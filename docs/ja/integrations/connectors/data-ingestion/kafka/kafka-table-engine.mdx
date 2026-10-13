@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', 'テーブルエンジン', 'ストリーミング', 'リアルタイム', 'メッセージキュー']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 Kafka テーブルエンジン は、Apache Kafka やその他の Kafka API 互換ブローカー (例: Redpanda、Amazon MSK) から[**データを読み取る**](#kafka-to-clickhouse)ことも、[**データを書き込む**](#clickhouse-to-kafka)こともできます。
 
 <div id="kafka-to-clickhouse">
@@ -31,7 +29,15 @@ Kafka テーブルエンジン を使うと、ClickHouse は Kafka トピック�
 
 テーブルエンジン から読み取ったデータを永続化するには、そのデータを取り込み、別の table に挿入する仕組みが必要です。トリガーベースの materialized view は、この機能をネイティブに提供します。materialized view は テーブルエンジン に対する読み取りを開始し、ドキュメントの batches を受け取ります。TO 句はデータの宛先を決定します。通常は [MergeTree ファミリー](/ja/reference/engines/table-engines/mergetree-family/index) の table です。この処理を以下に示します。
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="Kafka テーブルエンジン アーキテクチャ図" style={{width: '80%'}} />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kafka テーブルエンジン アーキテクチャ図](/images/integrations/data-ingestion/kafka/kafka_01.webp)
+
+</Frame>
+
+</div>
 
 <div id="steps">
   #### 手順
@@ -355,7 +361,15 @@ ClickHouse でより高い配信保証が必要な場合は、[クォーラム�
 
 最初の目的は、次の図を見るとわかりやすいでしょう。
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="insert を伴う Kafka テーブルエンジンの図" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![insert を伴う Kafka テーブルエンジンの図](/images/integrations/data-ingestion/kafka/kafka_02.webp)
+
+</Frame>
+
+</div>
 
 [Kafka to ClickHouse](#kafka-to-clickhouse) の手順で作成したテーブルとビューが存在し、トピックは完全に消費済みであることを前提とします。
 
@@ -399,7 +413,11 @@ ClickHouse でより高い配信保証が必要な場合は、[クォーラム�
   <Step title="materialized view を使う" id="2-using-materialized-views">
     テーブルにドキュメントが挿入されたとき、materialized view を利用してメッセージを Kafka エンジン (およびトピック) に送ることができます。GitHub テーブルに行が挿入されると、materialized view がトリガーされ、その結果、行は Kafka エンジン に再度挿入され、新しいトピックにも送られます。これも図で見るのが最もわかりやすいでしょう。
 
-    <Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="materialized view を使用した Kafka テーブルエンジン の図" />
+    <div className="ch-image-lg">
+
+    ![materialized view を使用した Kafka テーブルエンジン の図](/images/integrations/data-ingestion/kafka/kafka_03.webp)
+
+    </div>
 
     新しい Kafka トピック `github_out` または同等のものを作成してください。Kafka テーブルエンジン `github_out_queue` がこのトピックを指していることを確認してください。
 
@@ -493,7 +511,15 @@ Kafkaのコンシューマグループを使うことで、複数のClickHouse�
 
 複数のClickHouseインスタンスを、同じ コンシューマグループ id を使って1つのトピックを読み取るように設定できます。これはKafka テーブルエンジンの作成時に指定します。その結果、各インスタンスは1つ以上のパーティションから読み取り、ローカルのターゲットテーブルにセグメントを挿入します。さらに、ターゲットテーブルは、データの重複を処理するためにReplicatedMergeTreeを使用するよう設定できます。この方法では、Kafkaのパーティション数が十分にあれば、ClickHouseクラスターに合わせてKafkaからの読み取りをスケールできます。
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="ClickHouseクラスターでのKafka テーブルエンジンの図" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouseクラスターでのKafka テーブルエンジンの図](/images/integrations/data-ingestion/kafka/kafka_04.webp)
+
+</Frame>
+
+</div>
 
 <div id="tuning-performance">
   #### パフォーマンスのチューニング

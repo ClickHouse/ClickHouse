@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
@@ -31,7 +30,11 @@ DbVisualizer は https://www.dbvis.com/download/ から入手できます。
   <Step title="組み込みの JDBC ドライバー管理" id="2-built-in-jdbc-driver-management">
     DbVisualizer には、ClickHouse 用の最新の JDBC ドライバーが含まれています。最新のリリースに加え、過去のバージョンも参照できる JDBC ドライバー管理機能も組み込まれています。
 
-    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="ClickHouse JDBCドライバー設定が表示された DbVisualizer のドライバーマネージャーインターフェイス" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse JDBCドライバー設定が表示された DbVisualizer のドライバーマネージャーインターフェイス](/images/integrations/sql-clients/dbvisualizer-driver-manager.webp)
+
+    </div>
   </Step>
 
   <Step title="ClickHouse に接続する" id="3-connect-to-clickhouse">

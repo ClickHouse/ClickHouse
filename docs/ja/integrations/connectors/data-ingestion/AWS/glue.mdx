@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -41,13 +39,21 @@ Glue コードを ClickHouse と統合するには、次のいずれかの方法
       <Step title="コネクタを有効化して接続を作成する" id="activate-the-connector">
         サブスクライブ後、ジョブの要件に合った Glue バージョンを選択します。**Additional details** セクションの **Usage instructions** で、**Open Glue Studio - Add ClickHouse connector** へのリンクをクリックします。すると、主要なフィールドが事前入力された Glue の接続作成ページが開きます。接続に名前を付けて、作成をクリックしてください (この段階では ClickHouse の接続情報を指定する必要はありません) 。
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png" size="md" alt="ClickHouse Glue コネクタ向け AWS Marketplace の使用手順" />
+        <div className="ch-image-md">
+
+        ![ClickHouse Glue コネクタ向け AWS Marketplace の使用手順](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
+
+        </div>
       </Step>
 
       <Step title="Glue ジョブで使用する" id="use-in-glue-job">
         Glue ジョブで `Job details` タブを選択し、`Advanced properties` ウィンドウを展開します。`Connections` セクションで、先ほど作成した接続を選択します。コネクタは必要な JAR をジョブランタイムに自動的に追加します。
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size="md" alt="Glue Notebook の接続設定" force="true" />
+        <div className="ch-image-md">
+
+        ![Glue Notebook の接続設定](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
+
+        </div>
 
         <Note>
           Glue ジョブの設定に一致するコネクタバージョンを選択してください:
@@ -74,7 +80,11 @@ Glue コードを ClickHouse と統合するには、次のいずれかの方法
       <Step title="依存 JAR パスを設定する">
         `Job details` タブで下にスクロールし、`Advanced properties` のドロップダウンを展開して、`Dependent JARs path` に JAR のパスを入力します。
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size="md" alt="Glue Notebook の JAR パスオプション" force="true" />
+        <div className="ch-image-md">
+
+        ![Glue Notebook の JAR パスオプション](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -155,7 +165,11 @@ AWS Secrets Manager で、キーがコネクタのオプション名と一致す
   <Tab title="Visual Editor">
     Glue Studio の visual editor では、ClickHouse コネクタをソースとしてもターゲットとしても使用できます。ClickHouse Spark Connector コンポーネントをキャンバスにドラッグし、データパイプラインに接続するだけです。
 
-    <Image img="/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png" size="md" alt="ClickHouse connector を使用した Glue Studio visual editor" />
+    <div className="ch-image-md">
+
+    ![ClickHouse connector を使用した Glue Studio visual editor](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
+
+    </div>
   </Tab>
 
   <Tab title="Scala">

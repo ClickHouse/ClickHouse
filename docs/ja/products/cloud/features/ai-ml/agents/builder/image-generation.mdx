@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
@@ -20,7 +19,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 画像生成は、エージェントビルダーの **Add Tools** モーダル (Capabilities セクションではなく) から追加します。エージェントビルダーパネルの下部にある **Add Tools** をクリックし、画像モデル用ツールを 1 つ追加します。たとえば、**OpenAI Image Tools**、**DALL-E-3**、**Stable Diffusion** などです。エージェントはリクエストに応じて適切なものを選択しますが、指示で使用するツールを限定することもできます。
 
-<Image img="/images/cloud/agent-builder/tools-modal.webp" alt="OpenAI Image Tools、DALL-E-3、Stable Diffusion などの画像モデルのインテグレーションが、ほかのサードパーティーツールとともに表示された Agent Tools モーダル" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![OpenAI Image Tools、DALL-E-3、Stable Diffusion などの画像モデルのインテグレーションが、ほかのサードパーティーツールとともに表示された Agent Tools モーダル](/images/cloud/agent-builder/tools-modal.webp)
+
+</Frame>
+
+</div>
 
 <div id="generation">
   ## 生成

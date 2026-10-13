@@ -6,8 +6,6 @@ title: 'Integrating Google Cloud Storage with ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 The GCS ClickPipe provides a fully-managed and resilient way to ingest data from Google Cloud Storage (GCS). It supports both **one-time** and **continuous ingestion** with exactly-once semantics.
 
 GCS ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
@@ -121,7 +119,15 @@ Service Account authentication is required when using [unordered mode](#continuo
 
 To use [HMAC keys](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) to authenticate, choose `Credentials` under **Authentication method** when setting up your ClickPipe connection. Then, provide the access key (e.g., `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) and secret key (e.g., `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) under `Access key` and `Secret key`, respectively.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="HMAC credentials for GCS ClickPipes" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![HMAC credentials for GCS ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
+
+</Frame>
+
+</div>
 
 Follow [this guide](/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret) to create a service account with an HMAC key.
 
@@ -155,7 +161,15 @@ ClickPipes provides sensible defaults that cover the requirements of most use ca
 | `Parallel view processing`         | false         | Whether to enable pushing to attached views [concurrently instead of sequentially](/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`             | true          | Whether to process files in parallel across multiple nodes. |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Advanced settings for ClickPipes" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced settings for ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 ### Scaling {#scaling}
 

@@ -7,8 +7,6 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse 完全支持标准 SQL JOIN，可实现高效的数据分析。
 在本指南中，你将借助维恩图以及基于归一化 [IMDB](https://en.wikipedia.org/wiki/IMDb) 数据集的示例查询，了解一些常见的 JOIN 类型及其用法。该数据集源自[关系型数据集存储库](https://relational.fit.cvut.cz/dataset/IMDb)。
 
@@ -21,7 +19,15 @@ ClickHouse 完全支持标准 SQL JOIN，可实现高效的数据分析。
 
 你将使用示例数据集中的以下四个表：
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="IMDB Schema" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![IMDB Schema](/images/starter_guides/joins/imdb_schema.webp)
+
+</Frame>
+
+</div>
 
 这四个表中的数据表示电影，一部电影可以对应一个或多个类型。
 电影中的角色由演员扮演。
@@ -55,7 +61,15 @@ ClickHouse 支持以下 JOIN 类型：
 `INNER JOIN` 会针对每一对在连接键上匹配的行，返回由左表中该行的列值与右表中该行的列值组合而成的结果。
 如果某一行有多个匹配项，则会返回所有匹配项 (这意味着对于连接键匹配的行，会产生[笛卡尔积](https://en.wikipedia.org/wiki/Cartesian_product)) 。
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="内连接" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![内连接](/images/starter_guides/joins/inner_join.webp)
+
+</Frame>
+
+</div>
 
 此查询通过将 `movies` 表与 `genres` 表进行连接，找出每部电影对应的类型：
 
@@ -103,7 +117,15 @@ LIMIT 10;
 
 `FULL OUTER JOIN` 查询结合了 `LEFT` 和 `RIGHT OUTER JOIN`，会返回左表和右表中没有匹配项的行的值，并分别附带右表和左表各列的默认值。
 
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Outer Join](/images/starter_guides/joins/outer_join.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   可以将 ClickHouse [配置为](/zh/reference/settings/session-settings/join#join_use_nulls)返回 [NULL](/zh/reference/syntax#null)，而不是默认值 (不过，出于[性能原因](/zh/reference/data-types/nullable#storage-features)，通常不建议这样做) 。
@@ -148,7 +170,15 @@ LIMIT 10;
 `CROSS JOIN` 会生成两个表的完整笛卡尔积，不考虑连接键。
 左表中的每一行都会与右表中的每一行相组合。
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="交叉连接" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![交叉连接](/images/starter_guides/joins/cross_join.webp)
+
+</Frame>
+
+</div>
 
 因此，下面的查询会将 `movies` 表中的每一行与 `genres` 表中的每一行组合：
 
@@ -248,7 +278,15 @@ ALL
 
 `RIGHT SEMI JOIN` 查询与之类似，会返回右表中在左表里至少有一个匹配项的所有行的值，但同样只返回找到的第一个匹配项。
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="半连接" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![半连接](/images/starter_guides/joins/semi_join.webp)
+
+</Frame>
+
+</div>
 
 此查询会找出所有在 2023 年参演过电影的男演员/女演员。
 请注意，使用普通的 (`INNER`) 连接时，如果同一位男演员/女演员在 2023 年出演了多个角色，则会出现多次：
@@ -287,7 +325,15 @@ LIMIT 10;
 
 同样，`RIGHT ANTI JOIN` 返回右表中所有未匹配行的列值。
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="ANTI JOIN" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ANTI JOIN](/images/starter_guides/joins/anti_join.webp)
+
+</Frame>
+
+</div>
 
 前一个 OUTER JOIN 示例查询也可以改写为使用 ANTI JOIN，以查找数据集中没有流派的电影：
 
@@ -327,7 +373,15 @@ LIMIT 10;
 
 而 `INNER ANY JOIN` 则是禁用了笛卡尔积的 `INNER JOIN`。
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Any Join](/images/starter_guides/joins/any_join.webp)
+
+</Frame>
+
+</div>
 
 下面的示例使用两个通过 [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [表函数](/zh/reference/functions/table-functions/index) 构造的临时表 (`left_table` 和 `right_table`) ，以一个抽象示例演示 `LEFT ANY JOIN`：
 
@@ -402,14 +456,30 @@ INNER ANY JOIN right_table AS r ON l.c = r.c;
 
 这对于时间序列分析尤其有用，并且可以显著降低查询复杂度。
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Join](/images/starter_guides/joins/asof_join.webp)
+
+</Frame>
+
+</div>
 
 下面的示例展示了如何对股票市场数据进行时间序列分析。
 `quotes` 表包含股票代码在一天中各个特定时刻的报价。
 在示例数据中，价格每 10 秒更新一次。
 `trades` 表列出了股票代码的交易记录——某个代码的特定成交量在特定时刻被买入：
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Example](/images/starter_guides/joins/asof_example.webp)
+
+</Frame>
+
+</div>
 
 为了计算每笔交易的实际成本，我们需要将交易与时间上最接近的报价相匹配。
 

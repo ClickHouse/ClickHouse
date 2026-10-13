@@ -7,8 +7,6 @@ title: "SQL ServerからClickHouseへデータをストリーミングして高�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 この記事では、SQL ServerからClickHouseへデータをストリーミングする方法を紹介するチュートリアルを、わかりやすく解説します。ClickHouseは、社内向けまたは顧客向けのダッシュボード用に超高速な分析を行いたい場合に最適です。ここでは、両方のデータベースのセットアップ、接続方法、そして最後に[Streamkap](https://streamkap.com)を使ってデータをストリーミングする方法を、順を追って説明します。日々の業務処理はSQL Serverで行いながら、分析にはClickHouseの速度と高度な機能を活用したいなら、この記事はまさにぴったりです。
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
@@ -79,11 +77,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     * ユーザー名とパスワード
     * データベース名
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
+
+    </div>
 
     #### バックグラウンドで行われること
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
+
+    </div>
 
     この設定を行うと、Streamkap は SQL Server に接続してテーブルを検出します。このデモでは、events や transactions のように、すでにデータがストリーミングされているテーブルを選びます。
   </Step>
@@ -148,7 +154,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     #### バックフィルは必要ですか？
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
+
+    </div>
 
     「古いデータもバックフィルしたほうがよいのだろうか？」と思うかもしれません。
 

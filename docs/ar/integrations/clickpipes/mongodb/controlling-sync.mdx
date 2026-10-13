@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 توضح هذه الوثيقة كيفية التحكم في مزامنة ClickPipe الخاص بـ MongoDB عندما يكون ClickPipe في **وضع CDC (Running)**.
 
 <div id="overview">
@@ -47,15 +45,39 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكنك تعيين فاصل المزامنة وحجم دفعة السحب عند إنشاء ClickPipe أو تعديل ClickPipe موجود.
 وعند إنشاء ClickPipe، ستظهر هذه الإعدادات في الخطوة الثانية من معالج الإنشاء، كما هو موضح أدناه:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="إنشاء إعدادات المزامنة" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![إنشاء إعدادات المزامنة](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
+
+</Frame>
+
+</div>
 
 وعند تعديل ClickPipe موجود، يمكنك الانتقال إلى علامة تبويب **الإعدادات** الخاصة بالمسار، ثم إيقاف المسار مؤقتًا والنقر على **تهيئة** هنا:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="زر تعديل المزامنة" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![زر تعديل المزامنة](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
+
+</Frame>
+
+</div>
 
 سيؤدي ذلك إلى فتح لوحة جانبية تتضمن إعدادات المزامنة، حيث يمكنك تغيير فاصل المزامنة وحجم دفعة السحب:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="تعديل إعدادات المزامنة" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![تعديل إعدادات المزامنة](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
+
+</Frame>
+
+</div>
 
 <div id="monitoring">
   ### مراقبة سلوك التحكم بالمزامنة
@@ -63,4 +85,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكنك معرفة المدة التي تستغرقها كل دفعة في جدول **CDC Syncs** ضمن علامة التبويب **Metrics** في ClickPipe. لاحظ أن المدة هنا تشمل أيضًا وقت الدفع، وإذا لم ترد أي صفوف، فسينتظر ClickPipe، كما يُحتسب وقت الانتظار ضمن هذه المدة أيضًا.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="جدول CDC Syncs" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![جدول CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)
+
+</Frame>
+
+</div>

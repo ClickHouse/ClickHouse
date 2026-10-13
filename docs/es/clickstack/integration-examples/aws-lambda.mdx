@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['AWS', 'Lambda', 'OTEL', 'ClickStack', 'logs', 'CloudWatch']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -217,9 +215,17 @@ En esta sección se explica cómo configurar sus funciones de AWS Lambda existen
   <Step title="Verifica los logs en HyperDX" id="verify-logs">
     Una vez configurado, inicia sesión en HyperDX (la UI de ClickStack) y verifica que los logs se estén enviando:
 
-    <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Vista de logs de Lambda" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/lambda/lambda-log.webp" alt="Detalle del log de Lambda" />
+    ![Vista de logs de Lambda](/images/clickstack/lambda/lambda-log-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Detalle del log de Lambda](/images/clickstack/lambda/lambda-log.webp)
+
+    </div>
 
     Busca estos atributos clave en los logs:
 

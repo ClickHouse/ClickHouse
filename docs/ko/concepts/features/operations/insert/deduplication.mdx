@@ -7,8 +7,6 @@ keywords: ['중복 제거 전략', '데이터 중복 제거', '업서트', '업�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 **중복 제거**는 ***데이터셋에서 중복된 행을 제거하는*** 과정을 의미합니다. OLTP 데이터베이스에서는 각 행에 고유한 기본 키가 있으므로 이를 쉽게 수행할 수 있지만, 그 대가로 삽입 속도는 느려집니다. 삽입되는 모든 행은 먼저 기존에 있는지 확인해야 하며, 이미 있으면 대체해야 합니다.
 
 ClickHouse는 데이터 삽입 속도를 우선하도록 설계되었습니다. 저장 파일은 변경할 수 없으며, ClickHouse는 행을 삽입하기 전에 기존 기본 키를 확인하지 않으므로 중복 제거에 조금 더 많은 작업이 필요합니다. 이는 또한 중복 제거가 즉시 이루어지는 것이 아니라 **최종적으로** 이루어진다는 뜻이며, 이에 따라 몇 가지 부작용이 있습니다:
@@ -20,7 +18,7 @@ ClickHouse는 데이터 삽입 속도를 우선하도록 설계되었습니다. 
 <div class="transparent-table">
   |                                                                                       |                                                                                                                                                                                                                        |
   | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="중복 제거 로고" size="sm" /> | ClickHouse는 중복 제거를 비롯한 여러 주제에 대한 무료 교육을 제공합니다.  [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)은 시작하기에 좋은 자료입니다. |
+  | <span className="ch-image-sm">![중복 제거 로고](/images/guides/developer/de_duplication.webp)</span> | ClickHouse는 중복 제거를 비롯한 여러 주제에 대한 무료 교육을 제공합니다.  [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)은 시작하기에 좋은 자료입니다. |
 </div>
 
 <div id="options-for-deduplication">

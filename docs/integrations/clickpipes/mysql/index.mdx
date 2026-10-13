@@ -10,8 +10,8 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
+
 import SettingPartitionBy from '/snippets/clickpipes/_target_ch_partition_by.mdx';
 
 The MySQL ClickPipe provides a fully-managed and resilient way to ingest data from MySQL and MariaDB databases into ClickHouse Cloud. It supports both **bulk loads** for one-time ingestion and **Change Data Capture (CDC)** for continuous ingestion.
@@ -45,15 +45,39 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
 [//]: # (   TODO update image here)
 1. In the ClickHouse Cloud console, navigate to your ClickHouse Cloud Service.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes service" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes service](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. Select the `Data Sources` button on the left-side menu and click on "Set up a ClickPipe"
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Select imports" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select imports](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. Select the `MySQL CDC` tile
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="Select MySQL" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select MySQL](/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp)
+
+</Frame>
+
+</div>
 
 ### Add your source MySQL database connection {#add-your-source-mysql-database-connection}
 
@@ -64,7 +88,11 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
    For more information refer to the source MySQL setup guides linked at [the top of this page](#prerequisites).
 </Info>
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="Fill in connection details" size="lg" border/>
+   <div className="ch-image-lg">
+
+   ![Fill in connection details](/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp)
+
+   </div>
 
 #### (Optional) Changing TLS settings {#optional-changing-tls-settings}
 
@@ -77,7 +105,11 @@ You can specify SSH tunneling details if your source MySQL database isn't public
 1. Enable the "Use SSH Tunnelling" toggle.
 2. Fill in the SSH connection details.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border/>
+   <div className="ch-image-lg">
+
+   ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. To use Key-based authentication, click on "Revoke and generate key pair" to generate a new key pair and copy the generated public key to your SSH server under `~/.ssh/authorized_keys`.
 4. Click on "Verify Connection" to verify the connection.
@@ -103,7 +135,11 @@ You can configure the advanced settings if needed. A brief description of each s
 
 5. Here you can select the destination database for your ClickPipe. You can either select an existing database or create a new one.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="Select destination database" size="lg" border/>
+   <div className="ch-image-lg">
+
+   ![Select destination database](/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp)
+
+   </div>
 
 6. You can select the tables you want to replicate from the source MySQL database. While selecting the tables, you can also choose to rename the tables in the destination ClickHouse database as well as exclude specific columns.
 
@@ -113,7 +149,11 @@ You can configure the advanced settings if needed. A brief description of each s
 
 8. Select the "Full access" role from the permissions dropdown and click "Complete Setup".
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Review permissions" size="lg" border/>
+   <div className="ch-image-lg">
+
+   ![Review permissions](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 Finally, please refer to the ["ClickPipes for MySQL FAQ"](/integrations/clickpipes/mysql/faq) page for more information about common issues and how to resolve them.
 

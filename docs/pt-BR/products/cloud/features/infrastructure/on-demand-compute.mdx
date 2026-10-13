@@ -9,7 +9,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -250,7 +249,15 @@ Nada muda na forma como você acessa o ClickHouse. Os clientes continuam se cone
 
 Enquanto um worker está em lease para o seu service, a plataforma permite o tráfego de rede entre esse worker e o seu service e bloqueia todo o restante. A restrição é aplicada na camada de rede, e não no engine de consulta, portanto não depende da consulta, de suas configurações nem do plan produzido pelo optimizer.
 
-<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Diagrama explicativo do isolamento de rede" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Diagrama explicativo do isolamento de rede](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
+
+</Frame>
+
+</div>
 
 * **Somente o seu service consegue alcançar os seus workers.** O path existe durante o lease atual do worker e apenas para aquele service.
 * **Workers não atribuídos são inalcançáveis.** Um worker aguardando no pool não tem nenhum path de rede de ou para qualquer service até entrar em lease.

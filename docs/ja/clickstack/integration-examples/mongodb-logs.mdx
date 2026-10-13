@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['MongoDB', 'ログ', 'OTel', 'ClickStack', 'データベース監視', 'スロークエリ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -177,9 +175,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   <Step title="HyperDX でログを確認する" id="verifying-logs">
     設定が完了したら、HyperDX にログインして、ログが流れてきていることを確認します。
 
-    <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB ログの検索ビュー" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/mongodb/log-view.webp" alt="MongoDB ログの詳細ビュー" />
+    ![MongoDB ログの検索ビュー](/images/clickstack/mongodb/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![MongoDB ログの詳細ビュー](/images/clickstack/mongodb/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -277,9 +283,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     2. Search ビューに移動し、source を `Logs` に設定します
     3. 時間範囲に **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)** が含まれるよう設定します
 
-    <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB ログの Search ビュー" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/mongodb/log-view.webp" alt="MongoDB ログの詳細ビュー" />
+    ![MongoDB ログの Search ビュー](/images/clickstack/mongodb/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![MongoDB ログの詳細ビュー](/images/clickstack/mongodb/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -296,17 +310,29 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     1. HyperDX を開き、Dashboards セクションに移動します。
     2. 右上の省略記号メニューから「Import Dashboard」をクリックします。
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポート" />
+    <div className="ch-image-lg">
+
+    ![ダッシュボードのインポート](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. mongodb-logs-dashboard.json ファイルをアップロードし、インポートを完了します。
 
-    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="MongoDB ログダッシュボードのインポート完了" />
+    <div className="ch-image-lg">
+
+    ![MongoDB ログダッシュボードのインポート完了](/images/clickstack/mongodb/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="ダッシュボードが作成され、すべての可視化があらかじめ設定された状態になります" id="created-dashboard">
     デモデータセットでは、時間範囲に **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)** が含まれるように設定します。
 
-    <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="MongoDB ログダッシュボード" />
+    <div className="ch-image-lg">
+
+    ![MongoDB ログダッシュボード](/images/clickstack/mongodb/example-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

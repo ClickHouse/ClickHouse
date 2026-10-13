@@ -7,19 +7,25 @@ doc_type: 'guide'
 keywords: ['clickstack', '可观测性', '日志', '监控', '平台']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 所有数据都会通过 **OpenTelemetry (OTel) collector** 摄取到开源 ClickStack 或托管 ClickStack 中。它是日志、指标、链路追踪和会话数据的主要入口。
 
 这两种架构的关键区别在于组件托管的位置。在这两种情况下，您都需要运行一个 OpenTelemetry Collector 来接收来自应用程序的遥测数据。对于开源 ClickStack，您还需要自行托管和管理 ClickHouse 以及 ClickStack UI (HyperDX) 。对于托管 ClickStack，ClickHouse 和 HyperDX UI 则托管并由 ClickHouse Cloud 管理，同时还为您处理集成的身份验证和运维管理。
 
 <Tabs>
   <Tab title="托管 ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="托管架构与流程" size="md" />
+    <div className="ch-image-md">
+
+    ![托管架构与流程](/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp)
+
+    </div>
   </Tab>
 
   <Tab title="开源 ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="简化架构与流程" size="md" />
+    <div className="ch-image-md">
+
+    ![简化架构与流程](/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp)
+
+    </div>
   </Tab>
 </Tabs>
 

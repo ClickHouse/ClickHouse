@@ -6,8 +6,6 @@ title: 'Самостоятельное управление предоплаче
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Если вы приобретаете предоплаченные кредиты по контракту с обязательствами, вы можете управлять их распределением между своими организациями ClickHouse.
 На странице **Prepaid credits** можно просматривать балансы и переводить кредиты между организациями.
 
@@ -15,7 +13,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В консоли ClickHouse Cloud откройте **Settings**, затем выберите **Prepaid credits** в разделе **Account**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Prepaid credits в разделе Account на боковой панели Settings" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Prepaid credits в разделе Account на боковой панели Settings](/images/cloud/reference/billing/prepaid-credits-navigation.png)
+
+</Frame>
+
+</div>
 
 Чтобы просматривать баланс предоплаченных кредитов, вам нужна хотя бы одна из следующих ролей в организации, которой выделены кредиты по контракту с обязательствами:
 
@@ -63,7 +69,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 | **Spent**              | Все предоплаченные балансы организации израсходованы, но срок их действия не истёк. Этот статус имеет приоритет над **Active**.                                             |
 | **No Prepaid Credits** | У организации нет предоплаченных кредитов.                                                                                                                                  |
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Сводные метрики предоплаченных кредитов и балансы по организациям" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Сводные метрики предоплаченных кредитов и балансы по организациям](/images/cloud/reference/billing/prepaid-credits-balances.png)
+
+</Frame>
+
+</div>
 
 ## Перенос кредитов {#transfer-credits}
 
@@ -77,7 +91,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 4. Укажите сумму переноса.
 5. Проверьте итоговые балансы и нажмите **Transfer credits**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="Панель переноса кредитов с исходным грантом, целевой организацией, суммой переноса и итоговыми балансами" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Панель переноса кредитов с исходным грантом, целевой организацией, суммой переноса и итоговыми балансами](/images/cloud/reference/billing/prepaid-credits-transfer.png)
+
+</Frame>
+
+</div>
 
 ### Правила переноса {#transfer-rules}
 

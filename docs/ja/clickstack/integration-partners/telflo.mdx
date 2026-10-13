@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -119,7 +118,11 @@ Telflo が提供する機能:
 
     receiver からプロセッサを経由してエクスポーターへとエッジを描画し、シグナルごとに 1 つのパイプラインを構成します。status 行には **config valid** か、修正が必要なエラーの件数が表示され、**YAML** タブでは生成された設定を確認できます。
 
-    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="ClickHouse exporter が設定された Telflo エディターの collector パイプライン" size="lg" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse exporter が設定された Telflo エディターの collector パイプライン](/images/clickstack/telflo/telflo-configuration.webp)
+
+    </div>
 
     実際に展開する前に、サンプルのテレメトリーを構成に流して、出力結果を確認できます。[Telflo でのテスト](https://docs.telflo.com/docs/testing/overview)を参照してください。また、実現したい内容を説明するだけで、ツールバーの **AI** ボタンから開く Telflo AI アシスタントが構成の作成、検証、テストを代行します。独自のエージェントからも [Telflo CLI](https://docs.telflo.com/docs/cli/) を使って同じことが行えます。
   </Step>
@@ -136,7 +139,11 @@ Telflo が提供する機能:
 
     変更を rollout するには、新しい version をパブリッシュしてグループに割り当てます。ロールバックする場合は、以前にデプロイした version を割り当てます。
 
-    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="ロールアウト後、すべての collector が同期された Telflo フリート" size="lg" />
+    <div className="ch-image-lg">
+
+    ![ロールアウト後、すべての collector が同期された Telflo フリート](/images/clickstack/telflo/telflo-fleet.webp)
+
+    </div>
   </Step>
 
   <Step title="テレメトリーを確認する" id="verify-telemetry">

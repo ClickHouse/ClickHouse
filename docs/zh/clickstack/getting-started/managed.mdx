@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['托管 ClickStack', '入门', 'ClickHouse Cloud']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import ExampleOTelConfig from '/snippets/zh/clickstack/_config_example_otel.mdx';
 
 在 ClickHouse Cloud 上部署托管 ClickStack，通过摄取管道发送测试事件，并确认该事件已显示在 ClickStack UI 中。
@@ -51,7 +49,11 @@ ClickHouse Cloud 负责运维 ClickHouse 后端，而你仍可控制摄取管道
     <Step title="选择摄取源和 collector 配置" id="choose-an-ingestion-source">
       从您的 ClickHouse Cloud 服务中启动 ClickStack。在 ClickStack 的**入门**页面上，选择**开始摄取**。
 
-      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="开始摄取" border />
+      <div className="ch-image-lg">
+
+      ![开始摄取](/images/clickstack/getting-started/start_ingestion.webp)
+
+      </div>
 
       在**选择摄取源**页面上，选择 [OpenTelemetry](https://opentelemetry.io/)。
 
@@ -61,7 +63,11 @@ ClickHouse Cloud 负责运维 ClickHouse 后端，而你仍可控制摄取管道
         OpenTelemetry 为日志、追踪、指标和会话提供预配置的架构。
       </Info>
 
-      <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="选择 OpenTelemetry 作为摄取源" border />
+      <div className="ch-image-lg">
+
+      ![选择 OpenTelemetry 作为摄取源](/images/clickstack/getting-started/select_source_toggle.webp)
+
+      </div>
 
       <Tabs>
         <Tab title="启动新的收集器">
@@ -167,7 +173,11 @@ ClickHouse Cloud 负责运维 ClickHouse 后端，而你仍可控制摄取管道
 
       结果中应显示服务名称为 `clickstack-docs-test` 的测试事件。
 
-      <Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack 日志视图，显示 ClickStack 摄取测试事件" border />
+      <div className="ch-image-lg">
+
+      ![ClickStack 日志视图，显示 ClickStack 摄取测试事件](/images/clickstack/getting-started/clickstack_ingestion_test.webp)
+
+      </div>
     </Step>
   </Steps>
 </View>
@@ -183,11 +193,19 @@ ClickHouse Cloud 负责运维 ClickHouse 后端，而你仍可控制摄取管道
     <Step title="选择 Vector 并配置数据摄取" id="choose-an-ingestion-source-vector">
       在您的 ClickHouse Cloud 服务中启动 ClickStack。在 ClickStack 的 **Getting Started** 页面中，选择 **Start ingestion**。
 
-      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="开始摄取数据" border />
+      <div className="ch-image-lg">
+
+      ![开始摄取数据](/images/clickstack/getting-started/start_ingestion.webp)
+
+      </div>
 
       在 **Choose an ingestion source** 页面上，选择 [Vector](https://vector.dev/)。
 
-      <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="选择 Vector 作为摄取来源" border />
+      <div className="ch-image-lg">
+
+      ![选择 Vector 作为摄取来源](/images/clickstack/getting-started/select_source_vector_toggle.webp)
+
+      </div>
 
       [Vector](https://vector.dev) 是一款高性能、厂商中立的可观测性数据管道，凭借灵活性强、资源占用低的特点，在日志摄取场景中尤为流行。
 
@@ -332,7 +350,11 @@ ClickHouse Cloud 负责运维 ClickHouse 后端，而你仍可控制摄取管道
     <Step title="开始探索并确认数据摄取" id="open-clickstack-and-confirm-ingestion-vector">
       创建数据源后，选择 **开始探索**，打开 **搜索** 视图。选择对应表的数据源，并确认其中包含您发送的事件。
 
-      <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI 中的日志" />
+      <div className="ch-image-lg">
+
+      ![ClickStack UI 中的日志](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+      </div>
     </Step>
   </Steps>
 </View>

@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
@@ -47,19 +46,31 @@ Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode enco
   <Step title="Faça login ou cadastre-se no Mitzu" id="2-sign-in-or-sign-up-to-mitzu">
     Para começar, acesse [https://app.mitzu.io](https://app.mitzu.io) para se cadastrar.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="Página de login do Mitzu com campos de email e senha" border />
+    <div className="ch-image-lg">
+
+    ![Página de login do Mitzu com campos de email e senha](/images/integrations/data-visualization/mitzu_01.webp)
+
+    </div>
   </Step>
 
   <Step title="Configure seu workspace" id="3-configure-your-workspace">
     Depois de criar uma organização, siga o guia de onboarding `Set up your workspace` na barra lateral à esquerda. Em seguida, clique no link `Connect Mitzu with your data warehouse`.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="Página de configuração do workspace do Mitzu com as etapas de onboarding" border />
+    <div className="ch-image-lg">
+
+    ![Página de configuração do workspace do Mitzu com as etapas de onboarding](/images/integrations/data-visualization/mitzu_02.webp)
+
+    </div>
   </Step>
 
   <Step title="Conectar o Mitzu ao ClickHouse" id="4-connect-mitzu-to-clickhouse">
     Primeiro, selecione ClickHouse como o tipo de conexão e informe os detalhes da conexão. Em seguida, clique no botão `Test connection & Save` para salvar as configurações.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="Página de configuração de conexão do Mitzu para ClickHouse com formulário de configuração" border />
+    <div className="ch-image-lg">
+
+    ![Página de configuração de conexão do Mitzu para ClickHouse com formulário de configuração](/images/integrations/data-visualization/mitzu_03.webp)
+
+    </div>
   </Step>
 
   <Step title="Configurar tabelas de eventos" id="5-configure-event-tables">
@@ -67,7 +78,11 @@ Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode enco
 
     Use as caixas de seleção para escolher pelo menos uma tabela e clique no botão `Configure table`. Isso abrirá uma janela modal na qual você poderá definir as colunas-chave de cada tabela.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="Interface de seleção de tabelas do Mitzu mostrando tabelas do banco de dados" border />
+    <div className="ch-image-lg">
+
+    ![Interface de seleção de tabelas do Mitzu mostrando tabelas do banco de dados](/images/integrations/data-visualization/mitzu_04.webp)
+
+    </div>
 
     <br />
 
@@ -79,7 +94,11 @@ Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode enco
     > * **Hora do evento** - a coluna de timestamp dos seus eventos.
     > * Optional&#91;**Nome do evento**&#93; - Esta coluna segmenta os eventos se a tabela contiver vários tipos de evento.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="Configuração do catálogo de eventos do Mitzu mostrando opções de mapeamento de colunas" border />
+    <div className="ch-image-lg">
+
+    ![Configuração do catálogo de eventos do Mitzu mostrando opções de mapeamento de colunas](/images/integrations/data-visualization/mitzu_05.webp)
+
+    </div>
 
     <br />
 
@@ -91,7 +110,11 @@ Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode enco
 
     A página Explore tem uma área de seleção de eventos à esquerda, enquanto a seção superior permite configurar o horizonte de tempo.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="Interface de consulta de segmentação do Mitzu com seleção de eventos e configuração de tempo" border />
+    <div className="ch-image-lg">
+
+    ![Interface de consulta de segmentação do Mitzu com seleção de eventos e configuração de tempo](/images/integrations/data-visualization/mitzu_06.webp)
+
+    </div>
 
     <br />
 
@@ -107,7 +130,11 @@ Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode enco
     Selecione até 9 etapas para um funil. Escolha a janela de tempo em que seus usuários podem concluir o funil.
     Obtenha insights imediatos sobre a taxa de conversão sem escrever uma única linha de código SQL.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="Visualização da análise de funil do Mitzu mostrando taxas de conversão entre etapas" border />
+    <div className="ch-image-lg">
+
+    ![Visualização da análise de funil do Mitzu mostrando taxas de conversão entre etapas](/images/integrations/data-visualization/mitzu_07.webp)
+
+    </div>
 
     <br />
 
@@ -122,7 +149,11 @@ Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode enco
     Selecione até 2 etapas para calcular a taxa de retenção. Escolha a janela de retenção para a janela recorrente de
     Obtenha insights imediatos sobre a taxa de conversão sem escrever uma única linha de código SQL.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="Análise de retenção do Mitzu mostrando taxas de retenção por coorte" border />
+    <div className="ch-image-lg">
+
+    ![Análise de retenção do Mitzu mostrando taxas de retenção por coorte](/images/integrations/data-visualization/mitzu_08.webp)
+
+    </div>
 
     <br />
 
@@ -136,7 +167,11 @@ Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode enco
   <Step title="Executar consultas de jornada" id="7-run-journey-queries">
     Selecione até 9 etapas para um funil. Escolha a janela de tempo em que seus usuários podem concluir a jornada. O gráfico de jornada do Mitzu oferece um mapa visual de todos os caminhos que os usuários percorrem pelos eventos selecionados.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="Visualização de jornada do Mitzu mostrando o fluxo do caminho do usuário entre eventos" border />
+    <div className="ch-image-lg">
+
+    ![Visualização de jornada do Mitzu mostrando o fluxo do caminho do usuário entre eventos](/images/integrations/data-visualization/mitzu_09.webp)
+
+    </div>
 
     <br />
 
@@ -152,13 +187,21 @@ Este guia é apenas uma breve visão geral de como usar o Mitzu. Você pode enco
   <Step title="Executar consultas de faturamento" id="8-run-revenue-queries">
     Se as configurações de receita estiverem definidas, o Mitzu poderá calcular o MRR total e o número de assinaturas com base nos seus eventos de pagamento.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="dashboard de análise de receita do Mitzu mostrando métricas de MRR" border />
+    <div className="ch-image-lg">
+
+    ![dashboard de análise de receita do Mitzu mostrando métricas de MRR](/images/integrations/data-visualization/mitzu_10.webp)
+
+    </div>
   </Step>
 
   <Step title="SQL nativo" id="9-sql-native">
     O Mitzu é SQL Native, o que significa que ele gera código SQL nativo a partir da configuração escolhida na página Explore.
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="Visualização da geração de código SQL no Mitzu mostrando consulta nativa do ClickHouse" border />
+    <div className="ch-image-lg">
+
+    ![Visualização da geração de código SQL no Mitzu mostrando consulta nativa do ClickHouse](/images/integrations/data-visualization/mitzu_11.webp)
+
+    </div>
 
     <br />
 

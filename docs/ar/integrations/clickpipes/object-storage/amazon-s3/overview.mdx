@@ -6,8 +6,6 @@ title: 'تكامل Amazon S3 مع ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوفّر S3 ClickPipe طريقة مُدارة بالكامل وعالية الاعتمادية لإدخال البيانات من Amazon S3 ومخازن الكائنات المتوافقة مع S3 إلى ClickHouse Cloud. وهو يدعم كلاً من **الإدخال لمرة واحدة** و**الإدخال المستمر** مع ضمان المعالجة مرة واحدة فقط.
 
 يمكن نشر S3 ClickPipes وإدارتها يدويًا باستخدام ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
@@ -189,7 +187,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لاستخدام [مفاتيح الوصول](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) للمصادقة، اختر `Credentials` ضمن **Authentication method** عند إعداد اتصال ClickPipe. بعد ذلك، أدخِل معرّف مفتاح الوصول (مثل `AKIAIOSFODNN7EXAMPLE`) ومفتاح الوصول السري (مثل `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) في الحقلين `Access key` و`Secret key`، على الترتيب.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="بيانات اعتماد IAM لـ S3 ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![بيانات اعتماد IAM لـ S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
+
+</Frame>
+
+</div>
 
 <div id="iam-role">
   #### IAM role
@@ -197,7 +203,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لاستخدام [الوصول المستند إلى الأدوار](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) في المصادقة، اختر `IAM role` ضمن **Authentication method** عند إعداد اتصال ClickPipe.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="مصادقة IAM لـ S3 ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مصادقة IAM لـ S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
+
+</Frame>
+
+</div>
 
 اتّبع [هذا الدليل](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) [لإنشاء دور](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role) بسياسة الثقة المطلوبة للوصول إلى S3. ثم أدخِل ARN لدور IAM ضمن `IAM role ARN`.
 
@@ -242,7 +256,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | `Parallel view processing`           | false             | ما إذا كان سيتم تمكين الدفع إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true              | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عُقد.                                                                                                 |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة لـ ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![الإعدادات المتقدمة لـ ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="scaling">
   ### التحجيم

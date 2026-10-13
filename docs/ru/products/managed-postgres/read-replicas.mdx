@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
@@ -16,11 +15,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Чтобы управлять репликами для чтения, нажмите значок редактирования в вашем хранилище:
 
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="Представление хранилища со значком редактирования" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Представление хранилища со значком редактирования](/images/managed-postgres/warehouse-view.webp)
+
+</Frame>
+
+</div>
 
 Откроется диалоговое окно хранилища, где можно просмотреть существующие сервисы и создать новые реплики для чтения:
 
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Диалоговое окно управления репликами для чтения" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Диалоговое окно управления репликами для чтения](/images/managed-postgres/read-replica-dialog.webp)
+
+</Frame>
+
+</div>
 
 ## Управление репликами для чтения {#managing-read-replicas}
 
@@ -28,11 +43,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Представление **Flow** показывает топологию репликации: вверху находится основной экземпляр, а от него вниз к каждой подключенной реплике идут стрелки, так что вы сразу видите уровень, регион и status:
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Представление Flow для реплик для чтения с топологией основного экземпляра и реплик" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Представление Flow для реплик для чтения с топологией основного экземпляра и реплик](/images/managed-postgres/read-replicas-flow.webp)
+
+</Frame>
+
+</div>
 
 Представление **Table** показывает список всех реплик с указанием Service name, облачного провайдера и региона, статуса сервиса, времени создания и действием **Detach service**:
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Представление Table для реплик для чтения" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Представление Table для реплик для чтения](/images/managed-postgres/read-replicas-table.webp)
+
+</Frame>
+
+</div>
 
 Чтобы создать новую реплику, нажмите **Create read replica** в правом верхнем углу любого из представлений.
 

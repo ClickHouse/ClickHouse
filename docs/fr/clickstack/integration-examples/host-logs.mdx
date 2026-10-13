@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['logs hôtes', 'systemd', 'syslog', 'OTEL', 'ClickStack', 'supervision du système', 'logs serveur']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -249,9 +247,17 @@ Si vous souhaitez tester l’intégration des logs hôte avant de configurer vot
     3. Filtrez sur `source:host-logs` pour afficher les logs spécifiques à l’hôte
     4. Vous devriez voir des entrées de logs structurées avec des champs tels que `unit`, `hostname`, `pid`, `message`, etc.
 
-    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Vue Search" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Vue Log" />
+    ![Vue Search](/images/clickstack/host-logs/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Vue Log](/images/clickstack/host-logs/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -346,9 +352,17 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs hôte avan
     2. Accédez à la vue Search et définissez la source sur `Logs`
     3. Définissez l’intervalle de temps sur **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
 
-    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Vue Search" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Vue Log" />
+    ![Vue Search](/images/clickstack/host-logs/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Vue Log](/images/clickstack/host-logs/log-view.webp)
+
+    </div>
 
     <Info>
       **Affichage du fuseau horaire**
@@ -373,17 +387,29 @@ Pour vous aider à démarrer la surveillance des logs hôte avec ClickStack, nou
     1. Ouvrez HyperDX et accédez à la section Dashboards
     2. Cliquez sur **Import Dashboard** dans le coin supérieur droit, dans le menu à trois points
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’import du tableau de bord" />
+    <div className="ch-image-lg">
+
+    ![Bouton d’import du tableau de bord](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Téléversez le fichier `host-logs-dashboard.json` et cliquez sur **Finish Import**
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Terminer l’importation" />
+    <div className="ch-image-lg">
+
+    ![Terminer l’importation](/images/clickstack/host-logs/import-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations préconfigurées :
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="Tableau de bord des logs" />
+    <div className="ch-image-lg">
+
+    ![Tableau de bord des logs](/images/clickstack/host-logs/host-logs-dashboard.webp)
+
+    </div>
 
     Les principales visualisations sont les suivantes :
 

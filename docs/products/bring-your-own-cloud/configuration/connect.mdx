@@ -7,8 +7,6 @@ description: 'Connect to your BYOC ClickHouse services via public or private loa
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This page describes the different ways to connect to your ClickHouse services in BYOC. You can choose from public load balancers, private load balancers, or private endpoints (AWS PrivateLink, GCP Private Service Connect, or Azure Private Link) based on your security and networking requirements.
 
 ## Selecting a connection path in the console {#connection-via}
@@ -25,7 +23,15 @@ Selecting a path updates the hostname in every connection example in the dialog 
 
 The dropdown lists only the paths enabled for your infrastructure, and the list is refreshed each time the dialog opens — a newly enabled private load balancer or PrivateLink endpoint appears the next time you open **Connect**, with no propagation delay. When only one path is available, the dropdown is shown disabled with that endpoint selected.
 
-<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Connect dialog with the Connection via dropdown expanded, showing the public load balancer, private load balancer, and PrivateLink paths" background='black'/>
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![Connect dialog with the Connection via dropdown expanded, showing the public load balancer, private load balancer, and PrivateLink paths](/images/cloud/reference/byoc-connect-via.png)
+
+</Frame>
+
+</div>
 
 ## Public Load Balancer {#public-load-balancer}
 
@@ -43,7 +49,15 @@ To connect to your ClickHouse service using the public endpoint:
 
 1. **Obtain your service endpoint** from the ClickHouse Cloud console. The endpoint is displayed in the "Connect" session of your service.
 
-<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="BYOC connection" background='black'/>
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC connection](/images/cloud/reference/byoc-connect-1.webp)
+
+</Frame>
+
+</div>
 
 For example:
 ```text

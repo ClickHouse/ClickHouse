@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
+
 import ConfigurableBackupsCLI from "/snippets/ko/cloud/backups/_configurable_backups_cli.mdx";
 
 <Visibility for="agents">
@@ -22,11 +22,19 @@ import ConfigurableBackupsCLI from "/snippets/ko/cloud/backups/_configurable_bac
 
     서비스의 백업 일정을 구성하려면 콘솔의 **설정** 탭으로 이동한 다음 **백업 구성 변경**을 클릭하십시오.
 
-    <Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="백업 설정 구성" border />
+    <div className="ch-image-lg">
+
+    ![백업 설정 구성](/images/cloud/manage/backup-settings.webp)
+
+    </div>
 
     그러면 오른쪽에 탭이 열리며, 여기에서 보존 기간, 빈도, 시작 시간 값을 선택할 수 있습니다. 선택한 설정을 적용하려면 저장해야 합니다.
 
-    <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="백업 보존 기간 및 빈도 선택" border />
+    <div className="ch-image-lg">
+
+    ![백업 보존 기간 및 빈도 선택](/images/cloud/manage/backup-configuration-form.webp)
+
+    </div>
 
     <Note>
       시작 시간과 빈도는 함께 사용할 수 없습니다. 시작 시간이 우선 적용됩니다.

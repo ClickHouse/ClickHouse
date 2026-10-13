@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Redis', 'métricas', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -215,7 +213,7 @@ Se quiser testar a integração métricas do Redis antes de configurar seu próp
     2. Procure métricas que comecem com `redis.` (por exemplo, `redis.commands.processed`, `redis.memory.used`)
     3. Você deverá ver pontos de dados das métricas aparecendo no intervalo de coleta configurado
 
-    {/* <Image img={metrics_view} alt="Visualização de métricas do Redis"/> */}
+    {/* ![Visualização de métricas do Redis](/images/clickstack/redis-metrics-dashboard.webp) */}
   </Step>
 </Steps>
 
@@ -303,17 +301,29 @@ Para ajudar você a começar a monitorar o Redis com o ClickStack, fornecemos vi
     1. Abra o HyperDX e navegue até a seção Painéis
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botão de importação de dashboard" />
+    <div className="ch-image-lg">
+
+    ![Botão de importação de dashboard](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Faça upload do arquivo `redis-metrics-dashboard.json` e clique em **Finish Import**
 
-    <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="Caixa de diálogo para concluir a importação" />
+    <div className="ch-image-lg">
+
+    ![Caixa de diálogo para concluir a importação](/images/clickstack/import-redis-metrics-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Visualize o dashboard" id="created-dashboard">
     O dashboard será criado com todas as visualizações pré-configuradas:
 
-    <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Painel de métricas do Redis" />
+    <div className="ch-image-lg">
+
+    ![Painel de métricas do Redis](/images/clickstack/redis-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       Para o dataset de demonstração, defina o intervalo de tempo como **2025-10-20 05:00:00 - 2025-10-21 05:00:00 (UTC)** (ajuste com base no seu fuso horário local). O dashboard importado não terá um intervalo de tempo especificado por padrão.

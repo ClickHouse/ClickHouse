@@ -9,8 +9,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This dataset contains all of the commits and changes for the ClickHouse repository. It can be generated using the native `git-import` tool distributed with ClickHouse.
 
 The generated data provides a `tsv` file for each of the following tables:
@@ -555,11 +553,27 @@ This data visualizes well. Below we use Superset.
 
 **For lines added and deleted:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="For lines added and deleted" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![For lines added and deleted](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
+
+</Frame>
+
+</div>
 
 **For commits and authors:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="For commits and authors" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![For commits and authors](/images/getting-started/example-datasets/superset-commits-authors.webp)
+
+</Frame>
+
+</div>
 
 ### List files with maximum number of authors {#list-files-with-maximum-number-of-authors}
 
@@ -1330,11 +1344,27 @@ LIMIT 100
 
 A Sankey chart (SuperSet) allows this to be visualized nicely. Note we increase our `LIMIT BY` to 3, to get the top 3 code removers for each author, to improve the variety in the visual.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Superset authors matrix" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Superset authors matrix](/images/getting-started/example-datasets/superset-authors-matrix.webp)
+
+</Frame>
+
+</div>
 
 Alexey clearly likes removing other peoples code. Lets exclude him for a more balanced view of code removal.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Superset authors matrix v2" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Superset authors matrix v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
+
+</Frame>
+
+</div>
 
 ### Who is the highest percentage contributor per day of week? {#who-is-the-highest-percentage-contributor-per-day-of-week}
 

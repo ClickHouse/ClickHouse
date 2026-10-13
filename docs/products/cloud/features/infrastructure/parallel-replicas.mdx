@@ -6,8 +6,6 @@ description: 'In this guide, we will first discuss how ClickHouse distributes a 
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Introduction {#introduction}
 ClickHouse processes queries extremely quickly, but how are these queries 
 distributed and parallelized across multiple servers? 
@@ -27,7 +25,15 @@ on the specified shard, or it can be sent to the distributed table, and in that
 case, each shard will execute the given queries. The server where the distributed
 table was queried will aggregate the data and respond to the client:
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="sharded archtiecture" />
+<div className="ch-image-md">
+
+<Frame>
+
+![sharded archtiecture](/images/deployment-guides/parallel-replicas-1.webp)
+
+</Frame>
+
+</div>
 
 The figure above visualizes what happens when a client queries a distributed table:
 
@@ -64,7 +70,15 @@ infinite amount of storage, the need for shards becomes less important.
 
 The figure below shows the ClickHouse Cloud architecture:
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="non sharded architecture" />
+<div className="ch-image-md">
+
+<Frame>
+
+![non sharded architecture](/images/deployment-guides/parallel-replicas-2.webp)
+
+</Frame>
+
+</div>
 
 This architecture allows us to be able to add and remove replicas nearly
 instantaneously, ensuring a very high cluster scalability. The ClickHouse
@@ -90,7 +104,15 @@ as the unit of work.
 
 Now, let's see how it works in practice with the help of the figure below:
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Parallel replicas" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Parallel replicas](/images/deployment-guides/parallel-replicas-3.webp)
+
+</Frame>
+
+</div>
 
 With parallel replicas:
 
@@ -145,7 +167,15 @@ We explore how these factors are overcome in the following sections.
 To address (1) and (2) from the list above, we introduced the concept of an
 announcement. Let's visualize how it works using the figure below:
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Announcements" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Announcements](/images/deployment-guides/parallel-replicas-4.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
     <li>
@@ -185,7 +215,15 @@ an announcement with all parts.
 
 The figure below visualizes how dynamic coordination works:
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Dynamic Coordination - part 1" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dynamic Coordination - part 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
     <li>
@@ -197,7 +235,15 @@ The figure below visualizes how dynamic coordination works:
     </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Dynamic Coordination - part 2" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dynamic Coordination - part 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
     <li>
@@ -209,7 +255,15 @@ The figure below visualizes how dynamic coordination works:
     </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Dynamic Coordination - part 3" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dynamic Coordination - part 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
     <li>
@@ -465,7 +519,15 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN without parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN without parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+
+</Frame>
+
+</div>
 
 And now with parallel replica:
 
@@ -480,4 +542,12 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN with parallel_replica"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN with parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+
+</Frame>
+
+</div>

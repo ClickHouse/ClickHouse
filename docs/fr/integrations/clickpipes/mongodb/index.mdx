@@ -12,7 +12,6 @@ integration:
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/fr/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
@@ -51,15 +50,39 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 
 1. Dans la console de ClickHouse Cloud, accédez à votre service ClickHouse Cloud.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="service ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![service ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur « Set up a ClickPipe ».
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Sélectionner les importations" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Sélectionner les importations](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. Sélectionnez la tuile `MongoDB CDC`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="Sélectionner MongoDB" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Sélectionner MongoDB](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
+
+</Frame>
+
+</div>
 
 <div id="add-your-source-mongodb-database-connection">
   ### Ajoutez la connexion à votre base de données source MongoDB
@@ -72,7 +95,15 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
   Pour plus d’informations, consultez les guides de configuration de la source MongoDB liés [en haut de cette page](#prerequisites).
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="Renseignez les détails de connexion" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Renseignez les détails de connexion](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
+
+</Frame>
+
+</div>
 
 <div id="optional-changing-tls-settings">
   #### (Facultatif) Modifier les paramètres TLS
@@ -90,7 +121,11 @@ Vous pouvez spécifier les informations du tunnel SSH si votre base de données 
 
 2. Renseignez les informations de connexion SSH.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="Tunnel SSH" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![Tunnel SSH](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. Pour utiliser l&#39;authentification par clé, cliquez sur « Révoquer et générer une paire de clés » pour générer une nouvelle paire de clés, puis copiez la clé publique générée sur votre serveur SSH dans `~/.ssh/authorized_keys`.
 
@@ -118,7 +153,11 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 
 5. Ici, vous pouvez sélectionner la base de données de destination de votre ClickPipe. Vous pouvez soit sélectionner une base de données existante, soit en créer une nouvelle.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="Sélectionner la base de données de destination" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![Sélectionner la base de données de destination](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
+
+   </div>
 
 6. Vous pouvez sélectionner les tables que vous souhaitez répliquer depuis la base de données MongoDB source. Lors de la sélection des tables, vous pouvez également choisir de les renommer dans la base de données ClickHouse de destination.
 
@@ -128,7 +167,11 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 
 7. Sélectionnez le rôle « Full access » dans le menu déroulant des autorisations, puis cliquez sur « Complete Setup ».
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Vérifier les autorisations" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![Vérifier les autorisations](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 <div id="whats-next">
   ## Et ensuite ?

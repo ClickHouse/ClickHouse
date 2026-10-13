@@ -14,7 +14,6 @@ keywords: ['Grafana', '데이터 시각화', '대시보드', '플러그인', '�
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_native.mdx';
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -59,21 +58,37 @@ picture-in-picture"
 
     2. **ClickHouse**를 검색한 다음 Grafana Labs의 signed 플러그인을 클릭합니다:
 
-       <Image size="md" img="/images/integrations/data-visualization/grafana/search.webp" alt="Connections 페이지에서 ClickHouse 플러그인 선택" border />
+       <div className="ch-image-md">
+
+       ![Connections 페이지에서 ClickHouse 플러그인 선택](/images/integrations/data-visualization/grafana/search.webp)
+
+       </div>
 
     3. 다음 화면에서 **Install** 버튼을 클릭합니다:
 
-       <Image size="md" img="/images/integrations/data-visualization/grafana/install.webp" alt="ClickHouse 플러그인 설치" border />
+       <div className="ch-image-md">
+
+       ![ClickHouse 플러그인 설치](/images/integrations/data-visualization/grafana/install.webp)
+
+       </div>
   </Step>
 
   <Step title="ClickHouse 데이터 소스 정의" id="4-define-a-clickhouse-data-source">
     1. 설치가 완료되면 **Add new data source** 버튼을 클릭합니다. (**Connections** 페이지의 **Data sources** 탭에서도 데이터 소스를 추가할 수 있습니다.)
 
-       <Image size="md" img="/images/integrations/data-visualization/grafana/add_new_ds.webp" alt="ClickHouse 데이터 소스 생성" border />
+       <div className="ch-image-md">
+
+       ![ClickHouse 데이터 소스 생성](/images/integrations/data-visualization/grafana/add_new_ds.webp)
+
+       </div>
 
     2. 아래로 스크롤해 **ClickHouse** 데이터 소스 유형을 찾거나, **Add data source** 페이지의 검색창에서 검색할 수 있습니다. **ClickHouse** 데이터 소스를 선택하면 다음 페이지가 표시됩니다:
 
-    <Image size="md" img="/images/integrations/data-visualization/grafana/quick_config.webp" alt="연결 구성 페이지" border />
+    <div className="ch-image-md">
+
+    ![연결 구성 페이지](/images/integrations/data-visualization/grafana/quick_config.webp)
+
+    </div>
 
     3. 서버 설정과 자격 증명을 입력합니다. 주요 설정은 다음과 같습니다:
 
@@ -87,7 +102,11 @@ picture-in-picture"
 
     4. **Save &amp; test** 버튼을 클릭하여 Grafana가 ClickHouse 서비스에 연결할 수 있는지 확인합니다. 연결에 성공하면 **Data source is working** 메시지가 표시됩니다:
 
-       <Image size="md" img="/images/integrations/data-visualization/grafana/valid_ds.webp" alt="Save & test 선택" border />
+       <div className="ch-image-md">
+
+       ![Save & test 선택](/images/integrations/data-visualization/grafana/valid_ds.webp)
+
+       </div>
   </Step>
 
   <Step title="다음 단계" id="5-next-steps">

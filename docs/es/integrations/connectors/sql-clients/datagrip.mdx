@@ -11,7 +11,6 @@ integration:
 keywords: ['DataGrip', 'IDE para bases de datos', 'JetBrains', 'cliente SQL', 'entorno de desarrollo integrado']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
 
 import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
@@ -32,7 +31,11 @@ DataGrip está disponible en https://www.jetbrains.com/datagrip/
   <Step title="Carga el driver de ClickHouse" id="2-load-the-clickhouse-driver">
     1. Inicia DataGrip y, en la pestaña **Fuentes de datos** del cuadro de diálogo **Data Sources and Drivers**, haz clic en el icono **+**
 
-    <Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="Pestaña Fuentes de datos de DataGrip con el icono + resaltado" />
+    <div className="ch-image-lg">
+
+    ![Pestaña Fuentes de datos de DataGrip con el icono + resaltado](/images/integrations/sql-clients/datagrip-5.webp)
+
+    </div>
 
     Selecciona **ClickHouse**
 
@@ -40,14 +43,22 @@ DataGrip está disponible en https://www.jetbrains.com/datagrip/
       A medida que establezcas conexiones, el orden cambiará; es posible que ClickHouse aún no aparezca al principio de la lista.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="DataGrip seleccionando ClickHouse de la lista de fuentes de datos" />
+    <div className="ch-image-sm">
+
+    ![DataGrip seleccionando ClickHouse de la lista de fuentes de datos](/images/integrations/sql-clients/datagrip-6.webp)
+
+    </div>
 
     * Cambia a la pestaña **Drivers** y carga el driver de ClickHouse
 
       DataGrip no incluye drivers para minimizar el tamaño de la descarga. En la pestaña **Drivers**,
       selecciona **ClickHouse** en la lista **Complete Support** y expande el signo **+**. Elige el driver **Latest stable** en la opción **Provided Driver**:
 
-    <Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="Pestaña Drivers de DataGrip que muestra la instalación del driver de ClickHouse" />
+    <div className="ch-image-lg">
+
+    ![Pestaña Drivers de DataGrip que muestra la instalación del driver de ClickHouse](/images/integrations/sql-clients/datagrip-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Conéctate a ClickHouse" id="3-connect-to-clickhouse">
@@ -66,7 +77,11 @@ DataGrip está disponible en https://www.jetbrains.com/datagrip/
       Para obtener más información sobre la configuración de la URL JDBC, consulta el repositorio del [ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java).
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="Formulario de datos de conexión de DataGrip con la configuración de ClickHouse" />
+    <div className="ch-image-lg">
+
+    ![Formulario de datos de conexión de DataGrip con la configuración de ClickHouse](/images/integrations/sql-clients/datagrip-7.webp)
+
+    </div>
   </Step>
 </Steps>
 

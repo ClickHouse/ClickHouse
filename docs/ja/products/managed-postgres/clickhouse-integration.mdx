@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
@@ -16,7 +15,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 これを利用するには、Postgres インスタンスのサイドバーで **Sync to ClickHouse** をクリックします。
 
-<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="サイドバーのインテグレーションオプションを示す ClickHouse 連携のランディングページ" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![サイドバーのインテグレーションオプションを示す ClickHouse 連携のランディングページ](/images/managed-postgres/clickhouse-integration-intro.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   先に進む前に、Postgres サービスに ClickPipes サービスからアクセスできることを確認してください。通常はデフォルトでアクセス可能ですが、IP アクセスを制限している場合は、**ClickHouse service** が配置されているリージョンに応じて、[こちら](/ja/integrations/clickpipes/networking/static-ips) の一覧にある一部の送信元 IP からのアクセスを許可する必要がある場合があります。
@@ -36,7 +43,11 @@ ClickPipe の設定を開始するには、**Replicate data in ClickHouse** を�
       * **Initial load only**: 既存データを一回限りでスナップショット取得し、その後の更新は行いません
       * **CDC (変更データキャプチャ)  only**: 初期スナップショットをスキップし、以降の新しい変更のみをキャプチャします
 
-    <Image img="/images/managed-postgres/replication-service-step.webp" alt="インテグレーション名、宛先サービス、レプリケーション方式のオプションを示すレプリケーションサービス設定" size="md" border />
+    <div className="ch-image-md">
+
+    ![インテグレーション名、宛先サービス、レプリケーション方式のオプションを示すレプリケーションサービス設定](/images/managed-postgres/replication-service-step.webp)
+
+    </div>
 
     続行するには **Next** をクリックします。
   </Step>
@@ -50,7 +61,11 @@ ClickPipe の設定を開始するには、**Replicate data in ClickHouse** を�
     * **Snapshot number of rows per partition**: 初期スナップショット時のパーティションごとの行数 (デフォルト: 100000)
     * **Snapshot number of tables in parallel**: 同時にスナップショットを取得するテーブル数 (デフォルト: 1)
 
-    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="同期間隔、並列スレッド、Pull バッチサイズ、スナップショット構成オプションを示すレプリケーション設定ステップ" size="md" border />
+    <div className="ch-image-md">
+
+    ![同期間隔、並列スレッド、Pull バッチサイズ、スナップショット構成オプションを示すレプリケーション設定ステップ](/images/managed-postgres/integration-replication-settings.webp)
+
+    </div>
 
     続行するには **Next** をクリックします。
   </Step>
@@ -65,7 +80,11 @@ ClickPipe の設定を開始するには、**Replicate data in ClickHouse** を�
 
     スキーマを展開して、レプリケートする個々のテーブルを選択します。宛先テーブル名やカラム設定をカスタマイズすることもできます。
 
-    <Image img="/images/managed-postgres/select-tables-step.webp" alt="データベース選択、レプリケーションオプション、スキーマごとにグループ化されたテーブルピッカーを示すテーブル選択ステップ" size="md" border />
+    <div className="ch-image-md">
+
+    ![データベース選択、レプリケーションオプション、スキーマごとにグループ化されたテーブルピッカーを示すテーブル選択ステップ](/images/managed-postgres/select-tables-step.webp)
+
+    </div>
 
     レプリケーションを開始するには、**Replicate data to ClickHouse** をクリックします。
   </Step>
@@ -73,7 +92,11 @@ ClickPipe の設定を開始するには、**Replicate data in ClickHouse** を�
   <Step title="ClickPipe を監視する" id="monitor-clickpipe">
     ClickPipe が開始されると、同じメニューに一覧表示されます。すべてのデータの初期スナップショットには、テーブルのサイズによっては時間がかかる場合があります。
 
-    <Image img="/images/managed-postgres/integration-running.webp" alt="宛先サービスとステータスを含む Running 状態の ClickPipe を示す ClickHouse 連携の一覧" size="md" border />
+    <div className="ch-image-md">
+
+    ![宛先サービスとステータスを含む Running 状態の ClickPipe を示す ClickHouse 連携の一覧](/images/managed-postgres/integration-running.webp)
+
+    </div>
 
     インテグレーション名をクリックすると、詳細なステータスの確認、進行状況の監視、エラーの表示、ClickPipe の管理を行えます。ClickPipe が取りうるさまざまな状態については、[Lifecycle of a Postgres ClickPipe](/ja/integrations/clickpipes/postgres/lifecycle) を参照してください。
   </Step>

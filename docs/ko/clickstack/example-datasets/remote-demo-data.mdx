@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', '예제 데이터', '샘플 데이터세트', '로그', '관측성']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import DemoArchitecture from '/snippets/ko/_demo.mdx';
 
 **다음 가이드는 [all-in-one image용 안내](/ko/clickstack/getting-started/oss) 또는 [Local Mode Only](/ko/clickstack/deployment/local-mode-only)를 사용해 Open Source ClickStack을 배포하고 초기 사용자 생성을 완료한 상태를 가정합니다. 또는 로컬 설정을 모두 건너뛰고, 이 데이터셋을 사용하는 ClickStack 호스팅 데모 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)에 바로 연결할 수도 있습니다.**
@@ -62,7 +60,11 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     `Team Settings`로 이동한 다음 `Local Connection`의 `Edit`를 클릭합니다:
 
-    <Image img="/images/use-cases/observability/edit_connection.webp" alt="연결 편집" size="lg" />
+    <div className="ch-image-lg">
+
+    ![연결 편집](/images/use-cases/observability/edit_connection.webp)
+
+    </div>
 
     연결 이름을 `Demo`로 변경하고, 이어지는 양식에 데모 server의 다음 connection details를 입력합니다:
 
@@ -71,7 +73,11 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
     * `Username`: `otel_demo`
     * `Password`: 비워 두십시오
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp" alt="데모 연결 편집" size="lg" />
+    <div className="ch-image-lg">
+
+    ![데모 연결 편집](/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp)
+
+    </div>
   </Step>
 
   <Step title="소스 수정하기" id="modify-sources">
@@ -83,7 +89,11 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     위로 스크롤해 `Sources`로 이동한 다음, `Logs`, `Traces`, `Metrics`, `Sessions` 각 소스가 `otel_v2` 데이터베이스를 사용하도록 수정하세요.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp" alt="데모 소스 수정" size="lg" />
+    <div className="ch-image-lg">
+
+    ![데모 소스 수정](/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp)
+
+    </div>
 
     <Note>
       각 소스에 전체 데이터베이스 목록이 표시되도록 하려면 페이지를 새로고침해야 할 수 있습니다.
@@ -93,7 +103,11 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
   <Step title="시간 범위 조정" id="adjust-the-timeframe">
     오른쪽 상단의 시간 선택기를 사용하여 지난 `1 day`의 모든 데이터가 표시되도록 시간을 조정하세요.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_2.webp" alt="2단계" size="lg" />
+    <div className="ch-image-lg">
+
+    ![2단계](/images/use-cases/observability/hyperdx-demo/step_2.webp)
+
+    </div>
 
     개요 막대 차트에서 오류 수의 미세한 차이를 확인할 수 있으며, 여러 개의 연속된 막대에서 빨간색이 소폭 증가한 것을 볼 수 있습니다.
 
@@ -107,7 +121,11 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     이제 오류가 더 눈에 띄게 표시됩니다:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_3.webp" alt="3단계" size="lg" />
+    <div className="ch-image-lg">
+
+    ![3단계](/images/use-cases/observability/hyperdx-demo/step_3.webp)
+
+    </div>
   </Step>
 
   <Step title="오류 패턴 식별" id="identify-error-patterns">
@@ -115,7 +133,11 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     오류 클러스터는 `Failed to place order`라는 이름의 패턴을 포함해 결제 실패와 관련된 문제를 보여줍니다. 또한 카드 결제 처리 문제와 캐시가 가득 찬 상태를 나타내는 클러스터도 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_4.webp" alt="4단계" size="lg" />
+    <div className="ch-image-lg">
+
+    ![4단계](/images/use-cases/observability/hyperdx-demo/step_4.webp)
+
+    </div>
 
     이러한 오류 클러스터는 서로 다른 서비스에서 발생했을 가능성이 높습니다.
   </Step>
@@ -125,13 +147,21 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     그러면 `frontend` service와 연결된 이 오류의 모든 발생 목록이 표시됩니다:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_5.webp" alt="5단계" size="lg" />
+    <div className="ch-image-lg">
+
+    ![5단계](/images/use-cases/observability/hyperdx-demo/step_5.webp)
+
+    </div>
 
     표시된 오류 중 하나를 선택합니다. 그러면 로그 metadata가 자세히 표시됩니다. `Overview`와 `Column Values`를 모두 살펴보면, 캐시 문제로 인해 카드 청구에 문제가 있음을 알 수 있습니다:
 
     `failed to charge card: could not charge the card: rpc error: code = Unknown desc = Visa cache full: cannot add new item.`
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_6.webp" alt="6단계" size="lg" />
+    <div className="ch-image-lg">
+
+    ![6단계](/images/use-cases/observability/hyperdx-demo/step_6.webp)
+
+    </div>
   </Step>
 
   <Step title="인프라 살펴보기" id="explore-the-infrastructure">
@@ -141,7 +171,11 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     `Infrastructure` 탭을 선택하여 `frontend` 서비스의 기반 파드와 관련된 메트릭을 확인하고, 시간 범위를 `1d`로 넓히십시오:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_7.webp" alt="7단계" size="lg" />
+    <div className="ch-image-lg">
+
+    ![7단계](/images/use-cases/observability/hyperdx-demo/step_7.webp)
+
+    </div>
 
     이 문제는 인프라와 관련된 것으로 보이지 않습니다. 오류 전후를 포함해 해당 시간 범위 동안 눈에 띄게 변한 메트릭이 없습니다. Infrastructure 탭을 닫으십시오.
   </Step>
@@ -151,11 +185,19 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     연관된 trace를 시각화하려면 `Trace`를 선택하세요. 이어지는 화면을 아래로 스크롤하면 HyperDX가 각 서비스의 스팬을 연결해 마이크로서비스 전반에 걸친 분산 trace를 어떻게 시각화하는지 확인할 수 있습니다. 결제에는 checkout과 통화 변환을 수행하는 서비스를 포함해 여러 마이크로서비스가 분명히 관여합니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_8.webp" alt="Step 8" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Step 8](/images/use-cases/observability/hyperdx-demo/step_8.webp)
+
+    </div>
 
     화면 맨 아래까지 스크롤하면 `payment` 서비스가 오류를 일으키고 있으며, 이 오류가 다시 호출 chain을 따라 상위로 전파되는 것을 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_9.webp" alt="Step 9" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Step 9](/images/use-cases/observability/hyperdx-demo/step_9.webp)
+
+    </div>
   </Step>
 
   <Step title="트레이스 검색하기" id="searching-traces">
@@ -163,25 +205,45 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     `Search`를 선택하여 기본 `Search` 보기로 전환합니다. `Traces`의 데이터 소스(data source)로 전환한 다음 `Results table` 보기를 선택합니다. **시간 범위가 계속 지난 1일로 설정되어 있는지 확인하세요.**
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_10.webp" alt="단계 10" size="lg" />
+    <div className="ch-image-lg">
+
+    ![단계 10](/images/use-cases/observability/hyperdx-demo/step_10.webp)
+
+    </div>
 
     이 보기에는 지난 1일 동안의 모든 트레이스가 표시됩니다. 문제가 결제 서비스에서 시작된다는 점을 알고 있으므로 `ServiceName`에 `payment` 필터를 적용합니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_11.webp" alt="단계 11" size="lg" />
+    <div className="ch-image-lg">
+
+    ![단계 11](/images/use-cases/observability/hyperdx-demo/step_11.webp)
+
+    </div>
 
     `Event Patterns`를 선택해 트레이스에 이벤트 클러스터링을 적용하면 `payment` 서비스의 캐시 문제를 즉시 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_12.webp" alt="단계 12" size="lg" />
+    <div className="ch-image-lg">
+
+    ![단계 12](/images/use-cases/observability/hyperdx-demo/step_12.webp)
+
+    </div>
   </Step>
 
   <Step title="Explore에서 trace 인프라 확인하기" id="explore-infrastructure-for-a-trace">
     `Results table`를 클릭해 결과 보기로 전환합니다. `StatusCode` 필터와 `Error` 값을 사용해 오류만 표시합니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_13.webp" alt="단계 13" size="lg" />
+    <div className="ch-image-lg">
+
+    ![단계 13](/images/use-cases/observability/hyperdx-demo/step_13.webp)
+
+    </div>
 
     `Error: Visa cache full: cannot add new item.` 오류를 선택하고 `Infrastructure` 탭으로 전환한 다음, 시간 범위를 `1d`로 넓힙니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_14.webp" alt="단계 14" size="lg" />
+    <div className="ch-image-lg">
+
+    ![단계 14](/images/use-cases/observability/hyperdx-demo/step_14.webp)
+
+    </div>
 
     트레이스를 메트릭과 연관 지어 보면 `payment` 서비스에서 메모리와 CPU가 증가했다가 이후 `0`으로 떨어진 것을 확인할 수 있습니다(이는 파드 재시작 때문으로 볼 수 있습니다). 이는 캐시 문제가 리소스 문제를 유발했음을 시사합니다. 그 결과 결제 완료 시간이 영향을 받았을 가능성이 있습니다.
   </Step>
@@ -193,17 +255,29 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     데이터 범위를 좁히기 위해 결과 테이블 뷰로 돌아가 오류가 포함된 시간 범위를 선택합니다. 가능하다면 오류가 발생하기 전 몇 시간과 이후 시간까지 함께 선택하십시오(문제가 여전히 발생 중일 수 있습니다):
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_15.webp" alt="Step 15" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Step 15](/images/use-cases/observability/hyperdx-demo/step_15.webp)
+
+    </div>
 
     오류 필터를 제거한 다음, 왼쪽 `Analysis Mode` 메뉴에서 `Event Deltas`를 선택합니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_16.webp" alt="Step 16" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Step 16](/images/use-cases/observability/hyperdx-demo/step_16.webp)
+
+    </div>
 
     상단 패널에는 소요 시간 분포가 표시되며, 색상은 이벤트 밀도(스팬 수)를 나타냅니다. 주요 밀집 구간 밖에 있는 이벤트 부분 집합은 일반적으로 조사해 볼 가치가 있습니다.
 
     지속 시간이 `1ms`보다 큰 이벤트를 선택하고 `Filter by selection` 필터를 적용하면, &quot;정상&quot; 이벤트와 지속 시간이 약 0ms인 고밀도 스팬 그룹 간의 차이를 분석할 수 있습니다:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_17.webp" alt="Step 17" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Step 17](/images/use-cases/observability/hyperdx-demo/step_17.webp)
+
+    </div>
 
     데이터의 해당 부분 집합을 분석하면, 선택 범위 밖의 &quot;background&quot; 스팬은 대부분 Visa 트랜잭션이며, 캐시 오류로 인해 0ms 응답과 연결되어 있음을 확인할 수 있습니다.
   </Step>
@@ -232,11 +306,19 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     `▶️`를 클릭하면 시간이 지남에 따라 결제 성능이 어떻게 저하되었는지 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_18.webp" alt="18단계" size="lg" />
+    <div className="ch-image-lg">
+
+    ![18단계](/images/use-cases/observability/hyperdx-demo/step_18.webp)
+
+    </div>
 
     `Group By`를 `SpanAttributes['app.payment.card_type']`로 설정하면(`card`만 입력하면 자동 완성됨) Mastercard 대비 Visa 트랜잭션에서 서비스 성능이 어떻게 저하되었는지 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_19.webp" alt="19단계" size="lg" />
+    <div className="ch-image-lg">
+
+    ![19단계](/images/use-cases/observability/hyperdx-demo/step_19.webp)
+
+    </div>
 
     오류가 발생한 후에는 응답 시간이 `0s`로 표시된다는 점에 유의하십시오.
   </Step>
@@ -254,7 +336,11 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     캐시 크기가 4~5시간에 걸쳐 증가하다가(아마도 소프트웨어 배포 이후) 최대 크기 `100,000`에 도달한 것을 확인할 수 있습니다. `Sample Matched Events`를 보면 오류는 캐시가 이 한계값에 도달한 시점과 연관되어 있으며, 이후에는 크기가 `0`으로 기록되고 응답도 `0s`에 반환되는 것을 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_20.webp" alt="Step 20" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Step 20](/images/use-cases/observability/hyperdx-demo/step_20.webp)
+
+    </div>
 
     요약하면, 로그, 트레이스, 마지막으로 메트릭을 살펴본 결과 다음과 같은 결론을 내릴 수 있습니다:
 
@@ -274,11 +360,19 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     왼쪽 메뉴에서 `Client Sessions` 탭으로 이동한 다음, 데이터 소스가 `Sessions`로 설정되어 있고 시간 범위가 `Last 1 day`로 설정되어 있는지 확인합니다:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_21.webp" alt="단계 21" size="lg" />
+    <div className="ch-image-lg">
+
+    ![단계 21](/images/use-cases/observability/hyperdx-demo/step_21.webp)
+
+    </div>
 
     고객의 세션을 찾으려면 `SpanAttributes.userEmail: Ronny.Windler`를 검색합니다. 세션을 선택하면 왼쪽에 해당 고객 세션의 브라우저 이벤트와 연결된 스팬이 표시되고, 오른쪽에는 사용자의 브라우저 경험이 다시 렌더링되어 표시됩니다:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_22.webp" alt="단계 22" size="lg" />
+    <div className="ch-image-lg">
+
+    ![단계 22](/images/use-cases/observability/hyperdx-demo/step_22.webp)
+
+    </div>
   </Step>
 
   <Step title="세션 다시 보기" id="replaying-sessions">
@@ -286,11 +380,19 @@ SRE 팀은 HyperDX를 사용해 로그, 트레이스, 메트릭을 분석하여 
 
     스팬 목록의 맨 아래로 스크롤하면 `/api/checkout`와 연결된 `500` 오류를 확인할 수 있습니다. 이 특정 스팬의 ▶️ 버튼을 선택하면 재생이 세션의 해당 지점으로 이동하므로 고객의 실제 경험을 확인할 수 있습니다. 오류는 화면에 표시되지 않고, 결제는 단순히 작동하지 않는 것으로 보입니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_23.webp" alt="Step 23" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Step 23](/images/use-cases/observability/hyperdx-demo/step_23.webp)
+
+    </div>
 
     스팬을 선택하면 이것이 내부 오류로 인해 발생했음을 확인할 수 있습니다. `Trace` 탭을 클릭하고 연결된 스팬을 따라 스크롤하면, 해당 고객이 실제로 캐시 문제의 영향을 받았음을 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_24.webp" alt="Step 24" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Step 24](/images/use-cases/observability/hyperdx-demo/step_24.webp)
+
+    </div>
   </Step>
 </Steps>
 

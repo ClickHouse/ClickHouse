@@ -7,8 +7,6 @@ sidebarTitle: 'Analytique en temps réel'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -36,7 +34,15 @@ Pour raisonner sur la disponibilité des données, il faut considérer le délai
 * **Temps de transformation et de préparation** : Combien de temps faut-il pour nettoyer, enrichir, effectuer des jointures, pré-agréger ou mettre à jour les structures utilisées pour servir les requêtes (vues matérialisées, rollups, index) ?
 * **Temps de requête** : Combien de temps faut-il pour planifier et exécuter la lecture une fois les données disponibles ?
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="Analytique en temps réel : temps d’ingestion, de transformation et de requête" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Analytique en temps réel : temps d’ingestion, de transformation et de requête](/images/use-cases/rta-considerations.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickhouse-rta">
   ## Comment ClickHouse propulse l’analytique en temps réel
@@ -44,7 +50,11 @@ Pour raisonner sur la disponibilité des données, il faut considérer le délai
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="Comment ClickHouse propulse l’analytique en temps réel" />
+    <div className="ch-image-lg">
+
+    ![Comment ClickHouse propulse l’analytique en temps réel](/images/use-cases/real-time-analytics-architecture.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">

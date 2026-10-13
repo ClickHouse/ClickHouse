@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -41,7 +40,11 @@ O QStudio se conecta ao ClickHouse usando JDBC.
     * Ao abrir o QStudio pela primeira vez, clique nas opções de menu **Server-&gt;Add Server** ou no botão de adicionar servidor na barra de ferramentas.
     * Em seguida, preencha os detalhes:
 
-    <Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="Tela de configuração da conexão com o banco de dados no QStudio mostrando as configurações de conexão do ClickHouse" />
+    <div className="ch-image-lg">
+
+    ![Tela de configuração da conexão com o banco de dados no QStudio mostrando as configurações de conexão do ClickHouse](/images/integrations/sql-clients/qstudio-add-connection.webp)
+
+    </div>
 
     1. Tipo de servidor: ClickHouse.com
     2. Observação: em Host, você DEVE incluir https://
@@ -63,7 +66,11 @@ O QStudio se conecta ao ClickHouse usando JDBC.
 
     * Um exemplo de consulta:
 
-    <Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="Interface do QStudio mostrando a execução de uma consulta SQL de exemplo no banco de dados ClickHouse" />
+    <div className="ch-image-lg">
+
+    ![Interface do QStudio mostrando a execução de uma consulta SQL de exemplo no banco de dados ClickHouse](/images/integrations/sql-clients/qstudio-running-query.webp)
+
+    </div>
   </Step>
 </Steps>
 

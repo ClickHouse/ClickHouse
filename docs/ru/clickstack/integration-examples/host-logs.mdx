@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['журналы хоста', 'systemd', 'syslog', 'OTel', 'ClickStack', 'системный мониторинг', 'серверные журналы']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -249,9 +247,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Отфильтруйте по `source:host-logs`, чтобы увидеть журналы с конкретного хоста
     4. Вы должны увидеть структурированные записи журнала с такими полями, как `unit`, `hostname`, `pid`, `message` и т. д.
 
-    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Представление поиска" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Представление логов" />
+    ![Представление поиска](/images/clickstack/host-logs/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Представление логов](/images/clickstack/host-logs/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -346,9 +352,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     2. Перейдите в представление Search и выберите источник `Logs`
     3. Установите временной диапазон **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
 
-    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Представление Search" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Представление логов" />
+    ![Представление Search](/images/clickstack/host-logs/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Представление логов](/images/clickstack/host-logs/log-view.webp)
+
+    </div>
 
     <Info>
       **Отображение часового пояса**
@@ -373,17 +387,29 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Кнопка импорта панели мониторинга" />
+    <div className="ch-image-lg">
+
+    ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Загрузите файл `host-logs-dashboard.json` и нажмите **Finish Import**
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Завершение импорта" />
+    <div className="ch-image-lg">
+
+    ![Завершение импорта](/images/clickstack/host-logs/import-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Откройте панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="Панель мониторинга журналов" />
+    <div className="ch-image-lg">
+
+    ![Панель мониторинга журналов](/images/clickstack/host-logs/host-logs-dashboard.webp)
+
+    </div>
 
     Основные визуализации:
 

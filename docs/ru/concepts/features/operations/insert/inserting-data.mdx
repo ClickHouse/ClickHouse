@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## Вставка в ClickHouse в сравнении с OLTP-базами данных
 </div>
@@ -76,7 +74,15 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 
 При асинхронных вставках данные сначала попадают в буфер, а затем позже записываются в хранилище базы данных в 3 этапа, как показано на схеме ниже:
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Вставки Postgres" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Вставки Postgres](/images/guides/postgres-inserts.webp)
+
+</Frame>
+
+</div>
 
 Когда асинхронные вставки включены, ClickHouse:
 

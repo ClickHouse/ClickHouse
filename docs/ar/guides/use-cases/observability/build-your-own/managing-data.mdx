@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تتضمن عمليات نشر ClickHouse لأغراض Observability دائمًا مجموعات بيانات كبيرة تحتاج إلى إدارة. ويوفّر ClickHouse عددًا من الميزات التي تساعد على إدارة البيانات.
 
 <Tip>
@@ -28,7 +26,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يُحدَّد التقسيم في الجدول عند تعريفه لأول مرة عبر عبارة `PARTITION BY`. ويمكن أن تتضمن هذه العبارة تعبير SQL على أي عمود أو أعمدة، وتحدِّد نتائج هذا التعبير القسم الذي يُرسَل إليه الصف.
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="الأقسام" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![الأقسام](/images/use-cases/observability/observability-14.webp)
+
+</Frame>
+
+</div>
 
 ترتبط أجزاء البيانات منطقيًا (من خلال بادئة مشتركة لاسم المجلد) بكل قسم على القرص، ويمكن الاستعلام عنها بشكل منفصل. في المثال أدناه، يُقسِّم مخطط `otel_logs` الافتراضي البيانات حسب اليوم باستخدام التعبير `toDate(Timestamp)`. وعند إدراج الصفوف في ClickHouse، سيُقيَّم هذا التعبير على كل صف ويُوجَّه إلى القسم الناتج إذا كان موجودًا (وإذا كان هذا الصف هو الأول لذلك اليوم، فسيُنشأ القسم).
 

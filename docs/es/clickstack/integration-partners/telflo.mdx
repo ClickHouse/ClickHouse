@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'administración de flotas', 'ClickHouse exporter']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -119,7 +118,11 @@ Telflo ofrece:
 
     Trace aristas desde los receivers, pasando por los processors, hasta el exporter: un pipeline por cada señal. La fila de status indica **config valid** o el número de errores por corregir, y la pestaña **YAML** muestra la configuración generada.
 
-    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="Un pipeline del collector en el editor de Telflo con el exportador de ClickHouse configurado" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Un pipeline del collector en el editor de Telflo con el exportador de ClickHouse configurado](/images/clickstack/telflo/telflo-configuration.webp)
+
+    </div>
 
     Antes de desplegar nada, puede pasar telemetría de muestra por la configuración y comprobar qué sale por el otro extremo. Consulte [pruebas en Telflo](https://docs.telflo.com/docs/testing/overview). Como alternativa, puede describir lo que quiere hacer y el asistente de IA de Telflo, que se abre con el botón **AI** de la barra de herramientas, creará, validará y probará la configuración por usted. Su propio agente puede hacer lo mismo mediante la [CLI de Telflo](https://docs.telflo.com/docs/cli/).
   </Step>
@@ -136,7 +139,11 @@ Telflo ofrece:
 
     Para desplegar un cambio, publique una nueva versión y asígnela al grupo; para revertirlo, asigne una versión desplegada anteriormente.
 
-    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="Una fleet de Telflo con todos los collectors sincronizados tras un rollout" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Una fleet de Telflo con todos los collectors sincronizados tras un rollout](/images/clickstack/telflo/telflo-fleet.webp)
+
+    </div>
   </Step>
 
   <Step title="Verificar la telemetría" id="verify-telemetry">

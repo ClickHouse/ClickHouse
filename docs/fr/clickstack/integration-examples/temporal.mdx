@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Temporal', 'métriques', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -154,7 +152,11 @@ Cette section explique comment configurer ClickStack en configurant le ClickStac
     2. Recherchez les métriques commençant par `temporal` (par ex., `temporal_cloud_v1_workflow_success_count`, `temporal_cloud_v1_poll_timeout_count`)
     3. Vous devriez voir des points de données apparaître à l’intervalle de collecte configuré
 
-    <Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Métriques Temporal" size="md" />
+    <div className="ch-image-md">
+
+    ![Métriques Temporal](/images/clickstack/temporal/temporal-metrics.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -173,17 +175,29 @@ Pour vous aider à démarrer la surveillance de Temporal Cloud avec ClickStack, 
     1. Ouvrez HyperDX et accédez à la section Dashboards
     2. Cliquez sur **Import Dashboard** dans l’angle supérieur droit, sous le menu à trois points
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton Import Dashboard" />
+    <div className="ch-image-lg">
+
+    ![Bouton Import Dashboard](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Téléversez le fichier `temporal-metrics-dashboard.json`, puis cliquez sur **Finish Import**
 
-    <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="Boîte de dialogue Finish Import" />
+    <div className="ch-image-lg">
+
+    ![Boîte de dialogue Finish Import](/images/clickstack/temporal/import-temporal-metrics-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations déjà configurées :
 
-    <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Tableau de bord des métriques Temporal" />
+    <div className="ch-image-lg">
+
+    ![Tableau de bord des métriques Temporal](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

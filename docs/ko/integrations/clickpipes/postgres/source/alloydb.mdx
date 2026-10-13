@@ -6,8 +6,6 @@ title: 'AlloyDB Postgres 소스 설정 가이드'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="supported-versions">
   ## 지원 버전
 </div>
@@ -34,14 +32,22 @@ SHOW  wal_level;
 
 1. Google Cloud Console에서 AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters) 페이지로 이동합니다. 프라이머리 인스턴스의 **Actions** 메뉴에서 **Edit**를 클릭합니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="프라이머리 인스턴스 구성 편집" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![프라이머리 인스턴스 구성 편집](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp)
+
+   </div>
 
 2. 아래로 스크롤하여 **Advanced configuration options** 섹션을 펼칩니다. **Flags** 아래에서 **Add a database flag**를 클릭합니다.
 
    * [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) 플래그를 추가하고 값을 `on`으로 설정합니다
    * [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) 플래그를 추가하고 값을 `on`으로 설정합니다
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="allowdb.enable_pglogical 및 alloydb.logical_decoding 플래그를 on으로 설정" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![allowdb.enable_pglogical 및 alloydb.logical_decoding 플래그를 on으로 설정](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp)
+
+   </div>
 
 3. **Update instance**를 클릭하여 구성 변경 사항을 저장합니다. 이 작업을 수행하면 **프라이머리 인스턴스가 다시 시작된다는 점에 유의해야 합니다.**
 
@@ -53,7 +59,11 @@ SHOW  wal_level;
 
    결과는 `logical`이어야 합니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="논리적 복제가 활성화되었는지 확인" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![논리적 복제가 활성화되었는지 확인](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp)
+
+   </div>
 
 <div id="create-a-clickpipes-user-and-manage-replication-permissions">
   ## ClickPipes 사용자를 생성하고 복제 권한 관리하기
@@ -119,7 +129,11 @@ SHOW  wal_level;
 
     3. **Enable Public IP** 확인란을 선택하여 공용 인터넷을 통해 인스턴스에 연결할 수 있도록 합니다. **Authorized external networks** 아래에 서비스가 배포된 리전에 해당하는 [ClickPipes 정적 IP 주소 목록](/ko/integrations/clickpipes/networking/static-ips)을 입력합니다.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="IP 허용 목록을 사용해 공개 액세스를 위한 네트워킹 구성" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![IP 허용 목록을 사용해 공개 액세스를 위한 네트워킹 구성](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp)
+
+       </div>
 
     <Note>
       AlloyDB는 주소를 [CIDR 표기법](https://cloud.google.com/alloydb/docs/connection-overview#public-ip)으로 지정해야 합니다. 제공된 ClickPipes 정적 IP 주소 목록의 각 주소 끝에 `/32`를 추가하면 이 표기법에 맞출 수 있습니다.

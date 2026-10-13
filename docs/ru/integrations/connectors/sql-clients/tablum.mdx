@@ -10,8 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -28,7 +26,11 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
   <Step title="Зарегистрируйтесь или войдите в сервис" id="1-sign-up-or-sign-in-to-the-service">
     Сначала зарегистрируйтесь в TABLUM.IO, используя свой адрес электронной почты, или воспользуйтесь быстрым входом через аккаунты Google или Facebook.
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="Страница входа в TABLUM.IO" />
+    <div className="ch-image-md">
+
+    ![Страница входа в TABLUM.IO](/images/integrations/sql-clients/tablum-ch-0.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте коннектор ClickHouse" id="2-add-a-clickhouse-connector">
@@ -42,13 +44,21 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
       Обычно используется порт 8443 при использовании TLS или 8123, если TLS не используется.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="Добавление коннектора ClickHouse в TABLUM.IO" />
+    <div className="ch-image-lg">
+
+    ![Добавление коннектора ClickHouse в TABLUM.IO](/images/integrations/sql-clients/tablum-ch-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Выберите коннектор" id="3-select-the-connector">
     Перейдите на вкладку **Dataset**. Выберите недавно созданный коннектор ClickHouse в выпадающем списке. На правой панели вы увидите список доступных таблиц и схем.
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="Выбор коннектора ClickHouse в TABLUM.IO" />
+    <div className="ch-image-lg">
+
+    ![Выбор коннектора ClickHouse в TABLUM.IO](/images/integrations/sql-clients/tablum-ch-2.webp)
+
+    </div>
   </Step>
 
   <Step title="Введите SQL-запрос и выполните его" id="4-input-a-sql-query-and-run-it">
@@ -58,7 +68,11 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
       Щёлкните правой кнопкой мыши по имени столбца, чтобы открыть выпадающее меню с сортировкой, фильтрацией и другими действиями.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="Выполнение SQL-запроса в TABLUM.IO" />
+    <div className="ch-image-lg">
+
+    ![Выполнение SQL-запроса в TABLUM.IO](/images/integrations/sql-clients/tablum-ch-3.webp)
+
+    </div>
 
     <Note>
       С TABLUM.IO вы можете

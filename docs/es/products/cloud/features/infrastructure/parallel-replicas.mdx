@@ -6,8 +6,6 @@ description: 'En esta guía, primero veremos cómo ClickHouse distribuye una con
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="introduction">
   ## Introducción
 </div>
@@ -31,7 +29,15 @@ en el segmento especificado, o bien puede enviarse a la tabla distribuida, y en 
 caso, cada segmento ejecutará las consultas indicadas. El servidor en el que se consultó la tabla distribuida
 agregará los datos y responderá al Client:
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="arquitectura segmentada" />
+<div className="ch-image-md">
+
+<Frame>
+
+![arquitectura segmentada](/images/deployment-guides/parallel-replicas-1.webp)
+
+</Frame>
+
+</div>
 
 La figura anterior muestra lo que sucede cuando un Client consulta una tabla distribuida:
 
@@ -72,7 +78,15 @@ de almacenamiento prácticamente infinita, la necesidad de usar segmentos pasa a
 
 La siguiente figura muestra la arquitectura de ClickHouse Cloud:
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="arquitectura sin segmentos" />
+<div className="ch-image-md">
+
+<Frame>
+
+![arquitectura sin segmentos](/images/deployment-guides/parallel-replicas-2.webp)
+
+</Frame>
+
+</div>
 
 Esta arquitectura nos permite añadir y eliminar réplicas casi
 instantáneamente, lo que garantiza una escalabilidad muy alta del clúster. El clúster de ClickHouse
@@ -99,7 +113,15 @@ como unidad de trabajo.
 
 Ahora, veamos cómo funciona en la práctica con ayuda de la siguiente figura:
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Réplicas paralelas" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Réplicas paralelas](/images/deployment-guides/parallel-replicas-3.webp)
+
+</Frame>
+
+</div>
 
 Con réplicas paralelas:
 
@@ -162,7 +184,15 @@ En las siguientes secciones veremos cómo se superan estos factores.
 Para abordar (1) y (2) de la lista anterior, introdujimos el concepto de
 anuncio. Veamos cómo funciona en la siguiente figura:
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Anuncios" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Anuncios](/images/deployment-guides/parallel-replicas-4.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -206,7 +236,15 @@ un anuncio con todas las partes.
 
 La figura siguiente muestra cómo funciona la coordinación dinámica:
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Coordinación dinámica - parte 1" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordinación dinámica - parte 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -219,7 +257,15 @@ La figura siguiente muestra cómo funciona la coordinación dinámica:
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Coordinación dinámica - parte 2" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordinación dinámica - parte 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -232,7 +278,15 @@ La figura siguiente muestra cómo funciona la coordinación dinámica:
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Coordinación dinámica - parte 3" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordinación dinámica - parte 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -506,7 +560,15 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN sin parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN sin parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+
+</Frame>
+
+</div>
 
 Y ahora, con réplica paralela:
 
@@ -521,4 +583,12 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN con parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN con parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+
+</Frame>
+
+</div>

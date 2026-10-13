@@ -6,8 +6,6 @@ title: 'HTTPインターフェイス'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="prerequisites">
   ## 前提条件
 </div>
@@ -56,7 +54,15 @@ Web UI は、クエリ実行中の進行状況の表示、クエリのキャン�
 
 Web UI は、プロフェッショナルユーザー向けに設計されています。
 
-<Image img="/images/play.webp" size="md" alt="ClickHouse Web UI のスクリーンショット" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Web UI のスクリーンショット](/images/play.webp)
+
+</Frame>
+
+</div>
 
 ヘルスチェック用スクリプトでは `GET /ping` リクエストを使用してください。このハンドラーは常に &quot;Ok.&quot; を返します (末尾に改行付き) 。バージョン 18.12.13 以降で利用できます。レプリカの遅延を確認するには、関連項目として `/replicas_status` も参照してください。
 

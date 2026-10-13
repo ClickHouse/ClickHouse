@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
@@ -26,9 +25,25 @@ ClickHouse Cloud サービスは CPU とメモリの使用率に基づいて自�
 
 スケジュールを設定するには、ClickHouse Cloudコンソールで対象のサービスに移動し、設定を開きます。そこで **Schedule Override** を選択し、新しいルールを追加します。
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="時間ベースのスケーリングルールが表示された、ClickHouse Cloudコンソールのスケーリングスケジュールのインターフェイス" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="ClickHouse Cloudコンソールでスケジュールスケーリングルールを設定する画面" border />
+<Frame>
+
+![時間ベースのスケーリングルールが表示された、ClickHouse Cloudコンソールのスケーリングスケジュールのインターフェイス](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloudコンソールでスケジュールスケーリングルールを設定する画面](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
+
+</Frame>
+
+</div>
 
 各ルールには、次の項目が必要です。
 

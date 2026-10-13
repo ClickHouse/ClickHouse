@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Это руководство поможет вам настроить сбор журналов, метрик инфраструктуры и событий Kubernetes из кластера в Управляемый ClickStack, а затем просматривать их во встроенной панели мониторинга Kubernetes.
 
 Здесь используется стандартная для OpenTelemetry схема: два коллектора, развернутые через [Helm-чарт OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), каждый из которых пересылает данные в ваш коллектор-шлюз ClickStack по OTLP. **ДемонСет** запускается на каждом узле для сбора журналов контейнеров и метрик Кубелета. **Развертывание** с одной репликой собирает события Kubernetes и метрики всего кластера. Подробнее о роли шлюза см. в разделе [Роли коллектора](/ru/clickstack/ingesting-data/collector#collector-roles).
@@ -302,15 +300,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui">
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud) и выберите **ClickStack** в левом меню.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Запуск ClickStack" border />
+    <div className="ch-image-lg">
+
+    ![Запуск ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     В представлении **Search** переключите источник на `Logs` и установите временной диапазон **Последние 15 минут**. Журналы контейнеров со всего кластера должны появиться в течение нескольких секунд с такими атрибутами, как `k8s.namespace.name`, `k8s.pod.name` и `k8s.node.name`.
 
-    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Представление ClickStack Search с журналами Kubernetes" />
+    <div className="ch-image-lg">
+
+    ![Представление ClickStack Search с журналами Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </div>
 
     Чтобы увидеть метрики и события инфраструктуры в контексте, откройте встроенную панель мониторинга **Kubernetes**, перейдя в **Dashboards** -&gt; **Kubernetes**. Данные должны появиться на всех вкладках: `Pods`, `Nodes` и `Namespaces`.
 
-    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="Панель мониторинга Kubernetes в ClickStack" border />
+    <div className="ch-image-lg">
+
+    ![Панель мониторинга Kubernetes в ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </div>
 
     Если ничего не отображается:
 

@@ -8,7 +8,6 @@ keywords: ['clickstack', 'observability', 'العروض المادية', 'الأ
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge />
 
@@ -36,7 +35,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تُحدَّث العروض المادية في ClickHouse باستمرار مع تدفّق البيانات إلى جدول المصدر، لذا فهي أقرب في سلوكها إلى الفهارس المحدَّثة دائمًا. ويختلف هذا عن كثير من قواعد البيانات الأخرى، حيث تكون العروض المادية لقطات ثابتة يجب تحديثها دوريًا، على نحو مشابه لـ [العروض المادية القابلة للتحديث](/ar/concepts/features/materialized-views/refreshable-materialized-view) في ClickHouse.
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="مخطط العرض المادي" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مخطط العرض المادي](/images/materialized-view/materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 لا تحسب العروض المادية التزايدية سوى التغييرات التي تطرأ على العرض عند وصول بيانات جديدة، مما ينقل المعالجة إلى وقت الإدراج. ونظرًا إلى أن ClickHouse مُحسَّن بدرجة كبيرة لعمليات الاستيعاب، فإن التكلفة التزايدية للحفاظ على العرض لكل كتلة مُدرَجة تظل صغيرة مقارنةً بالوفورات المتحققة أثناء تنفيذ الاستعلام. وتُوزَّع تكلفة حساب التجميع على عمليات الإدراج بدلًا من تكبّدها مرارًا عند كل قراءة. لذلك، فإن الاستعلام عن النتائج المجمّعة مسبقًا أقل كلفةً بكثير من إعادة حسابها، مما يخفّض التكلفة التشغيلية ويوفر أداءً شبه لحظي للمرئيات اللاحقة، حتى على مستوى البيتابايت.
 
@@ -124,7 +131,15 @@ GROUP BY time, ServiceName, StatusCode
 
 بمجرد تحديد مرئية، أو مجموعة من المرئيات، التي تريد تسريعها، تتمثل الخطوة التالية في تحديد الاستعلامات الأساسية التي تستند إليها. وعمليًا، يعني ذلك فحص إعدادات المرئية ومراجعة SQL المُنشأ، مع إيلاء اهتمام خاص لمقاييس التجميع المستخدمة والدوال المطبقة.
 
-<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="SQL المُنشأ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SQL المُنشأ](/images/clickstack/materialized_views/generated_sql.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   في الحالات التي لا تتوفر فيها لوحة تصحيح داخل HyperDX لأحد المكوّنات، يمكن للمستخدمين فحص وحدة تحكم المتصفح، حيث تُسجَّل جميع الاستعلامات.
@@ -229,13 +244,21 @@ GROUP BY
   <Step title="حرّر المصدر" id="edit-the-source">
     انتقل إلى **المصدر** المعني في HyperDX وافتح مربع الحوار **تحرير الإعدادات**. مرّر إلى قسم العروض المادية.
 
-    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="تحرير المصادر" />
+    <div className="ch-image-lg">
+
+    ![تحرير المصادر](/images/clickstack/materialized_views/edit_source.webp)
+
+    </div>
   </Step>
 
   <Step title="أضف العرض المادي" id="add-the-materialized-view">
     حدّد **إضافة عرض مادي**، ثم اختر قاعدة البيانات والجدول الهدف اللذين يستندان إليه العرض المادي.
 
-    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="تحرير المصادر" />
+    <div className="ch-image-lg">
+
+    ![تحرير المصادر](/images/clickstack/materialized_views/add_view.webp)
+
+    </div>
   </Step>
 
   <Step title="حدّد المقاييس" id="select-metrics">
@@ -248,13 +271,21 @@ GROUP BY
 
     أما بالنسبة إلى الأبعاد، فحدّد جميع الأعمدة، باستثناء الطابع الزمني، التي يُجري العرض التجميع على أساسها.
 
-    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="تحديد المقاييس" />
+    <div className="ch-image-lg">
+
+    ![تحديد المقاييس](/images/clickstack/materialized_views/select_metrics.webp)
+
+    </div>
   </Step>
 
   <Step title="حدّد درجة الدقة الزمنية" id="select-time-granularity">
     حدّد **درجة الدقة الزمنية** للعرض المادي، على سبيل المثال دقيقة واحدة.
 
-    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="تحديد درجة الدقة الزمنية" />
+    <div className="ch-image-lg">
+
+    ![تحديد درجة الدقة الزمنية](/images/clickstack/materialized_views/select_time_granularity.webp)
+
+    </div>
   </Step>
 
   <Step title="حدّد الحد الأدنى للتاريخ" id="specify-the-minimum-date">
@@ -265,7 +296,11 @@ GROUP BY
       يمكن العثور على دليل كامل حول التعبئة بالبيانات التاريخية للعروض المادية ضمن [&quot;التعبئة بالبيانات التاريخية.&quot;](/ar/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
-    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="تحديد الحد الأدنى للوقت" />
+    <div className="ch-image-lg">
+
+    ![تحديد الحد الأدنى للوقت](/images/clickstack/materialized_views/select_min_time.webp)
+
+    </div>
 
     إذا لم يكن وقت البدء الدقيق واضحًا، فيمكنك تحديده عبر الاستعلام عن الحد الأدنى للطابع الزمني من الجدول الهدف، على سبيل المثال:
 
@@ -277,7 +312,11 @@ GROUP BY
   <Step title="احفظ المصدر" id="save-the-source">
     احفظ إعدادات المصدر.
 
-    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="حفظ المصدر" />
+    <div className="ch-image-lg">
+
+    ![حفظ المصدر](/images/clickstack/materialized_views/save_source.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -300,7 +339,15 @@ GROUP BY
 * تشير **أيقونة الصاعقة الخضراء** إلى أن الاستعلام مُسرَّع بواسطة عرض مادي.
 * تشير **أيقونة الصاعقة البرتقالية** إلى أن الاستعلام يُنفَّذ على الجدول المصدر.
 
-<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="مرئية مُسرَّعة" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مرئية مُسرَّعة](/images/clickstack/materialized_views/accelerated_visual.webp)
+
+</Frame>
+
+</div>
 
 2. **افحص تفاصيل التحسين**  انقر على أيقونة الصاعقة لفتح لوحة تفاصيل تعرض ما يلي:
 

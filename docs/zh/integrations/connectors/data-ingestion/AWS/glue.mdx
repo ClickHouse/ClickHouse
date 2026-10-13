@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -41,13 +39,21 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
       <Step title="激活连接器并创建连接" id="activate-the-connector">
         订阅后，选择与你的作业要求匹配的 Glue 版本。在 **Additional details** 部分的 **Usage instructions** 下，点击 **Open Glue Studio - Add ClickHouse connector** 的链接。该链接会打开 Glue 连接创建页面，并预先填好关键字段。为连接命名后，点击 create 即可 (此阶段无需提供 ClickHouse 连接信息) 。
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png" size="md" alt="AWS Marketplace 中 ClickHouse Glue 连接器的使用说明" />
+        <div className="ch-image-md">
+
+        ![AWS Marketplace 中 ClickHouse Glue 连接器的使用说明](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
+
+        </div>
       </Step>
 
       <Step title="在 Glue 作业中使用" id="use-in-glue-job">
         在你的 Glue 作业中，选择 `Job details` 选项卡，然后展开 `Advanced properties` 窗口。在 `Connections` 部分中，选择你刚刚创建的连接。该连接器会自动将所需 JAR 注入作业运行时。
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size="md" alt="Glue Notebook 连接配置" force="true" />
+        <div className="ch-image-md">
+
+        ![Glue Notebook 连接配置](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
+
+        </div>
 
         <Note>
           请确保选择与 Glue 作业配置匹配的连接器版本：
@@ -74,7 +80,11 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
       <Step title="配置依赖 JAR 路径">
         在 `Job details` 选项卡下，向下滚动并展开 `Advanced properties` 下拉菜单，然后在 `Dependent JARs path` 中填写 JAR 路径：
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size="md" alt="Glue Notebook JAR 路径选项" force="true" />
+        <div className="ch-image-md">
+
+        ![Glue Notebook JAR 路径选项](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -155,7 +165,11 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
   <Tab title="可视化编辑器">
     你可以在 Glue Studio 可视化编辑器中将 ClickHouse 连接器用作数据源或目标端。只需将 ClickHouse Spark 连接器组件拖到画布上，然后连接到你的数据管道即可。
 
-    <Image img="/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png" size="md" alt="带有 ClickHouse 连接器的 Glue Studio 可视化编辑器" />
+    <div className="ch-image-md">
+
+    ![带有 ClickHouse 连接器的 Glue Studio 可视化编辑器](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
+
+    </div>
   </Tab>
 
   <Tab title="Scala">

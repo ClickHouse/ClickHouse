@@ -7,15 +7,15 @@ doc_type: 'guide'
 keywords: ['ClickStack', '部署', '设置', '配置', '可观测性']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 import JSONSupport from '/snippets/zh/_json_support.mdx';
+
 import ExampleOTelConfig from '/snippets/zh/clickstack/_config_example_otel.mdx';
 
 import SetupManagedIngestion from '/snippets/zh/clickstack/_setup_managed_ingestion.mdx';
 import NavigateClickStackUI from '/snippets/zh/clickstack/_navigate_managed.mdx';
+
 import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
 本**指南适用于现有的 ClickHouse Cloud 用户**。如果你刚开始使用 ClickHouse Cloud，我们建议先阅读面向托管 ClickStack 的 [入门](/zh/clickstack/getting-started/managed) 指南。
@@ -58,7 +58,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
       <Step title="创建新服务" id="create-a-service">
         在 ClickHouse Cloud 首页中，选择 `New service` 以创建新服务。
 
-        <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="服务 服务" border />
+        <div className="ch-image-lg">
+
+        ![服务 服务](/images/clickstack/getting-started/new_service.webp)
+
+        </div>
       </Step>
 
       <Step title="指定您的提供商、区域和资源" id="specify-your-region-and-resources">
@@ -94,7 +98,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
           如果您的 ClickHouse 服务已经承载现有工作负载，例如实时应用分析，我们建议使用 [ClickHouse Cloud 的仓库功能](/zh/products/cloud/features/infrastructure/warehouses) 创建一个子服务，以隔离可观测性工作负载。这样既能确保现有应用不受影响，又能让两个服务都能访问这些数据集。
         </Warning>
 
-        <Image img="/images/clickstack/select_service.webp" alt="选择服务" size="lg" />
+        <div className="ch-image-lg">
+
+        ![选择服务](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="前往 ClickStack UI" id="navigate-to-the-clickstack-ui-existing">
@@ -110,7 +118,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
         如果自动检测成功，你将进入搜索视图，并可立即开始探索你的数据。
 
-        <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+        <div className="ch-image-lg">
+
+        ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+        </div>
 
         如果这一步成功，那就大功告成了——你已经全部就绪 🎉；否则请继续设置摄取。
       </Step>
@@ -118,11 +130,19 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
       <Step title="配置摄取" id="setup-ingestion-existing-service">
         如果自动检测失败，或您没有现有的表，系统将提示您配置摄取。
 
-        <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="在 ClickStack UI 中配置摄取" size="lg" />
+        <div className="ch-image-lg">
+
+        ![在 ClickStack UI 中配置摄取](/images/clickstack/clickstack-ui-setup-ingestion.webp)
+
+        </div>
 
         选择 &quot;Start Ingestion&quot;，系统将提示您选择摄取来源。托管 ClickStack 支持 OpenTelemetry 和 [Vector](https://vector.dev/) 作为主要摄取来源。此外，用户也可以通过任意 [ClickHouse Cloud 支持的集成](/zh/integrations/home)，使用自定义 schema 将数据直接发送至 ClickHouse。
 
-        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="选择数据源 - ClickStack UI" border />
+        <div className="ch-image-lg">
+
+        ![选择数据源 - ClickStack UI](/images/clickstack/select-source-clickstack-ui.webp)
+
+        </div>
 
         <Info>
           **强烈推荐使用 OpenTelemetry**
@@ -143,7 +163,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             为了快速开始，请复制并运行下方所示的 Docker 命令。
 
-            <Image img="/images/clickstack/otel-collector-start-clickstack-ui.webp" size="md" alt="OTel collector source" />
+            <div className="ch-image-md">
+
+            ![OTel collector source](/images/clickstack/otel-collector-start-clickstack-ui.webp)
+
+            </div>
 
             **请将此命令中的服务 credentials 替换为你在创建服务时记录的信息。**
 
@@ -169,7 +193,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             <ExampleOTelConfig />
 
-            <Image img="/images/clickstack/advanced-otel-collector-clickstack-ui.webp" size="lg" alt="Advanced OTel collector source" />
+            <div className="ch-image-lg">
+
+            ![Advanced OTel collector source](/images/clickstack/advanced-otel-collector-clickstack-ui.webp)
+
+            </div>
 
             有关配置 OpenTelemetry collector 的更多详细信息，请参阅[“使用 OpenTelemetry 进行摄取。”](/zh/clickstack/ingesting-data/opentelemetry)
 
@@ -237,7 +265,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             创建好表后，复制所示的配置片段。按需调整输入，以使用你现有的管道，以及目标表和数据库。凭据应已预先填入。
 
-            <Image img="/images/clickstack/vector-config-clickstack-ui.webp" size="lg" alt="Vector 配置" />
+            <div className="ch-image-lg">
+
+            ![Vector 配置](/images/clickstack/vector-config-clickstack-ui.webp)
+
+            </div>
 
             有关使用 Vector 摄取数据的更多示例，请参阅 [&quot;使用 Vector 进行摄取&quot;](/zh/clickstack/ingesting-data/vector)，或查看 [Vector ClickHouse sink 文档](https://vector.dev/docs/reference/configuration/sinks/clickhouse/)，了解高级选项。
 
@@ -253,7 +285,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
           <Tab title="OpenTelemetry">
             如果你已按照本指南摄取 OpenTelemetry 数据，系统会自动创建数据源，无需进一步设置。你可以立即开始使用 ClickStack。系统会将你引导至搜索视图，并自动选中一个数据源，以便你立即开始查询。
 
-            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+            <div className="ch-image-lg">
+
+            ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+            </div>
 
             就这样——一切已准备就绪 🎉。
 
@@ -263,7 +299,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
           <Tab title="Vector">
             如果你是通过 Vector 或其他来源摄取数据，系统会提示你配置数据源。
 
-            <Image img="/images/clickstack/create-vector-datasource.webp" alt="创建数据源 - vector" size="lg" />
+            <div className="ch-image-lg">
+
+            ![创建数据源 - vector](/images/clickstack/create-vector-datasource.webp)
+
+            </div>
 
             上述配置假定使用的是 Nginx 风格的 schema，并将 `time_local` 列用作时间戳。在可能的情况下，这应当是主键中声明的时间戳列。**此列为必填项**。
 
@@ -275,7 +315,11 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             配置好数据源后，点击 &quot;Save&quot; 并开始探索你的数据。
 
-            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+            <div className="ch-image-lg">
+
+            ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+            </div>
 
             <br />
           </Tab>
@@ -298,7 +342,15 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
    * **服务只读 → 只读** - 可查看可观测性数据并创建仪表盘
    * **无访问权限** - 无法访问 HyperDX
 
-<Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud 只读" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud 只读](/images/clickstack/read-only-access.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
   **告警需要管理员权限**
@@ -355,15 +407,39 @@ ClickStack 原生支持 OpenTelemetry，但并不局限于 OpenTelemetry——�
 
 如果你使用 OTel collector 在 ClickHouse 中创建数据库和表，请在创建数据源表单中保留所有默认值，并在 `Table` 字段中填写 `otel_logs`，以创建日志数据源。其余设置应会自动识别，然后即可点击 `Save New Source`。
 
-<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="ClickHouse Cloud HyperDX 数据源" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Cloud HyperDX 数据源](/images/use-cases/observability/hyperdx_cloud_datasource.webp)
+
+</Frame>
+
+</div>
 
 要为链路追踪和 OTel 指标创建数据源，你可以从顶部菜单中选择 `创建新数据源`。
 
-<Image img="/images/use-cases/observability/hyperdx_create_new_source.webp" alt="ClickStack 创建新数据源" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack 创建新数据源](/images/use-cases/observability/hyperdx_create_new_source.webp)
+
+</Frame>
+
+</div>
 
 在这里，先选择所需的数据源类型，再选择对应的表。例如，对于链路追踪，请选择表 `otel_traces`。所有设置都应自动识别。
 
-<Image img="/images/use-cases/observability/hyperdx_create_trace_datasource.webp" alt="ClickStack 创建链路追踪数据源" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack 创建链路追踪数据源](/images/use-cases/observability/hyperdx_create_trace_datasource.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **关联来源**

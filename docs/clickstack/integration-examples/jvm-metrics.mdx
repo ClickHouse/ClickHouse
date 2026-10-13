@@ -6,8 +6,6 @@ description: 'Monitoring JVM with ClickStack'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -37,7 +35,15 @@ The OpenTelemetry Java agent sends data to ClickStack's OTLP endpoint, which req
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
-<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack API Key](/images/clickstack/api-key.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Download OpenTelemetry Java agent" id="download-agent">
 
@@ -201,17 +207,41 @@ To help you monitor JVM applications with ClickStack, we provide a pre-built das
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</Frame>
+
+</div>
 
 3. Upload the `jvm-metrics-dashboard.json` file and click **Finish Import**
 
-<Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="Finish import"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Finish import](/images/clickstack/jvm/jvm-metrics-import.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
-<Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Kafka Metrics dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kafka Metrics dashboard](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
 For the demo dataset, set the time range to **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. Adjust based on your local timezone.

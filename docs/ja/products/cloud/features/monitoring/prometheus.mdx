@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 この機能は、[Prometheus](https://prometheus.io/) との統合により、ClickHouse Cloud サービスを監視できるようにします。Prometheus メトリクスへのアクセスは、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) のエンドポイント経由で提供されており、安全に接続して Prometheus メトリクス collector にメトリクスをエクスポートできます。これらのメトリクスは、Grafana や Datadog などのダッシュボードに統合して可視化できます。
 
@@ -273,17 +272,41 @@ Grafana と統合する主な方法は 2 つあります。
 * Scrape URL が Prometheus エンドポイントを指すように設定し、ベーシック認証を使用して API キー/シークレットで接続を構成します
 * 接続テストを実行し、接続できることを確認します
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Grafana の Metrics Endpoint を設定" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana の Metrics Endpoint を設定](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 設定が完了すると、ダッシュボードを構成する際に選択できるドロップダウンにメトリクスが表示されます。
 
-<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Grafana メトリクス エクスプローラーのドロップダウン" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana メトリクス エクスプローラーのドロップダウン](/images/integrations/prometheus-grafana-dropdown.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana メトリクス エクスプローラーのグラフ" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana メトリクス エクスプローラーのグラフ](/images/integrations/prometheus-grafana-chart.webp)
+
+</Frame>
+
+</div>
 
 <div id="grafana-cloud-with-alloy">
   ### Grafana Cloud で Alloy を使用する
@@ -291,7 +314,15 @@ Grafana と統合する主な方法は 2 つあります。
 
 Grafana Cloud を使用している場合は、Grafana の Alloy メニューに移動し、画面上の指示に従って Alloy をインストールできます。
 
-<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -372,7 +403,15 @@ Grafana をセルフマネージドで利用している場合、Alloy エージ
 
 設定が完了すると、メトリクス エクスプローラーに ClickHouse 関連のメトリクスが表示されるようになります。
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Grafana メトリクス エクスプローラー" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana メトリクス エクスプローラー](/images/integrations/prometheus-grafana-metrics-explorer.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -398,7 +437,15 @@ instances:
 
 <br />
 
-<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus と Datadog のインテグレーション" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prometheus と Datadog のインテグレーション](/images/integrations/prometheus-datadog.webp)
+
+</Frame>
+
+</div>
 
 <div id="related">
   ## 関連ページ

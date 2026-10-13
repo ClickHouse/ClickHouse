@@ -8,8 +8,6 @@ sidebarTitle: 'الجزء 3'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 > هذا هو **الجزء 3** من دليل عن ترحيل البيانات من PostgreSQL إلى ClickHouse. ومن خلال مثال عملي، يوضّح كيفية نمذجة البيانات في ClickHouse عند الترحيل من PostgreSQL.
 
 نوصي المستخدمين الذين يرحّلون من Postgres بقراءة [دليل نمذجة البيانات في ClickHouse](/ar/guides/clickhouse/data-modelling/schema-design). يستخدم هذا الدليل نفس Stack Overflow dataset، ويستعرض عدة أساليب بالاعتماد على ميزات ClickHouse.
@@ -32,9 +30,25 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لمزيد من التفاصيل، نوصي بهذا [الدليل المتعمق](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="فهرس B-Tree في PostgreSQL" />
+<div className="ch-image-lg">
 
-<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="الفهرس المتفرق في PostgreSQL" />
+<Frame>
+
+![فهرس B-Tree في PostgreSQL](/images/migrations/postgres-b-tree.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![الفهرس المتفرق في PostgreSQL](/images/migrations/postgres-sparse-index.webp)
+
+</Frame>
+
+</div>
 
 لا يحدد المفتاح المختار في ClickHouse الفهرس فحسب، بل يحدد أيضًا الترتيب الذي تُكتب به البيانات على disk. ولهذا السبب، يمكن أن يؤثر بدرجة كبيرة في مستويات Compression، مما قد ينعكس بدوره على query performance. فمفتاح الترتيب الذي يجعل قيم معظم الأعمدة تُكتب بترتيب متجاور يتيح لخوارزمية الضغط المختارة (والـ codecs) ضغط البيانات بكفاءة أعلى.
 
@@ -56,7 +70,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 في ClickHouse، يُحدَّد التقسيم للجدول عند تعريفه أول مرة عبر العبارة `PARTITION BY`. ويمكن أن تحتوي هذه العبارة على تعبير SQL على أي أعمدة، وتحدّد نتيجته القسم الذي يُرسل إليه الصف.
 
-<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="أقسام PostgreSQL إلى أقسام ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![أقسام PostgreSQL إلى أقسام ClickHouse](/images/migrations/postgres-partitions.webp)
+
+</Frame>
+
+</div>
 
 ترتبط أجزاء البيانات منطقيًا بكل قسم على القرص، ويمكن الاستعلام عنها بشكل مستقل. في المثال أدناه، نقسّم جدول `posts` حسب السنة باستخدام التعبير `toYear(CreationDate)`. ومع إدراج الصفوف في ClickHouse، سيُقيَّم هذا التعبير لكل صف ويُوجَّه إلى القسم الناتج إذا كان موجودًا (وإذا كان هذا الصف هو الأول لتلك السنة، فسيُنشأ القسم).
 
@@ -274,7 +296,15 @@ WHERE UserId = 8592047
 واحد، حيث تُستغل إسقاطات، متى أمكن، لتسريع
 زمن الاستجابة.
 
-<Image img="/images/migrations/postgres-projections.webp" size="md" alt="إسقاطات PostgreSQL في ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![إسقاطات PostgreSQL في ClickHouse](/images/migrations/postgres-projections.webp)
+
+</Frame>
+
+</div>
 
 وهذا على النقيض من العروض المادية، حيث يتعين على المستخدم اختيار
 الجدول الهدف المُحسَّن المناسب أو إعادة كتابة استعلامه، بحسب عوامل التصفية.

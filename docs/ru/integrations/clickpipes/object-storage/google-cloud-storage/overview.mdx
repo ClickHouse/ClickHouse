@@ -6,8 +6,6 @@ title: 'Интеграция Google Cloud Storage с ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 GCS ClickPipe предоставляет полностью управляемый и отказоустойчивый способ ингестии данных из Google Cloud Storage (GCS). Он поддерживает как **однократную** ингестию, так и **непрерывную ингестию** с семантикой «ровно один раз».
 
 GCS ClickPipes можно развёртывать и настраивать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
@@ -157,7 +155,15 @@ ClickPipe для GCS поддерживает публичные и приват
 
 Чтобы использовать [HMAC-ключи](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) для аутентификации, при настройке подключения ClickPipe выберите `Credentials` в разделе **метод аутентификации**. Затем укажите ключ доступа (например, `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) и секретный ключ (например, `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) в полях `Access key` и `Secret key` соответственно.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="Учетные данные HMAC для GCS ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Учетные данные HMAC для GCS ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
+
+</Frame>
+
+</div>
 
 Следуйте [этому руководству](/ru/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret), чтобы создать сервисный аккаунт с HMAC-ключом.
 
@@ -195,7 +201,15 @@ ClickPipes предоставляет разумные значения по у�
 | `Parallel view processing`           | false                 | Нужно ли включать отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings/parallel#parallel_view_processing).     |
 | `Use cluster function`               | true                  | Нужно ли обрабатывать файлы параллельно на нескольких узлах.                                                                                                                  |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Расширенные настройки ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Расширенные настройки ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="scaling">
   ### Масштабирование

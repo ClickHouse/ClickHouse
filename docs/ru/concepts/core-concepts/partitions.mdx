@@ -6,7 +6,6 @@ keywords: ['партиции', 'partition by']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
@@ -46,7 +45,15 @@ PARTITION BY toStartOfMonth(date);
 
 Каждый раз, когда в таблицу вставляется набор строк, ClickHouse вместо создания (как минимум [одной](/ru/reference/settings/session-settings/max-insert#max_insert_block_size)) одной-единственной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), создает по одной новой части данных для каждого уникального значения ключа партиционирования среди вставленных строк:
 
-<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="ОБРАБОТКА INSERT" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ОБРАБОТКА INSERT](/images/managing-data/core-concepts/partitions.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -61,7 +68,15 @@ PARTITION BY toStartOfMonth(date);
 
 При включенном партиционировании ClickHouse выполняет [слияния](/ru/concepts/core-concepts/merges) частей данных только в пределах одной партиции, но не между разными партициями. Покажем это на примере таблицы выше:
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="PART MERGES" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![PART MERGES](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -158,7 +173,15 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 ClickHouse обрабатывает этот запрос, применяя последовательность методов отсеивания данных, чтобы не обрабатывать нерелевантные данные:
 
-<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="PART MERGES 2" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![PART MERGES 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

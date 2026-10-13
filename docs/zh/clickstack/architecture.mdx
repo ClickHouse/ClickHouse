@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickStack 架构', '可观测性架构', 'HyperDX', 'OpenTelemetry Collector', 'MongoDB', '系统设计']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickStack 的架构会因部署方式不同而有所差异。**ClickStack Open Source** (所有组件均由用户自主管理) 与**托管 ClickStack** (ClickHouse 和 HyperDX UI 由 ClickHouse Cloud 托管并运行) 在架构上存在重要区别。虽然这两种模式的核心组件相同，但各组件在托管、扩缩容和安全保障方面的责任划分有所不同。
 
 <div id="architecture-overview">
@@ -23,7 +21,11 @@ ClickStack 的架构会因部署方式不同而有所差异。**ClickStack Open 
 
     在这种模式下，**ClickHouse 和 ClickStack UI (HyperDX) **均由 ClickHouse Cloud 托管、运维并保障安全。用户只需负责运行 **OpenTelemetry (OTel) 收集器**，将遥测数据发送到托管服务中。
 
-    <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="托管架构" size="lg" />
+    <div className="ch-image-lg">
+
+    ![托管架构](/images/use-cases/observability/clickstack-managed-architecture.webp)
+
+    </div>
 
 ### ClickHouse Cloud：引擎
 
@@ -77,7 +79,11 @@ ClickStack 的架构会因部署方式不同而有所差异。**ClickStack Open 
   <Tab title="开源 ClickStack">
     ClickStack 开源架构由三个核心组件构成：**ClickHouse**、**HyperDX** 和 **OpenTelemetry (OTel) collector**。**MongoDB** 实例用于存储应用状态。三者共同组成了一个高性能的开源可观测性技术栈，并针对日志、指标和链路追踪进行了优化。
 
-    <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="架构" size="lg" />
+    <div className="ch-image-lg">
+
+    ![架构](/images/use-cases/observability/clickstack-oss-architecture.webp)
+
+    </div>
 
 ### ClickHouse：数据库引擎
 

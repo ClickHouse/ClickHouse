@@ -6,8 +6,6 @@ description: 'Un dictionnaire fournit une représentation clé-valeur des donné
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Dans ClickHouse, un dictionnaire fournit une représentation en mémoire en [clé-valeur](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) des données provenant de diverses [sources internes et externes](/fr/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimisée pour des requêtes de consultation à très faible latence.
 
 Les dictionnaires sont utiles pour :
@@ -15,7 +13,15 @@ Les dictionnaires sont utiles pour :
 * Améliorer les performances des requêtes, en particulier avec les `JOIN`
 * Enrichir les données ingérées à la volée sans ralentir le processus d&#39;ingestion
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Cas d'utilisation des dictionnaires dans ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Cas d'utilisation des dictionnaires dans ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+
+</Frame>
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## Accélérer les jointures à l’aide d’un dictionnaire
@@ -23,7 +29,15 @@ Les dictionnaires sont utiles pour :
 
 Les dictionnaires peuvent être utilisés pour accélérer un type spécifique de `JOIN` : le [type `LEFT ANY`](/fr/reference/statements/select/join#supported-types-of-join), dans lequel la clé de jointure doit correspondre à l’attribut clé du stockage clé-valeur sous-jacent.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="Utilisation d’un dictionnaire avec LEFT ANY JOIN" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Utilisation d’un dictionnaire avec LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</Frame>
+
+</div>
 
 Dans ce cas, ClickHouse peut exploiter le dictionnaire pour effectuer une [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Il s’agit de l’algorithme de jointure le plus rapide de ClickHouse. Il s’applique lorsque le [moteur de table](/fr/reference/engines/table-engines/index) sous-jacent de la table de droite prend en charge des requêtes clé-valeur à faible latence. ClickHouse propose trois moteurs de table qui le permettent : [Join](/fr/reference/engines/table-engines/special/join) (qui est essentiellement une table de hachage précalculée), [EmbeddedRocksDB](/fr/reference/engines/table-engines/integrations/embedded-rocksdb) et [Dictionary](/fr/reference/engines/table-engines/special/dictionary). Nous allons décrire l’approche basée sur les dictionnaires, mais le mécanisme est le même pour ces trois moteurs.
 

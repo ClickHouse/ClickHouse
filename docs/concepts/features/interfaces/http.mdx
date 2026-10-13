@@ -7,8 +7,6 @@ title: 'HTTP interface'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Prerequisites {#prerequisites}
 
 For the examples in this article you will need:
@@ -49,7 +47,15 @@ After executing a query successfully, a download button appears that allows you 
 
 The web UI is designed for professionals like you.
 
-<Image img="/images/play.webp" size="md" alt="ClickHouse Web UI screenshot" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Web UI screenshot](/images/play.webp)
+
+</Frame>
+
+</div>
 
 In health-check scripts use the `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 

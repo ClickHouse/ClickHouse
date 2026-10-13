@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/ru/_intro.mdx';
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <IntroClickPipe />
 
 <div id="pre-requisites">
@@ -24,11 +22,19 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Выберите источник данных" id="1-select-the-data-source">
     **1.** В ClickHouse Cloud выберите **Data sources** в главном меню навигации и нажмите **Create ClickPipe**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импортов" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Выбор импортов](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
 
     **2.** Нажмите на плитку **BigQuery**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Выбор плитки BigQuery" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Выбор плитки BigQuery](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройте подключение ClickPipe" id="2-setup-your-clickpipe-connection">
@@ -36,7 +42,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     **1.** Загрузите ключ `.json` для сервисного аккаунта, который вы создали для ClickPipes. Убедитесь, что у сервисного аккаунта есть минимально необходимый набор [разрешений](/ru/integrations/clickpipes/bigquery/overview#permissions).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Загрузка ключа сервисного аккаунта" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Загрузка ключа сервисного аккаунта](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </div>
 
     **2.** Выберите **Replication method**. В закрытой предварительной версии поддерживается только вариант [**Initial load only**](/ru/integrations/clickpipes/bigquery/overview#initial-load).
 
@@ -54,7 +64,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     **2.** Выберите таблицы и, при необходимости, столбцы, которые вы хотите реплицировать. В списке будут показаны только те наборы данных, к которым у указанного сервисного аккаунта есть доступ.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="Разрешения" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Разрешения](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp)
+
+    </div>
 
     **3.** Для каждой выбранной таблицы обязательно задайте пользовательский ключ сортировки в разделе **Advanced settings** &gt; **Use a custom sorting key**. В будущем ключ сортировки будет автоматически определяться на основе существующих ключей кластеризации или ключей партиционирования в исходной базе данных.
 
@@ -62,7 +76,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       Для реплицируемых таблиц вы **должны** определить [ключ сортировки](/ru/concepts/best-practices/choosing-a-primary-key), чтобы оптимизировать производительность запросов в ClickHouse. В противном случае в качестве ключа сортировки будет установлено `tuple()`, а это означает, что первичный индекс создан не будет и ClickHouse будет выполнять полное сканирование таблицы для всех запросов к ней.
     </Warning>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Разрешения" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Разрешения](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройте разрешения" id="6-configure-permissions">
@@ -77,6 +95,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Завершите настройку" id="7-complete-setup">
     Нажмите **Create ClickPipe**, чтобы завершить настройку. Вы будете перенаправлены на страницу обзора, где сможете отслеживать ход первоначальной загрузки и перейти к подробной информации о ваших ClickPipes для BigQuery.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Разрешения" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Разрешения](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </div>
   </Step>
 </Steps>

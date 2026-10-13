@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Nginx', 'traces', 'otel']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -158,7 +156,11 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
   <Step title="Vérifier les traces dans HyperDX" id="verifying-traces">
     Une fois la configuration en place, connectez-vous à HyperDX et vérifiez que les traces arrivent bien. Vous devriez voir quelque chose comme ceci ; si vous ne voyez pas de traces, essayez d’ajuster l’intervalle de temps :
 
-    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Afficher les traces" />
+    <div className="ch-image-lg">
+
+    ![Afficher les traces](/images/clickstack/nginx-traces-search-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -246,7 +248,11 @@ Pour les utilisateurs qui souhaitent tester l’intégration des traces nginx av
       HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Ce large intervalle de temps garantit que vous verrez les traces de démonstration quel que soit votre emplacement. Une fois les traces visibles, vous pourrez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
     </Info>
 
-    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Voir les traces" />
+    <div className="ch-image-lg">
+
+    ![Voir les traces](/images/clickstack/nginx-traces-search-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -265,11 +271,19 @@ Pour vous aider à commencer à surveiller les traces avec ClickStack, nous four
     1. Ouvrez HyperDX et accédez à la section Dashboards.
     2. Cliquez sur &quot;Import Dashboard&quot; dans le coin supérieur droit, sous les points de suspension.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Importer le tableau de bord" />
+    <div className="ch-image-lg">
+
+    ![Importer le tableau de bord](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Téléversez le fichier nginx-trace-dashboard.json, puis cliquez sur Finish Import.
 
-    <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="Terminer l’importation" />
+    <div className="ch-image-lg">
+
+    ![Terminer l’importation](/images/clickstack/finish-nginx-traces-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Le tableau de bord sera créé avec toutes les visualisations préconfigurées." id="created-dashboard">
@@ -277,7 +291,11 @@ Pour vous aider à commencer à surveiller les traces avec ClickStack, nous four
       Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (ajustez-le en fonction de votre fuseau horaire local). Le tableau de bord importé n’aura pas d’intervalle de temps défini par défaut.
     </Note>
 
-    <Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="Exemple de tableau de bord" />
+    <div className="ch-image-lg">
+
+    ![Exemple de tableau de bord](/images/clickstack/nginx-traces-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['ClickStack', 'OpenTelemetry collector', 'observabilidad de ClickHouse', 'configuración del OTel collector', 'OpenTelemetry ClickHouse']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import ExtendingConfig from '/snippets/es/_extending_config.mdx';
 
 <Tip>
@@ -420,7 +418,11 @@ Los usuarios que implementen OTel collectors en el rol de agente normalmente usa
 
     Esta integración garantiza que el endpoint OTLP esté protegido mediante una API key de ingesta generada automáticamente al implementar la aplicación HyperDX. Todos los datos de telemetría que se envíen al collector deben incluir esta API key para la autenticación. Puede encontrar la clave en la aplicación HyperDX, en `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="API keys de ingesta" size="lg" />
+    <div className="ch-image-lg">
+
+    ![API keys de ingesta](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     Para reforzar aún más la seguridad de su implementación, recomendamos:
 
@@ -559,7 +561,15 @@ Normalmente, los usuarios se ven obligados a enviar lotes más pequeños cuando 
 
 Si no se pueden garantizar lotes grandes, puedes delegar la agrupación por lotes en ClickHouse mediante [inserciones asíncronas](/es/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). Con las inserciones asíncronas, los datos se insertan primero en un búfer y después se escriben en el almacenamiento de la base de datos más tarde, es decir, de forma asíncrona.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Inserciones asíncronas" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Inserciones asíncronas](/images/use-cases/observability/observability-6.webp)
+
+</Frame>
+
+</div>
 
 Con [las inserciones asíncronas habilitadas](/es/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), cuando ClickHouse ① recibe una consulta de inserción, los datos de la consulta ② se escriben inmediatamente en un búfer en memoria. Cuando ③ se produce el siguiente vaciado del búfer, los datos del búfer se [ordenan](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) y se escriben como una parte en el almacenamiento de la base de datos. Ten en cuenta que los datos no se pueden consultar antes de vaciarse en el almacenamiento de la base de datos; el vaciado del búfer es [configurable](/es/concepts/features/operations/insert/asyncinserts).
 
@@ -583,7 +593,15 @@ Los detalles completos sobre cómo configurar esta funcionalidad se pueden encon
 
 El OTel collector de ClickStack actúa como una instancia de gateway; consulta [Roles del collector](#collector-roles). Estas proporcionan un servicio independiente, normalmente por centro de datos o por región. Reciben eventos de las aplicaciones (o de otros collectors en el rol de agente) a través de un único endpoint de OTLP. Normalmente, se despliega un conjunto de instancias de collector, con un balanceador de carga listo para usar que distribuye la carga entre ellas.
 
-<Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="Escalado con gateways" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Escalado con gateways](/images/use-cases/observability/clickstack-with-gateways.webp)
+
+</Frame>
+
+</div>
 
 El objetivo de esta arquitectura es descargar de los agentes el procesamiento con uso intensivo de cómputo, minimizando así su consumo de recursos. Estos gateways de ClickStack pueden realizar tareas de transformación que, de otro modo, tendrían que ejecutar los agentes. Además, al agregar eventos de muchos agentes, los gateways pueden garantizar que se envíen grandes lotes a ClickHouse, lo que permite una inserción eficiente. Estos collectors gateway pueden escalarse fácilmente a medida que se añaden más agentes y fuentes de SDK, y aumenta el caudal de eventos.
 
@@ -599,7 +617,15 @@ Sin embargo, ClickHouse puede insertar datos muy rápidamente: millones de filas
 
 Sin embargo, si necesita altas garantías de entrega o la capacidad de reprocesar datos (potencialmente hacia múltiples destinos), Kafka puede ser una incorporación útil a la arquitectura.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="Añadir Kafka" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Añadir Kafka](/images/use-cases/observability/observability-8.webp)
+
+</Frame>
+
+</div>
 
 En este caso, los agentes de OTel pueden configurarse para enviar datos a Kafka mediante el [exporter de Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). A su vez, las instancias gateway consumen mensajes mediante el [receiver de Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). Recomendamos consultar la documentación de Confluent y de OTel para obtener más detalles.
 

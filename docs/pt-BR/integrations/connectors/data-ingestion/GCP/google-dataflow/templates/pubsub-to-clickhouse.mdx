@@ -7,8 +7,6 @@ doc_type: 'guia'
 keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O template do Pub/Sub para ClickHouse é um pipeline de streaming que lê mensagens codificadas em JSON de uma assinatura do Pub/Sub e as grava em uma tabela do ClickHouse.
 Mensagens cuja análise falha ou que não podem ser mapeadas para o esquema de destino são encaminhadas para um destino dead-letter: uma tabela do ClickHouse, um tópico do Pub/Sub ou ambos.
 
@@ -163,7 +161,11 @@ O template Pub/Sub para ClickHouse está disponível no Google Cloud Console.
 Faça login no Google Cloud Console e pesquise por Dataflow.
 
 1. Clique no botão `CREATE JOB FROM TEMPLATE`.
-   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Console do Dataflow" />
+   <div className="ch-image-lg">
+
+   ![Console do Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+   </div>
 
 2. Quando o formulário do template abrir, insira um nome para o job e selecione a região desejada.
 
@@ -190,7 +192,15 @@ Faça login no Google Cloud Console e pesquise por Dataflow.
 
 Acesse a [aba Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) no Google Cloud Console para monitorar o status do job. Nela, você encontrará os detalhes do job, incluindo o progresso e eventuais erros:
 
-<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="Console do Dataflow mostrando um job do Pub/Sub para ClickHouse em execução" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Console do Dataflow mostrando um job do Pub/Sub para ClickHouse em execução](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+
+</Frame>
+
+</div>
 
 O template também emite as seguintes métricas personalizadas no espaço de nomes `PubSubToClickHouse`, visíveis na página do job do Dataflow:
 

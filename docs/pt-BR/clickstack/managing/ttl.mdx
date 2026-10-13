@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'ttl', 'retenção de dados', 'ciclo de vida', 'gerenciamento de armazenamento']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import OtelLogsSchema from '/snippets/pt-BR/clickstack/_schema_otel_logs.mdx';
 
 <div id="ttl-clickstack">
@@ -26,7 +25,15 @@ O particionamento no ClickHouse permite que os dados sejam separados logicamente
 
 Como mostrado no exemplo acima, o particionamento é especificado em uma tabela quando ela é definida inicialmente por meio da cláusula `PARTITION BY`. Essa cláusula pode conter uma expressão SQL em qualquer coluna, cujo resultado definirá para qual partição uma linha será enviada. Isso faz com que os dados sejam associados logicamente (por meio de um prefixo comum no nome da pasta) a cada partição no disco, que então pode ser consultada isoladamente. No exemplo acima, o schema padrão `otel_logs` particiona por dia usando a expressão `toDate(Timestamp)`. À medida que as linhas são inseridas no ClickHouse, essa expressão será avaliada em relação a cada linha e encaminhada para a partição resultante, se ela existir (se a linha for a primeira de um dia, a partição será criada). Para mais detalhes sobre particionamento e suas outras aplicações, consulte [&quot;Partições de tabela&quot;](/pt-BR/concepts/core-concepts/partitions).
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="Partições" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Partições](/images/use-cases/observability/observability-14.webp)
+
+</Frame>
+
+</div>
 
 O schema da tabela também inclui `TTL toDateTime(Timestamp) + ${TABLES_TTL}` e a configuração `ttl_only_drop_parts = 1`. A primeira cláusula garante que os dados serão removidos quando tiverem mais do que o TTL configurado (3 dias por padrão). A configuração `ttl_only_drop_parts = 1` faz com que apenas partes de dados em que todos os dados expiraram sejam removidas (em vez de tentar excluir linhas parcialmente). Como o particionamento garante que dados de dias diferentes nunca sejam &quot;mesclados&quot;, os dados podem, assim, ser removidos com eficiência.
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['almacenamiento', 'cómputo', 'arquitectura', 'escalabilidad', 'nube']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="overview">
   ## Descripción general
 </div>
@@ -156,7 +154,11 @@ Tenga en cuenta que implementar y gestionar una arquitectura con separación de 
 
     Si todo funcionó correctamente, ahora está usando ClickHouse con almacenamiento y cómputo separados.
 
-    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="Ejemplo de bucket de S3 con separación de almacenamiento y cómputo" border />
+    <div className="ch-image-md">
+
+    ![Ejemplo de bucket de S3 con separación de almacenamiento y cómputo](/images/guides/s3_bucket_example.webp)
+
+    </div>
   </Step>
 
   <Step title="Implementación de la replicación para tolerancia a fallos (opcional)" id="3-implementing-replication-for-fault-tolerance-optional">

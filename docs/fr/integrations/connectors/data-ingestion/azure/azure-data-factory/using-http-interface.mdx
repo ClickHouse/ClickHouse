@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 La [fonction de table `azureBlobStorage`](/fr/reference/functions/table-functions/azureBlobStorage)
 est un moyen rapide et pratique d’ingérer des données depuis Azure Blob Storage dans
 ClickHouse. Son utilisation ne convient toutefois pas toujours, pour les raisons suivantes :
@@ -103,21 +101,41 @@ et utiliser votre service existant pour la suite.
 
 1. Connectez-vous au [Microsoft Azure Portal](https://portal.azure.com/) et cliquez sur
    **Créer une ressource**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Page d’accueil du portail Azure" border />
+   <div className="ch-image-lg">
+
+   ![Page d’accueil du portail Azure](/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp)
+
+   </div>
 
 2. Dans le volet Catégories à gauche, sélectionnez **Analytics**, puis cliquez sur
    **Data Factory** dans la liste des services populaires.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Nouvelle ressource dans le portail Azure" border />
+   <div className="ch-image-lg">
+
+   ![Nouvelle ressource dans le portail Azure](/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp)
+
+   </div>
 
 3. Sélectionnez votre abonnement et votre groupe de ressources, saisissez un nom pour la nouvelle instance
    Data Factory, choisissez la région et laissez la version sur V2.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Nouveau Data Factory dans le portail Azure" border />
+   <div className="ch-image-lg">
+
+   ![Nouveau Data Factory dans le portail Azure](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp)
+
+   </div>
 
 4. Cliquez sur **Vérifier + créer**, puis sur **Créer** pour lancer le déploiement.
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Confirmation du nouveau Data Factory dans le portail Azure" border />
+   <div className="ch-image-lg">
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Création du nouveau Data Factory réussie dans le portail Azure" border />
+   ![Confirmation du nouveau Data Factory dans le portail Azure](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp)
+
+   </div>
+
+   <div className="ch-image-lg">
+
+   ![Création du nouveau Data Factory réussie dans le portail Azure](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp)
+
+   </div>
 
 Une fois le déploiement terminé avec succès, vous pouvez commencer à utiliser votre nouvelle
 instance Azure Data Factory.
@@ -127,34 +145,62 @@ instance Azure Data Factory.
 </div>
 
 1. Connectez-vous au Microsoft Azure Portal et ouvrez votre instance Data Factory.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Page d’accueil d’Azure Portal avec Data Factory" border />
+   <div className="ch-image-lg">
+
+   ![Page d’accueil d’Azure Portal avec Data Factory](/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp)
+
+   </div>
 
 2. Sur la page de vue d’ensemble de Data Factory, cliquez sur **Launch Studio**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Page Data Factory d’Azure Portal" border />
+   <div className="ch-image-lg">
+
+   ![Page Data Factory d’Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp)
+
+   </div>
 
 3. Dans le menu de gauche, sélectionnez **Manage**, puis accédez à **Linked services**,
    et cliquez sur **+ New** pour créer un nouveau service lié.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Bouton New Linked Service d’Azure Data Factory" border />
+   <div className="ch-image-lg">
+
+   ![Bouton New Linked Service d’Azure Data Factory](/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp)
+
+   </div>
 
 4. Dans la **barre de recherche New linked service**, saisissez **REST**, sélectionnez **REST**, puis cliquez sur **Continue**
    pour créer une
    instance de [connecteur REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Recherche New Linked Service d’Azure Data Factory" border />
+   <div className="ch-image-lg">
+
+   ![Recherche New Linked Service d’Azure Data Factory](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp)
+
+   </div>
 
 5. Dans le panneau de configuration du service lié, entrez un nom pour votre nouveau service,
    cliquez sur le champ **Base URL**, puis sur **Add dynamic content** (ce lien n’apparaît
    que lorsque le champ est sélectionné).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="Panneau New Lined Service" border />
+   <div className="ch-image-lg">
+
+   ![Panneau New Lined Service](/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp)
+
+   </div>
 
 6. Dans le panneau de contenu dynamique, vous pouvez créer une URL paramétrée, ce qui
    vous permettra de définir la requête plus tard lors de la création de jeux de données pour différentes
    tables — le service lié sera ainsi réutilisable.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="URL de base vide de New Linked Service" border />
+   <div className="ch-image-lg">
+
+   ![URL de base vide de New Linked Service](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp)
+
+   </div>
 
 7. Cliquez sur le **&quot;+&quot;** à côté du champ de filtre et ajoutez un nouveau paramètre, nommez-le
    `pQuery`, définissez le type sur String et la valeur par défaut sur `SELECT 1`.
    Cliquez sur **Save**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Paramètres de New Linked Service" border />
+   <div className="ch-image-lg">
+
+   ![Paramètres de New Linked Service](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp)
+
+   </div>
 
 8. Dans le champ d’expression, saisissez ce qui suit et cliquez sur **OK**. Remplacez
    `your-clickhouse-url.com` par l’adresse réelle de votre instance
@@ -162,16 +208,28 @@ instance Azure Data Factory.
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="Champ d’expression rempli de New Linked Service" border />
+   <div className="ch-image-lg">
+
+   ![Champ d’expression rempli de New Linked Service](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp)
+
+   </div>
 
 9. De retour dans le formulaire principal, sélectionnez l’authentification de base, saisissez le nom d’utilisateur et le
    mot de passe utilisés pour vous connecter à votre interface HTTP de ClickHouse, puis cliquez sur **Test
    connection**. Si tout est correctement configuré, un message
    de réussite s’affichera.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="Vérification de la connexion de New Linked Service" border />
+   <div className="ch-image-lg">
+
+   ![Vérification de la connexion de New Linked Service](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp)
+
+   </div>
 
 10. Cliquez sur **Create** pour finaliser la configuration.
-    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="Liste des Linked Services" border />
+    <div className="ch-image-lg">
+
+    ![Liste des Linked Services](/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp)
+
+    </div>
 
 Vous devriez maintenant voir votre nouveau service lié REST dans la liste.
 
@@ -204,19 +262,31 @@ Data](/fr/get-started/sample-datasets/environmental-sensors).
 
 2. Dans Azure Data Factory Studio, sélectionnez Author dans le volet de gauche. Survolez
    l’élément Dataset, cliquez sur l’icône à trois points, puis choisissez New dataset.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="Nouvel élément jeu de données" border />
+   <div className="ch-image-lg">
+
+   ![Nouvel élément jeu de données](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp)
+
+   </div>
 
 3. Dans la barre de recherche, saisissez **REST**, sélectionnez **REST**, puis cliquez sur **Continue**.
    Entrez un nom pour votre jeu de données et sélectionnez le **service lié** que vous avez créé
    à l’étape précédente. Cliquez sur **OK** pour créer le jeu de données.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="Page New jeu de données" border />
+   <div className="ch-image-lg">
+
+   ![Page New jeu de données](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp)
+
+   </div>
 
 4. Vous devriez maintenant voir votre jeu de données nouvellement créé dans la section Datasets
    du volet Factory Resources à gauche. Sélectionnez le jeu de données pour
    ouvrir ses propriétés. Vous verrez le paramètre `pQuery` défini dans le
    service lié. Cliquez sur le champ de texte **Value**. Cliquez ensuite sur **Add dynamic**
    content.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="Propriétés du nouveau jeu de données" border />
+   <div className="ch-image-lg">
+
+   ![Propriétés du nouveau jeu de données](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp)
+
+   </div>
 
 5. Dans le volet qui s’ouvre, collez la requête suivante :
    ```sql
@@ -235,12 +305,24 @@ Data](/fr/get-started/sample-datasets/environmental-sensors).
   doit s’écrire `''best_effort''`.
 </Danger>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="Requête du nouveau jeu de données" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Requête du nouveau jeu de données](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp)
+
+</Frame>
+
+</div>
 
 6. Cliquez sur OK pour enregistrer l’expression. Cliquez sur Test connection. Si tout est
    correctement configuré, le message Connection successful s’affichera. Cliquez sur Publish
    all en haut de la page pour enregistrer vos modifications.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="Connexion du nouveau jeu de données réussie" border />
+   <div className="ch-image-lg">
+
+   ![Connexion du nouveau jeu de données réussie](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp)
+
+   </div>
 
 <div id="setting-up-an-example-dataset">
   ### Configuration d’un jeu de données d’exemple
@@ -269,13 +351,25 @@ enregistrer vos modifications.
 Maintenant que nous avons configuré les jeux de données d’entrée et de sortie, nous pouvons créer une activité **Copy Data** pour transférer les données de notre jeu de données d’exemple vers la table `sensors` dans ClickHouse.
 
 1. Ouvrez **Azure Data Factory Studio**, puis accédez à l’**onglet Author**. Dans le volet **Factory Resources**, survolez **Pipeline**, cliquez sur l’icône à trois points, puis sélectionnez **New pipeline**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="Nouvel élément de pipeline ADF" border />
+   <div className="ch-image-lg">
+
+   ![Nouvel élément de pipeline ADF](/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp)
+
+   </div>
 
 2. Dans le volet **Activities**, développez la section **Move and transform**, puis faites glisser l’activité **Copy data** sur le canevas.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="Nouvel élément Copy Data" border />
+   <div className="ch-image-lg">
+
+   ![Nouvel élément Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp)
+
+   </div>
 
 3. Sélectionnez l’**onglet Source**, puis choisissez le jeu de données source que vous avez créé précédemment.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="Source Copy Data" border />
+   <div className="ch-image-lg">
+
+   ![Source Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp)
+
+   </div>
 
 4. Accédez à l’**onglet Sink** et sélectionnez le jeu de données ClickHouse créé pour votre table `sensors`. Définissez **Request method** sur POST. Assurez-vous que **HTTP compression type** est défini sur **None**.
 
@@ -288,10 +382,22 @@ Maintenant que nous avons configuré les jeux de données d’entrée et de sort
   [Selecting an Insert Strategy / Batch inserts if synchronous](/fr/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous).
 </Info>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="Sink Copy Data sélectionner POST" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Sink Copy Data sélectionner POST](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp)
+
+</Frame>
+
+</div>
 
 5. Cliquez sur **Debug** en haut du canevas pour exécuter le pipeline. Après un court instant, l’activité sera mise en file d’attente puis exécutée. Si tout est correctement configuré, la tâche devrait se terminer avec le statut **Success**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="Succès du débogage Copy Data" border />
+   <div className="ch-image-lg">
+
+   ![Succès du débogage Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp)
+
+   </div>
 
 6. Une fois l’opération terminée, cliquez sur **Publish all** pour enregistrer les modifications apportées à votre pipeline et à vos jeux de données.
 

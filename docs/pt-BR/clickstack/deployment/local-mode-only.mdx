@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'implantação', 'setup', 'configuração', 'observabilidade']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import JSONSupport from '/snippets/pt-BR/_json_support.mdx';
 
 Semelhante à [imagem all-in-one](/pt-BR/clickstack/deployment/docker-compose), esta imagem Docker completa reúne todos os componentes do ClickStack:
@@ -49,11 +47,19 @@ Semelhante à [imagem all-in-one](/pt-BR/clickstack/deployment/docker-compose), 
 
     Conecte-se ao seu próprio cluster externo do ClickHouse, por exemplo, o ClickHouse Cloud.
 
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Criar login" size="md" />
+    <div className="ch-image-md">
+
+    ![Criar login](/images/use-cases/observability/hyperdx-2.webp)
+
+    </div>
 
     Crie uma fonte, mantenha todos os valores padrão e preencha o campo `Table` com o valor `otel_logs`. Todas as outras configurações devem ser detectadas automaticamente, permitindo que você clique em `Save New Source`.
 
-    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Criar fonte de logs" size="md" />
+    <div className="ch-image-md">
+
+    ![Criar fonte de logs](/images/use-cases/observability/hyperdx-logs.webp)
+
+    </div>
   </Step>
 </Steps>
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['api', 'openapi', 'API REST', 'documentación', 'gestión de la nube']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse Cloud proporciona una API basada en OpenAPI que le permite administrar mediante programación su cuenta y ciertos aspectos de sus servicios.
 
 <Note>
@@ -19,13 +17,21 @@ ClickHouse Cloud proporciona una API basada en OpenAPI que le permite administra
   <Step title="Abra la página claves de API">
     Puede usar la pestaña **claves de API** del menú de la izquierda para crear y administrar sus claves de API.
 
-    <Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="Pestaña claves de API" border />
+    <div className="ch-image-sm">
+
+    ![Pestaña claves de API](/images/cloud/manage/openapi1.webp)
+
+    </div>
   </Step>
 
   <Step title="Empiece a crear una clave de API">
     La página **claves de API** mostrará inicialmente un mensaje para crear su primera clave de API, como se muestra a continuación. Después de crear su primera clave, puede crear nuevas claves con el botón `New API Key` que aparece en la esquina superior derecha.
 
-    <Image img="/images/cloud/manage/openapi2.webp" size="md" alt="Página claves de API" border />
+    <div className="ch-image-md">
+
+    ![Página claves de API](/images/cloud/manage/openapi2.webp)
+
+    </div>
   </Step>
 
   <Step title="Configure la clave de API">
@@ -41,7 +47,11 @@ ClickHouse Cloud proporciona una API basada en OpenAPI que le permite administra
       Para usar claves de API con [Query API Endpoints](/es/products/cloud/guides/sql-console/query-endpoints), establezca Organization Role en `Member` (como mínimo) y conceda al Service Role acceso a `Query Endpoints`.
     </Tip>
 
-    <Image img="/images/cloud/manage/openapi3.png" size="md" alt="Formulario para crear una clave de API" border />
+    <div className="ch-image-md">
+
+    ![Formulario para crear una clave de API](/images/cloud/manage/openapi3.png)
+
+    </div>
   </Step>
 
   <Step title="Agregue direcciones IP permitidas">
@@ -49,7 +59,11 @@ ClickHouse Cloud proporciona una API basada en OpenAPI que le permite administra
 
     Los Query API endpoints respetan las listas de IP permitidas a nivel de clave de API. Como las solicitudes se enrutan mediante proxy desde la infraestructura interna de ClickHouse, las listas de IP permitidas a nivel de servicio no se aplican. Consulte [IP Access Control](/es/products/cloud/features/sql-console-features/query-endpoints#ip-access-control) para obtener más información.
 
-    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Direcciones IP permitidas configuradas para una clave de API" border />
+    <div className="ch-image-md">
+
+    ![Direcciones IP permitidas configuradas para una clave de API](/images/cloud/guides/query-endpoints/specific-locations.webp)
+
+    </div>
 
     Haga clic en **Generate API Key** cuando haya terminado de configurar la clave.
   </Step>
@@ -57,7 +71,11 @@ ClickHouse Cloud proporciona una API basada en OpenAPI que le permite administra
   <Step title="Guarde las credenciales de la clave de API">
     La siguiente pantalla mostrará su ID de clave y el secreto de la clave. Copie estos valores y guárdelos en un lugar seguro, como una bóveda. Estos valores no volverán a mostrarse después de salir de esta pantalla.
 
-    <Image img="/images/cloud/manage/openapi4.webp" size="md" alt="Detalles de la clave de API" border />
+    <div className="ch-image-md">
+
+    ![Detalles de la clave de API](/images/cloud/manage/openapi4.webp)
+
+    </div>
   </Step>
 
   <Step title="Autentique las solicitudes de API">
@@ -78,7 +96,11 @@ ClickHouse Cloud proporciona una API basada en OpenAPI que le permite administra
       Eliminar una clave de API es una acción permanente. Cualquier servicio que use la clave perderá inmediatamente el acceso a ClickHouse Cloud.
     </Note>
 
-    <Image img="/images/cloud/manage/openapi5.webp" size="md" alt="Página de administración de claves de API" border />
+    <div className="ch-image-md">
+
+    ![Página de administración de claves de API](/images/cloud/manage/openapi5.webp)
+
+    </div>
   </Step>
 </Steps>
 

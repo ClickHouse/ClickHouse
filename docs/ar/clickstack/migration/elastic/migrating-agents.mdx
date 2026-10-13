@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="migrating-agents-from-elastic">
   ## ترحيل الوكلاء من Elastic
 </div>
@@ -62,7 +60,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 نوضح كلتا هاتين المعماريتين أدناه.
 
-<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="ترحيل الوكلاء" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ترحيل الوكلاء](/images/use-cases/observability/clickstack-migrating-agents.webp)
+
+</Frame>
+
+</div>
 
 في المثال التالي، نقدّم الخطوات الأولية لتهيئة Vector لاستقبال أحداث السجلات من Filebeat عبر بروتوكول Lumberjack. كما نوفّر VRL لربط أحداث ECS الواردة بمواصفة OTel، قبل إرسالها إلى ClickStack جامع OpenTelemetry عبر OTLP. ويمكن للمستخدمين الذين يستهلكون الأحداث من Kafka استبدال مصدر Vector Logstash بـ [مصدر Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/) — مع بقاء جميع الخطوات الأخرى كما هي.
 
@@ -251,7 +257,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     يتم إنشاء `YOUR_INGESTION_API_KEY` بواسطة ClickStack. يمكنك العثور على المفتاح في واجهة ClickStack (HyperDX) ضمن `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح إدخال البيانات" size="lg" />
+    <div className="ch-image-lg">
+
+    ![مفاتيح إدخال البيانات](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     يظهر أدناه الإعداد الكامل النهائي:
 
@@ -339,11 +349,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     يمكن إجراء التهيئة المركزية عبر Kibana من خلال إضافة [Output إلى Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
 
-    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="إضافة مخرج Logstash" size="md" />
+    <div className="ch-image-md">
+
+    ![إضافة مخرج Logstash](/images/use-cases/observability/add-logstash-output.webp)
+
+    </div>
 
     يمكن بعد ذلك استخدام هذا الـ Output ضمن [سياسة وكيل](https://www.elastic.co/docs/reference/fleet/agent-policy). وهذا يعني تلقائيًا أن أي وكلاء يستخدمون هذه السياسة سيرسلون بياناتهم إلى Vector.
 
-    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="إعدادات الوكيل" size="md" />
+    <div className="ch-image-md">
+
+    ![إعدادات الوكيل](/images/use-cases/observability/agent-output-settings.webp)
+
+    </div>
 
     ونظرًا إلى أن هذا يتطلب تهيئة اتصال آمن عبر TLS، فنوصي بالرجوع إلى الدليل [&quot;تهيئة SSL/TLS لمخرج Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)، مع افتراض أن مثيل Vector لديك يؤدي دور Logstash.
 
@@ -398,7 +416,15 @@ exporters:
 
 يُنشئ ClickStack القيمة `YOUR_INGESTION_API_KEY` المستخدمة هنا. يمكنك العثور على المفتاح في ClickStack UI ضمن `Team Settings → API Keys`.
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح الاستيعاب" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مفاتيح الاستيعاب](/images/use-cases/observability/ingestion-keys.webp)
+
+</Frame>
+
+</div>
 
 إذا كان Vector مُهيأً لاستخدام mutual TLS، مع الشهادة والمفاتيح التي جرى إنشاؤها باتباع الخطوات الواردة في دليل [&quot;تكوين SSL/TLS لمخرج Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)، فسيلزم تهيئة الـ exporter ‏`otlp` وفقًا لذلك، على سبيل المثال.
 

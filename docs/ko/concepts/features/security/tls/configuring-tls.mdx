@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <SelfManaged />
 
 이 가이드는 OpenSSL 인증서를 사용해 연결을 검증하도록 ClickHouse를 구성하는 간단하고 최소한의 설정을 제공합니다. 이 데모에서는 적절한 설정으로 연결할 수 있도록 자체 서명된 인증 기관(CA) 인증서와 키를 생성하고, 노드 인증서도 함께 생성합니다.
@@ -461,7 +459,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     5. `https` 인터페이스를 통해 `https://chnode1.marsnet.local:8443/play`의 Play UI에 로그인하세요.
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="TLS 구성" size="md" border />
+       <div className="ch-image-md">
+
+       ![TLS 구성](/images/guides/sre/configuring-ssl_01.webp)
+
+       </div>
 
     <Note>
       브라우저는 워크스테이션에서 접속하고 있으며 인증서가 클라이언트 머신의 루트 CA 저장소에 없기 때문에 신뢰되지 않는 인증서로 표시합니다.

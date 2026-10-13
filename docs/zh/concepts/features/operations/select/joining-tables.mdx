@@ -6,15 +6,21 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse [完整支持 `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)，并提供多种 JOIN 算法可供选择。为获得最佳性能，我们建议遵循本指南中列出的 JOIN 优化建议。
 
 * 为了获得最佳性能，应尽量减少查询中的 `JOIN` 数量，尤其是在要求毫秒级响应的实时分析工作负载中。建议将单个查询中的 `JOIN` 数量控制在 3 到 4 个以内。我们在[数据建模部分](/zh/guides/clickhouse/data-modelling/schema-design)中详细介绍了多种减少 JOIN 的方法，包括反规范化、字典和 materialized views。
 * 从 ClickHouse 24.12 开始，查询规划器会自动调整双表 JOIN 的顺序，将较小的表放在右侧以获得最佳性能。到了 25.9 版本，这一能力进一步扩展到可优化包含三个或更多表的查询的 JOIN 顺序。
 * 如果你的查询需要 direct join，即 `LEFT ANY JOIN` (如下所示) ，我们建议在可能的情况下使用[字典](/zh/concepts/features/dictionaries/index)。
 
-<Image img="/images/guides/joins-1.webp" size="sm" alt="Left any join" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Left any join](/images/guides/joins-1.webp)
+
+</Frame>
+
+</div>
 
 * 如果执行的是 inner join，通常将其改写为使用 `IN` 子句的子查询会更高效。请看下面这些功能等价的查询。它们都会找出那些在问题中未提到 ClickHouse、但在 `comments` 中提到的 `posts` 数量。
 
@@ -140,7 +146,15 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="JOIN 的内存与速度关系" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![JOIN 的内存与速度关系](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -150,7 +164,15 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="JOIN 特性" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![JOIN 特性](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -166,7 +188,15 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="join flowchart" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![join flowchart](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -192,7 +222,15 @@ Grace hash join 是这三种不受内存限制的 JOIN 算法中最灵活的一�
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Join 内存优化决策树" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Join 内存优化决策树](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

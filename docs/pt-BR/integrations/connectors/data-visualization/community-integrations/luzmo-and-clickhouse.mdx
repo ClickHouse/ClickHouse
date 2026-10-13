@@ -11,8 +11,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -21,11 +19,19 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
   <Step title="Configure uma conexão com o ClickHouse" id="1-setup-a-clickhouse-connection">
     Para se conectar ao ClickHouse, acesse a **página Connections**, selecione **New Connection** e, em seguida, escolha o ClickHouse no modal **New Connection**.
 
-    <Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Interface do Luzmo mostrando a caixa de diálogo Create a New Connection com o ClickHouse selecionado" border />
+    <div className="ch-image-md">
+
+    ![Interface do Luzmo mostrando a caixa de diálogo Create a New Connection com o ClickHouse selecionado](/images/integrations/data-visualization/luzmo_01.webp)
+
+    </div>
 
     Será solicitado que você informe um **host**, **nome de usuário** e **senha**:
 
-    <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Formulário de configuração de conexão do Luzmo mostrando campos para host, nome de usuário e senha do ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![Formulário de configuração de conexão do Luzmo mostrando campos para host, nome de usuário e senha do ClickHouse](/images/integrations/data-visualization/luzmo_02.webp)
+
+    </div>
 
     * **Host**: este é o host em que seu banco de dados ClickHouse está exposto. Observe que apenas `https` é aceito aqui para transferir dados com segurança pelo wire. A estrutura esperada da URL do host é: `https://url-to-clickhouse-db:port/database`
       Por padrão, o plugin se conectará ao banco de dados &#39;default&#39; e à porta 443. Ao informar um banco de dados após a &#39;/&#39;, você pode configurar a qual banco de dados se conectar.
@@ -42,7 +48,11 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 
     Agora você pode usar seus datasets para criar dashboards bonitos (embutidos) ou até mesmo viabilizar um analista de dados com IA ([Luzmo IQ](https://luzmo.com/iq)) capaz de responder às perguntas dos seus clientes.
 
-    <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Exemplo de dashboard do Luzmo mostrando várias visualizações de dados do ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![Exemplo de dashboard do Luzmo mostrando várias visualizações de dados do ClickHouse](/images/integrations/data-visualization/luzmo_03.webp)
+
+    </div>
   </Step>
 </Steps>
 

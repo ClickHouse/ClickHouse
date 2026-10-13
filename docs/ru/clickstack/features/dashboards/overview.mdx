@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'панели мониторинга', 'визуализация', 'мониторинг', 'обсервабилити']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import Tagging from '/snippets/ru/_clickstack_tagging.mdx';
 
 ClickStack поддерживает визуализацию событий со встроенной возможностью построения диаграмм в интерфейсе ClickStack (HyperDX). Эти диаграммы можно добавлять на панели мониторинга, чтобы открывать к ним общий доступ для других пользователей.
@@ -37,7 +35,11 @@ ClickStack поддерживает визуализацию событий со
   <Step title="Перейдите в Chart Explorer" id="navigate-chart-explorer">
     Выберите `Chart Explorer` в левом меню.
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Chart Explorer](/images/use-cases/observability/clickstack-visualization-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте визуализацию" id="create-visualization">
@@ -51,17 +53,29 @@ ClickStack поддерживает визуализацию событий со
     * Group By: `ServiceName`
     * Alias: `Average Time`
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="Простая визуализация" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Простая визуализация](/images/use-cases/observability/clickstack-visualization-2.webp)
+
+    </div>
 
     Обратите внимание: события можно фильтровать либо с помощью SQL-условия `WHERE`, либо с помощью синтаксиса Lucene, а также задавать временной диапазон, за который они должны отображаться. Также поддерживается несколько серий.
 
     Например, можно отфильтровать данные по сервису `frontend`, добавив фильтр `ServiceName:"frontend"`. Нажмите `Add Series`, чтобы добавить вторую серию для количества событий по времени с псевдонимом `Count`.
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Простая визуализация 2" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Простая визуализация 2](/images/use-cases/observability/clickstack-visualization-3.webp)
+
+    </div>
 
     Чтобы создать серию, похожую на уже существующую, её можно дублировать вместо того, чтобы начинать с нуля. Нажмите значок копирования (`Duplicate series`) в строке серии, чтобы вставить копию прямо под ней. Копия сохраняет настройки исходной серии, такие как метрика, столбец и фильтр. Затем нужно изменить только те поля, которые отличаются (например, агрегацию), и задать копии собственный псевдоним. Дублирование доступно везде, где поддерживается несколько серий. Оно скрыто для типов визуализации, в которых допускается только одна серия, например `Number`, `Pie` и `Heatmap`.
 
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="Значок копирования Duplicate series и его всплывающая подсказка в строке серии диаграммы" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Значок копирования Duplicate series и его всплывающая подсказка в строке серии диаграммы](/images/use-cases/observability/clickstack-duplicate-series.webp)
+
+    </div>
 
     <Note>
       Визуализации можно создавать из любого источника данных — метрик, трассировок или журналов. ClickStack обрабатывает всё это как события в широком формате. Любой **числовой столбец** можно отображать на диаграмме во времени, а **строковые**, **числовые** столбцы и столбцы с **датами** можно использовать для группировки.
@@ -85,7 +99,11 @@ ClickStack поддерживает визуализацию событий со
   <Step title="Перейдите в раздел Dashboards" id="navigate-dashboards">
     Выберите `Dashboards` в левом меню. Затем нажмите `New Dashboard`, чтобы создать временную или сохранённую панель мониторинга.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="Создание панели мониторинга" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Создание панели мониторинга](/images/use-cases/observability/hyperdx-dashboard-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте визуализацию — среднее время запроса по сервисам" id="create-a-tile">
@@ -102,11 +120,19 @@ ClickStack поддерживает визуализацию событий со
 
     Нажмите кнопку **play** перед тем, как нажать `Save`.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="Создание визуализации на панели мониторинга" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Создание визуализации на панели мониторинга](/images/use-cases/observability/hyperdx-dashboard-2.webp)
+
+    </div>
 
     Измените размер визуализации так, чтобы она занимала всю ширину панели мониторинга.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="Панель мониторинга с визуализациями" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Панель мониторинга с визуализациями](/images/use-cases/observability/hyperdx-dashboard-3.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте визуализацию — события по времени по сервисам" id="create-a-tile-2">
@@ -122,11 +148,19 @@ ClickStack поддерживает визуализацию событий со
 
     Нажмите кнопку **play** перед тем, как нажать `Save`.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="Визуализация панели мониторинга 2" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Визуализация панели мониторинга 2](/images/use-cases/observability/hyperdx-dashboard-4.webp)
+
+    </div>
 
     Измените размер визуализации так, чтобы она занимала всю ширину панели мониторинга.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="Панель мониторинга с визуализациями 2" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Панель мониторинга с визуализациями 2](/images/use-cases/observability/hyperdx-dashboard-5.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте плитку тепловой карты для длительности span" id="create-a-tile-heatmap">
@@ -152,11 +186,19 @@ ClickStack поддерживает визуализацию событий со
 
     Нажмите `Run`, чтобы предварительно просмотреть график, затем — `Save`.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="Редактор плитки тепловой карты с заранее заполненными значениями длительности span, фильтром ServiceName payment и кнопкой Display Settings" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Редактор плитки тепловой карты с заранее заполненными значениями длительности span, фильтром ServiceName payment и кнопкой Display Settings](/images/clickstack/dashboards/heatmap-tile-editor.webp)
+
+    </div>
 
     Сохранённая плитка отображается на панели мониторинга как тепловая карта. Наведите указатель на любую ячейку, чтобы увидеть границы бакета и количество событий.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="Плитка тепловой карты на панели мониторинга, показывающая распределение длительности span сервиса payment за 24 часа" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Плитка тепловой карты на панели мониторинга, показывающая распределение длительности span сервиса payment за 24 часа](/images/clickstack/dashboards/heatmap-tile-rendered.webp)
+
+    </div>
 
     <Tip>
       **Два запроса ClickHouse для каждой тепловой карты**
@@ -168,7 +210,11 @@ ClickStack поддерживает визуализацию событий со
 
     Нажмите любую ячейку на готовой плитке тепловой карты, чтобы открыть действие **View in Event Deltas**.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="Щелчок по ячейке тепловой карты открывает действие View in Event Deltas" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Щелчок по ячейке тепловой карты открывает действие View in Event Deltas](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
+
+    </div>
 
     При выборе этого действия открывается представление [Event Deltas](/ru/clickstack/features/event-deltas), куда переносятся источник данных плитки, условие `Where` и временной диапазон. Там вы сможете интерактивно исследовать то же распределение, разбить его по attribute, чтобы понять, чем медленные spans отличаются от быстрых, и изучить отдельные spans, стоящие за любой ячейкой, не пересобирая запрос вручную.
   </Step>
@@ -176,13 +222,21 @@ ClickStack поддерживает визуализацию событий со
   <Step title="Фильтрация на панели мониторинга" id="filter-dashboards">
     Фильтры Lucene или SQL, а также временной диапазон, можно задавать на уровне панели мониторинга — они автоматически применяются ко всем визуализациям.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="Панель мониторинга с фильтрацией" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Панель мониторинга с фильтрацией](/images/use-cases/observability/hyperdx-dashboard-filter.webp)
+
+    </div>
 
     Для примера примените к панели мониторинга фильтр Lucene `ServiceName:"frontend"` и установите временной диапазон Последние 3 часа. Обратите внимание: теперь визуализации показывают данные только сервиса `frontend`.
 
     Панель мониторинга сохраняется автоматически. Чтобы задать ей имя, выберите заголовок, измените его и нажмите `Save Name`.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="Сохранение панели мониторинга" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Сохранение панели мониторинга](/images/use-cases/observability/hyperdx-dashboard-save.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -192,7 +246,15 @@ ClickStack поддерживает визуализацию событий со
 
 Чтобы удалить, изменить или дублировать визуализацию, наведите на неё курсор и используйте соответствующие кнопки действий.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="Редактирование панели мониторинга" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Редактирование панели мониторинга](/images/use-cases/observability/hyperdx-dashboard-edit.webp)
+
+</Frame>
+
+</div>
 
 <div id="tile-display-settings">
   ### Настройки отображения плитки
@@ -245,7 +307,15 @@ ClickStack поддерживает визуализацию событий со
 
 Выбрав плитку Number, откройте **Display Settings** и установите для **Background chart** значение **Line** или **Area** (или **None**, чтобы отключить его). Спарклайн строится на основе версии запроса плитки, разбитой по временным бакетам, поэтому дополнительная настройка не требуется. По умолчанию он наследует цвет плитки; задайте **Background color**, чтобы переопределить его и выбрать конкретный цвет из палитры.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Выдвижная панель Display Settings для плитки Number, где для параметра Background chart установлено значение Area" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выдвижная панель Display Settings для плитки Number, где для параметра Background chart установлено значение Area](/images/clickstack/dashboards/number-tile-background-chart.webp)
+
+</Frame>
+
+</div>
 
 Фоновые графики доступны для плиток Number, созданных в конструкторе запросов. Плитки Number с Raw SQL возвращают одно значение без временной размерности для разбиения по бакетам, поэтому этот параметр для них отображается, но остаётся недоступным.
 
@@ -253,7 +323,15 @@ ClickStack поддерживает визуализацию событий со
 
 Выбрав плитку-таблицу, откройте **Display Settings** и включите **Alternate Row Background**. Чередование фона — это исключительно визуальный эффект, поэтому оно работает как для плиток-таблиц из конструктора запросов, так и для плиток-таблиц с raw SQL.
 
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Выдвижная панель Display Settings для плитки-таблицы с включённым параметром Alternate Row Background" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выдвижная панель Display Settings для плитки-таблицы с включённым параметром Alternate Row Background](/images/clickstack/dashboards/table-tile-display-settings.webp)
+
+</Frame>
+
+</div>
 
 Плитки-таблицы также сохраняют разделитель между строкой заголовка и данными при прокрутке, чтобы заголовки столбцов оставались визуально отделёнными.
 
@@ -305,7 +383,15 @@ ClickStack поддерживает визуализацию событий со
 
 Панели мониторинга можно добавлять в избранное, чтобы быстро открывать их с боковой панели и из верхней части страницы со списком. Избранное у каждого пользователя свое.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="Поиск по панелям мониторинга" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Поиск по панелям мониторинга](/images/use-cases/observability/hyperdx-dashboard-search.webp)
+
+</Frame>
+
+</div>
 
 <div id="tagging">
   ## Панели мониторинга — теги
@@ -319,7 +405,15 @@ ClickStack поддерживает визуализацию событий со
 
 Помимо [текстовых фильтров](#filter-dashboards), доступных на всех панелях мониторинга, сохраненные панели мониторинга поддерживают пользовательские выпадающие фильтры, значения для которых загружаются из данных, запрошенных в ClickHouse. Это удобные, повторно используемые элементы управления фильтрацией, которые позволяют пользователям фильтровать данные без ручного ввода выражений.
 
-<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Выпадающий фильтр сервисов, показывающий доступные имена сервисов" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выпадающий фильтр сервисов, показывающий доступные имена сервисов](/images/clickstack/dashboards/filter-dropdown.webp)
+
+</Frame>
+
+</div>
 
 Каждый фильтр позволяет пользователю выбрать одно или несколько значений и выполняет с ними одно или оба следующих действия:
 
@@ -334,7 +428,11 @@ ClickStack поддерживает визуализацию событий со
   <Step title="Откройте диалоговое окно Edit Filters" id="open-edit-filters">
     Откройте сохраненную панель мониторинга и выберите **Edit Filters and Variables** на панели инструментов.
 
-    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Кнопка Edit Filters на панели инструментов панели мониторинга" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Кнопка Edit Filters на панели инструментов панели мониторинга](/images/clickstack/dashboards/edit-filters.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте новый фильтр" id="add-new-filter">
@@ -342,25 +440,41 @@ ClickStack поддерживает визуализацию событий со
 
     Например, чтобы добавить фильтр по сервису для данных трассировки, используйте `ServiceName` в качестве выражения фильтра и источник данных `Traces`. Поле &quot;Dropdown values filter&quot; необязательно и позволяет ограничить набор значений, отображаемых в выпадающем списке.
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Диалоговое окно добавления фильтра с полями Display Name, Data source и Filter expression" size="md" />
+    <div className="ch-image-md">
+
+    ![Диалоговое окно добавления фильтра с полями Display Name, Data source и Filter expression](/images/clickstack/dashboards/add-filter.webp)
+
+    </div>
 
     В том же диалоговом окне также настраивается, [транслирует](#broadcast-filters) ли фильтр свое значение и [доступно ли оно как переменная](#dashboard-variables); оба варианта описаны ниже.
 
     Модальное окно Filters показывает все настроенные фильтры для панели мониторинга. Здесь можно изменять или удалять существующие фильтры, а также добавлять новые.
 
-    <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="Модальное окно Filters с настроенным фильтром Services" size="md" />
+    <div className="ch-image-md">
+
+    ![Модальное окно Filters с настроенным фильтром Services](/images/clickstack/dashboards/saved-filters.webp)
+
+    </div>
   </Step>
 
   <Step title="Используйте фильтр" id="use-filter">
     Закройте модальное окно Filters. Новый выпадающий фильтр появится под строкой поиска. Нажмите на него, чтобы увидеть доступные значения, затем выберите одно из них, чтобы отфильтровать все визуализации на панели мониторинга.
 
-    <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="Панель мониторинга, отфильтрованная по сервису frontend" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Панель мониторинга, отфильтрованная по сервису frontend](/images/clickstack/dashboards/filtered-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="(Необязательно) Сохраните значения фильтра по умолчанию" id="save-default-filters">
     Чтобы сохранить выбранное значение фильтра как значение по умолчанию для панели мониторинга, выберите **Save Query &amp; Filters as Default** в меню панели мониторинга. После этого панель мониторинга всегда будет открываться с примененными выбранными фильтрами. Чтобы сбросить настройки, выберите **Remove Default Query &amp; Filters** в том же меню.
 
-    <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="Меню панели мониторинга с параметром Save Query and Filters as Default" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Меню панели мониторинга с параметром Save Query and Filters as Default](/images/clickstack/dashboards/save-filter-values.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -456,7 +570,15 @@ ORDER BY ts ASC
 * **Показать все события** — выполняет переход на страницу Search, где отображаются все события за выбранный период времени.
 * **Фильтровать по группе** — выполняет переход на страницу Search с фильтром по определённой серии.
 
-<Image img="/images/clickstack/dashboards/drilldown.webp" alt="Контекстное меню перехода с вариантами «Показать все события» и «Фильтровать по группе»" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Контекстное меню перехода с вариантами «Показать все события» и «Фильтровать по группе»](/images/clickstack/dashboards/drilldown.webp)
+
+</Frame>
+
+</div>
 
 Это удобно для исследования конкретных всплесков или аномалий, замеченных на панели мониторинга: вы можете быстро перейти от агрегированного представления к отдельным исходным событиям.
 
@@ -472,7 +594,15 @@ HyperDX поставляется с готовыми панелями монит
 
 На этой панели мониторинга представлены визуализации для мониторинга ClickHouse. Чтобы перейти к ней, выберите её в левом меню.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="Панель мониторинга ClickHouse" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Панель мониторинга ClickHouse](/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp)
+
+</Frame>
+
+</div>
 
 На этой панели мониторинга используются вкладки, которые разделяют мониторинг **запросов на чтение**, **вставок** и **инфраструктуры ClickHouse**.
 
@@ -500,7 +630,15 @@ HyperDX поставляется с готовыми панелями монит
 
 Визуализации можно фильтровать с помощью синтаксиса Lucene или SQL, а временной интервал — настраивать для более точного анализа.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="Сервисы ClickHouse" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Сервисы ClickHouse](/images/use-cases/observability/hyperdx-dashboard-services.webp)
+
+</Frame>
+
+</div>
 
 <div id="kubernetes-dashboard">
   ### Панель мониторинга Kubernetes
@@ -510,4 +648,12 @@ HyperDX поставляется с готовыми панелями монит
 
 Данные Kubernetes для удобства навигации распределены по трем вкладкам: Поды, Узлы и Пространства имен.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</Frame>
+
+</div>

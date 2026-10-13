@@ -13,7 +13,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
@@ -27,7 +26,15 @@ import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseS
 
 Neste guia, você vai criar um dashboard no Superset com dados de um banco de dados do ClickHouse. O dashboard ficará assim:
 
-<Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="Dashboard do Superset mostrando preços de imóveis do Reino Unido com várias visualizações, incluindo gráficos de pizza e tabelas" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dashboard do Superset mostrando preços de imóveis do Reino Unido com várias visualizações, incluindo gráficos de pizza e tabelas](/images/integrations/data-visualization/superset_12.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -61,13 +68,21 @@ Neste guia, você vai criar um dashboard no Superset com dados de um banco de da
   <Step title="Conectar o Superset ao ClickHouse" id="3-connect-superset-to-clickhouse">
     1. No Superset, selecione **Data** no menu superior e depois **Databases** no menu suspenso. Adicione um novo banco de dados clicando no botão **+ Database**:
 
-    <Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="Interface do Superset mostrando o menu Database com o botão + Database destacado" border />
+    <div className="ch-image-lg">
+
+    ![Interface do Superset mostrando o menu Database com o botão + Database destacado](/images/integrations/data-visualization/superset_01.webp)
+
+    </div>
 
     <br />
 
     2. No primeiro passo, selecione **ClickHouse Connect** como o tipo de banco de dados:
 
-    <Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="Assistente de conexão de banco de dados do Superset mostrando a opção ClickHouse Connect selecionada" border />
+    <div className="ch-image-sm">
+
+    ![Assistente de conexão de banco de dados do Superset mostrando a opção ClickHouse Connect selecionada](/images/integrations/data-visualization/superset_02.webp)
+
+    </div>
 
     <br />
 
@@ -77,7 +92,11 @@ Neste guia, você vai criar um dashboard no Superset com dados de um banco de da
     * Insira as informações de conexão que você coletou anteriormente
     * Especifique o **DISPLAY NAME**: pode ser qualquer nome de sua preferência. Se você for se conectar a vários bancos de dados do ClickHouse, escolha um nome mais descritivo.
 
-    <Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="Formulário de configuração de conexão do Superset mostrando os parâmetros de conexão do ClickHouse" border />
+    <div className="ch-image-sm">
+
+    ![Formulário de configuração de conexão do Superset mostrando os parâmetros de conexão do ClickHouse](/images/integrations/data-visualization/superset_03.webp)
+
+    </div>
 
     <br />
 
@@ -89,7 +108,11 @@ Neste guia, você vai criar um dashboard no Superset com dados de um banco de da
 
     2. Clique no botão para adicionar um conjunto de dados. Selecione seu novo banco de dados como fonte de dados, e você verá as tabelas definidas nele:
 
-    <Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="Caixa de diálogo de criação de conjunto de dados do Superset mostrando as tabelas disponíveis do banco de dados ClickHouse" border />
+    <div className="ch-image-sm">
+
+    ![Caixa de diálogo de criação de conjunto de dados do Superset mostrando as tabelas disponíveis do banco de dados ClickHouse](/images/integrations/data-visualization/superset_04.webp)
+
+    </div>
 
     <br />
 
@@ -101,39 +124,67 @@ Neste guia, você vai criar um dashboard no Superset com dados de um banco de da
 
     1. Você começa com um dashboard. No menu superior do Superset, selecione **Dashboards**. Clique no botão no canto superior direito para adicionar um novo dashboard. O dashboard a seguir se chama **UK property prices**:
 
-    <Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="Dashboard vazio do Superset chamado UK property prices, pronto para receber gráficos" border />
+    <div className="ch-image-md">
+
+    ![Dashboard vazio do Superset chamado UK property prices, pronto para receber gráficos](/images/integrations/data-visualization/superset_05.webp)
+
+    </div>
 
     <br />
 
     2. Para criar um novo gráfico, selecione **Charts** no menu superior e clique no botão para adicionar um novo gráfico. Você verá várias opções. O exemplo a seguir mostra um gráfico **Pie Chart** usando o conjunto de dados **uk&#95;price&#95;paid** no menu suspenso **CHOOSE A DATASET**:
 
-    <Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="Interface de criação de gráfico do Superset com o tipo de visualização Pie Chart selecionado" border />
+    <div className="ch-image-md">
+
+    ![Interface de criação de gráfico do Superset com o tipo de visualização Pie Chart selecionado](/images/integrations/data-visualization/superset_06.webp)
+
+    </div>
 
     <br />
 
     3. Os gráficos de pizza do Superset precisam de uma **Dimension** e uma **Metric**; o restante das configurações é opcional. Você pode escolher seus próprios campos para a dimensão e a métrica; este exemplo usa o campo `district` do ClickHouse como dimensão e `AVG(price)` como métrica.
 
-    <Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="Configuração de dimensão mostrando o campo district selecionado para o gráfico de pizza" border />
+    <div className="ch-image-md">
 
-    <Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="Configuração de métrica mostrando a função de agregação AVG(price) para o gráfico de pizza" border />
+    ![Configuração de dimensão mostrando o campo district selecionado para o gráfico de pizza](/images/integrations/data-visualization/superset_08.webp)
+
+    </div>
+
+    <div className="ch-image-md">
+
+    ![Configuração de métrica mostrando a função de agregação AVG(price) para o gráfico de pizza](/images/integrations/data-visualization/superset_09.webp)
+
+    </div>
 
     <br />
 
     5. Se você prefere gráficos de rosca a gráficos de pizza, pode definir isso e outras opções em **CUSTOMIZE**:
 
-    <Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="Painel de personalização mostrando a opção de gráfico de rosca e outras configurações do gráfico de pizza" border />
+    <div className="ch-image-sm">
+
+    ![Painel de personalização mostrando a opção de gráfico de rosca e outras configurações do gráfico de pizza](/images/integrations/data-visualization/superset_10.webp)
+
+    </div>
 
     <br />
 
     6. Clique no botão **SAVE** para salvar o gráfico, depois selecione **UK property prices** no menu suspenso **ADD TO DASHBOARD**; em seguida, **SAVE &amp; GO TO DASHBOARD** salva o gráfico e o adiciona ao dashboard:
 
-    <Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="Caixa de diálogo para salvar gráfico com menu suspenso de seleção de dashboard e botão Save & Go to Dashboard" border />
+    <div className="ch-image-md">
+
+    ![Caixa de diálogo para salvar gráfico com menu suspenso de seleção de dashboard e botão Save & Go to Dashboard](/images/integrations/data-visualization/superset_11.webp)
+
+    </div>
 
     <br />
 
     7. É isso. Criar dashboards no Superset com base em dados no ClickHouse abre todo um mundo de análises de dados extremamente rápidas!
 
-    <Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="Dashboard completo do Superset com várias visualizações de dados de preços de imóveis do Reino Unido no ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![Dashboard completo do Superset com várias visualizações de dados de preços de imóveis do Reino Unido no ClickHouse](/images/integrations/data-visualization/superset_12.webp)
+
+    </div>
 
     <br />
   </Step>

@@ -7,9 +7,9 @@ doc_type: 'guide'
 keywords: ['オブザーバビリティ', '監視', 'クラウド', 'メトリクス', 'システムヘルス']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import ObservabilityIntegrations from '/snippets/ja/_observability_integration_options.mdx';
 import DirectIntegrations from '/snippets/ja/_direct_observability_integration_options.mdx';
+
 import CommunityMonitoring from '/snippets/ja/_community_monitoring.mdx';
 
 このガイドでは、ClickHouse Cloud を評価中のエンタープライズチーム向けに、本番環境へのデプロイにおける監視およびオブザーバビリティ機能に関する包括的な情報を提供します。Enterprise のお客様からは、標準で利用できる監視機能、Datadog や AWS CloudWatch などのツールを含む既存のオブザーバビリティスタックとのインテグレーション、さらに ClickHouse Cloud の監視がセルフホストのデプロイと比べてどう異なるのかについて、よく質問が寄せられます。
@@ -26,13 +26,29 @@ ClickHouse Cloud は、監視セクションからアクセスできる組み込
   これらのメトリクスにアクセスしても、基盤となるサービスに対してクエリは発行されず、アイドル状態のサービスが起動することもありません。
 </Note>
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="高度なダッシュボード" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![高度なダッシュボード](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 これらの可視化をさらに拡張したいユーザーは、ClickHouse Cloud の dashboards 機能を使用して、システムテーブルに直接クエリできます。
 
 * **ネイティブの高度なダッシュボード**: 監視セクション内の「You can still access the native advanced dashboard」からアクセスできる、別のダッシュボードインターフェイスです。これは認証付きで別タブに開き、システムとサービスのヘルスを監視するための代替 UI を提供します。このダッシュボードでは基盤となる SQL クエリを変更できるため、より高度な分析が可能です。
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="高度なダッシュボード" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![高度なダッシュボード](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 どちらのダッシュボードも、外部依存なしでサービスのヘルスとパフォーマンスを即座に可視化できる点で、ClickStack のような外部のデバッグ重視ツールとは異なります。
 

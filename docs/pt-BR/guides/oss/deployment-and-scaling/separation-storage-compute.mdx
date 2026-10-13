@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['armazenamento', 'computação', 'arquitetura', 'escalabilidade', 'nuvem']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="overview">
   ## Visão geral
 </div>
@@ -156,7 +154,11 @@ Observe que implementar e gerenciar uma arquitetura com separação entre armaze
 
     Se tudo funcionou como esperado, agora você está usando o ClickHouse com storage e compute separados!
 
-    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="Exemplo de bucket do S3 usando separação de compute e storage" border />
+    <div className="ch-image-md">
+
+    ![Exemplo de bucket do S3 usando separação de compute e storage](/images/guides/s3_bucket_example.webp)
+
+    </div>
   </Step>
 
   <Step title="Implementação de replicação para tolerância a falhas (opcional)" id="3-implementing-replication-for-fault-tolerance-optional">

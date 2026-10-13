@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
@@ -26,7 +25,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 メッセージコンポーザーの左下にあるクリップアイコンをクリックし、**Upload to Provider** を選んでイメージを添付します。スクリーンショット、写真、チャート、図表などを追加できます。続いて、そのイメージを読み取る必要がある質問をします。たとえば、*&quot;このクエリプランの何が問題ですか？&quot;*、*&quot;このスクリーンショット内のテキストを書き起こしてください&quot;*、*&quot;このダッシュボードを先週のものと比較してください&quot;* といった質問です。
 
-<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="Upload to Provider、Upload as Text、Upload to Code Environment の各オプションが表示された、クリップメニューを開いた状態のメッセージコンポーザー" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Upload to Provider、Upload as Text、Upload to Code Environment の各オプションが表示された、クリップメニューを開いた状態のメッセージコンポーザー](/images/cloud/agent-builder/vision/vision.webp)
+
+</Frame>
+
+</div>
 
 エージェントはイメージをメッセージコンテキストの一部として扱うため、同じターン内の追加の質問では、再アップロードしなくても見た内容を参照できます。
 

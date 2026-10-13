@@ -6,21 +6,35 @@ description: 'A dictionary provides a key-value representation of data for fast 
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 A dictionary in ClickHouse provides an in-memory [key-value](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) representation of data from various [internal and external sources](/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimizing for super-low latency lookup queries.
 
 Dictionaries are useful for:
 - Improving the performance of queries, especially when used with `JOIN`s
 - Enriching ingested data on the fly without slowing down the ingestion process
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Use cases for Dictionary in ClickHouse"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Use cases for Dictionary in ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+
+</Frame>
+
+</div>
 
 ## Speeding up joins using a Dictionary {#speeding-up-joins-using-a-dictionary}
 
 Dictionaries can be used to speed up a specific type of `JOIN`: the [`LEFT ANY` type](/reference/statements/select/join#supported-types-of-join) where the join key needs to match the key attribute of the underlying key-value storage.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="Using Dictionary with LEFT ANY JOIN"/>
+<div className="ch-image-sm">
+
+<Frame>
+
+![Using Dictionary with LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</Frame>
+
+</div>
 
 If this is the case, ClickHouse can exploit the dictionary to perform a [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). This is ClickHouse's fastest join algorithm and is applicable when the underlying [table engine](/reference/engines/table-engines/index) for the right-hand side table supports low-latency key-value requests. ClickHouse has three table engines providing this: [Join](/reference/engines/table-engines/special/join) (that is basically a pre-calculated hash table), [EmbeddedRocksDB](/reference/engines/table-engines/integrations/embedded-rocksdb) and [Dictionary](/reference/engines/table-engines/special/dictionary). We will describe the dictionary-based approach, but the mechanics are the same for all three engines.
 

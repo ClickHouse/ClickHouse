@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['audit log']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Console activities are recorded in the audit log. Users with access can review the log and integrate it with their logging systems. Access to the audit log is controlled by the **View audit logs** permission (`control-plane:organization:view-activities`):
 
 - Users with the Admin organization role have access by default.
@@ -24,7 +22,15 @@ For a description of all permissions, see [Console roles and permissions](/produ
 
 In ClickHouse Cloud, navigate to your organization details. 
 
-<Image img="/images/cloud/security/activity_log1.webp" size="md" alt="ClickHouse Cloud activity tab" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud activity tab](/images/cloud/security/activity_log1.webp)
+
+</Frame>
+
+</div>
 
 <br/>
 </Step>
@@ -39,7 +45,15 @@ The **Activity** page displays a table containing a list of events logged about 
 - **IP Address:** When applicable, this flied lists the IP Address of the user that initiated the event
 - **Time:** The timestamp of the event
 
-<Image img="/images/cloud/security/activity_log2.webp" size="md" alt="ClickHouse Cloud Activity Table" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud Activity Table](/images/cloud/security/activity_log2.webp)
+
+</Frame>
+
+</div>
 
 <br/>
 </Step>
@@ -50,7 +64,11 @@ You can use the search bar provided to isolate events based on some criteria lik
 </Steps>
 
 <div class="eighty-percent">
-    <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="ClickHouse Cloud Activity CSV export" border />
+    <div className="ch-image-lg">
+
+    ![ClickHouse Cloud Activity CSV export](/images/cloud/security/activity_log3.webp)
+
+    </div>
 </div>
 
 ## Access the console audit log via the API {#console-audit-log-api}

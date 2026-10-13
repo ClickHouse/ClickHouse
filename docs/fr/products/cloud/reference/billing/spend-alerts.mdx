@@ -7,8 +7,6 @@ keywords: ['facturation', 'alertes de dépenses', "seuils d'utilisation", 'notif
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Les alertes de dépenses vous avertissent lorsque la consommation de votre organisation atteint les seuils configurés au cours d’une période de facturation, afin d’éviter des frais imprévus. Elles envoient uniquement des notifications ; pour les seuils qui déclenchent une facturation automatique, consultez [Seuils de paiement](/fr/products/cloud/reference/billing/payment-thresholds).
 
 <div id="prerequisites">
@@ -39,7 +37,11 @@ Les alertes de dépenses vous avertissent lorsque la consommation de votre organ
     1. Accédez à **Organization &gt; Billing** dans la console ClickHouse Cloud.
     2. Cliquez sur **Actions &gt; Add spend alerts**.
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Page Billing avec le menu Actions ouvert et Add spend alerts mis en évidence" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Page Billing avec le menu Actions ouvert et Add spend alerts mis en évidence](/images/cloud/reference/billing/spend-alerts-actions.webp)
+
+    </div>
   </Step>
 
   <Step title="Configurer et enregistrer l’alerte" id="configure-and-save">
@@ -47,7 +49,11 @@ Les alertes de dépenses vous avertissent lorsque la consommation de votre organ
     2. Sélectionnez vos canaux de notification : **E-mail**, **UI** et/ou **Slack**.
     3. Cliquez sur **Save**.
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="Boîte de dialogue des alertes de dépenses de l’organisation avec limite de dépenses, alertes de seuil automatiques et canaux de notification" size="md" />
+    <div className="ch-image-md">
+
+    ![Boîte de dialogue des alertes de dépenses de l’organisation avec limite de dépenses, alertes de seuil automatiques et canaux de notification](/images/cloud/reference/billing/spend-alerts-config.png)
+
+    </div>
   </Step>
 </Steps>
 

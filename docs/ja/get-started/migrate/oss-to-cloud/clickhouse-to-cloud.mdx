@@ -7,12 +7,19 @@ doc_type: 'guide'
 keywords: ['移行', 'ClickHouse Cloud', 'OSS', 'セルフマネージドから Cloud へ移行']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import AddARemoteSystem from '/snippets/ja/_add_remote_ip_access_list_detail.mdx';
 
 import CompatibilityNote from '/snippets/ja/compatibility.mdx';
 
-<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/self-managed-01.webp)
+
+</Frame>
+
+</div>
 
 このガイドでは、セルフマネージド ClickHouse サーバーから ClickHouse Cloud へ移行する方法と、ClickHouse Cloud サービス間で移行する方法を説明します。
 [`remoteSecure`](/ja/reference/functions/table-functions/remote) 関数は `SELECT` および `INSERT` クエリで使用され、リモートの ClickHouse サーバーにアクセスできるようにします。これにより、`SELECT` を埋め込んだ `INSERT INTO` クエリを書くだけで、テーブルを簡単に移行できます。
@@ -21,7 +28,15 @@ import CompatibilityNote from '/snippets/ja/compatibility.mdx';
   ## セルフマネージド ClickHouse から ClickHouse Cloud への移行
 </div>
 
-<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/self-managed-02.webp)
+
+</Frame>
+
+</div>
 
 ソーステーブルが分片化されているか、レプリケーションされているかにかかわらず、ClickHouse Cloud では宛先テーブルを作成するだけで済みます (このテーブルでは Engine パラメータを省略でき、テーブルエンジンには `SharedMergeTree` が自動的に選択されます) 。
 また、ClickHouse Cloud が垂直・水平両方のスケーリングを自動的に処理します。
@@ -95,7 +110,15 @@ CREATE TABLE db.table ...
 
 * `remoteSecure` 関数を使用して、セルフマネージドの移行元からデータをプルします
 
-<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/self-managed-03.webp)
+
+</Frame>
+
+</div>
 
 ```sql
 INSERT INTO db.table SELECT * FROM
@@ -108,7 +131,15 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 
 * `remoteSecure` 関数を使用して、データを ClickHouse Cloud サービスにプッシュします
 
-<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/self-managed-04.webp)
+
+</Frame>
+
+</div>
 
 <Tip>
   **リモートシステムを ClickHouse Cloud サービスの IP Access List に追加します**
@@ -128,7 +159,15 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ## ClickHouse Cloud サービス間の移行
 </div>
 
-<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/self-managed-05.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse Cloud サービス間でデータを移行するユースケースの例をいくつか示します。
 
@@ -137,7 +176,15 @@ ClickHouse Cloud サービス間でデータを移行するユースケースの
 
 この例では 2 つの ClickHouse Cloud サービスがあり、それぞれを *ソース* と *宛先* と呼びます。データはソースから宛先へ Pull されます。必要に応じて Push することもできますが、ここでは読み取り専用ユーザーを使用するため、Pull の方法を示します。
 
-<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/self-managed-06.webp)
+
+</Frame>
+
+</div>
 
 この移行は、いくつかの手順で進めます。
 

@@ -6,8 +6,6 @@ title: 'Crie seu primeiro ClickPipe do Azure Blob Storage'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 **Pré-requisitos**
 
 Para seguir este guia, você precisará de:
@@ -22,15 +20,27 @@ Para seguir este guia, você precisará de:
     Na página inicial do seu serviço, clique em **Fontes de dados** no menu à esquerda.
     Expanda a lista suspensa **ClickPipes** e clique em **Criar ClickPipe**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="Navegar até Fontes de Dados" size="md" />
+    <div className="ch-image-md">
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="Criar ClickPipe" size="md" />
+    ![Navegar até Fontes de Dados](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
+
+    </div>
+
+    <div className="ch-image-md">
+
+    ![Criar ClickPipe](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
+
+    </div>
   </Step>
 
   <Step title="Selecione a fonte de dados" id="select-data-source">
     Selecione **Azure Blob Storage** como tipo de dado
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="Selecionar Azure Blob Storage" size="md" />
+    <div className="ch-image-md">
+
+    ![Selecionar Azure Blob Storage](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
+
+    </div>
   </Step>
 
   <Step title="Configure sua conexão do ClickPipe" id="setup-connection">
@@ -44,7 +54,11 @@ Para seguir este guia, você precisará de:
 
     Por fim, clique em **Incoming data**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="Detalhes da Configuração" size="md" />
+    <div className="ch-image-md">
+
+    ![Detalhes da Configuração](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
+
+    </div>
   </Step>
 
   <Step title="Selecione o formato dos dados" id="select-data-format">
@@ -53,7 +67,11 @@ Para seguir este guia, você precisará de:
     3. Preencha as configurações adicionais específicas do formato, como o delimitador usado em formatos separados por vírgula
     4. Clique em **Parse information**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="Escolher Formato dos Dados" size="md" />
+    <div className="ch-image-md">
+
+    ![Escolher Formato dos Dados](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
+
+    </div>
   </Step>
 
   <Step title="Configure a tabela, o esquema e as configurações" id="configure-table-schema">
@@ -65,7 +83,11 @@ Para seguir este guia, você precisará de:
     4. Defina os mapeamentos do arquivo de origem para a tabela de destino, incluindo nome da coluna, tipo da coluna, valor padrão e nulabilidade
     5. Por fim, especifique configurações avançadas, como o tipo de engine que deseja usar, a expressão de particionamento e a chave primária
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="Analisar Informações" size="md" />
+    <div className="ch-image-md">
+
+    ![Analisar Informações](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
+
+    </div>
 
     Quando terminar de configurar a tabela, o esquema e as configurações, clique em **Details and settings**
   </Step>
@@ -75,7 +97,11 @@ Para seguir este guia, você precisará de:
     Você pode selecionar uma função para esse usuário.
     Para acesso a visões materializadas ou dicionários a partir da tabela de destino, opte por &quot;Full access&quot;.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="Configurar Permissões" size="md" />
+    <div className="ch-image-md">
+
+    ![Configurar Permissões](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
+
+    </div>
   </Step>
 
   <Step title="Conclua a configuração" id="complete-setup">

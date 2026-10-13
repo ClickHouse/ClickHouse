@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 > We interchangeably use the term "ordering key" to refer to the "primary key" on this page. Strictly, [these differ in ClickHouse](/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key), but for the purposes of this document, readers can use them interchangeably, with the ordering key referring to the columns specified in the table `ORDER BY`.
 
 Note that a ClickHouse primary key works [very differently](/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse) to those familiar with similar terms in OLTP databases such as Postgres.
@@ -118,7 +116,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 The following animation shows how an optimized sparse primary index is created for the Stack Overflow posts table. Instead of indexing individual rows, the index targets blocks of rows:
 
-<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="Primary key" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Primary key](/images/bestpractices/create_primary_key.webp)
+
+</Frame>
+
+</div>
 
 If the same query is repeated on a table with this ordering key:
 
@@ -166,7 +172,15 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 Additionally, we visualize how the sparse index prunes all row blocks that can't possibly contain matches for our example query:
 
-<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="Primary key" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Primary key](/images/bestpractices/primary_key.webp)
+
+</Frame>
+
+</div>
 
 <Note>
 All columns in a table will be sorted based on the value of the specified ordering key, regardless of whether they're included in the key itself. For instance, if `CreationDate` is used as the key, the order of values in all other columns will correspond to the order of values in the `CreationDate` column. Multiple ordering keys can be specified - this will order with the same semantics as an `ORDER BY` clause in a `SELECT` query.

@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
@@ -16,7 +15,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 기능에 액세스하려면 Postgres 인스턴스의 사이드바에서 **Sync to ClickHouse**를 클릭하십시오.
 
-<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="사이드바에 통합 옵션이 표시된 ClickHouse 통합 랜딩 페이지" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![사이드바에 통합 옵션이 표시된 ClickHouse 통합 랜딩 페이지](/images/managed-postgres/clickhouse-integration-intro.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   계속 진행하기 전에 Postgres 서비스에 ClickPipes 서비스가 액세스할 수 있는지 확인하십시오. 기본적으로는 가능하지만, IP 액세스를 제한한 경우 **ClickHouse 서비스**가 위치한 리전에 따라 [이](/ko/integrations/clickpipes/networking/static-ips) 목록에 있는 일부 원본 IP의 액세스를 허용해야 할 수 있습니다.
@@ -36,7 +43,11 @@ ClickPipe 설정을 시작하려면 **Replicate data in ClickHouse**를 클릭�
       * **Initial load only**: One-time snapshot of existing data with no ongoing updates
       * **CDC only**: Skip the initial snapshot and only capture new changes going forward
 
-    <Image img="/images/managed-postgres/replication-service-step.webp" alt="Replication service configuration showing integration name, destination service, and replication method options" size="md" border />
+    <div className="ch-image-md">
+
+    ![Replication service configuration showing integration name, destination service, and replication method options](/images/managed-postgres/replication-service-step.webp)
+
+    </div>
 
     Click **Next** to proceed.
   </Step>
@@ -50,7 +61,11 @@ ClickPipe 설정을 시작하려면 **Replicate data in ClickHouse**를 클릭�
     * **Snapshot number of rows per partition**: Rows per partition during the initial snapshot (default: 100000)
     * **Snapshot number of tables in parallel**: How many tables are snapshotted concurrently (default: 1)
 
-    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="Replication settings step showing sync interval, parallel threads, pull batch size, and snapshot configuration options" size="md" border />
+    <div className="ch-image-md">
+
+    ![Replication settings step showing sync interval, parallel threads, pull batch size, and snapshot configuration options](/images/managed-postgres/integration-replication-settings.webp)
+
+    </div>
 
     Click **Next** to proceed.
   </Step>
@@ -65,7 +80,11 @@ ClickPipe 설정을 시작하려면 **Replicate data in ClickHouse**를 클릭�
 
     Expand schemas and select individual tables to replicate. You can also customize destination table names and column settings.
 
-    <Image img="/images/managed-postgres/select-tables-step.webp" alt="Select tables step showing database selection, 복제 options, and table picker grouped by schema" size="md" border />
+    <div className="ch-image-md">
+
+    ![Select tables step showing database selection, 복제 options, and table picker grouped by schema](/images/managed-postgres/select-tables-step.webp)
+
+    </div>
 
     Click **Replicate data to ClickHouse** to start the 복제.
   </Step>
@@ -73,7 +92,11 @@ ClickPipe 설정을 시작하려면 **Replicate data in ClickHouse**를 클릭�
   <Step title="Monitor your ClickPipe" id="monitor-clickpipe">
     Once the ClickPipe starts, you&#39;ll see it listed in the same menu. The initial snapshot of all data may take some time depending on the size of your tables.
 
-    <Image img="/images/managed-postgres/integration-running.webp" alt="ClickHouse integration list showing a running ClickPipe with its destination service and status" size="md" border />
+    <div className="ch-image-md">
+
+    ![ClickHouse integration list showing a running ClickPipe with its destination service and status](/images/managed-postgres/integration-running.webp)
+
+    </div>
 
     Click on the integration name to view detailed status, monitor progress, view errors, and manage the ClickPipe. See [Lifecycle of a Postgres ClickPipe](/ko/integrations/clickpipes/postgres/lifecycle) to understand the different states your ClickPipe may be in.
   </Step>

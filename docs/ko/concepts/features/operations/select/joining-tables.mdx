@@ -6,15 +6,21 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse는 다양한 조인 알고리즘과 함께 [포괄적인 `JOIN` 지원](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)을 제공합니다. 성능을 극대화하려면 이 가이드에 나열된 조인 최적화 권장 사항을 따르는 것이 좋습니다.
 
 * 최적의 성능을 위해서는 쿼리의 `JOIN` 수를 줄이는 것이 좋으며, 특히 밀리초 단위의 응답 성능이 필요한 실시간 분석 워크로드에서는 더욱 중요합니다. 하나의 쿼리에서 조인은 최대 3~4개를 목표로 하십시오. [데이터 모델링 섹션](/ko/guides/clickhouse/data-modelling/schema-design)에서는 비정규화, Dictionaries, 구체화된 뷰(Materialized View)를 포함해 조인을 최소화하는 여러 방법을 자세히 설명합니다.
 * ClickHouse 24.12부터는 쿼리 플래너가 최적의 성능을 위해 2개 테이블 조인의 순서를 자동으로 재정렬하여 더 작은 테이블을 오른쪽에 배치합니다. 25.9 버전에서는 이 기능이 확장되어 3개 이상의 테이블을 조인하는 쿼리의 조인 순서까지 최적화할 수 있게 되었습니다.
 * 쿼리에 Direct 조인, 즉 아래와 같은 `LEFT ANY JOIN`이 필요한 경우에는 가능하면 [Dictionaries](/ko/concepts/features/dictionaries/index)를 사용하는 것이 좋습니다.
 
-<Image img="/images/guides/joins-1.webp" size="sm" alt="Left any join" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Left any join](/images/guides/joins-1.webp)
+
+</Frame>
+
+</div>
 
 * inner join을 수행하는 경우에는 `IN` 절을 사용하는 서브쿼리로 작성하는 편이 더 효율적인 경우가 많습니다. 다음 쿼리를 살펴보십시오. 두 쿼리는 기능적으로 동일합니다. 둘 다 질문에는 ClickHouse가 언급되지 않았지만 `comments`에는 언급된 `posts`의 수를 찾습니다.
 
@@ -140,7 +146,15 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="조인의 메모리 대비 속도" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![조인의 메모리 대비 속도](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -150,7 +164,15 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="조인 기능" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![조인 기능](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -166,7 +188,15 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="조인 흐름도" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![조인 흐름도](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -192,7 +222,15 @@ Grace hash join은 세 가지 메모리 비제약 조인 알고리즘 중 가장
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="조인 메모리 최적화 의사결정 트리" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![조인 메모리 최적화 의사결정 트리](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

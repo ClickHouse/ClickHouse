@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['ClickStack', '生产环境', '部署', '最佳实践', '运维']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
 
 在生产环境中部署 ClickStack 时，还需额外考虑一些事项，以确保安全性、稳定性以及配置无误。具体考虑因素会因所使用的版本——开源版或托管版——而有所不同。
@@ -132,7 +130,11 @@ import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
 
     所有数据摄取均应通过 ClickStack 发行版 OpenTelemetry (OTel) collector 所暴露的 OTLP 端口进行。默认情况下，需要使用启动时生成的安全摄取 API key。向 OTel 端口发送数据时必须提供此 key，可在 HyperDX UI 的 `Team Settings → API Keys` 中找到。
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="摄取密钥" size="lg" />
+    <div className="ch-image-lg">
+
+    ![摄取密钥](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     此外，建议为 OTLP 端点启用 TLS。
 

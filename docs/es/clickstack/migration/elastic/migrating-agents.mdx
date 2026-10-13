@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="migrating-agents-from-elastic">
   ## Migración de agentes desde Elastic
 </div>
@@ -62,7 +60,15 @@ Como alternativa, Vector también admite la recepción de eventos a través del 
 
 A continuación, ilustramos ambas arquitecturas.
 
-<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="Migración de agentes" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migración de agentes](/images/use-cases/observability/clickstack-migrating-agents.webp)
+
+</Frame>
+
+</div>
 
 En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vector de modo que reciba eventos de logs de Filebeat a través del protocolo Lumberjack. También proporcionamos VRL para mapear los eventos ECS entrantes a la especificación de OTel, antes de enviarlos al ClickStack OpenTelemetry collector mediante OTLP. Los usuarios que consumen eventos desde Kafka pueden sustituir el origen Logstash de Vector por el [origen Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/); todos los demás pasos siguen siendo los mismos.
 
@@ -251,7 +257,11 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
 
     La `YOUR_INGESTION_API_KEY` es generada por ClickStack. Puede encontrar la clave en la UI de ClickStack (HyperDX) en `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Claves de ingestión" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Claves de ingestión](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     A continuación se muestra la configuración completa final:
 
@@ -339,11 +349,19 @@ A continuación, mostramos ambas opciones.
 
     La configuración centralizada a través de Kibana puede hacerse añadiendo [una salida en Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
 
-    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="Añadir salida de Logstash" size="md" />
+    <div className="ch-image-md">
+
+    ![Añadir salida de Logstash](/images/use-cases/observability/add-logstash-output.webp)
+
+    </div>
 
     Esta salida puede usarse después en una [política de agente](https://www.elastic.co/docs/reference/fleet/agent-policy). Esto implica automáticamente que cualquier agente que use esa política enviará sus datos a Vector.
 
-    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="Configuración del agente" size="md" />
+    <div className="ch-image-md">
+
+    ![Configuración del agente](/images/use-cases/observability/agent-output-settings.webp)
+
+    </div>
 
     Dado que esto requiere configurar comunicación segura mediante TLS, recomendamos la guía [&quot;Configure SSL/TLS for the Logstash output&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), que puede seguirse suponiendo que la instancia de Vector del usuario asume el rol de Logstash.
 
@@ -398,7 +416,15 @@ exporters:
 
 ClickStack genera `YOUR_INGESTION_API_KEY`. Puede encontrar la clave en la UI de ClickStack, en `Team Settings → API Keys`.
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Claves de ingestión" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Claves de ingestión](/images/use-cases/observability/ingestion-keys.webp)
+
+</Frame>
+
+</div>
 
 Si Vector se ha configurado para usar TLS mutuo, con el certificado y las claves generados siguiendo los pasos de la guía [&quot;Configurar SSL/TLS para la salida de Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), el exportador `otlp` deberá configurarse en consecuencia; por ejemplo:
 

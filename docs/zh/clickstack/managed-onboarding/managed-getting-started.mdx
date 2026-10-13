@@ -9,8 +9,8 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import GatherCredentials from '/snippets/zh/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.mdx';
 
 本指南将带你从一个空白的托管 ClickStack 服务开始，一路完成从真实应用接入日志、指标、链路追踪和会话回放。你将为自己的服务部署一个新的 OpenTelemetry collector (如果你已经有，也可以改造现有的) ，在不修改业务逻辑的前提下为一个示例 Node.js 应用接入遥测，然后在 ClickStack UI 中查看这些遥测数据。
@@ -211,7 +211,11 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
 
     打开 [http://localhost:5001](http://localhost:5001)。你会看到年份选择器、汇总统计信息、活动图表、热门用户表和域名表，以及一个搜索框。可以随意点击体验：切换年份，点开具体故事查看详情。
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="在本地运行的 HackerNews Analyzer 应用" />
+    <div className="ch-image-lg">
+
+    ![在本地运行的 HackerNews Analyzer 应用](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
 
     此时，应用程序已经在运行，但尚未接入埋点。ClickStack 中还没有任何数据：它正在等待遥测数据。这就是“before”状态。
   </Step>
@@ -300,31 +304,55 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
   <Step title="启动 ClickStack 并探索你的遥测数据" id="launch-clickstack">
     在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud) 中打开你的服务，从左侧菜单选择 **ClickStack**，然后点击 **开始摄取**。
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="启动 ClickStack" border />
+    <div className="ch-image-lg">
+
+    ![启动 ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+
+    </div>
 
     下一步可以跳过，因为你已经配置好了 collector。点击 **启动 ClickStack** 继续。
 
     ClickStack 会在新选项卡中打开，你应会被自动带到 **Getting Started** 页面。如果没有，请从左侧菜单选择 **Getting Started**，然后依次点击 **开始摄取** 和 **下一步**。
 
-    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack 开始摄取" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack 开始摄取](/images/use-cases/observability/clickstack-start-ingestion.webp)
+
+    </div>
 
     ClickStack 应该会自动检测你的表和遥测数据，让你可以继续。选择 **开始探索**，开始查看你的数据。
 
-    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack 开始探索" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack 开始探索](/images/use-cases/observability/clickstack-start-exploring.webp)
+
+    </div>
 
     现在来查看应用程序正在生成的数据：
 
     1. 前往 **搜索**，将时间范围过滤为最近 5 分钟。你会看到 `hn-analyzer-api` 的日志持续流入。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack 日志" />
+    <div className="ch-image-lg">
+
+    ![ClickStack 日志](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+
+    </div>
 
     2. 点开某个请求，沿着 trace 逐级查看。你会看到 Express handler span、一个指向 ClickHouse cluster 且包含真实网络耗时的子 HTTP span，以及同一 trace 上已关联的 `console.log` 记录。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack 链路追踪" />
+    <div className="ch-image-lg">
+
+    ![ClickStack 链路追踪](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+
+    </div>
 
     3. 打开 **Session Replay**，回放浏览器会话视频，并可拖动时间轴查看；它会与 trace 时间线保持同步。
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack 会话" />
+    <div className="ch-image-lg">
+
+    ![ClickStack 会话](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+
+    </div>
 
     日志、指标、链路追踪和会话回放都会汇集到同一个 UI 中，使用相同的查询语言，并自动完成关联。
 

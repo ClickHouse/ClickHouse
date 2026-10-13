@@ -9,14 +9,21 @@ doc_type: 'guide'
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Databrain](https://usedatabrain.com) — это платформа встраиваемой аналитики, которая позволяет создавать интерактивные панели мониторинга, метрики и визуализации данных и делиться ими с вашими клиентами. Databrain подключается к ClickHouse через интерфейс HTTPS, поэтому визуализировать и анализировать данные ClickHouse можно в современном и удобном интерфейсе.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="Интерфейс панели мониторинга Databrain с визуализацией данных ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Интерфейс панели мониторинга Databrain с визуализацией данных ClickHouse](/images/integrations/data-visualization/databrain_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -58,13 +65,21 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
     2. В меню навигации выберите **Data Sources**.
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Меню источников данных Databrain" border />
+    <div className="ch-image-md">
+
+    ![Меню источников данных Databrain](/images/integrations/data-visualization/databrain_02.webp)
+
+    </div>
 
     3. Нажмите **Add a Data Source** или **Connect Data Source**.
 
     4. Выберите **ClickHouse** из списка доступных коннекторов.
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="Выбор коннектора в Databrain с вариантом ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![Выбор коннектора в Databrain с вариантом ClickHouse](/images/integrations/data-visualization/databrain_03.webp)
+
+    </div>
 
     5. Заполните сведения о подключении:
        * **Destination Name**: Укажите понятное имя для этого подключения (например, &quot;Production ClickHouse&quot; или &quot;Analytics DB&quot;)
@@ -73,7 +88,11 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
        * **Username**: Введите имя пользователя ClickHouse
        * **Password**: Введите пароль ClickHouse
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="Форма подключения ClickHouse в Databrain с полями конфигурации" border />
+    <div className="ch-image-md">
+
+    ![Форма подключения ClickHouse в Databrain с полями конфигурации](/images/integrations/data-visualization/databrain_04.webp)
+
+    </div>
 
     6. Нажмите **Test Connection**, чтобы убедиться, что Databrain может подключиться к вашему экземпляру ClickHouse.
 
@@ -107,7 +126,15 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
 2. В обозревателе данных отобразится список таблиц ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="Обозреватель данных Databrain со списком таблиц ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Обозреватель данных Databrain со списком таблиц ClickHouse](/images/integrations/data-visualization/databrain_05.webp)
+
+</Frame>
+
+</div>
 
 3. Нажмите на таблицу, чтобы изучить её схему и просмотреть данные.
 
@@ -137,7 +164,15 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
 3. Настройте структуру и внешний вид панели мониторинга.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="Панель мониторинга Databrain с несколькими визуализациями ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Панель мониторинга Databrain с несколькими визуализациями ClickHouse](/images/integrations/data-visualization/databrain_06.webp)
+
+</Frame>
+
+</div>
 
 4. Поделитесь панелью мониторинга с командой или встроите её в своё приложение.
 

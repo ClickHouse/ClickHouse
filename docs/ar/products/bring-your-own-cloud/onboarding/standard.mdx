@@ -7,8 +7,6 @@ description: 'نشر ClickHouse على البنية التحتية السحاب�
 doc_type: 'مرجع'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="what-is-standard-onboarding">
   ## ما هي التهيئة القياسية؟
 </div>
@@ -41,7 +39,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Steps>
   <Step title="اختر مزوّد خدمة سحابية" id="choose-cloud-provider">
-    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="اختيار موفر الخدمات السحابية لـ BYOC" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![اختيار موفر الخدمات السحابية لـ BYOC](/images/cloud/reference/byoc-onboarding-1.webp)
+
+    </div>
   </Step>
 
   <Step title="إعداد الحساب/المشروع/الاشتراك" id="account-setup">
@@ -51,7 +53,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       **طبّق ملفات إعداد Onboarding كما هي تمامًا.** لا تغيّر أي شيء في قالب CloudFormation أو وحدة Terraform — بما في ذلك إعادة تسمية الموارد أو إضافة معلمات مثل `PermissionsBoundary` — من دون موافقة صريحة من ClickHouse. تعتمد أتمتة ClickHouse على الموارد المحددة التي تنشئها هذه الملفات، وتُتاح التخصيصات المدعومة على شكل معلمات. وعلى وجه الخصوص، في AWS يجب أن يحتفظ دور IAM باسمه الافتراضي `ClickHouseManagementRole` — من دون بادئة أو لاحقة — ما لم توافق ClickHouse صراحةً ومسبقًا على اسم مختلف. تتضمن وحدة Terraform تقنيًا مُدخلًا باسم `role_name`، لكن يجب تهيئة أتمتة ClickHouse لتتوافق معه؛ لذا فإن تغييره من دون تنسيق (أو إعادة تسمية الدور في قالب CloudFormation الذي لا يتضمن معلمة مماثلة) يؤدي إلى إنشاء stack يُطبّق بنجاح، بينما يفشل توفير البنية التحتية لأن ClickHouse لا يستطيع تولي الدور المتوقع.
     </Warning>
 
-    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="تهيئة حساب BYOC" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![تهيئة حساب BYOC](/images/cloud/reference/byoc-onboarding-2.webp)
+
+    </div>
 
     <Note>
       لا يتضمن هذا الإعداد الأولي حاويات التخزين وVPC/VNet ومجموعة Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse. وسيتم توفيرها في الخطوة التالية.
@@ -100,7 +106,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     * **مناطق التوافر**: إذا كنت تخطط لاستخدام VPC peering، فقد تساعد محاذاة مناطق التوافر بين الحساب المصدر وحساب BYOC على خفض تكاليف حركة المرور بين مناطق التوافر. على سبيل المثال، في AWS، قد تمثل لاحقات مناطق التوافر (`a` و`b` و`c`) معرّفات لمناطق فعلية مختلفة بين الحسابات. راجع [دليل AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) لمزيد من التفاصيل.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="إعداد البنية التحتية لنموذج BYOC" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![إعداد البنية التحتية لنموذج BYOC](/images/cloud/reference/byoc-onboarding-3.webp)
+
+    </div>
 
 #### التحقق المسبق
 
@@ -116,7 +126,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     عند فشل عمليات التحقق، يُدرج كل منها مع الإجراء المقابل له وسبب الفشل (على سبيل المثال، `iam:CreateRole · explicitDeny`). وسّع **Show passed checks** لمراجعة جميع العمليات التي نجحت.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="فحوصات إعداد Cloud الفاشلة التي أبلغ عنها التحقق المسبق لـ BYOC" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![فحوصات إعداد Cloud الفاشلة التي أبلغ عنها التحقق المسبق لـ BYOC](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
+
+    </div>
 
     لمعالجة حالات الفشل، أعد تشغيل أحدث stack من CloudFormation أو Terraform الخاص بـ ClickHouse — أو امنح الـ actions المُبلّغ عنها لهوية الإدارة (دور IAM / حساب خدمة / service principal) — ثم اختر أحد الخيارين التاليين:
 
@@ -142,7 +156,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 بعد توفير البنية التحتية لـ BYOC، تصبح جاهزًا لإطلاق أول خدمة ClickHouse. افتح وحدة تحكم ClickHouse Cloud، وحدد بيئة BYOC الخاصة بك، ثم اتبع الإرشادات لإنشاء خدمة جديدة.
 
-<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC إنشاء خدمة جديدة" />
+<div className="ch-image-md">
+
+<Frame>
+
+![BYOC إنشاء خدمة جديدة](/images/cloud/reference/byoc-new-service-1.webp)
+
+</Frame>
+
+</div>
 
 أثناء إنشاء الخدمة، ستُهيّئ الخيارات التالية:
 

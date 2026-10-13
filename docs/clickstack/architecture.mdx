@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickStack architecture', 'observability architecture', 'HyperDX', 'OpenTelemetry collector', 'MongoDB', 'system design']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 The ClickStack architecture varies depending on how it is deployed. There are important architectural distinctions between **ClickStack Open Source**, where all components are self-managed, and **Managed ClickStack**, where ClickHouse and the HyperDX UI are hosted and operated in ClickHouse Cloud. While the core components remain the same in both models, the responsibility for hosting, scaling, and securing each component differs.
 
 ## Architecture overview {#architecture-overview}
@@ -22,7 +20,15 @@ Managed ClickStack runs entirely within **ClickHouse Cloud**, providing a fully 
 
 In this model, **ClickHouse and the ClickStack UI (HyperDX)** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an **OpenTelemetry (OTel) collector**to send telemetry data into the managed service.
 
-<Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="Managed Architecture" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Architecture](/images/use-cases/observability/clickstack-managed-architecture.webp)
+
+</Frame>
+
+</div>
 
 ### ClickHouse Cloud: the engine {#clickhouse-cloud}
 
@@ -77,7 +83,15 @@ In Managed ClickStack, the UI is integrated into the ClickHouse Cloud console au
 
 The ClickStack Open Source architecture is built around three core components: **ClickHouse**, **HyperDX**, and a **OpenTelemetry (OTel) collector**. A **MongoDB** instance provides storage for the application state. Together, they provide a high-performance, open-source observability stack optimized for logs, metrics, and traces.
 
-<Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="Architecture" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Architecture](/images/use-cases/observability/clickstack-oss-architecture.webp)
+
+</Frame>
+
+</div>
 
 ### ClickHouse: the database engine {#clickhouse}
 

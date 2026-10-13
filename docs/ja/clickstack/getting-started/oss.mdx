@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack Open Source', '使用開始', 'Docker デプロイメント', 'OpenTelemetry', 'ローカルデプロイメント']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickStack Open Source をローカルで実行し、その OpenTelemetry Collector 経由でテストイベントを送信して、イベントが ClickStack UI で利用可能であることを確認します。
 
 ClickStack Open Source では、ClickHouse backend、ClickStack UI、インジェストパイプラインを実行・管理します。オールインワンイメージには、これらのコンポーネントと MongoDB がローカルでの評価・テスト用に単一の Docker コンテナーへバンドルされています。
@@ -127,7 +125,11 @@ ClickStack Open Source では、ClickHouse backend、ClickStack UI、インジ�
 
     検索結果には、サービス名が `clickstack-docs-test` のテストイベントが表示されます。
 
-    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="ClickStack ingestion test イベントを表示する ClickStack Open Source のログビュー" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack ingestion test イベントを表示する ClickStack Open Source のログビュー](/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp)
+
+    </div>
   </Step>
 </Steps>
 

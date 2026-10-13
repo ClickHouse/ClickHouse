@@ -7,8 +7,6 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', '인증']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse Cloud는 ARN 기반 AWS IAM 신뢰 관계를 사용하여 객체 스토리지(일반적으로 S3)에 저장된 Iceberg 데이터에 대한 안전한 역할 기반 접근을 지원합니다. 이 가이드는 [S3 데이터에 안전하게 접근하기](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)와 동일한 보안 설정 패턴을 따르며, ClickHouse에 Iceberg 전용 구성을 추가로 설정하는 방법을 설명합니다.
 
 <div id="overview">
@@ -36,7 +34,11 @@ ClickHouse Cloud는 ARN 기반 AWS IAM 신뢰 관계를 사용하여 객체 스�
   <Step title={<>5. <strong>서비스 역할 ID(IAM)</strong> 값을 복사합니다.</>} id="service-role-iam-value">
     이 ARN은 Iceberg 데이터에 액세스할 AWS IAM 역할의 신뢰 정책에 필요합니다.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="ClickHouse 서비스 IAM 역할 ARN 가져오기" border />
+    <div className="ch-image-lg">
+
+    ![ClickHouse 서비스 IAM 역할 ARN 가져오기](/images/cloud/security/secures3_arn.webp)
+
+    </div>
   </Step>
 </Steps>
 

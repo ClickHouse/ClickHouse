@@ -8,7 +8,7 @@ keywords: ['ClickStack', '서비스 맵', '토폴로지', '트레이스', '의�
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { Video } from "/snippets/ko/components/Video/Video.jsx";
 
 <BetaBadge />
@@ -17,7 +17,15 @@ import { Video } from "/snippets/ko/components/Video/Video.jsx";
 
 왼쪽 탐색 패널에서 **서비스 맵**을 클릭해 전체 그래프를 여세요. OpenTelemetry로 [트레이스 데이터를 수집](/ko/clickstack/ingesting-data/overview)하면 서비스가 표시됩니다.
 
-<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="서비스 노드와 그 사이의 요청 흐름을 보여주는 서비스 맵" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![서비스 노드와 그 사이의 요청 흐름을 보여주는 서비스 맵](/images/clickstack/service-maps/service-map-overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-the-service-map">
   ## 서비스 맵 살펴보기
@@ -29,15 +37,39 @@ import { Video } from "/snippets/ko/components/Video/Video.jsx";
 
 **소스 셀렉터** — 맵을 특정 트레이스 소스(예: &quot;ClickPy Traces&quot;)로 필터링합니다.
 
-<Image img="/images/clickstack/service-maps/source-selector.webp" alt="서비스 맵 도구 모음에서 강조 표시된 소스 셀렉터" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![서비스 맵 도구 모음에서 강조 표시된 소스 셀렉터](/images/clickstack/service-maps/source-selector.webp)
+
+</Frame>
+
+</div>
 
 **샘플링 슬라이더** — 성능과 정확성의 균형을 맞출 수 있도록 샘플링 비율을 조정합니다. 비율이 낮을수록 대용량 클러스터에서 더 빠르게 로드됩니다.
 
-<Image img="/images/clickstack/service-maps/sampling.webp" alt="서비스 맵 도구 모음에서 강조 표시된 샘플링 슬라이더" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![서비스 맵 도구 모음에서 강조 표시된 샘플링 슬라이더](/images/clickstack/service-maps/sampling.webp)
+
+</Frame>
+
+</div>
 
 **날짜 범위 선택기** — 맵을 생성하는 데 사용하는 트레이스 데이터의 시간 범위를 설정합니다.
 
-<Image img="/images/clickstack/service-maps/date-selector.webp" alt="서비스 맵 도구 모음에서 강조 표시된 날짜 범위 선택기" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![서비스 맵 도구 모음에서 강조 표시된 날짜 범위 선택기](/images/clickstack/service-maps/date-selector.webp)
+
+</Frame>
+
+</div>
 
 맵 왼쪽 아래의 **+/-** 버튼을 사용하거나 스크롤하여 확대하거나 축소할 수 있습니다.
 

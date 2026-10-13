@@ -6,15 +6,21 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickHouse tem [suporte completo a `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1), com uma ampla variedade de algoritmos de junção. Para maximizar o desempenho, recomendamos seguir as sugestões de otimização de junção listadas neste guia.
 
 * Para um desempenho ideal, você deve procurar reduzir o número de `JOIN`s nas consultas, especialmente em workloads analíticas em tempo real que exigem desempenho na casa dos milissegundos. Procure limitar cada consulta a no máximo 3 ou 4 junções. Detalhamos várias formas de minimizar junções na [seção de modelagem de dados](/pt-BR/guides/clickhouse/data-modelling/schema-design), incluindo desnormalização, Dictionaries e visões materializadas.
 * A partir do ClickHouse 24.12, o planejador de consultas reordena automaticamente junções entre duas tabelas para colocar a tabela menor no lado direito, visando ao melhor desempenho. Na versão 25.9, isso foi estendido para otimizar a ordem das junções em consultas que envolvem três ou mais tabelas.
 * Se a sua consulta exigir um direct join, ou seja, um `LEFT ANY JOIN`, como mostrado abaixo, recomendamos usar [Dictionaries](/pt-BR/concepts/features/dictionaries/index) sempre que possível.
 
-<Image img="/images/guides/joins-1.webp" size="sm" alt="Junção LEFT ANY" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Junção LEFT ANY](/images/guides/joins-1.webp)
+
+</Frame>
+
+</div>
 
 * Ao fazer junções internas, em geral é mais eficiente escrevê-las como subconsultas usando a cláusula `IN`. Considere as consultas a seguir, que são funcionalmente equivalentes. Ambas encontram o número de `posts` que não mencionam ClickHouse na pergunta, mas mencionam em `comments`.
 
@@ -140,7 +146,15 @@ O ClickHouse oferece vários [algoritmos de junção](https://clickhouse.com/blo
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="velocidade em função da memória para junções" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![velocidade em função da memória para junções](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -150,7 +164,15 @@ Os tipos de `JOIN` compatíveis com cada algoritmo de junção são mostrados ab
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="recursos de junção" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![recursos de junção](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -166,7 +188,15 @@ Se a sua principal métrica de otimização for o desempenho e você estiver bus
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="fluxograma de junção" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![fluxograma de junção](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -192,7 +222,15 @@ Se você quiser otimizar uma junção para usar o mínimo possível de memória,
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Árvore de decisão para otimização de memória de junção" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Árvore de decisão para otimização de memória de junção](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

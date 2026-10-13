@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -72,7 +71,11 @@ Certaines sections de supervision dépendent de tables de logs facultatives ou d
     ProbeDeck authentifie les requêtes SQL envoyées au point de terminaison de service à l’aide de ces identifiants de base de données.
     ClickHouse Cloud utilise les clés au niveau de l’organisation de la page **API Keys** pour les points de terminaison de Cloud API et de Query API. Le processus de connexion SQL de ProbeDeck n’utilise pas ces clés.
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="Formulaire de connexion ProbeDeck configuré pour HTTPS sur le port 8443 avec un nom d’utilisateur ClickHouse" />
+    <div className="ch-image-sm">
+
+    ![Formulaire de connexion ProbeDeck configuré pour HTTPS sur le port 8443 avec un nom d’utilisateur ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
+
+    </div>
   </Step>
 </Steps>
 
@@ -149,11 +152,27 @@ Ouvrez la connexion enregistrée et sélectionnez **Monitor**. Le tableau de bor
 | Métriques de la mémoire et du serveur                   | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | Débits historiques des requêtes et des disques          | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="Tableau de bord de surveillance ProbeDeck affichant les requêtes en cours, la réplication, les disques, les parts, les mutations, les merges, le débit de requêtes et la mémoire" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Tableau de bord de surveillance ProbeDeck affichant les requêtes en cours, la réplication, les disques, les parts, les mutations, les merges, le débit de requêtes et la mémoire](/images/integrations/sql-clients/probedeck-dashboard.png)
+
+</Frame>
+
+</div>
 
 Cliquez sur **Running queries** pour trier les requêtes actives par temps écoulé et examiner la mémoire et les lignes lues.
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="Liste des requêtes en cours de ProbeDeck triée par temps écoulé" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Liste des requêtes en cours de ProbeDeck triée par temps écoulé](/images/integrations/sql-clients/probedeck-running-queries.png)
+
+</Frame>
+
+</div>
 
 <div id="query-the-uk-property-price-dataset">
   ## Interroger le jeu de données UK Property Price

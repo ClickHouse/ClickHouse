@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
-import { Image } from "/snippets/es/components/Image.jsx";
 
 import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
@@ -25,32 +24,52 @@ import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.
   <Step title="Crear un recurso de ClickHouse" id="2-create-a-clickhouse-resource">
     Inicia sesión en tu cuenta de Retool y ve a la pestaña *Resources*. Selecciona &quot;Create New&quot; -&gt; &quot;Resource&quot;:
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="Crear un recurso nuevo" />
+    <div className="ch-image-lg">
+
+    ![Crear un recurso nuevo](/images/integrations/tools/data-integration/retool/retool_01.webp)
+
+    </div>
 
     <br />
 
     Selecciona &quot;JDBC&quot; en la lista de conectores disponibles:
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="Elegir el conector JDBC" />
+    <div className="ch-image-lg">
+
+    ![Elegir el conector JDBC](/images/integrations/tools/data-integration/retool/retool_02.webp)
+
+    </div>
 
     <br />
 
     En el asistente de configuración, asegúrate de seleccionar `com.clickhouse.jdbc.ClickHouseDriver` como &quot;Driver name&quot;:
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="Seleccionar el driver correcto" />
+    <div className="ch-image-lg">
+
+    ![Seleccionar el driver correcto](/images/integrations/tools/data-integration/retool/retool_03.webp)
+
+    </div>
 
     <br />
 
     Introduce tus credenciales de ClickHouse con el siguiente formato: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
     Si tu instancia requiere SSL o si estás usando ClickHouse Cloud, añade `&ssl=true` a la cadena de conexión para que quede así: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="Especificar tus credenciales" />
+    <div className="ch-image-lg">
+
+    ![Especificar tus credenciales](/images/integrations/tools/data-integration/retool/retool_04.webp)
+
+    </div>
 
     <br />
 
     Después, prueba la conexión:
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="Probar la conexión" />
+    <div className="ch-image-lg">
+
+    ![Probar la conexión](/images/integrations/tools/data-integration/retool/retool_05.webp)
+
+    </div>
 
     <br />
 

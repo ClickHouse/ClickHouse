@@ -7,8 +7,6 @@ title: 'ربط BladePipe بـ ClickHouse'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -55,7 +53,11 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
     2. اختر `ClickHouse`، ثم املأ الإعدادات بإدخال مضيف ClickHouse والمنفذ واسم المستخدم وكلمة المرور، ثم انقر على &quot;Test Connection&quot;.
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp" size="lg" border alt="أضِف ClickHouse كوجهة" />
+       <div className="ch-image-lg">
+
+       ![أضِف ClickHouse كوجهة](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+       </div>
 
     3. انقر على &quot;Add DataSource&quot; في الأسفل، وستتم إضافة مثيل ClickHouse.
   </Step>
@@ -71,7 +73,11 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
     2. حدِّد `MySQL`، ثم املأ الإعدادات بإدخال مضيف MySQL والمنفذ واسم المستخدم وكلمة المرور، ثم انقر على &quot;Test Connection&quot;.
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp" size="lg" border alt="إضافة MySQL كمصدر" />
+       <div className="ch-image-lg">
+
+       ![إضافة MySQL كمصدر](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+       </div>
 
     3. انقر على &quot;Add DataSource&quot; في الأسفل، وستتم إضافة مثيل MySQL.
   </Step>
@@ -80,19 +86,39 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     1. في BladePipe، انقر على &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;.
 
     2. حدِّد مثيلَي MySQL وClickHouse اللذين تمت إضافتهما، ثم انقر على &quot;Test Connection&quot; للتأكد من اتصال BladePipe بهما. بعد ذلك، حدِّد قواعد البيانات المطلوب نقلها.
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp" size="lg" border alt="حدد المصدر والوجهة" />
+       <div className="ch-image-lg">
+
+       ![حدد المصدر والوجهة](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
+
+       </div>
 
     3. حدِّد &quot;Incremental&quot; كنوع DataJob، مع خيار &quot;Full Data&quot;.
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp" size="lg" border alt="حدد نوع المزامنة" />
+       <div className="ch-image-lg">
+
+       ![حدد نوع المزامنة](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
+
+       </div>
 
     4. حدِّد الجداول المطلوب نسخها.
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp" size="lg" border alt="حدد الجداول" />
+       <div className="ch-image-lg">
+
+       ![حدد الجداول](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
+
+       </div>
 
     5. حدِّد الأعمدة المطلوب نسخها.
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp" size="lg" border alt="حدد الأعمدة" />
+       <div className="ch-image-lg">
+
+       ![حدد الأعمدة](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
+
+       </div>
 
     6. أكِّد إنشاء DataJob، وسيبدأ تشغيله تلقائيًا.
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob قيد التشغيل" />
+       <div className="ch-image-lg">
+
+       ![DataJob قيد التشغيل](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+       </div>
   </Step>
 
   <Step title="تحقّق من البيانات" id="5-verify-the-data">
@@ -105,6 +131,10 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     </Note>
 
     2. أنشئ <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">DataJob للتحقق</a>. بعد اكتمال DataJob للتحقق، راجع النتائج للتأكد من أن البيانات في ClickHouse مطابقة للبيانات في MySQL.
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp" size="lg" border alt="التحقق من البيانات" />
+       <div className="ch-image-lg">
+
+       ![التحقق من البيانات](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+       </div>
   </Step>
 </Steps>

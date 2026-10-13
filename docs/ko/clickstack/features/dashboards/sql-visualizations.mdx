@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', '대시보드', '시각화', 'SQL', '관측성']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickStack는 직접 작성한 SQL 쿼리를 기반으로 하는 시각화를 지원합니다. 이를 통해 대시보드 수준의 시간 범위, 필터, 차트 렌더링과 계속 연동하면서도 쿼리 로직을 완전히 제어할 수 있습니다.
 
 SQL 기반 시각화는 기본 제공되는 Chart Explorer만으로는 부족한 작업이 필요할 때 유용합니다. 예를 들어 테이블을 join하거나 차트 빌더에서 지원하지 않는 복잡한 집계를 구성할 때 사용할 수 있습니다.
@@ -19,7 +17,15 @@ SQL 기반 시각화는 기본 제공되는 Chart Explorer만으로는 부족한
 
 SQL 기반 시각화를 만들려면 대시보드 타일 편집기를 열고 **SQL** 탭을 선택합니다.
 
-<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="SQL Editor 버튼" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SQL Editor 버튼](/images/use-cases/observability/sql-editor-button.webp)
+
+</Frame>
+
+</div>
 
 여기서 다음을 수행합니다:
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['registro de auditoría']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Las actividades de la consola se registran en el registro de auditoría. Los usuarios con acceso pueden revisar el registro e integrarlo con sus sistemas de logging. El acceso al registro de auditoría está controlado por el permiso **View audit logs** (`control-plane:organization:view-activities`):
 
 * Los usuarios con el rol Admin de la organización tienen acceso de forma predeterminada.
@@ -23,7 +21,11 @@ Para una descripción de todos los permisos, consulte [Console roles and permiss
   <Step title="Seleccionar organización" id="select-org">
     En ClickHouse Cloud, ve a los detalles de tu organización.
 
-    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="Pestaña Activity de ClickHouse Cloud" border />
+    <div className="ch-image-md">
+
+    ![Pestaña Activity de ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
+
+    </div>
 
     <br />
   </Step>
@@ -38,7 +40,11 @@ Para una descripción de todos los permisos, consulte [Console roles and permiss
     * **IP Address:** Cuando corresponde, este campo muestra la dirección IP del usuario que inició el evento
     * **Time:** La marca temporal del evento
 
-    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="Tabla Activity de ClickHouse Cloud" border />
+    <div className="ch-image-md">
+
+    ![Tabla Activity de ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
+
+    </div>
 
     <br />
   </Step>
@@ -49,7 +55,11 @@ Para una descripción de todos los permisos, consulte [Console roles and permiss
 </Steps>
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="Exportación CSV de Activity de ClickHouse Cloud" border />
+  <div className="ch-image-lg">
+
+  ![Exportación CSV de Activity de ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
+
+  </div>
 </div>
 
 ## Acceder al registro de auditoría de la consola mediante la API {#console-audit-log-api}

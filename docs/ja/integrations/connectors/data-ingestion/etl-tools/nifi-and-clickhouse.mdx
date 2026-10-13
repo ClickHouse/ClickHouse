@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
@@ -37,19 +36,35 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
   <Step title={<>`DBCPConnectionPool` Controller Service を追加し、そのプロパティを設定する</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. Apache NiFi で Controller Service を設定するには、&quot;gear&quot; ボタンをクリックして NiFi Flow Configuration ページを開きます
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="gear ボタンが強調表示された NiFi Flow Configuration ページ" />
+       <div className="ch-image-sm">
+
+       ![gear ボタンが強調表示された NiFi Flow Configuration ページ](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
+
+       </div>
 
     2. Controller Services タブを選択し、右上の `+` ボタンをクリックして新しい Controller Service を追加します
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_02.webp" size="lg" border alt="追加ボタンが強調表示された Controller Services タブ" />
+       <div className="ch-image-lg">
+
+       ![追加ボタンが強調表示された Controller Services タブ](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
+
+       </div>
 
     3. `DBCPConnectionPool` を検索し、&quot;Add&quot; ボタンをクリックします
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_03.webp" size="lg" border alt="DBCPConnectionPool が強調表示された Controller Service 選択ダイアログ" />
+       <div className="ch-image-lg">
+
+       ![DBCPConnectionPool が強調表示された Controller Service 選択ダイアログ](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
+
+       </div>
 
     4. 新しく追加した `DBCPConnectionPool` は、デフォルトでは Invalid 状態です。設定を開始するには、&quot;gear&quot; ボタンをクリックします
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_04.webp" size="lg" border alt="gear ボタンが強調表示され、無効な DBCPConnectionPool が表示された Controller Services 一覧" />
+       <div className="ch-image-lg">
+
+       ![gear ボタンが強調表示され、無効な DBCPConnectionPool が表示された Controller Services 一覧](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
+
+       </div>
 
     5. &quot;Properties&quot; セクションで、以下の値を入力します
 
@@ -63,25 +78,45 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
     6. Settings セクションで、識別しやすいように Controller Service の名前を &quot;ClickHouse JDBC&quot; に変更します
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_05.webp" size="lg" border alt="プロパティが入力された DBCPConnectionPool 設定ダイアログ" />
+       <div className="ch-image-lg">
+
+       ![プロパティが入力された DBCPConnectionPool 設定ダイアログ](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
+
+       </div>
 
     7. &quot;lightning&quot; ボタンをクリックし、続けて &quot;Enable&quot; ボタンをクリックして `DBCPConnectionPool` Controller Service を有効にします
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_06.webp" size="lg" border alt="lightning ボタンが強調表示された Controller Services 一覧" />
+       <div className="ch-image-lg">
+
+       ![lightning ボタンが強調表示された Controller Services 一覧](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
+
+       </div>
 
        <br />
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_07.webp" size="lg" border alt="Controller Service を有効にする確認ダイアログ" />
+       <div className="ch-image-lg">
+
+       ![Controller Service を有効にする確認ダイアログ](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
+
+       </div>
 
     8. Controller Services タブを確認し、Controller Service が有効になっていることを確認します
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="有効になった ClickHouse JDBC service が表示された Controller Services 一覧" />
+       <div className="ch-image-lg">
+
+       ![有効になった ClickHouse JDBC service が表示された Controller Services 一覧](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
+
+       </div>
   </Step>
 
   <Step title={<><code>ExecuteSQL</code> プロセッサを使用してテーブルから読み取る</>} id="5-read-from-a-table-using-the-executesql-processor">
     1. 適切な上流側および下流側のプロセッサとともに、`ExecuteSQL` プロセッサを追加します
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="ワークフロー内の ExecuteSQL プロセッサを示す NiFi キャンバス" />
+       <div className="ch-image-md">
+
+       ![ワークフロー内の ExecuteSQL プロセッサを示す NiFi キャンバス](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
+
+       </div>
 
     2. `ExecuteSQL` プロセッサの &quot;Properties&quot; セクションで、次の値を入力します
 
@@ -92,15 +127,27 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
     3. `ExecuteSQL` プロセッサを開始します
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_10.webp" size="lg" border alt="プロパティが入力された ExecuteSQL プロセッサの設定" />
+       <div className="ch-image-lg">
+
+       ![プロパティが入力された ExecuteSQL プロセッサの設定](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
+
+       </div>
 
     4. クエリが正常に処理されたことを確認するには、出力キュー内の `FlowFile` のいずれか 1 つを確認します
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_11.webp" size="lg" border alt="確認可能な FlowFile が表示されたキュー一覧ダイアログ" />
+       <div className="ch-image-lg">
+
+       ![確認可能な FlowFile が表示されたキュー一覧ダイアログ](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
+
+       </div>
 
     5. 出力 `FlowFile` の結果を表示するには、表示を &quot;formatted&quot; に切り替えます
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="整形表示でクエリ結果を示す FlowFile コンテンツビューア" />
+       <div className="ch-image-lg">
+
+       ![整形表示でクエリ結果を示す FlowFile コンテンツビューア](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
+
+       </div>
   </Step>
 
   <Step title={<>`MergeRecord` と `PutDatabaseRecord` プロセッサを使用してテーブルに書き込む</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
@@ -119,11 +166,19 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
        Input
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_13.webp" size="sm" border alt="単一レコードを示す MergeRecord processor の input" />
+       <div className="ch-image-sm">
+
+       ![単一レコードを示す MergeRecord processor の input](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
+
+       </div>
 
        Output
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_14.webp" size="sm" border alt="レコードがマージされた配列を示す MergeRecord processor の output" />
+       <div className="ch-image-sm">
+
+       ![レコードがマージされた配列を示す MergeRecord processor の output](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
+
+       </div>
 
     4. `PutDatabaseRecord` プロセッサの &quot;Properties&quot; セクションで、以下の値を入力します
 
@@ -139,7 +194,11 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
     5. 各 insert に複数の行が含まれていることを確認するには、テーブルの行数が `MergeRecord` で定義した &quot;Minimum Number of Records&quot; の値以上ずつ増えていることを確認します。
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_15.webp" size="sm" border alt="宛先テーブルの行数を示すクエリ結果" />
+       <div className="ch-image-sm">
+
+       ![宛先テーブルの行数を示すクエリ結果](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
+
+       </div>
 
     6. これで、Apache NiFi を使用して ClickHouse にデータを正常にロードできました！
   </Step>

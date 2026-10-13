@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', '대시보드', '드릴다운', '테이블', '행 클릭', '조사', '관측성']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 테이블 타일은 흔히 **카탈로그** 역할을 합니다. 즉, 서비스, host, endpoint 또는 오류 그룹마다 1개의 행이 있고, 각 항목을 평가하는 몇 개의 컬럼이 포함됩니다. 행 클릭 동작을 사용하면 이 카탈로그를 조사 워크플로로 전환할 수 있습니다. 카탈로그를 훑어보다가 중요한 행을 찾은 다음 클릭하면, ClickStack이 클릭한 행의 값을 필터로 그대로 전달합니다. 그러면 대상이 해당 항목 하나로 이미 범위가 좁혀진 상태로 열리므로, 쿼리를 수동으로 다시 작성할 필요가 없습니다.
 
 클릭하면 다음 두 위치 중 하나로 이동할 수 있습니다:
@@ -40,7 +38,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     `Requests`를 기준으로 내림차순 정렬하여 가장 바쁜 서비스가 상단에 오도록 합니다. 이 테이블이 카탈로그 역할을 합니다. 즉, 서비스별로 한 행씩 있으며 RED 기준으로 평가됩니다.
 
-    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="각 서비스의 RED 컬럼(Requests, Errors, P95 Duration)이 표시되고 request volume 기준으로 정렬된 서비스 인벤토리 테이블, 그 위에 시간별 requests 추세 표시" size="lg" />
+    <div className="ch-image-lg">
+
+    ![각 서비스의 RED 컬럼(Requests, Errors, P95 Duration)이 표시되고 request volume 기준으로 정렬된 서비스 인벤토리 테이블, 그 위에 시간별 requests 추세 표시](/images/clickstack/dashboards/row-click-catalog.webp)
+
+    </div>
 
     <Tip>
       **group-by 컬럼을 앞에 배치하십시오**
@@ -63,7 +65,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   <Step title="행 클릭" id="click-dashboard">
     행 위에 마우스를 올리면 테이블 오른쪽 가장자리에 link 동작 표시가 나타나고, 작업을 설명하는 힌트(`Open dashboard "Service Detail"`)가 함께 표시됩니다. 행을 클릭하면 `Service` 필터가 클릭한 값으로 설정된 상태로 `Service Detail` 대시보드가 열리므로, 모든 타일(RED 핵심 지표, 지연 시간 백분위수, 엔드포인트별 분석)의 범위가 한 번의 클릭으로 해당 서비스 하나로 다시 한정됩니다.
 
-    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="행 클릭 후의 Service Detail 대시보드. Service 필터가 클릭한 서비스로 설정되어 있고 RED 핵심 지표, 지연 시간 백분위수, 엔드포인트별 분석이 모두 해당 서비스 범위로 한정됨" size="lg" />
+    <div className="ch-image-lg">
+
+    ![행 클릭 후의 Service Detail 대시보드. Service 필터가 클릭한 서비스로 설정되어 있고 RED 핵심 지표, 지연 시간 백분위수, 엔드포인트별 분석이 모두 해당 서비스 범위로 한정됨](/images/clickstack/dashboards/row-click-drilldown.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -88,7 +94,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   <Step title="행 클릭" id="click-search">
     이제 서비스 행을 클릭하면 해당 트레이스 소스의 검색 페이지가 열리고, `ServiceName = <service>`로 필터링되므로 동일한 시간 범위에서 해당 서비스의 스팬만 바로 확인할 수 있습니다.
 
-    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="행 클릭 후 트레이스 소스의 검색 페이지가 열리고, 클릭한 서비스로 필터링된 상태" size="lg" />
+    <div className="ch-image-lg">
+
+    ![행 클릭 후 트레이스 소스의 검색 페이지가 열리고, 클릭한 서비스로 필터링된 상태](/images/clickstack/dashboards/row-click-search-drilldown.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -100,7 +110,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 행 클릭 동작은 별도 페이지가 아니라 테이블 타일 자체에서 구성합니다. 타일을 추가하거나 편집한 다음 시각화 유형을 **Table**로 설정하십시오. 그러면 편집기 도구 모음에서 **Display Settings** 옆에 **Row Click Action** 버튼이 표시됩니다. 이 버튼은 테이블 타일에만 표시되며, 레이블에는 현재 작업이 반영됩니다: `Row Click Action: Default`, `Row Click Action: 검색`, 또는 `Row Click Action: Dashboard`. 이 버튼을 클릭하면 드로어가 열립니다.
 
-<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="Dashboard 모드의 Row Click Action 드로어. 대상으로 Service Detail 대시보드가 선택되어 있고, 클릭한 행에서 템플릿화된 ServiceName 필터가 설정된 모습" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard 모드의 Row Click Action 드로어. 대상으로 Service Detail 대시보드가 선택되어 있고, 클릭한 행에서 템플릿화된 ServiceName 필터가 설정된 모습](/images/clickstack/dashboards/row-click-drawer.webp)
+
+</Frame>
+
+</div>
 
 이 드로어에서는 3가지 작업을 제공합니다:
 

@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -24,7 +23,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В этом руководстве вы подключите Chartbrew к ClickHouse, выполните SQL-запрос и создадите визуализацию. В результате ваша панель мониторинга будет выглядеть примерно так:
 
-<Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Панель мониторинга Chartbrew" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Панель мониторинга Chartbrew](/images/integrations/data-visualization/chartbrew_01.webp)
+
+</Frame>
+
+</div>
 
 <Tip>
   **Добавьте данные**
@@ -42,7 +49,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     2. Нажмите **Create connection** и выберите **ClickHouse** из списка доступных баз данных.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="Выбор подключения ClickHouse в Chartbrew" />
+       <div className="ch-image-lg">
+
+       ![Выбор подключения ClickHouse в Chartbrew](/images/integrations/data-visualization/chartbrew_02.webp)
+
+       </div>
 
     3. Введите сведения о подключении к вашей базе данных ClickHouse:
 
@@ -53,20 +64,32 @@ import { Image } from "/snippets/ru/components/Image.jsx";
        * **Username**: Ваше имя пользователя ClickHouse.
        * **Password**: Ваш пароль ClickHouse.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Настройки подключения ClickHouse в Chartbrew" />
+       <div className="ch-image-lg">
+
+       ![Настройки подключения ClickHouse в Chartbrew](/images/integrations/data-visualization/chartbrew_03.webp)
+
+       </div>
 
     4. Нажмите **Test connection**, чтобы проверить, может ли Chartbrew подключиться к ClickHouse.
 
     5. Если проверка прошла успешно, нажмите **Save connection**. Chartbrew автоматически получит схему из ClickHouse.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="JSON-схема ClickHouse в Chartbrew" />
+       <div className="ch-image-lg">
+
+       ![JSON-схема ClickHouse в Chartbrew](/images/integrations/data-visualization/chartbrew_04.webp)
+
+       </div>
   </Step>
 
   <Step title="Создайте датасет и выполните SQL-запрос" id="3-create-a-dataset-and-run-a-sql-query">
     1. Нажмите кнопку **Create dataset** или перейдите на вкладку **Datasets**, чтобы создать датасет.
     2. Выберите подключение ClickHouse, которое вы создали ранее.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="Выбор подключения ClickHouse для датасета" />
+    <div className="ch-image-lg">
+
+    ![Выбор подключения ClickHouse для датасета](/images/integrations/data-visualization/chartbrew_05.webp)
+
+    </div>
 
     Напишите SQL-запрос, чтобы получить данные, которые вы хотите визуализировать. Например, этот запрос вычисляет среднюю цену по годам из датасета `uk_price_paid`:
 
@@ -77,13 +100,21 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ORDER BY year;
     ```
 
-    <Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="SQL-запрос ClickHouse в Chartbrew" />
+    <div className="ch-image-lg">
+
+    ![SQL-запрос ClickHouse в Chartbrew](/images/integrations/data-visualization/chartbrew_07.webp)
+
+    </div>
 
     Нажмите **Run query**, чтобы получить данные.
 
     Если вы не уверены, как написать запрос, можете воспользоваться **ИИ-помощником Chartbrew** для генерации SQL-запросов на основе схемы вашей базы данных.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="ИИ-помощник Chartbrew для SQL-запросов к ClickHouse" />
+    <div className="ch-image-lg">
+
+    ![ИИ-помощник Chartbrew для SQL-запросов к ClickHouse](/images/integrations/data-visualization/chartbrew_06.webp)
+
+    </div>
 
     После получения данных нажмите **Configure dataset**, чтобы настроить параметры визуализации.
   </Step>
@@ -94,11 +125,19 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     3. Выберите тип диаграммы (например, линейный график, столбчатая диаграмма или круговая диаграмма) и добавьте её на панель мониторинга.
     4. Нажмите **Complete dataset**, чтобы завершить настройку.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="Панель мониторинга Chartbrew с данными ClickHouse" />
+    <div className="ch-image-lg">
+
+    ![Панель мониторинга Chartbrew с данными ClickHouse](/images/integrations/data-visualization/chartbrew_08.webp)
+
+    </div>
 
     Вы можете создать столько датасетов, сколько потребуется, чтобы визуализировать разные аспекты ваших данных. На основе этих датасетов можно создать несколько панелей мониторинга для отслеживания различных метрик.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Панель мониторинга Chartbrew с данными ClickHouse" />
+    <div className="ch-image-lg">
+
+    ![Панель мониторинга Chartbrew с данными ClickHouse](/images/integrations/data-visualization/chartbrew_01.webp)
+
+    </div>
   </Step>
 
   <Step title="Автоматизируйте обновление данных" id="5-automate-data-updates">
@@ -108,7 +147,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     2. Настройте интервал обновления (например, каждый час или каждый день).
     3. Сохраните настройки, чтобы включить автоматическое обновление.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Настройки обновления датасета в Chartbrew" />
+    <div className="ch-image-lg">
+
+    ![Настройки обновления датасета в Chartbrew](/images/integrations/data-visualization/chartbrew_09.webp)
+
+    </div>
   </Step>
 </Steps>
 

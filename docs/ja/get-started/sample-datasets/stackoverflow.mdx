@@ -8,15 +8,21 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このデータセットには、Stack Overflow 上のすべての `Posts`、`Users`、`Votes`、`Comments`、`Badges`、`PostHistory`、`PostLinks` が含まれています。
 
 2024 年 4 月までのすべての投稿を含む、あらかじめ用意された Parquet 版のデータをダウンロードすることも、最新の XML フォーマットのデータをダウンロードして読み込むこともできます。Stack Overflow はこのデータを定期的に更新しており、これまではおおむね 3 か月ごとに更新されてきました。
 
 次の図は、Parquet フォーマットで利用することを前提とした利用可能なテーブルのスキーマを示しています。
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Stack Overflow スキーマ" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Stack Overflow スキーマ](/images/getting-started/example-datasets/stackoverflow.webp)
+
+</Frame>
+
+</div>
 
 このデータのスキーマの説明は [こちら](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede) を参照してください。
 

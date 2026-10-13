@@ -172,14 +172,38 @@ quit
 密码，然后选择要导入 ClickHouse 表的 Postgres 数据库和目标 schema。点击 **连接**，创建 foreign
 server 并导入 schema。
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置表单" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置表单](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+
+</Frame>
+
+</div>
 
 设置完成后，控制台会显示确认信息，foreign
 server 将出现在 server 列表中。
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置已完成" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="显示 taxi pg_clickhouse 连接的 foreign server 列表" size="lg" border />
+<Frame>
+
+![ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置已完成](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示 taxi pg_clickhouse 连接的 foreign server 列表](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+
+</Frame>
+
+</div>
 
 现在，您可以打开 Postgres **SQL 控制台**并查询已导入的表：
 

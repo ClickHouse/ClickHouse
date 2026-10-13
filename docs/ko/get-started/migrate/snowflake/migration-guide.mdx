@@ -8,8 +8,6 @@ show_related_blogs: false
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 > 이 가이드에서는 Snowflake에서 ClickHouse로 데이터를 마이그레이션하는 방법을 설명합니다.
 
 Snowflake와 ClickHouse 간 데이터 마이그레이션에는
@@ -19,7 +17,11 @@ Snowflake의 `COPY INTO` 명령과 ClickHouse의 `INSERT INTO SELECT`
 
 <Steps>
   <Step title="Snowflake에서 데이터 내보내기" id="1-exporting-data-from-snowflake">
-    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Snowflake에서 ClickHouse로 마이그레이션" />
+    <div className="ch-image-md">
+
+    ![Snowflake에서 ClickHouse로 마이그레이션](/images/migrations/migrate_snowflake_clickhouse.webp)
+
+    </div>
 
     Snowflake에서 데이터를 내보내려면 위 다이어그램에 표시된 것처럼 외부 스테이지를 사용해야 합니다.
 

@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge />
 
@@ -26,9 +25,25 @@ No momento, o Scheduled Scaling está disponível em **Beta**.
 
 Para configurar um agendamento, acesse seu serviço no console do ClickHouse Cloud e vá até as configurações. Em seguida, selecione **Schedule Override** e adicione uma nova regra.
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="A interface de agendamentos de escalonamento no console do ClickHouse Cloud, mostrando regras de escalonamento baseadas em horário" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Configurando uma regra de Scheduled Scaling no console do ClickHouse Cloud" border />
+<Frame>
+
+![A interface de agendamentos de escalonamento no console do ClickHouse Cloud, mostrando regras de escalonamento baseadas em horário](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Configurando uma regra de Scheduled Scaling no console do ClickHouse Cloud](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
+
+</Frame>
+
+</div>
 
 Cada regra exige:
 

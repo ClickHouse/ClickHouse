@@ -7,8 +7,6 @@ keywords: ['GCS']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوضح هذا الدليل كيفية إجراء مصادقة آمنة مع Google Cloud Storage ‏(GCS) والوصول إلى بياناتك عبر ClickHouse Cloud.
 
 <div id="introduction">
@@ -45,11 +43,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="إنشاء حساب خدمة في Google Cloud" id="create-gcs-account">
     1. في Google Cloud Console، انتقل إلى IAM &amp; Admin → Service Accounts
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
+    <div className="ch-image-md">
+
+    ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
+
+    </div>
 
     2. انقر على `Service accounts` في القائمة الجانبية اليسرى، ثم انقر على `Create service account`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_service_account.webp" size="md" alt="" />
+    <div className="ch-image-md">
+
+    ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
+
+    </div>
 
     أدخل اسمًا ووصفًا لحساب الخدمة، على سبيل المثال:
 
@@ -60,11 +66,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     انقر على `Create and continue`
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_and_continue.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+
+    ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
+
+    </div>
 
     امنح حساب الخدمة دور `Storage Object User`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/storage_object_user.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+
+    ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
+
+    </div>
 
     يوفّر هذا الدور إذن القراءة والكتابة لكائنات GCS
 
@@ -77,7 +91,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     دوّن عنوان البريد الإلكتروني الخاص بحساب الخدمة:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
+    <div className="ch-image-md">
+
+    ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
+
+    </div>
   </Step>
 
   <Step title="منح حساب الخدمة إذن الوصول إلى حاوية التخزين" id="grant-bucket-access-to-service-account">
@@ -116,19 +134,31 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="أنشئ مفاتيح HMAC لحساب الخدمة" id="generate-hmac-keys-for-service-account">
     انتقل إلى `Cloud Storage` → `Settings` → `Interoperability`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+
+    ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
+
+    </div>
 
     إذا لم يظهر قسم &quot;Access keys&quot;، فانقر على `Enable interoperability access`
 
     ضمن &quot;Access keys for service accounts&quot;، انقر على `Create a key for a service account`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp" size="md" alt="" />
+    <div className="ch-image-md">
+
+    ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
+
+    </div>
 
     حدّد حساب الخدمة الذي أنشأته سابقًا (على سبيل المثال clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
     انقر على `Create key`:
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_a_key.webp" size="md" alt="" />
+    <div className="ch-image-md">
+
+    ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
+
+    </div>
 
     سيُعرَض مفتاح HMAC.
     احفظ كلاً من Access Key وSecret فورًا - فلن تتمكن من عرض الـ secret مرة أخرى.
@@ -184,7 +214,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     1. حدِّد `Credentials` ضمن `Authentication method` أثناء إعداد ClickPipe
     2. أدخِل بيانات اعتماد HMAC التي حصلت عليها في الخطوات السابقة
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp" size="md" alt="" />
+    <div className="ch-image-md">
+
+    ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
+
+    </div>
 
     <Note>
       لا تتوفر حاليًا مصادقة حساب الخدمة — يجب استخدام مفاتيح HMAC

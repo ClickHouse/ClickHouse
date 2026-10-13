@@ -7,8 +7,6 @@ description: '자체 클라우드 인프라에 ClickHouse를 배포합니다'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ## ClickHouse 컨트롤 플레인과 BYOC VPC 간 연결 {#connection-between-clickhouse-and-byoc}
 
 ClickHouse Cloud 컨트롤 플레인은 BYOC 배포를 운영하고 지원하기 위해 여러 유형의 연결을 유지합니다:
@@ -64,7 +62,15 @@ Tailscale은 ClickHouse 컨트롤 플레인(ClickHouse의 VPC 내)과 BYOC 데�
 
 ### BYOC에서 Tailscale이 작동하는 방식 {#how-tailscale-works}
 
-<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
+
+</Frame>
+
+</div>
 
 Tailscale을 통해 액세스해야 하는 각 서비스 또는 엔드포인트에 대해 ClickHouse BYOC는 다음을 배포합니다:
 

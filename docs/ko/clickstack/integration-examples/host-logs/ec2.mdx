@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['EC2', 'AWS', '호스트 로그', 'systemd', 'syslog', 'OTel', 'ClickStack', '시스템 모니터링', '클라우드 메타데이터']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -292,9 +290,17 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
        * `host.type` (인스턴스 유형)
        * `cloud.availability_zone`
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="EC2 로그 Search view" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="메타데이터가 표시된 EC2 로그 상세 보기" />
+    ![EC2 로그 Search view](/images/clickstack/host-logs/ec2/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![메타데이터가 표시된 EC2 로그 상세 보기](/images/clickstack/host-logs/ec2/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -417,9 +423,17 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     4. `source:ec2-demo`로 필터링합니다
     5. 로그 항목을 펼쳐 리소스 속성에서 EC2 메타데이터를 확인합니다
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="EC2 로그 검색 뷰" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="메타데이터가 포함된 EC2 로그 상세 보기" />
+    ![EC2 로그 검색 뷰](/images/clickstack/host-logs/ec2/search-view-demo.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![메타데이터가 포함된 EC2 로그 상세 보기](/images/clickstack/host-logs/ec2/log-view-demo.webp)
+
+    </div>
 
     <Info>
       **시간대 표시**
@@ -451,17 +465,29 @@ ClickStack로 EC2 호스트 로그 모니터링을 시작할 수 있도록 클�
     1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
     2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+    <div className="ch-image-lg">
+
+    ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `host-logs-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="가져오기 완료" />
+    <div className="ch-image-lg">
+
+    ![가져오기 완료](/images/clickstack/host-logs/import-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     모든 시각화가 미리 구성된 상태로 대시보드가 생성됩니다:
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 로그 대시보드" />
+    <div className="ch-image-lg">
+
+    ![EC2 로그 대시보드](/images/clickstack/host-logs/host-logs-dashboard.webp)
+
+    </div>
 
     EC2 컨텍스트를 기준으로 대시보드 시각화를 필터링할 수 있습니다:
 

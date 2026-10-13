@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -74,7 +73,11 @@ ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة
     يستخدم ClickHouse Cloud مفاتيح على مستوى المؤسسة من صفحة **API Keys** لواجهة برمجة تطبيقات Cloud
     ونقاط نهاية واجهة برمجة تطبيقات الاستعلام. ولا يستخدم مسار اتصال SQL في ProbeDeck هذه المفاتيح.
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="نموذج اتصال ProbeDeck مُهيأ لاستخدام HTTPS على المنفذ 8443 مع اسم مستخدم ClickHouse" />
+    <div className="ch-image-sm">
+
+    ![نموذج اتصال ProbeDeck مُهيأ لاستخدام HTTPS على المنفذ 8443 مع اسم مستخدم ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
+
+    </div>
   </Step>
 </Steps>
 
@@ -151,11 +154,27 @@ CA خاصة، يعرض ProbeDeck بصمة SHA-256 والجهة المُصدِر�
 | مقاييس الذاكرة والخادم                                              | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | المعدلات السابقة للاستعلامات والأقراص                               | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="لوحة معلومات ProbeDeck للمراقبة تعرض الاستعلامات قيد التشغيل والنسخ المتماثل والأقراص والأجزاء والطفرات وعمليات الدمج ومعدل الاستعلامات والذاكرة" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![لوحة معلومات ProbeDeck للمراقبة تعرض الاستعلامات قيد التشغيل والنسخ المتماثل والأقراص والأجزاء والطفرات وعمليات الدمج ومعدل الاستعلامات والذاكرة](/images/integrations/sql-clients/probedeck-dashboard.png)
+
+</Frame>
+
+</div>
 
 انقر على **الاستعلامات قيد التشغيل** لفرز الاستعلامات النشطة حسب الوقت المنقضي، وفحص الذاكرة والصفوف المقروءة.
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="قائمة الاستعلامات قيد التشغيل في ProbeDeck مرتبة حسب الوقت المنقضي" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![قائمة الاستعلامات قيد التشغيل في ProbeDeck مرتبة حسب الوقت المنقضي](/images/integrations/sql-clients/probedeck-running-queries.png)
+
+</Frame>
+
+</div>
 
 <div id="query-the-uk-property-price-dataset">
   ## الاستعلام عن مجموعة بيانات UK Property Price

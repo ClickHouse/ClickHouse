@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -18,7 +17,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 当你的服务可以使用 `WalShadow` 时，**Overview** 页面上会显示 **私有预览** 横幅。点击 **Configure WalShadow** 即可开始。
 
-<Image img="/images/managed-postgres/walshadow/overview-banner.webp" alt="Postgres 服务概览页面，显示 WalShadow 私有预览横幅以及 Learn more 和 Configure WalShadow 链接" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Postgres 服务概览页面，显示 WalShadow 私有预览横幅以及 Learn more 和 Configure WalShadow 链接](/images/managed-postgres/walshadow/overview-banner.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   在继续之前，请确保 ClickHouse 能够访问你的 Postgres 服务。`WalShadow` 会直接连接作为目标端的 ClickHouse 服务，因此你需要一个具备创建数据库和表权限的 ClickHouse 用户及密码。
@@ -26,13 +33,25 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 要设置复制，请在 Postgres 实例的侧边栏中点击 **Sync to ClickHouse**，然后点击 **Replicate data in ClickHouse**。
 
-<Image img="/images/managed-postgres/walshadow/sync-landing.webp" alt="Sync to ClickHouse 着陆页，显示 ClickPipes 和 WalShadow 两种复制方式" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sync to ClickHouse 着陆页，显示 ClickPipes 和 WalShadow 两种复制方式](/images/managed-postgres/walshadow/sync-landing.webp)
+
+</Frame>
+
+</div>
 
 <Steps>
   <Step title="选择复制引擎" id="select-replication-engine">
     选择 **WalShadow** 作为复制引擎，然后点击 **Next**。
 
-    <Image img="/images/managed-postgres/walshadow/select-engine.webp" alt="选择复制引擎步骤，显示 ClickPipes 和 WalShadow 选项，其中已选中 WalShadow" size="md" border />
+    <div className="ch-image-md">
+
+    ![选择复制引擎步骤，显示 ClickPipes 和 WalShadow 选项，其中已选中 WalShadow](/images/managed-postgres/walshadow/select-engine.webp)
+
+    </div>
   </Step>
 
   <Step title="配置复制服务" id="configure-replication-service">
@@ -45,7 +64,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       * **Initial load only**：一次性导入现有数据，不再持续更新
       * **CDC only**：跳过初始加载，仅捕获此后产生的新变更
 
-    <Image img="/images/managed-postgres/walshadow/configure-service.webp" alt="配置复制服务步骤，显示 ClickHouse 服务、Postgres 数据库和复制方式选项" size="md" border />
+    <div className="ch-image-md">
+
+    ![配置复制服务步骤，显示 ClickHouse 服务、Postgres 数据库和复制方式选项](/images/managed-postgres/walshadow/configure-service.webp)
+
+    </div>
 
     点击 **Next** 继续。
   </Step>
@@ -57,7 +80,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     * **Tables**：展开各个 schema 并逐个选择表，或切换 **Select all tables**。对于每张表，你可以自定义 **Destination table name** 并调整 **Column settings**。
     * **ClickHouse user** 和 **ClickHouse password**：`WalShadow` 会直接连接目标 ClickHouse 服务，因此所用凭据需具备创建目标数据库和表的权限。
 
-    <Image img="/images/managed-postgres/walshadow/select-tables.webp" alt="选择表步骤，显示 schema 与表的选择、目标表名称以及 ClickHouse 凭据" size="md" border />
+    <div className="ch-image-md">
+
+    ![选择表步骤，显示 schema 与表的选择、目标表名称以及 ClickHouse 凭据](/images/managed-postgres/walshadow/select-tables.webp)
+
+    </div>
 
     点击 **Replicate data to ClickHouse** 开始复制。
   </Step>
@@ -65,7 +92,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="监控 WalShadow" id="monitor-walshadow">
     启动复制后，`WalShadow` 会出现在 **Sync to ClickHouse** 页面上。在管道预配和初始加载准备期间，其状态显示为 **Creating**。
 
-    <Image img="/images/managed-postgres/walshadow/walshadow-creating.webp" alt="Sync to ClickHouse 页面，显示处于 Creating 状态的 WalShadow" size="md" border />
+    <div className="ch-image-md">
+
+    ![Sync to ClickHouse 页面，显示处于 Creating 状态的 WalShadow](/images/managed-postgres/walshadow/walshadow-creating.webp)
+
+    </div>
 
     预配完成后，状态将变为 **Running**。页面会实时展示复制的相关指标：
 
@@ -77,7 +108,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     * **Uptime**：管道已运行的运行时间
     * **Last updated**：指标上次上报的时间
 
-    <Image img="/images/managed-postgres/walshadow/walshadow-running.webp" alt="Sync to ClickHouse 页面，显示处于 Running 状态的 WalShadow，以及已同步行数、滞后和运行时间等指标" size="md" border />
+    <div className="ch-image-md">
+
+    ![Sync to ClickHouse 页面，显示处于 Running 状态的 WalShadow，以及已同步行数、滞后和运行时间等指标](/images/managed-postgres/walshadow/walshadow-running.webp)
+
+    </div>
   </Step>
 </Steps>
 

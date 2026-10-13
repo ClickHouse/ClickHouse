@@ -8,7 +8,6 @@ doc_type: 'guide'
 keywords: ['Datadog', 'Datadog receiver', 'Datadog agent', 'OpenTelemetry collector', 'ترحيل', 'observability', 'ClickStack']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
@@ -23,7 +22,15 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * **تسهيل عملية الترحيل**، بالانتقال إلى ClickStack مع الإبقاء على طبقة collection الحالية لديك كما هي، واعتماد instrumentation في OpenTelemetry تدريجيًا.
 * **تشغيل كلتا الحزمتين بالتوازي** على المدى الطويل، واستخدام كل منصة فيما تجيده على أفضل وجه.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="ترحيل وكلاء Datadog" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ترحيل وكلاء Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</Frame>
+
+</div>
 
 <div id="why-run-clickstack-alongside-datadog">
   ## لماذا تُشغِّل ClickStack إلى جانب Datadog
@@ -47,17 +54,41 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 في عملية نشر OpenTelemetry نموذجية، تُرسَل بيانات القياس عن بُعد إلى مجمّع OpenTelemetry قبل أن تصل إلى النظام الخلفي. يستقبل المجمّع البيانات من المجمّعات العاملة في وضع agent ومن [OpenTelemetry SDKs](/ar/clickstack/ingesting-data/sdks/index) التي تُستخدَم لتهيئة التطبيقات، ويطبّق أي عمليات تصفية أو تحويل، ويجمع الأحداث في دفعات، ثم يصدّرها إلى الوجهة المستهدفة.
 
-<Image img="/images/use-cases/observability/simple_otel_pipeline.png" alt="مسار OTel بسيط" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مسار OTel بسيط](/images/use-cases/observability/simple_otel_pipeline.png)
+
+</Frame>
+
+</div>
 
 يضيف [مستقبِل Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) مُدخلاً آخر إلى هذه المعمارية. فهو يوفّر نقطة نهاية تفهم البروتوكولات التي تستخدمها عوامل Datadog وSDKs الخاصة بها، ويحوّل حمولات Datadog الواردة إلى نموذج بيانات OpenTelemetry. ومن هناك تمر عبر مسار المجمّع المعتاد مثلها مثل أي بيانات قياس عن بُعد أخرى.
 
 تُعاد ببساطة تهيئة عوامل Datadog الحالية لإرسال السجلات وآثار التتبّع إلى المستقبِل الذي يعمل على مجمّع ClickStack. وتحتفظ التطبيقات بـ Datadog SDKs الحالية، كما تبقى العوامل المنشورة بالفعل عبر بنيتك التحتية في مكانها.
 
-<Image img="/images/use-cases/observability/datadog_to_otel.png" alt="Datadog إلى OpenTelemetry" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Datadog إلى OpenTelemetry](/images/use-cases/observability/datadog_to_otel.png)
+
+</Frame>
+
+</div>
 
 ولأن مسار المجمّع يمكنه استخدام أكثر من مُصدِّر واحد، يمكن إرسال بيانات القياس عن بُعد نفسها إلى Datadog وClickStack في الوقت نفسه. وهذا ما يجعل التقييم جنبًا إلى جنب والتشغيل المتوازي على المدى الطويل ممكنين: إذ تقارن بين المنصتين باستخدام بيانات متطابقة، ثم تقرر ما إذا كنت ستُجري الترحيل.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="ترحيل عوامل Datadog" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ترحيل عوامل Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</Frame>
+
+</div>
 
 <div id="what-the-receiver-handles">
   ## ما الذي يتعامل معه المستقبِل
@@ -201,7 +232,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
       <Step title="انسخ مفتاح API للإدخال الخاص بك" id="copy-ingestion-key-oss">
         في واجهة ClickStack ‏(HyperDX)، اختر حسابك في الزاوية السفلية اليسرى، ثم انتقل إلى **Team Settings &gt; API Keys**، وانسخ **Ingestion API Key**.
 
-        <Image img="/images/use-cases/observability/hyperdx_ingestion_key.png" alt="مفتاح إدخال ClickStack" size="lg" background />
+        <div className="ch-image-lg">
+
+        ![مفتاح إدخال ClickStack](/images/use-cases/observability/hyperdx_ingestion_key.png)
+
+        </div>
       </Step>
 
       <Step title="اضبط عامل Datadog" id="configure-datadog-agent-oss">
@@ -275,7 +310,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
     اتبع [التعليمات في README](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) لتشغيل التطبيق.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="تطبيق HackerNews Analyzer قيد التشغيل محليًا" />
+    <div className="ch-image-lg">
+
+    ![تطبيق HackerNews Analyzer قيد التشغيل محليًا](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
   </Step>
 
   <Step title="تشغيل ClickStack مع تفعيل مستقبِل Datadog" id="launch-clickstack-example">
@@ -314,11 +353,23 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   <Step title="استكشف بيانات القياس عن بُعد في ClickStack" id="explore-telemetry">
     افتح واجهة HyperDX على [http://localhost:8080](http://localhost:8080) واستكشف traces وlogs وmetrics التي جُمعت من Datadog agent.
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_2.png" alt="Datadog في ClickStack traces 2" size="lg" background />
+    <div className="ch-image-lg">
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_1.png" alt="Datadog في ClickStack traces 1" size="lg" background />
+    ![Datadog في ClickStack traces 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_3.png" alt="Datadog في ClickStack traces 3" size="lg" background />
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Datadog في ClickStack traces 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Datadog في ClickStack traces 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+
+    </div>
   </Step>
 </Steps>
 

@@ -7,8 +7,6 @@ title: 'BladePipe を ClickHouse に接続する'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -55,7 +53,11 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
 
     2. `ClickHouse` を選択し、ClickHouse のホストとポート、ユーザー名とパスワードを入力して設定を行い、&quot;Test Connection&quot; をクリックします。
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp" size="lg" border alt="ターゲットとして ClickHouse を追加" />
+       <div className="ch-image-lg">
+
+       ![ターゲットとして ClickHouse を追加](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+       </div>
 
     3. 下部にある &quot;Add DataSource&quot; をクリックすると、ClickHouse インスタンスが追加されます。
   </Step>
@@ -71,7 +73,11 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
 
     2. `MySQL` を選択し、MySQL のホストとポート、ユーザー名、パスワードを入力して設定を行い、&quot;Test Connection&quot; をクリックします。
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp" size="lg" border alt="MySQL をソースとして追加" />
+       <div className="ch-image-lg">
+
+       ![MySQL をソースとして追加](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+       </div>
 
     3. 下部の &quot;Add DataSource&quot; をクリックすると、MySQL インスタンスが追加されます。
   </Step>
@@ -80,19 +86,39 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
     1. BladePipe で、&quot;DataJob&quot; &gt; &quot;Create DataJob&quot; をクリックします。
 
     2. 追加した MySQL インスタンスと ClickHouse インスタンスを選択し、&quot;Test Connection&quot; をクリックして BladePipe がそれぞれのインスタンスに接続できることを確認します。続いて、移行対象のデータベースを選択します。
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp" size="lg" border alt="ソースとターゲットを選択" />
+       <div className="ch-image-lg">
+
+       ![ソースとターゲットを選択](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
+
+       </div>
 
     3. DataJob Type で &quot;Incremental&quot; を選択し、あわせて &quot;Full Data&quot; オプションも選択します。
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp" size="lg" border alt="同期タイプを選択" />
+       <div className="ch-image-lg">
+
+       ![同期タイプを選択](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
+
+       </div>
 
     4. 複製するテーブルを選択します。
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp" size="lg" border alt="テーブルを選択" />
+       <div className="ch-image-lg">
+
+       ![テーブルを選択](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
+
+       </div>
 
     5. 複製するカラムを選択します。
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp" size="lg" border alt="カラムを選択" />
+       <div className="ch-image-lg">
+
+       ![カラムを選択](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
+
+       </div>
 
     6. DataJob の作成を確認すると、DataJob は自動的に実行されます。
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob は実行中です" />
+       <div className="ch-image-lg">
+
+       ![DataJob は実行中です](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+       </div>
   </Step>
 
   <Step title="データを検証する" id="5-verify-the-data">
@@ -105,6 +131,10 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
     </Note>
 
     2. <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">検証用 DataJob</a> を作成します。検証用 DataJob が完了したら、結果を確認し、ClickHouse のデータが MySQL のデータと一致していることを確認します。
-       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp" size="lg" border alt="データを検証" />
+       <div className="ch-image-lg">
+
+       ![データを検証](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+       </div>
   </Step>
 </Steps>

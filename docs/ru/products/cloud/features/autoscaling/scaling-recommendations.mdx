@@ -7,8 +7,6 @@ title: 'Рекомендации по масштабированию'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="introduction">
   ## Введение
 </div>
@@ -96,7 +94,15 @@ desired_memory = max(
 Каждое окно независимо формирует рекомендацию на основе анализа памяти и CPU.
 Затем система объединяет эти рекомендации в зависимости от того, какое направление масштабирования предлагает каждое окно, как показано на рисунке ниже:
 
-<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="Логика объединения в двухоконном рекомендателе" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Логика объединения в двухоконном рекомендателе](/images/cloud/features/autoscaling/two-window-recommender.webp)
+
+</Frame>
+
+</div>
 
 Подробный разбор проектных решений, лежащих в основе рекомендателя, см. в статье [&quot;Более интеллектуальное автомасштабирование для ClickHouse: двухоконный подход
 &quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)

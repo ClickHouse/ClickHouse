@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse Assistant permite usar lenguaje natural para analizar datos en un servicio de ClickHouse Cloud. Puede generar consultas, visualizaciones y resúmenes utilizando el contexto de las pestañas activas, las consultas guardadas, los esquemas y los dashboards.
 
 El Assistant también incluye un modo Docs AI para formular preguntas basadas en la documentación de ClickHouse. Use esta guía para habilitar el Assistant y trabajar con ambos modos en la ClickHouse Cloud Console.
@@ -24,14 +22,22 @@ El Assistant también incluye un modo Docs AI para formular preguntas basadas en
     2. En la barra lateral izquierda, haga clic en el icono de destello con la etiqueta “ClickHouse Assistant”.
     3. (Acceso directo) Pulse <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) o <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) para abrirlo o cerrarlo.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/1_open_chat.webp" alt="Abrir el panel lateral de AI Chat" size="md" />
+    <div className="ch-image-md">
+
+    ![Abrir el panel lateral de AI Chat](/images/use-cases/AI_ML/AIChat/1_open_chat.webp)
+
+    </div>
   </Step>
 
   <Step title="Aceptar el consentimiento de uso de datos (primer uso)" id="consent">
     1. La primera vez que lo use, verá un cuadro de diálogo de consentimiento que describe el tratamiento de los datos y los subencargados externos del LLM.
     2. Revíselo y acéptelo para continuar. Si lo rechaza, el panel no se abrirá.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/2_consent.webp" alt="Cuadro de diálogo de consentimiento" size="md" />
+    <div className="ch-image-md">
+
+    ![Cuadro de diálogo de consentimiento](/images/use-cases/AI_ML/AIChat/2_consent.webp)
+
+    </div>
   </Step>
 
   <Step title="Elegir un modo de chat" id="modes">
@@ -42,7 +48,11 @@ El Assistant también incluye un modo Docs AI para formular preguntas basadas en
 
     Use el selector de modo en la parte inferior izquierda del panel lateral para cambiar.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/3_modes.webp" alt="Selección de modo" size="sm" />
+    <div className="ch-image-sm">
+
+    ![Selección de modo](/images/use-cases/AI_ML/AIChat/3_modes.webp)
+
+    </div>
   </Step>
 
   <Step title="Redactar y enviar un mensaje" id="compose">
@@ -54,7 +64,11 @@ El Assistant también incluye un modo Docs AI para formular preguntas basadas en
   <Step title="Comprender los pasos de “thinking” de Agent" id="thinking-steps">
     En el modo Agent, puede ver pasos intermedios expandibles de “thinking” o planificación. Estos aportan transparencia sobre cómo el asistente formula su respuesta. Puede contraerlos o expandirlos según lo necesite.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/4_thinking.webp" alt="Pasos de thinking" size="md" />
+    <div className="ch-image-md">
+
+    ![Pasos de thinking](/images/use-cases/AI_ML/AIChat/4_thinking.webp)
+
+    </div>
   </Step>
 
   <Step title="Iniciar chats nuevos" id="new-chats">
@@ -66,7 +80,11 @@ El Assistant también incluye un modo Docs AI para formular preguntas basadas en
     2. Seleccione un chat anterior para cargar sus mensajes.
     3. Elimine una conversación con el icono de la papelera.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/5_history.webp" alt="Lista del historial de chats" size="md" />
+    <div className="ch-image-md">
+
+    ![Lista del historial de chats](/images/use-cases/AI_ML/AIChat/5_history.webp)
+
+    </div>
   </Step>
 
   <Step title="Trabajar con SQL generado" id="sql-actions">
@@ -76,9 +94,17 @@ El Assistant también incluye un modo Docs AI para formular preguntas basadas en
     * Haga clic en “Open in editor” para cargar la consulta en una nueva pestaña SQL.
     * Modifíquelo y ejecútelo en la Console.
 
-    <Image img="/images/use-cases/AI_ML/AIChat/6_result_actions.webp" alt="Acciones de resultado" size="md" />
+    <div className="ch-image-md">
 
-    <Image img="/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp" alt="Abrir la consulta generada en el editor" size="md" />
+    ![Acciones de resultado](/images/use-cases/AI_ML/AIChat/6_result_actions.webp)
+
+    </div>
+
+    <div className="ch-image-md">
+
+    ![Abrir la consulta generada en el editor](/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp)
+
+    </div>
   </Step>
 
   <Step title="Detener o interrumpir una respuesta" id="interrupt">

@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -18,7 +17,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Если `WalShadow` доступен для вашего сервиса, на странице **Overview** отображается баннер **закрытая предварительная версия**. Нажмите **Configure WalShadow**, чтобы начать работу.
 
-<Image img="/images/managed-postgres/walshadow/overview-banner.webp" alt="Страница обзора сервиса Postgres с баннером закрытой предварительной версии WalShadow и ссылками Learn more и Configure WalShadow" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Страница обзора сервиса Postgres с баннером закрытой предварительной версии WalShadow и ссылками Learn more и Configure WalShadow](/images/managed-postgres/walshadow/overview-banner.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Прежде чем продолжить, убедитесь, что ваш сервис Postgres доступен для ClickHouse. `WalShadow` подключается к целевому сервису ClickHouse напрямую, поэтому вам понадобятся пользователь ClickHouse и пароль с разрешением на создание баз данных и таблиц.
@@ -26,13 +33,25 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Чтобы настроить репликацию, нажмите **Sync to ClickHouse** на боковой панели вашего экземпляра Postgres, а затем — **Replicate data in ClickHouse**.
 
-<Image img="/images/managed-postgres/walshadow/sync-landing.webp" alt="Страница Sync to ClickHouse с методами репликации ClickPipes и WalShadow" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Страница Sync to ClickHouse с методами репликации ClickPipes и WalShadow](/images/managed-postgres/walshadow/sync-landing.webp)
+
+</Frame>
+
+</div>
 
 <Steps>
   <Step title="Выберите движок репликации" id="select-replication-engine">
     Выберите **WalShadow** в качестве движка репликации, затем нажмите **Next**.
 
-    <Image img="/images/managed-postgres/walshadow/select-engine.webp" alt="Шаг выбора движка репликации с вариантами ClickPipes и WalShadow, выбран WalShadow" size="md" border />
+    <div className="ch-image-md">
+
+    ![Шаг выбора движка репликации с вариантами ClickPipes и WalShadow, выбран WalShadow](/images/managed-postgres/walshadow/select-engine.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройте сервис репликации" id="configure-replication-service">
@@ -45,7 +64,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       * **Initial load only**: разовый импорт существующих данных без дальнейших обновлений
       * **CDC only**: пропустить первоначальный импорт и фиксировать только новые изменения
 
-    <Image img="/images/managed-postgres/walshadow/configure-service.webp" alt="Шаг настройки сервиса репликации с параметрами сервиса ClickHouse, базы данных Postgres и метода репликации" size="md" border />
+    <div className="ch-image-md">
+
+    ![Шаг настройки сервиса репликации с параметрами сервиса ClickHouse, базы данных Postgres и метода репликации](/images/managed-postgres/walshadow/configure-service.webp)
+
+    </div>
 
     Нажмите **Next**, чтобы продолжить.
   </Step>
@@ -57,7 +80,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * **Tables**: разверните каждую схему и выберите отдельные таблицы либо включите переключатель **Select all tables**. Для каждой таблицы можно задать **Destination table name** и изменить **Column settings**.
     * **ClickHouse user** и **ClickHouse password**: `WalShadow` подключается к целевому сервису ClickHouse напрямую, поэтому ему нужны учётные данные с разрешением на создание целевой базы данных и таблиц.
 
-    <Image img="/images/managed-postgres/walshadow/select-tables.webp" alt="Шаг выбора таблиц с выбором схемы и таблиц, именами целевых таблиц и учётными данными ClickHouse" size="md" border />
+    <div className="ch-image-md">
+
+    ![Шаг выбора таблиц с выбором схемы и таблиц, именами целевых таблиц и учётными данными ClickHouse](/images/managed-postgres/walshadow/select-tables.webp)
+
+    </div>
 
     Нажмите **Replicate data to ClickHouse**, чтобы начать репликацию.
   </Step>
@@ -65,7 +92,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Мониторинг WalShadow" id="monitor-walshadow">
     После запуска репликации `WalShadow` появляется на странице **Sync to ClickHouse**. Пока конвейер разворачивается и готовится первоначальная загрузка, его статус — **Creating**.
 
-    <Image img="/images/managed-postgres/walshadow/walshadow-creating.webp" alt="Страница Sync to ClickHouse, на которой WalShadow находится в состоянии Creating" size="md" border />
+    <div className="ch-image-md">
+
+    ![Страница Sync to ClickHouse, на которой WalShadow находится в состоянии Creating](/images/managed-postgres/walshadow/walshadow-creating.webp)
+
+    </div>
 
     После завершения развёртывания статус меняется на **Running**. На странице отображаются актуальные метрики репликации:
 
@@ -77,7 +108,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * **Uptime**: как долго работает конвейер
     * **Last updated**: когда метрики обновлялись последний раз
 
-    <Image img="/images/managed-postgres/walshadow/walshadow-running.webp" alt="Страница Sync to ClickHouse, на которой WalShadow находится в состоянии Running с метриками синхронизированных строк, отставания и времени работы" size="md" border />
+    <div className="ch-image-md">
+
+    ![Страница Sync to ClickHouse, на которой WalShadow находится в состоянии Running с метриками синхронизированных строк, отставания и времени работы](/images/managed-postgres/walshadow/walshadow-running.webp)
+
+    </div>
   </Step>
 </Steps>
 

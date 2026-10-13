@@ -7,8 +7,6 @@ title: クエリ API エンドポイントの設定
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 **クエリ API エンドポイント**機能を使用すると、ClickHouse Cloud コンソールで任意の保存クエリから API エンドポイントを直接作成できます。ネイティブドライバーで ClickHouse Cloud サービスに接続しなくても、HTTP 経由で API エンドポイントにアクセスして保存クエリを実行できます。
 
 <div id="quick-start-guide">
@@ -68,11 +66,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     正しく動作することを確認するために、SQL エディタ右側のクエリ変数入力ボックスで年 `2010` を指定して、このクエリをすばやく実行してみましょう。
 
-    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="サンプルクエリをテストする" />
+    <div className="ch-image-md">
+
+    ![サンプルクエリをテストする](/images/cloud/sqlconsole/endpoints-testquery.webp)
+
+    </div>
 
     次に、クエリを保存します。
 
-    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="サンプルクエリを保存する" />
+    <div className="ch-image-md">
+
+    ![サンプルクエリを保存する](/images/cloud/sqlconsole/endpoints-savequery.webp)
+
+    </div>
 
     保存クエリの詳細については、[&quot;Saving a query&quot;](/ja/products/cloud/features/sql-console-features/sql-console#saving-a-query) セクションを参照してください。
   </Step>
@@ -81,7 +87,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     クエリ API エンドポイントは、クエリビューで **Share** ボタンをクリックし、`API Endpoint` を選択することで直接設定できます。
     どの API キーにエンドポイントへのアクセスを許可するかを指定するよう求められます。
 
-    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="クエリエンドポイントを設定する" />
+    <div className="ch-image-md">
+
+    ![クエリエンドポイントを設定する](/images/cloud/sqlconsole/endpoints-configure.webp)
+
+    </div>
 
     API キーを選択すると、次の項目を求められます。
 
@@ -92,7 +102,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     テスト用のリクエストを送信できるよう、`curl` コマンドの例が表示されます。
 
-    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="エンドポイントの curl コマンド" />
+    <div className="ch-image-md">
+
+    ![エンドポイントの curl コマンド](/images/cloud/sqlconsole/endpoints-completed.webp)
+
+    </div>
 
     インターフェイスに表示される curl コマンドを、便宜上以下に示します。
 
@@ -108,11 +122,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="テストと監視" id="testing-and-monitoring">
     クエリ API エンドポイントが作成されたら、`curl` または他の HTTP クライアントを使って動作をテストできます。
 
-    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="エンドポイントの curl テスト" />
+    <div className="ch-image-md">
+
+    ![エンドポイントの curl テスト](/images/cloud/sqlconsole/endpoints-curltest.webp)
+
+    </div>
 
     最初のリクエストを送信すると、**Share** ボタンのすぐ右側に新しいボタンが表示されるはずです。これをクリックすると、クエリに関する監視データを含むフライアウトが開きます。
 
-    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="エンドポイントの監視" />
+    <div className="ch-image-sm">
+
+    ![エンドポイントの監視](/images/cloud/sqlconsole/endpoints-monitoring.webp)
+
+    </div>
   </Step>
 </Steps>
 

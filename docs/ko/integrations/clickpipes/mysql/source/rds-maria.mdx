@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 MySQL ClickPipe를 통해 데이터를 복제할 수 있도록 RDS MariaDB 인스턴스를 구성하는 방법을 단계별로 안내합니다.
@@ -31,7 +30,11 @@ MySQL ClickPipe를 통해 데이터를 복제할 수 있도록 RDS MariaDB 인�
   <Step title="자동 백업을 통해 바이너리 로깅 활성화" id="enable-binlog-logging-rds">
     자동 백업 기능에 따라 MySQL의 바이너리 로깅 활성화 여부가 결정됩니다. 이 설정은 AWS 콘솔에서 구성할 수 있습니다.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS에서 자동 백업 활성화" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![RDS에서 자동 백업 활성화](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     복제 사용 사례에 따라 백업 보존을 충분히 긴 값으로 설정하는 것이 좋습니다.
   </Step>
@@ -53,25 +56,65 @@ MySQL ClickPipe를 통해 데이터를 복제할 수 있도록 RDS MariaDB 인�
 
 RDS Console에서 MariaDB 인스턴스를 클릭한 다음 `Configurations` 탭으로 이동하면 파라미터 그룹을 찾을 수 있습니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="RDS에서 파라미터 그룹을 찾는 위치" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![RDS에서 파라미터 그룹을 찾는 위치](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</Frame>
+
+</div>
 
 파라미터 그룹 링크를 클릭하면 해당 파라미터 그룹 페이지로 이동합니다. 오른쪽 상단에 Edit 버튼이 표시됩니다:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="파라미터 그룹 편집" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![파라미터 그룹 편집](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</Frame>
+
+</div>
 
 설정 `binlog_format`, `binlog_row_metadata`, `binlog_row_image`는 다음과 같이 지정해야 합니다:
 
 1. `binlog_format`을 `ROW`로 설정합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Binlog format을 ROW로 설정" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Binlog format을 ROW로 설정](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</Frame>
+
+</div>
 
 2. `binlog_row_metadata`를 `FULL`로 설정합니다
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Binlog row metadata를 FULL로 설정" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Binlog row metadata를 FULL로 설정](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</Frame>
+
+</div>
 
 3. `binlog_row_image`를 `FULL`로 설정합니다
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Binlog row image를 FULL로 설정" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Binlog row image를 FULL로 설정](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</Frame>
+
+</div>
 
 다음으로, 오른쪽 상단의 `Save Changes`를 클릭합니다. 변경 사항을 적용하려면 인스턴스를 재부팅해야 할 수 있습니다. RDS 인스턴스의 `Configurations` 탭에서 파라미터 그룹 링크 옆에 `Pending reboot`가 표시되면, 인스턴스를 재부팅해야 한다는 뜻입니다.
 
@@ -132,9 +175,25 @@ RDS Console에서 MariaDB 인스턴스를 클릭한 다음 `Configurations` 탭�
 
 RDS 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS에서 보안 그룹을 찾는 위치" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="위 보안 그룹의 인바운드 규칙 편집" size="lg" border />
+<Frame>
+
+![RDS에서 보안 그룹을 찾는 위치](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![위 보안 그룹의 인바운드 규칙 편집](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</Frame>
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### AWS PrivateLink를 통한 프라이빗 액세스

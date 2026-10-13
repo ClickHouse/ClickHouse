@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Redis', 'métricas', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -215,7 +213,7 @@ Si desea probar la integración de Redis Metrics antes de configurar su propio e
     2. Busca métricas que empiecen por `redis.` (p. ej., `redis.commands.processed`, `redis.memory.used`)
     3. Deberías ver puntos de datos de métricas según el intervalo de recopilación configurado
 
-    {/* <Image img={metrics_view} alt="Vista de métricas de Redis"/> */}
+    {/* ![Vista de métricas de Redis](/images/clickstack/redis-metrics-dashboard.webp) */}
   </Step>
 </Steps>
 
@@ -303,17 +301,29 @@ Para ayudarte a empezar a monitorizar Redis con ClickStack, proporcionamos visua
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, en el menú de puntos suspensivos
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botón para importar dashboard" />
+    <div className="ch-image-lg">
+
+    ![Botón para importar dashboard](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Sube el archivo `redis-metrics-dashboard.json` y haz clic en **Finish Import**
 
-    <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="Diálogo para finalizar la importación" />
+    <div className="ch-image-lg">
+
+    ![Diálogo para finalizar la importación](/images/clickstack/import-redis-metrics-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones ya configuradas:
 
-    <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Dashboard de Redis Metrics" />
+    <div className="ch-image-lg">
+
+    ![Dashboard de Redis Metrics](/images/clickstack/redis-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       Para el demo dataset, establece el intervalo de tiempo en **2025-10-20 05:00:00 - 2025-10-21 05:00:00 (UTC)** (ajústalo según tu zona horaria local). El dashboard importado no tendrá ningún intervalo de tiempo especificado de forma predeterminada.

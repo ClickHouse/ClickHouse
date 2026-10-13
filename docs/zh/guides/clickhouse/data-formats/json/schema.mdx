@@ -7,8 +7,6 @@ score: 20
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 虽然可以使用 [schema inference](/zh/guides/clickhouse/data-formats/json/inference) 为 JSON 数据建立初始 schema，并直接查询 JSON 数据文件 (例如 S3 中的数据文件) ，但你应尽量为数据建立一个经过优化、带版本的 schema。下面我们将讨论对 JSON 结构进行建模的推荐方法。
 
 <div id="static-vs-dynamic-json">
@@ -989,19 +987,43 @@ FORMAT PrettyJSONEachRow
 
 ClickHouse 会在真正的列式布局中将每个 JSON 路径存储为子列，从而获得与传统列相同的性能优势，例如压缩、SIMD 加速处理以及尽可能减少磁盘 I/O。JSON 数据中每个唯一的路径和类型组合，都可能在磁盘上形成各自独立的列文件。
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="每个 JSON 路径一个列" />
+<div className="ch-image-md">
+
+<Frame>
+
+![每个 JSON 路径一个列](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
+
+</Frame>
+
+</div>
 
 例如，当插入两个类型不同的 JSON 路径时，ClickHouse 会将每种[具体类型的值存储在不同的子列中](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data)。这些子列可以独立访问，从而尽量减少不必要的 I/O。请注意，查询包含多种类型的列时，其值仍会作为单个列式响应返回。
 
 此外，借助 offset，ClickHouse 可确保这些子列保持紧凑，且不会为缺失的 JSON 路径存储默认值。这种方式可以最大化压缩效果，并进一步减少 I/O。
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="JSON 偏移量" />
+<div className="ch-image-md">
+
+<Frame>
+
+![JSON 偏移量](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
+
+</Frame>
+
+</div>
 
 但是，在高基数或变化频繁的 JSON 结构场景中——例如遥测管道、日志或机器学习特征存储——这种行为可能会导致列文件数量激增。每出现一个新的唯一 JSON 路径，就会新增一个列文件；该路径下每多一种类型变体，又会额外新增一个列文件。虽然这对读取性能最为有利，但也会带来运维挑战：文件描述符耗尽、内存使用增加，以及由于大量小文件导致合并变慢。
 
 为缓解这一问题，ClickHouse 引入了溢出子列 (overflow subcolumn) 的概念：一旦不同 JSON 路径的数量超过某个阈值，额外路径就会使用紧凑编码格式存储在一个共享文件中。该文件仍可查询，但无法享受专用子列所具备的相同性能特征。
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="共享 JSON 列" />
+<div className="ch-image-md">
+
+<Frame>
+
+![共享 JSON 列](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
+
+</Frame>
+
+</div>
 
 该阈值由 JSON 类型声明中的 [`max_dynamic_paths`](/zh/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) 参数控制。
 

@@ -6,8 +6,6 @@ keywords: ['rastreamento de consulta', 'OTel', 'Grafana']
 description: "Este guia mostra como coletar e visualizar rastreamentos de consulta com ClickHouse autogerenciado usando métodos nativos ou o Grafana. Isso é particularmente útil quando você está trabalhando com consultas complexas e precisa entender o funcionamento interno da execução além do que o EXPLAIN mostra."
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 **Pré-requisitos**:
 
 * Familiaridade com os [arquivos de configuração](/pt-BR/concepts/features/configuration/server-config/configuration-files) do ClickHouse
@@ -145,7 +143,11 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
     Use o visualizador de trace hospedado em [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
     Carregue o arquivo `trace.json` da etapa anterior para visualizar o trace.
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="Exemplo do visualizador de trace do ClickHouse" />
+    <div className="ch-image-md">
+
+    ![Exemplo do visualizador de trace do ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
+
+    </div>
   </Step>
 
   <Step title="Usando o Grafana para visualizar traces" id="using-grafana">
@@ -174,10 +176,18 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
     Certifique-se de definir `Query type` como `Traces`:
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Visualização de traces do ClickHouse no Grafana" />
+    <div className="ch-image-md">
+
+    ![Visualização de traces do ClickHouse no Grafana](/images/knowledgebase/trace-visualization-grafana.png)
+
+    </div>
 
     Clique em &quot;Run Query&quot; e examine o diagrama de traces:
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Visualização de traces do ClickHouse no Grafana" />
+    <div className="ch-image-md">
+
+    ![Visualização de traces do ClickHouse no Grafana](/images/knowledgebase/trace-visualization-diagram.png)
+
+    </div>
   </Step>
 </Steps>

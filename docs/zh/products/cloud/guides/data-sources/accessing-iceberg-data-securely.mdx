@@ -7,8 +7,6 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', '身份验证']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在对象存储 (通常为 S3) 中的 Iceberg 数据进行安全的基于角色的访问控制。本指南沿用与[安全访问 S3 数据](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)相同的安全配置模式，并在 ClickHouse 中补充了 Iceberg 特有的配置。
 
 <div id="overview">
@@ -36,7 +34,11 @@ ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在�
   <Step title={<>5. 复制 <strong>服务角色 ID (IAM)</strong> 的值。</>} id="service-role-iam-value">
     此 ARN 是为将访问您的 Iceberg 数据的 AWS IAM 角色配置信任策略所必需的。
 
-    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="获取 ClickHouse 服务 IAM 角色 ARN" border />
+    <div className="ch-image-lg">
+
+    ![获取 ClickHouse 服务 IAM 角色 ARN](/images/cloud/security/secures3_arn.webp)
+
+    </div>
   </Step>
 </Steps>
 

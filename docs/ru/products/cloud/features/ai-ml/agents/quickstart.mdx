@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge />
 
@@ -29,7 +28,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Запустите ClickHouse Agents" id="launch-agents">
     В вашем сервисе Cloud нажмите **ClickHouse agents** на левой боковой панели, чтобы открыть стартовую страницу агентов. Затем нажмите **Launch ClickHouse agents**, чтобы открыть Конструктор агентов.
 
-    <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="Навигация сервиса Cloud с выбранным пунктом ClickHouse agents (бета), где показана стартовая страница с кнопкой Launch ClickHouse agents" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Навигация сервиса Cloud с выбранным пунктом ClickHouse agents (бета), где показана стартовая страница с кнопкой Launch ClickHouse agents](/images/cloud/agent-builder/launch-ch-agents.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте агента" id="create-the-agent">
@@ -41,7 +44,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * **Instructions** - системный промпт, который описывает роль агента, вопросы, на которые он должен отвечать, и бизнес-правила, которым он должен следовать.
     * **Model** - выберите модель из выпадающего списка.
 
-    <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Панель Конструктора агентов с выпадающим списком Create New Agent, полями формы (Name, Description, Category, Instructions, Model) и разделом Capabilities" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Панель Конструктора агентов с выпадающим списком Create New Agent, полями формы (Name, Description, Category, Instructions, Model) и разделом Capabilities](/images/cloud/agent-builder/agent-builder.webp)
+
+    </div>
   </Step>
 
   <Step title="Подключите возможности и инструменты" id="attach-tools">
@@ -49,15 +56,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     **Capabilities** на основной панели — встроенные возможности, такие как [Run Code](/ru/products/cloud/features/ai-ml/agents/builder/code-interpreter), [Веб-поиск](/ru/products/cloud/features/ai-ml/agents/builder/web-search), File Context, Artifacts, [MCP-серверы](/ru/products/cloud/features/ai-ml/agents/builder/mcp-servers) и [навыки](/ru/products/cloud/features/ai-ml/agents/builder/skills). Включите те, которые нужны агенту.
 
-    <Image img="/images/cloud/agent-builder/capabilities.webp" alt="Раздел Capabilities в панели Конструктора агентов с переключателями Run Code, Веб-поиск, File Context, Artifacts, MCP-серверы и навыки" size="sm" />
+    <div className="ch-image-sm">
+
+    ![Раздел Capabilities в панели Конструктора агентов с переключателями Run Code, Веб-поиск, File Context, Artifacts, MCP-серверы и навыки](/images/cloud/agent-builder/capabilities.webp)
+
+    </div>
 
     **Tools** доступны по кнопке **Add Tools** в нижней части панели — это сторонние интеграции, такие как [генерация изображений](/ru/products/cloud/features/ai-ml/agents/builder/image-generation), [Vision](/ru/products/cloud/features/ai-ml/agents/builder/vision), API поиска и внешние сервисы.
 
-    <Image img="/images/cloud/agent-builder/tools-button.webp" alt="Нижняя часть панели Конструктора агентов с выделенной кнопкой Add Tools" size="sm" />
+    <div className="ch-image-sm">
+
+    ![Нижняя часть панели Конструктора агентов с выделенной кнопкой Add Tools](/images/cloud/agent-builder/tools-button.webp)
+
+    </div>
 
     Нажмите **Add Tools**, чтобы открыть каталог:
 
-    <Image img="/images/cloud/agent-builder/tools-modal.webp" alt="Модальное окно Agent Tools с сеткой сторонних интеграций, включая Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator и Stable Diffusion" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Модальное окно Agent Tools с сеткой сторонних интеграций, включая Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator и Stable Diffusion](/images/cloud/agent-builder/tools-modal.webp)
+
+    </div>
 
     [Субагенты](/ru/products/cloud/features/ai-ml/agents/builder/subagents) настраиваются в разделе **Advanced settings** — подробности см. на странице субагентов.
 
@@ -67,7 +86,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Выполните запрос" id="run-a-query">
     Сохраните агента, откройте новый диалог и выберите своего агента в списке выбора агентов. Введите вопрос — например, *&quot;Какие 10 моих таблиц имеют наибольшее число строк на этой неделе?&quot;* — и агент составит план, при необходимости вызовет инструменты и вернет ответ.
 
-    <Image img="/images/cloud/agent-builder/chat-query.webp" alt="Диалог в чате с вопросом 'Какие 10 моих таблиц имеют наибольшее число строк на этой неделе?' и ответом агента — таблицей Markdown с рейтингом 10 лучших таблиц по сервисам по числу строк, а ниже — Key Observations" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Диалог в чате с вопросом 'Какие 10 моих таблиц имеют наибольшее число строк на этой неделе?' и ответом агента — таблицей Markdown с рейтингом 10 лучших таблиц по сервисам по числу строк, а ниже — Key Observations](/images/cloud/agent-builder/chat-query.webp)
+
+    </div>
   </Step>
 </Steps>
 

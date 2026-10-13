@@ -7,8 +7,6 @@ keywords: ['azure', 'flexible server', 'mysql', 'clickpipes', 'binlog']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Ce guide pas à pas vous montre comment configurer Azure Flexible Server for MySQL pour répliquer des données vers ClickHouse Cloud à l’aide de [MySQL ClickPipe](/fr/integrations/clickpipes/mysql/index). Seule **l’ingestion ponctuelle** est prise en charge pour ce service. Pour les questions fréquentes sur MySQL CDC, consultez la [page FAQ MySQL](/fr/integrations/clickpipes/mysql/faq).
 
 <Warning>
@@ -59,7 +57,11 @@ Ensuite, vous devez autoriser les connexions à votre instance Azure Flexible Se
 
     3. Dans la section **Firewall rules**, saisissez la [liste des adresses IP statiques de ClickPipes](/fr/integrations/clickpipes/networking/static-ips) correspondant à la région dans laquelle votre service est déployé.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="Configurer le réseau pour un accès public avec une liste d’autorisation d’IP" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![Configurer le réseau pour un accès public avec une liste d’autorisation d’IP](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
+
+       </div>
 
     4. Cliquez sur **Save** pour enregistrer les modifications de la configuration de sécurité réseau.
   </Tab>

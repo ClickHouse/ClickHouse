@@ -12,9 +12,9 @@ integration:
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
 import PostgresClickPipeCli from '/snippets/ko/clickpipes/_postgres_clickpipe_cli.mdx';
+
 import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.mdx';
 
 <Visibility for="agents">
@@ -65,15 +65,27 @@ import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.
 
     1. ClickHouse Cloud 콘솔에서 ClickHouse Cloud 서비스로 이동합니다.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 서비스" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![ClickPipes 서비스](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+    </div>
 
     2. 왼쪽 메뉴에서 `Data Sources` 버튼을 선택한 후 &quot;Set up a ClickPipe&quot;를 클릭하십시오
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 선택" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![가져오기 선택](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
 
     3. `Postgres CDC` 타일을 선택합니다
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Postgres 선택" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![Postgres 선택](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
+
+       </div>
 
 ### 소스 Postgres 데이터베이스 연결 추가하기
 
@@ -84,7 +96,11 @@ import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.
       자세한 내용은 [이 페이지 상단](#prerequisites)에 링크된 소스 Postgres 설정 가이드를 참조하십시오.
     </Info>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="연결 정보 입력" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![연결 정보 입력](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
+
+    </div>
 
 #### (선택 사항) AWS Private Link 설정
 
@@ -104,7 +120,11 @@ import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.
 
     2. SSH 연결 정보를 입력하십시오.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+       </div>
 
     3. 키 기반 인증(authentication)을 사용하려면 &quot;Revoke and generate key pair&quot;를 클릭하여 새 키 쌍을 생성하고, 생성된 공개 키(public key)를 SSH 서버의 `~/.ssh/authorized_keys`에 복사하십시오.
 
@@ -120,7 +140,11 @@ import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.
 
     5. 사전 요구사항 단계에서 생성한 replication slot을 드롭다운 목록에서 선택하십시오.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="replication slot 선택" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![replication slot 선택](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
+
+       </div>
 
 #### 고급 설정
 
@@ -136,7 +160,11 @@ import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.
 
     6. 여기에서 ClickPipe의 대상 데이터베이스를 선택할 수 있습니다. 기존 데이터베이스를 선택하거나 새 데이터베이스를 생성할 수 있습니다.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="대상 데이터베이스 선택" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![대상 데이터베이스 선택](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
+
+       </div>
 
     7. 소스 Postgres 데이터베이스에서 복제할 테이블을 선택할 수 있습니다. 테이블을 선택할 때 대상 ClickHouse 데이터베이스에서 사용할 테이블 이름을 변경하거나 특정 컬럼을 제외할 수도 있습니다.
 
@@ -150,7 +178,11 @@ import SettingPartitionBy from '/snippets/ko/clickpipes/_target_ch_partition_by.
 
     9. 권한 드롭다운에서 &quot;Full access&quot; 역할을 선택한 후 &quot;Complete Setup&quot;을 클릭하십시오.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="권한 검토" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![권한 검토](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+       </div>
 
 ## 다음 단계
 

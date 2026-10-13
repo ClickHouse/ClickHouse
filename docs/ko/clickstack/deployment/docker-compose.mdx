@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'HyperDX Docker 배포', 'ClickStack 배포 가이드', 'OpenTelemetry Docker Compose']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import JSONSupport from '/snippets/ko/_json_support.mdx';
 
 모든 ClickStack Open Source 구성 요소는 각각 별도의 Docker image로 배포됩니다:
@@ -67,7 +65,11 @@ Docker Compose는 기본 `otel-collector` 설정을 기준으로 관측성과 �
       통합된 ClickHouse 인스턴스의 기본 연결을 재정의할 수 있습니다. 자세한 내용은 [&quot;ClickHouse Cloud 사용&quot;](#using-clickhouse-cloud)을 참조하세요.
     </Info>
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    <div className="ch-image-lg">
+
+    ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
 
     다른 ClickHouse 인스턴스를 사용하는 예시는 [&quot;ClickHouse Cloud 사용&quot;](#using-clickhouse-cloud)을 참조하세요.
   </Step>
@@ -79,7 +81,11 @@ Docker Compose는 기본 `otel-collector` 설정을 기준으로 관측성과 �
 
     소스를 생성하라는 메시지가 표시되면 모든 기본값을 유지하고 `Table` 필드에 `otel_logs`를 입력하세요. 다른 모든 설정은 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="로그 소스 생성" size="md" />
+    <div className="ch-image-md">
+
+    ![로그 소스 생성](/images/use-cases/observability/hyperdx-logs.webp)
+
+    </div>
   </Step>
 </Steps>
 

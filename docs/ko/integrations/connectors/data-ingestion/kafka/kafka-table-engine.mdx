@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', '테이블 엔진', '스트리밍', '실시간', '메시지 큐']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 Kafka 테이블 엔진은 Apache Kafka 및 기타 Kafka API 호환 브로커(예: Redpanda, Amazon MSK)에서 데이터를 [**읽고**](#kafka-to-clickhouse) 해당 브로커에 데이터를 [**쓸 때**](#clickhouse-to-kafka) 사용할 수 있습니다.
 
 <div id="kafka-to-clickhouse">
@@ -31,7 +29,15 @@ Kafka 테이블 엔진을 사용하면 ClickHouse가 Kafka 토픽에서 직접 �
 
 테이블 엔진에서 읽은 데이터를 영속적으로 저장하려면, 그 데이터를 캡처해 다른 테이블에 삽입할 수단이 필요합니다. 트리거 기반 materialized view는 이 기능을 네이티브하게 제공합니다. materialized view는 테이블 엔진에 대한 읽기를 시작하고, 문서 배치를 전달받습니다. TO 절은 데이터의 대상을 결정하며, 일반적으로 [MergeTree 계열](/ko/reference/engines/table-engines/mergetree-family/index)의 테이블이 사용됩니다. 이 과정은 아래와 같이 시각화할 수 있습니다.
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="Kafka 테이블 엔진 아키텍처 다이어그램" style={{width: '80%'}} />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kafka 테이블 엔진 아키텍처 다이어그램](/images/integrations/data-ingestion/kafka/kafka_01.webp)
+
+</Frame>
+
+</div>
 
 <div id="steps">
   #### 절차
@@ -355,7 +361,15 @@ ClickHouse에서 더 높은 전달 보장이 필요한 경우 [쿼럼 기반 삽
 
 초기 목표는 다음 그림에서 가장 잘 드러납니다:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="삽입이 포함된 Kafka 테이블 엔진 다이어그램" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![삽입이 포함된 Kafka 테이블 엔진 다이어그램](/images/integrations/data-ingestion/kafka/kafka_02.webp)
+
+</Frame>
+
+</div>
 
 [Kafka to ClickHouse](#kafka-to-clickhouse)의 단계에 따라 테이블과 뷰를 생성했으며, 토픽이 완전히 소비된 상태라고 가정합니다.
 
@@ -399,7 +413,11 @@ ClickHouse에서 더 높은 전달 보장이 필요한 경우 [쿼럼 기반 삽
   <Step title="materialized views 사용" id="2-using-materialized-views">
     테이블에 문서가 삽입될 때 materialized views를 활용해 메시지를 Kafka 엔진(및 토픽)으로 보낼 수 있습니다. GitHub 테이블에 행이 삽입되면 materialized view가 트리거되어, 해당 행이 다시 Kafka 엔진을 통해 새 토픽에 삽입됩니다. 이 역시 그림으로 보면 가장 쉽게 이해할 수 있습니다.
 
-    <Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="materialized view를 사용하는 Kafka 테이블 엔진 다이어그램" />
+    <div className="ch-image-lg">
+
+    ![materialized view를 사용하는 Kafka 테이블 엔진 다이어그램](/images/integrations/data-ingestion/kafka/kafka_03.webp)
+
+    </div>
 
     새 Kafka 토픽 `github_out` 또는 이에 상응하는 토픽을 생성하십시오. Kafka 테이블 엔진 `github_out_queue`가 이 토픽을 가리키도록 하십시오.
 
@@ -493,7 +511,15 @@ Kafka 컨슈머 그룹을 통해 여러 ClickHouse 인스턴스가 동일한 토
 
 여러 ClickHouse 인스턴스가 동일한 컨슈머 그룹 id를 사용해 하나의 토픽을 읽도록 구성할 수 있으며, 이는 Kafka 테이블 엔진 생성 시 지정합니다. 따라서 각 인스턴스는 하나 이상의 파티션에서 읽어 로컬 대상 테이블에 세그먼트를 삽입합니다. 이어서 대상 테이블은 데이터 중복을 처리하도록 ReplicatedMergeTree를 사용하도록 구성할 수 있습니다. 이 방식은 Kafka 파티션이 충분하다면 ClickHouse 클러스터에 맞춰 Kafka 읽기를 스케일링할 수 있게 해줍니다.
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="ClickHouse 클러스터를 사용하는 Kafka 테이블 엔진 다이어그램" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse 클러스터를 사용하는 Kafka 테이블 엔진 다이어그램](/images/integrations/data-ingestion/kafka/kafka_04.webp)
+
+</Frame>
+
+</div>
 
 <div id="tuning-performance">
   #### 성능 튜닝

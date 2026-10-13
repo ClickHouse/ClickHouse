@@ -6,8 +6,6 @@ keywords: ['jeu de données d’exemple', 'antennes-relais', 'OpenCelliD', 'géo
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Dans ce tutoriel, vous allez découvrir comment exploiter des données géographiques avec ClickHouse à partir du jeu de données des antennes-relais.
 Vous chargerez le jeu de données dans ClickHouse Cloud, examinerez son schéma et exécuterez des requêtes d&#39;agrégation sur des dizaines de millions de lignes.
 Vous enrichirez ensuite les données à l&#39;aide d&#39;un dictionnaire, utiliserez la fonction `pointInPolygon` pour compter les antennes situées en Allemagne, puis vous servirez de ClickHouse Agents pour visualiser le résultat sur une carte.
@@ -234,7 +232,11 @@ Pour ce tutoriel, vous aurez besoin de :
     Saisissez « Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables » et envoyez le message.
     Lors d&#39;une exécution, l&#39;agent a effectué les étapes suivantes :
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="Chat de l'agent ClickHouse montrant les étapes suivies pour construire une grille de densité des antennes-relais en Allemagne" />
+    <div className="ch-image-lg">
+
+    ![Chat de l'agent ClickHouse montrant les étapes suivies pour construire une grille de densité des antennes-relais en Allemagne](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+    </div>
 
     * Il a recherché le Mobile Country Code de l&#39;Allemagne dans `mcc_country_dict` et a trouvé le MCC `262`.
     * Il a compté les antennes avec `mcc = 262` situées à l&#39;intérieur du polygone de `germany` à l&#39;aide de `pointInPolygon`, soit 2 588 635 antennes. Ce nombre est légèrement inférieur au décompte précédent, car le filtre supplémentaire sur `mcc` exclut les antennes situées dans le polygone mais enregistrées dans un autre pays.
@@ -243,7 +245,11 @@ Pour ce tutoriel, vous aurez besoin de :
 
     Ouvrez le fichier généré pour voir le résultat. Les zones les plus lumineuses correspondent aux grandes agglomérations : Berlin, Hambourg, Munich et Francfort.
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="Carte de densité des antennes-relais en Allemagne sur une grille de 0,1 degré avec une échelle de couleurs logarithmique" />
+    <div className="ch-image-md">
+
+    ![Carte de densité des antennes-relais en Allemagne sur une grille de 0,1 degré avec une échelle de couleurs logarithmique](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+    </div>
   </Step>
 </Steps>
 

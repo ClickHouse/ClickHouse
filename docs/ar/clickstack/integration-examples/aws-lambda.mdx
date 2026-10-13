@@ -7,8 +7,6 @@ doc_type: 'دليل'
 keywords: ['AWS', 'Lambda', 'OTEL', 'ClickStack', 'سجلات', 'CloudWatch']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -217,9 +215,17 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   <Step title="تحقّق من السجلات في HyperDX" id="verify-logs">
     بعد اكتمال الإعداد، سجّل الدخول إلى HyperDX (واجهة مستخدم ClickStack) وتحقّق من وصول السجلات:
 
-    <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="عرض سجلات Lambda" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/lambda/lambda-log.webp" alt="تفاصيل سجل Lambda" />
+    ![عرض سجلات Lambda](/images/clickstack/lambda/lambda-log-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![تفاصيل سجل Lambda](/images/clickstack/lambda/lambda-log.webp)
+
+    </div>
 
     ابحث عن السمات الأساسية التالية في السجلات:
 

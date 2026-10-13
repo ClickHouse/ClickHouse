@@ -10,7 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
@@ -25,7 +24,15 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
 このガイドでは、ClickHouse のデータを Explo に接続して、結果を可視化します。グラフは次のようになります。
 
-<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Explo Dashboard](/images/integrations/data-visualization/explo_15.webp)
+
+</Frame>
+
+</div>
 
 <p />
 
@@ -45,27 +52,51 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
     2. 左側のサイドバーにある Explo の **data** タブをクリックします。
 
-    <Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Data タブ" border />
+    <div className="ch-image-sm">
+
+    ![Data タブ](/images/integrations/data-visualization/explo_01.webp)
+
+    </div>
 
     3. 右上にある **Connect Data Source** をクリックします。
 
-    <Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
+    <div className="ch-image-sm">
+
+    ![Connect Data Source](/images/integrations/data-visualization/explo_02.webp)
+
+    </div>
 
     4. **Getting Started** ページで必要な情報を入力します
 
-    <Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
+    <div className="ch-image-md">
+
+    ![Getting Started](/images/integrations/data-visualization/explo_03.webp)
+
+    </div>
 
     5. **ClickHouse** を選択します
 
-    <Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+
+    </div>
 
     6. **ClickHouse の認証情報** を入力します。
 
-    <Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Credentials" border />
+    <div className="ch-image-md">
+
+    ![Credentials](/images/integrations/data-visualization/explo_05.webp)
+
+    </div>
 
     7. **Security** を設定します
 
-    <Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
+    <div className="ch-image-md">
+
+    ![Security](/images/integrations/data-visualization/explo_06.webp)
+
+    </div>
 
     8. ClickHouse 側で、**Explo の IP をホワイトリストに追加します**。
        `54.211.43.19, 52.55.98.121, 3.214.169.94, 54.156.141.148`
@@ -74,15 +105,27 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
   <Step title="ダッシュボードを作成する" id="3-create-a-dashboard">
     1. 左側のナビゲーションバーにある **Dashboard** タブに移動します。
 
-    <Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="Dashboard" border />
+    <div className="ch-image-sm">
+
+    ![Dashboard](/images/integrations/data-visualization/explo_07.webp)
+
+    </div>
 
     2. 右上の **Create Dashboard** をクリックし、ダッシュボードに名前を付けます。これでダッシュボードの作成は完了です。
 
-    <Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="Create Dashboard" border />
+    <div className="ch-image-sm">
+
+    ![Create Dashboard](/images/integrations/data-visualization/explo_08.webp)
+
+    </div>
 
     3. 以下のような画面が表示されます。
 
-    <Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo Dashboard" border />
+    <div className="ch-image-md">
+
+    ![Explo Dashboard](/images/integrations/data-visualization/explo_09.webp)
+
+    </div>
   </Step>
 
   <Step title="SQL クエリを実行する" id="4-run-a-sql-query">
@@ -90,33 +133,61 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
        `SELECT * FROM YOUR_TABLE_NAME
        LIMIT 100`
 
-    <Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+    <div className="ch-image-md">
+
+    ![Explo Dashboard](/images/integrations/data-visualization/explo_10.webp)
+
+    </div>
 
     2. **Run** をクリックし、**preview** タブに移動してデータを確認します。
 
-    <Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+    <div className="ch-image-md">
+
+    ![Explo Dashboard](/images/integrations/data-visualization/explo_11.webp)
+
+    </div>
   </Step>
 
   <Step title="グラフを作成する" id="5-build-a-chart">
     1. 左側から棒グラフのアイコンを画面上にドラッグします。
 
-    <Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+    <div className="ch-image-sm">
+
+    ![Explo Dashboard](/images/integrations/data-visualization/explo_16.webp)
+
+    </div>
 
     2. データセット を選択します。すると、以下のような画面が表示されます。
 
-    <Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+    <div className="ch-image-sm">
+
+    ![Explo Dashboard](/images/integrations/data-visualization/explo_12.webp)
+
+    </div>
 
     3. 次のように、X Axis に **county**、Y Axis Section に **Price** を入力します。
 
-    <Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
+    <div className="ch-image-sm">
+
+    ![Explo Dashboard](/images/integrations/data-visualization/explo_13.webp)
+
+    </div>
 
     4. 次に、aggregation を **AVG** に変更します。
 
-    <Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
+    <div className="ch-image-sm">
+
+    ![Explo Dashboard](/images/integrations/data-visualization/explo_14.webp)
+
+    </div>
 
     5. これで、住宅の平均価格を county ごとに表示できます。
 
-    <Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+    <div className="ch-image-md">
+
+    ![Explo Dashboard](/images/integrations/data-visualization/explo_15.webp)
+
+    </div>
   </Step>
 </Steps>
 

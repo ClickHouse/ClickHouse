@@ -6,8 +6,6 @@ keywords: ['تتبّع الاستعلام', 'OTel', 'Grafana']
 description: "يوضح هذا الدليل كيفية جمع بيانات تتبّع الاستعلام وتصوّرها باستخدام ClickHouse مُدار ذاتيًا، إما بالاعتماد على الطرق المضمّنة أو باستخدام Grafana. ويكون ذلك مفيدًا بشكل خاص عند العمل على استعلامات معقّدة والحاجة إلى فهم آليات التنفيذ الداخلية بما يتجاوز ما يوفّره EXPLAIN."
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 **المتطلبات المسبقة**:
 
 * الإلمام بـ [ملفات تهيئة ClickHouse](/ar/concepts/features/configuration/server-config/configuration-files)
@@ -145,7 +143,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     استخدم عارض التتبّع المستضاف على [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
     حمّل ملف `trace.json` من الخطوة السابقة لعرض التتبّع بصريًا.
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="مثال على عارض التتبّع في ClickHouse" />
+    <div className="ch-image-md">
+
+    ![مثال على عارض التتبّع في ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
+
+    </div>
   </Step>
 
   <Step title="استخدام Grafana لعرض التتبعات بصريًا" id="using-grafana">
@@ -174,10 +176,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     تأكد من تعيين `Query type` إلى `Traces`:
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="تصوّر التتبعات في ClickHouse في Grafana" />
+    <div className="ch-image-md">
+
+    ![تصوّر التتبعات في ClickHouse في Grafana](/images/knowledgebase/trace-visualization-grafana.png)
+
+    </div>
 
     انقر على &quot;Run Query&quot; وافحص مخطط التتبّع:
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="تصوّر التتبعات في ClickHouse في Grafana" />
+    <div className="ch-image-md">
+
+    ![تصوّر التتبعات في ClickHouse في Grafana](/images/knowledgebase/trace-visualization-diagram.png)
+
+    </div>
   </Step>
 </Steps>

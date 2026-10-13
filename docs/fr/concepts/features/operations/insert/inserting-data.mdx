@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## Insertion dans ClickHouse vs. les bases de données OLTP
 </div>
@@ -76,7 +74,15 @@ Si vous ne pouvez pas insérer de gros lots, vous pouvez déléguer ce regroupem
 
 Avec les insertions asynchrones, les données sont d&#39;abord insérées dans un buffer, puis écrites ultérieurement dans le stockage de la base de données en 3 étapes, comme l&#39;illustre le schéma ci-dessous :
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="insertions Postgres" />
+<div className="ch-image-md">
+
+<Frame>
+
+![insertions Postgres](/images/guides/postgres-inserts.webp)
+
+</Frame>
+
+</div>
 
 Avec les insertions asynchrones activées, ClickHouse :
 

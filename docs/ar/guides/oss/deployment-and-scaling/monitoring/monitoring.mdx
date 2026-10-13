@@ -7,8 +7,6 @@ title: 'المراقبة'
 doc_type: 'مرجع'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Note>
   بيانات المراقبة الموضَّحة في هذا الدليل متاحة في ClickHouse Cloud. وإلى جانب عرضها عبر لوحة المعلومات المدمجة الموضحة أدناه، يمكن أيضًا عرض مقاييس الأداء الأساسية والمتقدمة مباشرةً في وحدة تحكم الخدمة الرئيسية.
 </Note>
@@ -22,7 +20,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## لوحة معلومات observability المتقدمة المضمّنة
 </div>
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="لوحة معلومات observability المتقدمة الأصلية" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![لوحة معلومات observability المتقدمة الأصلية](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 يأتي ClickHouse مزودًا بميزة لوحة معلومات observability متقدمة مضمّنة يمكن الوصول إليها عبر `$HOST:$PORT/dashboard` (يتطلب اسم مستخدم وكلمة مرور)، وتعرض المقاييس التالية:
 

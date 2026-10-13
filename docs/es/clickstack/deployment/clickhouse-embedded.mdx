@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack integrado', 'ClickHouse integrado', 'ClickStack ClickHouse Server', 'observabilidad integrada']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickStack viene integrado directamente en el binario del servidor de ClickHouse. Esto significa que puedes acceder a la UI de ClickStack (HyperDX) desde tu instancia de ClickHouse sin desplegar ningún componente adicional. Esta implementación es similar a la demo pública en [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), pero se ejecuta con tu propia instancia de ClickHouse y tus propios datos.
 
 <div id="suitable-for">
@@ -59,7 +57,11 @@ Esta versión integrada **no está diseñada para su uso en producción**. En co
 
         Introduce el nombre de usuario `default` y la contraseña `password` para conectarte a la instancia local.
 
-        <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="Autenticación" size="lg" />
+        <div className="ch-image-lg">
+
+        ![Autenticación](/images/clickstack/deployment/embedded/authenticate.webp)
+
+        </div>
       </Step>
 
       <Step title="Crea una fuente" id="create-a-source-docker">
@@ -67,7 +69,11 @@ Esta versión integrada **no está diseñada para su uso en producción**. En co
 
         En una instalación limpia, se te pedirá que crees una fuente. Completa el campo **Table** con el nombre de tabla adecuado (por ejemplo, `otel_logs`) y haz clic en **Save New fuente**.
 
-        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Crear fuente" size="lg" />
+        <div className="ch-image-lg">
+
+        ![Crear fuente](/images/clickstack/deployment/embedded/inferred-source.webp)
+
+        </div>
 
         Si todavía no tienes datos, consulta [Ingesting data](/es/clickstack/ingesting-data/overview) para ver las opciones disponibles.
       </Step>
@@ -140,7 +146,11 @@ Esta versión integrada **no está diseñada para su uso en producción**. En co
 
         Si todavía no tienes datos, consulta [Ingesting data](/es/clickstack/ingesting-data/overview) para ver las opciones disponibles.
 
-        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Crear fuente" size="lg" />
+        <div className="ch-image-lg">
+
+        ![Crear fuente](/images/clickstack/deployment/embedded/inferred-source.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>

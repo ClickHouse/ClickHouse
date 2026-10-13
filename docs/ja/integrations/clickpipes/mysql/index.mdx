@@ -10,8 +10,8 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
+
 import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.mdx';
 
 MySQL ClickPipe は、MySQL および MariaDB データベースから ClickHouse Cloud にデータを取り込むための、フルマネージドかつ耐障害性に優れた方法です。**バルクロード**による一回限りのインジェストと、**変更データキャプチャ (CDC (変更データキャプチャ) ) **による継続的インジェストの両方をサポートしています。
@@ -46,15 +46,39 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 1. ClickHouse Cloud コンソールで、対象の ClickHouse Cloud サービスを開きます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes サービス" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. 左側のメニューで `Data Sources` ボタンを選択し、「Set up a ClickPipe」をクリックします
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. `MySQL CDC（変更データキャプチャ）` タイルを選択します
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="MySQL を選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![MySQL を選択](/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp)
+
+</Frame>
+
+</div>
 
 ### ソース MySQL データベース接続を追加する {#add-your-source-mysql-database-connection}
 
@@ -65,7 +89,15 @@ ClickHouse Cloud アカウントにログインしていることを確認して
   詳細については、[このページの上部](#prerequisites) にリンクされているソース MySQL のセットアップガイドを参照してください。
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="接続情報を入力" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![接続情報を入力](/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp)
+
+</Frame>
+
+</div>
 
 #### &#x20;(任意) TLS設定の変更 {#optional-changing-tls-settings}
 
@@ -79,7 +111,11 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 2. SSH の接続情報を入力します。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH トンネリング" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![SSH トンネリング](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. 鍵ベース認証を使用する場合は、「Revoke and generate key pair」をクリックして新しいキーペアを生成し、生成された公開鍵を SSH サーバーの `~/.ssh/authorized_keys` にコピーします。
 
@@ -106,7 +142,11 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 5. ここでは、ClickPipe の宛先データベースを選択できます。既存のデータベースを選択することも、新しいデータベースを作成することもできます。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="宛先データベースを選択" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![宛先データベースを選択](/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp)
+
+   </div>
 
 6. ソース MySQL データベースからレプリケートするテーブルを選択できます。テーブルの選択時には、宛先の ClickHouse データベースでテーブル名を変更したり、特定のカラムを除外したりすることもできます。
 
@@ -116,7 +156,11 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 8. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="権限の確認" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![権限の確認](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 最後に、よくある問題とその解決方法の詳細については、[&quot;MySQL 向け ClickPipes よくある質問&quot;](/ja/integrations/clickpipes/mysql/faq) ページを参照してください。
 

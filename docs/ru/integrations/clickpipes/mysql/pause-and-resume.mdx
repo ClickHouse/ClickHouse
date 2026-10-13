@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Бывают ситуации, когда MySQL ClickPipe полезно приостановить. Например, вам может понадобиться провести анализ уже имеющихся данных в неизменном состоянии. Или вы можете выполнять обновление MySQL. Вот как приостановить и затем возобновить MySQL ClickPipe.
 
 <div id="pause-clickpipe-steps">
@@ -22,16 +20,40 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 2. Перейдите на вкладку **Настройки**.
 3. Нажмите кнопку **Pause**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp)
+
+</Frame>
+
+</div>
 
 4. Появится окно подтверждения. Нажмите **Pause** ещё раз.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp)
+
+</Frame>
+
+</div>
 
 4. Перейдите на вкладку **Метрики**.
 5. Примерно через 5 секунд (а также после обновления страницы) статус пайпа должен стать **Paused**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp)
+
+</Frame>
+
+</div>
 
 <div id="resume-clickpipe-steps">
   ## Шаги по возобновлению MySQL ClickPipe
@@ -41,11 +63,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 2. Перейдите на вкладку **Настройки**.
 3. Нажмите кнопку **Resume**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp)
+
+</Frame>
+
+</div>
 
 4. Должно появиться диалоговое окно подтверждения. Нажмите Resume еще раз.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp)
+
+</Frame>
+
+</div>
 
 5. Перейдите на вкладку **Метрики**.
 6. Примерно через 5 секунд (а также после обновления страницы) статус пайпа должен стать **Running**.

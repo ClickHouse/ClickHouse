@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickPipes поддерживает интеграцию с реестром схем для декодирования значений записей, закодированных в Avro и Protobuf, а также [структурированных ключей Kafka](/ru/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 Для значений записей в формате Protobuf вы также можете [загрузить схему напрямую](/ru/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic), не настраивая реестр схем.
@@ -73,7 +71,15 @@ ClickPipes динамически получает и применяет схе�
 
 В мастере создания ClickPipe на шаге подключения Kafka включите **Реестр схем** и установите для параметра **Тип реестра** значение **AWS Glue**:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="Панель реестра схем с выбранным AWS Glue" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Панель реестра схем с выбранным AWS Glue](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
+
+</Frame>
+
+</div>
 
 | Поле         | Обязательно | Описание                                                                                                                             | Пример                                                     |
 | ------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -123,7 +129,11 @@ URL реестра настраивать не требуется. Каждая 
   <Step title="Получите ARN роли IAM сервиса ClickHouse" id="obtain-clickhouse-service-iam-role-arn">
     Откройте сервис, перейдите на вкладку **Settings**, прокрутите до раздела **Network security information** и скопируйте значение **Service role ID (IAM)** — ARN вида `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. Далее оно обозначается как `{ClickHouse_IAM_ARN}`. У каждого сервиса ClickHouse, развернутого в AWS, есть собственная роль, поэтому это значение отличается для каждого сервиса.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" alt="Идентификатор сервисной роли (IAM)" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Идентификатор сервисной роли (IAM)](/images/cloud/security/secures3_arn.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте роль IAM для реестра" id="create-registry-iam-role">

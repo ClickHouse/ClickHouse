@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -15,7 +14,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ## 아이덴티티 {#identities}
 
-<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse Connector identity model" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Connector identity model](/images/cloud/reference/byoc-connector-identity-model.svg)
+
+</Frame>
+
+</div>
 
 * **커넥터의 mTLS 클라이언트 인증서**는 조직 ID를 공통 이름(common name)으로 사용하며, 모든 데몬을 커넥터 엔드포인트에 인증합니다. `clicklink clctl instances create`도 엔드포인트를 호출할 때 동일한 인증서와 HMAC 키를 사용합니다.
 * **`pcm_scraper`와 `pcm_troubleshooter`**는 스크레이퍼와 Troubleshooter가 접속할 때 사용하는 읽기 전용 ClickHouse 사용자입니다. 실행기에는 ClickHouse 사용자가 없습니다.

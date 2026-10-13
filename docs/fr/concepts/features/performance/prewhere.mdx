@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['prewhere', 'optimisation des requêtes', 'performance', 'filtrage', 'bonnes pratiques']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 La [clause PREWHERE](/fr/reference/statements/select/prewhere) est une optimisation de l’exécution des requêtes dans ClickHouse. Elle réduit les opérations d’E/S et accélère les requêtes en évitant des lectures de données inutiles et en filtrant les données non pertinentes avant de lire sur le disque les colonnes non utilisées pour le filtrage.
 
 Ce guide explique le fonctionnement de PREWHERE, comment mesurer son impact et comment l’ajuster pour obtenir les meilleures performances.
@@ -19,7 +17,15 @@ Ce guide explique le fonctionnement de PREWHERE, comment mesurer son impact et c
 
 Nous allons commencer par illustrer comment une requête sur la table [uk&#95;price&#95;paid&#95;simple](/fr/concepts/core-concepts/parts) est traitée sans utiliser PREWHERE :
 
-<Image img="/images/guides/best-practices/prewhere_01.webp" size="md" alt="Traitement des requêtes sans optimisation PREWHERE" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Traitement des requêtes sans optimisation PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -45,7 +51,15 @@ Les animations suivantes montrent comment la requête ci-dessus est traitée lor
 
 Les trois premières étapes du traitement sont les mêmes que précédemment :
 
-<Image img="/images/guides/best-practices/prewhere_02.webp" size="md" alt="Traitement de la requête avec l’optimisation PREWHERE" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Traitement de la requête avec l’optimisation PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -66,7 +80,15 @@ ClickHouse commence le traitement PREWHERE en ① lisant les granules sélection
 
 Dans notre exemple, tous les granules sélectionnés correspondent, donc ② les granules correspondants, alignés positionnellement, de la colonne du filtre suivant — `date` — sont alors sélectionnés pour traitement :
 
-<Image img="/images/guides/best-practices/prewhere_03.webp" size="md" alt="Étape 1 : Filtrage par ville" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Étape 1 : Filtrage par ville](/images/guides/best-practices/prewhere_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -77,7 +99,15 @@ Ensuite, ClickHouse ① lit les granules sélectionnés de la colonne `date` pou
 
 Dans ce cas, deux granules sur trois contiennent des lignes correspondantes, donc ② seuls leurs granules, alignés positionnellement, de la colonne du filtre suivant — `price` — sont sélectionnés pour la suite du traitement :
 
-<Image img="/images/guides/best-practices/prewhere_04.webp" size="md" alt="Étape 2 : Filtrage par date" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Étape 2 : Filtrage par date](/images/guides/best-practices/prewhere_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -88,7 +118,15 @@ Enfin, ClickHouse ① lit les deux granules sélectionnés de la colonne `price`
 
 Un seul des deux granules contient des lignes correspondantes, donc ② seul son granule, aligné positionnellement, de la colonne du `SELECT` — `street` — doit être chargé pour la suite du traitement :
 
-<Image img="/images/guides/best-practices/prewhere_05.webp" size="md" alt="Étape 2 : Filtrage par prix" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Étape 2 : Filtrage par prix](/images/guides/best-practices/prewhere_05.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

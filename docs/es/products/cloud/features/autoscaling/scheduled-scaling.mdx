@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge />
 
@@ -26,9 +25,25 @@ Actualmente, el escalado programado está disponible en **Beta**.
 
 Para configurar una programación, ve a tu servicio en la consola de ClickHouse Cloud y entra en la configuración. Desde allí, selecciona **Schedule Override** y añade una regla nueva.
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="La interfaz de Scaling Schedules en la consola de ClickHouse Cloud, que muestra reglas de escalado basadas en el tiempo" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Configuración de una regla de escalado programado en la consola de ClickHouse Cloud" border />
+<Frame>
+
+![La interfaz de Scaling Schedules en la consola de ClickHouse Cloud, que muestra reglas de escalado basadas en el tiempo](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Configuración de una regla de escalado programado en la consola de ClickHouse Cloud](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
+
+</Frame>
+
+</div>
 
 Cada regla requiere:
 

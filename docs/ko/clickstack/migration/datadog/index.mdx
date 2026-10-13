@@ -8,7 +8,6 @@ doc_type: 'guide'
 keywords: ['Datadog', 'Datadog 수신기', 'Datadog agent', 'OpenTelemetry collector', '마이그레이션', '관측성', 'ClickStack']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
@@ -23,7 +22,15 @@ OpenTelemetry (OTel) collector의 ClickStack 배포판에 내장된 **Datadog �
 * 현재 수집 계층은 그대로 유지하면서 ClickStack으로 이전하고, OpenTelemetry 계측은 점진적으로 도입하여 **마이그레이션을 수월하게 진행**할 수 있습니다.
 * 장기적으로 **두 스택을 병렬로 운영**하면서 각 플랫폼의 강점을 살려 활용할 수 있습니다.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="Datadog 에이전트 마이그레이션" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Datadog 에이전트 마이그레이션](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</Frame>
+
+</div>
 
 <div id="why-run-clickstack-alongside-datadog">
   ## Datadog와 함께 ClickStack을 실행해야 하는 이유
@@ -47,17 +54,41 @@ OpenTelemetry (OTel) collector의 ClickStack 배포판에 내장된 **Datadog �
 
 일반적인 OpenTelemetry 배포에서는 텔레메트리 데이터가 백엔드에 도달하기 전에 OpenTelemetry collector로 전송됩니다. collector는 agent 모드 collector와 애플리케이션을 계측하는 [OpenTelemetry SDKs](/ko/clickstack/ingesting-data/sdks/index)로부터 데이터를 수신하고, 필요한 필터링이나 변환을 적용한 뒤, 이벤트를 배치로 묶어 대상에 내보냅니다.
 
-<Image img="/images/use-cases/observability/simple_otel_pipeline.png" alt="간단한 OTel 파이프라인" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![간단한 OTel 파이프라인](/images/use-cases/observability/simple_otel_pipeline.png)
+
+</Frame>
+
+</div>
 
 [Datadog 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver)는 이 아키텍처에 또 다른 입력 경로를 추가합니다. Datadog agent와 SDK가 사용하는 프로토콜을 이해하는 endpoint를 제공하고, 들어오는 Datadog payload를 OpenTelemetry 데이터 모델로 변환합니다. 이후에는 다른 텔레메트리와 마찬가지로 일반적인 collector pipeline을 거칩니다.
 
 기존 Datadog 에이전트는 ClickStack collector에서 실행 중인 수신기로 logs와 트레이스를 보내도록 간단히 재구성하면 됩니다. 애플리케이션은 기존 Datadog SDK를 그대로 사용할 수 있으며, 인프라 전반에 이미 배포된 agent도 그대로 유지됩니다.
 
-<Image img="/images/use-cases/observability/datadog_to_otel.png" alt="Datadog에서 OpenTelemetry로" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Datadog에서 OpenTelemetry로](/images/use-cases/observability/datadog_to_otel.png)
+
+</Frame>
+
+</div>
 
 collector pipeline은 둘 이상의 exporter를 사용할 수 있으므로, 동일한 텔레메트리를 Datadog와 ClickStack으로 동시에 보낼 수 있습니다. 따라서 두 플랫폼을 동일한 데이터로 비교하면서 나란히 평가하고 장기간 병행 운영할 수 있습니다. 그런 다음 마이그레이션 여부는 별도로 결정하면 됩니다.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="Datadog agent 마이그레이션" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Datadog agent 마이그레이션](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</Frame>
+
+</div>
 
 <div id="what-the-receiver-handles">
   ## 수신기가 처리하는 내용
@@ -201,7 +232,11 @@ Datadog 수신기는 ClickStack 배포에 포함된 OpenTelemetry collector에�
       <Step title="수집 API key 복사" id="copy-ingestion-key-oss">
         ClickStack 인터페이스(HyperDX)에서 왼쪽 하단의 사용자를 선택하고 **Team Settings &gt; API Keys**로 이동한 다음 **Ingestion API Key**를 복사합니다.
 
-        <Image img="/images/use-cases/observability/hyperdx_ingestion_key.png" alt="ClickStack 수집 key" size="lg" background />
+        <div className="ch-image-lg">
+
+        ![ClickStack 수집 key](/images/use-cases/observability/hyperdx_ingestion_key.png)
+
+        </div>
       </Step>
 
       <Step title="Datadog agent 구성" id="configure-datadog-agent-oss">
@@ -275,7 +310,11 @@ Datadog 수신기는 ClickStack 배포에 포함된 OpenTelemetry collector에�
 
     앱을 실행하려면 [README의 안내](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation)를 따르십시오.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="로컬에서 실행 중인 HackerNews Analyzer 애플리케이션" />
+    <div className="ch-image-lg">
+
+    ![로컬에서 실행 중인 HackerNews Analyzer 애플리케이션](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
   </Step>
 
   <Step title="수신기를 활성화하여 ClickStack 실행" id="launch-clickstack-example">
@@ -314,11 +353,23 @@ Datadog 수신기는 ClickStack 배포에 포함된 OpenTelemetry collector에�
   <Step title="ClickStack에서 텔레메트리 탐색" id="explore-telemetry">
     [http://localhost:8080](http://localhost:8080)에서 HyperDX 인터페이스를 열고 Datadog 에이전트에서 수집된 트레이스, 로그, 메트릭을 살펴보십시오.
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_2.png" alt="ClickStack 트레이스의 Datadog 2" size="lg" background />
+    <div className="ch-image-lg">
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_1.png" alt="ClickStack 트레이스의 Datadog 1" size="lg" background />
+    ![ClickStack 트레이스의 Datadog 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_3.png" alt="ClickStack 트레이스의 Datadog 3" size="lg" background />
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![ClickStack 트레이스의 Datadog 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![ClickStack 트레이스의 Datadog 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+
+    </div>
   </Step>
 </Steps>
 

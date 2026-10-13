@@ -6,8 +6,6 @@ keywords: ['ClickStack configuration', 'observability configuration', 'HyperDX s
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 The following configuration options are available for each component of ClickStack:
 
 ## Settings for open source distributions {#modifying-settings}
@@ -102,7 +100,15 @@ The ClickStack UI relies on the user defining a source for each of the Observabi
 
 This configuration can be performed inside the application from `Team Settings -> Sources`, as shown below for logs:
 
-<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="HyperDX Source configuration" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![HyperDX Source configuration](/images/use-cases/observability/hyperdx-25.webp)
+
+</Frame>
+
+</div>
 
 Each of these sources require at least one table specified on creation and a set of columns which allow HyperDX to query the data.
 
@@ -267,15 +273,39 @@ Each attribute is configured with the following settings:
 
 For example, this trace source has been configured with a Highlighted Attribute and a Highlighted Trace Attribute:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Highlighted Attributes configuration" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Highlighted Attributes configuration](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
+
+</Frame>
+
+</div>
 
 These attributes are displayed in the side panel after clicking on a log or span:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Highlighted Attributes" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
+
+</Frame>
+
+</div>
 
 Clicking on an attribute provides options for using the attribute as a search value. If the optional Lucene expression is provided in the attribute configuration, then the Lucene expression will be used for the search instead of the SQL expression.
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="Highlighted Attributes Search" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Highlighted Attributes Search](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
+
+</Frame>
+
+</div>
 
 ### Correlated sources {#correlated-sources}
 
@@ -290,7 +320,15 @@ Setting these correlations enables several features. For example, HyperDX can re
 
 For example, below is the Logs source configured with correlated sources:
 
-<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="HyperDX Source correlated" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![HyperDX Source correlated](/images/use-cases/observability/hyperdx-26.webp)
+
+</Frame>
+
+</div>
 
 ### Application configuration settings {#application-configuration-settings}
 

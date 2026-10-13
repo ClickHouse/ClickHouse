@@ -10,8 +10,8 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
+
 import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.mdx';
 
 يوفّر MySQL ClickPipe طريقة مُدارة بالكامل وموثوقة لإدخال البيانات من قواعد بيانات MySQL وMariaDB إلى ClickHouse Cloud. وهو يدعم كلاً من **التحميل المجمّع** للإدخال لمرة واحدة و**التقاط تغيّر البيانات (CDC)** للإدخال المستمر.
@@ -46,15 +46,39 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 1. في وحدة تحكم ClickHouse Cloud، انتقل إلى خدمة ClickHouse Cloud الخاصة بك.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. من القائمة الجانبية اليسرى، اختر الزر `Data Sources` ثم انقر على &quot;Set up a ClickPipe&quot;
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد الواردات" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تحديد الواردات](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. اختر بطاقة `MySQL CDC`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="تحديد MySQL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تحديد MySQL](/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp)
+
+</Frame>
+
+</div>
 
 ### أضِف اتصال قاعدة بيانات MySQL المصدر {#add-your-source-mysql-database-connection}
 
@@ -65,7 +89,15 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
   لمزيد من المعلومات، راجع أدلة إعداد MySQL المصدر المشار إليها في [أعلى هذه الصفحة](#prerequisites).
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![املأ تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp)
+
+</Frame>
+
+</div>
 
 #### (اختياري) تغيير إعدادات TLS {#optional-changing-tls-settings}
 
@@ -79,7 +111,11 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 2. املأ تفاصيل اتصال SSH.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="نفق SSH" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![نفق SSH](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. لاستخدام المصادقة المستندة إلى المفتاح، انقر على &quot;إبطال وإنشاء زوج مفاتيح&quot; لإنشاء زوج مفاتيح جديد، ثم انسخ المفتاح العام الذي تم إنشاؤه إلى خادم SSH لديك ضمن `~/.ssh/authorized_keys`.
 
@@ -106,7 +142,11 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 5. هنا يمكنك تحديد قاعدة البيانات الوجهة لـ ClickPipe. يمكنك إما اختيار قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="اختيار قاعدة البيانات الوجهة" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![اختيار قاعدة البيانات الوجهة](/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp)
+
+   </div>
 
 6. يمكنك اختيار الجداول التي تريد نسخها من قاعدة بيانات MySQL المصدر. وأثناء اختيار الجداول، يمكنك أيضًا إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة، بالإضافة إلى استبعاد أعمدة محددة.
 
@@ -116,7 +156,11 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
 8. اختر دور &quot;الوصول الكامل&quot; من قائمة الأذونات المنسدلة، ثم انقر على &quot;إكمال الإعداد&quot;.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الأذونات" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![مراجعة الأذونات](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 أخيرًا، يُرجى الرجوع إلى صفحة [&quot;الأسئلة الشائعة حول ClickPipes for MySQL&quot;](/ar/integrations/clickpipes/mysql/faq) لمزيد من المعلومات عن المشكلات الشائعة وكيفية حلّها.
 

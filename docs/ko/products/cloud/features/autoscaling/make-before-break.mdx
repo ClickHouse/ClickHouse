@@ -7,8 +7,6 @@ title: 'ClickHouse Cloud의 중단 없는 교체(MBB) 작업'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse Cloud는 **Make Before Break**(MBB) 방식을 사용해 클러스터 업그레이드와 클러스터 스케일링을 수행합니다.
 이 방식에서는 기존 레플리카를 클러스터에서 제거하기 전에 새 레플리카를 클러스터에 추가합니다.
 즉, 새 레플리카를 추가하기에 앞서 기존 레플리카를 먼저 제거하는 break-first 방식과 반대입니다.
@@ -21,7 +19,15 @@ MBB 방식에는 여러 가지 장점이 있습니다.
 
 아래 이미지는 3개의 레플리카로 구성된 클러스터에서 서비스가 수직 스케일링될 때 이러한 방식이 어떻게 적용될 수 있는지 보여줍니다:
 
-<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="수직 스케일링되는 3개 레플리카 클러스터의 예시 다이어그램" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![수직 스케일링되는 3개 레플리카 클러스터의 예시 다이어그램](/images/cloud/features/mbb/vertical_scaling.webp)
+
+</Frame>
+
+</div>
 
 전반적으로 MBB는 이전에 사용되던 break-first 방식과 비교해 더 매끄럽고 중단이 적은 스케일링 및 업그레이드 경험을 제공합니다.
 

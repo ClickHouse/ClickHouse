@@ -6,8 +6,6 @@ description: 'ClickStack으로 JVM 모니터링'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -41,7 +39,11 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     3. **Team Settings → API Keys**로 이동하십시오
     4. **수집 API Key**를 복사하십시오
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
+    <div className="ch-image-lg">
+
+    ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+    </div>
   </Step>
 
   <Step title="OpenTelemetry Java agent 다운로드" id="download-agent">
@@ -210,17 +212,29 @@ ClickStack에서 JVM 애플리케이션을 모니터링할 수 있도록, JVM �
     1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
     2. 오른쪽 상단의 줄임표 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+    <div className="ch-image-lg">
+
+    ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `jvm-metrics-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="가져오기 완료" />
+    <div className="ch-image-lg">
+
+    ![가져오기 완료](/images/clickstack/jvm/jvm-metrics-import.webp)
+
+    </div>
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     모든 시각화가 사전 구성된 상태로 대시보드가 생성됩니다:
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Kafka 메트릭 대시보드" />
+    <div className="ch-image-lg">
+
+    ![Kafka 메트릭 대시보드](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       데모 데이터세트의 경우 시간 범위를 **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**로 설정하십시오. 로컬 시간대에 맞게 조정하십시오.

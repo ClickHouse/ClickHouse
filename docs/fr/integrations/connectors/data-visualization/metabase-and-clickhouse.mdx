@@ -12,7 +12,6 @@ integration:
   - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
@@ -27,7 +26,15 @@ Metabase est un outil open source doté d’une interface utilisateur simple d�
 
 Dans ce guide, vous allez poser quelques questions sur vos données ClickHouse avec Metabase et visualiser les réponses. L’une des réponses ressemblera à ceci :
 
-<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Visualisation Metabase sous forme de diagramme circulaire affichant des données de ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Visualisation Metabase sous forme de diagramme circulaire affichant des données de ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
+
+</Frame>
+
+</div>
 
 <p />
 
@@ -61,13 +68,21 @@ Dans ce guide, vous allez poser quelques questions sur vos données ClickHouse a
 
     3. Si l’installation de votre pilote a fonctionné, **ClickHouse** apparaîtra dans le menu déroulant **Type de base de données** :
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Sélection de base de données Metabase montrant ClickHouse comme option" border />
+       <div className="ch-image-md">
+
+       ![Sélection de base de données Metabase montrant ClickHouse comme option](/images/integrations/data-visualization/metabase_01.webp)
+
+       </div>
 
     4. Donnez à votre base de données un **Nom d’affichage**. Il s’agit d’un paramètre Metabase : vous pouvez donc utiliser le nom de votre choix.
 
     5. Saisissez les informations de connexion de votre base de données ClickHouse. Activez une connexion sécurisée si votre serveur ClickHouse est configuré pour utiliser SSL. Par exemple :
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Formulaire des informations de connexion Metabase pour la base de données ClickHouse" border />
+       <div className="ch-image-md">
+
+       ![Formulaire des informations de connexion Metabase pour la base de données ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
+
+       </div>
 
     6. Cliquez sur le bouton **Enregistrer** et Metabase analysera votre base de données à la recherche de tables.
   </Step>
@@ -77,25 +92,45 @@ Dans ce guide, vous allez poser quelques questions sur vos données ClickHouse a
 
     2. En haut à droite, cliquez sur le menu **+ New** et notez que vous pouvez poser des questions, exécuter des requêtes SQL et créer un dashboard :
 
-       <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Menu + New de Metabase affichant les options pour créer des questions, exécuter des requêtes SQL et créer des dashboards" border />
+       <div className="ch-image-sm">
+
+       ![Menu + New de Metabase affichant les options pour créer des questions, exécuter des requêtes SQL et créer des dashboards](/images/integrations/data-visualization/metabase_03.webp)
+
+       </div>
 
     3. Par exemple, voici une requête SQL exécutée sur une table nommée `uk_price_paid` qui renvoie le prix moyen payé par année de 1995 à 2022 :
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="SQL Editor de Metabase affichant une requête sur les données UK price paid" border />
+       <div className="ch-image-md">
+
+       ![SQL Editor de Metabase affichant une requête sur les données UK price paid](/images/integrations/data-visualization/metabase_04.webp)
+
+       </div>
   </Step>
 
   <Step title="Poser une question" id="5-ask-a-question">
     1. Cliquez sur **+ New** et sélectionnez **Question**. Notez que vous pouvez créer une question à partir d’une base de données et d’une table. Par exemple, la question suivante est posée à une table nommée `uk_price_paid` dans la base de données `default`. Voici une question simple qui calcule le prix moyen par ville, dans le comté du Grand Manchester :
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="Interface de création de questions Metabase avec les données UK price paid" border />
+       <div className="ch-image-md">
+
+       ![Interface de création de questions Metabase avec les données UK price paid](/images/integrations/data-visualization/metabase_06.webp)
+
+       </div>
 
     2. Cliquez sur le bouton **Visualize** pour afficher les résultats sous forme de tableau.
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Visualisation Metabase affichant les résultats tabulaires des prix moyens par ville" border />
+       <div className="ch-image-md">
+
+       ![Visualisation Metabase affichant les résultats tabulaires des prix moyens par ville](/images/integrations/data-visualization/metabase_07.webp)
+
+       </div>
 
     3. Sous les résultats, cliquez sur le bouton **Visualization** pour remplacer la visualisation par un graphique en barres (ou toute autre option disponible) :
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Visualisation Metabase en diagramme circulaire des prix moyens par ville dans le Grand Manchester" border />
+       <div className="ch-image-md">
+
+       ![Visualisation Metabase en diagramme circulaire des prix moyens par ville dans le Grand Manchester](/images/integrations/data-visualization/metabase_08.webp)
+
+       </div>
   </Step>
 </Steps>
 

@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['Agentic Data Stack', 'Docker Compose', 'настройка', 'LibreChat', 'MCP', 'Langfuse']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Запустите полный Agentic Data Stack локально с помощью Docker Compose, чтобы сразу после первого входа задавать вопросы по своим данным. Одной командой `docker compose up` вы запустите [LibreChat](/ru/products/agentic-data-stack/components/librechat), [MCP-сервер ClickHouse](/ru/products/agentic-data-stack/components/mcp-server), [ClickHouse](/ru/get-started/setup/install) и [Langfuse](/ru/products/agentic-data-stack/components/langfuse) для обсервабилити.
 
 <div id="prerequisites">
@@ -74,18 +72,30 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Выберите модель">
     По умолчанию модель уже выбрана. Если хотите ее изменить, откройте селектор моделей и выберите нужную.
 
-    <Image img="/images/agentic-data-stack/select-model.webp" alt="Селектор моделей LibreChat в левом верхнем углу, показывающий модель по умолчанию с подсказкой Select a model" size="md" />
+    <div className="ch-image-md">
+
+    ![Селектор моделей LibreChat в левом верхнем углу, показывающий модель по умолчанию с подсказкой Select a model](/images/agentic-data-stack/select-model.webp)
+
+    </div>
 
     Если во время настройки вы не задали ключ провайдера, добавьте его в интерфейсе.
 
     <Accordion title="Задайте ключ провайдера в интерфейсе">
       Откройте селектор моделей и нажмите **Set API Key** рядом с провайдером.
 
-      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Селектор моделей LibreChat с кнопкой Set API Key рядом с провайдером Anthropic" size="md" />
+      <div className="ch-image-md">
+
+      ![Селектор моделей LibreChat с кнопкой Set API Key рядом с провайдером Anthropic](/images/agentic-data-stack/set-api-key.webp)
+
+      </div>
 
       Вставьте свой ключ в диалоговое окно и нажмите **Submit**. Вы можете задать срок действия или сделать ключ бессрочным.
 
-      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="Диалоговое окно Set API Key for Anthropic с выпадающим списком срока действия, полем Key и кнопками Submit и Revoke" size="md" />
+      <div className="ch-image-md">
+
+      ![Диалоговое окно Set API Key for Anthropic с выпадающим списком срока действия, полем Key и кнопками Submit и Revoke](/images/agentic-data-stack/set-api-key-modal.webp)
+
+      </div>
     </Accordion>
   </Step>
 
@@ -96,7 +106,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
 
-    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="Открытое меню MCP Servers в поле ввода LibreChat, показывающее ClickHouse-Local с зеленой точкой подключения и ClickHouse-Cloud" size="md" />
+    <div className="ch-image-md">
+
+    ![Открытое меню MCP Servers в поле ввода LibreChat, показывающее ClickHouse-Local с зеленой точкой подключения и ClickHouse-Cloud](/images/agentic-data-stack/select-clickhouse-local.webp)
+
+    </div>
   </Step>
 
   <Step title="Задайте свой первый вопрос">
@@ -106,7 +120,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Агент использует инструменты MCP-сервера, чтобы получить список баз данных и таблиц, выполнять запросы к ClickHouse в режиме только для чтения и формировать ответ на основе результатов. Вам не нужно писать SQL.
 
-    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="LibreChat отвечает на пример вопроса, вызывая инструменты MCP ClickHouse-Local и перечисляя доступные базы данных и таблицы" size="md" />
+    <div className="ch-image-md">
+
+    ![LibreChat отвечает на пример вопроса, вызывая инструменты MCP ClickHouse-Local и перечисляя доступные базы данных и таблицы](/images/agentic-data-stack/prompt-chat.webp)
+
+    </div>
   </Step>
 </Steps>
 

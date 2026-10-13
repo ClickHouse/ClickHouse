@@ -9,8 +9,8 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import GatherCredentials from '/snippets/es/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/es/clickstack/_create_ingestion_user.mdx';
 
 Esta guía te lleva desde un servicio de Managed ClickStack vacío hasta tener logs, métricas, trazas y reproducciones de sesión fluyendo desde una aplicación real. Desplegarás un nuevo OpenTelemetry Collector (o adaptarás uno existente, si ya lo tienes) para tu servicio, instrumentarás una aplicación de ejemplo en Node.js sin cambiar su lógica de negocio y luego explorarás la telemetría en la UI de ClickStack.
@@ -211,7 +211,11 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
 
     Abre [http://localhost:5001](http://localhost:5001). Verás un selector de año, estadísticas generales, un gráfico de actividad, tablas con los principales usuarios y dominios, y un campo de búsqueda. Explora la interfaz: cambia de año y profundiza en las historias.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="La aplicación HackerNews Analyzer ejecutándose localmente" />
+    <div className="ch-image-lg">
+
+    ![La aplicación HackerNews Analyzer ejecutándose localmente](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
 
     En este punto, la aplicación está en ejecución, pero aún no está instrumentada. ClickStack no muestra datos: está esperando telemetría. Este es el estado &quot;antes&quot;.
   </Step>
@@ -300,31 +304,55 @@ La aplicación que instrumentaremos es [HackerNews Analyzer](https://github.com/
   <Step title="Inicia ClickStack y explora tu telemetría" id="launch-clickstack">
     Abre tu servicio en la [ClickHouse Cloud console](https://console.clickhouse.cloud) y selecciona **ClickStack** en el menú de la izquierda; luego, **Start Ingestion**.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Iniciar ClickStack" border />
+    <div className="ch-image-lg">
+
+    ![Iniciar ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+
+    </div>
 
     El siguiente paso puede omitirse, ya que ya configuraste tu collector. Haz clic en **Launch ClickStack** para continuar.
 
     ClickStack se abrirá en una pestaña nueva y debería llevarte automáticamente a la página **Getting Started**. Si no es así, selecciona **Getting Started** en el menú de la izquierda y luego haz clic en **Start Ingestion** y después en **Next**.
 
-    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
+
+    </div>
 
     ClickStack debería detectar automáticamente tus tablas y datos de telemetría, lo que te permitirá continuar. Selecciona **Start Exploring** para empezar a explorar tus datos.
 
-    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
+
+    </div>
 
     Ahora, visualiza los datos que está generando la aplicación:
 
     1. Ve a **Búsqueda** y filtra los últimos 5 minutos. Los logs de `hn-analyzer-api` empezarán a aparecer.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs de ClickStack" />
+    <div className="ch-image-lg">
+
+    ![Logs de ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+
+    </div>
 
     2. Haz clic en una solicitud y recorre la traza hacia arriba. Verás el span del handler de Express, un span HTTP hijo que apunta al ClickHouse cluster con la duración real de red, y registros de `console.log` correlacionados en la misma traza.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Trazas de ClickStack" />
+    <div className="ch-image-lg">
+
+    ![Trazas de ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+
+    </div>
 
     3. Abre **Session Replay** para reproducir un video navegable de una sesión del navegador, sincronizado con la línea de tiempo de la traza.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sesiones de ClickStack" />
+    <div className="ch-image-lg">
+
+    ![Sesiones de ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+
+    </div>
 
     Los logs, métricas, trazas y repeticiones de sesión llegan a la misma UI, comparten el mismo lenguaje de consulta y se correlacionan automáticamente.
 

@@ -7,8 +7,6 @@ title: 'Streaming de dados do SQL Server para o ClickHouse para análise rápida
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Neste artigo, vamos apresentar um tutorial que mostra como fazer streaming de dados do SQL Server para o ClickHouse. O ClickHouse é ideal para quem busca análise extremamente rápida em relatórios e dashboards internos ou voltados para clientes. Vamos passar, passo a passo, pela configuração de ambos os bancos de dados, pela forma de conectá-los e, por fim, por como usar o [Streamkap](https://streamkap.com) para fazer streaming dos seus dados. Se o SQL Server dá conta das suas operações do dia a dia, mas você precisa da velocidade e da inteligência do ClickHouse para análise, você está no lugar certo.&quot;
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
@@ -79,11 +77,19 @@ Certifique-se de ter:
     * Nome de usuário e senha
     * Nome do banco de dados
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
+
+    </div>
 
     #### O que acontece nos bastidores
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
+
+    </div>
 
     Quando você configurar isso, o Streamkap se conectará ao SQL Server e detectará as tabelas. Para esta demo, vamos escolher uma tabela com alguns dados já chegando em streaming, como eventos ou transações.
   </Step>
@@ -148,7 +154,11 @@ Certifique-se de ter:
 
     #### Você deve fazer backfill?
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
+
+    </div>
 
     Você pode estar se perguntando: devo carregar dados antigos?
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'シングルサインオン', 'IdP', 'Okta', 'Google']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <EnterprisePlanFeatureBadge feature="SAML SSO" />
@@ -50,7 +48,11 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
   <Step title="SAMLシングルサインオンを有効にする" id="enable-saml-sso">
     `Enable SAML single sign-on` の横にあるトグルをクリックします。セットアップ中にこの画面を何度か参照するため、このまま開いておいてください。
 
-    <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="SAMLセットアップを開始" force />
+    <div className="ch-image-lg">
+
+    ![SAMLセットアップを開始](/images/cloud/security/saml-self-serve-1.webp)
+
+    </div>
   </Step>
 
   <Step title="ID プロバイダーにアプリケーションを作成する" id="create-idp-application">
@@ -65,19 +67,31 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
       ClickHouse は IdP 主導のサインインをサポートしていません。ユーザーが ClickHouse Cloud に簡単にアクセスできるように、このサインイン URL 形式を使ってユーザー用のブックマークを設定してください: `https://console.clickhouse.cloud/?connection={orgId}`。ここで `{orgID}` は、Organization details ページにある Organization ID です。
     </Tip>
 
-    <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="ID プロバイダーのアプリケーションを作成する" force />
+    <div className="ch-image-lg">
+
+    ![ID プロバイダーのアプリケーションを作成する](/images/cloud/security/saml-self-serve-2.webp)
+
+    </div>
   </Step>
 
   <Step title="メタデータURLをSAML設定に追加する" id="add-metadata-url">
     SAMLプロバイダから`Metadata URL`を取得します。ClickHouse Cloudに戻り、`Next: Provide metadata URL`をクリックして、URLをテキストボックスに貼り付けます。
 
-    <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="メタデータURLを追加" force />
+    <div className="ch-image-lg">
+
+    ![メタデータURLを追加](/images/cloud/security/saml-self-serve-3.webp)
+
+    </div>
   </Step>
 
   <Step title="ドメイン検証コードを取得する" id="get-domain-verification-code">
     `Next: Verify your domains` をクリックします。テキストボックスにドメインを入力し、`Check domain` をクリックします。DNS プロバイダで TXT レコードに追加するためのランダムな検証コードが生成されます。
 
-    <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="検証するドメインを追加" force />
+    <div className="ch-image-lg">
+
+    ![検証するドメインを追加](/images/cloud/security/saml-self-serve-4.webp)
+
+    </div>
   </Step>
 
   <Step title="ドメインを確認する" id="verify-your-domain">
@@ -87,7 +101,11 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
       DNSレコードの更新と確認が完了するまで、数分かかる場合があります。設定ページを離れても、最初からやり直すことなく、後で戻って手順を完了できます。検証値は、最初に生成されてから48時間有効です。
     </Note>
 
-    <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="ドメインを確認する" force />
+    <div className="ch-image-lg">
+
+    ![ドメインを確認する](/images/cloud/security/saml-self-serve-5.webp)
+
+    </div>
   </Step>
 
   <Step title="デフォルトのロールとセッションタイムアウトを更新" id="update-defaults">
@@ -197,7 +215,11 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
 
     1. Google Admin console (admin.google.com) に移動します。
 
-       <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Google SAML App" force />
+       <div className="ch-image-md">
+
+       ![Google SAML App](/images/cloud/security/saml-google-app.webp)
+
+       </div>
 
     2. **Apps** をクリックし、左側の **Web and mobile apps** をクリックします。
 
@@ -251,7 +273,11 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
 
     5. 名前を入力し、**Integrate any other application you don&#39;t find in the gallery (Non-gallery)** を選択して、**Create** をクリックします。
 
-       <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Azure Non-Gallery App" force />
+       <div className="ch-image-md">
+
+       ![Azure Non-Gallery App](/images/cloud/security/saml-azure-app.webp)
+
+       </div>
 
     6. 左側の **Users and groups** をクリックし、ユーザーを割り当てます。
 
@@ -277,7 +303,11 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
         | (A) email                            | Basic         | user.mail |
         | (U) /identity/claims/name            | Omitted       | user.mail |
 
-        <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="Attributes and Claims" force />
+        <div className="ch-image-md">
+
+        ![Attributes and Claims](/images/cloud/security/saml-azure-claims.webp)
+
+        </div>
 
     11. metadata URL をコピーし、[Add the metadata URL to your SAML configuration](#add-metadata-url) に戻って手順を続けます。
   </Tab>

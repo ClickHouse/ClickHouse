@@ -7,8 +7,6 @@ title: 'クエリ API エンドポイント'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 対話型のデータ駆動アプリケーションを構築するには、高速なデータベース、適切に構造化されたデータ、最適化されたクエリだけでは十分ではありません。
 フロントエンドやマイクロサービスでも、それらのクエリが返すデータを簡単に利用できる手段が必要です。できれば、適切に構造化された API を介して利用できるのが望ましいでしょう。
 
@@ -27,11 +25,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="API キーの設定を開く" id="open-settings">
     1. ClickHouse Cloud Console → **Organization** → **API Keys** に移動します
 
-    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API Keys" />
+    <div className="ch-image-md">
+
+    ![API Keys](/images/cloud/guides/query-endpoints/console-api-keys.webp)
+
+    </div>
 
     2. クエリ API エンドポイントで使用する API キーの横にある **Edit** をクリックします
 
-    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Edit" />
+    <div className="ch-image-md">
+
+    ![Edit](/images/cloud/guides/query-endpoints/api-key-edit.webp)
+
+    </div>
   </Step>
 
   <Step title="許可する IP アドレスを追加する" id="add-ips">
@@ -39,7 +45,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     2. IP アドレスまたは CIDR 範囲 (例: `203.0.113.1` または `203.0.113.0/24`) を入力します
     3. 必要に応じて複数のエントリを追加します
 
-    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Specific locations" />
+    <div className="ch-image-md">
+
+    ![Specific locations](/images/cloud/guides/query-endpoints/specific-locations.webp)
+
+    </div>
 
     クエリ API エンドポイントを作成するには、Admin Console ロールと、適切な権限を持つ API キーが必要です。
   </Step>

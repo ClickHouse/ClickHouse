@@ -11,8 +11,8 @@ integration:
   - website: 'https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
 import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
@@ -35,13 +35,29 @@ Si desea explorar un ejemplo interactivo de cómo consultar ClickHouse desde los
 
 1. En Deepnote, selecciona la sección &quot;Integrations&quot; y haz clic en la tarjeta de ClickHouse.
 
-<Image size="lg" img="/images/integrations/data-visualization/deepnote_01.webp" alt="tarjeta de integración de ClickHouse" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![tarjeta de integración de ClickHouse](/images/integrations/data-visualization/deepnote_01.webp)
+
+</Frame>
+
+</div>
 
 2. Introduce los datos de conexión de tu instancia de ClickHouse:
 
 <ConnectionDetails />
 
-<Image size="md" img="/images/integrations/data-visualization/deepnote_02.webp" alt="cuadro de diálogo de detalles de ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![cuadro de diálogo de detalles de ClickHouse](/images/integrations/data-visualization/deepnote_02.webp)
+
+</Frame>
+
+</div>
 
 ***NOTA:*** Si tu conexión a ClickHouse está protegida mediante una IP Access List, es posible que tengas que permitir las direcciones IP de Deepnote. Obtén más información en [la documentación de Deepnote](https://deepnote.com/docs/securing-connections).
 
@@ -53,7 +69,11 @@ Si desea explorar un ejemplo interactivo de cómo consultar ClickHouse desde los
 
 1. Empieza conectándote a la integración de ClickHouse, a la derecha de tu notebook.
 
-   <Image size="lg" img="/images/integrations/data-visualization/deepnote_03.webp" alt="Cuadro de diálogo de detalles de ClickHouse" border />
+   <div className="ch-image-lg">
+
+   ![Cuadro de diálogo de detalles de ClickHouse](/images/integrations/data-visualization/deepnote_03.webp)
+
+   </div>
 
 2. Ahora crea un nuevo bloque de consulta de ClickHouse y consulta la base de datos. Los resultados de la consulta se guardarán como un DataFrame y se almacenarán en la variable especificada en el bloque SQL.
 

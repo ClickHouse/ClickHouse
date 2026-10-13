@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['cluster deployment', 'replication', 'sharding', 'high availability', 'scalability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/_config_explanation.mdx';
 import ListenHost from '/snippets/_listen_host.mdx';
 import KeeperConfig from '/snippets/_keeper_config.mdx';
@@ -16,6 +14,7 @@ import KeeperConfigExplanation from '/snippets/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/_working_example.mdx';
+
 import CloudTip from '/snippets/_cloud_tip.mdx';
 
 > In this example, you'll learn how to set up a simple ClickHouse cluster which
@@ -25,7 +24,15 @@ in the cluster.
 
 The architecture of the cluster you will be setting up is shown below:
 
-<Image img="/images/deployment-guides/replication-sharding-examples/both.webp" size='md' alt='Architecture diagram for 2 shards and 1 replica' />
+<div className="ch-image-md">
+
+<Frame>
+
+![Architecture diagram for 2 shards and 1 replica](/images/deployment-guides/replication-sharding-examples/both.webp)
+
+</Frame>
+
+</div>
 
 <DedicatedKeeperServers/>
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ejecución de consultas', 'analizador', 'optimización de consultas', 'explain', 'rendimiento']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse procesa las consultas con gran rapidez, pero la ejecución de una consulta no es tan sencilla. Intentemos entender cómo se ejecuta una consulta `SELECT`. Para ilustrarlo, agreguemos algunos datos a una tabla de ClickHouse:
 
 ```sql
@@ -29,7 +27,15 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 Ahora que tenemos algunos datos en ClickHouse, queremos ejecutar algunas consultas y comprender cómo se ejecutan. La ejecución de una consulta se descompone en muchos pasos. Cada paso de la ejecución de la consulta puede analizarse y depurarse mediante la consulta `EXPLAIN` correspondiente. Estos pasos se resumen en el siguiente gráfico:
 
-<Image img="/images/guides/developer/analyzer1.webp" alt="Pasos de la consulta EXPLAIN" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Pasos de la consulta EXPLAIN](/images/guides/developer/analyzer1.webp)
+
+</Frame>
+
+</div>
 
 Veamos cada elemento en acción durante la ejecución de la consulta. Vamos a tomar algunas consultas y luego examinarlas mediante la sentencia `EXPLAIN`.
 
@@ -358,7 +364,15 @@ digraph
 
 A continuación, puede copiar esta salida y pegarla [aquí](https://dreampuf.github.io/GraphvizOnline) para generar el siguiente grafo:
 
-<Image img="/images/guides/developer/analyzer3.webp" alt="Resultado del grafo" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Resultado del grafo](/images/guides/developer/analyzer3.webp)
+
+</Frame>
+
+</div>
 
 Un rectángulo blanco corresponde a un nodo del pipeline, el rectángulo gris corresponde a los pasos del plan de consulta, y la `x` seguida de un número corresponde a la cantidad de entradas/salidas que se están utilizando. Si no desea verlos en formato compacto, siempre puede añadir `compact=0`:
 
@@ -398,7 +412,15 @@ digraph
 }
 ```
 
-<Image img="/images/guides/developer/analyzer4.webp" alt="Salida compacta del grafo" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Salida compacta del grafo](/images/guides/developer/analyzer4.webp)
+
+</Frame>
+
+</div>
 
 ¿Por qué ClickHouse no lee de la tabla con varios hilos? Intentemos añadir más datos a nuestra tabla:
 
@@ -457,7 +479,15 @@ digraph
 }
 ```
 
-<Image img="/images/guides/developer/analyzer5.webp" alt="Salida del grafo en paralelo" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Salida del grafo en paralelo](/images/guides/developer/analyzer5.webp)
+
+</Frame>
+
+</div>
 
 Así, el ejecutor decidió no paralelizar las operaciones porque el volumen de datos no era lo bastante alto. Al añadir más filas, el ejecutor pasó a usar varios hilos, como se muestra en el grafo.
 

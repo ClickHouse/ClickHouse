@@ -7,8 +7,6 @@ keywords: ['stratégies de déduplication', 'déduplication des données', 'upse
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 **La déduplication** désigne le processus de ***suppression des lignes en double d’un jeu de données***. Dans une base de données OLTP, cela se fait facilement, car chaque ligne possède une clé primaire unique, mais au prix d’insertions plus lentes. Chaque ligne insérée doit d’abord être recherchée et, si elle est trouvée, remplacée.
 
 ClickHouse est conçu pour la rapidité d’insertion des données. Les fichiers de stockage sont immuables et ClickHouse ne vérifie pas l’existence d’une clé primaire avant d’insérer une ligne ; la déduplication demande donc un peu plus d’efforts. Cela signifie aussi que la déduplication n’est pas immédiate : elle est **différée**, ce qui entraîne quelques effets secondaires :
@@ -20,7 +18,7 @@ ClickHouse est conçu pour la rapidité d’insertion des données. Les fichiers
 <div class="transparent-table">
   |                                                                                                    |                                                                                                                                                                                                                                                                                         |
   | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="Logo de déduplication" size="sm" /> | ClickHouse propose une formation gratuite sur la déduplication et de nombreux autres sujets. Le [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) constitue un bon point de départ. |
+  | <span className="ch-image-sm">![Logo de déduplication](/images/guides/developer/de_duplication.webp)</span> | ClickHouse propose une formation gratuite sur la déduplication et de nombreux autres sujets. Le [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) constitue un bon point de départ. |
 </div>
 
 <div id="options-for-deduplication">

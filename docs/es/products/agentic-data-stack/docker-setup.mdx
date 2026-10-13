@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['Agentic Data Stack', 'Docker Compose', 'configuración', 'LibreChat', 'MCP', 'Langfuse']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Ejecute localmente el Agentic Data Stack completo con Docker Compose para hacer preguntas a sus datos desde que inicia sesión por primera vez. Con un solo comando `docker compose up` se ponen en marcha [LibreChat](/es/products/agentic-data-stack/components/librechat), el [ClickHouse MCP server](/es/products/agentic-data-stack/components/mcp-server), [ClickHouse](/es/get-started/setup/install) y [Langfuse](/es/products/agentic-data-stack/components/langfuse) para observabilidad.
 
 <div id="prerequisites">
@@ -74,18 +72,30 @@ Ejecute localmente el Agentic Data Stack completo con Docker Compose para hacer 
   <Step title="Selecciona un modelo">
     Hay un modelo seleccionado de forma predeterminada. Si quieres cambiarlo, abre el selector de modelos y elige el que quieras usar.
 
-    <Image img="/images/agentic-data-stack/select-model.webp" alt="El selector de modelos de LibreChat en la esquina superior izquierda, mostrando el modelo predeterminado con un tooltip que dice Select a model" size="md" />
+    <div className="ch-image-md">
+
+    ![El selector de modelos de LibreChat en la esquina superior izquierda, mostrando el modelo predeterminado con un tooltip que dice Select a model](/images/agentic-data-stack/select-model.webp)
+
+    </div>
 
     Si no configuraste una clave del proveedor durante la instalación, añade una en la UI.
 
     <Accordion title="Establece una clave del proveedor en la UI">
       Abre el selector de modelos y haz clic en **Set API Key** junto al proveedor.
 
-      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Selector de modelos de LibreChat con el botón Set API Key junto al proveedor Anthropic" size="md" />
+      <div className="ch-image-md">
+
+      ![Selector de modelos de LibreChat con el botón Set API Key junto al proveedor Anthropic](/images/agentic-data-stack/set-api-key.webp)
+
+      </div>
 
       Pega tu clave en el cuadro de diálogo y haz clic en **Submit**. Puedes establecer un vencimiento o hacer que la clave no caduque.
 
-      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="El cuadro de diálogo Set API Key for Anthropic con un desplegable de vencimiento, un campo Key y los botones Submit y Revoke" size="md" />
+      <div className="ch-image-md">
+
+      ![El cuadro de diálogo Set API Key for Anthropic con un desplegable de vencimiento, un campo Key y los botones Submit y Revoke](/images/agentic-data-stack/set-api-key-modal.webp)
+
+      </div>
     </Accordion>
   </Step>
 
@@ -96,7 +106,11 @@ Ejecute localmente el Agentic Data Stack completo con Docker Compose para hacer 
 
     {/* TODO: orientar a los usuarios (o enlazar a la documentación de Remote MCP en /cloud/features/ai-ml/remote-mcp) sobre cómo conectar ClickHouse-Cloud; requiere un flujo OAuth, a diferencia del servidor local incluido. */}
 
-    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="El menú MCP Servers abierto en el editor de mensajes de LibreChat, mostrando ClickHouse-Local con un punto verde de conexión y ClickHouse-Cloud" size="md" />
+    <div className="ch-image-md">
+
+    ![El menú MCP Servers abierto en el editor de mensajes de LibreChat, mostrando ClickHouse-Local con un punto verde de conexión y ClickHouse-Cloud](/images/agentic-data-stack/select-clickhouse-local.webp)
+
+    </div>
   </Step>
 
   <Step title="Haz tu primera pregunta">
@@ -106,7 +120,11 @@ Ejecute localmente el Agentic Data Stack completo con Docker Compose para hacer 
 
     El agente usa las herramientas del servidor MCP para listar bases de datos y tablas, ejecutar consultas de solo lectura en ClickHouse y elaborar una respuesta a partir de los resultados. No necesitas escribir SQL.
 
-    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="LibreChat respondiendo a la pregunta de ejemplo al invocar las herramientas MCP de ClickHouse-Local y listar las bases de datos y tablas disponibles" size="md" />
+    <div className="ch-image-md">
+
+    ![LibreChat respondiendo a la pregunta de ejemplo al invocar las herramientas MCP de ClickHouse-Local y listar las bases de datos y tablas disponibles](/images/agentic-data-stack/prompt-chat.webp)
+
+    </div>
   </Step>
 </Steps>
 

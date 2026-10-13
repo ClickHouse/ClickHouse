@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > このページでは、「ソートキー」という用語を「primary key」とほぼ同義で使用しています。厳密には、[ClickHouse では両者は異なります](/ja/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)が、このドキュメントでは同じものとして捉えて差し支えありません。ここでいう ソートキー は、テーブルの `ORDER BY` で指定するカラムを指します。
 
 ClickHouse の主キーは、Postgres などの OLTP データベースにおける同様の用語に慣れている方の想像とは[大きく異なる](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse)点に注意してください。
@@ -122,7 +120,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 次のアニメーションは、Stack Overflow の Posts テーブルに対して最適化されたスパースプライマリインデックスがどのように作成されるかを示しています。個々の行に索引を作成するのではなく、この索引は行のブロックを対象とします。
 
-<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="主キー" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![主キー](/images/bestpractices/create_primary_key.webp)
+
+</Frame>
+
+</div>
 
 同じクエリを、このソートキーを持つテーブルに対して繰り返すと、次のようになります。
 
@@ -170,7 +176,15 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 さらに、スパースインデックスが、サンプルクエリに一致する可能性のないすべての行ブロックをどのように枝刈りするかを可視化します。
 
-<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="主キー" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![主キー](/images/bestpractices/primary_key.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   テーブル内のすべてのカラムは、キー自体に含まれているかどうかにかかわらず、指定されたソートキーの値に基づいてソートされます。たとえば、`CreationDate` をキーとして使用した場合、他のすべてのカラムの値の並び順は `CreationDate` カラムの値の並び順に対応します。複数のソートキーを指定することもでき、その場合は `SELECT` クエリの `ORDER BY` 句と同じ意味で並べ替えられます。

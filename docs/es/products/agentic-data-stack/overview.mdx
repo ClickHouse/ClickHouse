@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 La forma más sencilla de usar analítica agéntica en ClickHouse es [ClickHouse Agents](/es/products/cloud/features/ai-ml/agents) en ClickHouse Cloud: completamente gestionado, sin infraestructura que administrar. Los usuarios hacen preguntas en lenguaje natural, y un agente de IA responde consultando la base de datos directamente.
 
 Si prefieres autoalojarlo, **Agentic Data Stack** es un stack open-source y componible. Lo ejecutas tú mismo, conectas tus propios modelos y mantienes tu chat y tus datos en tu propio entorno. Está compuesto por [ClickHouse](/es/get-started/setup/install), el [servidor MCP de ClickHouse](/es/products/agentic-data-stack/components/mcp-server), [LibreChat](/es/products/agentic-data-stack/components/librechat) y [Langfuse](/es/products/agentic-data-stack/components/langfuse).
@@ -32,7 +30,15 @@ En la analítica agéntica, el modelo fundamenta sus respuestas ejecutando consu
   ## Cómo encajan los componentes del stack
 </div>
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Arquitectura de Agentic Data Stack: los usuarios interactúan con LibreChat, que se conecta a un LLM, a ClickHouse a través del servidor MCP y a Langfuse para la trazabilidad" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Arquitectura de Agentic Data Stack: los usuarios interactúan con LibreChat, que se conecta a un LLM, a ClickHouse a través del servidor MCP y a Langfuse para la trazabilidad](/images/agentic-data-stack/01-architecture.webp)
+
+</Frame>
+
+</div>
 
 Un usuario hace una pregunta en LibreChat. El modelo prepara una respuesta y, a través del servidor MCP, invoca herramientas para explorar y consultar ClickHouse. Los resultados vuelven, y el agente elabora una respuesta. Langfuse, basado en OpenTelemetry, registra cada ejecución desde el prompt hasta la llamada a la herramienta y la respuesta, permite evaluar los resultados automáticamente o mediante revisión humana, y hace un seguimiento de la calidad, el costo y la latencia.
 

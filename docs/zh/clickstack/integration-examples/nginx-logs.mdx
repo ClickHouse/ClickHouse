@@ -6,8 +6,6 @@ description: '使用 ClickStack 监控 Nginx'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -168,9 +166,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     你应会看到类似下面的内容：
 
-    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/log-view.webp" alt="日志视图" />
+    ![日志视图](/images/clickstack/nginx-logs-search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![日志视图](/images/clickstack/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -258,9 +264,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       HyperDX 会按浏览器的本地时区显示时间戳。演示数据的时间范围为 2025-10-20 11:00:00 - 2025-10-21 11:00:00 UTC。较大的时间范围可确保无论你位于何处都能看到这些演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
 
-    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/log-view.webp" alt="日志视图" />
+    ![日志视图](/images/clickstack/nginx-logs-search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![日志视图](/images/clickstack/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -279,11 +293,19 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX，进入 Dashboards 部分。
     2. 点击右上角省略号菜单下的“导入仪表盘”。
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+    <div className="ch-image-lg">
+
+    ![导入仪表盘](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. 上传 nginx-logs-dashboard.json 文件，然后点击完成导入。
 
-    <Image img="/images/clickstack/finish-nginx-logs-import.webp" alt="完成导入" />
+    <div className="ch-image-lg">
+
+    ![完成导入](/images/clickstack/finish-nginx-logs-import.webp)
+
+    </div>
   </Step>
 
   <Step title="系统将创建一个已预先配置好所有可视化内容的仪表盘" id="created-dashboard">
@@ -291,7 +313,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       对于演示数据集，请将时间范围设置为 **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** (请根据你的本地时区调整) 。导入的仪表盘默认不会预设时间范围。
     </Note>
 
-    <Image img="/images/clickstack/nginx-logs-dashboard.webp" alt="示例仪表盘" />
+    <div className="ch-image-lg">
+
+    ![示例仪表盘](/images/clickstack/nginx-logs-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

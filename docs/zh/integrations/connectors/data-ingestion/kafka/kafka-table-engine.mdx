@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', '表引擎', '流式', '实时', '消息队列']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 Kafka 表引擎可用于从 Apache Kafka 和其他兼容 Kafka API 的消息代理 (例如 Redpanda、Amazon MSK) [**读取**数据](#kafka-to-clickhouse)，也可向其[**写入**数据](#clickhouse-to-kafka)。
 
 <div id="kafka-to-clickhouse">
@@ -31,7 +29,15 @@ Kafka 表引擎 允许 ClickHouse 直接从 Kafka topic 读取数据。虽然这
 
 要将通过 表引擎 读取到的数据持久化，我们需要一种机制来捕获这些数据并将其插入到另一张表中。基于触发器的 materialized view 原生提供了这一能力。materialized view 会触发对 表引擎 的读取，并接收成批的文档。`TO` 子句决定数据的目标端——通常是一张属于 [MergeTree 家族](/zh/reference/engines/table-engines/mergetree-family/index) 的表。如下图所示：
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="Kafka 表引擎 架构图" style={{width: '80%'}} />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kafka 表引擎 架构图](/images/integrations/data-ingestion/kafka/kafka_01.webp)
+
+</Frame>
+
+</div>
 
 <div id="steps">
   #### 步骤
@@ -355,7 +361,15 @@ Kafka 表引擎具有至少一次 (at-least-once) 投递语义。在一些已知
 
 我们的初始目标如下图所示：
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="带有插入操作的 Kafka 表引擎 示意图" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![带有插入操作的 Kafka 表引擎 示意图](/images/integrations/data-ingestion/kafka/kafka_02.webp)
+
+</Frame>
+
+</div>
 
 我们假设你已按照 [Kafka 到 ClickHouse](#kafka-to-clickhouse) 中的步骤创建好这些表和视图，并且该 topic 中的数据已被完全消费。
 
@@ -399,7 +413,11 @@ Kafka 表引擎具有至少一次 (at-least-once) 投递语义。在一些已知
   <Step title="使用 materialized view" id="2-using-materialized-views">
     当文档插入表中时，我们可以利用 materialized view 将消息推送到 Kafka 引擎 (以及某个 topic) 。当行插入 GitHub 表时，会触发一个 materialized view，进而将这些行重新插入到 Kafka 引擎中，并写入一个新的 topic。如下图所示：
 
-    <Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="带有 materialized view 的 Kafka 表引擎示意图" />
+    <div className="ch-image-lg">
+
+    ![带有 materialized view 的 Kafka 表引擎示意图](/images/integrations/data-ingestion/kafka/kafka_03.webp)
+
+    </div>
 
     创建一个新的 Kafka topic `github_out` 或等效项。确保 Kafka 表引擎 `github_out_queue` 指向该 topic。
 
@@ -493,7 +511,15 @@ Kafka 表引擎具有至少一次 (at-least-once) 投递语义。在一些已知
 
 多个 ClickHouse 实例也可以配置为使用同一个消费者组 id 从某个 topic 读取数据——该 id 在创建 Kafka 表引擎时指定。因此，每个实例都会从一个或多个分区读取数据，并将数据分段插入其本地目标表。目标表则可以进一步配置为使用 ReplicatedMergeTree 来处理数据重复。这种方法可以让 Kafka 读取能力随着 ClickHouse 集群一同扩展，前提是 Kafka 有足够多的分区。
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="带有 ClickHouse 集群的 Kafka 表引擎示意图" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![带有 ClickHouse 集群的 Kafka 表引擎示意图](/images/integrations/data-ingestion/kafka/kafka_04.webp)
+
+</Frame>
+
+</div>
 
 <div id="tuning-performance">
   #### 性能调优

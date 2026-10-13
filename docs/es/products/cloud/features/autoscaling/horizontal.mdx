@@ -7,8 +7,6 @@ title: 'Escalado horizontal'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 ## Escalado horizontal manual {#manual-horizontal-scaling}
@@ -27,11 +25,27 @@ Los niveles **Scale** y **Enterprise** también admiten servicios con una sola r
 
 Para escalar horizontalmente un clúster, envíe una solicitud `PATCH` a través de la API para ajustar el número de réplicas. Las capturas de pantalla a continuación muestran una llamada a la API para ampliar un clúster de `3` réplicas a `6` réplicas, y la respuesta correspondiente.
 
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Solicitud PATCH de escalado" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Solicitud PATCH de escalado](/images/cloud/manage/scaling-patch-request.webp)
+
+</Frame>
+
+</div>
 
 *Solicitud `PATCH` para actualizar `numReplicas`*
 
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Respuesta PATCH de escalado" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Respuesta PATCH de escalado](/images/cloud/manage/scaling-patch-response.webp)
+
+</Frame>
+
+</div>
 
 *Respuesta a la solicitud `PATCH`*
 
@@ -41,10 +55,26 @@ Si envía una nueva solicitud de escalado, o varias solicitudes seguidas, mientr
 
 Para escalar un servicio horizontalmente desde la UI, puedes ajustar el número de réplicas del servicio en la página **Settings**.
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Configuración del escalado" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configuración del escalado](/images/cloud/manage/scaling-configure.webp)
+
+</Frame>
+
+</div>
 
 *Configuración de escalado del servicio desde la consola de ClickHouse Cloud*
 
 Una vez que el servicio se haya escalado, el dashboard de métricas en la consola de ClickHouse Cloud debería mostrar la asignación correcta del servicio. La captura de pantalla siguiente muestra el clúster escalado hasta una memoria total de `96 GiB`, es decir, `6` réplicas, cada una con una asignación de memoria de `16 GiB`.
 
-<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="Asignación de memoria del escalado" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Asignación de memoria del escalado](/images/cloud/manage/scaling-memory-allocation.webp)
+
+</Frame>
+
+</div>

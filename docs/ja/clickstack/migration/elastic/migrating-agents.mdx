@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="migrating-agents-from-elastic">
   ## Elasticからのagentsの移行
 </div>
@@ -62,7 +60,15 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
 
 以下では、これら 2 つのアーキテクチャを示します。
 
-<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="エージェントの移行" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![エージェントの移行](/images/use-cases/observability/clickstack-migrating-agents.webp)
+
+</Frame>
+
+</div>
 
 以下の例では、Lumberjack プロトコル経由で Filebeat からログイベントを受信するように Vector を設定するための最初の手順を示します。また、受信した ECS イベントを OTel 仕様にマッピングするための VRL も示し、その後、それらを OTLP 経由で ClickStack OpenTelemetry collector に送信します。Kafka からイベントを取り込むユーザーは、Vector の Logstash source を [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/) に置き換えることができます。その他の手順はすべて同じです。
 
@@ -251,7 +257,11 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
 
     ここで使用する `YOUR_INGESTION_API_KEY` は ClickStack によって生成されます。このキーは ClickStack の UI (HyperDX) の `Team Settings → API Keys` から確認できます。
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェストキー" size="lg" />
+    <div className="ch-image-lg">
+
+    ![インジェストキー](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     最終的な完全なconfigurationを以下に示します：
 
@@ -339,11 +349,19 @@ Elastic Agent をデプロイしているユーザーには、いくつかの移
 
     Kibana から一元的に設定するには、[Fleet に Output を追加](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings)します。
 
-    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="Logstash output を追加" size="md" />
+    <div className="ch-image-md">
+
+    ![Logstash output を追加](/images/use-cases/observability/add-logstash-output.webp)
+
+    </div>
 
     この Output は、[エージェント policy](https://www.elastic.co/docs/reference/fleet/agent-policy) で使用できます。これにより、そのポリシーを使用するすべての エージェント は自動的に Vector にデータを送信するようになります。
 
-    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="Agent の設定" size="md" />
+    <div className="ch-image-md">
+
+    ![Agent の設定](/images/use-cases/observability/agent-output-settings.webp)
+
+    </div>
 
     これには TLS による安全な通信の設定が必要なため、Vector インスタンスを Logstash の役割を担うものとして、ガイド[「Configure SSL/TLS for the Logstash output」](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)に従うことを推奨します。
 
@@ -398,7 +416,15 @@ exporters:
 
 ここでの `YOUR_INGESTION_API_KEY` は ClickStack で生成されるものです。キーは ClickStack の UI の `Team Settings → API Keys` で確認できます。
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェストキー" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![インジェストキー](/images/use-cases/observability/ingestion-keys.webp)
+
+</Frame>
+
+</div>
 
 Vector が相互 TLS を使用するように設定されており、証明書と秘密鍵がガイド [&quot;Logstash 出力用に SSL/TLS を設定する&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output) の手順で生成されている場合は、`otlp` エクスポーターもそれに合わせて設定する必要があります。たとえば次のようになります。
 

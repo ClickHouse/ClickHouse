@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -119,7 +118,11 @@ Telflo offre :
 
     Tracez les edges depuis les receivers, en passant par les processors, jusqu&#39;à l&#39;exporter, à raison d&#39;un pipeline par signal. La row status indique **config valid** ou le nombre d&#39;errors à corriger, et le tab **YAML** affiche la configuration générée.
 
-    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="Un pipeline de collecteur dans l’éditeur Telflo, avec l’exportateur ClickHouse configuré" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Un pipeline de collecteur dans l’éditeur Telflo, avec l’exportateur ClickHouse configuré](/images/clickstack/telflo/telflo-configuration.webp)
+
+    </div>
 
     Avant tout déploiement, vous pouvez faire passer un échantillon de telemetry dans la configuration et vérifier ce qui en ressort. Consultez [les tests dans Telflo](https://docs.telflo.com/docs/testing/overview). Vous pouvez également décrire ce que vous cherchez à faire : l&#39;AI assistant de Telflo, ouvert à l&#39;aide du bouton **AI** de la barre d&#39;outils, construit, valide et teste la configuration à votre place. Votre propre agent peut faire de même via la [CLI Telflo](https://docs.telflo.com/docs/cli/).
   </Step>
@@ -136,7 +139,11 @@ Telflo offre :
 
     Pour déployer une modification, publiez une nouvelle version et affectez-la au groupe ; pour revenir en arrière, affectez une version déployée précédemment.
 
-    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="Une fleet Telflo dont tous les collectors sont synchronisés après un rollout" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Une fleet Telflo dont tous les collectors sont synchronisés après un rollout](/images/clickstack/telflo/telflo-fleet.webp)
+
+    </div>
   </Step>
 
   <Step title="Vérifier la télémétrie" id="verify-telemetry">

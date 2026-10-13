@@ -9,14 +9,21 @@ doc_type: 'guide'
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Databrain](https://usedatabrain.com) é uma plataforma de analytics embarcada que permite criar e compartilhar dashboards interativos, métricas e visualizações de dados com seus clientes. O Databrain se conecta ao ClickHouse por meio da interface HTTPS, facilitando a visualização e a análise dos seus dados no ClickHouse em uma interface moderna e fácil de usar.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="Interface de dashboard do Databrain mostrando visualização de dados do ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Interface de dashboard do Databrain mostrando visualização de dados do ClickHouse](/images/integrations/data-visualization/databrain_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -58,13 +65,21 @@ Este guia mostrará as etapas para conectar o Databrain à sua instância do Cli
 
     2. Clique em **Data Sources** no menu de navegação.
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Menu de fontes de dados do Databrain" border />
+    <div className="ch-image-md">
+
+    ![Menu de fontes de dados do Databrain](/images/integrations/data-visualization/databrain_02.webp)
+
+    </div>
 
     3. Clique em **Add a Data Source** ou **Connect Data Source**.
 
     4. Selecione **ClickHouse** na lista de conectores disponíveis.
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="Tela de seleção de conectores do Databrain mostrando a opção ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![Tela de seleção de conectores do Databrain mostrando a opção ClickHouse](/images/integrations/data-visualization/databrain_03.webp)
+
+    </div>
 
     5. Preencha os detalhes da conexão:
        * **Destination Name**: Insira um nome descritivo para esta conexão (por exemplo, &quot;ClickHouse de produção&quot; ou &quot;Analytics DB&quot;)
@@ -73,7 +88,11 @@ Este guia mostrará as etapas para conectar o Databrain à sua instância do Cli
        * **Username**: Insira seu nome de usuário do ClickHouse
        * **Password**: Insira sua senha do ClickHouse
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="Formulário de conexão do ClickHouse no Databrain com campos de configuração" border />
+    <div className="ch-image-md">
+
+    ![Formulário de conexão do ClickHouse no Databrain com campos de configuração](/images/integrations/data-visualization/databrain_04.webp)
+
+    </div>
 
     6. Clique em **Test Connection** para verificar se o Databrain consegue se conectar à sua instância do ClickHouse.
 
@@ -107,7 +126,15 @@ Este guia mostrará as etapas para conectar o Databrain à sua instância do Cli
 
 2. Você verá as tabelas do ClickHouse listadas no explorador de dados.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="Explorador de dados do Databrain mostrando tabelas do ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Explorador de dados do Databrain mostrando tabelas do ClickHouse](/images/integrations/data-visualization/databrain_05.webp)
+
+</Frame>
+
+</div>
 
 3. Clique em uma tabela para explorar o schema e visualizar os dados.
 
@@ -137,7 +164,15 @@ Este guia mostrará as etapas para conectar o Databrain à sua instância do Cli
 
 3. Personalize o layout e a aparência do seu dashboard.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="Dashboard do Databrain com várias visualizações do ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dashboard do Databrain com várias visualizações do ClickHouse](/images/integrations/data-visualization/databrain_06.webp)
+
+</Frame>
+
+</div>
 
 4. Compartilhe seu dashboard com sua equipe ou incorpore-o ao seu aplicativo.
 

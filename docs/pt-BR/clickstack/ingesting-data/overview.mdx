@@ -7,19 +7,25 @@ doc_type: 'guide'
 keywords: ['clickstack', 'observabilidade', 'logs', 'monitoramento', 'plataforma']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Todos os dados são ingeridos no ClickStack Open Source ou no Managed ClickStack por meio de um **collector do OpenTelemetry (OTel)**. Ele atua como o principal ponto de entrada para logs, métricas, traces e dados de sessão.
 
 A principal diferença entre as arquiteturas está em onde os componentes são hospedados. Em ambos os casos, você executa um OpenTelemetry Collector para receber dados de telemetria das suas aplicações. Com o ClickStack Open Source, você também gerencia e hospeda o ClickHouse e a UI do ClickStack (HyperDX) por conta própria. Com o Managed ClickStack, o ClickHouse e a UI do HyperDX são hospedados e gerenciados no ClickHouse Cloud, com autenticação integrada e gerenciamento operacional já incluídos para você.
 
 <Tabs>
   <Tab title="Managed ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="Arquitetura gerenciada com fluxo" size="md" />
+    <div className="ch-image-md">
+
+    ![Arquitetura gerenciada com fluxo](/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp)
+
+    </div>
   </Tab>
 
   <Tab title="Open Source ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="Arquitetura simples com fluxo" size="md" />
+    <div className="ch-image-md">
+
+    ![Arquitetura simples com fluxo](/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp)
+
+    </div>
   </Tab>
 </Tabs>
 

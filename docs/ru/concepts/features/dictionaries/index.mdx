@@ -6,8 +6,6 @@ description: 'Словарь представляет данные в форма
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Словарь в ClickHouse — это хранящееся в памяти представление данных в формате [ключ-значение](https://en.wikipedia.org/wiki/Key%E2%80%93value_database), получаемых из различных [внутренних и внешних источников](/ru/reference/statements/create/dictionary/sources/overview#dictionary-sources) и оптимизированное для запросов поиска со сверхнизкой задержкой.
 
 Словари полезны для:
@@ -15,7 +13,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * Повышения производительности запросов, особенно при использовании `JOIN`
 * Обогащения принимаемых данных на лету без замедления процесса ингестии
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Сценарии использования словаря в ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Сценарии использования словаря в ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+
+</Frame>
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## Ускорение JOIN с помощью словаря
@@ -23,7 +29,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Словари можно использовать для ускорения определённого типа `JOIN`: [`LEFT ANY`](/ru/reference/statements/select/join#supported-types-of-join), где ключ JOIN должен совпадать с ключевым атрибутом базового хранилища ключ-значение.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="Использование словаря с LEFT ANY JOIN" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Использование словаря с LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</Frame>
+
+</div>
 
 В этом случае ClickHouse может использовать словарь для выполнения [Direct JOIN](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Это самый быстрый алгоритм JOIN в ClickHouse; он применим, когда базовый [движок таблицы](/ru/reference/engines/table-engines/index) правой таблицы поддерживает низколатентные запросы ключ-значение. В ClickHouse есть три движка таблиц, которые это обеспечивают: [Join](/ru/reference/engines/table-engines/special/join) (по сути, это заранее вычисленная хеш-таблица), [EmbeddedRocksDB](/ru/reference/engines/table-engines/integrations/embedded-rocksdb) и [Dictionary](/ru/reference/engines/table-engines/special/dictionary). Мы опишем подход на основе словаря, но механизм одинаков для всех трёх движков.
 

@@ -6,7 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'kubernetes', 'ログ', 'オブザーバビリティ', 'コンテナー監視']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import DemoArchitecture from '/snippets/ja/_demo.mdx';
 
 このガイドでは、Kubernetes システムからログとメトリクスを収集し、可視化と分析のために **ClickStack** に送信できます。デモデータとして、必要に応じて公式 OpenTelemetry デモの ClickStack フォークを使用します。
@@ -200,7 +199,11 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
 
     複雑さの要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    <div className="ch-image-lg">
+
+    ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="インジェスト API key を取得する" id="retrieve-ingestion-api-key">
@@ -208,7 +211,11 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
 
     [`Team Settings`](http://localhost:8080/team) に移動し、`API Keys` セクションから `Ingestion API Key` をコピーします。この API key により、OpenTelemetry collector 経由のデータインジェストの安全性が確保されます。
 
-    <Image img="/images/use-cases/observability/copy_api_key.webp" alt="API key をコピー" size="lg" />
+    <div className="ch-image-lg">
+
+    ![API key をコピー](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="API key 用の Kubernetes Secret を作成する" id="create-api-key-kubernetes-secret">
@@ -232,7 +239,11 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
 
     デモサービスからのトレースおよびログデータが、HyperDX に流れ始めるはずです。
 
-    <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="HyperDX Kubernetes データ" size="lg" />
+    <div className="ch-image-lg">
+
+    ![HyperDX Kubernetes データ](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="OpenTelemetry Helm リポジトリを追加する" id="add-otel-helm-repo">
@@ -483,4 +494,12 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
   </Step>
 </Steps>
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="Kubernetes 上の ClickHouse" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kubernetes 上の ClickHouse](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</Frame>
+
+</div>

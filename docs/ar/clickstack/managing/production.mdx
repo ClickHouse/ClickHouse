@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['clickstack', 'الإنتاج', 'النشر', 'أفضل الممارسات', 'العمليات']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
 عند نشر ClickStack في بيئة الإنتاج، هناك عدة اعتبارات إضافية لضمان الأمان والاستقرار والإعداد الصحيح. وتختلف هذه الاعتبارات بحسب النسخة المستخدمة - مفتوحة المصدر أو المُدارة - .
@@ -132,7 +130,11 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     يجب أن تتم عملية الاستيعاب بالكامل عبر منافذ OTLP التي يكشفها توزيع ClickStack من مُجمِّع OpenTelemetry (OTel). يستلزم هذا افتراضيًا مفتاح API استيعاب آمنًا يُولَّد عند بدء التشغيل. يُعدّ هذا المفتاح ضروريًا عند إرسال البيانات إلى منافذ OTel، ويمكن العثور عليه في واجهة HyperDX UI ضمن `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح استيعاب البيانات" size="lg" />
+    <div className="ch-image-lg">
+
+    ![مفاتيح استيعاب البيانات](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     بالإضافة إلى ذلك، يُوصى بتفعيل TLS لنقاط نهاية OTLP.
 

@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/pt-BR/clickpipes/_iam_authentication.mdx";
 
 Este é um guia passo a passo sobre como configurar sua instância RDS MariaDB para replicar os dados por meio do ClickPipe do MySQL.
@@ -31,7 +30,11 @@ O log binário é um conjunto de arquivos de log que contém informações sobre
   <Step title="Habilitar o logging binário por meio de backup automatizado" id="enable-binlog-logging-rds">
     O recurso de backups automatizados determina se o logging binário está ativado ou desativado no MySQL. Ele pode ser configurado no console da AWS:
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Habilitando backups automatizados no RDS" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Habilitando backups automatizados no RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     É recomendável definir a retenção de backup com um valor razoavelmente alto, dependendo do caso de uso da replicação.
   </Step>
@@ -53,25 +56,65 @@ O log binário é um conjunto de arquivos de log que contém informações sobre
 
 Você pode encontrar o grupo de parâmetros clicando na sua instância MariaDB no Console do RDS e, em seguida, navegando até a guia `Configurations`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="Onde encontrar o grupo de parâmetros no RDS" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Onde encontrar o grupo de parâmetros no RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</Frame>
+
+</div>
 
 Ao clicar no link do grupo de parâmetros, você será levado à página dele. Nela, você verá um botão `Edit` no canto superior direito:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="Editar grupo de parâmetros" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Editar grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</Frame>
+
+</div>
 
 As configurações `binlog_format`, `binlog_row_metadata` e `binlog_row_image` precisam ser definidas da seguinte forma:
 
 1. `binlog_format` como `ROW`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Formato do binlog como ROW" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Formato do binlog como ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</Frame>
+
+</div>
 
 2. `binlog_row_metadata` como `FULL`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Metadados de linha do binlog como FULL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Metadados de linha do binlog como FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</Frame>
+
+</div>
 
 3. `binlog_row_image` como `FULL`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Imagem de linha do binlog como FULL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Imagem de linha do binlog como FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</Frame>
+
+</div>
 
 Em seguida, clique em `Save Changes` no canto superior direito. Talvez seja necessário reiniciar sua instância para que as alterações entrem em vigor. Se você vir `Pending reboot` ao lado do link do grupo de parâmetros na guia `Configurations` da instância do RDS, isso é um bom indicativo de que sua instância precisa ser reiniciada.
 
@@ -132,9 +175,25 @@ Conecte-se à sua instância do RDS MariaDB como um usuário administrador e exe
 
 Se você quiser restringir o tráfego para sua instância do RDS, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às `Inbound rules` do seu Security Group do RDS.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Onde encontrar o Security Group no RDS?" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Edite as regras de entrada do Security Group acima" size="lg" border />
+<Frame>
+
+![Onde encontrar o Security Group no RDS?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Edite as regras de entrada do Security Group acima](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</Frame>
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Acesso privado via AWS PrivateLink

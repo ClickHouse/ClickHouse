@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'AI', '관측성', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickStack에는 AI 어시스턴트가 관측성 데이터와 상호작용할 수 있도록 하는 기본 제공 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 서버가 포함되어 있습니다. 연결되면 AI 어시스턴트는 자연어만으로 로그, 트레이스, 메트릭을 쿼리하고, 대시보드와 알림을 관리하며, 데이터 소스를 탐색하고, 저장된 검색을 활용할 수 있습니다.
 
 이를 통해 [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/), 또는 MCP 호환 클라이언트를 사용해 개발 환경을 벗어나지 않고도 인시던트를 조사하고, 대시보드를 구축하며, 관측성 환경을 관리할 수 있습니다.
@@ -155,7 +153,15 @@ Open Source 및 BYOC 배포는 ClickStack 인스턴스에 내장된 MCP 엔드�
 * 실행 중인 ClickStack 인스턴스([배포](/ko/clickstack/deployment/overview)에서 설정 옵션 참조)
 * **Personal API Access Key** — HyperDX의 **Team Settings → API Keys → Personal API Access Key**에서 확인할 수 있습니다
 
-<Image img="/images/clickstack/api-key-personal.webp" alt="Team Settings의 Personal API Access Key" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Team Settings의 Personal API Access Key](/images/clickstack/api-key-personal.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Personal API Access Key는 Team Settings에서 찾을 수 있는 **수집 API key**와 다릅니다. 수집 API key는 OpenTelemetry collector로 전송되는 텔레메트리 데이터를 인증하는 데 사용됩니다.

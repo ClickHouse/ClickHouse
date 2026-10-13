@@ -7,8 +7,6 @@ keywords: ['биллинг']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом документе описано, как управлять и изменять параметры биллинга вашей организации в ClickHouse Cloud, включая переключение между оплатой кредитной картой и через маркетплейс, добавление резервной кредитной карты и предоставление общего доступа к подписке через маркетплейс для нескольких организаций.
 
 <div id="prerequisites">
@@ -38,11 +36,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 1. Перейдите в раздел **Billing** в консоли ClickHouse Cloud.
 2. Если вы хотите добавить кредитную карту, нажмите в верхней части страницы кнопку **add a payment method**.
 
-<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="Добавить способ оплаты" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Добавить способ оплаты](/images/cloud/reference/billing/01-add-payment-method.webp)
+
+</Frame>
+
+</div>
 
 3. Если вы хотите изменить данные кредитной карты, нажмите в верхней части страницы кнопку **edit your credit card**.
 
-<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="Изменить данные кредитной карты" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Изменить данные кредитной карты](/images/cloud/reference/billing/02-edit-credit-card.webp)
+
+</Frame>
+
+</div>
 
 4. В обоих случаях следуйте инструкциям, чтобы добавить или обновить адрес для выставления счетов, привязанный к кредитной карте.
 
@@ -62,7 +76,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 1. Перейдите на страницу **Billing** в консоли ClickHouse Cloud.
 2. Нажмите значок редактирования рядом с **способом оплаты**.
 
-<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="Редактировать способ оплаты" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Редактировать способ оплаты](/images/cloud/reference/billing/03-edit-payment-method.webp)
+
+</Frame>
+
+</div>
 
 3. В диалоговом окне **Edit способ оплаты** текущая кредитная карта будет указана как основной способ оплаты.
 4. Под кредитной картой отображаются доступные подписки через маркетплейс из ваших других организаций. Для каждой записи показаны тип маркетплейса (например, AWS Marketplace) и название связанной организации.
@@ -76,7 +98,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 1. Перейдите на страницу **Billing** в консоли ClickHouse Cloud.
 2. Нажмите значок редактирования рядом с **способом оплаты**.
 
-<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="Редактировать способ оплаты" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Редактировать способ оплаты](/images/cloud/reference/billing/04-edit-payment-method.webp)
+
+</Frame>
+
+</div>
 
 3. В диалоговом окне **Edit способ оплаты** вы увидите, что в качестве способа оплаты указана текущая подписка через маркетплейс.
 4. Ниже текущей подписки через маркетплейс отображаются другие доступные подписки через маркетплейс из ваших организаций. Для каждой записи указан тип маркетплейса (например, AWS Marketplace) и имя связанной организации.
@@ -101,7 +131,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 2. В верхней части страницы **Billing** будет показан ваш основной способ оплаты — подписка через маркетплейс, а резервный способ оплаты — **None**.
 3. Нажмите кнопку **add credit card**, чтобы настроить резервный способ оплаты.
 
-<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="Добавить резервную кредитную карту" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Добавить резервную кредитную карту](/images/cloud/reference/billing/05-add-backup.webp)
+
+</Frame>
+
+</div>
 
 4. Следуйте инструкциям, чтобы добавить или обновить адресные данные для выставления счетов по вашей кредитной карте. После сохранения на странице **Billing** будет отображаться резервная кредитная карта наряду с основной подпиской через маркетплейс.
 

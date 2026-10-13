@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'deployment', 'setup', 'configuration', 'observability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import JSONSupport from '/snippets/_json_support.mdx';
 
 Similar to the [all-in-one image](/clickstack/deployment/docker-compose), this comprehensive Docker image bundles all ClickStack components:
@@ -45,11 +43,27 @@ Visit [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
 
 Connect to your own external ClickHouse cluster e.g. ClickHouse Cloud.
 
-<Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Create login" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Create login](/images/use-cases/observability/hyperdx-2.webp)
+
+</Frame>
+
+</div>
 
 Create a source, retain all default values, and complete the `Table` field with the value `otel_logs`. All other settings should be auto-detected, allowing you to click `Save New Source`.
 
-<Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Create logs source" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Create logs source](/images/use-cases/observability/hyperdx-logs.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

@@ -7,8 +7,6 @@ title: 'HTTP 인터페이스'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="prerequisites">
   ## 사전 준비 사항
 </div>
@@ -57,7 +55,15 @@ http://localhost:8123/play
 
 웹 UI는 전문가를 위해 설계되었습니다.
 
-<Image img="/images/play.webp" size="md" alt="ClickHouse 웹 UI 스크린샷" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse 웹 UI 스크린샷](/images/play.webp)
+
+</Frame>
+
+</div>
 
 상태 점검 스크립트에서는 `GET /ping` 요청을 사용하십시오. 이 핸들러는 항상 &quot;Ok.&quot;를 반환합니다(끝에 개행 문자가 포함됨). 버전 18.12.13부터 사용할 수 있습니다. 레플리카 지연을 확인하려면 `/replicas_status`도 참조하십시오.
 

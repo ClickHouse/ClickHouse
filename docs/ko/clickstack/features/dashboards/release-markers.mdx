@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'release markers', 'deployment tracking', 'service.version', 'annotations', 'observability']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 지연 시간 또는 오류가 급증했을 때 가장 먼저 드는 질문은 대개 무언가가 배포되었는지입니다. 대시보드의 시간 차트에서 바로 확인할 수 있습니다. 릴리스 마커를 켜면 각 타일에 서비스 버전이 텔레메트리에 처음 나타난 시점에 점선 수직선이 표시됩니다.
 
 버전 정보는 이미 전송 중인 텔레메트리에서 가져오며, 타일의 소스에 설정된 표현식을 통해 읽습니다. 연결할 CI 통합도 없고 배포 시 푸시할 항목도 없습니다.
@@ -19,7 +17,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 릴리스 마커는 기본적으로 꺼져 있습니다. 대시보드의 더보기 메뉴를 열고 **릴리스 마커 표시**를 선택하십시오.
 
-<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="보기 섹션에서 알림 어노테이션 표시 아래에 릴리스 마커 표시 항목이 있는 대시보드 더보기 메뉴" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![보기 섹션에서 알림 어노테이션 표시 아래에 릴리스 마커 표시 항목이 있는 대시보드 더보기 메뉴](/images/clickstack/dashboards/release-markers-menu.webp)
+
+</Frame>
+
+</div>
 
 토글을 켜면 대시보드 URL에 `releaseMarkers=true`가 추가되므로 공유한 링크를 열면 마커가 이미 켜진 상태로 표시됩니다. 이는 대시보드 구성이 아닌 보기 상태이므로 대시보드와 함께 저장되지 않으며, 끄면 매개변수가 다시 제거됩니다.
 
@@ -33,7 +39,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 다른 위치에서 버전을 읽으려면 로그 또는 트레이스 소스에서 **Service Version Expression**을 설정하십시오. **Team Settings → Sources**에서 소스를 편집합니다. 로그 소스에서는 **Configure Optional Fields**를 통해 이 필드에 접근할 수 있으며, 트레이스 소스에서는 **Service Name Expression** 아래 양식에 바로 표시됩니다.
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="로그 소스의 선택적 필드에 있는 Service Version Expression 필드이며, 기본 자리 표시자로 ResourceAttributes['service.version']가 표시됨" size="lg" />
+![로그 소스의 선택적 필드에 있는 Service Version Expression 필드이며, 기본 자리 표시자로 ResourceAttributes\['service.version'\]가 표시됨](/images/clickstack/dashboards/service-version-expression.webp)
 
 값은 속성 이름이 아닌 SQL 표현식이므로 다음과 같은 일반적인 두 가지 경우를 지원합니다.
 
@@ -80,7 +86,15 @@ marker는 표시된 윈도우 내 타일 데이터에 특정 버전 값이 처�
 
 마커 레이블에 마우스를 올리면 해당 시점의 모든 릴리스를 확인할 수 있으며, 각 릴리스의 제공 서비스, 버전, 시간이 표시됩니다.
 
-<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="두 서비스가 표시된 차트에서 서비스 frontend, 버전 2.0.2 및 해당 버전이 처음 나타난 시간이 표시된 릴리스 마커의 호버 툴팁" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![두 서비스가 표시된 차트에서 서비스 frontend, 버전 2.0.2 및 해당 버전이 처음 나타난 시간이 표시된 릴리스 마커의 호버 툴팁](/images/clickstack/dashboards/release-marker-tooltip.webp)
+
+</Frame>
+
+</div>
 
 색상은 마커와 해당 시리즈를 연결하지만, 차트 범례에는 최대 4개의 항목만 표시되며 나머지는 &quot;+N more&quot; 뒤로 축약됩니다. 그러면 화면에서 색상을 대조할 대상이 없습니다. 툴팁에는 서비스 이름이 직접 표시되므로 타일에 표시되는 시리즈 수와 관계없이 사용할 수 있습니다.
 

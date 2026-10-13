@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['systemd', 'journald', 'journal', 'OTEL', 'ClickStack', '시스템 로그', 'systemctl']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -42,7 +40,11 @@ OpenTelemetry Collector를 journald 수신기와 함께 실행해 기존 Linux �
     3. **Team Settings → API Keys**로 이동합니다
     4. **수집 API key**를 복사합니다
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
+    <div className="ch-image-lg">
+
+    ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. 이를 환경 변수로 설정합니다:
 
@@ -185,9 +187,17 @@ OpenTelemetry Collector를 journald 수신기와 함께 실행해 기존 Linux �
     3. `service.name:systemd-logs`로 필터링합니다
     4. `unit`, `priority`, `MESSAGE`, `_HOSTNAME` 등의 필드가 포함된 구조화된 로그 항목이 표시되어야 합니다
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="로그 검색 보기" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="로그 보기" />
+    ![로그 검색 보기](/images/clickstack/systemd/systemd-search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![로그 보기](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -266,9 +276,17 @@ OpenTelemetry Collector를 journald 수신기와 함께 실행해 기존 Linux �
     2. Search view로 이동한 다음 source를 `Logs`로 설정합니다
     3. 시간 범위를 **2025-11-14 00:00:00 - 2025-11-17 00:00:00**으로 설정합니다
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="로그 검색 보기" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="로그 보기" />
+    ![로그 검색 보기](/images/clickstack/systemd/systemd-search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![로그 보기](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
 
     <Info>
       **시간대 표시**
@@ -293,11 +311,19 @@ ClickStack으로 systemd 로그 모니터링을 시작할 수 있도록 systemd 
     1. HyperDX를 열고 **Dashboards** 섹션으로 이동합니다
     2. 오른쪽 상단의 줄임표 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+    <div className="ch-image-lg">
+
+    ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `systemd-logs-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="가져오기 완료" />
+    <div className="ch-image-lg">
+
+    ![가져오기 완료](/images/clickstack/systemd/finish-import-systemd.webp)
+
+    </div>
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
@@ -309,7 +335,11 @@ ClickStack으로 systemd 로그 모니터링을 시작할 수 있도록 systemd 
     * 서비스 실패
     * 오류율
 
-    <Image img="/images/clickstack/systemd/systemd-logs-dashboard.webp" alt="예시 대시보드" />
+    <div className="ch-image-lg">
+
+    ![예시 대시보드](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       데모 데이터세트에서는 시간 범위를 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 따라 조정).

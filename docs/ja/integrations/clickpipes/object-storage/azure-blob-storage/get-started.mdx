@@ -6,8 +6,6 @@ title: '最初の Azure Blob Storage ClickPipe を作成する'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 **前提条件**
 
 このガイドを進めるには、以下が必要です。
@@ -22,15 +20,27 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     サービスのホームページで、左側のメニューから **Data sources** をクリックします。
     **ClickPipes** のドロップダウンを展開し、**Create ClickPipe** をクリックします
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="データソースに移動" size="md" />
+    <div className="ch-image-md">
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="ClickPipe を作成" size="md" />
+    ![データソースに移動](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
+
+    </div>
+
+    <div className="ch-image-md">
+
+    ![ClickPipe を作成](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
+
+    </div>
   </Step>
 
   <Step title="データソースを選択" id="select-data-source">
     データタイプとして **Azure Blob Storage** を選択します
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="Azure Blob Storage を選択" size="md" />
+    <div className="ch-image-md">
+
+    ![Azure Blob Storage を選択](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
+
+    </div>
   </Step>
 
   <Step title="ClickPipe 接続を設定" id="setup-connection">
@@ -44,7 +54,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     最後に、**Incoming data** をクリックします
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="設定の詳細" size="md" />
+    <div className="ch-image-md">
+
+    ![設定の詳細](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
+
+    </div>
   </Step>
 
   <Step title="データフォーマットを選択" id="select-data-format">
@@ -53,7 +67,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     3. カンマ区切りフォーマットで使用する区切り文字など、フォーマット固有の追加設定を行います
     4. **Parse information** をクリックします
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="データフォーマットを選択" size="md" />
+    <div className="ch-image-md">
+
+    ![データフォーマットを選択](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
+
+    </div>
   </Step>
 
   <Step title="テーブル、スキーマ、設定を構成" id="configure-table-schema">
@@ -65,7 +83,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     4. カラム名、カラム型、デフォルト値、NULL 許容性について、ソースファイルから宛先テーブルへのマッピングを定義します
     5. 最後に、使用するエンジンタイプ、パーティション分割に使う式、主キーなどの高度な設定を指定します
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="情報を解析" size="md" />
+    <div className="ch-image-md">
+
+    ![情報を解析](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
+
+    </div>
 
     テーブル、スキーマ、設定の構成が完了したら、**Details and settings** をクリックします
   </Step>
@@ -75,7 +97,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     このユーザーに割り当てるロールを選択できます。
     materialized view または宛先テーブルからの Dictionary アクセスが必要な場合は、&quot;Full access&quot; を選択してください。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="権限を設定" size="md" />
+    <div className="ch-image-md">
+
+    ![権限を設定](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
+
+    </div>
   </Step>
 
   <Step title="セットアップを完了" id="complete-setup">

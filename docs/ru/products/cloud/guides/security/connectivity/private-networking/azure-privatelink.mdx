@@ -7,14 +7,21 @@ keywords: ['azure', 'private link', 'privatelink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Azure Private Link" />
 
 В этом руководстве показано, как использовать Azure Private Link для организации частного подключения через виртуальную сеть между Azure (включая сервисы, принадлежащие клиентам и партнёрам Microsoft) и ClickHouse Cloud. Azure Private Link упрощает сетевую архитектуру и защищает соединение между конечными точками в Azure, исключая передачу данных через публичный интернет.
 
-<Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="Обзор PrivateLink" background="white" />
+<div className="ch-image-lg ch-image-background-white">
+
+<Frame>
+
+![Обзор PrivateLink](/images/cloud/security/azure-pe.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
   Azure Private Link поддерживает только подключения, инициируемые из вашей Azure VNet к ClickHouse Cloud. Его нельзя использовать для подключений, инициируемых из ClickHouse Cloud к сервисам в вашей VNet, например к частной базе данных.
@@ -57,7 +64,15 @@ ClickHouse старается группировать ваши сервисы, 
 
 В консоли ClickHouse Cloud откройте сервис, к которому вы хотите подключиться через PrivateLink, затем откройте меню **Настройки**. Нажмите кнопку **Set up private endpoint**. Запишите `Service name` и `DNS name` — они понадобятся для настройки Private Link.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="lg" alt="Частные конечные точки" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Частные конечные точки](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+</Frame>
+
+</div>
 
 Запишите `Service name` и `DNS name` — они понадобятся на следующих шагах.
 
@@ -118,11 +133,27 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 В Azure Portal откройте **Private Link Center → Private Endpoints**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Откройте Azure Private Center" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Откройте Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
+
+</Frame>
+
+</div>
 
 Откройте диалог создания частной конечной точки, нажав кнопку **Create**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Откройте Azure Private Center" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Откройте Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
+
+</Frame>
+
+</div>
 
 ***
 
@@ -134,7 +165,15 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 После этого нажмите кнопку **Next: Resource**.
 
-<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Создание частной конечной точки: основные параметры" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Создание частной конечной точки: основные параметры](/images/cloud/security/azure-pe-create-basic.webp)
+
+</Frame>
+
+</div>
 
 ***
 
@@ -144,7 +183,15 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 Нажмите кнопку **Next: Virtual Network**.
 
-<Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Выбор ресурса частной конечной точки" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Выбор ресурса частной конечной точки](/images/cloud/security/azure-pe-resource.webp)
+
+</Frame>
+
+</div>
 
 ***
 
@@ -157,13 +204,29 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 Нажмите кнопку **Next: DNS**.
 
-<Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Выбор виртуальной сети для частной конечной точки" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Выбор виртуальной сети для частной конечной точки](/images/cloud/security/azure-pe-create-vnet.webp)
+
+</Frame>
+
+</div>
 
 Нажмите кнопку **Next: Tags**.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="Настройка DNS для частной конечной точки" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Настройка DNS для частной конечной точки](/images/cloud/security/azure-pe-create-dns.webp)
+
+</Frame>
+
+</div>
 
 При желании вы можете добавить теги к своей частной конечной точке.
 
@@ -171,17 +234,41 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-tags.webp" size="md" alt="Теги частной конечной точки" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Теги частной конечной точки](/images/cloud/security/azure-pe-create-tags.webp)
+
+</Frame>
+
+</div>
 
 Наконец, нажмите кнопку **Create**.
 
-<Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="Проверка частной конечной точки" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Проверка частной конечной точки](/images/cloud/security/azure-pe-create-review.webp)
+
+</Frame>
+
+</div>
 
 **Connection status** созданной частной конечной точки будет иметь состояние **Pending**. Оно изменится на **Approved**, как только вы добавите эту частную конечную точку в список разрешённых сервиса.
 
 Откройте сетевой интерфейс, связанный с частной конечной точкой, и скопируйте **частный IPv4-адрес** (в этом примере `10.0.0.4`) — эта информация понадобится на следующих шагах.
 
-<Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="IP-адрес частной конечной точки" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![IP-адрес частной конечной точки](/images/cloud/security/azure-pe-ip.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-using-terraform-to-create-a-private-endpoint-in-azure">
   ### Вариант 2: Создание частной конечной точки в Azure с помощью Terraform
@@ -212,18 +299,42 @@ resource "azurerm_private_endpoint" "example_clickhouse_cloud" {
 
 Resource ID частной конечной точки доступен в Azure Portal. Откройте частную конечную точку, созданную на предыдущем шаге, и нажмите **JSON View**:
 
-<Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Просмотр частной конечной точки" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Просмотр частной конечной точки](/images/cloud/security/azure-pe-view.webp)
+
+</Frame>
+
+</div>
 
 Скопируйте поле `id` верхнего уровня (Resource ID частной конечной точки в формате `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — не используйте вложенные поля `id` внутри объекта `properties`:
 
 **Предпочтительный способ: использование Resource ID**
 
-<Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Resource ID частной конечной точки" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Resource ID частной конечной точки](/images/cloud/security/azure-pe-resource-id.webp)
+
+</Frame>
+
+</div>
 
 **Устаревший способ: использование resourceGUID**
 resourceGUID по-прежнему можно использовать для обратной совместимости. Найдите поле `resourceGuid` и скопируйте его значение:
 
-<Image img="/images/cloud/security/azure-pe-resource-guid.webp" size="lg" alt="Resource GUID частной конечной точки" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Resource GUID частной конечной точки](/images/cloud/security/azure-pe-resource-guid.webp)
+
+</Frame>
+
+</div>
 
 <div id="setting-up-dns-for-private-link">
   ## Настройка DNS для Private Link
@@ -264,7 +375,15 @@ resource "azurerm_private_dns_zone" "clickhouse_cloud_private_link_zone" {
 4. В поле IP Address введите IP-адрес, указанный для Private Endpoint.
 5. Выберите **OK**.
 
-<Image img="/images/cloud/security/azure-pl-dns-wildcard.webp" size="lg" alt="Настройка подстановочного DNS для Private Link" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Настройка подстановочного DNS для Private Link](/images/cloud/security/azure-pl-dns-wildcard.webp)
+
+</Frame>
+
+</div>
 
 **Вариант 2: с помощью Terraform**
 
@@ -326,7 +445,15 @@ Address: 10.0.0.4
 
 Чтобы удалить конечную точку, откройте **Сведения об организации -&gt; Частные конечные точки** и нажмите кнопку удаления.
 
-<Image img="/images/cloud/security/azure-pe-remove-private-endpoint.webp" size="lg" alt="Удаление частной конечной точки" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Удаление частной конечной точки](/images/cloud/security/azure-pe-remove-private-endpoint.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api">
   ### Вариант 2: API
@@ -404,7 +531,15 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
   Если вы хотите разрешить доступ через существующее подключение PrivateLink, выберите существующую конечную точку в раскрывающемся меню.
 </Note>
 
-<Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="lg" alt="Фильтр частных конечных точек" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Фильтр частных конечных точек](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api">
   ### Вариант 2: API
@@ -473,7 +608,15 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 В консоли ClickHouse Cloud перейдите в раздел **Настройки**. Нажмите кнопку **Set up private endpoint**. В открывшейся выдвижной панели скопируйте **DNS Name**.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="lg" alt="DNS-имя частной конечной точки" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![DNS-имя частной конечной точки](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-3">
   #### Вариант 2: API

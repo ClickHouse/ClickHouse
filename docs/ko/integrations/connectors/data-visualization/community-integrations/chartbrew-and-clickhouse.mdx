@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -24,7 +23,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 가이드에서는 Chartbrew를 ClickHouse에 연결하고, SQL 쿼리를 실행한 뒤 시각화를 만듭니다. 완료되면 대시보드는 다음과 비슷한 모습이 됩니다:
 
-<Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Chartbrew 대시보드" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Chartbrew 대시보드](/images/integrations/data-visualization/chartbrew_01.webp)
+
+</Frame>
+
+</div>
 
 <Tip>
   **데이터 추가**
@@ -42,7 +49,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     2. **Create connection**을 클릭하고 사용 가능한 데이터베이스 옵션에서 **ClickHouse**를 선택합니다.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="Chartbrew에서 ClickHouse 연결 선택" />
+       <div className="ch-image-lg">
+
+       ![Chartbrew에서 ClickHouse 연결 선택](/images/integrations/data-visualization/chartbrew_02.webp)
+
+       </div>
 
     3. ClickHouse 데이터베이스의 연결 정보를 입력합니다:
 
@@ -53,20 +64,32 @@ import { Image } from "/snippets/ko/components/Image.jsx";
        * **Username**: ClickHouse 사용자 이름입니다.
        * **Password**: ClickHouse 비밀번호입니다.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Chartbrew의 ClickHouse 연결 설정" />
+       <div className="ch-image-lg">
+
+       ![Chartbrew의 ClickHouse 연결 설정](/images/integrations/data-visualization/chartbrew_03.webp)
+
+       </div>
 
     4. **Test connection**을 클릭하여 Chartbrew가 ClickHouse에 연결할 수 있는지 확인합니다.
 
     5. 테스트에 성공하면 **Save connection**을 클릭합니다. Chartbrew가 ClickHouse에서 스키마를 자동으로 가져옵니다.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Chartbrew의 ClickHouse JSON 스키마" />
+       <div className="ch-image-lg">
+
+       ![Chartbrew의 ClickHouse JSON 스키마](/images/integrations/data-visualization/chartbrew_04.webp)
+
+       </div>
   </Step>
 
   <Step title="데이터셋을 만들고 SQL 쿼리 실행하기" id="3-create-a-dataset-and-run-a-sql-query">
     1. **Create dataset** 버튼을 클릭하거나 **Datasets** 탭으로 이동해 데이터셋을 생성합니다.
     2. 앞에서 생성한 ClickHouse 연결을 선택합니다.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="데이터셋용 ClickHouse 연결 선택" />
+    <div className="ch-image-lg">
+
+    ![데이터셋용 ClickHouse 연결 선택](/images/integrations/data-visualization/chartbrew_05.webp)
+
+    </div>
 
     시각화할 데이터를 가져오는 SQL 쿼리를 작성합니다. 예를 들어, 다음 쿼리는 `uk_price_paid` 데이터셋에서 연도별 평균 거래 가격을 계산합니다:
 
@@ -77,13 +100,21 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     ORDER BY year;
     ```
 
-    <Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="Chartbrew의 ClickHouse SQL 쿼리" />
+    <div className="ch-image-lg">
+
+    ![Chartbrew의 ClickHouse SQL 쿼리](/images/integrations/data-visualization/chartbrew_07.webp)
+
+    </div>
 
     **Run query**를 클릭하여 데이터를 가져옵니다.
 
     쿼리 작성이 어렵다면 **Chartbrew의 AI 어시스턴트**를 사용해 데이터베이스 스키마를 기반으로 SQL 쿼리를 생성할 수 있습니다.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="Chartbrew의 ClickHouse AI SQL 어시스턴트" />
+    <div className="ch-image-lg">
+
+    ![Chartbrew의 ClickHouse AI SQL 어시스턴트](/images/integrations/data-visualization/chartbrew_06.webp)
+
+    </div>
 
     데이터를 가져온 후 **Configure dataset**을 클릭하여 시각화 매개변수를 설정합니다.
   </Step>
@@ -94,11 +125,19 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     3. 차트 유형(예: 라인 차트, 막대 차트, 파이 차트)을 선택하고 대시보드에 추가합니다.
     4. **Complete dataset**을 클릭하여 설정을 완료합니다.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="ClickHouse 데이터가 포함된 Chartbrew 대시보드" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse 데이터가 포함된 Chartbrew 대시보드](/images/integrations/data-visualization/chartbrew_08.webp)
+
+    </div>
 
     데이터의 다양한 측면을 시각화할 수 있도록 원하는 만큼 데이터셋을 만들 수 있습니다. 이러한 데이터셋을 사용해 여러 대시보드를 만들어 서로 다른 메트릭을 추적할 수 있습니다.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="ClickHouse 데이터가 포함된 Chartbrew 대시보드" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse 데이터가 포함된 Chartbrew 대시보드](/images/integrations/data-visualization/chartbrew_01.webp)
+
+    </div>
   </Step>
 
   <Step title="데이터 업데이트 자동화하기" id="5-automate-data-updates">
@@ -108,7 +147,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     2. 업데이트 간격(예: 매시간, 매일)을 설정합니다.
     3. 설정을 저장하여 자동 갱신을 활성화합니다.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Chartbrew 데이터셋 갱신 설정" />
+    <div className="ch-image-lg">
+
+    ![Chartbrew 데이터셋 갱신 설정](/images/integrations/data-visualization/chartbrew_09.webp)
+
+    </div>
   </Step>
 </Steps>
 

@@ -6,7 +6,6 @@ keywords: ['PrivateLink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="AWS PrivateLink" />
@@ -95,7 +94,15 @@ AWS PrivateLink 経由で ClickHouse Cloud サービスに接続するには、�
 
 ClickHouse Cloud コンソールで、PrivateLink 経由で接続するサービスを開き、**Settings** メニューに移動します。
 
-<Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="プライベート エンドポイント" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![プライベート エンドポイント](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+</Frame>
+
+</div>
 
 `Service name` と `DNS name` をメモしたら、[次のステップに進みます](#create-aws-endpoint)。
 
@@ -161,7 +168,15 @@ AWS コンソールを開き、**VPC** → **Endpoints** → **Create endpoints*
 
 **Endpoint services that use NLBs and GWLBs** を選択し、[Obtain Endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info) の手順で取得した `Service name`<sup>console</sup> または `endpointServiceId`<sup>API</sup> を **Service Name** フィールドに入力します。続いて、**Verify service** をクリックします。
 
-<Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink エンドポイント設定" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![AWS PrivateLink エンドポイント設定](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   クロスリージョン接続の場合は、**Cross region endpoint** チェックボックスをオンにして、ClickHouse service が稼働しているリージョンを指定します。
@@ -171,7 +186,15 @@ AWS コンソールを開き、**VPC** → **Endpoints** → **Create endpoints*
 
 次に、使用する VPC とサブネットを選択します。
 
-<Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="VPC とサブネットの選択" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![VPC とサブネットの選択](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+</Frame>
+
+</div>
 
 必要に応じて、セキュリティグループ/タグを割り当てます。
 
@@ -181,7 +204,15 @@ AWS コンソールを開き、**VPC** → **Endpoints** → **Create endpoints*
 
 VPC エンドポイント を作成したら、`Endpoint ID` の値を控えておいてください。後続の手順で必要になります。
 
-<Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="VPC Endpoint ID" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![VPC Endpoint ID](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-aws-cloudformation">
   #### オプション 2: AWS CloudFormation
@@ -257,7 +288,15 @@ VPC Endpoint を作成したら、`Endpoint ID` の値を控えておいてく�
   既存の PrivateLink 接続からのアクセスを許可する場合は、既存のエンドポイントのドロップダウン メニューを使用します。
 </Note>
 
-<Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="プライベート エンドポイント フィルター" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![プライベート エンドポイント フィルター](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+</Frame>
+
+</div>
 
 削除するには、ClickHouse Cloud コンソール に移動してサービスを見つけ、そのサービスの **Settings** に進み、削除したいエンドポイントを見つけます。エンドポイントの一覧から削除します。
 
@@ -334,7 +373,15 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
 
 ClickHouse Cloud コンソール で **Settings** に移動します。**Set up private endpoint** ボタンをクリックします。表示された flyout で、**DNS Name** をコピーします。
 
-<Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="プライベート エンドポイント DNS 名" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![プライベート エンドポイント DNS 名](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-3">
   ##### オプション 2: API

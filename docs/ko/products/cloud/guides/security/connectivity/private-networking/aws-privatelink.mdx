@@ -6,7 +6,6 @@ keywords: ['PrivateLink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="AWS PrivateLink" />
@@ -95,7 +94,15 @@ AWS PrivateLink를 통해 ClickHouse Cloud 서비스를 연결하려면 다음 �
 
 ClickHouse Cloud 콘솔에서 PrivateLink를 통해 연결할 서비스를 연 다음, **설정** 메뉴로 이동합니다.
 
-<Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="Private Endpoints" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Private Endpoints](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+</Frame>
+
+</div>
 
 `Service name`과 `DNS name`을 메모한 다음, [다음 단계로 이동하세요](#create-aws-endpoint).
 
@@ -161,7 +168,15 @@ AWS 콘솔을 열고 **VPC** → **Endpoints** → **Create endpoints**로 이�
 
 **Endpoint services that use NLBs and GWLBs**를 선택한 다음, **Service Name** 필드에 [엔드포인트 &quot;Service name&quot; 확인 ](#obtain-endpoint-service-info) 단계에서 얻은 `Service name`<sup>console</sup> 또는 `endpointServiceId`<sup>API</sup>를 입력하세요. **Verify service**를 클릭하세요.
 
-<Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink 엔드포인트 설정" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![AWS PrivateLink 엔드포인트 설정](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   리전 간 연결의 경우 **Cross region endpoint** 체크박스를 선택하고 ClickHouse 서비스가 실행 중인 서비스 리전을 지정하세요.
@@ -171,7 +186,15 @@ AWS 콘솔을 열고 **VPC** → **Endpoints** → **Create endpoints**로 이�
 
 다음으로, VPC와 서브넷을 선택하세요.
 
-<Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="VPC 및 서브넷 선택" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![VPC 및 서브넷 선택](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+</Frame>
+
+</div>
 
 선택 사항으로 Security Group/태그를 할당하세요.
 
@@ -181,7 +204,15 @@ AWS 콘솔을 열고 **VPC** → **Endpoints** → **Create endpoints**로 이�
 
 VPC 엔드포인트를 생성한 후 `Endpoint ID` 값을 기록해 두세요. 다음 단계에서 필요합니다.
 
-<Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="VPC 엔드포인트 ID" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![VPC 엔드포인트 ID](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-aws-cloudformation">
   #### 옵션 2: AWS CloudFormation
@@ -257,7 +288,15 @@ VPC 엔드포인트를 생성한 후 `Endpoint ID` 값을 메모해 두세요. �
   기존 PrivateLink connection의 액세스를 허용하려면 기존 엔드포인트 드롭다운 메뉴를 사용하십시오.
 </Note>
 
-<Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="Private Endpoints 필터" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Private Endpoints 필터](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+</Frame>
+
+</div>
 
 제거하려면 ClickHouse Cloud 콘솔로 이동하여 서비스를 찾은 다음, 해당 서비스의 **설정**으로 이동하고 제거할 엔드포인트를 찾으십시오. 엔드포인트 목록에서 제거하십시오.
 
@@ -334,7 +373,15 @@ Private Link가 활성화된 각 서비스에는 공용 엔드포인트와 Priva
 
 ClickHouse Cloud 콘솔에서 **설정**으로 이동합니다. **Set up private endpoint** 버튼을 클릭합니다. 열리는 플라이아웃에서 **DNS Name**을 복사합니다.
 
-<Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="Private Endpoint DNS 이름" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Private Endpoint DNS 이름](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-3">
   ##### 옵션 2: API

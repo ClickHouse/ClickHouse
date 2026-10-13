@@ -6,8 +6,6 @@ keywords: ['クエリトレース', 'OTel', 'Grafana']
 description: "このガイドでは、組み込みの方法または Grafana を使って、セルフマネージド ClickHouse でクエリトレースを収集し、可視化する方法を説明します。これは特に、複雑なクエリを扱う際に、EXPLAIN でわかる内容を超えて内部的な実行の仕組みを理解したい場合に役立ちます。"
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 **前提条件**:
 
 * ClickHouseの[設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)に関する知識
@@ -145,7 +143,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     ホスト型のトレース可視化ツールは [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/) を使用してください。
     前のステップで作成した `trace.json` ファイルを読み込んで、トレースを可視化します。
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="ClickHouse トレース可視化ツールの例" />
+    <div className="ch-image-md">
+
+    ![ClickHouse トレース可視化ツールの例](/images/knowledgebase/trace-visualizer-example.png)
+
+    </div>
   </Step>
 
   <Step title="Grafana でトレースを可視化する" id="using-grafana">
@@ -174,10 +176,18 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     `Query type` を `Traces` に設定してください：
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Grafana における ClickHouse トレースの可視化" />
+    <div className="ch-image-md">
+
+    ![Grafana における ClickHouse トレースの可視化](/images/knowledgebase/trace-visualization-grafana.png)
+
+    </div>
 
     &quot;Run Query&quot; をクリックして、トレース図を確認してください：
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Grafana における ClickHouse トレースの可視化" />
+    <div className="ch-image-md">
+
+    ![Grafana における ClickHouse トレースの可視化](/images/knowledgebase/trace-visualization-diagram.png)
+
+    </div>
   </Step>
 </Steps>

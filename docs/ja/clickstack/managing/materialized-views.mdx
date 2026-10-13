@@ -8,7 +8,6 @@ keywords: ['clickstack', 'オブザーバビリティ', 'materialized views', '�
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
@@ -36,7 +35,15 @@ materialized VIEW を使う主な目的は、ターゲットテーブルに書�
 
 ClickHouse の materialized VIEW は、データがソーステーブルに流入するのに合わせて継続的に更新され、常に最新の索引のように振る舞います。これは、多くの他のデータベースにおける materialized VIEW が静的なスナップショットであり、ClickHouse の [リフレッシュ可能なマテリアライズドビュー](/ja/concepts/features/materialized-views/refreshable-materialized-view) と同様に定期的な更新が必要なのとは異なります。
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized VIEW の図" />
+<div className="ch-image-md">
+
+<Frame>
+
+![materialized VIEW の図](/images/materialized-view/materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 インクリメンタルmaterialized VIEW は、新しいデータが到着した際に VIEW への変更分だけを計算し、計算を挿入時に寄せます。ClickHouse はインジェスト向けに高度に最適化されているため、挿入される各ブロックに対して VIEW を維持する増分コストは、クエリ実行時に得られる削減効果に比べて小さく抑えられます。集計計算のコストは、読み取りのたびに毎回支払うのではなく、挿入全体に分散されます。そのため、事前集計済みの結果をクエリする方が再計算するよりもはるかに低コストであり、結果として、ペタバイト規模であっても下流の可視化に対して低い運用コストとほぼリアルタイムの性能を実現できます。
 
@@ -124,7 +131,15 @@ GROUP BY time, ServiceName, StatusCode
 
 高速化したい可視化、または可視化のセットを特定したら、次にその基になるクエリを洗い出します。実際には、可視化の設定を確認し、生成された SQL をレビューして、使用されている集計メトリクスや適用されている関数を重点的に確認することになります。
 
-<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="生成された SQL" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![生成された SQL](/images/clickstack/materialized_views/generated_sql.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   HyperDX 内のコンポーネントでデバッグパネルを利用できない場合は、ブラウザーのコンソールを確認できます。そこにはすべてのクエリが記録されています。
@@ -229,13 +244,21 @@ materialized VIEW は、ビューの派生元である**元のソーステーブ
   <Step title="ログソースを編集する" id="edit-the-source">
     HyperDX で該当する**ログソース**に移動し、**設定を編集**ダイアログを開きます。materialized VIEW のセクションまでスクロールします。
 
-    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="ログソースを編集" />
+    <div className="ch-image-lg">
+
+    ![ログソースを編集](/images/clickstack/materialized_views/edit_source.webp)
+
+    </div>
   </Step>
 
   <Step title="materialized VIEW を追加する" id="add-the-materialized-view">
     **Add materialized view** を選択し、続いて materialized VIEW の基盤となるデータベースとターゲットテーブルを選択します。
 
-    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="ログソースを編集" />
+    <div className="ch-image-lg">
+
+    ![ログソースを編集](/images/clickstack/materialized_views/add_view.webp)
+
+    </div>
   </Step>
 
   <Step title="メトリクスを選択する" id="select-metrics">
@@ -248,13 +271,21 @@ materialized VIEW は、ビューの派生元である**元のソーステーブ
 
     次元では、timestamp を除き、ビューがグループ化に使用するすべてのカラムを指定します。
 
-    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="メトリクスを選択" />
+    <div className="ch-image-lg">
+
+    ![メトリクスを選択](/images/clickstack/materialized_views/select_metrics.webp)
+
+    </div>
   </Step>
 
   <Step title="時間粒度を選択する" id="select-time-granularity">
     materialized VIEW の**時間粒度**を選択します。たとえば 1 分です。
 
-    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="時間粒度を選択" />
+    <div className="ch-image-lg">
+
+    ![時間粒度を選択](/images/clickstack/materialized_views/select_time_granularity.webp)
+
+    </div>
   </Step>
 
   <Step title="最小日付を選択する" id="specify-the-minimum-date">
@@ -265,7 +296,11 @@ materialized VIEW は、ビューの派生元である**元のソーステーブ
       materialized VIEW のバックフィルに関する完全なガイドは、[&quot;データのバックフィル&quot;](/ja/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables) を参照してください。
     </Note>
 
-    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="最小時刻を選択" />
+    <div className="ch-image-lg">
+
+    ![最小時刻を選択](/images/clickstack/materialized_views/select_min_time.webp)
+
+    </div>
 
     正確な開始時刻が不明な場合は、たとえば次のようにターゲットテーブルから最小 timestamp をクエリして確認できます。
 
@@ -277,7 +312,11 @@ materialized VIEW は、ビューの派生元である**元のソーステーブ
   <Step title="ログソースを保存する" id="save-the-source">
     ログソース設定を保存します。
 
-    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="ログソースを保存" />
+    <div className="ch-image-lg">
+
+    ![ログソースを保存](/images/clickstack/materialized_views/save_source.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -300,7 +339,15 @@ ClickStack には、materialized VIEW が使用されているかどうかを確
 * **緑色の稲妻** は、そのクエリが materialized VIEW によって高速化されていることを示します。
 * **オレンジ色の稲妻** は、そのクエリがソーステーブルに対して実行されていることを示します。
 
-<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="高速化された可視化" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![高速化された可視化](/images/clickstack/materialized_views/accelerated_visual.webp)
+
+</Frame>
+
+</div>
 
 2. **最適化の詳細を確認する** 稲妻アイコンをクリックすると、次の内容を示す詳細パネルが開きます。
 

@@ -8,8 +8,6 @@ keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud chang
 rss: true
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 除本 ClickHouse Cloud 更新日志外，另请参阅 [Cloud 兼容性](/zh/products/cloud/guides/cloud-compatibility)页面。
 
 <Update label="2026-09-22">
@@ -354,7 +352,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     * GCP us-east1 (南卡罗来纳)
   * 现在可以在组织级别配置崩溃报告收集偏好设置。此前此设置仅在服务级别可用。在组织级别禁用后，所有现有和未来的服务都会自动退出。
 
-  <Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="崩溃报告收集" />
+  <div className="ch-image-md">
+
+  ![崩溃报告收集](/images/cloud/reference/crash-reports-collection.webp)
+
+  </div>
 </Update>
 
 <Update label="2026 年 1 月 23 日">

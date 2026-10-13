@@ -9,8 +9,8 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import GatherCredentials from '/snippets/ko/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.mdx';
 
 이 가이드는 비어 있는 Managed ClickStack 서비스에서 시작해 실제 애플리케이션에서 로그, 메트릭, 트레이스, 세션 리플레이가 수집되기까지의 전 과정을 안내합니다. 서비스에 맞게 새로운 OpenTelemetry collector를 배포하거나(이미 있다면 기존 collector를 조정할 수 있습니다), 비즈니스 로직 변경 없이 샘플 Node.js 애플리케이션을 계측한 다음, ClickStack UI에서 텔레메트리를 살펴봅니다.
@@ -211,7 +211,11 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
 
     [http://localhost:5001](http://localhost:5001)을 여십시오. 연도 셀렉터, 요약 통계, 활동 차트, 상위 사용자 및 도메인 테이블, 검색 상자가 표시됩니다. 이것저것 클릭해 보십시오. 연도를 바꾸고 스토리를 자세히 살펴보십시오.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="로컬에서 실행 중인 HackerNews Analyzer 애플리케이션" />
+    <div className="ch-image-lg">
+
+    ![로컬에서 실행 중인 HackerNews Analyzer 애플리케이션](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
 
     이 시점에서 애플리케이션은 실행 중이지만 아직 계측되지 않은 상태입니다. ClickStack에는 데이터가 표시되지 않습니다. 텔레메트리를 기다리는 중입니다. 이것이 「이전」 상태입니다.
   </Step>
@@ -300,31 +304,55 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
   <Step title="ClickStack를 실행하고 텔레메트리 데이터를 살펴보십시오" id="launch-clickstack">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택한 다음 **수집 시작**을 선택합니다.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="ClickStack 실행" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack 실행](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+
+    </div>
 
     다음 단계는 이미 collector를 구성했으므로 건너뛸 수 있습니다. 계속하려면 **ClickStack 실행**을 클릭합니다.
 
     ClickStack이 새 탭에서 열리며 자동으로 **시작하기** 페이지로 이동합니다. 그렇지 않다면 왼쪽 메뉴에서 **시작하기**를 선택한 다음 **수집 시작**을 클릭하고 이어서 **다음**을 클릭합니다.
 
-    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack 수집 시작" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack 수집 시작](/images/use-cases/observability/clickstack-start-ingestion.webp)
+
+    </div>
 
     ClickStack이 테이블과 텔레메트리 데이터를 자동으로 감지하므로 계속 진행할 수 있습니다. 데이터 탐색을 시작하려면 **탐색 시작**을 선택합니다.
 
-    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack 탐색 시작" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack 탐색 시작](/images/use-cases/observability/clickstack-start-exploring.webp)
+
+    </div>
 
     이제 애플리케이션이 생성하는 데이터를 확인합니다:
 
     1. **검색**으로 이동해 최근 5분으로 필터링합니다. `hn-analyzer-api`의 로그가 실시간으로 들어옵니다.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack 로그" />
+    <div className="ch-image-lg">
+
+    ![ClickStack 로그](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+
+    </div>
 
     2. 요청 하나를 클릭해 트레이스를 따라 상위로 이동합니다. Express handler 스팬, 실제 네트워크 Duration이 표시된 ClickHouse 클러스터를 가리키는 하위 HTTP 스팬, 그리고 동일한 트레이스에 연관된 `console.log` 레코드를 볼 수 있습니다.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack 트레이스" />
+    <div className="ch-image-lg">
+
+    ![ClickStack 트레이스](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+
+    </div>
 
     3. **세션 리플레이**를 열어 트레이스 타임라인과 동기화된 브라우저 세션의 스크러빙 가능한 비디오를 재생합니다.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack 세션" />
+    <div className="ch-image-lg">
+
+    ![ClickStack 세션](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+
+    </div>
 
     로그, 메트릭, 트레이스, 세션 리플레이는 모두 동일한 UI에 수집되고, 동일한 쿼리 언어를 공유하며, 자동으로 연관됩니다.
 

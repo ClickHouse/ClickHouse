@@ -6,8 +6,6 @@ description: 'Пошаговое руководство по настройке 
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 По умолчанию S3 ClickPipe предполагает, что файлы добавляются в бакет в [лексикографическом порядке](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order). S3 ClickPipe можно настроить на приём файлов, у которых нет подразумеваемого порядка, указав очередь [Amazon SQS](https://aws.amazon.com/sqs/), подключённую к бакету, и при необходимости используя [Amazon EventBridge](https://aws.amazon.com/eventbridge/) в качестве маршрутизатора событий. Это позволяет ClickPipes отслеживать события `ObjectCreated:*` и принимать любые новые файлы независимо от схемы их именования.
 
 <Note>
@@ -44,11 +42,19 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       <Tab title="через EventBridge">
         **a.** В свойствах S3 бакета перейдите в **Event notifications &gt; Amazon EventBridge** и включите отправку уведомлений в EventBridge. Нажмите **Save changes**.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="Включение уведомлений Amazon EventBridge в свойствах S3 бакета" size="lg" border />
+        <div className="ch-image-lg">
+
+        ![Включение уведомлений Amazon EventBridge в свойствах S3 бакета](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
+
+        </div>
 
         **b.** В консоли AWS перейдите в **Amazon EventBridge &gt; Rules &gt; Create rule**. Укажите имя правила (например, `S3ObjectCreated`), выберите шину событий **default** и нажмите **Next**. На шаге **Build event pattern** выберите **AWS events or EventBridge partner events** в качестве источника событий, затем вручную введите следующий шаблон события, заменив `<bucket-name>` именем вашего бакета:
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="Указание имени правила EventBridge и шины событий" size="lg" border />
+        <div className="ch-image-lg">
+
+        ![Указание имени правила EventBridge и шины событий](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
+
+        </div>
 
         ```json
         {
@@ -66,9 +72,17 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
         **c.** На шаге **Select target(s)** выберите **AWS service** в качестве типа цели и укажите **SQS queue**. Выберите очередь, созданную на предыдущем шаге. Оставьте флажок **Use execution role (recommended)** установленным, чтобы EventBridge автоматически создал необходимую роль IAM, затем нажмите **Next** и завершите настройку.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="Настройка очереди SQS в качестве цели правила EventBridge" size="lg" border />
+        <div className="ch-image-lg">
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="Правило EventBridge успешно создано" size="lg" border />
+        ![Настройка очереди SQS в качестве цели правила EventBridge](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
+
+        </div>
+
+        <div className="ch-image-lg">
+
+        ![Правило EventBridge успешно создано](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
+
+        </div>
 
         **d.** Измените политику доступа очереди SQS, чтобы разрешить EventBridge отправлять в неё сообщения. Замените `<sqs-queue-arn>` и `<eventbridge-rule-arn>` соответствующими значениями:
 

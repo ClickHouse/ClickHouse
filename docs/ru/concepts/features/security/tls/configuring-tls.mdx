@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <SelfManaged />
 
 В этом руководстве приведены простые минимальные настройки для конфигурации ClickHouse с использованием сертификатов OpenSSL для проверки соединений. В этом примере создаются самоподписанные сертификат и ключ центра сертификации (CA), а также сертификаты узлов, чтобы установить соединения с нужными параметрами.
@@ -461,7 +459,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     5. Войдите в интерфейс Play через `https`-интерфейс по адресу `https://chnode1.marsnet.local:8443/play`.
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="Настройка TLS" size="md" border />
+       <div className="ch-image-md">
+
+       ![Настройка TLS](/images/guides/sre/configuring-ssl_01.webp)
+
+       </div>
 
     <Note>
       браузер покажет, что сертификат не является доверенным, поскольку доступ к нему осуществляется с рабочей станции, а сертификаты отсутствуют в хранилищах корневых CA на клиентской машине.

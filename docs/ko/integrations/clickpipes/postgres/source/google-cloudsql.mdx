@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <Info>
   지원되는 제공업체 중 하나를 사용하는 경우(사이드바 참조), 해당 제공업체의 가이드를 참조하십시오.
 </Info>
@@ -30,13 +28,37 @@ Postgres 12 이상 버전
 
 1. Overview 페이지에서 **Edit** 버튼을 클릭하세요.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp" alt="Cloud SQL Postgres의 Edit 버튼" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Cloud SQL Postgres의 Edit 버튼](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+
+</Frame>
+
+</div>
 
 2. Flags로 이동하여 `cloudsql.logical_decoding`을 `on`으로 변경하세요. 이 변경 사항을 적용하려면 Postgres 서버를 다시 시작해야 합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="`cloudsql.logical_decoding`을 `on`으로 변경" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="서버 다시 시작" size="lg" border />
+<Frame>
+
+![`cloudsql.logical_decoding`을 `on`으로 변경](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![서버 다시 시작](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## ClickPipes 사용자 생성 및 권한 부여
@@ -98,17 +120,49 @@ Postgres 12 이상 버전
 
 1. **연결** 섹션으로 이동합니다
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="Cloud SQL의 연결 섹션" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Cloud SQL의 연결 섹션](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+
+</Frame>
+
+</div>
 
 2. **네트워킹** 하위 섹션으로 이동합니다
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Cloud SQL의 네트워킹 하위 섹션" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Cloud SQL의 네트워킹 하위 섹션](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+
+</Frame>
+
+</div>
 
 3. [ClickPipes의 공용 IP](/ko/integrations/clickpipes/networking/static-ips)를 추가합니다
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="방화벽에 ClickPipes 네트워크 추가" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="방화벽에 ClickPipes 네트워크가 추가됨" size="lg" border />
+<Frame>
+
+![방화벽에 ClickPipes 네트워크 추가](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![방화벽에 ClickPipes 네트워크가 추가됨](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## 다음 단계

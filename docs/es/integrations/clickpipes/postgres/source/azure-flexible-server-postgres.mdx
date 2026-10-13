@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickPipes admite Postgres 12 y versiones posteriores.
 
 <div id="enable-logical-replication">
@@ -22,15 +20,39 @@ ClickPipes admite Postgres 12 y versiones posteriores.
 
 1. Haz clic en la sección **Server parameters**
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp" alt="Server Parameters en Azure Flexible Server for Postgres" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Server Parameters en Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp)
+
+</Frame>
+
+</div>
 
 2. Cambia `wal_level` a `logical`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp" alt="Cambiar wal_level a logical en Azure Flexible Server for Postgres" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Cambiar wal_level a logical en Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp)
+
+</Frame>
+
+</div>
 
 3. Este cambio requiere reiniciar el servidor. Reinícialo cuando se te solicite.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp" alt="Reiniciar el servidor después de cambiar wal_level" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Reiniciar el servidor después de cambiar wal_level](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## Creación de usuarios para ClickPipes y concesión de permisos
@@ -87,7 +109,15 @@ Sigue estos pasos para agregar las [IP de ClickPipes](/es/integrations/clickpipe
 1. Ve a la pestaña **Networking** y agrega las [IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips) al firewall
    de tu Azure Flexible Server Postgres o al servidor de salto/bastión si usas tunelización SSH.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Agrega las IP de ClickPipes al firewall en Azure Flexible Server for Postgres" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Agrega las IP de ClickPipes al firewall en Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## ¿Qué sigue?

@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Esta é uma das maneiras mais eficientes e diretas de copiar dados do
 Azure Blob Storage ou do Azure Data Lake Storage para o ClickHouse. Com essa função de tabela,
 você pode instruir o ClickHouse a se conectar diretamente ao armazenamento do Azure e
@@ -38,11 +36,19 @@ Para permitir que o ClickHouse acesse seu Azure Blob Storage, você precisará d
 
 2. No menu à esquerda, selecione **Chaves de acesso** na seção **Segurança +
    rede**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Configurações do armazenamento de dados do Azure" border />
+   <div className="ch-image-lg">
+
+   ![Configurações do armazenamento de dados do Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
+
+   </div>
 
 3. Escolha **key1** ou **key2** e clique no botão **Mostrar** ao lado do
    campo **String de conexão**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Chaves de acesso do armazenamento de dados do Azure" border />
+   <div className="ch-image-lg">
+
+   ![Chaves de acesso do armazenamento de dados do Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
+
+   </div>
 
 4. Copie a string de conexão — você a usará como parâmetro na função de tabela azureBlobStorage.
 

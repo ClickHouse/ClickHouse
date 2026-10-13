@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge />
 
@@ -26,9 +25,25 @@ ClickHouse Cloud 服务会根据 CPU 和内存利用率自动扩缩容，但许�
 
 要配置计划，请在 ClickHouse Cloud 控制台中进入你的服务并前往设置。在这里，选择 **Schedule Override**，然后添加一条新规则。
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="ClickHouse Cloud 控制台中的扩缩容计划界面，显示基于时间的扩缩容规则" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="在 ClickHouse Cloud 控制台中配置定时扩缩容规则" border />
+<Frame>
+
+![ClickHouse Cloud 控制台中的扩缩容计划界面，显示基于时间的扩缩容规则](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![在 ClickHouse Cloud 控制台中配置定时扩缩容规则](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
+
+</Frame>
+
+</div>
 
 每条规则都需要：
 

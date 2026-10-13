@@ -7,8 +7,6 @@ keywords: ['azure', 'flexible server', 'mysql', 'clickpipes', 'binlog']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوضح هذا الدليل خطوة بخطوة كيفية تهيئة Azure Flexible Server for MySQL لنسخ البيانات إلى ClickHouse Cloud باستخدام [MySQL ClickPipe](/ar/integrations/clickpipes/mysql/index). لا تدعم هذه الخدمة سوى **الإدخال لمرة واحدة**. وللإجابة عن الأسئلة الشائعة حول MySQL CDC، راجع [صفحة الأسئلة الشائعة حول MySQL](/ar/integrations/clickpipes/mysql/faq).
 
 <Warning>
@@ -59,7 +57,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     3. في قسم **Firewall rules**، أدخِل [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) للمنطقة التي نُشرت فيها خدمتك.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="تهيئة الشبكة للوصول العام باستخدام قائمة سماح لعناوين IP" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![تهيئة الشبكة للوصول العام باستخدام قائمة سماح لعناوين IP](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
+
+       </div>
 
     4. انقر على **Save** لحفظ تغييرات تهيئة أمان الشبكة.
   </Tab>

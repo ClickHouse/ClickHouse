@@ -11,8 +11,8 @@ integration:
   - website: 'https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
@@ -35,13 +35,29 @@ Deepnote 데이터 노트북에서 ClickHouse를 쿼리하는 대화형 예시�
 
 1. Deepnote에서 &quot;Integrations&quot; 개요를 선택한 다음 ClickHouse 타일을 클릭합니다.
 
-<Image size="lg" img="/images/integrations/data-visualization/deepnote_01.webp" alt="ClickHouse 통합 타일" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse 통합 타일](/images/integrations/data-visualization/deepnote_01.webp)
+
+</Frame>
+
+</div>
 
 2. ClickHouse 인스턴스의 연결 정보를 입력합니다.
 
 <ConnectionDetails />
 
-<Image size="md" img="/images/integrations/data-visualization/deepnote_02.webp" alt="ClickHouse 세부 정보 대화 상자" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse 세부 정보 대화 상자](/images/integrations/data-visualization/deepnote_02.webp)
+
+</Frame>
+
+</div>
 
 ***참고:*** ClickHouse 연결이 IP 액세스 목록으로 보호되는 경우 Deepnote의 IP 주소를 허용해야 할 수 있습니다. 자세한 내용은 [Deepnote 문서](https://deepnote.com/docs/securing-connections)를 참조하십시오.
 
@@ -53,7 +69,11 @@ Deepnote 데이터 노트북에서 ClickHouse를 쿼리하는 대화형 예시�
 
 1. 먼저 노트북 오른쪽에 있는 ClickHouse 통합에 연결하세요.
 
-   <Image size="lg" img="/images/integrations/data-visualization/deepnote_03.webp" alt="ClickHouse 세부 정보 대화상자" border />
+   <div className="ch-image-lg">
+
+   ![ClickHouse 세부 정보 대화상자](/images/integrations/data-visualization/deepnote_03.webp)
+
+   </div>
 
 2. 이제 새 ClickHouse 쿼리 블록을 만들고 데이터베이스에 쿼리를 실행하세요. 쿼리 결과는 DataFrame으로 저장되며, SQL 블록에서 지정한 변수에 할당됩니다.
 

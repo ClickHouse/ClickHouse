@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'ttl', 'الاحتفاظ بالبيانات', 'دورة الحياة', 'إدارة التخزين']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
 
 <div id="ttl-clickstack">
@@ -26,7 +25,15 @@ import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
 
 كما هو موضح في المثال أعلاه، يتم تحديد التقسيم للجدول عند تعريفه أول مرة عبر عبارة `PARTITION BY`. ويمكن أن تحتوي هذه العبارة على تعبير SQL يستند إلى أي عمود أو أعمدة، وتحدد نتيجته partition الذي سيُرسل إليه كل row. ويؤدي ذلك إلى ربط البيانات منطقيًا (عبر بادئة اسم مجلد مشتركة) بكل partition على القرص، بحيث يمكن بعد ذلك الاستعلام عنه بشكل مستقل. وفي المثال أعلاه، يستخدم المخطط الافتراضي لـ `otel_logs` التقسيم حسب اليوم باستخدام التعبير `toDate(Timestamp)`. وعند insert rows في ClickHouse، يُقيَّم هذا التعبير على كل row ويُوجَّه إلى partition الناتج إذا كان موجودًا (وإذا كان هذا row هو الأول لذلك اليوم، فسيتم إنشاء partition). لمزيد من التفاصيل حول التقسيم وتطبيقاته الأخرى، راجع [&quot;Table Partitions&quot;](/ar/concepts/core-concepts/partitions).
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="الأقسام" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![الأقسام](/images/use-cases/observability/observability-14.webp)
+
+</Frame>
+
+</div>
 
 يتضمن مخطط الجدول أيضًا `TTL toDateTime(Timestamp) + ${TABLES_TTL}` والإعداد `ttl_only_drop_parts = 1`. تضمن العبارة الأولى حذف البيانات بمجرد أن تصبح أقدم من TTL المُعدّة (3 أيام افتراضيًا). أما الإعداد `ttl_only_drop_parts = 1` فيفرض انتهاء صلاحية أجزاء البيانات فقط عندما تكون كل البيانات فيها قد انتهت صلاحيتها (بدلًا من محاولة حذف rows جزئيًا). ومع ضمان التقسيم عدم &quot;دمج&quot; البيانات من أيام مختلفة مطلقًا، يمكن بالتالي حذف البيانات بكفاءة.
 

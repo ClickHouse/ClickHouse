@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このドキュメントでは、MySQL ClickPipe における並列化されたスナップショット/初期ロードの仕組みと、それを制御するために使用できるスナップショットパラメータについて説明します。
 
 <div id="overview-mysql-snapshot">
@@ -27,7 +25,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 機能フラグを有効にすると、ClickPipe のテーブルピッカーに以下の設定が表示されます (ClickPipe の作成時と編集時の両方) :
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="パーティションキー カラム" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![パーティションキー カラム](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</Frame>
+
+</div>
 
 MySQL ClickPipe では、ソーステーブルを論理的にパーティション分割するために、そのテーブル上のカラムを使用します。このカラムを **パーティションキー カラム** と呼びます。これはソーステーブルをパーティションに分割するために使われ、各パーティションは ClickPipe によって並列に処理されます。
 
@@ -41,7 +47,15 @@ MySQL ClickPipe では、ソーステーブルを論理的にパーティショ�
 
 以下の設定を見ていきましょう。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="スナップショットパラメータ" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![スナップショットパラメータ](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</Frame>
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### スナップショット時のパーティションあたりの行数

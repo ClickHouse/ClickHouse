@@ -2,15 +2,21 @@
 title: デモ
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="demo-architecture">
   ### デモアーキテクチャ
 </div>
 
 このデモは、異なるプログラミング言語で書かれたマイクロサービス群が gRPC と HTTP を介して相互に通信し、さらに Locust を使ってユーザートラフィックを模擬するロードジェネレーターで構成されています。このデモの元のソースコードは、[ClickStackインストルメンテーション](/ja/clickstack/ingesting-data/sdks/index)を使用するように変更されています。
 
-<Image img="/images/use-cases/observability/hyperdx-demo/architecture.webp" alt="アーキテクチャ" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![アーキテクチャ](/images/use-cases/observability/hyperdx-demo/architecture.webp)
+
+</Frame>
+
+</div>
 
 *出典: https://opentelemetry.io/docs/demo/architecture/*
 

@@ -7,8 +7,6 @@ keywords: ['去重策略', '数据去重', 'upsert', '更新和删除', '开发�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 **去重**是&#x6307;***删除数据集中重复行***&#x7684;过程。在 OLTP 数据库中，这很容易实现，因为每一行都有唯一的主键——但代价是插入速度会变慢。每次插入一行，都需要先查找是否已存在；如果存在，就需要替换。
 
 ClickHouse 在数据插入方面是为高速度而设计的。存储文件是不可变的，而且 ClickHouse 在插入一行之前不会检查是否已存在相同的主键——因此，去重需要额外花一些功夫。这也意味着去重不是立即完成的——而是**最终**才会发生，这会带来一些副作用：
@@ -20,7 +18,7 @@ ClickHouse 在数据插入方面是为高速度而设计的。存储文件是不
 <div class="transparent-table">
   |                                                                                   |                                                                                                                                                                                     |
   | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="去重标志" size="sm" /> | ClickHouse 提供关于去重及许多其他主题的免费培训。[Deleting and Updating Data 培训模块](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)是一个很好的入门起点。 |
+  | <span className="ch-image-sm">![去重标志](/images/guides/developer/de_duplication.webp)</span> | ClickHouse 提供关于去重及许多其他主题的免费培训。[Deleting and Updating Data 培训模块](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)是一个很好的入门起点。 |
 </div>
 
 <div id="options-for-deduplication">

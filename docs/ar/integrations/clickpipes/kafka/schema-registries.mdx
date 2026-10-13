@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يدعم ClickPipes التكامل مع سجل مخططات لفك ترميز قيم السجلات المُرمَّزة بتنسيقَي Avro وProtobuf و[مفاتيح Kafka المهيكلة](/ar/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 بالنسبة إلى قيم السجلات بتنسيق Protobuf، يمكنك أيضًا [رفع مخطط مباشرةً](/ar/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) دون تكوين سجل مخططات.
@@ -73,7 +71,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 في معالج إنشاء ClickPipe، فعّل **سجل المخططات** في خطوة اتصال Kafka واضبط **نوع السجل** على **AWS Glue**:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="لوحة سجل المخططات مع تحديد AWS Glue" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![لوحة سجل المخططات مع تحديد AWS Glue](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
+
+</Frame>
+
+</div>
 
 | الحقل        | مطلوب | الوصف                                                                                                                    | مثال                                                       |
 | ------------ | ----- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -123,7 +129,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="الحصول على ARN لدور IAM لخدمة ClickHouse" id="obtain-clickhouse-service-iam-role-arn">
     افتح الخدمة، وحدد علامة التبويب **الإعدادات**، ثم مرر إلى قسم **معلومات أمان الشبكة**، وانسخ قيمة **معرّف دور الخدمة (IAM)**، وهي ARN بالصيغة `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. يُشار إلى هذه القيمة أدناه باسم `{ClickHouse_IAM_ARN}`. لكل خدمة ClickHouse منشورة على AWS دور خاص بها، لذا تختلف هذه القيمة من خدمة إلى أخرى.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" alt="معرّف دور الخدمة (IAM)" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![معرّف دور الخدمة (IAM)](/images/cloud/security/secures3_arn.webp)
+
+    </div>
   </Step>
 
   <Step title="إنشاء دور IAM للسجل" id="create-registry-iam-role">

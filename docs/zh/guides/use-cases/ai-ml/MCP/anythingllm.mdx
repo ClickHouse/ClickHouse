@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 > 本指南介绍如何使用 Docker 配置 [AnythingLLM](https://anythingllm.com/) 与 ClickHouse MCP 服务器，
 > 并将其连接到 ClickHouse 示例数据集。
 
@@ -100,18 +98,30 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="等待 MCP 服务器启动" id="wait-for-mcp-servers-to-start-up">
     点击 UI 左下角的工具图标：
 
-    <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="工具图标" size="md" />
+    <div className="ch-image-md">
+
+    ![工具图标](/images/use-cases/AI_ML/MCP/alm_tool-icon.webp)
+
+    </div>
 
     点击 `Agent Skills`，然后查看 `MCP servers` 部分。
     等待直到你看到 `Mcp ClickHouse` 显示为 `On`
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCP servers 已就绪" size="md" />
+    <div className="ch-image-md">
+
+    ![MCP servers 已就绪](/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp)
+
+    </div>
   </Step>
 
   <Step title="使用 AnythingLLM 与 ClickHouse MCP 服务器聊天" id="chat-with-clickhouse-mcp-server-with-anythingllm">
     现在已经可以开始聊天了。
     要让 MCP 服务器可用于聊天，你需要在对话的第一条消息前加上 `@agent` 前缀。
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="对话" size="md" />
+    <div className="ch-image-md">
+
+    ![对话](/images/use-cases/AI_ML/MCP/allm_conversation.webp)
+
+    </div>
   </Step>
 </Steps>

@@ -10,8 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -28,7 +26,11 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
   <Step title="Cadastre-se ou entre no serviço" id="1-sign-up-or-sign-in-to-the-service">
     Primeiro, cadastre-se no TABLUM.IO usando seu e-mail ou use um login rápido por meio de contas do Google ou Facebook.
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="Página de login do TABLUM.IO" />
+    <div className="ch-image-md">
+
+    ![Página de login do TABLUM.IO](/images/integrations/sql-clients/tablum-ch-0.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicione um conector do ClickHouse" id="2-add-a-clickhouse-connector">
@@ -42,13 +44,21 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
       Normalmente, a porta é 8443 ao usar TLS ou 8123 quando o TLS não é usado.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="Adicionando um conector do ClickHouse no TABLUM.IO" />
+    <div className="ch-image-lg">
+
+    ![Adicionando um conector do ClickHouse no TABLUM.IO](/images/integrations/sql-clients/tablum-ch-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Selecione o conector" id="3-select-the-connector">
     Vá até a aba **Dataset**. Selecione na lista suspensa o conector do ClickHouse criado recentemente. No painel à direita, você verá a lista de tabelas e esquemas disponíveis.
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="Selecionando o conector do ClickHouse no TABLUM.IO" />
+    <div className="ch-image-lg">
+
+    ![Selecionando o conector do ClickHouse no TABLUM.IO](/images/integrations/sql-clients/tablum-ch-2.webp)
+
+    </div>
   </Step>
 
   <Step title="Insira uma consulta SQL e execute-a" id="4-input-a-sql-query-and-run-it">
@@ -58,7 +68,11 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
       Clique com o botão direito no nome da coluna para abrir o menu suspenso com opções de classificação, filtro e outras ações.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="Executando uma consulta SQL no TABLUM.IO" />
+    <div className="ch-image-lg">
+
+    ![Executando uma consulta SQL no TABLUM.IO](/images/integrations/sql-clients/tablum-ch-3.webp)
+
+    </div>
 
     <Note>
       Com o TABLUM.IO, você pode

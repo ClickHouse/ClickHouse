@@ -35,15 +35,39 @@ keywords: ['Windows']
 
 * Пример среды AD и структуры UO:
 
-<Image img={ad_env} size="md" alt="Пример среды AD и структуры UO" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Пример среды AD и структуры UO](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+
+</Frame>
+
+</div>
 
 * Пример конфигурации группы безопасности AD:
 
-<Image img={ad_group} size="md" alt="Пример конфигурации группы безопасности AD" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Пример конфигурации группы безопасности AD](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+
+</Frame>
+
+</div>
 
 * Пример конфигурации пользователя AD:
 
-<Image img={ad_user} size="md" alt="Пример конфигурации пользователя AD" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Пример конфигурации пользователя AD](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+
+</Frame>
+
+</div>
 
 1. В Windows AD Users and Groups добавьте каждого пользователя в соответствующую группу или группы — они будут сопоставлены с ролями ClickHouse (пример на следующем шаге).
 
@@ -56,7 +80,15 @@ keywords: ['Windows']
 
 * Пример членства пользователя в группах:
 
-<Image img={ad_user_group} size="md" alt="Пример членства пользователя в группах" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Пример членства пользователя в группах](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+
+</Frame>
+
+</div>
 
 2. В `config.xml` ClickHouse добавьте конфигурацию `ldap_servers` на каждый узел ClickHouse.
 

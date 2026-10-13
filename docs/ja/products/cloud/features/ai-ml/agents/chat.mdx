@@ -8,13 +8,20 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
 ClickHouse Agents のチャット画面では、会話、ブランチ、共有を行えます。
 
-<Image img="/images/cloud/agent-builder/chat/chat.webp" alt="左側のナビゲーション、エージェントの識別情報ヘッダー、メッセージのコンポーザーが表示された ClickHouse Agent のチャット画面" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![左側のナビゲーション、エージェントの識別情報ヘッダー、メッセージのコンポーザーが表示された ClickHouse Agent のチャット画面](/images/cloud/agent-builder/chat/chat.webp)
+
+</Frame>
+
+</div>
 
 <div id="conversations">
   ## 会話
@@ -24,7 +31,15 @@ ClickHouse Agents のチャット画面では、会話、ブランチ、共有�
 会話ウィンドウの左上にある Agent selector ダイアログで、使用するエージェントを選択します。デフォルトでは **ClickHouse Agent** が選択されています。
 コンポーザーにメッセージを入力して送信すると、各会話はサイドバーの履歴に保存され、後から再度開いたり、名前を変更したり、削除したりできます。
 
-<Image img="/images/cloud/agent-builder/chat/conversation.webp" alt="左側のナビゲーションで作成アイコンが強調表示されたチャット画面。サイドバーには、保存済みの Top 10 Tables Ranked 会話を含む Chats の履歴が表示され、コンポーザーにはサンプルの質問が入力されている" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![左側のナビゲーションで作成アイコンが強調表示されたチャット画面。サイドバーには、保存済みの Top 10 Tables Ranked 会話を含む Chats の履歴が表示され、コンポーザーにはサンプルの質問が入力されている](/images/cloud/agent-builder/chat/conversation.webp)
+
+</Frame>
+
+</div>
 
 どのメッセージもその場で編集でき、エージェントは会話履歴のその時点から応答を再生成します。
 また、メッセージを再送信せずに、エージェントの直前の応答だけを再生成することもできます。
@@ -35,7 +50,15 @@ ClickHouse Agents のチャット画面では、会話、ブランチ、共有�
 
 メッセージまたは会話全体をブックマークしておくと、後ですぐに見つけられます。ブックマークは自分にのみ表示され、会話名を変更しても保持されます。
 
-<Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="ブックマークアイコンが強調表示され、「Add Bookmarks」のツールチップが表示されているチャットヘッダー" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ブックマークアイコンが強調表示され、「Add Bookmarks」のツールチップが表示されているチャットヘッダー](/images/cloud/agent-builder/chat/bookmark.webp)
+
+</Frame>
+
+</div>
 
 <div id="pinned-conversations">
   ## ピン留めした会話
@@ -58,7 +81,7 @@ ClickHouse Agents のチャット画面では、会話、ブランチ、共有�
 
 フォークした会話は独立しているため、変更が元の会話に同期されることはありません。
 
-<Image img="/images/cloud/agent-builder/chat/fork.webp" alt="3 つのフォークモードのアイコン、[Start fork here] と [Remember] のチェックボックス、および下部のメッセージアクションツールバーが表示されたフォークオプション選択ダイアログ" size="lg" />
+![3 つのフォークモードのアイコン、\[Start fork here\] と \[Remember\] のチェックボックス、および下部のメッセージアクションツールバーが表示されたフォークオプション選択ダイアログ](/images/cloud/agent-builder/chat/fork.webp)
 
 <div id="sharing-chats">
   ## チャットの共有
@@ -72,11 +95,27 @@ ClickHouse Agents のチャット画面では、会話、ブランチ、共有�
 
 会話を共有するには、サイドバーでそのメニューを開き、**Share** を選択します。
 
-<Image img="/images/cloud/agent-builder/chat/share.webp" alt="サイドバーの会話メニュー。Share、Rename、Duplicate、Archive、Delete の各オプションが表示されています" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![サイドバーの会話メニュー。Share、Rename、Duplicate、Archive、Delete の各オプションが表示されています](/images/cloud/agent-builder/chat/share.webp)
+
+</Frame>
+
+</div>
 
 次に、共有ダイアログで **Create link** をクリックします。
 
-<Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="チャット共有ダイアログ。Create link ボタンと、共有後に追加されたメッセージとあなたの名前は非公開のままであることを示す注記が表示されています" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![チャット共有ダイアログ。Create link ボタンと、共有後に追加されたメッセージとあなたの名前は非公開のままであることを示す注記が表示されています](/images/cloud/agent-builder/chat/share-modal.webp)
+
+</Frame>
+
+</div>
 
 <div id="keyboard-shortcuts">
   ## キーボードショートカット

@@ -6,7 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'kubernetes', 'журналы', 'обсервабилити', 'мониторинг контейнеров']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
 Это руководство позволит вам собирать журналы и метрики из вашей системы Kubernetes и отправлять их в **ClickStack** для визуализации и анализа. В качестве демонстрационных данных при желании можно использовать форк официального демо OpenTelemetry от ClickStack.
@@ -200,7 +199,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Создайте пользователя, указав имя пользователя и пароль, которые соответствуют требованиям сложности.
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Интерфейс HyperDX" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Интерфейс HyperDX](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="Получение ключа API для приёма данных" id="retrieve-ingestion-api-key">
@@ -208,7 +211,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Перейдите в [`Team Settings`](http://localhost:8080/team) и скопируйте `Ingestion API Key` из раздела `API Keys`. Этот ключ API обеспечивает безопасную ингестию данных через OpenTelemetry Collector.
 
-    <Image img="/images/use-cases/observability/copy_api_key.webp" alt="Копирование ключа API" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Копирование ключа API](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="Создание секрета Kubernetes с ключом API" id="create-api-key-kubernetes-secret">
@@ -232,7 +239,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Данные трассировок и логов из демо-сервисов теперь должны начать поступать в HyperDX.
 
-    <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="Данные HyperDX в Kubernetes" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Данные HyperDX в Kubernetes](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте Helm-репозиторий OpenTelemetry" id="add-otel-helm-repo">
@@ -483,4 +494,12 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
   </Step>
 </Steps>
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse в Kubernetes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse в Kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</Frame>
+
+</div>

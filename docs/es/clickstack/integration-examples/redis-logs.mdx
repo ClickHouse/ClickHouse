@@ -6,8 +6,6 @@ description: 'Monitorización de logs de Redis con ClickStack'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -167,9 +165,17 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
   <Step title="Verificación de logs en HyperDX" id="verifying-logs">
     Una vez configurado, inicia sesión en HyperDX y verifica que los logs se estén recibiendo:
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Vista de logs" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="Log" />
+    ![Vista de logs](/images/clickstack/redis/redis-log-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Log](/images/clickstack/redis/redis-log.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -260,9 +266,17 @@ Para los usuarios que quieran probar la integración de Redis antes de configura
       HyperDX muestra las marcas de tiempo en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. El amplio intervalo de tiempo garantiza que verás los logs de demostración independientemente de tu ubicación. Una vez que veas los logs, puedes reducir el intervalo a un período de 24 horas para obtener visualizaciones más claras.
     </Info>
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Vista de logs" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="Log" />
+    ![Vista de logs](/images/clickstack/redis/redis-log-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Log](/images/clickstack/redis/redis-log.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -281,11 +295,19 @@ Para ayudarle a empezar a monitorizar Redis con ClickStack, proporcionamos visua
     1. Abra HyperDX y vaya a la sección Dashboards.
     2. Haga clic en &quot;Import Dashboard&quot; en la esquina superior derecha, dentro del menú de los tres puntos.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Importar dashboard" />
+    <div className="ch-image-lg">
+
+    ![Importar dashboard](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Cargue el archivo redis-logs-dashboard.json y haga clic en Finalizar importación.
 
-    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="Finalizar importación" />
+    <div className="ch-image-lg">
+
+    ![Finalizar importación](/images/clickstack/redis/redis-import-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="El dashboard se creará con todas las visualizaciones preconfiguradas" id="created-dashboard">
@@ -293,7 +315,11 @@ Para ayudarle a empezar a monitorizar Redis con ClickStack, proporcionamos visua
       Para el conjunto de datos de demostración, establezca el intervalo de tiempo en **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (ajústelo según su zona horaria local). De forma predeterminada, el dashboard importado no tendrá ningún intervalo de tiempo especificado.
     </Note>
 
-    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="Dashboard de ejemplo" />
+    <div className="ch-image-lg">
+
+    ![Dashboard de ejemplo](/images/clickstack/redis/redis-logs-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

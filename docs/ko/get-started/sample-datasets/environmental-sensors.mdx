@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['환경 센서', 'Sensor.Community', '대기질 데이터', '환경 데이터', '시작하기']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 [Sensor.Community](https://sensor.community/en/)는 공개 환경 데이터(Open Environmental Data)를 생성하는, 커뮤니티 참여자들이 주도하는 글로벌 센서 네트워크입니다. 데이터는 전 세계 센서에서 수집됩니다. 누구나 센서를 구매해 원하는 곳에 설치할 수 있습니다. 데이터를 다운로드하기 위한 API는 [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs)에 있으며, 데이터는 [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/)에 따라 자유롭게 사용할 수 있습니다.
 
 <Warning>
@@ -157,7 +155,15 @@ ORDER BY date ASC;
 
 SQL 콘솔에서 차트를 생성해 결과를 시각화할 수 있습니다:
 
-<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="일별 이벤트 수" />
+<div className="ch-image-md">
+
+<Frame>
+
+![일별 이벤트 수](/images/getting-started/example-datasets/sensors_01.webp)
+
+</Frame>
+
+</div>
 
 6. 이 쿼리는 매우 덥고 습한 날의 수를 계산합니다:
 
@@ -172,4 +178,12 @@ ORDER BY day ASC;
 
 결과를 시각화하면 다음과 같습니다:
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="무덥고 습한 날" />
+<div className="ch-image-md">
+
+<Frame>
+
+![무덥고 습한 날](/images/getting-started/example-datasets/sensors_02.webp)
+
+</Frame>
+
+</div>

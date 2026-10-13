@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', 'движок таблицы', 'стриминг', 'реальное время', 'очередь сообщений']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Движок таблицы Kafka можно использовать для [**чтения** данных из](#kafka-to-clickhouse) и [**записи** данных в](#clickhouse-to-kafka) Apache Kafka и другие брокеры с поддержкой Kafka API (например, Redpanda, Amazon MSK).
 
 <div id="kafka-to-clickhouse">
@@ -31,7 +29,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Чтобы сохранить данные, прочитанные через движок таблицы, нужен способ захватить их и вставить в другую таблицу. Эту возможность нативно предоставляют materialized view на основе триггеров. Materialized view инициирует чтение из движка таблицы, получая батчи документов. Предложение TO определяет пункт назначения данных — обычно это таблица семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/index). Этот процесс показан ниже:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="Диаграмма архитектуры движка таблицы Kafka" style={{width: '80%'}} />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Диаграмма архитектуры движка таблицы Kafka](/images/integrations/data-ingestion/kafka/kafka_01.webp)
+
+</Frame>
+
+</div>
 
 <div id="steps">
   #### Шаги
@@ -355,7 +361,15 @@ Kafka движок таблицы имеет семантику at-least-once. �
 
 Нашу первоначальную цель лучше всего иллюстрирует следующая схема:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="Схема движка таблицы Kafka со вставками" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Схема движка таблицы Kafka со вставками](/images/integrations/data-ingestion/kafka/kafka_02.webp)
+
+</Frame>
+
+</div>
 
 Мы предполагаем, что вы уже создали таблицы и представления, описанные в разделе [Kafka в ClickHouse](#kafka-to-clickhouse), и что топик был полностью прочитан.
 
@@ -399,7 +413,11 @@ Kafka движок таблицы имеет семантику at-least-once. �
   <Step title="Использование materialized views" id="2-using-materialized-views">
     Мы можем использовать materialized views, чтобы отправлять сообщения в движок Kafka (и в топик), когда документы вставляются в таблицу. Когда строки вставляются в таблицу GitHub, срабатывает materialized view, в результате чего строки снова вставляются в движок Kafka и в новый топик. Это лучше всего показано на иллюстрации:
 
-    <Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="Диаграмма движка таблицы Kafka с materialized views" />
+    <div className="ch-image-lg">
+
+    ![Диаграмма движка таблицы Kafka с materialized views](/images/integrations/data-ingestion/kafka/kafka_03.webp)
+
+    </div>
 
     Создайте новый топик Kafka `github_out` или его эквивалент. Убедитесь, что движок таблицы Kafka `github_out_queue` указывает на этот топик.
 
@@ -493,7 +511,15 @@ Kafka движок таблицы имеет семантику at-least-once. �
 
 Несколько экземпляров ClickHouse можно настроить на чтение из топика с одним и тем же идентификатором группы потребителей, указанным при создании движка таблицы Kafka. Таким образом, каждый экземпляр будет читать из одной или нескольких партиций, записывая сегменты в свою локальную целевую таблицу. Целевые таблицы, в свою очередь, можно настроить на использование ReplicatedMergeTree для устранения дублирования данных. Такой подход позволяет масштабировать чтение из Kafka вместе с кластером ClickHouse при условии, что в Kafka достаточно партиций.
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="Диаграмма движка таблицы Kafka с кластерами ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Диаграмма движка таблицы Kafka с кластерами ClickHouse](/images/integrations/data-ingestion/kafka/kafka_04.webp)
+
+</Frame>
+
+</div>
 
 <div id="tuning-performance">
   #### Настройка производительности

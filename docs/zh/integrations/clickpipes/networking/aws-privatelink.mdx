@@ -11,7 +11,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 您可以使用 [AWS PrivateLink](https://aws.amazon.com/privatelink/) 在 ClickPipes 与托管在 AWS 上的数据源之间建立安全连接。ClickPipes 会在其 VPC 中创建**反向专用终结点 (RPE)**，并将其指向为您的数据源发布的专用终结点服务，确保流量不会暴露于公网。
@@ -277,19 +276,51 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
 
 1. 打开 ClickHouse Cloud 服务的 SQL 控制台。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击“设置 ClickPipe”。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. 选择 Kafka 或 Postgres 作为数据源。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="选择数据源" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择数据源](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</Frame>
+
+</div>
 
 4. 选择 `Reverse private endpoint` 选项。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="选择反向专用终结点" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</Frame>
+
+</div>
 
 5. 选择现有的任一反向专用终结点，或创建新的终结点。
 
@@ -300,11 +331,27 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
   对于同一区域访问，建议创建 VPC 资源。
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="选择反向专用终结点" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</Frame>
+
+</div>
 
 6. 为所选端点类型提供必需参数。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="选择反向专用终结点" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</Frame>
+
+</div>
 
 * 对于 VPC 资源，请提供配置共享 ARN 和配置 ID。
   * 对于 MSK multi-VPC，请提供集群 ARN，以及已创建端点使用的身份验证方法。
@@ -317,7 +364,15 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
    终结点就绪后，页面将自动刷新。
    对于 VPC endpoint service，您可能需要在 AWS 控制台中接受连接请求。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="选择反向专用终结点" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</Frame>
+
+</div>
 
 8. 终结点就绪后，您可以使用 DNS name 连接到数据源。
 
@@ -339,11 +394,19 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
 
 1. 在侧边栏中找到并点击 `Settings` 按钮。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud 设置" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![ClickHouse Cloud 设置](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+   </div>
 
 2. 在 `ClickPipe reverse private endpoints` 部分中，点击 `Reverse private endpoints`。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud 设置" size="md" border />
+   <div className="ch-image-md">
+
+   ![ClickHouse Cloud 设置](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+   </div>
 
    弹出面板中会显示反向专用终结点的详细信息。
 

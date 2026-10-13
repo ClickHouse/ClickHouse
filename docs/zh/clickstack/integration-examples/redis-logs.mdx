@@ -6,8 +6,6 @@ description: '使用 ClickStack 监控 Redis 日志'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -167,9 +165,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   <Step title="在 HyperDX 中验证日志" id="verifying-logs">
     配置完成后，登录 HyperDX，确认日志已开始流入：
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="日志" />
+    ![日志视图](/images/clickstack/redis/redis-log-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![日志](/images/clickstack/redis/redis-log.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -260,9 +266,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**。较宽的时间范围可确保你无论身在何处都能看到这些演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="日志" />
+    ![日志视图](/images/clickstack/redis/redis-log-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![日志](/images/clickstack/redis/redis-log.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -281,11 +295,19 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX，进入“仪表盘”部分。
     2. 点击右上角省略号菜单中的“Import Dashboard”。
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+    <div className="ch-image-lg">
+
+    ![导入仪表盘](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. 上传 redis-logs-dashboard.json 文件，然后点击 Finish Import。
 
-    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="完成导入" />
+    <div className="ch-image-lg">
+
+    ![完成导入](/images/clickstack/redis/redis-import-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="系统将创建一个已预先配置好所有可视化的仪表盘" id="created-dashboard">
@@ -293,7 +315,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       对于演示数据集，请将时间范围设置为 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (根据你的本地时区进行调整) 。默认情况下，导入的仪表盘不会预先指定时间范围。
     </Note>
 
-    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="示例仪表盘" />
+    <div className="ch-image-lg">
+
+    ![示例仪表盘](/images/clickstack/redis/redis-logs-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

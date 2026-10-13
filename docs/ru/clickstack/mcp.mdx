@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'AI', 'обсервабилити', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickStack включает встроенный сервер [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), который позволяет ИИ-ассистентам взаимодействовать с вашими данными обсервабилити. После подключения ИИ-ассистент может выполнять запросы к журналам, трассировкам и метрикам; управлять панелями мониторинга и оповещениями; просматривать источники данных; и работать с сохранёнными поисками — всё это на естественном языке.
 
 Благодаря этому вы можете использовать такие инструменты, как [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/), или любой клиент, совместимый с MCP, чтобы расследовать инциденты, создавать панели мониторинга и управлять вашей системой обсервабилити, не покидая среду разработки.
@@ -155,7 +153,15 @@ https://mcp.clickhouse.cloud/clickstack
 * запущенный экземпляр ClickStack (варианты развертывания см. в разделе [Развертывание](/ru/clickstack/deployment/overview))
 * **Personal API Access Key** — его можно найти в HyperDX: **Team Settings → API Keys → Personal API Access Key**
 
-<Image img="/images/clickstack/api-key-personal.webp" alt="Personal API Access Key в разделе Team Settings" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Personal API Access Key в разделе Team Settings](/images/clickstack/api-key-personal.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Personal API Access Key отличается от **ключ API для приёма данных API key** в Team Settings, который используется для аутентификации телеметрических данных, отправляемых в OpenTelemetry Collector.

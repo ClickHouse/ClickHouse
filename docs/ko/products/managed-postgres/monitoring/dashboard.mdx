@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
 
@@ -16,7 +15,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 선택한 시간 범위의 리소스 사용량과 데이터베이스 활동을
 실시간으로 보여주는 차트가 표시됩니다.
 
-<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="IOPS, 사용량, 메모리, 디스크, 네트워크 트래픽, 데이터베이스 크기, 연결, 처리량, 트랜잭션, 캐시 적중률, 교착 상태를 보여주는 모니터링 대시보드" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![IOPS, 사용량, 메모리, 디스크, 네트워크 트래픽, 데이터베이스 크기, 연결, 처리량, 트랜잭션, 캐시 적중률, 교착 상태를 보여주는 모니터링 대시보드](/images/managed-postgres/monitoring/dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="panels">
   ## 패널

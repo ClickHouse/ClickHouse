@@ -6,8 +6,6 @@ description: 'يوفّر القاموس تمثيلًا للبيانات بصيغ
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوفّر القاموس في ClickHouse تمثيلاً [بصيغة المفتاح-القيمة](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) للبيانات داخل الذاكرة من [مصادر داخلية وخارجية متنوعة](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources)، وهو مُحسَّن لتنفيذ استعلامات البحث بزمن كمون منخفض جدًا.
 
 تكون القواميس مفيدة في الحالات التالية:
@@ -15,7 +13,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * تحسين أداء الاستعلامات، خاصةً عند استخدامها مع عمليات `JOIN`
 * إثراء البيانات الواردة لحظيًا من دون إبطاء عملية الإدخال
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="حالات استخدام القاموس في ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![حالات استخدام القاموس في ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+
+</Frame>
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## تسريع عمليات JOIN باستخدام قاموس
@@ -23,7 +29,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكن استخدام القواميس لتسريع نوع محدد من `JOIN`: [النوع `LEFT ANY`](/ar/reference/statements/select/join#supported-types-of-join)، حيث يجب أن يتطابق مفتاح الربط مع سمة المفتاح في مخزن المفتاح-القيمة الأساسي.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="استخدام القاموس مع LEFT ANY JOIN" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![استخدام القاموس مع LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</Frame>
+
+</div>
 
 في هذه الحالة، يمكن لـ ClickHouse الاستفادة من القاموس لتنفيذ [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). وهذه أسرع خوارزمية JOIN في ClickHouse، وتُطبَّق عندما يدعم [محرك الجدول](/ar/reference/engines/table-engines/index) الأساسي للجدول الموجود على الجانب الأيمن طلبات مفتاح-قيمة منخفضة زمن الانتقال. يوفّر ClickHouse ثلاثة محركات جداول تدعم ذلك: [Join](/ar/reference/engines/table-engines/special/join) (وهو في الأساس جدول hash محسوب مسبقًا)، و[EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)، و[Dictionary](/ar/reference/engines/table-engines/special/dictionary). سنشرح النهج القائم على القاموس، لكن الآلية نفسها تنطبق على المحركات الثلاثة جميعًا.
 

@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/fr/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <SelfManaged />
 
 Ce guide présente des paramètres simples et minimaux pour configurer ClickHouse afin d’utiliser des certificats OpenSSL pour valider les connexions. Pour cette démonstration, un certificat d’autorité de certification (CA) auto-signé et sa clé, ainsi que des certificats de nœud, sont créés afin d’établir les connexions avec les paramètres appropriés.
@@ -461,7 +459,11 @@ Ce guide présente des paramètres simples et minimaux pour configurer ClickHous
 
     5. Connectez-vous à l’interface Play via l’interface `https` à l’adresse `https://chnode1.marsnet.local:8443/play`.
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="Configurer TLS" size="md" border />
+       <div className="ch-image-md">
+
+       ![Configurer TLS](/images/guides/sre/configuring-ssl_01.webp)
+
+       </div>
 
     <Note>
       le navigateur affichera un certificat non approuvé, car il y accède depuis un poste de travail et les certificats ne se trouvent pas dans les magasins d’AC racines de la machine cliente.

@@ -7,8 +7,6 @@ description: '기본 제공 대시보드와 Prometheus 메트릭을 사용하여
 doc_type: '참고'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 BYOC 배포에는 포괄적인 관측성 기능이 포함되어 있어, 전용 Prometheus 모니터링 스택과 ClickHouse 서버에서 직접 제공되는 메트릭 엔드포인트를 통해 ClickHouse 서비스를 모니터링할 수 있습니다. 모니터링 데이터는 클라우드 계정 내에 유지되므로 모니터링 인프라를 완전히 제어할 수 있습니다. ClickHouse로 내보내지는 모니터링 데이터는 [네트워크 경계](/ko/products/bring-your-own-cloud/reference/network-security#outbound-connections)에 명시된 제한된 사용량 및 상태 텔레메트리뿐입니다. 이와 별개로, ClickHouse의 대시보드와 승인된 에스컬레이션 시 ClickHouse 엔지니어는 Tailscale을 통해 이 스택을 원격지에서 그대로 쿼리할 수 있으며, ClickHouse 측에는 어떠한 데이터도 저장되지 않습니다. [ClickHouse 데이터 액세스](/ko/products/bring-your-own-cloud/reference/clickhouse-data-access)를 참조하십시오.
 
 <div id="prometheus-monitoring">
@@ -205,19 +203,59 @@ Prometheus 인스턴스가 ClickHouse 모니터링 스택에 통합되면, 다�
 1. **Grafana에서 Prometheus를 데이터 소스로 추가**
    Grafana 사이드바에서 &quot;Data sources&quot;로 이동한 다음 &quot;Add data source&quot;를 클릭하고 &quot;Prometheus&quot;를 선택하십시오. 연결에 필요한 Prometheus 인스턴스 URL과 자격 증명을 입력하십시오.
 
-<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
+<div className="ch-image-lg ch-image-background-black">
 
-<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
+<Frame>
 
-<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
+![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
+
+</Frame>
+
+</div>
 
 2. **ClickHouse 대시보드 가져오기**
    Grafana에서 대시보드 영역으로 이동한 다음 &quot;Import&quot;를 선택하십시오. 대시보드 JSON 파일을 업로드하거나 파일 내용을 직접 붙여넣을 수 있습니다. JSON 파일은 ClickHouse mixin 리포지토리에서 가져올 수 있습니다.
    [ClickHouse Mix-in Dashboard JSON](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
-<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
+
+</Frame>
+
+</div>
 
 3. **메트릭 살펴보기**
    대시보드를 가져와 Prometheus 데이터 소스로 구성하면 ClickHouse Cloud 서비스의 실시간 메트릭을 확인할 수 있습니다.
 
-<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
+
+</Frame>
+
+</div>

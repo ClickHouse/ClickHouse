@@ -12,7 +12,6 @@ integration:
 
 import MySQLCloudSetup from '/snippets/ko/_clickhouse_mysql_cloud_setup.mdx';
 import MySQLOnPremiseSetup from '/snippets/ko/_clickhouse_mysql_on_premise_setup.mdx';
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 Tableau Online은 공식 MySQL 데이터 소스를 사용해 MySQL 인터페이스를 통해 ClickHouse Cloud 또는 온프레미스 ClickHouse 환경에 연결할 수 있습니다.
 
@@ -34,25 +33,57 @@ Tableau Online은 공식 MySQL 데이터 소스를 사용해 MySQL 인터페이�
 
 Tableau Cloud 사이트에 로그인한 후 새 Published 데이터 소스를 추가합니다.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="'New' 버튼으로 게시된 데이터 소스를 생성하는 Tableau Online 인터페이스" border />
+<div className="ch-image-md">
+
+<Frame>
+
+!['New' 버튼으로 게시된 데이터 소스를 생성하는 Tableau Online 인터페이스](/images/integrations/data-visualization/tableau_online_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 사용 가능한 커넥터 목록에서 &quot;MySQL&quot;을 선택합니다.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="MySQL 옵션이 강조 표시된 Tableau Online 커넥터 선택 화면" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![MySQL 옵션이 강조 표시된 Tableau Online 커넥터 선택 화면](/images/integrations/data-visualization/tableau_online_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 ClickHouse 설정 과정에서 확인한 연결 정보를 입력합니다.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="server, port, database 및 자격 증명 필드가 있는 Tableau Online MySQL 연결 구성 화면" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![server, port, database 및 자격 증명 필드가 있는 Tableau Online MySQL 연결 구성 화면](/images/integrations/data-visualization/tableau_online_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Tableau Online은 데이터베이스를 분석하여 사용 가능한 테이블 목록을 표시합니다. 원하는 테이블을 오른쪽 캔버스로 끌어다 놓습니다. 또한 &quot;Update Now&quot;를 클릭해 데이터를 미리 보고, 자동으로 인식된 필드 타입이나 이름을 세부 조정할 수도 있습니다.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="왼쪽에 데이터베이스 테이블이, 오른쪽에 드래그 앤 드롭 기능이 있는 캔버스가 표시된 Tableau Online 데이터 소스 페이지" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![왼쪽에 데이터베이스 테이블이, 오른쪽에 드래그 앤 드롭 기능이 있는 캔버스가 표시된 Tableau Online 데이터 소스 페이지](/images/integrations/data-visualization/tableau_online_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -72,7 +103,15 @@ Windows 또는 Mac 컴퓨터에서 Tableau Desktop을 실행한 다음 &quot;Con
 데이터 소스 드롭다운에서 MySQL을 선택하면 [여기](https://www.tableau.com/support/drivers)에 표시되는 설정 가이드를 따라 설치할 수 있습니다.
 M1 Mac을 사용하는 경우 드라이버 설치 우회 방법은 [이 문제 해결 스레드](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac)를 확인하십시오.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="MySQL 옵션이 강조 표시된 Connect 메뉴를 보여주는 Tableau Desktop 인터페이스" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![MySQL 옵션이 강조 표시된 Connect 메뉴를 보여주는 Tableau Desktop 인터페이스](/images/integrations/data-visualization/tableau_desktop_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -84,26 +123,58 @@ M1 Mac을 사용하는 경우 드라이버 설치 우회 방법은 [이 문제 �
 
 ClickHouse Cloud 인스턴스의 MySQL 사용자 자격 증명과 다운로드한 루트 인증서의 경로를 입력하십시오.
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="SSL 옵션이 활성화되어 있고 server, username, password 및 certificate 입력 필드가 있는 Tableau Desktop MySQL 연결 대화 상자" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![SSL 옵션이 활성화되어 있고 server, username, password 및 certificate 입력 필드가 있는 Tableau Desktop MySQL 연결 대화 상자](/images/integrations/data-visualization/tableau_desktop_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 평소처럼 원하는 테이블을 선택하고(Tableau Online과 비슷함),
 &quot;Server&quot; -&gt; &quot;Publish 데이터 소스&quot; -&gt; Tableau Cloud를 선택하십시오.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Publish 데이터 소스 옵션이 강조 표시된 Server 메뉴를 보여주는 Tableau Desktop" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Publish 데이터 소스 옵션이 강조 표시된 Server 메뉴를 보여주는 Tableau Desktop](/images/integrations/data-visualization/tableau_desktop_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 중요: &quot;Authentication&quot; 옵션에서 &quot;Embedded password&quot;를 선택해야 합니다.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="Embedded password가 선택된 Authentication 옵션을 보여주는 Tableau Desktop 게시 대화 상자" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Embedded password가 선택된 Authentication 옵션을 보여주는 Tableau Desktop 게시 대화 상자](/images/integrations/data-visualization/tableau_desktop_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 추가로 &quot;Update workbook to use the published data source&quot;를 선택하십시오.
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="'Update workbook to use the published data source' 옵션이 선택된 Tableau Desktop 게시 대화 상자" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+!['Update workbook to use the published data source' 옵션이 선택된 Tableau Desktop 게시 대화 상자](/images/integrations/data-visualization/tableau_desktop_05.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

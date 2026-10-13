@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Nginx', 'traces', 'otel']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -150,7 +148,15 @@ sudo systemctl reload nginx
 
 Once configured, log into HyperDX and verify traces are flowing, you should see something like this, if you don't see traces, try adjusting your time range:
 
-<Image img="/images/clickstack/nginx-traces-search-view.webp" alt="View Traces"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![View Traces](/images/clickstack/nginx-traces-search-view.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -235,7 +241,15 @@ Here's what you should see in your search view:
 HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. The wide time range ensures you'll see the demo traces regardless of your location. Once you see the traces, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 
-<Image img="/images/clickstack/nginx-traces-search-view.webp" alt="View Traces"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![View Traces](/images/clickstack/nginx-traces-search-view.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -252,11 +266,27 @@ To help you get started monitoring traces with ClickStack, we provide essential 
 1. Open HyperDX and navigate to the Dashboards section.
 2. Click "Import Dashboard" in the upper right corner under the ellipses.
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import Dashboard](/images/clickstack/import-dashboard.webp)
+
+</Frame>
+
+</div>
 
 3. Upload the nginx-trace-dashboard.json file and click finish import.
 
-<Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="Finish Import"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Finish Import](/images/clickstack/finish-nginx-traces-dashboard.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="The dashboard will be created with all visualizations pre-configured." id="created-dashboard">
 
@@ -264,7 +294,15 @@ To help you get started monitoring traces with ClickStack, we provide essential 
 For the demo dataset, set the time range to **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.
 </Note>
 
-<Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="Example Dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Example Dashboard](/images/clickstack/nginx-traces-dashboard.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

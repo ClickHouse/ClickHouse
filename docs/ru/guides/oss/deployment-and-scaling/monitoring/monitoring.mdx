@@ -7,8 +7,6 @@ title: 'Мониторинг'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <Note>
   Данные мониторинга, описанные в этом руководстве, доступны в ClickHouse Cloud. Помимо встроенной панели мониторинга, описанной ниже, базовые и расширенные метрики производительности также можно просматривать напрямую в основной консоли сервиса.
 </Note>
@@ -22,7 +20,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Встроенная расширенная панель обсервабилити
 </div>
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="Встроенная расширенная панель обсервабилити" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Встроенная расширенная панель обсервабилити](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 В ClickHouse есть встроенная расширенная панель обсервабилити, доступная по адресу `$HOST:$PORT/dashboard` (требуются имя пользователя и пароль), где отображаются следующие метрики:
 

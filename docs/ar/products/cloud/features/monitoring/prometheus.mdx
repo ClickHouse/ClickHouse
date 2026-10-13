@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 تدعم هذه الميزة التكامل مع [Prometheus](https://prometheus.io/) لمراقبة خدمات ClickHouse Cloud. ويُتاح الوصول إلى مقاييس Prometheus عبر نقطة نهاية [واجهة برمجة تطبيقات ClickHouse Cloud](/ar/products/cloud/features/admin-features/api/api-overview)، ما يتيح لك الاتصال بأمان وتصدير المقاييس إلى مجمّع مقاييس Prometheus لديك. كما يمكن دمج هذه المقاييس مع لوحات المعلومات مثل Grafana وDatadog لعرضها بصريًا.
 
@@ -273,17 +272,41 @@ scrape_configs:
 * اضبط عنوان URL الخاص بـ Scrape بحيث يشير إلى نقطة نهاية Prometheus، واستخدم المصادقة الأساسية لإعداد اتصالك باستخدام مفتاح واجهة برمجة تطبيقات/السر
 * اختبر الاتصال للتأكد من أنك قادر على الاتصال
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="تهيئة نقطة نهاية مقاييس Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![تهيئة نقطة نهاية مقاييس Grafana](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 بعد إكمال التهيئة، ينبغي أن ترى المقاييس في القائمة المنسدلة التي يمكنك اختيارها لتهيئة لوحات المعلومات:
 
-<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="القائمة المنسدلة في مستكشف مقاييس Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![القائمة المنسدلة في مستكشف مقاييس Grafana](/images/integrations/prometheus-grafana-dropdown.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="مخطط في مستكشف مقاييس Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مخطط في مستكشف مقاييس Grafana](/images/integrations/prometheus-grafana-chart.webp)
+
+</Frame>
+
+</div>
 
 <div id="grafana-cloud-with-alloy">
   ### Grafana Cloud مع Alloy
@@ -291,7 +314,15 @@ scrape_configs:
 
 إذا كنت تستخدم Grafana Cloud، فيمكن تثبيت Alloy بالانتقال إلى قائمة Alloy في Grafana واتباع الإرشادات المعروضة على الشاشة:
 
-<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -372,7 +403,15 @@ prometheus.scrape "clickhouse_cloud" {
 
 بمجرد اكتمال الإعداد، ينبغي أن ترى المقاييس المتعلقة بـ ClickHouse في مستكشف المقاييس لديك:
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="مستكشف المقاييس في Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مستكشف المقاييس في Grafana](/images/integrations/prometheus-grafana-metrics-explorer.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -398,7 +437,15 @@ instances:
 
 <br />
 
-<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="تكامل Prometheus وDatadog" />
+<div className="ch-image-md">
+
+<Frame>
+
+![تكامل Prometheus وDatadog](/images/integrations/prometheus-datadog.webp)
+
+</Frame>
+
+</div>
 
 <div id="related">
   ## الصفحات ذات الصلة

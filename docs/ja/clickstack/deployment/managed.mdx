@@ -7,15 +7,15 @@ doc_type: 'guide'
 keywords: ['clickstack', 'デプロイ', 'セットアップ', '設定', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 import JSONSupport from '/snippets/ja/_json_support.mdx';
+
 import ExampleOTelConfig from '/snippets/ja/clickstack/_config_example_otel.mdx';
 
 import SetupManagedIngestion from '/snippets/ja/clickstack/_setup_managed_ingestion.mdx';
 import NavigateClickStackUI from '/snippets/ja/clickstack/_navigate_managed.mdx';
+
 import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
 この**ガイドは既存の ClickHouse Cloud ユーザー向け**です。ClickHouse Cloud を初めて利用する場合は、Managed ClickStack 向けの [Getting Started](/ja/clickstack/getting-started/managed) ガイドを参照することをお勧めします。
@@ -58,7 +58,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
       <Step title="新しいサービスを作成する" id="create-a-service">
         ClickHouse Cloud のランディングページで `New service` を選択し、新しいサービスを作成します。
 
-        <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="サービス作成画面" border />
+        <div className="ch-image-lg">
+
+        ![サービス作成画面](/images/clickstack/getting-started/new_service.webp)
+
+        </div>
       </Step>
 
       <Step title="プロバイダー、リージョン、リソースを指定する" id="specify-your-region-and-resources">
@@ -94,7 +98,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
           ClickHouse サービスが、リアルタイムのアプリケーション分析などの既存のワークロードをすでにホストしている場合は、オブザーバビリティのワークロードを分離するために、[ClickHouse Cloud&#39;s warehouses feature](/ja/products/cloud/features/infrastructure/warehouses) を使用して子サービスを作成することをおすすめします。これにより、既存のアプリケーションに影響を与えることなく、両方のサービスからデータセットにアクセスできる状態を維持できます。
         </Warning>
 
-        <Image img="/images/clickstack/select_service.webp" alt="サービスを選択" size="lg" />
+        <div className="ch-image-lg">
+
+        ![サービスを選択](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="ClickStack UI に移動する" id="navigate-to-the-clickstack-ui-existing">
@@ -110,7 +118,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
         自動検出に成功すると、検索ビューに移動し、すぐにデータの探索を開始できます。
 
-        <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+        <div className="ch-image-lg">
+
+        ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+        </div>
 
         この手順が成功したら、これで完了です。準備はすべて整いました 🎉。失敗した場合は、インジェストの設定に進んでください。
       </Step>
@@ -118,11 +130,19 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
       <Step title="インジェストを設定する" id="setup-ingestion-existing-service">
         自動検出に失敗した場合、または既存のテーブルがない場合は、インジェストのセットアップを行うよう求められます。
 
-        <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="ClickStack UI でインジェストを設定する" size="lg" />
+        <div className="ch-image-lg">
+
+        ![ClickStack UI でインジェストを設定する](/images/clickstack/clickstack-ui-setup-ingestion.webp)
+
+        </div>
 
         「Start Ingestion」を選択すると、インジェストソースの選択を求められます。Managed ClickStackは主要なインジェストソースとしてOpenTelemetryおよび[Vector](https://vector.dev/)をサポートしています。ただし、ユーザーは[ClickHouse Cloudがサポートする統合](/ja/integrations/home)を使用して、独自のスキーマでClickHouseに直接データを送信することもできます。
 
-        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="ログソースを選択 - ClickStack UI" border />
+        <div className="ch-image-lg">
+
+        ![ログソースを選択 - ClickStack UI](/images/clickstack/select-source-clickstack-ui.webp)
+
+        </div>
 
         <Info>
           **OpenTelemetry を推奨**
@@ -143,7 +163,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             すばやく始めるには、表示されている Docker コマンドをコピーして実行してください。
 
-            <Image img="/images/clickstack/otel-collector-start-clickstack-ui.webp" size="md" alt="OTel collector ソース" />
+            <div className="ch-image-md">
+
+            ![OTel collector ソース](/images/clickstack/otel-collector-start-clickstack-ui.webp)
+
+            </div>
 
             **このコマンドは、service の作成時に記録した service credentials に合わせて変更してください。**
 
@@ -169,7 +193,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             <ExampleOTelConfig />
 
-            <Image img="/images/clickstack/advanced-otel-collector-clickstack-ui.webp" size="lg" alt="高度な OTel collector ソース" />
+            <div className="ch-image-lg">
+
+            ![高度な OTel collector ソース](/images/clickstack/advanced-otel-collector-clickstack-ui.webp)
+
+            </div>
 
             OpenTelemetry collectors の設定の詳細については、[「OpenTelemetry でインジェストする」](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
 
@@ -237,7 +265,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             テーブルを作成したら、表示されている設定スニペットをコピーしてください。必要に応じて、既存のパイプラインを使用するように input を調整し、ターゲットテーブルやデータベースも変更してください。認証情報はあらかじめ入力されているはずです。
 
-            <Image img="/images/clickstack/vector-config-clickstack-ui.webp" size="lg" alt="Vector の設定" />
+            <div className="ch-image-lg">
+
+            ![Vector の設定](/images/clickstack/vector-config-clickstack-ui.webp)
+
+            </div>
 
             Vector でデータを取り込むその他の例については、[&quot;Vector での取り込み&quot;](/ja/clickstack/ingesting-data/vector)を参照してください。高度なオプションについては、[Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/)も参照してください。
 
@@ -253,7 +285,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
           <Tab title="OpenTelemetry">
             このガイドを使用して OpenTelemetry データを取り込んだ場合、データソースは自動的に作成されるため、追加の設定は不要です。すぐに ClickStack を使い始められます。ログソースが自動的に選択された検索ビューに移動するので、すぐにクエリを開始できます。
 
-            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+            <div className="ch-image-lg">
+
+            ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+            </div>
 
             これで完了です。準備はすべて整いました 🎉。
 
@@ -263,7 +299,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
           <Tab title="Vector">
             Vector やその他のソース経由でデータを取り込んだ場合は、データソースを設定するよう求められます。
 
-            <Image img="/images/clickstack/create-vector-datasource.webp" alt="データソースを作成 - Vector" size="lg" />
+            <div className="ch-image-lg">
+
+            ![データソースを作成 - Vector](/images/clickstack/create-vector-datasource.webp)
+
+            </div>
 
             上記の設定は、タイムスタンプとして `time_local` カラムを使用する Nginx 形式のスキーマを前提としています。可能であれば、ここには主キーで定義されているタイムスタンプカラムを指定してください。**このカラムは必須です**。
 
@@ -275,7 +315,11 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             ログソースを設定したら、&quot;Save&quot; をクリックしてデータの確認を開始します。
 
-            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+            <div className="ch-image-lg">
+
+            ![ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+            </div>
 
             <br />
           </Tab>
@@ -298,7 +342,15 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
    * **Service Read Only → Read Only** - オブザーバビリティデータを表示し、ダッシュボードを作成できます
    * **No access** - HyperDX にアクセスできません
 
-<Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud Read Only" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud Read Only](/images/clickstack/read-only-access.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
   **アラートには管理者アクセスが必要です**
@@ -353,15 +405,39 @@ ClickStack は OpenTelemetry をネイティブでサポートしていますが
 
 OTel collector を使用して ClickHouse 内にデータベースとテーブルを作成している場合は、ソース作成フォームですべてのデフォルト値をそのまま使用し、ログソースを作成するために `Table` フィールドに `otel_logs` を入力します。その他の設定はすべて自動検出されるため、`Save New Source` をクリックできます。
 
-<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="ClickHouse Cloud HyperDX データソース" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Cloud HyperDX データソース](/images/use-cases/observability/hyperdx_cloud_datasource.webp)
+
+</Frame>
+
+</div>
 
 traces と OTel メトリクスのソースを作成するには、上部メニューから `新しいソースを作成` を選択します。
 
-<Image img="/images/use-cases/observability/hyperdx_create_new_source.webp" alt="ClickStack 新しいソースを作成" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack 新しいソースを作成](/images/use-cases/observability/hyperdx_create_new_source.webp)
+
+</Frame>
+
+</div>
 
 ここでは、必要なソースタイプを選択してから、適切なテーブルを選択します。たとえば traces の場合は、`otel_traces` テーブルを選択します。すべての設定は自動検出されます。
 
-<Image img="/images/use-cases/observability/hyperdx_create_trace_datasource.webp" alt="ClickStack トレースソースを作成" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack トレースソースを作成](/images/use-cases/observability/hyperdx_create_trace_datasource.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **ソースの相関付け**

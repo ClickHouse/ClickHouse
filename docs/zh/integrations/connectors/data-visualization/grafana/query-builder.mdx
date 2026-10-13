@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -50,7 +48,15 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 | Limit    | 在查询末尾追加一条 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设为 `0`，则不会添加。有些可视化可能需要将其设为 `0` 才能显示所有数据。 |
 | 过滤器      | 应用于 `WHERE` 子句的过滤器列表。                                                                                  |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="聚合表查询示例" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![聚合表查询示例](/images/integrations/data-visualization/grafana/demo_table_query.webp)
+
+</Frame>
+
+</div>
 
 此查询类型会将数据显示为表格。
 
@@ -78,7 +84,15 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 | Filters        | 要应用于 `WHERE` 子句中的过滤器列表。                                                                   |
 | Message Filter | 一个文本输入框，用于通过 `LIKE %value%` 便捷地过滤日志。输入为空时会被排除。                                            |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="OTel 日志查询示例" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![OTel 日志查询示例](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -86,7 +100,15 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 查询中选取的额外列可在展开的日志行中查看：
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="日志查询中的额外字段示例" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![日志查询中的额外字段示例](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
+
+</Frame>
+
+</div>
 
 <div id="time-series">
   ### 时间序列
@@ -120,7 +142,15 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 | Limit    | 在查询末尾追加 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设为 `0`，则会省略；对于某些时间序列数据集，建议这样设置以显示完整的可视化。 |
 | Filters  | 将应用于 `WHERE` 子句的过滤器列表。                                                                               |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="时间序列查询示例" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![时间序列查询示例](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
+
+</Frame>
+
+</div>
 
 此查询类型会使用时间序列面板来渲染数据。
 
@@ -159,7 +189,15 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 | Filters               | 要应用于 `WHERE` 子句中的过滤器列表。                                                                             |
 | Trace ID              | 用于过滤的 Trace ID。仅在 Trace ID 模式下，以及打开 trace ID [数据链接](#data-links)时使用。                                |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="OTel trace 查询示例" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![OTel trace 查询示例](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
+
+</Frame>
+
+</div>
 
 此查询类型在 Trace Search 模式下会以表格视图渲染数据，在 Trace ID 模式下会以 trace 面板渲染数据。
 
@@ -177,7 +215,15 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 你可以在不同的查询类型之间切换，以获得最适合查询的可视化效果。
 即使在仪表板视图中，这种切换也会产生影响，尤其是在处理时间序列数据时。
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="原始 SQL 查询示例" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![原始 SQL 查询示例](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
+
+</Frame>
+
+</div>
 
 ## 数据链接 {#data-links}
 
@@ -188,13 +234,21 @@ ClickHouse 插件已启用此功能，可在 trace 和日志之间相互跳转�
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   表中 trace 链接示例
 
-  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="表中的 trace 链接" border />
+  <div className="ch-image-sm">
+
+  ![表中的 trace 链接](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
+
+  </div>
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   日志中 trace 链接示例
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="日志中的 trace 链接" border />
+  <div className="ch-image-md">
+
+  ![日志中的 trace 链接](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
+
+  </div>
 </div>
 
 ### 如何创建数据链接 {#how-to-make-a-data-link}
@@ -221,7 +275,11 @@ ClickHouse 插件已启用此功能，可在 trace 和日志之间相互跳转�
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   从日志查询 (左侧面板) 查看 trace (右侧面板) 的示例
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="数据链接跳转示例" border />
+  <div className="ch-image-md">
+
+  ![数据链接跳转示例](/images/integrations/data-visualization/grafana/demo_data_links.webp)
+
+  </div>
 </div>
 
 <div id="macros">

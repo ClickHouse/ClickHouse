@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'opentelemetry', '链路追踪', '可观测性', '遥测']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 所有数据都会通过一个 **OpenTelemetry (OTel) collector** 实例摄取到 ClickStack，该实例是日志、指标、链路追踪和会话数据的主要入口。我们建议此实例使用官方提供的 collector [ClickStack 发行版](#installing-otel-collector)。
 
 <Tip>
@@ -127,7 +125,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     此外，还需要提供一个包含 API 摄取密钥的授权请求头。你可以在 HyperDX 应用中的 `Team Settings → API Keys` 下找到该密钥。
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="摄取密钥" size="lg" />
+    <div className="ch-image-lg">
+
+    ![摄取密钥](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     对于语言 SDK，这既可以通过 `init` 函数设置，也可以通过 `OTEL_EXPORTER_OTLP_HEADERS` 环境变量设置，例如：
 

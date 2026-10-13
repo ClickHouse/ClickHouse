@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -72,7 +70,15 @@ Por ejemplo, puedes configurar tu sesión de Spark en tu notebook con estas opci
 
 Asegúrese de que aparezca en la primera celda, de la siguiente manera:
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="Configuración de Spark mediante notebook" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Configuración de Spark mediante notebook](/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp)
+
+</Frame>
+
+</div>
 
 Visite la [página de configuración de ClickHouse Spark](/es/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations) para consultar ajustes adicionales.
 
@@ -87,7 +93,15 @@ Visite la [página de configuración de ClickHouse Spark](/es/integrations/conne
 Para verificar que las dependencias y configuraciones se hayan establecido correctamente, visite la UI de Spark de su sesión y vaya a la pestaña `Environment`.
 Allí, busque la configuración relacionada con ClickHouse:
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="Verificación de la configuración de ClickHouse mediante la UI de Spark" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Verificación de la configuración de ClickHouse mediante la UI de Spark](/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="additional-resources">
   ## Recursos adicionales

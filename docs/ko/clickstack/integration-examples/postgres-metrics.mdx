@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', '메트릭', 'OTEL', 'ClickStack', '데이터베이스 모니터링']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -202,17 +200,29 @@ ClickStack으로 PostgreSQL 모니터링을 빠르게 시작할 수 있도록 Po
     1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
     2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+    <div className="ch-image-lg">
+
+    ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `postgres-metrics-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="가져오기 완료 대화상자" />
+    <div className="ch-image-lg">
+
+    ![가져오기 완료 대화상자](/images/clickstack/postgres/import-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     모든 시각화가 미리 구성된 상태로 대시보드가 생성됩니다:
 
-    <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="PostgreSQL 메트릭 대시보드" />
+    <div className="ch-image-lg">
+
+    ![PostgreSQL 메트릭 대시보드](/images/clickstack/postgres/postgres-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       데모 데이터세트의 경우 시간 범위를 **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되지 않습니다.

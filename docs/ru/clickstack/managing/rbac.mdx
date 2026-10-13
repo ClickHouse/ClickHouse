@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'rbac', 'роли', 'разрешения', 'управление доступом', 'безопасность']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickStack поддерживает ролевое управление доступом (RBAC), поэтому вы можете определять пользовательские роли с детально настроенными разрешениями для [панелей мониторинга](/ru/clickstack/features/dashboards/overview), [сохранённых поисков](/ru/clickstack/features/search), источников, [оповещений](/ru/clickstack/features/alerts), вебхуков и блокнотов. Разрешения работают на двух уровнях: доступ на уровне ресурсов (нет доступа, чтение или управление для каждого типа ресурса) и необязательные детализированные правила, ограничивающие доступ к отдельным ресурсам по имени, тегу или ID. В ClickStack есть три встроенные роли, и вы можете создавать пользовательские роли под потребности своей команды.
 
 <Info>
@@ -37,11 +35,19 @@ ClickStack поддерживает ролевое управление дост
 
 <Tabs>
   <Tab title="Cloud Users and roles">
-    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="Страница ClickHouse Cloud Users and roles" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Страница ClickHouse Cloud Users and roles](/images/clickstack/rbac/team-page-cloud.webp)
+
+    </div>
   </Tab>
 
   <Tab title="ClickStack Team Settings">
-    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="Страница ClickStack Team Settings с участниками команды и их ролями" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Страница ClickStack Team Settings с участниками команды и их ролями](/images/clickstack/rbac/team-page-clickstack.webp)
+
+    </div>
   </Tab>
 </Tabs>
 
@@ -84,7 +90,11 @@ ClickStack включает три системные роли. Их нельз�
   <Step title="Перейдите в Team Settings" id="step-navigate">
     Откройте **Team Settings** и прокрутите страницу до раздела **RBAC Roles**.
 
-    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
+    <div className="ch-image-lg">
+
+    ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте новую роль" id="step-add-role">
@@ -94,7 +104,11 @@ ClickStack включает три системные роли. Их нельз�
   <Step title="Настройте разрешения и сохраните" id="step-configure">
     Задайте разрешения для роли, затем нажмите **Create Role**.
 
-    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Модальное окно Add Role" size="md" />
+    <div className="ch-image-md">
+
+    ![Модальное окно Add Role](/images/clickstack/rbac/add-role-modal.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -151,7 +165,15 @@ ClickStack включает три системные роли. Их нельз�
 
 Чтобы переключить режим, нажмите на шеврон, чтобы развернуть тип ресурса в редакторе роли, а затем переключите **режим управления доступом**.
 
-<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="Режимы «Доступ по умолчанию» и «Точная настройка» в редакторе роли" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Режимы «Доступ по умолчанию» и «Точная настройка» в редакторе роли](/images/clickstack/rbac/default-vs-fine-grained.webp)
+
+</Frame>
+
+</div>
 
 <div id="configuring-access-rules">
   #### Настройка правил доступа
@@ -159,7 +181,15 @@ ClickStack включает три системные роли. Их нельз�
 
 Каждое правило доступа состоит из **условия** и **уровня доступа**. Условия позволяют сопоставлять ресурсы по их свойствам:
 
-<Image img="/images/clickstack/rbac/condition-tip.webp" alt="Подсказка по условию: сопоставляйте ресурсы по имени или тегу (показаны в заголовке) либо по ID (указан в URL)" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Подсказка по условию: сопоставляйте ресурсы по имени или тегу (показаны в заголовке) либо по ID (указан в URL)](/images/clickstack/rbac/condition-tip.webp)
+
+</Frame>
+
+</div>
 
 | Поле условия | Операторы        | Что сопоставляется                                                                                                                                             | Пример                                                                                                                |
 | ------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -169,11 +199,27 @@ ClickStack включает три системные роли. Их нельз�
 
 На следующем снимке экрана показаны выделенный в адресной строке ID панели мониторинга и тег &quot;TESTING&quot; на панели тегов (в правом верхнем углу).
 
-<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="Панель мониторинга, на которой показаны ID ресурса в адресной строке и тег в правом верхнем углу" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Панель мониторинга, на которой показаны ID ресурса в адресной строке и тег в правом верхнем углу](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+
+</Frame>
+
+</div>
 
 Для каждого типа ресурса можно добавить несколько правил. Каждое правило проверяется независимо по логике OR — ресурс доступен, если он соответствует **хотя бы одному** правилу. Ресурсы, не соответствующие ни одному правилу, недоступны.
 
-<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="Подсказка по правилам доступа с логикой OR" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Подсказка по правилам доступа с логикой OR](/images/clickstack/rbac/access-rules-tip.webp)
+
+</Frame>
+
+</div>
 
 **Пример**: Чтобы предоставить роли доступ только для чтения к тестовым панелям мониторинга, раскройте панели мониторинга, переключитесь на точную настройку и добавьте два правила:
 
@@ -182,7 +228,15 @@ ClickStack включает три системные роли. Их нельз�
 
 Панель мониторинга, соответствующая любому из этих правил, будет доступна.
 
-<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="Два детализированных правила доступа, объединённых по OR: Name contains testing с доступом Read и Tag is testing с доступом Read" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Два детализированных правила доступа, объединённых по OR: Name contains testing с доступом Read и Tag is testing с доступом Read](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+
+</Frame>
+
+</div>
 
 <div id="security-policies">
   ## Политики безопасности
@@ -194,4 +248,12 @@ ClickStack включает три системные роли. Их нельз�
 
 **Generative AI** позволяет включать или отключать функции на базе LLM (например, генерацию запросов на естественном языке), работающие через Anthropic или Amazon Bedrock. Если эта опция отключена, данные не отправляются внешним ИИ-провайдерам.
 
-<Image img="/images/clickstack/rbac/security-policies.webp" alt="Политики безопасности" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Политики безопасности](/images/clickstack/rbac/security-policies.webp)
+
+</Frame>
+
+</div>

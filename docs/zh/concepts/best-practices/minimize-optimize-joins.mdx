@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse 支持多种 JOIN 类型和算法，而且 JOIN 性能在最近几个发行版中已显著提升。不过，JOIN 天生就比从单个反规范化表中查询成本更高。反规范化会将计算工作从查询时转移到插入或预处理阶段，这通常会显著降低运行时延迟。对于实时或对延迟敏感的分析查询，**强烈建议采用反规范化**。
 
 一般来说，在以下情况下应进行反规范化：
@@ -56,7 +54,15 @@ ClickHouse 支持多种 JOIN 算法，可在速度和内存占用之间进行权
 * **Partial Merge JOIN：** 可将内存占用降到最低，但速度较慢——最适合在内存有限时连接大型表。
 * **Grace Hash JOIN：** 灵活且可调节内存使用，适合大型数据集，并可按需权衡性能表现。
 
-<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins —— 速度与内存" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Joins —— 速度与内存](/images/bestpractices/joins-speed-memory.png)
+
+</Frame>
+
+</div>
 
 <Note>
   每种算法支持的 JOIN 类型各不相同。每种算法所支持 JOIN 类型的完整列表可在[这里](/zh/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)查看。

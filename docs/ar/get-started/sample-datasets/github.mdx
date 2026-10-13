@@ -9,8 +9,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تحتوي مجموعة البيانات هذه على جميع الـ commits والتغييرات الخاصة بمستودع ClickHouse. ويمكن إنشاؤها باستخدام أداة `git-import` الأصلية الموزعة مع ClickHouse.
 
 توفّر البيانات الناتجة ملف `tsv` لكل جدول من الجداول التالية:
@@ -572,11 +570,27 @@ LIMIT 10
 
 **بالنسبة إلى الأسطر المضافة والمحذوفة:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="بالنسبة إلى الأسطر المضافة والمحذوفة" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![بالنسبة إلى الأسطر المضافة والمحذوفة](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
+
+</Frame>
+
+</div>
 
 **بالنسبة إلى عمليات commit والمؤلفين:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="بالنسبة إلى عمليات commit والمؤلفين" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![بالنسبة إلى عمليات commit والمؤلفين](/images/getting-started/example-datasets/superset-commits-authors.webp)
+
+</Frame>
+
+</div>
 
 <div id="list-files-with-maximum-number-of-authors">
   ### اعرض الملفات التي تضم أكبر عدد من المؤلفين
@@ -1365,11 +1379,27 @@ LIMIT 100
 
 يتيح مخطط Sankey ‏(SuperSet) عرض ذلك بصورة واضحة وجميلة. لاحظ أننا نرفع قيمة `LIMIT BY` إلى 3 للحصول على أبرز 3 أشخاص يزيلون الشيفرة لكل مؤلف، مما يعزّز التنوع في التصور المرئي.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="مصفوفة المؤلفين في Superset" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مصفوفة المؤلفين في Superset](/images/getting-started/example-datasets/superset-authors-matrix.webp)
+
+</Frame>
+
+</div>
 
 من الواضح أن Alexey يميل إلى إزالة شيفرة الآخرين. لنستبعده للحصول على عرض أكثر توازنًا لعمليات إزالة الشيفرة.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="مصفوفة المؤلفين في Superset الإصدار 2" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مصفوفة المؤلفين في Superset الإصدار 2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
+
+</Frame>
+
+</div>
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
   ### من هو المساهم ذو أعلى نسبة مئوية في كل يوم من أيام الأسبوع؟

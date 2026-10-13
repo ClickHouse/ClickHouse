@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -88,7 +87,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="注册并安装连接器" id="enroll-and-install">
     `init --enroll` 会兑换你的注册令牌，获取已签名的客户端证书以及 executor 的集群级授权 (grant) ，然后安装并验证连接器。
 
-    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse 连接器注册流程" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse 连接器注册流程](/images/cloud/reference/byoc-connector-enrollment-flow.svg)
+
+    </div>
 
     在终端中，`init` 会询问 `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?`，并预选 `yes`。传入 `--managed` 可跳过该提示，或使用 `--no-managed` 进行不含 executor 的仅观察安装。若在无人值守的全新安装中未传入这两个 flag，则 managed 模式保持关闭 (使用 `--force` 重新运行时会沿用被替换配置的设定) ，因此在脚本中请始终传入 `--managed`。
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Managed ClickStack', 'getting started', 'ClickHouse Cloud']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import ExampleOTelConfig from '/snippets/clickstack/_config_example_otel.mdx';
 
 Deploy Managed ClickStack on ClickHouse Cloud, send a test event through your ingestion pipeline, and confirm that the event is available in the ClickStack UI.
@@ -48,7 +46,15 @@ This page is showing the **OpenTelemetry** path. Use the guide selector near the
 <Step title="Choose an ingestion source and collector setup" id="choose-an-ingestion-source">
 From your ClickHouse Cloud service, launch ClickStack. On the ClickStack **Getting Started** page, select **Start ingestion**.
 
-<Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Start ingestion" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start ingestion](/images/clickstack/getting-started/start_ingestion.webp)
+
+</Frame>
+
+</div>
 
 On the **Choose an ingestion source** page, select [OpenTelemetry](https://opentelemetry.io/).
 
@@ -58,7 +64,15 @@ On the **Choose an ingestion source** page, select [OpenTelemetry](https://opent
 OpenTelemetry provides preconfigured schemas for logs, traces, metrics, and sessions.
 </Info>
 
-<Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="Select OpenTelemetry as the ingestion source" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select OpenTelemetry as the ingestion source](/images/clickstack/getting-started/select_source_toggle.webp)
+
+</Frame>
+
+</div>
 
 <Tabs>
 
@@ -173,7 +187,15 @@ After ClickStack detects the OpenTelemetry data sources, select **Start explorin
 
 The result should include the test event with the `clickstack-docs-test` service name.
 
-<Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack logs view showing the ClickStack ingestion test event" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack logs view showing the ClickStack ingestion test event](/images/clickstack/getting-started/clickstack_ingestion_test.webp)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>
@@ -192,11 +214,27 @@ Start with an [existing Vector pipeline](/clickstack/ingesting-data/vector) that
 <Step title="Choose Vector and configure ingestion" id="choose-an-ingestion-source-vector">
 From your ClickHouse Cloud service, launch ClickStack. On the ClickStack **Getting Started** page, select **Start ingestion**.
 
-<Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Start ingestion" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start ingestion](/images/clickstack/getting-started/start_ingestion.webp)
+
+</Frame>
+
+</div>
 
 On the **Choose an ingestion source** page, select [Vector](https://vector.dev/).
 
-<Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="Select Vector as the ingestion source" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select Vector as the ingestion source](/images/clickstack/getting-started/select_source_vector_toggle.webp)
+
+</Frame>
+
+</div>
 
 [Vector](https://vector.dev) is a high-performance, vendor-neutral observability data pipeline, especially popular for log ingestion due to its flexibility and low resource footprint.
 
@@ -345,7 +383,15 @@ For more Vector source and transformation examples, see [Ingesting with Vector](
 <Step title="Start exploring and confirm ingestion" id="open-clickstack-and-confirm-ingestion-vector">
 After creating the data source, select **Start exploring** to open the **Search** view. Select the data source for your table and confirm that it contains the event you sent.
 
-<Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="Logs in the ClickStack UI"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Logs in the ClickStack UI](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>

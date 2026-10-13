@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 [`azureBlobStorage` 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)는 Azure Blob Storage에서
 ClickHouse로 데이터를 수집하는 빠르고 편리한 방법입니다. 하지만 다음과 같은 이유로
 항상 적합한 것은 아닐 수 있습니다:
@@ -106,21 +104,41 @@ Service를 설정하고,
 
 1. [Microsoft Azure Portal](https://portal.azure.com/)에 로그인한 다음
    **Create a resource**를 클릭합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Azure Portal 홈 페이지" border />
+   <div className="ch-image-lg">
+
+   ![Azure Portal 홈 페이지](/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp)
+
+   </div>
 
 2. 왼쪽의 Categories 창에서 **Analytics**를 선택한 다음, 인기 서비스 목록에서
    **Data Factory**를 클릭합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Azure Portal 새 리소스" border />
+   <div className="ch-image-lg">
+
+   ![Azure Portal 새 리소스](/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp)
+
+   </div>
 
 3. subscription과 resource group을 선택하고, 새 Data
    Factory 인스턴스의 이름을 입력한 다음, 지역을 선택하고 버전은 V2로 그대로 둡니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Azure Portal 새 Data Factory" border />
+   <div className="ch-image-lg">
+
+   ![Azure Portal 새 Data Factory](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp)
+
+   </div>
 
 4. **Review + Create**를 클릭한 다음, **Create**를 클릭하여 배포를 시작합니다.
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Azure Portal 새 Data Factory 확인" border />
+   <div className="ch-image-lg">
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Azure Portal 새 Data Factory 성공" border />
+   ![Azure Portal 새 Data Factory 확인](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp)
+
+   </div>
+
+   <div className="ch-image-lg">
+
+   ![Azure Portal 새 Data Factory 성공](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp)
+
+   </div>
 
 배포가 성공적으로 완료되면 새 Azure
 Data Factory 인스턴스를 사용할 수 있습니다.
@@ -130,33 +148,61 @@ Data Factory 인스턴스를 사용할 수 있습니다.
 </div>
 
 1. Microsoft Azure Portal에 로그인한 다음 Data Factory 인스턴스를 여십시오.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Data Factory가 있는 Azure Portal 홈 페이지" border />
+   <div className="ch-image-lg">
+
+   ![Data Factory가 있는 Azure Portal 홈 페이지](/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp)
+
+   </div>
 
 2. Data Factory 개요 페이지에서 **Launch Studio**를 클릭하십시오.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure Portal Data Factory 페이지" border />
+   <div className="ch-image-lg">
+
+   ![Azure Portal Data Factory 페이지](/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp)
+
+   </div>
 
 3. 왼쪽 메뉴에서 **Manage**를 선택한 다음 **Linked services**로 이동하고,
    **+ New**를 클릭하여 새 Linked Service를 만드십시오.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory 새 Linked Service 버튼" border />
+   <div className="ch-image-lg">
+
+   ![Azure Data Factory 새 Linked Service 버튼](/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp)
+
+   </div>
 
 4. **New linked service search bar**에 **REST**를 입력하고 **REST**를 선택한 다음 **Continue**를 클릭하여
    [REST connector](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
    인스턴스를 만드십시오.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory 새 Linked Service 검색" border />
+   <div className="ch-image-lg">
+
+   ![Azure Data Factory 새 Linked Service 검색](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp)
+
+   </div>
 
 5. Linked Service 구성 창에서 새 서비스 이름을 입력한 다음
    **Base URL** 필드를 클릭하고 **Add dynamic content**를 클릭하십시오(이 링크는
    해당 필드를 선택했을 때만 표시됩니다).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="새 Linked Service 창" border />
+   <div className="ch-image-lg">
+
+   ![새 Linked Service 창](/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp)
+
+   </div>
 
 6. 동적 콘텐츠 창에서는 매개변수화된 URL을 만들 수 있습니다.
    이렇게 하면 서로 다른 테이블의 데이터셋을 만들 때 나중에 쿼리를 정의할 수 있어 Linked Service를 재사용할 수 있습니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="비어 있는 새 Linked Service 기준 URL" border />
+   <div className="ch-image-lg">
+
+   ![비어 있는 새 Linked Service 기준 URL](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp)
+
+   </div>
 
 7. 필터 입력 옆의 **&quot;+&quot;**를 클릭하여 새 매개변수를 추가하고, 이름을
    `pQuery`로 지정하고, 유형을 String으로 설정한 다음, 기본값을 `SELECT 1`로 설정하십시오.
    **Save**를 클릭하십시오.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="새 Linked Service 매개변수" border />
+   <div className="ch-image-lg">
+
+   ![새 Linked Service 매개변수](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp)
+
+   </div>
 
 8. 표현식 필드에 다음 내용을 입력하고 **OK**를 클릭하십시오. `your-clickhouse-url.com`을
    실제 ClickHouse
@@ -164,16 +210,28 @@ Data Factory 인스턴스를 사용할 수 있습니다.
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="값이 입력된 새 Linked Service 표현식 필드" border />
+   <div className="ch-image-lg">
+
+   ![값이 입력된 새 Linked Service 표현식 필드](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp)
+
+   </div>
 
 9. 기본 폼으로 돌아가서 기본 인증을 선택하고, ClickHouse HTTP 인터페이스에 연결할 때 사용하는 사용자 이름과
    암호를 입력한 다음 **Test
    connection**을 클릭하십시오. 모든 구성이 올바르면 성공
    메시지가 표시됩니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="새 Linked Service 연결 확인" border />
+   <div className="ch-image-lg">
+
+   ![새 Linked Service 연결 확인](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp)
+
+   </div>
 
 10. **Create**를 클릭하여 설정을 완료하십시오.
-    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="Linked Services 목록" border />
+    <div className="ch-image-lg">
+
+    ![Linked Services 목록](/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp)
+
+    </div>
 
 이제 목록에서 새로 등록한 REST 기반 Linked Service를 확인할 수 있습니다.
 
@@ -206,18 +264,30 @@ Data](/ko/get-started/sample-datasets/environmental-sensors)의 일부만 소량
 
 2. Azure Data Factory Studio에서 왼쪽 창의 Author를 선택합니다. 데이터셋 항목에
    마우스를 올리고 점 3개 아이콘을 클릭한 다음 New dataset을 선택합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="새 데이터셋 항목" border />
+   <div className="ch-image-lg">
+
+   ![새 데이터셋 항목](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp)
+
+   </div>
 
 3. 검색창에 **REST**를 입력하고 **REST**를 선택한 다음 **Continue**를 클릭합니다.
    데이터셋 이름을 입력하고 이전 단계에서 만든 **linked service**를 선택합니다.
    **OK**를 클릭해 데이터셋을 생성합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="새 데이터셋 페이지" border />
+   <div className="ch-image-lg">
+
+   ![새 데이터셋 페이지](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp)
+
+   </div>
 
 4. 이제 왼쪽의 Factory Resources 창에 있는 데이터셋 섹션 아래에 방금 생성한
    데이터셋이 표시됩니다. 데이터셋을 선택해 속성을 엽니다. Linked Service에서
    정의한 `pQuery` 매개변수가 표시됩니다. **Value** 텍스트 필드를 클릭한 다음
    **Add dynamic** content를 클릭합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="새 데이터셋 속성" border />
+   <div className="ch-image-lg">
+
+   ![새 데이터셋 속성](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp)
+
+   </div>
 
 5. 열리는 창에 다음 쿼리를 붙여넣습니다:
    ```sql
@@ -236,12 +306,24 @@ Data](/ko/get-started/sample-datasets/environmental-sensors)의 일부만 소량
   는 `''best_effort''`로 작성해야 합니다.
 </Danger>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="새 데이터셋 쿼리" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![새 데이터셋 쿼리](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp)
+
+</Frame>
+
+</div>
 
 6. 표현식을 저장하려면 OK를 클릭합니다. Test connection을 클릭합니다. 모든 것이
    올바르게 구성되었다면 Connection successful 메시지가 표시됩니다. 페이지
    상단의 Publish all을 클릭해 변경 사항을 저장합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="새 데이터셋 연결 성공" border />
+   <div className="ch-image-lg">
+
+   ![새 데이터셋 연결 성공](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp)
+
+   </div>
 
 <div id="setting-up-an-example-dataset">
   ### 예시 데이터셋 설정하기
@@ -270,14 +352,26 @@ Data](/ko/get-started/sample-datasets/environmental-sensors)의 일부만 소량
 
 1. **Azure Data Factory Studio**를 열고 **Author 탭**으로 이동합니다. **Factory Resources** 창에서 **Pipeline** 위에 마우스를 올린 다음 점 3개
    아이콘을 클릭하고 **New pipeline**을 선택합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="ADF 새 Pipeline 항목" border />
+   <div className="ch-image-lg">
+
+   ![ADF 새 Pipeline 항목](/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp)
+
+   </div>
 
 2. **Activities** 창에서 **Move and transform** 섹션을 펼친 후
    **Copy data** 활동을 캔버스로 끌어옵니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="새 Copy Data 항목" border />
+   <div className="ch-image-lg">
+
+   ![새 Copy Data 항목](/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp)
+
+   </div>
 
 3. **Source** 탭을 선택하고 앞서 만든 원본 데이터셋을 선택합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="Copy Data Source" border />
+   <div className="ch-image-lg">
+
+   ![Copy Data Source](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp)
+
+   </div>
 
 4. **Sink** 탭으로 이동하여 `sensors` 테이블용으로 만든 ClickHouse 데이터셋을 선택합니다. **Request method**를 POST로 설정합니다. **HTTP compression
    type**이 **None**으로 설정되어 있는지 확인합니다.
@@ -293,10 +387,22 @@ Data](/ko/get-started/sample-datasets/environmental-sensors)의 일부만 소량
   참조하십시오.
 </Info>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="Copy Data Sink에서 POST 선택" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Copy Data Sink에서 POST 선택](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp)
+
+</Frame>
+
+</div>
 
 5. 캔버스 상단의 **Debug**를 클릭하여 파이프라인을 실행합니다. 잠시 후 활동이 큐에 들어가 실행됩니다. 모든 구성이 올바르면 작업은 **Success** 상태로 완료됩니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="Copy Data Debug Success" border />
+   <div className="ch-image-lg">
+
+   ![Copy Data Debug Success](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp)
+
+   </div>
 
 6. 완료되면 **Publish all**을 클릭하여 파이프라인과 데이터셋 변경 사항을 저장합니다.
 

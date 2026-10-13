@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['ClickStack', 'OpenTelemetry collector', 'ClickHouse 관측성', 'OTel collector 구성', 'OpenTelemetry ClickHouse']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import ExtendingConfig from '/snippets/ko/_extending_config.mdx';
 
 <Tip>
@@ -420,7 +418,11 @@ agent 역할로 OTel collector를 배포하는 사용자는 일반적으로 Clic
 
     이 통합을 통해 HyperDX 앱 배포 시 자동 생성되는 수집 API key로 OTLP 엔드포인트를 보호할 수 있습니다. collector로 전송되는 모든 텔레메트리 데이터에는 인증을 위해 이 API key가 포함되어야 합니다. 해당 key는 HyperDX 앱의 `Team Settings → API Keys`에서 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="수집 키" size="lg" />
+    <div className="ch-image-lg">
+
+    ![수집 키](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     배포를 더욱 안전하게 보호하려면 다음을 권장합니다.
 
@@ -559,7 +561,15 @@ collector 관점에서는 (1)과 (2)를 구분하기 어려울 수 있습니다.
 
 큰 배치를 보장할 수 없다면 [Asynchronous Inserts](/ko/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)를 사용해 ClickHouse에 배칭을 맡길 수 있습니다. 비동기 삽입을 사용하면 데이터는 먼저 버퍼에 삽입되고, 이후 나중에 또는 비동기적으로 데이터베이스 저장소에 기록됩니다.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Async inserts" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Async inserts](/images/use-cases/observability/observability-6.webp)
+
+</Frame>
+
+</div>
 
 [비동기 삽입을 활성화하면](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), ClickHouse가 ① 삽입 쿼리를 수신할 때 해당 쿼리의 데이터는 ② 즉시 인메모리 버퍼에 먼저 기록됩니다. 이후 ③ 다음 버퍼 플러시가 발생하면 버퍼의 데이터가 [정렬되어](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) 파트로 데이터베이스 저장소에 기록됩니다. 데이터는 데이터베이스 저장소로 플러시되기 전까지 쿼리로 검색할 수 없으며, 버퍼 플러시는 [구성할 수 있습니다](/ko/concepts/features/operations/insert/asyncinserts).
 
@@ -583,7 +593,15 @@ async insert의 데이터는 ClickHouse 버퍼가 플러시되면 삽입됩니�
 
 ClickStack OTel collector는 gateway 인스턴스로 작동합니다. 자세한 내용은 [Collector roles](#collector-roles)를 참조하십시오. gateway 인스턴스는 일반적으로 데이터 센터 또는 리전별로 배치되는 독립 실행형 서비스를 제공합니다. 단일 OTLP endpoint를 통해 애플리케이션(또는 agent 역할의 다른 collector)에서 이벤트를 수신합니다. 일반적으로 여러 collector 인스턴스를 배포하고, 기본 제공 로드 밸런서를 사용해 이들 간에 부하를 분산합니다.
 
-<Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="gateway를 사용한 스케일링" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![gateway를 사용한 스케일링](/images/use-cases/observability/clickstack-with-gateways.webp)
+
+</Frame>
+
+</div>
 
 이 아키텍처의 목적은 계산 집약적인 처리를 agent에서 분리해 agent의 리소스 사용량을 최소화하는 것입니다. 이러한 ClickStack gateway는 그렇지 않으면 agent가 수행해야 하는 변환 작업을 처리할 수 있습니다. 또한 많은 agent의 이벤트를 집계하여 ClickHouse에 큰 배치를 전송함으로써 효율적인 삽입이 가능해집니다. 이러한 gateway collector는 더 많은 agent와 SDK source가 추가되고 이벤트 처리량이 증가함에 따라 쉽게 스케일링할 수 있습니다.
 
@@ -599,7 +617,15 @@ ClickStack OTel collector는 gateway 인스턴스로 작동합니다. 자세한 
 
 반면 높은 전달 보장이나 데이터 재생 기능(잠재적으로 여러 소스로의 재생)이 필요하다면, Kafka는 아키텍처에 유용하게 추가할 수 있는 요소입니다.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="Kafka 추가" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kafka 추가](/images/use-cases/observability/observability-8.webp)
+
+</Frame>
+
+</div>
 
 이 경우 OTel agent는 [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md)를 통해 Kafka로 데이터를 보내도록 구성할 수 있습니다. 반대로 Gateway 인스턴스는 [Kafka 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md)를 사용해 메시지를 소비합니다. 자세한 내용은 Confluent 및 OTel 문서를 참조하십시오.
 

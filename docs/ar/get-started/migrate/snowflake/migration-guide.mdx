@@ -8,8 +8,6 @@ show_related_blogs: false
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 > يوضّح هذا الدليل كيفية ترحيل البيانات من Snowflake إلى ClickHouse.
 
 يتطلّب ترحيل البيانات بين Snowflake وClickHouse استخدام خدمة تخزين كائنات،
@@ -19,7 +17,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Steps>
   <Step title="تصدير البيانات من Snowflake" id="1-exporting-data-from-snowflake">
-    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="الترحيل من Snowflake إلى ClickHouse" />
+    <div className="ch-image-md">
+
+    ![الترحيل من Snowflake إلى ClickHouse](/images/migrations/migrate_snowflake_clickhouse.webp)
+
+    </div>
 
     يتطلب تصدير البيانات من Snowflake استخدام مرحلة خارجية، كما هو موضح في المخطط أعلاه.
 

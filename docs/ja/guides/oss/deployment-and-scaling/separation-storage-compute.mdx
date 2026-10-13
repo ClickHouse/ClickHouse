@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ストレージ', 'コンピュート', 'アーキテクチャ', '拡張性', 'クラウド']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="overview">
   ## 概要
 </div>
@@ -156,7 +154,11 @@ S3 をバックエンドストレージとして利用する ClickHouse は、�
 
     すべて正常に動作していれば、これでストレージとコンピュートを分離した ClickHouse を利用できています！
 
-    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="コンピュートとストレージの分離を使用した S3 バケットの例" border />
+    <div className="ch-image-md">
+
+    ![コンピュートとストレージの分離を使用した S3 バケットの例](/images/guides/s3_bucket_example.webp)
+
+    </div>
   </Step>
 
   <Step title="フォールトトレランスのためにレプリケーションを実装する（任意）" id="3-implementing-replication-for-fault-tolerance-optional">

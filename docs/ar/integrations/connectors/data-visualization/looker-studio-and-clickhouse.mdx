@@ -10,8 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import MySQLCloudSetup from '/snippets/ar/_clickhouse_mysql_cloud_setup.mdx';
+
 import MySQLOnPremiseSetup from '/snippets/ar/_clickhouse_mysql_on_premise_setup.mdx';
 
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
@@ -38,38 +38,86 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 أولاً، سجّل الدخول إلى [Looker Studio](https://lookerstudio.google.com) باستخدام حساب Google الخاص بك، ثم أنشئ مصدر بيانات جديدًا:
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_01.webp" alt="إنشاء مصدر بيانات جديد في واجهة Looker Studio" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![إنشاء مصدر بيانات جديد في واجهة Looker Studio](/images/integrations/data-visualization/looker_studio_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 ابحث عن موصل MySQL الرسمي الذي توفّره Google (ويظهر باسم **MySQL** فقط):
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_02.webp" alt="البحث عن موصل MySQL في قائمة الموصلات في Looker Studio" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![البحث عن موصل MySQL في قائمة الموصلات في Looker Studio](/images/integrations/data-visualization/looker_studio_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 حدّد تفاصيل الاتصال الخاصة بك. يُرجى ملاحظة أن منفذ واجهة MySQL هو 9004 افتراضيًا،
 وقد يختلف ذلك حسب إعدادات الخادم لديك.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="تحديد تفاصيل اتصال MySQL الخاصة بـ ClickHouse في Looker Studio" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![تحديد تفاصيل اتصال MySQL الخاصة بـ ClickHouse في Looker Studio](/images/integrations/data-visualization/looker_studio_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 الآن، لديك خياران لجلب البيانات من ClickHouse. أولاً، يمكنك استخدام ميزة Table Browser:
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_04.webp" alt="استخدام Table Browser لتحديد جداول ClickHouse في Looker Studio" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![استخدام Table Browser لتحديد جداول ClickHouse في Looker Studio](/images/integrations/data-visualization/looker_studio_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 أو يمكنك تحديد استعلام SQL مخصص لجلب بياناتك:
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="استخدام استعلام SQL مخصص لجلب البيانات من ClickHouse في Looker Studio" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![استخدام استعلام SQL مخصص لجلب البيانات من ClickHouse في Looker Studio](/images/integrations/data-visualization/looker_studio_05.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 أخيرًا، ينبغي أن تتمكن من رؤية بنية الجدول التي جرى استكشافها وضبط أنواع البيانات إذا لزم الأمر.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="عرض بنية جدول ClickHouse التي جرى استكشافها في Looker Studio" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![عرض بنية جدول ClickHouse التي جرى استكشافها في Looker Studio](/images/integrations/data-visualization/looker_studio_06.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -81,13 +129,29 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 عند استخدام ClickHouse Cloud، عليك أولاً تمكين واجهة MySQL. يمكنك القيام بذلك من مربع حوار الاتصال، ضمن علامة التبويب &quot;MySQL&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_enable_mysql.webp" alt="تمكين واجهة MySQL في إعدادات ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![تمكين واجهة MySQL في إعدادات ClickHouse Cloud](/images/integrations/data-visualization/looker_studio_enable_mysql.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 في واجهة مستخدم Looker Studio، اختر خيار &quot;Enable SSL&quot;. شهادة SSL الخاصة بـ ClickHouse Cloud موقَّعة من [Let&#39;s Encrypt](https://letsencrypt.org/certificates/). يمكنك تنزيل الشهادة الجذرية من [هنا](https://letsencrypt.org/certs/isrgrootx1.pem).
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_mysql_cloud.webp" alt="إعداد اتصال Looker Studio مع إعدادات SSL الخاصة بـ ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![إعداد اتصال Looker Studio مع إعدادات SSL الخاصة بـ ClickHouse Cloud](/images/integrations/data-visualization/looker_studio_mysql_cloud.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

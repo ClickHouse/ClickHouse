@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -73,7 +72,11 @@ Algunas secciones de monitorización dependen de tablas de registros opcionales 
     ClickHouse Cloud usa claves de nivel de organización de la página **API Keys** para Cloud API y los
     endpoints de Query API. El flujo de conexión SQL de ProbeDeck no usa esas claves.
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="Formulario de conexión de ProbeDeck configurado para HTTPS en el puerto 8443 con un nombre de usuario de ClickHouse" />
+    <div className="ch-image-sm">
+
+    ![Formulario de conexión de ProbeDeck configurado para HTTPS en el puerto 8443 con un nombre de usuario de ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
+
+    </div>
   </Step>
 </Steps>
 
@@ -150,11 +153,27 @@ Abra la conexión guardada y seleccione **Monitor**. El panel resume estas fuent
 | Métricas de memoria y del servidor                                  | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | Tasas históricas de consultas y de disco                            | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="Panel de monitorización de ProbeDeck que muestra consultas en ejecución, replicación, discos, partes, mutaciones, fusiones, tasa de consultas y memoria" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Panel de monitorización de ProbeDeck que muestra consultas en ejecución, replicación, discos, partes, mutaciones, fusiones, tasa de consultas y memoria](/images/integrations/sql-clients/probedeck-dashboard.png)
+
+</Frame>
+
+</div>
 
 Pulse **Consultas en ejecución** para ordenar las consultas activas por tiempo transcurrido e inspeccionar el uso de memoria y las filas leídas.
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="Lista de consultas en ejecución de ProbeDeck ordenada por tiempo transcurrido" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Lista de consultas en ejecución de ProbeDeck ordenada por tiempo transcurrido](/images/integrations/sql-clients/probedeck-running-queries.png)
+
+</Frame>
+
+</div>
 
 <div id="query-the-uk-property-price-dataset">
   ## Consultar el conjunto de datos de precios de propiedades del Reino Unido

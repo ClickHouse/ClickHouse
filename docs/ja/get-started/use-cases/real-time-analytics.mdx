@@ -7,8 +7,6 @@ sidebarTitle: 'リアルタイム分析'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -36,7 +34,15 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **変換と準備にかかる時間**: クエリが実際に参照する構造 (materialized view、ロールアップ、索引) を、クレンジング、エンリッチ、結合、事前集計、更新できる状態にするまでにどれくらい時間がかかるか。
 * **クエリにかかる時間**: データが利用可能になってから、読み取りの計画と実行にどれくらい時間がかかるか。
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="リアルタイム分析: 取り込み、変換、クエリにかかる時間" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![リアルタイム分析: 取り込み、変換、クエリにかかる時間](/images/use-cases/rta-considerations.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickhouse-rta">
   ## ClickHouseがリアルタイム分析を支える仕組み
@@ -44,7 +50,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="ClickHouseがリアルタイム分析を支える仕組み" />
+    <div className="ch-image-lg">
+
+    ![ClickHouseがリアルタイム分析を支える仕組み](/images/use-cases/real-time-analytics-architecture.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">

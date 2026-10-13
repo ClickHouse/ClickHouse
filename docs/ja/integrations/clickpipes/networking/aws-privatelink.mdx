@@ -11,7 +11,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 [AWS PrivateLink](https://aws.amazon.com/privatelink/)を使用すると、ClickPipes と AWS でホストされているデータソースの間に安全な接続を確立できます。ClickPipes は VPC 内に**リバースプライベートエンドポイント (RPE) **を作成し、データソース用に公開されたエンドポイントサービスに接続するため、トラフィックがパブリックインターネットに公開されることはありません。
@@ -278,19 +277,51 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
 
 1. ClickHouse Cloud サービスの SQL Console にアクセスします。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes サービス" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. 左側のメニューで `Data Sources` ボタンを選択し、「ClickPipe をセットアップ」をクリックします。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. データソースとして Kafka または Postgres を選択します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="データソースを選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![データソースを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</Frame>
+
+</div>
 
 4. `Reverse private endpoint` オプションを選択します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="リバース プライベート エンドポイントを選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![リバース プライベート エンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</Frame>
+
+</div>
 
 5. 既存のリバース プライベート エンドポイントを選択するか、新しいエンドポイントを作成します。
 
@@ -300,11 +331,27 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
   同一リージョン内でアクセスする場合は、VPC リソースを作成することを推奨します。
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="リバース プライベート エンドポイントを選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![リバース プライベート エンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</Frame>
+
+</div>
 
 6. 選択したエンドポイントタイプに必要なパラメータを指定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="リバース プライベート エンドポイントを選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![リバース プライベート エンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</Frame>
+
+</div>
 
 * VPC リソースの場合は、設定共有 ARN と設定 ID を指定します。
   * MSK マルチ VPC の場合は、クラスター ARN と、作成したエンドポイントで使用する認証方法を指定します。
@@ -317,7 +364,15 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
    エンドポイントの準備が完了すると、ページは自動的に更新されます。
    VPC エンドポイントサービスでは、AWS コンソールで接続リクエストを承認する必要がある場合があります。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="リバース プライベート エンドポイントを選択" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![リバース プライベート エンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</Frame>
+
+</div>
 
 8. エンドポイントの準備が完了すると、DNS 名を使用してデータソースに接続できます。
 
@@ -339,11 +394,19 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
 
 1. サイドバーで `Settings` ボタンをクリックします。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud の設定" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![ClickHouse Cloud の設定](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+   </div>
 
 2. `ClickPipe reverse private endpoints` セクションで `Reverse private endpoints` をクリックします。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud の設定" size="md" border />
+   <div className="ch-image-md">
+
+   ![ClickHouse Cloud の設定](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+   </div>
 
    リバースプライベートエンドポイントの詳細情報がフライアウトに表示されます。
 

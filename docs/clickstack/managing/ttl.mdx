@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'ttl', 'data retention', 'lifecycle', 'storage management']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import OtelLogsSchema from '/snippets/clickstack/_schema_otel_logs.mdx';
 
 ## TTL in ClickStack {#ttl-clickstack}
@@ -24,7 +23,15 @@ Partitioning in ClickHouse allows data to be logically separated on disk accordi
 
 As shown in the above example, partitioning is specified on a table when it is initially defined via the `PARTITION BY` clause. This clause can contain an SQL expression on any column/s, the results of which will define which partition a row is sent to. This causes data to be logically associated (via a common folder name prefix) with each partition on the disk, which can then be queried in isolation. For the example above, the default `otel_logs` schema partitions by day using the expression `toDate(Timestamp)`. As rows are inserted into ClickHouse, this expression will be evaluated against each row and routed to the resulting partition if it exists (if the row is the first for a day, the partition will be created). For further details on partitioning and its other applications, see ["Table Partitions"](/concepts/core-concepts/partitions).
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="Partitions" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Partitions](/images/use-cases/observability/observability-14.webp)
+
+</Frame>
+
+</div>
 
 The table schema also includes `TTL toDateTime(Timestamp) + ${TABLES_TTL}` and setting `ttl_only_drop_parts = 1`. The former clause ensures data will be dropped once it is older than the configured TTL (3 days by default). The setting `ttl_only_drop_parts = 1` enforces only expiring data parts where all of the data has expired (vs. attempting to partially delete rows). With partitioning ensuring data from separate days is never "merged," data can thus be efficiently dropped.
 

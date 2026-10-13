@@ -7,8 +7,6 @@ title: 'Connecter Artie à ClickHouse'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 
 <a href="https://www.artie.com/" target="_blank">Artie</a> est une plateforme de streaming de données en temps réel entièrement gérée qui réplique les données de production dans ClickHouse, afin de rendre possibles des analyses orientées client, des processus opérationnels et de l’IA agentique en production.
@@ -29,7 +27,11 @@ Des leaders comme ClickUp, Substack et Alloy utilisent Artie non seulement pour 
   <Step title="Créer un compte Artie" id="1-create-an-artie-account">
     Rendez-vous sur <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> et remplissez le formulaire pour demander l’accès.
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Page d’inscription Artie" />
+    <div className="ch-image-md">
+
+    ![Page d’inscription Artie](/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp)
+
+    </div>
   </Step>
 
   <Step title="Trouver vos identifiants ClickHouse" id="2-find-your-clickhouse-credentials">
@@ -45,7 +47,11 @@ Des leaders comme ClickUp, Substack et Alloy utilisent Artie non seulement pour 
     2. **Choisissez les tables que vous souhaitez répliquer** - Sélectionnez les tables à synchroniser vers ClickHouse
     3. **Connectez votre destination** - Saisissez vos identifiants ClickHouse
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="Interface Edit Pipeline d’Artie" />
+    <div className="ch-image-lg">
+
+    ![Interface Edit Pipeline d’Artie](/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -61,12 +67,36 @@ Si vous avez des questions, veuillez consulter notre <a href="https://www.artie.
 
 Portail d’analyse
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/analytics.webp" size="md" border alt="Portail d’analyse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Portail d’analyse](/images/integrations/data-ingestion/etl-tools/artie/analytics.webp)
+
+</Frame>
+
+</div>
 
 Supervision spécifique aux pipelines et aux tables
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="Supervision intégrée" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Supervision intégrée](/images/integrations/data-ingestion/etl-tools/artie/monitor.webp)
+
+</Frame>
+
+</div>
 
 Notifications quotidiennes des modifications du schéma
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="Notification de schéma" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Notification de schéma](/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp)
+
+</Frame>
+
+</div>

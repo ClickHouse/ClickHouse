@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['Agentic Data Stack', 'агентная аналитика', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'ИИ']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Самый простой способ запустить агентную аналитику на ClickHouse — [ClickHouse Agents](/ru/products/cloud/features/ai-ml/agents) в ClickHouse Cloud: полностью управляемый сервис, без необходимости разворачивать инфраструктуру. Пользователи задают вопросы на естественном языке, а ИИ-агент отвечает на них, отправляя запросы напрямую к базе данных.
 
 Для самостоятельного размещения **Agentic Data Stack** — это модульный стек с открытым исходным кодом. Вы сами запускаете его, подключаете собственные модели и храните чат и данные в своей среде. Он построен на основе [ClickHouse](/ru/get-started/setup/install), [MCP-сервера ClickHouse](/ru/products/agentic-data-stack/components/mcp-server), [LibreChat](/ru/products/agentic-data-stack/components/librechat) и [Langfuse](/ru/products/agentic-data-stack/components/langfuse).
@@ -32,7 +30,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Как устроен стек
 </div>
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Архитектура Agentic Data Stack: пользователи взаимодействуют с LibreChat, который подключается к LLM, к ClickHouse через MCP-сервер и к Langfuse для трассировки" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Архитектура Agentic Data Stack: пользователи взаимодействуют с LibreChat, который подключается к LLM, к ClickHouse через MCP-сервер и к Langfuse для трассировки](/images/agentic-data-stack/01-architecture.webp)
+
+</Frame>
+
+</div>
 
 Пользователь задает вопрос в LibreChat. Модель планирует ответ и через MCP-сервер вызывает инструменты, чтобы изучать данные и выполнять запросы к ClickHouse. Результаты возвращаются обратно, и агент формирует ответ. Langfuse, построенный на OpenTelemetry, фиксирует весь ход выполнения — от промпта до вызова инструмента и ответа, позволяет автоматически или с участием человека оценивать результаты, а также отслеживает качество, стоимость и задержку.
 

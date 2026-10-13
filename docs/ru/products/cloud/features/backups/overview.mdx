@@ -7,7 +7,6 @@ description: 'Обзор возможностей резервного копи�
 doc_type: 'справочник'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 Резервные копии базы данных позволяют восстановить сервис до предыдущего состояния на основе последней успешной резервной копии.
@@ -24,7 +23,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 В день 1 создаётся полная резервная копия, чтобы начать цепочку резервного копирования. В день 2 создаётся инкрементная резервная копия, и для восстановления доступны как полная, так и инкрементная резервные копии. К дню 7 в цепочке есть одна полная резервная копия и шесть инкрементных, и все они видимы и доступны для восстановления. В день 8 создаётся новая полная резервная копия, а в день 9, как только в новой цепочке появляются две резервные копии, предыдущая цепочка удаляется.
 
-<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Пример цепочки резервного копирования в ClickHouse Cloud" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Пример цепочки резервного копирования в ClickHouse Cloud](/images/cloud/manage/backup-chain.webp)
+
+</Frame>
+
+</div>
 
 ### Политика резервного копирования по умолчанию {#default-backup-policy}
 

@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
@@ -25,32 +24,52 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
   <Step title="أنشئ مورد ClickHouse" id="2-create-a-clickhouse-resource">
     سجّل الدخول إلى حسابك في Retool وانتقل إلى علامة التبويب *Resources*. اختر &quot;Create New&quot; -&gt; &quot;Resource&quot;:
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="إنشاء مورد جديد" />
+    <div className="ch-image-lg">
+
+    ![إنشاء مورد جديد](/images/integrations/tools/data-integration/retool/retool_01.webp)
+
+    </div>
 
     <br />
 
     حدّد &quot;JDBC&quot; من قائمة الموصلات المتاحة:
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="اختيار موصل JDBC" />
+    <div className="ch-image-lg">
+
+    ![اختيار موصل JDBC](/images/integrations/tools/data-integration/retool/retool_02.webp)
+
+    </div>
 
     <br />
 
     في معالج الإعداد، تأكد من اختيار `com.clickhouse.jdbc.ClickHouseDriver` كـ &quot;Driver name&quot;:
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="تحديد برنامج التشغيل الصحيح" />
+    <div className="ch-image-lg">
+
+    ![تحديد برنامج التشغيل الصحيح](/images/integrations/tools/data-integration/retool/retool_03.webp)
+
+    </div>
 
     <br />
 
     أدخل بيانات اعتماد ClickHouse بالتنسيق التالي: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
     إذا كان المثيل لديك يتطلب SSL أو كنت تستخدم ClickHouse Cloud، فأضف `&ssl=true` إلى سلسلة الاتصال، بحيث تصبح بالشكل `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="إدخال بيانات الاعتماد" />
+    <div className="ch-image-lg">
+
+    ![إدخال بيانات الاعتماد](/images/integrations/tools/data-integration/retool/retool_04.webp)
+
+    </div>
 
     <br />
 
     بعد ذلك، اختبر الاتصال:
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="اختبار الاتصال" />
+    <div className="ch-image-lg">
+
+    ![اختبار الاتصال](/images/integrations/tools/data-integration/retool/retool_05.webp)
+
+    </div>
 
     <br />
 

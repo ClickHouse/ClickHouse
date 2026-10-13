@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Dans cette page, nous utilisons indifféremment le terme &quot;clé de tri&quot; pour désigner la &quot;clé primaire&quot;. À strictement parler, [ces deux notions diffèrent dans ClickHouse](/fr/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key), mais dans le cadre de ce document, elles peuvent être utilisées de façon interchangeable, la clé de tri désignant les colonnes spécifiées dans le `ORDER BY` de la table.
 
 Notez qu’une clé primaire ClickHouse fonctionne [très différemment](/fr/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse) de ce que recouvre ce terme dans des bases de données OLTP comme Postgres.
@@ -122,7 +120,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 L’animation suivante montre comment un index primaire clairsemé optimisé est créé pour la table Posts de Stack Overflow. Au lieu d’indexer les lignes individuellement, l’index cible des blocs de lignes :
 
-<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="Clé primaire" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Clé primaire](/images/bestpractices/create_primary_key.webp)
+
+</Frame>
+
+</div>
 
 Si la même requête est répétée sur une table avec cette clé de tri :
 
@@ -170,7 +176,15 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 De plus, nous visualisons comment l’index clairsemé écarte tous les blocs de lignes qui ne peuvent en aucun cas contenir de correspondances pour notre requête d’exemple :
 
-<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="Clé primaire" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Clé primaire](/images/bestpractices/primary_key.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Toutes les colonnes d’une table sont triées selon la valeur de la clé de tri spécifiée, qu’elles soient ou non incluses dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l’ordre des valeurs dans toutes les autres colonnes correspondra à l’ordre des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées : l’ordre suivra alors la même sémantique qu’une clause `ORDER BY` dans une requête `SELECT`.

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este documento explica como funciona o snapshot/carregamento inicial paralelizado no ClickPipe do MySQL e aborda os parâmetros de snapshot que podem ser usados para controlá-lo.
 
 <div id="overview-mysql-snapshot">
@@ -27,7 +25,15 @@ No entanto, o ClickPipe do MySQL pode paralelizar esse processo, o que pode acel
 
 Depois de habilitar a feature flag, você deverá ver a configuração abaixo no seletor de tabelas do ClickPipe (tanto durante a criação quanto na edição de um ClickPipe):
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="Coluna de chave de partição" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coluna de chave de partição](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</Frame>
+
+</div>
 
 O ClickPipe do MySQL usa uma coluna da sua tabela de origem para particionar logicamente as tabelas de origem. Essa coluna é chamada de **coluna de chave de partição**. Ela é usada para dividir a tabela de origem em partições, que podem então ser processadas em paralelo pelo ClickPipe.
 
@@ -41,7 +47,15 @@ O ClickPipe do MySQL usa uma coluna da sua tabela de origem para particionar log
 
 Veja as configurações abaixo:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="Parâmetros do snapshot" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Parâmetros do snapshot](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</Frame>
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### Número de linhas do snapshot por partição

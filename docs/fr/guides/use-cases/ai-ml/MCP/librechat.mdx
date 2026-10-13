@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Ce guide explique comment configurer LibreChat avec un serveur MCP ClickHouse à l’aide de Docker
 > et le connecter aux jeux de données d’exemple de ClickHouse.
 
@@ -196,7 +194,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     Dans l’interface de chat, sélectionnez `clickhouse-playground` comme serveur MCP :
 
-    <Image img="/images/use-cases/AI_ML/MCP/librechat.webp" alt="Sélectionnez votre serveur MCP" size="md" />
+    <div className="ch-image-md">
+
+    ![Sélectionnez votre serveur MCP](/images/use-cases/AI_ML/MCP/librechat.webp)
+
+    </div>
 
     Vous pouvez maintenant demander au LLM d’explorer les jeux de données d’exemple de ClickHouse. Essayez :
 

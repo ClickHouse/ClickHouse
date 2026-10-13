@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Этот набор данных содержит все коммиты и изменения из репозитория ClickHouse. Его можно сгенерировать с помощью нативного инструмента `git-import`, который поставляется вместе с ClickHouse.
 
 Сгенерированные данные включают файл `tsv` для каждой из следующих таблиц:
@@ -571,11 +569,27 @@ LIMIT 10
 
 **Для добавленных и удалённых строк:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="Для добавленных и удалённых строк" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Для добавленных и удалённых строк](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
+
+</Frame>
+
+</div>
 
 **Для коммитов и авторов:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="Для коммитов и авторов" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Для коммитов и авторов](/images/getting-started/example-datasets/superset-commits-authors.webp)
+
+</Frame>
+
+</div>
 
 <div id="list-files-with-maximum-number-of-authors">
   ### Список файлов с наибольшим количеством авторов
@@ -1364,11 +1378,27 @@ LIMIT 100
 
 Диаграмма Санки (SuperSet) позволяет наглядно это показать. Обратите внимание: мы увеличиваем `LIMIT BY` до 3, чтобы получить трёх основных удаляющих код для каждого автора и сделать визуализацию более разнообразной.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Матрица авторов Superset" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Матрица авторов Superset](/images/getting-started/example-datasets/superset-authors-matrix.webp)
+
+</Frame>
+
+</div>
 
 Алексею явно нравится удалять чужой код. Давайте исключим его, чтобы получить более сбалансированную картину удаления кода.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Матрица авторов Superset v2" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Матрица авторов Superset v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
+
+</Frame>
+
+</div>
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
   ### Кто вносит наибольший вклад в процентах по дням недели?

@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Info>
   إذا كنت تستخدم أحد المزوّدين المدعومين (في الشريط الجانبي)، يُرجى الرجوع إلى الدليل الخاص بهذا المزوّد.
 </Info>
@@ -30,13 +28,37 @@ Postgres 12 فما بعده
 
 1. انقر على زر **Edit** في صفحة النظرة العامة.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp" alt="زر Edit في Cloud SQL Postgres" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![زر Edit في Cloud SQL Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+
+</Frame>
+
+</div>
 
 2. انتقل إلى Flags وغيّر `cloudsql.logical_decoding` إلى on. سيتطلب هذا التغيير إعادة تشغيل خادم Postgres.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="غيّر cloudsql.logical_decoding إلى on" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="أعد تشغيل الخادم" size="lg" border />
+<Frame>
+
+![غيّر cloudsql.logical_decoding إلى on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![أعد تشغيل الخادم](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## إنشاء مستخدم ClickPipes ومنح الأذونات
@@ -98,17 +120,49 @@ Postgres 12 فما بعده
 
 1. انتقل إلى قسم **Connections**
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="قسم Connections في Cloud SQL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![قسم Connections في Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+
+</Frame>
+
+</div>
 
 2. انتقل إلى القسم الفرعي Networking
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="القسم الفرعي Networking في Cloud SQL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![القسم الفرعي Networking في Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+
+</Frame>
+
+</div>
 
 3. أضف [عناوين IP العامة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="أضف شبكات ClickPipes إلى جدار الحماية" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="تمت إضافة شبكات ClickPipes إلى جدار الحماية" size="lg" border />
+<Frame>
+
+![أضف شبكات ClickPipes إلى جدار الحماية](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![تمت إضافة شبكات ClickPipes إلى جدار الحماية](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## ما الخطوة التالية؟

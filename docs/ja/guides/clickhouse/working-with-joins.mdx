@@ -7,8 +7,6 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse は標準的な SQL JOIN を完全にサポートしており、効率的なデータ分析を可能にします。
 このガイドでは、よく使われる JOIN の種類の一部とその使い方を、ベン図と、[relational dataset repository](https://relational.fit.cvut.cz/dataset/IMDb) 由来の正規化された [IMDB](https://en.wikipedia.org/wiki/IMDb) データセットに対するクエリ例を使って紹介します。
 
@@ -21,7 +19,15 @@ ClickHouse は標準的な SQL JOIN を完全にサポートしており、効�
 
 以下の4つのテーブルを例のデータセットから使用します。
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="IMDB スキーマ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![IMDB スキーマ](/images/starter_guides/joins/imdb_schema.webp)
+
+</Frame>
+
+</div>
 
 これら4つのテーブルのデータは、1つまたは複数のジャンルを持つ映画を表しています。
 映画の役は俳優が演じます。
@@ -55,7 +61,15 @@ ClickHouseは、次のJOINの種類をサポートしています。
 `INNER JOIN` は、結合キーで一致する各行の組み合わせごとに、左テーブルの行のカラム値と右テーブルの行のカラム値を組み合わせて返します。
 1 つの行に複数の一致がある場合は、該当するすべての一致が返されます (つまり、結合キーが一致する行については [デカルト積](https://en.wikipedia.org/wiki/Cartesian_product) が生成されます) 。
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Inner Join](/images/starter_guides/joins/inner_join.webp)
+
+</Frame>
+
+</div>
 
 このクエリは、`movies` テーブルと `genres` テーブルを結合して、各映画のジャンルを取得します。
 
@@ -103,7 +117,15 @@ LIMIT 10;
 
 `FULL OUTER JOIN` のクエリは `LEFT OUTER JOIN` と `RIGHT OUTER JOIN` を組み合わせたもので、左テーブルおよび右テーブルで一致しない行の値を、それぞれ右テーブルおよび左テーブルのカラムのデフォルト値とともに返します。
 
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Outer Join](/images/starter_guides/joins/outer_join.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   ClickHouse は、[設定](/ja/reference/settings/session-settings/join#join_use_nulls)により [デフォルト値](/ja/reference/statements/create/table#default_values) の代わりに [NULL](/ja/reference/syntax#null) を返すようにできます (ただし、[パフォーマンス上の理由](/ja/reference/data-types/nullable#storage-features)から、あまり推奨されません) 。
@@ -148,7 +170,15 @@ LIMIT 10;
 `CROSS JOIN` は、結合キーを考慮せずに、2つのテーブルの完全なデカルト積を生成します。
 左テーブルの各行は、右テーブルの各行と組み合わされます。
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="クロス結合" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![クロス結合](/images/starter_guides/joins/cross_join.webp)
+
+</Frame>
+
+</div>
 
 したがって、次のクエリでは、`movies` テーブルの各行が `genres` テーブルの各行と組み合わされます。
 
@@ -248,7 +278,15 @@ ALL
 
 `RIGHT SEMI JOIN`クエリも同様で、左テーブルに少なくとも1つの一致がある右テーブルのすべての行について値を返しますが、返されるのは最初に見つかった一致のみです。
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="セミ結合" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![セミ結合](/images/starter_guides/joins/semi_join.webp)
+
+</Frame>
+
+</div>
 
 このクエリは、2023年に映画に出演したすべての俳優・女優を見つけます。
 通常の (`INNER`) JOINでは、2023年に複数の役を演じていた場合、同じ俳優・女優が複数回表示されることに注意してください。
@@ -287,7 +325,15 @@ LIMIT 10;
 
 同様に、`RIGHT ANTI JOIN` は、右テーブルのうち一致しないすべての行のカラム値を返します。
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Anti Join](/images/starter_guides/joins/anti_join.webp)
+
+</Frame>
+
+</div>
 
 前の外部結合のクエリ例は、データセット内にジャンルを持たない映画を見つけるために、anti join を使って次のように表現することもできます:
 
@@ -327,7 +373,15 @@ LIMIT 10;
 
 また、`INNER ANY JOIN` はデカルト積を無効化した `INNER JOIN` です。
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Any Join](/images/starter_guides/joins/any_join.webp)
+
+</Frame>
+
+</div>
 
 次の例では、[values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [table function](/ja/reference/functions/table-functions/index) を使って構築した 2 つの一時テーブル (`left_table` と `right_table`) による抽象的な例で、`LEFT ANY JOIN` を示します。
 
@@ -402,14 +456,30 @@ INNER ANY JOIN right_table AS r ON l.c = r.c;
 
 これは時系列分析で特に有用で、クエリの複雑さを大幅に抑えられます。
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Join](/images/starter_guides/joins/asof_join.webp)
+
+</Frame>
+
+</div>
 
 次の例では、株式市場データの時系列分析を行います。
 `quotes` テーブルには、1日の特定時刻における株式シンボルのクオートが含まれます。
 この例のデータでは、価格は 10 秒ごとに更新されます。
 `trades` テーブルにはシンボルの取引が記録されています。つまり、あるシンボルの特定数量が特定時刻に買われたことを表します。
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Example](/images/starter_guides/joins/asof_example.webp)
+
+</Frame>
+
+</div>
 
 各取引の実際のコストを計算するには、取引を最も近いクオート時刻に対応付ける必要があります。
 

@@ -7,8 +7,6 @@ title: 'عمليات الإنشاء قبل الإزالة (MBB) في ClickHouse 
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تُجري ClickHouse Cloud عمليات ترقية العنقود وتوسيع نطاقه باستخدام نهج **Make Before Break** ‏(MBB).
 في هذا النهج، تُضاف نسخ متماثلة جديدة إلى العنقود قبل إزالة النسخ المتماثلة القديمة منه.
 وذلك على عكس نهج الإزالة أولًا، حيث تُزال النسخ المتماثلة القديمة أولًا قبل إضافة النسخ الجديدة.
@@ -21,7 +19,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 توضح الصورة أدناه كيف يمكن أن يحدث ذلك لعنقود يحتوي على 3 نسخ متماثلة عند توسيع الخدمة رأسيًا:
 
-<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="رسم تخطيطي توضيحي لعنقود يحتوي على 3 نسخ متماثلة جرى توسيعه رأسيًا" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![رسم تخطيطي توضيحي لعنقود يحتوي على 3 نسخ متماثلة جرى توسيعه رأسيًا](/images/cloud/features/mbb/vertical_scaling.webp)
+
+</Frame>
+
+</div>
 
 بوجه عام، يوفّر MBB تجربة توسعة وترقية سلسة وأقل تعطيلًا مقارنةً بنهج الإزالة أولًا الذي كان مستخدمًا سابقًا.
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['custom roles', 'security', 'permissions']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This guide is intended for users with the Admin role in ClickHouse Cloud.
 
 ClickHouse Cloud customers may select from pre-defined system roles or create custom roles to assign to users. For more information on system roles and their associated permissions, review [Console roles and permissions](/products/cloud/reference/security/console-roles). This guide provides details for managing custom roles.
@@ -22,25 +20,57 @@ Custom roles can contain a combination of organization, service, and database pe
 
 From the services page, select the name of your organization. Select the `Users and roles` menu item from the popup menu.
 
-<Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title={<>Select the <code>Roles</code> tab</>} id="roles-tab">
 
 Select the `Roles` tab from the top middle of the screen.
 
-<Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title={<>Select <code>Create new role</code> from the upper right</>} id="create-new-role">
 
 Select the `Create new role` button in the upper right of the screen.
 
-<Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Name the role" id="name-the-role">
 
 Enter a descriptive role name. This will be the name you will see when assigning roles to users and API keys.
 
-<Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title={<>Click <code>Allow</code> and select permission scope</>} id="scope-permissions">
 
@@ -56,13 +86,29 @@ Ensure users who will log into the console have a minimum of Organization > Acce
 To access the **Data Sources** tab, the role currently requires the `Manage selected services` permission.
 </Info>
 
-<Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Review your new role" id="review-role">
 
 Review permissions assigned to your new role before finalizing. Click `Create role` when done.
 
-<Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -84,7 +130,15 @@ Cloud-managed database roles replace manually assigned [`sql-console-role:<email
 
 Custom database roles on a service depend on [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) and are not applied while it is disabled. Before adding a `Data` policy to a role, navigate to the service, open `Settings`, and find the `JWT authentication` card in the `Security` section. Make sure the `SQL Console` toggle is enabled.
 
-<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="JWT authentication card with the SQL Console toggle enabled" size="lg" force/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![JWT authentication card with the SQL Console toggle enabled](/images/cloud/security/jwt/jwt-sql-console-toggle.png)
+
+</Frame>
+
+</div>
 
 <Steps>
 <Step title="Open the role dialog" id="open-role-dialog">
@@ -113,7 +167,15 @@ Select the service the policy applies to. Add more services to apply the same `R
 
 Select `Read-only`, `Admin`, or `Custom` access. With `Custom` access, define specific data access permissions using ClickHouse [`GRANT` statements](/reference/statements/grant). `Custom` access can only be selected when the policy targets a single service; to define custom permissions for multiple services, add a separate `Data` policy for each service.
 
-<Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Create new role dialog with data permissions defined by custom grant statements" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Create new role dialog with data permissions defined by custom grant statements](/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create the role" id="create-role-with-data-permissions">
 

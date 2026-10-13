@@ -8,8 +8,6 @@ show_related_blogs: false
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > В этом руководстве показано, как выполнить миграцию данных из Snowflake в ClickHouse.
 
 Для миграции данных между Snowflake и ClickHouse требуется объектное хранилище,
@@ -19,7 +17,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <Steps>
   <Step title="Экспорт данных из Snowflake" id="1-exporting-data-from-snowflake">
-    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Миграция из Snowflake в ClickHouse" />
+    <div className="ch-image-md">
+
+    ![Миграция из Snowflake в ClickHouse](/images/migrations/migrate_snowflake_clickhouse.webp)
+
+    </div>
 
     Для экспорта данных из Snowflake требуется использовать внешний stage, как показано на диаграмме выше.
 

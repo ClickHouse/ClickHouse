@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Bindplane', 'OTel', 'ClickStack', 'OpenTelemetry', 'управление коллекторами']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -146,7 +144,11 @@ Bindplane решает эту задачу, предоставляя:
       Bindplane предоставляет безопасные выкатки в один клик с проверкой. Вы можете в реальном времени отслеживать состояние коллекторов, пропускную способность и любые ошибки через интерфейс Bindplane.
     </Tip>
 
-    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Сигналы телеметрии в ClickStack через Bindplane" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Сигналы телеметрии в ClickStack через Bindplane](/images/clickstack/bindplane/bindplane-configuration.webp)
+
+    </div>
   </Step>
 
   <Step title="Проверьте телеметрию в ClickStack" id="verify-telemetry">
@@ -157,7 +159,11 @@ Bindplane решает эту задачу, предоставляя:
     3. Вы должны увидеть телеметрические данные, поступающие от коллекторов под управлением Bindplane
     4. Данные, поступающие в ClickStack, уже обогащены и структурированы процессорами Bindplane
 
-    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Сигналы телеметрии в ClickStack через Bindplane" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Сигналы телеметрии в ClickStack через Bindplane](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+
+    </div>
   </Step>
 </Steps>
 

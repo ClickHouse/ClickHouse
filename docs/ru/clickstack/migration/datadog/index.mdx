@@ -8,7 +8,6 @@ doc_type: 'guide'
 keywords: ['Datadog', 'приёмник Datadog', 'агент Datadog', 'OpenTelemetry Collector', 'миграция', 'обсервабилити', 'ClickStack']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
@@ -23,7 +22,15 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * **Упростить миграцию** — перейти на ClickStack, сохранив текущий уровень сбора данных и постепенно внедряя инструментацию OpenTelemetry.
 * **Использовать оба стека параллельно** в долгосрочной перспективе, применяя каждую платформу там, где она подходит лучше всего.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="Миграция агентов Datadog" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Миграция агентов Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</Frame>
+
+</div>
 
 <div id="why-run-clickstack-alongside-datadog">
   ## Почему стоит запускать ClickStack вместе с Datadog
@@ -47,17 +54,41 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 В типичном развертывании OpenTelemetry телеметрия сначала отправляется в OpenTelemetry Collector, а уже затем попадает в бэкенд. Коллектор получает данные от коллекторов, работающих в режиме агента, и от [OpenTelemetry SDKs](/ru/clickstack/ingesting-data/sdks/index), которыми инструментированы приложения, применяет фильтрацию и преобразования, объединяет события в батчи и экспортирует их в целевой пункт назначения.
 
-<Image img="/images/use-cases/observability/simple_otel_pipeline.png" alt="Простой конвейер OTel" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Простой конвейер OTel](/images/use-cases/observability/simple_otel_pipeline.png)
+
+</Frame>
+
+</div>
 
 [Приёмник Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) добавляет в эту архитектуру ещё один источник входящих данных. Он предоставляет конечную точку, которая понимает протоколы, используемые агентами и SDK Datadog, и преобразует входящие полезные нагрузки Datadog в модель данных OpenTelemetry. После этого они проходят через стандартный конвейер коллектора, как и любая другая телеметрия.
 
 Существующие агенты Datadog достаточно просто перенастроить так, чтобы они отправляли журналы и трассировки в приёмник, работающий на коллекторе ClickStack. Приложения продолжают использовать существующие SDK Datadog, а агенты, уже развернутые в вашей инфраструктуре, остаются на месте.
 
-<Image img="/images/use-cases/observability/datadog_to_otel.png" alt="Datadog в OpenTelemetry" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Datadog в OpenTelemetry](/images/use-cases/observability/datadog_to_otel.png)
+
+</Frame>
+
+</div>
 
 Поскольку конвейер коллектора может использовать несколько exporter, одну и ту же телеметрию можно одновременно отправлять и в Datadog, и в ClickStack. Именно это делает возможными параллельную оценку и длительную параллельную эксплуатацию: вы сравниваете обе платформы на идентичных данных, а затем отдельно принимаете решение о миграции.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="Миграция агентов Datadog" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Миграция агентов Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</Frame>
+
+</div>
 
 <div id="what-the-receiver-handles">
   ## Что обрабатывает приёмник
@@ -201,7 +232,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
       <Step title="Скопируйте свой ключ API для приёма данных" id="copy-ingestion-key-oss">
         В интерфейсе ClickStack (HyperDX) выберите своего пользователя в левом нижнем углу, перейдите в **Team Settings &gt; API Keys** и скопируйте **Ingestion API Key**.
 
-        <Image img="/images/use-cases/observability/hyperdx_ingestion_key.png" alt="Ключ приёма данных ClickStack" size="lg" background />
+        <div className="ch-image-lg">
+
+        ![Ключ приёма данных ClickStack](/images/use-cases/observability/hyperdx_ingestion_key.png)
+
+        </div>
       </Step>
 
       <Step title="Настройте агент Datadog" id="configure-datadog-agent-oss">
@@ -275,7 +310,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
     Чтобы запустить приложение, следуйте [инструкциям в README](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation).
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="Приложение HackerNews Analyzer, запущенное локально" />
+    <div className="ch-image-lg">
+
+    ![Приложение HackerNews Analyzer, запущенное локально](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
   </Step>
 
   <Step title="Запустите ClickStack с включённым приёмником" id="launch-clickstack-example">
@@ -314,11 +353,23 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
   <Step title="Изучите телеметрию в ClickStack" id="explore-telemetry">
     Откройте интерфейс HyperDX по адресу [http://localhost:8080](http://localhost:8080) и изучите трассировки, журналы и метрики, собранные агентом Datadog.
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_2.png" alt="Datadog в ClickStack, трассировки 2" size="lg" background />
+    <div className="ch-image-lg">
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_1.png" alt="Datadog в ClickStack, трассировки 1" size="lg" background />
+    ![Datadog в ClickStack, трассировки 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_3.png" alt="Datadog в ClickStack, трассировки 3" size="lg" background />
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Datadog в ClickStack, трассировки 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Datadog в ClickStack, трассировки 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+
+    </div>
   </Step>
 </Steps>
 

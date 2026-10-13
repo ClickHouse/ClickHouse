@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
@@ -31,7 +30,11 @@ O DbVisualizer está disponível em https://www.dbvis.com/download/
   <Step title="Gerenciamento integrado do driver JDBC" id="2-built-in-jdbc-driver-management">
     O DbVisualizer inclui os drivers JDBC mais atualizados para o ClickHouse. Ele tem gerenciamento completo de driver JDBC integrado, apontando para os lançamentos mais recentes, bem como para versões históricas dos drivers.
 
-    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Interface do gerenciador de drivers do DbVisualizer mostrando a configuração do ClickHouse JDBC driver" />
+    <div className="ch-image-lg">
+
+    ![Interface do gerenciador de drivers do DbVisualizer mostrando a configuração do ClickHouse JDBC driver](/images/integrations/sql-clients/dbvisualizer-driver-manager.webp)
+
+    </div>
   </Step>
 
   <Step title="Conecte-se ao ClickHouse" id="3-connect-to-clickhouse">

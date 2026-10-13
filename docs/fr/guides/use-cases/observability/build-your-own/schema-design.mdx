@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Nous recommandons aux utilisateurs de toujours créer leur propre schéma pour les logs et les traces pour les raisons suivantes :
 
 * **Choisir une clé primaire** - Les schémas par défaut utilisent un `ORDER BY` optimisé pour des modèles d’accès spécifiques. Il est peu probable que vos modèles d’accès y correspondent.
@@ -256,7 +254,15 @@ Les [vues matérialisées](/fr/concepts/features/materialized-views/index) offre
 
 Les vues matérialisées permettent de déplacer le coût du calcul du moment de l&#39;exécution de la requête vers le moment de l’insertion. Une vue matérialisée ClickHouse n&#39;est en réalité qu&#39;un trigger qui exécute une requête sur des blocs de données lorsqu&#39;ils sont insérés dans une table. Les résultats de cette requête sont insérés dans une seconde table « cible ».
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="Vue matérialisée" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Vue matérialisée](/images/use-cases/observability/observability-10.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **Mises à jour en temps réel**
@@ -411,7 +417,15 @@ FROM otel_logs
 
 Ce qui précède est illustré ci-dessous :
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Otel MV](/images/use-cases/observability/observability-11.webp)
+
+</Frame>
+
+</div>
 
 Si nous redémarrons maintenant la config du collector utilisée dans [&quot;Exporter vers ClickHouse&quot;](/fr/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse), les données apparaîtront dans `otel_logs_v2` au format souhaité. Notez l’utilisation de fonctions typées d’extraction JSON.
 
@@ -645,7 +659,15 @@ En outre, les timestamps, bien qu’ils bénéficient de l’encodage delta en t
 
 Les [dictionnaires](/fr/reference/statements/create/dictionary) sont une [fonctionnalité clé](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) de ClickHouse : ils fournissent une représentation [clé-valeur](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) en mémoire de données provenant de diverses [sources](/fr/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimisée pour des requêtes de recherche à très faible latence.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="Observabilité et dictionnaires" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Observabilité et dictionnaires](/images/use-cases/observability/observability-12.webp)
+
+</Frame>
+
+</div>
 
 Cela s’avère utile dans divers scénarios, qu’il s’agisse d’enrichir à la volée les données ingérées sans ralentir le processus d’ingestion, ou d’améliorer les performances des requêtes de manière générale, en particulier pour les jointures.
 Même si les jointures sont rarement nécessaires dans les cas d’usage d’observabilité, les dictionnaires restent utiles pour l’enrichissement, aussi bien à l’insertion qu’au moment de la requête. Nous donnons ci-dessous des exemples des deux approches.
@@ -1473,7 +1495,15 @@ En théorie, cette possibilité peut être utilisée pour fournir plusieurs clé
   Les projections offrent bon nombre des mêmes possibilités que les vues matérialisées, mais doivent être utilisées avec parcimonie, ces dernières étant souvent à privilégier. Vous devez en comprendre les inconvénients et savoir dans quels cas elles sont appropriées. Par exemple, même si les projections peuvent être utilisées pour précalculer des agrégations, nous recommandons d’utiliser des vues matérialisées pour cela.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="Observability et projections" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Observability et projections](/images/use-cases/observability/observability-13.webp)
+
+</Frame>
+
+</div>
 
 Considérez la requête suivante, qui filtre notre table `otel_logs_v2` sur les codes d’erreur 500. Il s’agit probablement d’un schéma d’accès courant pour la journalisation, les utilisateurs souhaitant filtrer par codes d’erreur :
 

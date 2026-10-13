@@ -11,8 +11,6 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse に接続するための公式 C# クライアントです。
 クライアントのソースコードは [GitHubリポジトリ](https://github.com/ClickHouse/clickhouse-cs) で公開されています。
 当初は [Oleg V. Kozlyuk](https://github.com/DarkWanderer) によって開発されました。
@@ -310,11 +308,27 @@ ClickHouse Cloud サービスの詳細は、ClickHouse Cloud コンソールで�
 
 サービスを選択し、**Connect** をクリックします。
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud service connect button" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud service connect button](/images/_snippets/cloud-connect-button.webp)
+
+</Frame>
+
+</div>
 
 **C#** を選択します。接続情報が下に表示されます。
 
-<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="ClickHouse Cloud C# connection details" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud C# connection details](/images/_snippets/connection-details-csharp.webp)
+
+</Frame>
+
+</div>
 
 セルフマネージドの ClickHouse を使用している場合、接続情報は ClickHouse 管理者が設定します。
 

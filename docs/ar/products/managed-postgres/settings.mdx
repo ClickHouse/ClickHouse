@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
 
@@ -18,7 +17,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## إجراءات الخدمة والتحجيم
 </div>
 
-<Image img="/images/managed-postgres/service-actions.webp" alt="إجراءات الخدمة والتحجيم" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![إجراءات الخدمة والتحجيم](/images/managed-postgres/service-actions.webp)
+
+</Frame>
+
+</div>
 
 يوفّر شريط الأدوات **إجراءات الخدمة** عناصر تحكم لإدارة مثيل ClickHouse Managed Postgres لديك:
 
@@ -33,7 +40,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## تغيير معلمات التكوين
 </div>
 
-<Image img="/images/managed-postgres/postgres-parameters.webp" alt="تكوين معلمات Postgres" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![تكوين معلمات Postgres](/images/managed-postgres/postgres-parameters.webp)
+
+</Frame>
+
+</div>
 
 لتعديل معلمة، حدِّد زر **تعديل المعلمات**. ثم حدِّد المعلمات التي تريد تعديلها وغيّر قيمها وفقًا لذلك. بعد أن تنتهي من التغييرات وتكون راضيًا عنها، اضغط زر **حفظ التغييرات**.
 

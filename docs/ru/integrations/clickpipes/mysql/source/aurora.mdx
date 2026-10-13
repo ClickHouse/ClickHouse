@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 Это пошаговое руководство показывает, как настроить Amazon Aurora MySQL для репликации данных в ClickHouse Cloud с помощью [MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index). Ответы на часто задаваемые вопросы о CDC в MySQL см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
@@ -25,7 +24,11 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
   <Step title="Включение бинарного логирования через автоматическое резервное копирование" id="enable-binlog-logging">
     Функция автоматического резервного копирования определяет, включено ли бинарное логирование для MySQL. Автоматическое резервное копирование можно настроить для вашего экземпляра в RDS Console, перейдя в **Modify** &gt; **Additional configuration** &gt; **Backup** и установив флажок **Enable automated backups** (если он еще не установлен).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в Aurora" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Включение автоматического резервного копирования в Aurora](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     Мы рекомендуем установить для **Backup retention period** достаточно большое значение в зависимости от сценария использования репликации.
   </Step>
@@ -57,13 +60,29 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
   Если у вас кластер MySQL, указанные ниже параметры находятся в группе параметров [DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html), а не в группе параметров экземпляра DB.
 </Tip>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp" alt="Где найти группу параметров в Aurora" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Где найти группу параметров в Aurora](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Нажмите ссылку группы параметров — откроется её отдельная страница. В правом верхнем углу должна быть кнопка **Edit**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="Редактирование группы параметров" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Редактирование группы параметров](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -71,15 +90,39 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
 
 1. `binlog_format` — `ROW`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Формат binlog: ROW" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Формат binlog: ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</Frame>
+
+</div>
 
 2. `binlog_row_metadata` — `FULL`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Метаданные строк binlog" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Метаданные строк binlog](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</Frame>
+
+</div>
 
 3. `binlog_row_image` — `FULL`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Образ строки binlog" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Образ строки binlog](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -106,7 +149,15 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
 7. Нажмите **Save Changes** в правом верхнем углу.
 8. Перезагрузите экземпляр, чтобы изменения вступили в силу.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp" alt="Режим GTID включен" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Режим GTID включен](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+
+</Frame>
+
+</div>
 
 <div id="configure-database-user">
   ## Настройте пользователя базы данных
@@ -149,9 +200,25 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
 
 Чтобы ограничить трафик к вашему экземпляру Aurora MySQL, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в **Inbound rules** вашей группы безопасности Aurora.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Где найти группу безопасности в Aurora MySQL?" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение Inbound rules для указанной выше группы безопасности" size="lg" border />
+<Frame>
+
+![Где найти группу безопасности в Aurora MySQL?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Изменение Inbound rules для указанной выше группы безопасности](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</Frame>
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Доступ через AWS PrivateLink по закрытой сети

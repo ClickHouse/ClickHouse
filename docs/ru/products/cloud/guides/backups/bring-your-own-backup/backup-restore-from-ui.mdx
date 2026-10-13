@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['резервные копии', 'аварийное восстановление', 'защита данных', 'восстановление', 'возможности Cloud']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <Note>
   Автоматические резервные копии в ваш внешний бакет являются полными и независимыми. Они выполняются с той частотой и в то время начала, которые настроены для сервиса (по умолчанию каждые 24 часа). ClickHouse также каждые 24 часа создаёт отдельную резервную копию в бакете, управляемом ClickHouse; эта периодичность фиксирована.
 </Note>
@@ -39,7 +37,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     * a. Получите ARN на странице настроек сервиса ClickHouse Cloud в разделе Network security information. Он выглядит примерно так:
 
-    <Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
+    <div className="ch-image-lg">
+
+    ![AWS S3 ARN](/images/cloud/manage/backups/arn.webp)
+
+    </div>
 
     * b. Для этой роли создайте политику доверия следующим образом:
 
@@ -112,13 +114,21 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Change external backup" id="configure-external-bucket">
     На странице Settings нажмите Set up external backup:
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройка ARN роли AWS IAM и параметров S3 бакета" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     На следующем экране укажите ARN только что созданной роли AWS IAM и URL S3 бакета в следующем формате:
 
-    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Настройка ARN роли AWS IAM и параметров S3 бакета" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Настройка ARN роли AWS IAM и параметров S3 бакета](/images/cloud/manage/backups/configure_arn_s3_details.webp)
+
+    </div>
   </Step>
 
   <Step title="Сохранение изменений" id="save-changes">
@@ -137,7 +147,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     На странице Backups эти резервные копии из вашего бакета будут отображаться в отдельной таблице,
     как показано ниже:
 
-    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/view_backups.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -161,7 +175,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Нажмите ссылку “access or restore a backup” над списком резервных копий в
     интерфейсе, чтобы получить SQL-команду для восстановления резервной копии. Команда будет выглядеть так:
 
-    <Image img="/images/cloud/manage/backups/backup_command.webp" alt="Получение SQL-команды для восстановления резервной копии" size="md" />
+    <div className="ch-image-md">
+
+    ![Получение SQL-команды для восстановления резервной копии](/images/cloud/manage/backups/backup_command.webp)
+
+    </div>
 
     <Warning>
       **Перемещение резервных копий в другое место**
@@ -233,13 +251,21 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Change external backup" id="gcp-configure-external-bucket">
     На странице `Settings` нажмите `Change external backup`
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройка HMAC-ключа и секрета GCP" id="gcp-configure-gcp-hmac-key-and-secret">
     Во всплывающем окне укажите путь к бакету GCP, HMAC-ключ и Secret, созданные в предыдущем разделе.
 
-    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Настройка HMAC-ключа и секрета GCP" size="md" />
+    <div className="ch-image-md">
+
+    ![Настройка HMAC-ключа и секрета GCP](/images/cloud/manage/backups/gcp_configure.webp)
+
+    </div>
   </Step>
 
   <Step title="Save External Bucket" id="gcp-save-external-bucket">
@@ -257,7 +283,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Просмотр резервных копий, сохранённых в вашем бакете" id="gcp-view-backups-stored-in-your-bucket">
     На странице Backups эти резервные копии из вашего бакета должны отображаться в отдельной таблице, как показано ниже:
 
-    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/gcp_stored_backups.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -276,7 +306,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     вы можете выбрать нужную резервную копию в раскрывающемся списке, чтобы получить команду восстановления
     именно для неё. В команду также потребуется добавить свой секретный ключ доступа:
 
-    <Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="Получение SQL-команды для восстановления резервной копии" size="md" />
+    <div className="ch-image-md">
+
+    ![Получение SQL-команды для восстановления резервной копии](/images/cloud/manage/backups/gcp_restore_command.webp)
+
+    </div>
 
     <Warning>
       **Перемещение резервных копий в другое расположение**
@@ -333,14 +367,22 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Change external backup" id="azure-configure-external-bucket">
     На странице `Settings` нажмите `Change external backup`
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="Укажите строку подключения и имя контейнера для вашей учётной записи хранилища Azure" id="azure-provide-connection-string-and-container-name-azure">
     На следующем экране укажите Connection String и Container Name для вашей
     учётной записи хранилища Azure, созданной в предыдущем разделе:
 
-    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Укажите строку подключения и имя контейнера для вашей учётной записи хранилища Azure" size="md" />
+    <div className="ch-image-md">
+
+    ![Укажите строку подключения и имя контейнера для вашей учётной записи хранилища Azure](/images/cloud/manage/backups/azure_connection_details.webp)
+
+    </div>
   </Step>
 
   <Step title="Save External Bucket" id="azure-save-external-bucket">
@@ -359,7 +401,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     На странице Backups эти резервные копии из вашего бакета должны отображаться в отдельной таблице,
     как показано ниже:
 
-    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="md" />
+    <div className="ch-image-md">
+
+    ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/view_backups_azure.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -380,7 +426,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     команду восстановления именно для нее. В команду нужно будет добавить строку подключения
     к вашей учетной записи хранилища Azure.
 
-    <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Восстановление резервных копий в Azure" size="md" />
+    <div className="ch-image-md">
+
+    ![Восстановление резервных копий в Azure](/images/cloud/manage/backups/restore_backups_azure.webp)
+
+    </div>
 
     <Warning>
       **Перемещение резервных копий в другое место**

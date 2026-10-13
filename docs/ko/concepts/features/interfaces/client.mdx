@@ -6,8 +6,6 @@ title: 'ClickHouse Client'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse는 ClickHouse 서버에 직접 SQL 쿼리를 실행할 수 있는 네이티브 command-line client를 제공합니다.
 이 client는 대화형 모드(interactive mode)와 배치 모드(배치 모드)를 모두 지원하며, 각각 실시간 쿼리 실행과 스크립팅 및 자동화에 사용할 수 있습니다.
 쿼리 결과는 터미널에 표시하거나 파일로 내보낼 수 있으며, Pretty, CSV, JSON 등을 포함한 모든 ClickHouse 출력 [포맷](/ko/reference/formats/index)을 지원합니다.
@@ -68,7 +66,15 @@ Connected to ClickHouse server version 24.12.2.
 
 ClickHouse Cloud 서비스의 연결 정보는 ClickHouse Cloud 콘솔에서 확인할 수 있습니다. 연결할 서비스를 선택한 다음 **Connect**를 클릭하십시오:
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud 서비스 연결 버튼" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud 서비스 연결 버튼](/images/_snippets/cloud-connect-button.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -76,7 +82,15 @@ ClickHouse Cloud 서비스의 연결 정보는 ClickHouse Cloud 콘솔에서 확
 
 **Native**를 선택하면 예시 `clickhouse-client` 명령과 함께 연결 세부 정보가 표시됩니다:
 
-<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="ClickHouse Cloud 네이티브 TCP 연결 세부 정보" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud 네이티브 TCP 연결 세부 정보](/images/_snippets/connection-details-native.webp)
+
+</Frame>
+
+</div>
 
 ### 설정 파일에 연결 정보 저장하기 {#connection-credentials}
 

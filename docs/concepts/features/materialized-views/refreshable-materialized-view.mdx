@@ -6,13 +6,19 @@ keywords: ['refreshable materialized view', 'refresh', 'materialized views', 'sp
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 [Refreshable materialized views](/reference/statements/create/view#refreshable-materialized-view) are conceptually similar to materialized views in traditional OLTP databases, storing the result of a specified query for quick retrieval and reducing the need to repeatedly execute resource-intensive queries. Unlike ClickHouse's [incremental materialized views](/concepts/features/materialized-views/incremental-materialized-view), this requires the periodic execution of the query over the full dataset - the results of which are stored in a target table for querying. This result set should, in theory, be smaller than the original dataset, allowing the subsequent query to execute faster.
 
 The diagram explains how Refreshable Materialized Views work:
 
-<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="Refreshable materialized view diagram"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Refreshable materialized view diagram](/images/materialized-view/refreshable-materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 You can also see the following video:
 

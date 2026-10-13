@@ -9,8 +9,8 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import GatherCredentials from '/snippets/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/clickstack/_create_ingestion_user.mdx';
 
 This guide takes you from an empty Managed ClickStack service all the way to logs, metrics, traces, and session replays flowing from a real application. You'll deploy a new OpenTelemetry collector (or adapt an existing one if you have one) against your service, instrument a sample Node.js application with no changes to its business logic, then explore the telemetry in the ClickStack UI.
@@ -216,7 +216,15 @@ The ClickHouse data source defaults to the public read-only demo cluster, so the
 
 Open [http://localhost:5001](http://localhost:5001). You will see a year selector, summary statistics, an activity chart, top users and domains tables, and a search box. Click around: switch years, drill into stories.
 
-<Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="The HackerNews Analyzer application running locally"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![The HackerNews Analyzer application running locally](/images/clickstack/getting-started/hackernews_main.webp)
+
+</Frame>
+
+</div>
 
 At this point the application is running but uninstrumented. ClickStack shows no data: it is waiting for telemetry. This is the "before" state.
 </Step>
@@ -305,31 +313,79 @@ Reload the browser tab so Vite serves the updated bundle, then refresh the app a
 
 Open your service in the [ClickHouse Cloud console](https://console.clickhouse.cloud) and select **ClickStack** from the left menu, then **Start Ingestion**.
 
-<Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Launch ClickStack" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Launch ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+
+</Frame>
+
+</div>
 
 The next step can be skipped, as you've already configured your collector. Click **Launch ClickStack** to continue.
 
 ClickStack will open in a new tab and you should be automatically directed to the **Getting Started** page. If not, select **Getting Started** from the left-hand menu, then click **Start Ingestion** followed by **Next**.
 
-<Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
+
+</Frame>
+
+</div>
 
 ClickStack should automatically detect your tables and telemetry data, allowing you to proceed. Select **Start Exploring** to begin exploring your data.
 
-<Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
+
+</Frame>
+
+</div>
 
 Now view the data the application is producing:
 
 1. Go to **Search** and filter to the last 5 minutes. Logs for `hn-analyzer-api` stream in.
 
-<Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack Logs"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack Logs](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+
+</Frame>
+
+</div>
 
 2. Click into a request and walk up the trace. You will see the Express handler span, a child HTTP span pointing at the ClickHouse cluster with real network duration, and correlated `console.log` records on the same trace.
 
-<Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack Traces"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack Traces](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+
+</Frame>
+
+</div>
 
 3. Open **Session Replay** to play back a scrubbable video of a browser session, synced to the trace timeline.
 
-<Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack Sessions"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack Sessions](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+
+</Frame>
+
+</div>
 
 Logs, metrics, traces, and session replays all land in the same UI, share the same query language, and are correlated automatically.
 

@@ -6,8 +6,6 @@ keywords: ['aws', 'Amazon', 'marketplace', 'الفوترة', 'الالتزام',
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 ابدأ استخدام ClickHouse Cloud على [AWS Marketplace](https://aws.amazon.com/marketplace) من خلال عقد التزام.
 يتيح عقد الالتزام، المعروف أيضًا باسم Private Offer، للعملاء الالتزام بإنفاق مبلغ معين على ClickHouse Cloud خلال فترة زمنية محددة.
 
@@ -34,7 +32,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="اقبل عرضك الخاص" id="private-offer-accept">
     يُفترض أنك تلقيت رسالة بريد إلكتروني تتضمن رابطًا لمراجعة عرضك الخاص وقبوله.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_1.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
+    <div className="ch-image-md">
+
+    ![رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace](/images/cloud/reference/mp_committed_spend_1.webp)
+
+    </div>
   </Step>
 
   <Step title="راجع رابط العرض" id="review-offer-link">
@@ -47,14 +49,22 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     من الضروري في هذه المرحلة أن تتم إعادة توجيهك إلى ClickHouse Cloud، ثم إما تسجيل حساب جديد أو تسجيل الدخول باستخدام حساب حالي.
     ومن دون إكمال هذه الخطوة، لن نتمكن من ربط عقد AWS Marketplace الخاص بك بـ ClickHouse Cloud.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_2.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
+    <div className="ch-image-md">
+
+    ![رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace](/images/cloud/reference/mp_committed_spend_2.webp)
+
+    </div>
   </Step>
 
   <Step title="سجّل الدخول إلى ClickHouse Cloud" id="login-cloud">
     بمجرد إعادة توجيهك إلى ClickHouse Cloud، يمكنك إما تسجيل الدخول باستخدام حساب حالي أو تسجيل حساب جديد.
     هذه الخطوة ضرورية حتى نتمكن من ربط مؤسسة ClickHouse Cloud الخاصة بك بالفوترة عبر AWS Marketplace.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_3.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
+    <div className="ch-image-md">
+
+    ![رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace](/images/cloud/reference/mp_committed_spend_3.webp)
+
+    </div>
   </Step>
 
   <Step title="سجّل إذا كنت مستخدمًا جديدًا" id="register">
@@ -65,9 +75,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     لاحظ أنه إذا كنت مستخدمًا جديدًا، فستحتاج أيضًا إلى تقديم بعض المعلومات الأساسية عن نشاطك التجاري.
     راجع لقطات الشاشة أدناه.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_4.png" size="md" alt="قدّم معلومات النشاط التجاري" />
+    <div className="ch-image-md">
 
-    <Image img="/images/cloud/reference/mp_committed_spend_5.png" size="md" alt="قدّم معلومات النشاط التجاري" />
+    ![قدّم معلومات النشاط التجاري](/images/cloud/reference/mp_committed_spend_4.png)
+
+    </div>
+
+    <div className="ch-image-md">
+
+    ![قدّم معلومات النشاط التجاري](/images/cloud/reference/mp_committed_spend_5.png)
+
+    </div>
 
     أما إذا كنت مستخدمًا حاليًا في ClickHouse Cloud، فما عليك سوى تسجيل الدخول باستخدام بيانات الاعتماد الخاصة بك.
   </Step>
@@ -75,12 +93,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="أنشئ مؤسسة للفوترة أو اختر واحدة موجودة" id="create-select-org-to-bill">
     بعد تسجيل الدخول بنجاح، يمكنك تحديد ما إذا كنت تريد إنشاء مؤسسة جديدة لتتم فوترتها بموجب عقد marketplace هذا، أو اختيار مؤسسة حالية لتتم فوترتها بموجب هذا العقد.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_6.webp" size="md" alt="أنشئ مؤسسة أو اخترها لتتم الفوترة على هذا الاشتراك" />
+    <div className="ch-image-md">
+
+    ![أنشئ مؤسسة أو اخترها لتتم الفوترة على هذا الاشتراك](/images/cloud/reference/mp_committed_spend_6.webp)
+
+    </div>
 
     بعد إكمال هذه الخطوة، سيتم ربط مؤسستك بعقد الالتزام بالإنفاق الخاص بك لدى AWS، وستتم فوترة كل الاستخدام عبر AWS account الخاص بك.
     يمكنك التأكد من صفحة الفوترة الخاصة بالمؤسسة في واجهة ClickHouse من أن الفوترة أصبحت الآن مرتبطة بالفعل بـ AWS Marketplace.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_7.webp" size="md" alt="أكّد اكتمال الإعداد" />
+    <div className="ch-image-md">
+
+    ![أكّد اكتمال الإعداد](/images/cloud/reference/mp_committed_spend_7.webp)
+
+    </div>
 
     إذا واجهت أي مشكلات، فلا تتردد في التواصل مع [فريق الدعم](https://clickhouse.com/support/program) لدينا.
   </Step>

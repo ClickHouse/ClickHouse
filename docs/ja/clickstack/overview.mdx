@@ -7,9 +7,15 @@ doc_type: 'guide'
 keywords: ['clickstack', 'オブザーバビリティ', 'ログ', '監視', 'プラットフォーム']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
+<div className="ch-image-lg">
 
-<Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="ランディングページ" size="lg" />
+<Frame>
+
+![ランディングページ](/images/use-cases/observability/hyperdx-landing.webp)
+
+</Frame>
+
+</div>
 
 **ClickStack** は ClickHouse 上に構築された本番環境対応のオブザーバビリティプラットフォームで、ログ、トレース、メトリクス、セッションを単一の高性能なソリューションに統合します。複雑なシステムの監視やデバッグ向けに設計されており、ClickStack を使えば、開発者や SRE はツールを切り替えたり、タイムスタンプや相関 ID を使って手作業でデータをつなぎ合わせたりすることなく、問題をエンドツーエンドで追跡できます。
 
@@ -102,7 +108,11 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
 <Tabs>
   <Tab title="Managed ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="Managed ClickStack architecture" size="md" />
+    <div className="ch-image-md">
+
+    ![Managed ClickStack architecture](/images/use-cases/observability/clickstack-simple-managed-architecture.webp)
+
+    </div>
 
     Managed ClickStack は **ClickHouse Cloud** 上で完全に動作し、ClickStack と同じデータモデルとユーザー体験を維持しながら、完全マネージド型のオブザーバビリティ基盤を提供します。
 
@@ -137,7 +147,11 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
   </Tab>
 
   <Tab title="Open Source ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="OSS Simple architecture" size="md" />
+    <div className="ch-image-md">
+
+    ![OSS Simple architecture](/images/use-cases/observability/clickstack-simple-oss-architecture.webp)
+
+    </div>
 
     Open Source ClickStack は、3 つの中核コンポーネントで構成されます。
 

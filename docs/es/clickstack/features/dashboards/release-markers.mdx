@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'marcadores de versiones', 'seguimiento de implementaciones', 'service.version', 'anotaciones', 'observabilidad']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 La primera pregunta ante un pico de latencia o de errores suele ser si se ha desplegado algo. Los gráficos temporales del dashboard pueden responderla directamente: active los marcadores de versiones y cada tile dibujará una línea vertical discontinua en el momento en que una versión de un servicio aparezca por primera vez en su telemetría.
 
 Las versiones proceden de la telemetría que ya envía y se leen mediante una expresión en la fuente del tile. No hay ninguna integración de CI que configurar ni nada que enviar al desplegar.
@@ -19,7 +17,15 @@ Las versiones proceden de la telemetría que ya envía y se leen mediante una ex
 
 Los marcadores de versiones están desactivados de forma predeterminada. Abra el menú de desbordamiento de un dashboard y seleccione **Mostrar marcadores de versiones**.
 
-<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="Menú de desbordamiento del dashboard con la opción Mostrar marcadores de versiones en la sección Vista, debajo de Mostrar anotaciones de alertas" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Menú de desbordamiento del dashboard con la opción Mostrar marcadores de versiones en la sección Vista, debajo de Mostrar anotaciones de alertas](/images/clickstack/dashboards/release-markers-menu.webp)
+
+</Frame>
+
+</div>
 
 El interruptor añade `releaseMarkers=true` a la URL del dashboard, por lo que los enlaces que comparta se abrirán con los marcadores ya activados. Es un estado de visualización, no una configuración del dashboard: no se guarda con el dashboard y, al desactivarlo, el parámetro vuelve a eliminarse.
 
@@ -33,7 +39,7 @@ De forma predeterminada, ClickStack lee `ResourceAttributes['service.version']`,
 
 Para leer la versión desde otro lugar, establece **Expresión de versión del servicio** en la fuente de logs o fuente de traza. Edita la fuente en **Configuración del equipo → Sources**. En una fuente de logs, el campo se encuentra en **Configurar campos opcionales**; en una fuente de traza, aparece directamente en el formulario, debajo de **Expresión de nombre del servicio**.
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Campo Expresión de versión del servicio en los campos opcionales de una fuente de logs, que muestra el marcador de posición predeterminado ResourceAttributes['service.version']" size="lg" />
+![Campo Expresión de versión del servicio en los campos opcionales de una fuente de logs, que muestra el marcador de posición predeterminado ResourceAttributes\['service.version'\]](/images/clickstack/dashboards/service-version-expression.webp)
 
 El valor es una expresión SQL, no un nombre de atributo, lo que permite cubrir dos casos habituales:
 
@@ -80,7 +86,15 @@ En el tercer caso, el servicio de un marcador no tiene ninguna línea con la que
 
 Pasa el cursor sobre la etiqueta de un marcador para ver todas las versiones en ese punto, cada una con el servicio que la publicó, su versión y la hora.
 
-<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="Información emergente al pasar el cursor sobre un marcador de versión que indica el servicio frontend y la versión 2.0.2 con la hora en que apareció por primera vez, en un gráfico de dos servicios" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Información emergente al pasar el cursor sobre un marcador de versión que indica el servicio frontend y la versión 2.0.2 con la hora en que apareció por primera vez, en un gráfico de dos servicios](/images/clickstack/dashboards/release-marker-tooltip.webp)
+
+</Frame>
+
+</div>
 
 El color vincula un marcador con su serie, pero la leyenda de un gráfico muestra como máximo cuatro entradas antes de contraer el resto tras &quot;+N more&quot;, momento en el que no hay nada en pantalla con lo que relacionar el color. La información emergente indica directamente el servicio, por lo que funciona independientemente de cuántas series muestre el tile.
 

@@ -7,8 +7,6 @@ description: 'نشر ClickHouse BYOC ضمن شبكة AWS VPC الحالية لد
 doc_type: 'مرجع'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="customer-managed-vpc-aws">
   ## VPC مُدار من قِبل العميل (BYO-VPC) لـ AWS
 </div>
@@ -22,15 +20,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     3. تأكد من أن كل شبكة فرعية تحتوي على نطاق CIDR لا يقل عن `/25` (على سبيل المثال، 10.0.0.0/25). يدعم النطاق `/25` نحو 10 عُقد خوادم ClickHouse لكل منطقة توافر؛ ويُوصى باستخدام `/24` لمعظم عمليات النشر، وشبكات فرعية أكبر لعمليات النشر التي تتوقع نموها. تُخصَّص عناوين IP الخاصة بالـ pod من الشبكة الفرعية نفسها، لذا تستهلك كل نسخة متماثلة عناوين من الشبكة الفرعية.
     4. أضِف الوسمين `kubernetes.io/role/internal-elb=1` و`clickhouse-byoc="true"` إلى كل شبكة فرعية لتمكين التهيئة الصحيحة لموازن التحميل.
 
-    <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="الشبكة الفرعية لـ VPC في BYOC" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="وسوم الشبكة الفرعية لـ VPC في BYOC" />
+    ![الشبكة الفرعية لـ VPC في BYOC](/images/cloud/reference/byoc-subnet-1.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![وسوم الشبكة الفرعية لـ VPC في BYOC](/images/cloud/reference/byoc-subnet-2.webp)
+
+    </div>
   </Step>
 
   <Step title="قم بتهيئة نقطة نهاية بوابة S3" id="configure-s3-endpoint">
     إذا لم تكن VPC لديك تحتوي بالفعل على S3 Gateway Endpoint مُهيأة، فستحتاج إلى إنشاء واحدة لتمكين اتصال آمن وخاص بين VPC وAmazon S3. تتيح نقطة النهاية هذه لخدمات ClickHouse الوصول إلى S3 من دون المرور عبر الإنترنت العام. يُرجى الرجوع إلى لقطة الشاشة أدناه للاطلاع على مثال على التهيئة.
 
-    <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="S3 Endpoint لـ BYOC" />
+    <div className="ch-image-lg">
+
+    ![S3 Endpoint لـ BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
+
+    </div>
   </Step>
 
   <Step title="تأكد من توفر اتصال الشبكة" id="ensure-network-connectivity">
@@ -95,7 +105,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     4. اختياريًا، أدخل **معرّفات الشبكات الفرعية العامة** إذا كان إعدادك يتطلب موازنات تحميل متاحة للعامة.
     5. انقر فوق **إعداد البنية التحتية** لبدء التوفير.
 
-    <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="واجهة إعداد BYOC في ClickHouse Cloud مع تحديد استخدام شبكة VPC الحالية" />
+    <div className="ch-image-lg">
+
+    ![واجهة إعداد BYOC في ClickHouse Cloud مع تحديد استخدام شبكة VPC الحالية](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+
+    </div>
 
     <Note>
       قد يستغرق إعداد منطقة جديدة ما يصل إلى 40 دقيقة.

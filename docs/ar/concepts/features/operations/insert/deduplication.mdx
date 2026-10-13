@@ -7,8 +7,6 @@ keywords: ['استراتيجيات إزالة التكرار', 'إزالة تك�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 **إزالة التكرار** هي عملية ***حذف الصفوف المكررة من مجموعة بيانات***. في قاعدة بيانات OLTP، يُنجَز ذلك بسهولة لأن لكل صف مفتاحًا أساسيًا فريدًا، لكن على حساب إبطاء عمليات الإدراج. إذ يجب أولًا البحث عن كل صف مُدرَج، وإذا وُجد، فيجب استبداله.
 
 صُمم ClickHouse ليوفر السرعة في إدراج البيانات. ملفات التخزين غير قابلة للتغيير، ولا يتحقق ClickHouse من وجود مفتاح أساسي مسبقًا قبل إدراج صف، لذا فإن إزالة التكرار تتطلب جهدًا إضافيًا قليلًا. وهذا يعني أيضًا أن إزالة التكرار ليست فورية، بل **تتحقق لاحقًا**، ما يترتب عليه بعض الآثار الجانبية:
@@ -20,7 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <div class="transparent-table">
   |                                                                                                 |                                                                                                                                                                                                                                                               |
   | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="شعار إزالة التكرار" size="sm" /> | يوفّر ClickHouse تدريبًا مجانيًا حول إزالة التكرار والعديد من الموضوعات الأخرى. وتُعد [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) نقطة انطلاق جيدة. |
+  | <span className="ch-image-sm">![شعار إزالة التكرار](/images/guides/developer/de_duplication.webp)</span> | يوفّر ClickHouse تدريبًا مجانيًا حول إزالة التكرار والعديد من الموضوعات الأخرى. وتُعد [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) نقطة انطلاق جيدة. |
 </div>
 
 <div id="options-for-deduplication">

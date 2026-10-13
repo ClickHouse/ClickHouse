@@ -7,9 +7,15 @@ doc_type: 'guide'
 keywords: ['clickstack', '可观测性', '日志', '监控', '平台']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
+<div className="ch-image-lg">
 
-<Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="首页" size="lg" />
+<Frame>
+
+![首页](/images/use-cases/observability/hyperdx-landing.webp)
+
+</Frame>
+
+</div>
 
 **ClickStack** 是一个基于 ClickHouse 构建的生产级可观测性平台，将日志、链路追踪、指标和会话统一到一个高性能解决方案中。它专为监控和调试复杂系统而设计，使开发人员和 SRE 无需在不同工具之间切换，也无需借助时间戳或关联 ID 手动拼接数据，就能端到端追踪问题。
 
@@ -102,7 +108,11 @@ ClickStack 的架构会因部署方式不同而有所差异。**开源 ClickStac
 
 <Tabs>
   <Tab title="托管 ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="托管 ClickStack 架构" size="md" />
+    <div className="ch-image-md">
+
+    ![托管 ClickStack 架构](/images/use-cases/observability/clickstack-simple-managed-architecture.webp)
+
+    </div>
 
     托管 ClickStack 完全运行在 **ClickHouse Cloud** 中，在保留相同 ClickStack 数据模型和用户体验的同时，提供全托管的可观测性后端。
 
@@ -136,7 +146,11 @@ ClickStack 的架构会因部署方式不同而有所差异。**开源 ClickStac
   </Tab>
 
   <Tab title="开源 ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="OSS 简化架构" size="md" />
+    <div className="ch-image-md">
+
+    ![OSS 简化架构](/images/use-cases/observability/clickstack-simple-oss-architecture.webp)
+
+    </div>
 
     开源 ClickStack 由三个核心组件构成：
 

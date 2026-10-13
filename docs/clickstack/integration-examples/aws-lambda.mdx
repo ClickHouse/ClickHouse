@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['AWS', 'Lambda', 'OTEL', 'ClickStack', 'logs', 'CloudWatch']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge/>
@@ -205,9 +203,25 @@ aws logs tail /aws/lambda/my-function --follow
 
 Once configured, log into HyperDX (ClickStack's UI) and verify that logs are flowing:
 
-<Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Lambda Log View"/>
+<div className="ch-image-lg">
 
-<Image img="/images/clickstack/lambda/lambda-log.webp" alt="Lambda Log Detail"/>
+<Frame>
+
+![Lambda Log View](/images/clickstack/lambda/lambda-log-view.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Lambda Log Detail](/images/clickstack/lambda/lambda-log.webp)
+
+</Frame>
+
+</div>
 
 Look for these key attributes in the logs:
 - `service.name`: Your Lambda function name

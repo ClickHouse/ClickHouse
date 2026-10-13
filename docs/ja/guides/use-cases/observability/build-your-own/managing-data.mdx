@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 オブザーバビリティ用途でClickHouseを導入する場合、必ず大規模なデータセットを扱うことになり、それらを適切に管理する必要があります。ClickHouseには、データ管理に役立つさまざまな機能が用意されています。
 
 <Tip>
@@ -28,7 +26,15 @@ ClickHouse のパーティション化では、カラムまたは SQL 式に基�
 
 パーティション化は、テーブルを最初に定義する際に `PARTITION BY` 句で指定します。この句には、任意のカラムに対する SQL 式を含めることができ、その結果によって各行の格納先となるパーティションが決まります。
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="パーティション" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![パーティション](/images/use-cases/observability/observability-14.webp)
+
+</Frame>
+
+</div>
 
 データパーツは、ディスク上で各パーティションに論理的に関連付けられており (共通のフォルダー名プレフィックスを介して) 、個別にクエリできます。以下の例では、デフォルトの `otel_logs` スキーマは、`toDate(Timestamp)` 式を使って日単位でパーティション化されています。行が ClickHouse に挿入されるたびに、この式が各行に対して評価され、対応するパーティションが存在すればそのパーティションに振り分けられます (その日の最初の行であれば、パーティションが作成されます) 。
 

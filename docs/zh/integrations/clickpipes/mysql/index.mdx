@@ -10,8 +10,8 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/zh/clickpipes/_changing_tls_settings.mdx';
+
 import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.mdx';
 
 MySQL ClickPipe 提供了一种全托管且可靠的方式，可将 MySQL 和 MariaDB 数据库中的数据摄取到 ClickHouse Cloud。它既支持用于一次性摄取的 **批量加载**，也支持用于持续摄取的 **CDC (变更数据捕获)  (变更数据捕获)&#x20;**。
@@ -46,15 +46,39 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 1. 在 ClickHouse Cloud 控制台中，前往你的 ClickHouse Cloud 服务。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击“Set up a ClickPipe”
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. 选择 `MySQL CDC` 卡片
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="选择 MySQL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![选择 MySQL](/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp)
+
+</Frame>
+
+</div>
 
 ### 添加源 MySQL 数据库连接 {#add-your-source-mysql-database-connection}
 
@@ -65,7 +89,15 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
   更多信息请参阅本页顶部链接的源 MySQL 设置指南 [本页顶部](#prerequisites)。
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="填写连接信息" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![填写连接信息](/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp)
+
+</Frame>
+
+</div>
 
 #### &#x20;(可选) 修改 TLS 设置 {#optional-changing-tls-settings}
 
@@ -79,7 +111,11 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 2. 填写 SSH 连接信息。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH 隧道" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![SSH 隧道](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. 如需使用基于密钥的身份验证，请点击“撤销并生成密钥对”生成新的密钥对，并将生成的公钥复制到 SSH 服务器上的 `~/.ssh/authorized_keys`。
 
@@ -106,7 +142,11 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 5. 在此，您可以为 ClickPipe 选择目标数据库。您既可以选择现有数据库，也可以新建数据库。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="选择目标数据库" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![选择目标数据库](/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp)
+
+   </div>
 
 6. 您可以选择要从源 MySQL 数据库复制的表。选择表时，您还可以重命名目标 ClickHouse 数据库中的表，并排除特定列。
 
@@ -116,7 +156,11 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 8. 在权限下拉菜单中选择“完全访问”角色，然后点击“完成设置”。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="查看权限" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![查看权限](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 最后，请参阅 [&quot;ClickPipes for MySQL 常见问题&quot;](/zh/integrations/clickpipes/mysql/faq) 页面，了解常见问题及其解决方法的更多信息。
 

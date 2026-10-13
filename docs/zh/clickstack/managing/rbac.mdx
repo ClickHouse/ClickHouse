@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'rbac', '角色', '权限', '访问控制', '安全']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickStack 包含基于角色的访问控制 (RBAC) ，因此你可以为[仪表盘](/zh/clickstack/features/dashboards/overview)、[已保存的搜索](/zh/clickstack/features/search)、数据源、[告警](/zh/clickstack/features/alerts)、Webhook 和笔记本定义具有细粒度权限的自定义角色。权限分为两个级别：资源级访问 (可按资源类型设置为无权限、只读或管理) 以及可选的细粒度规则，用于按名称、标签或 ID 限制对特定资源的访问。ClickStack 附带三个内置角色，你也可以创建符合团队需求的自定义角色。
 
 <Info>
@@ -37,11 +35,19 @@ ClickStack 使用 ClickHouse Cloud 进行身份验证。分配 ClickStack 角色
 
 <Tabs>
   <Tab title="Cloud 用户和角色">
-    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="ClickHouse Cloud 用户和角色页面" size="lg" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse Cloud 用户和角色页面](/images/clickstack/rbac/team-page-cloud.webp)
+
+    </div>
   </Tab>
 
   <Tab title="ClickStack 团队设置">
-    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="显示团队成员及其角色的 ClickStack 团队设置页面" size="lg" />
+    <div className="ch-image-lg">
+
+    ![显示团队成员及其角色的 ClickStack 团队设置页面](/images/clickstack/rbac/team-page-clickstack.webp)
+
+    </div>
   </Tab>
 </Tabs>
 
@@ -84,7 +90,11 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
   <Step title="前往 团队设置" id="step-navigate">
     打开 **团队设置**，然后向下滚动到 **RBAC Roles**。
 
-    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
+    <div className="ch-image-lg">
+
+    ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
+
+    </div>
   </Step>
 
   <Step title="添加新角色" id="step-add-role">
@@ -94,7 +104,11 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
   <Step title="配置权限并保存" id="step-configure">
     为该角色设置权限，然后点击 **Create Role**。
 
-    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="添加角色模态框" size="md" />
+    <div className="ch-image-md">
+
+    ![添加角色模态框](/images/clickstack/rbac/add-role-modal.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -151,7 +165,15 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
 
 要切换模式，请点击角色编辑器中某个资源类型旁的箭头以将其展开，然后切换**访问控制模式**。
 
-<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="角色编辑器中的默认访问与细粒度控制模式" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![角色编辑器中的默认访问与细粒度控制模式](/images/clickstack/rbac/default-vs-fine-grained.webp)
+
+</Frame>
+
+</div>
 
 <div id="configuring-access-rules">
   #### 配置访问规则
@@ -159,7 +181,15 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
 
 每条访问规则都由一个**条件**和一个**访问级别**组成。条件会根据资源属性匹配资源：
 
-<Image img="/images/clickstack/rbac/condition-tip.webp" alt="条件提示：可按名称或标签（可从标题判断），或按 ID（可在 URL 中找到）匹配资源" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![条件提示：可按名称或标签（可从标题判断），或按 ID（可在 URL 中找到）匹配资源](/images/clickstack/rbac/condition-tip.webp)
+
+</Frame>
+
+</div>
 
 | 条件字段   | 运算符              | 匹配内容                                     | 示例                                              |
 | ------ | ---------------- | ---------------------------------------- | ----------------------------------------------- |
@@ -169,11 +199,27 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
 
 下图同时显示了 URL 栏中高亮显示的仪表盘 ID，以及标签面板 (右上角) 中可见的“TESTING”标签。
 
-<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="仪表盘中显示了 URL 栏里的资源 ID，以及右上角的一个标签" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![仪表盘中显示了 URL 栏里的资源 ID，以及右上角的一个标签](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+
+</Frame>
+
+</div>
 
 你可以为每种资源类型添加多条规则。系统会基于 OR 逻辑分别检查每条规则——只要资源匹配**任意**一条规则，即可访问。不匹配任何规则的资源则无法访问。
 
-<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="使用 OR 逻辑的访问规则提示" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![使用 OR 逻辑的访问规则提示](/images/clickstack/rbac/access-rules-tip.webp)
+
+</Frame>
+
+</div>
 
 **示例**：要为某个角色授予测试仪表盘的只读访问权限，请展开仪表盘，切换到细粒度控制，然后添加两条规则：
 
@@ -182,7 +228,15 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
 
 匹配任意一条规则的仪表盘都可以访问。
 
-<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="两条通过 OR 连接的细粒度访问规则：名称包含 testing 且访问级别为 只读，以及标签为 testing 且访问级别为 只读" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![两条通过 OR 连接的细粒度访问规则：名称包含 testing 且访问级别为 只读，以及标签为 testing 且访问级别为 只读](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+
+</Frame>
+
+</div>
 
 <div id="security-policies">
   ## 安全策略
@@ -194,4 +248,12 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
 
 **生成式 AI** 可让你启用或禁用由 Anthropic 或亚马逊 Bedrock 支持的 LLM 功能 (例如自然语言查询生成) 。禁用后，不会向 AI 提供商发送任何数据。
 
-<Image img="/images/clickstack/rbac/security-policies.webp" alt="安全策略" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![安全策略](/images/clickstack/rbac/security-policies.webp)
+
+</Frame>
+
+</div>

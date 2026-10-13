@@ -7,8 +7,6 @@ title: 'تدفق البيانات من SQL Server إلى ClickHouse لتحليل
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 في هذه المقالة، نستعرض دليلًا عمليًا يوضّح كيفية تدفّق البيانات من SQL Server إلى ClickHouse. ويُعد ClickHouse خيارًا مثاليًا إذا كنت بحاجة إلى تحليلات فائقة السرعة لإعداد لوحات معلومات داخلية أو موجّهة للعملاء. سنأخذك خطوة بخطوة خلال إعداد قاعدتي البيانات كلتيهما، وكيفية ربطهما، ثم كيفية استخدام [Streamkap](https://streamkap.com) لبث بياناتك. إذا كان SQL Server يدير عملياتك اليومية، لكنك تحتاج إلى سرعة ClickHouse وذكائه في التحليلات، فأنت في المكان المناسب.
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
@@ -79,11 +77,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * اسم المستخدم وكلمة المرور
     * اسم قاعدة البيانات
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
+
+    </div>
 
     #### ما الذي يحدث في الخلفية
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
+
+    </div>
 
     عند إعداد ذلك، سيتصل Streamkap بخادم SQL Server لديك ويكتشف الجداول. في هذا العرض التوضيحي، سنختار جدولًا تتدفق إليه بعض البيانات بالفعل، مثل الأحداث أو المعاملات.
   </Step>
@@ -148,7 +154,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     #### هل تحتاج إلى تحميل البيانات التاريخية؟
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    <div className="ch-image-lg">
+
+    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
+
+    </div>
 
     قد تتساءل: هل ينبغي تحميل البيانات القديمة؟
 

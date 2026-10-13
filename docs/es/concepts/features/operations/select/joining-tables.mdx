@@ -6,15 +6,21 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse ofrece [compatibilidad completa con `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1), con una amplia variedad de algoritmos de JOIN. Para maximizar el rendimiento, recomendamos seguir las sugerencias de optimización de JOIN que se enumeran en esta guía.
 
 * Para un rendimiento óptimo, conviene reducir el número de `JOIN` en las consultas, especialmente en cargas de trabajo analíticas en tiempo real donde se requiere latencia de milisegundos. Intenta no superar los 3 o 4 joins por consulta. En la [sección de modelado de datos](/es/guides/clickhouse/data-modelling/schema-design) detallamos varios cambios para minimizar los joins, como la desnormalización, los diccionarios y las vistas materializadas.
 * A partir de ClickHouse 24.12, el planificador de consultas reordena automáticamente los joins entre dos tablas para situar la tabla más pequeña en el lado derecho y así obtener un rendimiento óptimo. En la versión 25.9, esto se amplió para optimizar el orden de join en consultas que combinan tres o más tablas.
 * Si tu consulta requiere un direct join, es decir, un `LEFT ANY JOIN`, como se muestra a continuación, recomendamos usar [Dictionaries](/es/concepts/features/dictionaries/index) siempre que sea posible.
 
-<Image img="/images/guides/joins-1.webp" size="sm" alt="LEFT ANY JOIN" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![LEFT ANY JOIN](/images/guides/joins-1.webp)
+
+</Frame>
+
+</div>
 
 * Si realizas inner joins, a menudo resulta más eficiente escribirlos como subconsultas con la cláusula `IN`. Considera las siguientes consultas, que son funcionalmente equivalentes. Ambas encuentran el número de `posts` que no mencionan ClickHouse en la pregunta, pero sí en los `comments`.
 
@@ -140,7 +146,15 @@ ClickHouse admite varios [algoritmos de JOIN](https://clickhouse.com/blog/clickh
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="velocidad según la memoria para joins" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![velocidad según la memoria para joins](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -150,7 +164,15 @@ A continuación se muestran los tipos de `JOIN` admitidos por cada algoritmo de 
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="características de join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![características de join](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -166,7 +188,15 @@ Si su métrica de optimización principal es el rendimiento y busca ejecutar el 
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="diagrama de flujo de join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![diagrama de flujo de join](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -192,7 +222,15 @@ Si quiere optimizar un join para reducir al mínimo el uso de memoria, en lugar 
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Árbol de decisión para optimizar el uso de memoria en joins" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Árbol de decisión para optimizar el uso de memoria en joins](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

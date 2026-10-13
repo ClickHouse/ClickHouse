@@ -6,8 +6,6 @@ keywords: ['example dataset', 'cell towers', 'OpenCelliD', 'geospatial', 'pointI
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 In this tutorial you'll explore how ClickHouse can be used for geo data using the cell tower dataset.
 You'll load the dataset into ClickHouse Cloud, examine its schema and run aggregation queries over tens of millions of rows.
 You'll then enrich the data with a dictionary, use the `pointInPolygon` function to count the towers inside Germany, and use ClickHouse Agents to visualize the result on a map.
@@ -232,7 +230,11 @@ For this tutorial, you'll need:
         Type "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables" and hit send.
         On one run, the agent carried out the following steps:
 
-        <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="ClickHouse Agent chat showing the steps taken to build a cell tower density grid for Germany"/>
+        <div className="ch-image-lg">
+
+        ![ClickHouse Agent chat showing the steps taken to build a cell tower density grid for Germany](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+        </div>
 
         - It looked up Germany's Mobile Country Code in `mcc_country_dict` and found MCC `262`.
         - It counted the towers with `mcc = 262` that fall inside the polygon in `germany` using `pointInPolygon`, which gave 2,588,635 towers. This is slightly fewer than the count above because the extra `mcc` filter excludes towers inside the polygon that are registered to another country.
@@ -241,7 +243,11 @@ For this tutorial, you'll need:
 
         Open the generated file to see the result. The bright clusters are the major metropolitan areas: Berlin, Hamburg, Munich and Frankfurt.
 
-        <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="Heatmap of cell tower density in Germany on a 0.1 degree grid with a logarithmic color scale"/>
+        <div className="ch-image-md">
+
+        ![Heatmap of cell tower density in Germany on a 0.1 degree grid with a logarithmic color scale](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+        </div>
     </Step>
 </Steps>
 

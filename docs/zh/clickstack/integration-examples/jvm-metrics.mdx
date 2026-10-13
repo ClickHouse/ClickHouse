@@ -6,8 +6,6 @@ description: '使用 ClickStack 监控 JVM 指标'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -41,7 +39,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     3. 进入 **Team Settings → API Keys**
     4. 复制你的 **摄取 API key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+    <div className="ch-image-lg">
+
+    ![ClickStack API key](/images/clickstack/api-key.webp)
+
+    </div>
   </Step>
 
   <Step title="下载 OpenTelemetry Java agent" id="download-agent">
@@ -210,17 +212,29 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX 并进入仪表盘部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+    <div className="ch-image-lg">
+
+    ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. 上传 `jvm-metrics-dashboard.json` 文件，然后点击 **Finish Import**
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="完成导入" />
+    <div className="ch-image-lg">
+
+    ![完成导入](/images/clickstack/jvm/jvm-metrics-import.webp)
+
+    </div>
   </Step>
 
   <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建后，所有可视化内容都将预先配置好：
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Kafka 指标仪表盘" />
+    <div className="ch-image-lg">
+
+    ![Kafka 指标仪表盘](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**。请根据您的本地时区进行调整。

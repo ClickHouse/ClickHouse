@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['agentic data stack', 'analytique agentique', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'IA']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Le moyen le plus simple de faire de l’analytique agentique sur ClickHouse est d’utiliser [ClickHouse Agents](/fr/products/cloud/features/ai-ml/agents) dans ClickHouse Cloud : entièrement géré, sans aucune infrastructure à gérer. Les utilisateurs posent des questions en langage naturel, et un agent IA y répond en interrogeant directement la base de données.
 
 Pour l’auto-hébergement, l’**Agentic Data Stack** est une stack open-source modulaire. Vous l’exécutez vous-même, connectez vos propres modèles et conservez vos conversations et vos données dans votre propre environnement. Elle repose sur [ClickHouse](/fr/get-started/setup/install), le [ClickHouse MCP server](/fr/products/agentic-data-stack/components/mcp-server), [LibreChat](/fr/products/agentic-data-stack/components/librechat) et [Langfuse](/fr/products/agentic-data-stack/components/langfuse).
@@ -32,7 +30,15 @@ Avec l’analytique agentique, le modèle appuie ses réponses sur des requêtes
   ## Comment les composants s’articulent
 </div>
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Architecture d’Agentic Data Stack : les utilisateurs interagissent avec LibreChat, qui se connecte à un LLM, à ClickHouse via le serveur MCP, et à Langfuse pour le tracing" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Architecture d’Agentic Data Stack : les utilisateurs interagissent avec LibreChat, qui se connecte à un LLM, à ClickHouse via le serveur MCP, et à Langfuse pour le tracing](/images/agentic-data-stack/01-architecture.webp)
+
+</Frame>
+
+</div>
 
 Un utilisateur pose une question dans LibreChat. Le modèle prépare une réponse et, via le serveur MCP, appelle des outils pour explorer et interroger ClickHouse. Les résultats sont renvoyés, puis l’agent rédige une réponse. Langfuse, basé sur OpenTelemetry, enregistre chaque exécution, du prompt à l’appel d’outil jusqu’à la réponse, permet d’évaluer automatiquement les résultats ou via une revue humaine, et suit la qualité, le coût et la latence.
 

@@ -8,7 +8,6 @@ keywords: ['clickstack', 'обсервабилити', 'materialized views', 'п
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge />
 
@@ -36,7 +35,15 @@ Incremental materialized views позволяют перенести вычис�
 
 Materialized views в ClickHouse непрерывно обновляются по мере поступления данных в исходную таблицу и больше похожи на всегда актуальные индексы. Это отличается от многих других баз данных, где materialized views представляют собой статические снимки, которые нужно периодически обновлять, как в ClickHouse [Refreshable Materialized Views](/ru/concepts/features/materialized-views/refreshable-materialized-view).
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Диаграмма materialized view" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Диаграмма materialized view](/images/materialized-view/materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 Incremental materialized views вычисляют только изменения в представлении по мере поступления новых данных, перенося вычисления на момент вставки. Поскольку ClickHouse хорошо оптимизирован для ингестии, дополнительные затраты на поддержку представления для каждого вставленного блока невелики по сравнению с выигрышем при выполнении запросов. Стоимость вычисления агрегации распределяется между операциями вставки, а не оплачивается заново при каждом чтении. Поэтому запросы к предварительно агрегированным результатам обходятся значительно дешевле, чем их повторное вычисление, что снижает эксплуатационные затраты и обеспечивает производительность, близкую к реальному времени, для последующих визуализаций даже в масштабе петабайтов.
 
@@ -124,7 +131,15 @@ GROUP BY time, ServiceName, StatusCode
 
 После того как вы определили визуализацию или набор визуализаций, которые хотите ускорить, следующим шагом будет определить лежащие в их основе запросы. На практике это означает изучить конфигурацию визуализации и просмотреть сгенерированный SQL, обращая особое внимание на используемые метрики агрегации и применяемые функции.
 
-<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="Сгенерированный SQL" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Сгенерированный SQL](/images/clickstack/materialized_views/generated_sql.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Если в HyperDX для компонента недоступна панель отладки, пользователи могут проверить консоль браузера, где записываются все запросы.
@@ -229,13 +244,21 @@ materialized view следует регистрировать для **исто�
   <Step title="Измените источник" id="edit-the-source">
     Перейдите к нужному **источнику** в HyperDX и откройте диалог **Edit configuration**. Прокрутите страницу до раздела materialized views.
 
-    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Изменить источники" />
+    <div className="ch-image-lg">
+
+    ![Изменить источники](/images/clickstack/materialized_views/edit_source.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте materialized view" id="add-the-materialized-view">
     Выберите **Add materialized view**, затем укажите базу данных и целевую таблицу, на которых основано materialized view.
 
-    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Изменить источники" />
+    <div className="ch-image-lg">
+
+    ![Изменить источники](/images/clickstack/materialized_views/add_view.webp)
+
+    </div>
   </Step>
 
   <Step title="Выберите метрики" id="select-metrics">
@@ -248,13 +271,21 @@ materialized view следует регистрировать для **исто�
 
     Для размерностей укажите все столбцы, кроме временной метки, по которым представление выполняет группировку.
 
-    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Выбрать метрики" />
+    <div className="ch-image-lg">
+
+    ![Выбрать метрики](/images/clickstack/materialized_views/select_metrics.webp)
+
+    </div>
   </Step>
 
   <Step title="Выберите временную гранулярность" id="select-time-granularity">
     Выберите **временную гранулярность** materialized view, например одну минуту.
 
-    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Выбрать временную гранулярность" />
+    <div className="ch-image-lg">
+
+    ![Выбрать временную гранулярность](/images/clickstack/materialized_views/select_time_granularity.webp)
+
+    </div>
   </Step>
 
   <Step title="Выберите минимальную дату" id="specify-the-minimum-date">
@@ -265,7 +296,11 @@ materialized view следует регистрировать для **исто�
       Полное руководство по дозагрузке materialized views можно найти в разделе [&quot;Дозагрузка данных.&quot;](/ru/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
-    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="Выбрать минимальное время" />
+    <div className="ch-image-lg">
+
+    ![Выбрать минимальное время](/images/clickstack/materialized_views/select_min_time.webp)
+
+    </div>
 
     Если точное время начала неизвестно, его можно определить, выполнив запрос минимальной временной метки из целевой таблицы, например:
 
@@ -277,7 +312,11 @@ materialized view следует регистрировать для **исто�
   <Step title="Сохраните источник" id="save-the-source">
     Сохраните конфигурацию источника.
 
-    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="Сохранить источник" />
+    <div className="ch-image-lg">
+
+    ![Сохранить источник](/images/clickstack/materialized_views/save_source.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -300,7 +339,15 @@ ClickStack предоставляет понятные визуальные ин
 * **Зелёная молния** означает, что запрос ускорен с помощью materialized view.
 * **Оранжевая молния** означает, что запрос выполняется по исходной таблице.
 
-<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="Ускоренная визуализация" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Ускоренная визуализация](/images/clickstack/materialized_views/accelerated_visual.webp)
+
+</Frame>
+
+</div>
 
 2. **Изучите сведения об оптимизации**  Нажмите на значок молнии, чтобы открыть панель с подробностями, где показано:
 

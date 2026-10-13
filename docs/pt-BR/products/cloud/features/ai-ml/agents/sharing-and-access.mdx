@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge />
 
@@ -55,11 +54,27 @@ A visibilidade em toda a organização é o que torna um recurso localizável no
 
 Clique no ícone de **compartilhar** na parte inferior do Agent Builder. Um indicador no ícone mostra quantos usuários ou grupos têm acesso no momento.
 
-<Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="Parte inferior do painel do Agent Builder com o ícone de compartilhar destacado e um indicador mostrando um principal com quem foi compartilhado" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Parte inferior do painel do Agent Builder com o ícone de compartilhar destacado e um indicador mostrando um principal com quem foi compartilhado](/images/cloud/agent-builder/sharing/sharing.webp)
+
+</Frame>
+
+</div>
 
 O modal **Compartilhar** é aberto. Procure um usuário ou grupo por nome ou e-mail, escolha o nível de acesso (**Visualizador**, **Editor** ou **Proprietário**) e clique em **Salvar alterações**. Para compartilhar com toda a organização, habilite a opção **Compartilhar com todos no ClickHouse**.
 
-<Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="Modal Compartilhar com a seção Permissões de usuário e grupo, um campo de busca, um usuário existente com a função de Proprietário, uma opção Compartilhar com todos no ClickHouse e os botões Cancelar e Salvar alterações" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Modal Compartilhar com a seção Permissões de usuário e grupo, um campo de busca, um usuário existente com a função de Proprietário, uma opção Compartilhar com todos no ClickHouse e os botões Cancelar e Salvar alterações](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
+
+</Frame>
+
+</div>
 
 O destinatário verá o agente na lista de agentes disponíveis na próxima vez que atualizar. Para revogar o acesso, remova a linha no mesmo modal. O destinatário perde o acesso imediatamente; as conversas em andamento terminam, mas não será possível iniciar novas.
 

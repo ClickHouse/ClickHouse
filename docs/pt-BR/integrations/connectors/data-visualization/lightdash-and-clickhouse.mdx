@@ -11,7 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -29,7 +29,15 @@ Essa parceria reúne a **velocidade do ClickHouse** e a **experiência para dese
 Neste guia, você verá como o **Lightdash** se conecta ao **ClickHouse** para explorar seus modelos do dbt e criar painéis interativos.
 O exemplo abaixo mostra um painel pronto, alimentado por dados do ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Exemplo de painel do Lightdash" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Exemplo de painel do Lightdash](/images/integrations/data-visualization/lightdash_02.webp)
+
+</Frame>
+
+</div>
 
 <Steps>
   <Step title="Reúna os dados da conexão" id="connection-data-required">
@@ -56,7 +64,11 @@ O exemplo abaixo mostra um painel pronto, alimentado por dados do ClickHouse.
 
     Por exemplo:
 
-    <Image size="md" img="/images/integrations/data-visualization/lightdash_01.webp" alt="Exemplo de configuração do profiles.yml para um projeto lightdash-clickhouse" border />
+    <div className="ch-image-md">
+
+    ![Exemplo de configuração do profiles.yml para um projeto lightdash-clickhouse](/images/integrations/data-visualization/lightdash_01.webp)
+
+    </div>
 
     <br />
   </Step>
@@ -88,7 +100,11 @@ O exemplo abaixo mostra um painel pronto, alimentado por dados do ClickHouse.
   <Step title="Defina métricas e dimensões no Lightdash" id="defining-metrics-and-dimensions-in-lightdash">
     No Lightdash, todas as **métricas** e **dimensões** são definidas diretamente nos arquivos `.yml` do seu modelo dbt. Isso faz com que sua lógica de negócios fique sob controle de versão, consistente e totalmente transparente.
 
-    <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt="Exemplo de métricas sendo definidas no arquivo .yml" border />
+    <div className="ch-image-md">
+
+    ![Exemplo de métricas sendo definidas no arquivo .yml](/images/integrations/data-visualization/lightdash_03.webp)
+
+    </div>
 
     <br />
 
@@ -114,7 +130,11 @@ O exemplo abaixo mostra um painel pronto, alimentado por dados do ClickHouse.
     4. **Resultados** — veja os dados brutos retornados do seu banco de dados ClickHouse
     5. **SQL** — inspecione a consulta SQL gerada por trás dos seus resultados
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_04.webp" alt="Visualização Explore do Lightdash mostrando dimensões, filtros, gráfico, resultados e SQL" border />
+    <div className="ch-image-lg">
+
+    ![Visualização Explore do Lightdash mostrando dimensões, filtros, gráfico, resultados e SQL](/images/integrations/data-visualization/lightdash_04.webp)
+
+    </div>
 
     A partir daqui, você pode criar e ajustar consultas de forma interativa — arrastando e soltando campos, adicionando filtros e alternando entre tipos de visualização, como tabelas, gráficos de barras ou séries temporais.
 
@@ -138,7 +158,11 @@ O exemplo abaixo mostra um painel pronto, alimentado por dados do ClickHouse.
     3. Crie sua visualização no chart builder
     4. Salve-a — ela aparecerá na parte inferior do seu dashboard
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_05.webp" alt="Criando e organizando gráficos em um dashboard do Lightdash" border />
+    <div className="ch-image-lg">
+
+    ![Criando e organizando gráficos em um dashboard do Lightdash](/images/integrations/data-visualization/lightdash_05.webp)
+
+    </div>
 
     Saiba mais sobre como criar e organizar dashboards aqui:
     [Criando dashboards → Documentação do Lightdash](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
@@ -152,7 +176,11 @@ O exemplo abaixo mostra um painel pronto, alimentado por dados do ClickHouse.
 
     Ele usa a mesma camada semântica que você usa no dbt, o que significa que cada resposta continua sob governança, é explicável e rápida — tudo com o suporte do ClickHouse.
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_06.webp" alt="Interface do Ask AI do Lightdash mostrando uma consulta em linguagem natural com base em métricas do dbt" border />
+    <div className="ch-image-lg">
+
+    ![Interface do Ask AI do Lightdash mostrando uma consulta em linguagem natural com base em métricas do dbt](/images/integrations/data-visualization/lightdash_06.webp)
+
+    </div>
 
     <Tip>
       Saiba mais sobre Agentes de IA aqui: [Agentes de IA → Documentação do Lightdash](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)

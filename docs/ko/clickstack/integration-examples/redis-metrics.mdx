@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Redis', '메트릭', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -215,7 +213,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     2. `redis.`로 시작하는 메트릭을 검색합니다(예: `redis.commands.processed`, `redis.memory.used`)
     3. 구성한 수집 인터벌에 따라 메트릭 데이터 포인트가 표시되어야 합니다
 
-    {/* <Image img={metrics_view} alt="Redis 메트릭 화면"/> */}
+    {/* ![Redis 메트릭 화면](/images/clickstack/redis-metrics-dashboard.webp) */}
   </Step>
 </Steps>
 
@@ -303,17 +301,29 @@ ClickStack으로 Redis 모니터링을 시작할 수 있도록 Redis Metrics용 
     1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
     2. 오른쪽 상단의 줄임표 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+    <div className="ch-image-lg">
+
+    ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `redis-metrics-dashboard.json` 파일을 업로드하고 **Finish Import**를 클릭합니다
 
-    <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="가져오기 완료 대화상자" />
+    <div className="ch-image-lg">
+
+    ![가져오기 완료 대화상자](/images/clickstack/import-redis-metrics-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     대시보드는 모든 시각화가 사전 구성된 상태로 생성됩니다:
 
-    <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Redis Metrics 대시보드" />
+    <div className="ch-image-lg">
+
+    ![Redis Metrics 대시보드](/images/clickstack/redis-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       데모 데이터세트의 경우 시간 범위를 **2025-10-20 05:00:00 - 2025-10-21 05:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.

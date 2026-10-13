@@ -7,8 +7,6 @@ title: 'Расширенная панель мониторинга в ClickHouse
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Мониторинг вашей системы баз данных в промышленной среде крайне важен
 для понимания состояния развертывания, чтобы вы могли предотвращать сбои и устранять их.
 
@@ -29,7 +27,15 @@ Cloud.
 * Левая боковая панель
   * `Monitoring` → `Advanced dashboard`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Расширенная панель мониторинга" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Расширенная панель мониторинга](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="accessing-the-native-advanced-dashboard">
   ## Доступ к встроенной расширенной панели мониторинга
@@ -44,12 +50,28 @@ Cloud.
 После этого встроенная расширенная панель мониторинга откроется в новой вкладке. Для доступа к панели мониторинга потребуется
 пройти аутентификацию.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 С каждой визуализацией связан SQL-запрос, который её заполняет. Вы можете
 изменить этот запрос, нажав на значок пера.
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="Advanced dashboard" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</Frame>
+
+</div>
 
 <div id="out-of-box-visualizations">
   ## Готовые визуализации
@@ -137,7 +159,15 @@ ClickHouse Cloud хранит данные в Объектном хранили�
 Ключевые метрики для выявления неоптимальной вставки — это **Вставленных строк/с** и
 **Макс. частей в партиции**
 
-<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="Вставки без батчей" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Вставки без батчей](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</Frame>
+
+</div>
 
 Пример выше показывает два всплеска **Вставленных строк/с** и **Макс. частей в партиции**
 между 13h и 14h. Это указывает на то, что данные поступают с разумной скоростью.
@@ -162,7 +192,15 @@ CPU или памяти. Однако важно отслеживать таки
 Ниже приведен пример пикового использования CPU без существенного изменения
 количества выполняемых запросов в секунду.
 
-<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="Ресурсоемкий запрос" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Ресурсоемкий запрос](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</Frame>
+
+</div>
 
 <div id="bad-primary-key-design">
   ### Неудачный выбор первичного ключа
@@ -178,7 +216,15 @@ CPU или памяти. Однако важно отслеживать таки
 указывать как на общий рост пропускной способности запросов, так и на запросы,
 для выполнения которых выбирается большое количество строк.
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="Ресурсоемкий запрос" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Ресурсоемкий запрос](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</Frame>
+
+</div>
 
 Используя временную метку в качестве фильтра, вы можете найти запросы, выполненные во время
 пика, в таблице `system.query_log`.

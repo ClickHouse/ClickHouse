@@ -11,8 +11,6 @@ hidden: true
 
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本页介绍如何使用 ClickPipes 配置从 DynamoDB 到 ClickHouse 的 CDC (变更数据捕获)  (变更数据捕获) 。此集成包含 2 个组件：
 
 1. 通过 S3 ClickPipes 执行初始快照
@@ -28,14 +26,22 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     首先，您需要在 DynamoDB 表上启用 Kinesis 数据流，以实时捕获变更。我们希望在创建快照之前先完成这一步，以免遗漏任何数据。
     AWS 指南可见[此处](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html)。
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="DynamoDB Kinesis 数据流" border />
+    <div className="ch-image-lg">
+
+    ![DynamoDB Kinesis 数据流](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+
+    </div>
   </Step>
 
   <Step title="创建快照" id="2-create-the-snapshot">
     接下来，我们将为 DynamoDB 表创建一个快照。这可以通过 AWS 导出到 S3 的方式来实现。可在[此处](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html)查看 AWS 指南。
     **你需要以 DynamoDB JSON 格式执行“完整导出”。**
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="DynamoDB S3 导出" border />
+    <div className="ch-image-md">
+
+    ![DynamoDB S3 导出](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+
+    </div>
   </Step>
 
   <Step title="将快照导入 ClickHouse" id="3-load-the-snapshot-into-clickhouse">
@@ -128,7 +134,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       * `ApproximateCreationDateTime`：`version`
       * 按照下图所示，将其他字段映射到相应的目标端列
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="DynamoDB 映射列" border />
+    <div className="ch-image-md">
+
+    ![DynamoDB 映射列](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+
+    </div>
   </Step>
 
   <Step title="清理（可选）" id="5-cleanup-optional">

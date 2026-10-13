@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge />
 
@@ -20,7 +19,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在智能体构建器中，启用 **Capabilities** 部分里的 **网页搜索**。启用后，智能体会根据用户的问题和自身指令，自行判断何时发起搜索。系统会执行搜索、抓取结果，并将最相关的内容传回模型上下文。
 
-<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="高亮显示“网页搜索”部分的 Capabilities 面板，其中显示了“网页搜索”复选框" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![高亮显示“网页搜索”部分的 Capabilities 面板，其中显示了“网页搜索”复选框](/images/cloud/agent-builder/web-search/web-search.webp)
+
+</Frame>
+
+</div>
 
 <div id="how-a-search-round-works">
   ## 搜索轮次的工作原理

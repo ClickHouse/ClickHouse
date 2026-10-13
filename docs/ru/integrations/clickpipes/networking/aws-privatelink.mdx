@@ -11,7 +11,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Вы можете использовать [AWS PrivateLink](https://aws.amazon.com/privatelink/) для установки защищённого соединения между ClickPipes и источником данных, размещённым в AWS. ClickPipes создаёт **обратную частную конечную точку (RPE)** в своей VPC и связывает её с сервисом конечной точки, опубликованным для вашего источника данных, поэтому трафик никогда не выходит в публичный интернет.
@@ -280,19 +279,51 @@ AWS PrivateLink предоставляет [управляемый private DNS](
 
 1. Откройте SQL Console своего сервиса ClickHouse Cloud.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Сервис ClickPipes" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Сервис ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. В меню слева выберите `Data Sources` и нажмите «Set up a ClickPipe».
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импорта" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор импорта](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. Выберите Kafka или Postgres в качестве источника данных.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="Выбор источника данных" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор источника данных](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</Frame>
+
+</div>
 
 4. Выберите вариант `Reverse private endpoint`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="Выбор обратной частной конечной точки" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор обратной частной конечной точки](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</Frame>
+
+</div>
 
 5. Выберите одну из существующих обратных частных конечных точек или создайте новую.
 
@@ -302,11 +333,27 @@ AWS PrivateLink предоставляет [управляемый private DNS](
   Для доступа в пределах одного региона рекомендуется создать ресурс VPC.
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="Выбор обратной частной конечной точки" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор обратной частной конечной точки](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</Frame>
+
+</div>
 
 6. Укажите необходимые параметры для выбранного типа конечной точки.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="Выбор обратной частной конечной точки" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор обратной частной конечной точки](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</Frame>
+
+</div>
 
 * Для ресурса VPC укажите ARN общего доступа к конфигурации и ID конфигурации.
   * Для MSK multi-VPC укажите ARN кластера и метод аутентификации, используемый для созданной конечной точки.
@@ -319,7 +366,15 @@ AWS PrivateLink предоставляет [управляемый private DNS](
    Страница автоматически обновится, когда конечная точка будет готова.
    Для сервиса конечной точки VPC может потребоваться принять запрос на подключение в консоли AWS.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="Выбор обратной частной конечной точки" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор обратной частной конечной точки](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</Frame>
+
+</div>
 
 8. Когда конечная точка будет готова, используйте DNS-имя для подключения к источнику данных.
 
@@ -341,11 +396,19 @@ AWS PrivateLink предоставляет [управляемый private DNS](
 
 1. На боковой панели найдите кнопку `Settings` и нажмите её.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="Настройки ClickHouse Cloud" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![Настройки ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+   </div>
 
 2. В разделе `ClickPipe reverse private endpoints` нажмите `Reverse private endpoints`.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="Настройки ClickHouse Cloud" size="md" border />
+   <div className="ch-image-md">
+
+   ![Настройки ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+   </div>
 
    На выдвижной панели отображается подробная информация об обратной частной конечной точке.
 

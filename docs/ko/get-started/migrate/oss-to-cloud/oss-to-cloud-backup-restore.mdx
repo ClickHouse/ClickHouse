@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['마이그레이션', 'ClickHouse Cloud', 'OSS', '자가 관리형에서 Cloud로 마이그레이션', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="overview-migration-approaches">
   ## 개요
 </div>
@@ -275,19 +273,31 @@ FROM s3(
   </Step>
 
   <Step title="새 서비스 생성" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="새 서비스 생성" />
+    <div className="ch-image-md">
+
+    ![새 서비스 생성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+
+    </div>
   </Step>
 
   <Step title="서비스 구성 및 생성" id="configure-and-create">
     원하는 리전과 구성을 선택한 다음 `Create service`를 클릭하십시오.
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="서비스 기본 설정 구성" />
+    <div className="ch-image-md">
+
+    ![서비스 기본 설정 구성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+
+    </div>
   </Step>
 
   <Step title="액세스 역할 생성" id="create-an-access-role">
     SQL 콘솔을 여십시오
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="서비스 기본 설정 구성" />
+    <div className="ch-image-md">
+
+    ![서비스 기본 설정 구성](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+
+    </div>
 
     ### S3 액세스 설정
 
@@ -391,7 +401,15 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 이제 앞서 비어 있던 S3 버킷을 확인하면 몇 개의 폴더가 생성된 것을 볼 수 있습니다:
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="Backup, 데이터 및 메타데이터" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Backup, 데이터 및 메타데이터](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+
+</Frame>
+
+</div>
 
 전체 마이그레이션을 수행하는 경우에는, 다음 명령으로 전체 서버를 Backup할 수 있습니다:
 

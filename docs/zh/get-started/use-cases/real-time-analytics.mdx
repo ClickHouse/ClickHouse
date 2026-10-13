@@ -7,8 +7,6 @@ sidebarTitle: '实时分析'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -36,7 +34,15 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **转换和准备时间**：清洗、增强、连接、预聚合，或更新查询实际访问的服务结构 (materialized views、rollup、索引) 需要多久？
 * **查询时间**：数据可用后，完成查询规划和执行读取需要多久？
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="实时分析：摄取、转换和查询所需时间" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![实时分析：摄取、转换和查询所需时间](/images/use-cases/rta-considerations.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickhouse-rta">
   ## ClickHouse 如何支撑实时分析
@@ -44,7 +50,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="ClickHouse 如何支撑实时分析" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse 如何支撑实时分析](/images/use-cases/real-time-analytics-architecture.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">

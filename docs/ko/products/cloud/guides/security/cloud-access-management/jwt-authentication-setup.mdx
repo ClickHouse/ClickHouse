@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', '인증', 'IdP(Identity Provider)', 'RS256']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.jsx";
@@ -58,7 +56,11 @@ ClickHouse는 provider를 추가하거나 업데이트할 때 JWKS URL을 검증
   <Step title="서비스 보안 설정 열기" id="open-security-settings">
     서비스로 이동하여 **설정**를 열고 **Security** 섹션으로 스크롤합니다. **JWT authentication** 카드를 찾습니다.
 
-    <Image img="/images/cloud/security/jwt/jwt-section.png" size="lg" alt="서비스 보안 설정의 JWT authentication 섹션" force />
+    <div className="ch-image-lg">
+
+    ![서비스 보안 설정의 JWT authentication 섹션](/images/cloud/security/jwt/jwt-section.png)
+
+    </div>
   </Step>
 
   <Step title="provider 플라이아웃 열기" id="open-flyout">

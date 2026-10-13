@@ -9,14 +9,21 @@ doc_type: 'guide'
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Databrain](https://usedatabrain.com) は埋め込み型分析プラットフォームで、顧客向けにインタラクティブなダッシュボード、メトリクス、データの可視化を構築して共有できます。Databrain は HTTPS インターフェイスを使用して ClickHouse に接続するため、モダンで使いやすいインターフェイスで ClickHouse のデータを簡単に可視化し、分析できます。
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="ClickHouse のデータ可視化を表示する Databrain のダッシュボードインターフェイス" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse のデータ可視化を表示する Databrain のダッシュボードインターフェイス](/images/integrations/data-visualization/databrain_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -58,13 +65,21 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
     2. ナビゲーションメニューで**Data Sources**をクリックします。
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrainのデータソースメニュー" border />
+    <div className="ch-image-md">
+
+    ![Databrainのデータソースメニュー](/images/integrations/data-visualization/databrain_02.webp)
+
+    </div>
 
     3. **Add a Data Source**または**Connect Data Source**をクリックします。
 
     4. 利用可能なコネクタの一覧から**ClickHouse**を選択します。
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="ClickHouseオプションが表示されたDatabrainのコネクタ選択画面" border />
+    <div className="ch-image-md">
+
+    ![ClickHouseオプションが表示されたDatabrainのコネクタ選択画面](/images/integrations/data-visualization/databrain_03.webp)
+
+    </div>
 
     5. 接続情報を入力します。
        * **Destination Name**: この接続を識別しやすい名前を入力します (例: &quot;Production ClickHouse&quot; または &quot;Analytics DB&quot;)
@@ -73,7 +88,11 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
        * **Username**: ClickHouseのユーザー名を入力します
        * **Password**: ClickHouseのパスワードを入力します
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="設定フィールドが表示されたDatabrainのClickHouse接続フォーム" border />
+    <div className="ch-image-md">
+
+    ![設定フィールドが表示されたDatabrainのClickHouse接続フォーム](/images/integrations/data-visualization/databrain_04.webp)
+
+    </div>
 
     6. **Test Connection**をクリックし、DatabrainがClickHouseインスタンスに接続できることを確認します。
 
@@ -107,7 +126,15 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
 2. データエクスプローラーに ClickHouse のテーブル一覧が表示されます。
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="ClickHouse のテーブル一覧を表示する Databrain のデータエクスプローラー" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse のテーブル一覧を表示する Databrain のデータエクスプローラー](/images/integrations/data-visualization/databrain_05.webp)
+
+</Frame>
+
+</div>
 
 3. テーブルをクリックすると、スキーマを確認したり、データをプレビューしたりできます。
 
@@ -137,7 +164,15 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
 3. ダッシュボードのレイアウトや外観をカスタマイズします。
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="複数の ClickHouse 可視化を含む Databrain ダッシュボード" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![複数の ClickHouse 可視化を含む Databrain ダッシュボード](/images/integrations/data-visualization/databrain_06.webp)
+
+</Frame>
+
+</div>
 
 4. ダッシュボードをチームで共有したり、アプリケーションに埋め込んだりできます。
 

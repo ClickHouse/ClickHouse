@@ -8,8 +8,6 @@ sidebarTitle: 'Partie 3'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Voici la **partie 3** d&#39;un guide sur la migration de PostgreSQL vers ClickHouse. À l&#39;aide d&#39;un exemple concret, ce guide montre comment modéliser les données dans ClickHouse lors d&#39;une migration depuis PostgreSQL.
 
 Nous recommandons aux utilisateurs migrant depuis Postgres de lire [le guide sur la modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design). Ce guide utilise le même Stack Overflow dataset et présente plusieurs approches à l&#39;aide des fonctionnalités de ClickHouse.
@@ -32,9 +30,25 @@ Pour comprendre pourquoi il n’est pas approprié d’utiliser votre clé prima
 
 Pour plus de détails, nous recommandons ce [guide approfondi](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="Index B-Tree PostgreSQL" />
+<div className="ch-image-lg">
 
-<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="Index épars PostgreSQL" />
+<Frame>
+
+![Index B-Tree PostgreSQL](/images/migrations/postgres-b-tree.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Index épars PostgreSQL](/images/migrations/postgres-sparse-index.webp)
+
+</Frame>
+
+</div>
 
 La clé sélectionnée dans ClickHouse déterminera non seulement l’index, mais aussi l’ordre dans lequel les données sont écrites sur disque. De ce fait, elle peut avoir un impact considérable sur les niveaux de compression, ce qui peut à son tour affecter les performances des requêtes. Une clé de tri qui amène les valeurs de la plupart des colonnes à être écrites dans un ordre contigu permettra à l’algorithme de compression sélectionné (et aux codecs) de compresser les données plus efficacement.
 
@@ -56,7 +70,15 @@ Si vous venez de Postgres, le concept de partitionnement de table vous est famil
 
 Dans ClickHouse, le partitionnement est défini sur une table lors de sa création initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL portant sur n’importe quelles colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée.
 
-<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="Partitions PostgreSQL vers partitions ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Partitions PostgreSQL vers partitions ClickHouse](/images/migrations/postgres-partitions.webp)
+
+</Frame>
+
+</div>
 
 Les data parts sont associées logiquement à chaque partition sur le disque et peuvent être interrogées isolément. Dans l’exemple ci-dessous, nous partitionnons la table `posts` par année à l’aide de l’expression `toYear(CreationDate)`. À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne et la ligne est dirigée vers la partition correspondante si elle existe (si c’est la première ligne pour une année donnée, la partition sera créée).
 
@@ -274,7 +296,15 @@ mises à jour à mesure que les données sont insérées. De plus, les requêtes
 table, les projections étant exploitées lorsque c&#39;est possible pour accélérer le temps
 de réponse.
 
-<Image img="/images/migrations/postgres-projections.webp" size="md" alt="Projections PostgreSQL dans ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Projections PostgreSQL dans ClickHouse](/images/migrations/postgres-projections.webp)
+
+</Frame>
+
+</div>
 
 À l&#39;inverse des vues matérialisées, l&#39;utilisateur doit alors sélectionner la
 table cible optimisée appropriée ou réécrire sa requête, selon les filtres.

@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'chrome 확장 프로그램', '세션 리플레이', 'browser sdk', 'rum', '관측성', 'hyperdx']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <Info>
   **요약**
 
@@ -104,7 +102,11 @@ SDK는 확장 프로그램 내부에 번들되어 있으므로(~480 KB) 페이�
 
     **Save Configuration**을 클릭한 다음 계측하려는 탭을 다시 로드합니다.
 
-    <Image img="/images/clickstack/chrome-extension/extension-config.png" alt="로컬 ClickStack 설정이 표시된 HyperDX Chrome 확장 프로그램 구성 팝업" size="sm" />
+    <div className="ch-image-sm">
+
+    ![로컬 ClickStack 설정이 표시된 HyperDX Chrome 확장 프로그램 구성 팝업](/images/clickstack/chrome-extension/extension-config.png)
+
+    </div>
 
     위 스크린샷은 일반적인 로컬 설정을 보여줍니다. 모니터링이 활성화되어 있고 서비스 이름이 설정되어 있으며 collector는 `http://localhost:4318`을 가리키고, 추적 전파는 API 및 localhost URL로 제한되어 있습니다.
   </Step>

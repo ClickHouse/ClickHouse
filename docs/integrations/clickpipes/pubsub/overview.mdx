@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <Note>
 You can sign up for the Private Preview waitlist [here](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
 </Note>
@@ -25,19 +23,51 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
 
 1. Access the SQL Console for your ClickHouse Cloud Service.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes service" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes service](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. Select the `Data Sources` button on the left-side menu and click on "Set up a ClickPipe"
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Select imports" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select imports](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. Select **GCP Pub/Sub** as your data source.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp" alt="Select GCP Pub/Sub as the data source" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select GCP Pub/Sub as the data source](/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp)
+
+</Frame>
+
+</div>
 
 4. Fill out the form by providing your ClickPipe with a name, your **GCP Project ID**, and the **service account JSON file** for the service account that has been granted Pub/Sub access. The Project ID must be 6–30 characters, can contain lowercase letters, digits, and hyphens, must start with a letter, and cannot end with a hyphen.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp" alt="Fill out connection details" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Fill out connection details](/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp)
+
+</Frame>
+
+</div>
 
 5. Select the **Pub/Sub topic** to ingest from. The dropdown is auto-populated from the topics in your GCP project (sorted alphabetically) once your credentials validate.
 
@@ -46,19 +76,51 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
    - **Filter expression (optional).** A Pub/Sub [subscription filter](https://cloud.google.com/pubsub/docs/subscription-message-filter) on message attributes — for example, `attributes.type = "telemetry"`. Filters apply to message attributes only, not the payload, and cannot be changed after the pipe is created (changing the filter requires recreating the pipe).
    - The UI will show a sample message from the selected topic, with a **Flatten object** toggle that lets you preview how nested JSON would be flattened on the destination side.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp" alt="Set Pub/Sub topic, format, and starting offset" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Set Pub/Sub topic, format, and starting offset](/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp)
+
+</Frame>
+
+</div>
 
 6. In the next step, you can select whether you want to ingest data into a new ClickHouse table or reuse an existing one. Follow the instructions in the screen to modify your table name, schema, and settings. You can see a real-time preview of your changes in the sample table at the top.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Set table, schema, and settings" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Set table, schema, and settings](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</Frame>
+
+</div>
 
   You can also customize the advanced settings using the controls provided
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Set advanced controls" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Set advanced controls](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</Frame>
+
+</div>
 
 7. Alternatively, you can decide to ingest your data in an existing ClickHouse table. In that case, the UI will allow you to map fields from the source to the ClickHouse fields in the selected destination table.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Use an existing table" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Use an existing table](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</Frame>
+
+</div>
 
 8. Finally, you can configure permissions for the internal ClickPipes user.
 
@@ -66,21 +128,61 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
     - `Full access`: with the full access to the cluster. It might be useful if you use materialized view or Dictionary with the destination table.
     - `Only destination table`: with the `INSERT` permissions to the destination table only.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Permissions](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</Frame>
+
+</div>
 
 9. By clicking on "Complete Setup", the system will register your ClickPipe, and you'll be able to see it listed in the summary table.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Success notice" size="sm" border/>
+<div className="ch-image-sm">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Remove notice" size="lg" border/>
+<Frame>
+
+![Success notice](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Remove notice](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
+
+</Frame>
+
+</div>
 
   The summary table provides controls to display sample data from the source or the destination table in ClickHouse
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="View destination" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![View destination](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
+
+</Frame>
+
+</div>
 
   As well as controls to remove the ClickPipe and display a summary of the ingest job.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="View overview" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![View overview](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</Frame>
+
+</div>
 
 10. **Congratulations!** You have successfully set up your first Pub/Sub ClickPipe. It will be continuously running, ingesting data in real-time from your Pub/Sub topic into your ClickHouse Cloud service.
 

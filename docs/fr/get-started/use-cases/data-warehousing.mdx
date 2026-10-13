@@ -7,8 +7,6 @@ sidebarTitle: 'Entrepôt de données'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -44,7 +42,11 @@ Les données circulent depuis les plateformes de streaming et les entrepôts de 
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="Architecture d’entrepôt de données ClickHouse" />
+    <div className="ch-image-lg">
+
+    ![Architecture d’entrepôt de données ClickHouse](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="dw-arch">

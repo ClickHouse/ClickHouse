@@ -11,8 +11,6 @@ integration:
   - website: 'https://airbyte.com/'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -37,7 +35,11 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
 
     3. 터미널에 Airbyte 배너가 표시되면 <a href="http://localhost:8000" target="_blank">localhost:8000</a>에 접속할 수 있습니다.
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_01.webp" size="lg" border alt="Airbyte 배너" />
+       <div className="ch-image-lg">
+
+       ![Airbyte 배너](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
+
+       </div>
 
     <Note>
       또는 <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>에 가입하여 사용할 수 있습니다.
@@ -55,11 +57,19 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
 
     2. Airbyte에서 &quot;Destinations&quot; 페이지를 선택한 다음 새 대상을 추가합니다:
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_02.webp" size="lg" border alt="Airbyte에서 대상 추가" />
+       <div className="ch-image-lg">
+
+       ![Airbyte에서 대상 추가](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
+
+       </div>
 
     3. &quot;Destination type&quot; 드롭다운 목록에서 ClickHouse를 선택한 다음, ClickHouse 호스트명과 포트, 데이터베이스 이름, 사용자 이름, 비밀번호를 입력하고 SSL connection 사용 여부를 선택하여 &quot;Set up the destination&quot; 양식을 작성합니다(`clickhouse-client`의 `--secure` 플래그와 동일):
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_03.webp" size="lg" border alt="Airbyte에서 ClickHouse 대상 생성" />
+       <div className="ch-image-lg">
+
+       ![Airbyte에서 ClickHouse 대상 생성](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
+
+       </div>
 
     4. 완료되었습니다! 이제 Airbyte에 ClickHouse를 대상으로 추가했습니다.
 
@@ -79,7 +89,11 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
 
     1. Airbyte에서 &quot;Sources&quot; 페이지를 선택한 다음, file 유형의 새 소스를 추가합니다.
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_04.webp" size="lg" border alt="Airbyte에서 소스 추가" />
+       <div className="ch-image-lg">
+
+       ![Airbyte에서 소스 추가](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
+
+       </div>
 
     2. 소스 이름을 지정하고 NYC Taxi 2022년 1월 파일의 URL(아래 참조)을 입력하여 &quot;Set up the source&quot; 양식을 작성합니다. 파일 포맷은 `parquet`, Storage Provider는 `HTTPS Public Web`, Dataset Name은 `nyc_taxi_2022`로 선택하십시오.
 
@@ -87,7 +101,11 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
        https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet
        ```
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_05.webp" size="lg" border alt="Airbyte에서 ClickHouse 소스 생성" />
+       <div className="ch-image-lg">
+
+       ![Airbyte에서 ClickHouse 소스 생성](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
+
+       </div>
 
     3. 완료되었습니다. 이제 Airbyte에 소스 파일이 추가되었습니다.
   </Step>
@@ -95,21 +113,37 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
   <Step title="ClickHouse에 연결을 생성하고 데이터셋 불러오기" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
     1. Airbyte에서 &quot;Connections&quot; 페이지를 선택하고 새 연결을 추가하세요
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_06.webp" size="lg" border alt="Airbyte에서 연결 추가하기" />
+    <div className="ch-image-lg">
+
+    ![Airbyte에서 연결 추가하기](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
+
+    </div>
 
     2. &quot;기존 소스 사용&quot;을 선택한 다음 New York City Taxi Data를 선택하고, 이어서 &quot;기존 대상 사용&quot;을 선택한 후 ClickHouse 인스턴스를 선택합니다.
 
     3. 복제 빈도(이 튜토리얼에서는 `manual`을 사용합니다)를 선택하고, 동기화할 스트림으로 `nyc_taxi_2022`를 선택하여 &quot;연결 설정&quot; 양식을 작성하십시오. 정규화 옵션으로 Normalized Tabular Data를 선택했는지 확인하십시오.
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_07.webp" size="lg" border alt="Airbyte에서 연결 만들기" />
+    <div className="ch-image-lg">
+
+    ![Airbyte에서 연결 만들기](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
+
+    </div>
 
     4. 이제 연결이 생성되었으므로 데이터 로딩을 실행하려면 &quot;Sync now&quot;를 클릭하십시오(`Replication Frequency`로 `Manual`을 선택했기 때문입니다)
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_08.webp" size="lg" border alt="지금 Airbyte에서 동기화하세요" />
+    <div className="ch-image-lg">
+
+    ![지금 Airbyte에서 동기화하세요](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
+
+    </div>
 
     5. 데이터 로딩이 시작되면 보기를 펼쳐 Airbyte 로그와 진행 상황을 확인할 수 있습니다. 작업이 완료되면 로그에 `Completed successfully` 메시지가 표시됩니다:
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_09.webp" size="lg" border alt="성공적으로 완료되었습니다" />
+    <div className="ch-image-lg">
+
+    ![성공적으로 완료되었습니다](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
+
+    </div>
 
     6. 사용하는 SQL Client로 ClickHouse 인스턴스에 연결하고 생성된 테이블을 확인하십시오:
 

@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Info>
   如果你使用的是受支持的提供商之一 (见侧边栏) ，请参阅该提供商对应的专门指南。
 </Info>
@@ -30,13 +28,37 @@ Postgres 12 及更高版本
 
 1. 在 Overview 页面上点击 **Edit** 按钮。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp" alt="Cloud SQL Postgres 中的 Edit 按钮" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Cloud SQL Postgres 中的 Edit 按钮](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+
+</Frame>
+
+</div>
 
 2. 进入 Flags，将 `cloudsql.logical_decoding` 设置为 on。此更改需要重启 Postgres 服务器。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="将 cloudsql.logical_decoding 设置为 on" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="重启服务器" size="lg" border />
+<Frame>
+
+![将 cloudsql.logical_decoding 设置为 on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![重启服务器](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## 创建 ClickPipes 用户并授予权限
@@ -98,17 +120,49 @@ Postgres 12 及更高版本
 
 1. 前往 **Connections** 部分
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="Cloud SQL 中的 Connections 部分" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Cloud SQL 中的 Connections 部分](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+
+</Frame>
+
+</div>
 
 2. 前往 **Networking** 子部分
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Cloud SQL 中的 Networking 子部分" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Cloud SQL 中的 Networking 子部分](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+
+</Frame>
+
+</div>
 
 3. 添加 [ClickPipes 的公网 IP](/zh/integrations/clickpipes/networking/static-ips)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="将 ClickPipes 网络添加到防火墙" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="已将 ClickPipes 网络添加到防火墙" size="lg" border />
+<Frame>
+
+![将 ClickPipes 网络添加到防火墙](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![已将 ClickPipes 网络添加到防火墙](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## 下一步是什么？

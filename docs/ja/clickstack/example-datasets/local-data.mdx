@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', '例データ', 'サンプルデータセット', 'ログ', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 この入門ガイドでは、システム上のローカルなログとメトリクスを収集し、ClickStack に送信して可視化や分析を行えます。
 
 **この例は OSX および Linux システムでのみ使用できます**
@@ -123,7 +121,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       <Step title="サービスを選択する" id="select-your-service">
         ClickHouse Cloud のメインページで、Managed ClickStack のサービスを選択します。
 
-        <Image img="/images/clickstack/select_service.webp" alt="サービスを選択" size="lg" />
+        <div className="ch-image-lg">
+
+        ![サービスを選択](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="システムログを確認する" id="navigate-to-the-hyperdx-ui">
@@ -131,7 +133,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
         Search UI にはローカルのシステムログが表示されているはずです。フィルターを展開して `system.log` を選択します。
 
-        <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX ローカルログ" size="lg" />
+        <div className="ch-image-lg">
+
+        ![HyperDX ローカルログ](/images/use-cases/observability/hyperdx-20.webp)
+
+        </div>
       </Step>
 
       <Step title="システムメトリクスを調べる" id="explore-system-metrics">
@@ -143,15 +149,27 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
         `Run` ボタンを押して、メモリ使用率の推移を可視化します。
 
-        <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="時間経過に伴うメモリ使用率" size="lg" />
+        <div className="ch-image-lg">
+
+        ![時間経過に伴うメモリ使用率](/images/use-cases/observability/hyperdx-21.webp)
+
+        </div>
 
         値は `%` の浮動小数点数として返される点に注意してください。より分かりやすく表示するには、`Set number format` を選択します。
 
-        <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数値フォーマット" size="lg" />
+        <div className="ch-image-lg">
+
+        ![数値フォーマット](/images/use-cases/observability/hyperdx-22.webp)
+
+        </div>
 
         続いて表示されるメニューで、`Apply` をクリックする前に `Output format` ドロップダウンから `Percentage` を選択します。
 
-        <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="時間ごとのメモリ %" size="lg" />
+        <div className="ch-image-lg">
+
+        ![時間ごとのメモリ %](/images/use-cases/observability/hyperdx-23.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -268,7 +286,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     データソースはあらかじめ作成済みです。検索UIにはローカルシステムのログが表示されているはずです。フィルターを展開して`system.log`を選択してください：
 
-    <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX ローカルログ" size="lg" />
+    <div className="ch-image-lg">
+
+    ![HyperDX ローカルログ](/images/use-cases/observability/hyperdx-20.webp)
+
+    </div>
 
     ### システムメトリクスを調べる
 
@@ -280,14 +302,26 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     `Run` ボタンを押して、メモリ使用率の推移を可視化します。
 
-    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="時間経過に伴うメモリ使用率" size="lg" />
+    <div className="ch-image-lg">
+
+    ![時間経過に伴うメモリ使用率](/images/use-cases/observability/hyperdx-21.webp)
+
+    </div>
 
     値は `%` の浮動小数点数として返される点に注意してください。より分かりやすく表示するには、`Set number format` を選択します。
 
-    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数値フォーマット" size="lg" />
+    <div className="ch-image-lg">
+
+    ![数値フォーマット](/images/use-cases/observability/hyperdx-22.webp)
+
+    </div>
 
     続いて表示されるメニューで、`Apply` をクリックする前に `Output format` ドロップダウンから `Percentage` を選択します。
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="時間ごとのメモリ %" size="lg" />
+    <div className="ch-image-lg">
+
+    ![時間ごとのメモリ %](/images/use-cases/observability/hyperdx-23.webp)
+
+    </div>
   </Tab>
 </Tabs>

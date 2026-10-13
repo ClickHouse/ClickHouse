@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'example data', 'sample dataset', 'logs', 'observability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This getting started guide allows you to collect local logs and metrics from your system, sending them to ClickStack for visualization and analysis.
 
 **This example works on OSX and Linux systems only**
@@ -125,7 +123,15 @@ The collector will immediately begin collecting local system logs and metrics.
 
 Select the service with Managed ClickStack from the main ClickHouse cloud landing page.
 
-<Image img="/images/clickstack/select_service.webp" alt="Select Service" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select Service](/images/clickstack/select_service.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Explore system logs" id="navigate-to-the-hyperdx-ui">
 
@@ -133,7 +139,15 @@ Select `ClickStack` from the left menu to navigate to the ClickStack UI, where y
 
 The search UI should be populated with local system logs. Expand the filters to select the `system.log`:
 
-<Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX Local logs" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![HyperDX Local logs](/images/use-cases/observability/hyperdx-20.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Explore system metrics" id="explore-system-metrics">
 
@@ -145,15 +159,39 @@ For the `Select a Metric` menu simply type `memory` before selecting `system.mem
 
 Press the run button to visualize your memory utilization over time.
 
-<Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory over time" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Memory over time](/images/use-cases/observability/hyperdx-21.webp)
+
+</Frame>
+
+</div>
 
 Note the number is returned as a floating point `%`. To render it more clearly, select `Set number format`. 
 
-<Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Number format" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Number format](/images/use-cases/observability/hyperdx-22.webp)
+
+</Frame>
+
+</div>
 
 From the subsequent menu you can select `Percentage` from the `Output format` drop down before clicking `Apply`.
 
-<Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Memory % of time" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Memory % of time](/images/use-cases/observability/hyperdx-23.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -271,7 +309,15 @@ Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI
 
 Data sources should be pre-created for you. The search UI should be populated with local system logs. Expand the filters to select the `system.log`:
 
-<Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX Local logs" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![HyperDX Local logs](/images/use-cases/observability/hyperdx-20.webp)
+
+</Frame>
+
+</div>
 
 ### Explore system metrics {#explore-system-metrics-oss}
 
@@ -283,14 +329,38 @@ For the `Select a Metric` menu simply type `memory` before selecting `system.mem
 
 Press the run button to visualize your memory utilization over time.
 
-<Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory over time" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Memory over time](/images/use-cases/observability/hyperdx-21.webp)
+
+</Frame>
+
+</div>
 
 Note the number is returned as a floating point `%`. To render it more clearly, select `Set number format`. 
 
-<Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Number format" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Number format](/images/use-cases/observability/hyperdx-22.webp)
+
+</Frame>
+
+</div>
 
 From the subsequent menu you can select `Percentage` from the `Output format` drop down before clicking `Apply`.
 
-<Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Memory % of time" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Memory % of time](/images/use-cases/observability/hyperdx-23.webp)
+
+</Frame>
+
+</div>
 </Tab>
 </Tabs>

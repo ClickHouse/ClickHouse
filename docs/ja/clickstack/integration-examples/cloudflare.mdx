@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Cloudflare', 'ログ', 'ClickStack', 'ClickPipes', 'S3', 'HTTP', 'Logpush']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -70,7 +68,11 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
     1. ClickHouse Cloud Console → **Data Sources** → **Create ClickPipe**
     2. **Source**: Amazon S3
 
-    <Image img="/images/clickstack/cloudflare/clickpipe-s3.webp" alt="Clickpipe s3" />
+    <div className="ch-image-lg">
+
+    ![Clickpipe s3](/images/clickstack/cloudflare/clickpipe-s3.webp)
+
+    </div>
 
     **Connection:**
 
@@ -86,7 +88,11 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
     * **Continuous ingestion** をオンにする
     * **Ordering**: 辞書式順序
 
-    <Image img="/images/clickstack/cloudflare/continuous-ingestion.webp" alt="Continuous ingestion" />
+    <div className="ch-image-lg">
+
+    ![Continuous ingestion](/images/clickstack/cloudflare/continuous-ingestion.webp)
+
+    </div>
 
     Cloudflare Logpush は日付ベースの名前 (例: `20250127/...`) でファイルを書き込むため、自然に辞書式順序になります。ClickPipes は 30 秒ごとに新しいファイルをポーリングし、最後に処理したファイル名より後のファイルを取り込みます。
 
@@ -94,7 +100,11 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
 
     **Parse information** をクリックします。ClickPipes はログファイルをサンプルしてスキーマを自動検出します。マッピングされたカラムを確認し、必要に応じて型を調整してください。宛先テーブルの **Sorting key** を定義します。Cloudflare ログでは、`(EdgeStartTimestamp, ClientCountry, EdgeResponseStatus)` が適切です。
 
-    <Image img="/images/clickstack/cloudflare/parse-information.webp" alt="Parse information" />
+    <div className="ch-image-lg">
+
+    ![Parse information](/images/clickstack/cloudflare/parse-information.webp)
+
+    </div>
 
     **Complete Setup** をクリックします。
 
@@ -108,11 +118,19 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
 
     1. HyperDX → **チーム設定** → **ソース** を開きます
 
-    <Image img="/images/clickstack/cloudflare/add-source.webp" alt="ソースを追加" />
+    <div className="ch-image-lg">
+
+    ![ソースを追加](/images/clickstack/cloudflare/add-source.webp)
+
+    </div>
 
     2. **ソースを追加** をクリックし、以下の設定を行います。すべてのフィールドにアクセスするには、**オプションフィールドを設定** をクリックします。
 
-    <Image img="/images/clickstack/cloudflare/configure-optional-fields.webp" alt="オプションを設定" />
+    <div className="ch-image-lg">
+
+    ![オプションを設定](/images/clickstack/cloudflare/configure-optional-fields.webp)
+
+    </div>
 
     | 設定             | 値                                                                                                                                                                                                                                                                                                                 |
     | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -131,7 +149,11 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
 
     3. **ソースを保存** をクリックします
 
-    <Image img="/images/clickstack/cloudflare/save-source.webp" alt="ソースを保存" />
+    <div className="ch-image-lg">
+
+    ![ソースを保存](/images/clickstack/cloudflare/save-source.webp)
+
+    </div>
 
     これにより、データの変換や複製を行うことなく、Cloudflare のネイティブカラムが HyperDX のログビューアに直接マッピングされます。**Body** には `GET /api/v1/users 200` のようなリクエストの要約が表示され、すべての Cloudflare フィールドを検索可能な属性として利用できます。
   </Step>
@@ -143,9 +165,17 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
     * HTTP ステータスに応じて色分けされた重大度レベル (2xx は INFO、4xx は WARN、5xx は ERROR)
     * `http.status_code`、`client.country`、`cache.status`、`bot.score` などの検索可能な属性
 
-    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="検索ビュー" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="ログビュー" />
+    ![検索ビュー](/images/clickstack/cloudflare/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![ログビュー](/images/clickstack/cloudflare/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -184,9 +214,17 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
 
     リクエストの概要、検索可能な Cloudflare 属性、HTTP ステータスコードに基づく重大度レベルを含むログエントリが表示されるはずです。
 
-    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="検索ビュー" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="ログビュー" />
+    ![検索ビュー](/images/clickstack/cloudflare/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![ログビュー](/images/clickstack/cloudflare/log-view.webp)
+
+    </div>
 
     <Info>
       **タイムゾーン表示**
@@ -208,15 +246,27 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
   <Step title="ダッシュボードをインポート" id="import-dashboard">
     1. HyperDX → **Dashboards** → **Import Dashboard**
 
-    <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="ダッシュボードのインポート" />
+    <div className="ch-image-lg">
+
+    ![ダッシュボードのインポート](/images/clickstack/cloudflare/import-dashboard.webp)
+
+    </div>
 
     2. `cloudflare-logs-dashboard.json` をアップロード → **Finish Import**
 
-    <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="ダッシュボードのインポート" />
+    <div className="ch-image-lg">
+
+    ![ダッシュボードのインポート](/images/clickstack/cloudflare/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="ダッシュボードを表示" id="view-dashboard">
-    <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="ダッシュボードの例" />
+    <div className="ch-image-lg">
+
+    ![ダッシュボードの例](/images/clickstack/cloudflare/example-dashboard.webp)
+
+    </div>
 
     <Note>
       デモデータセットを使用する場合は、時間範囲を **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに合わせて調整してください) 。インポートしたダッシュボードには、デフォルトで時間範囲は設定されていません。

@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -21,7 +20,15 @@ Le ClickHouse Connector exécute trois démons, tous intégrés au binaire `clic
 
 Sur Kubernetes, le Helm chart `clicklink-connector` déploie les démons dans un namespace de votre choix (`clicklink` par défaut). L&#39;executor est un Deployment à réplique unique qui conserve l&#39;état de ses commandes sur un volume persistant. Sur une VM Linux, les démons s&#39;exécutent en tant qu&#39;unités systemd `clicklink-scraper`, `clicklink-troubleshooter` et `clicklink-executor`, sous un utilisateur système `clicklink` non privilégié.
 
-<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="Architecture du ClickHouse Connector" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Architecture du ClickHouse Connector](/images/cloud/reference/byoc-connector-architecture.svg)
+
+</Frame>
+
+</div>
 
 ## Connexions {#connections}
 
@@ -57,7 +64,15 @@ Le connector vérifie le certificat serveur de votre endpoint à partir du magas
 
 ## Flux de données {#data-flow}
 
-<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="Flux de données de ClickHouse Connector" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Flux de données de ClickHouse Connector](/images/cloud/reference/byoc-connector-data-flow.svg)
+
+</Frame>
+
+</div>
 
 ### Ce qui quitte votre environnement {#what-leaves}
 

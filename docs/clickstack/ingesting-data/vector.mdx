@@ -7,8 +7,8 @@ doc_type: 'guide'
 keywords: ['clickstack', 'vector', 'traces', 'observability', 'telemetry']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import InstallingVector from '/snippets/_installing_vector.mdx';
+
 import VectorSampleData from '/snippets/_vector_sample_data.mdx';
 
 [Vector](https://vector.dev) is a high-performance, vendor-neutral observability data pipeline. It is commonly used to collect, transform, and route logs and metrics from a wide range of sources, and is especially popular for log ingestion due to its flexibility and low resource footprint.
@@ -104,13 +104,29 @@ The example above uses the default user for Managed ClickStack. For production d
 
 Navigate to your Managed ClickStack service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the ClickStack UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
 
-<Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Launch ClickStack for vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Launch ClickStack for vector](/images/clickstack/launch-clickstack-vector.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create a datasource" id="create-a-datasource-managed">
 
 Create a logs data source. If no data sources exist, you will be prompted to create one on your first login. Otherwise, navigate to Team Settings and add a new data source.
 
-<Image img="/images/clickstack/create-vector-datasource.webp" alt="Create datasource - vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Create datasource - vector](/images/clickstack/create-vector-datasource.webp)
+
+</Frame>
+
+</div>
 
 The configuration above assumes an Nginx-style schema with a `time_local` column used as the timestamp. This should be, where possible, the timestamp column declared in the primary key. This column is mandatory.
 
@@ -124,7 +140,15 @@ For other possible options, see the [configuration reference](/clickstack/managi
 
 Navigate to the logs view to explore the data and begin using ClickStack.
 
-<Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Nginx logs in CLickStack" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nginx logs in CLickStack](/images/clickstack/nginx-logs-vector-search.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -138,7 +162,15 @@ Vector requires a table and schema to be defined prior to data ingestion.
 
 First create a database. This can be done via the [ClickHouse Web user interface](/concepts/features/interfaces/http#web-ui) at [http://localhost:8123/play](http://localhost:8123/play). Use the default username and password `api:api`.
 
-<Image img="/images/clickstack/play-ui-clickstack.webp" alt="Play UI ClickStack" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Play UI ClickStack](/images/clickstack/play-ui-clickstack.webp)
+
+</Frame>
+
+</div>
 
 In the example below, we use `logs`:
 
@@ -213,13 +245,29 @@ The example above uses the `api` user for ClickStack Open Source. For production
 
 Navigate to the ClickStack UI at [http://localhost:8080](http://localhost:8080). Create a user if you haven't completed the onboarding.
 
-<Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack login" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack login](/images/use-cases/observability/hyperdx-login.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create a datasource" id="create-a-datasource-oss">
 
 Navigate to Team Settings and add a new data source.
 
-<Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="Create datasource - vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Create datasource - vector](/images/clickstack/create-vector-datasource-oss.webp)
+
+</Frame>
+
+</div>
 
 The configuration above assumes an Nginx-style schema with a `time_local` column used as the timestamp. This should be, where possible, the timestamp column declared in the primary key. This column is mandatory.
 
@@ -233,7 +281,15 @@ For other possible options, see the [configuration reference](/clickstack/managi
 
 Navigate to the logs view to explore the data and begin using ClickStack.
 
-<Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Nginx logs in CLickStack" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nginx logs in CLickStack](/images/clickstack/nginx-logs-vector-search.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -355,13 +411,29 @@ vector --config nginx.yaml
 
 Navigate to your Managed ClickStack service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the ClickStack UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
 
-<Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Launch ClickStack for vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Launch ClickStack for vector](/images/clickstack/launch-clickstack-vector.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create a datasource" id="create-a-datasource-nginx-managed">
 
 Create a logs data source. If no data sources exist, you will be prompted to create one on first login. Otherwise, navigate to Team Settings and add a new data source.
 
-<Image img="/images/clickstack/create-vector-datasource.webp" alt="Create datasource - vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Create datasource - vector](/images/clickstack/create-vector-datasource.webp)
+
+</Frame>
+
+</div>
 
 The configuration assumes the Nginx schema with a `time_local` column used as the timestamp. This is the timestamp column declared in the primary key. This column is mandatory.
 
@@ -394,7 +466,15 @@ For other possible options, see the [configuration reference](/clickstack/managi
 
 Navigate to the search view for `October 20th, 2025` to explore the data and begin using ClickStack.
 
-<Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![HyperDX UI](/images/clickstack/nginx-logs-vector-search.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -419,7 +499,15 @@ Vector requires a table and schema to be defined prior to data ingestion.
 
 First create a database. This can be done via the [ClickHouse Web user interface](/concepts/features/interfaces/http#web-ui) at [http://localhost:8123/play](http://localhost:8123/play). Use the default username and password `api:api`.
 
-<Image img="/images/clickstack/play-ui-clickstack.webp" alt="Play UI ClickStack" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Play UI ClickStack](/images/clickstack/play-ui-clickstack.webp)
+
+</Frame>
+
+</div>
 
 Create a database `logs`:
 
@@ -514,7 +602,15 @@ vector --config nginx-local.yaml
 
 Create a logs data source via `Team -> Sources` 
 
-<Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="Create datasource - vector" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Create datasource - vector](/images/clickstack/create-vector-datasource-oss.webp)
+
+</Frame>
+
+</div>
 
 The configuration assumes the Nginx schema with a `time_local` column used as the timestamp. This is the timestamp column declared in the primary key. This column is mandatory.
 
@@ -547,13 +643,29 @@ For other possible options, see the [configuration reference](/clickstack/managi
 
 Navigate to the ClickStack UI at [http://localhost:8080](http://localhost:8080). Create a user if you haven't completed the onboarding.
 
-<Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack login" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack login](/images/use-cases/observability/hyperdx-login.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Explore the data" id="explore-the-data-nginx-oss">
 
 Navigate to the search view for `October 20th, 2025` to explore the data and begin using ClickStack.
 
-<Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![HyperDX UI](/images/clickstack/nginx-logs-vector-search.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

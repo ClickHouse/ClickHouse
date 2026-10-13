@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -26,7 +24,15 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Экран с примером конфигурации:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="Пример безопасной конфигурации для native-протокола" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Пример безопасной конфигурации для native-протокола](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</Frame>
+
+</div>
 
 Пример YAML-конфигурации для общих настроек:
 
@@ -58,7 +64,15 @@ secureJsonData:
 
 Если выбрать подключение по HTTP-протоколу, отобразятся дополнительные настройки.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Дополнительные параметры конфигурации HTTP" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Дополнительные параметры конфигурации HTTP](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</Frame>
+
+</div>
 
 <div id="http-path">
   #### HTTP-путь
@@ -106,7 +120,15 @@ secureJsonData:
 
 Эти настройки необязательны.
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="Пример дополнительных настроек" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Пример дополнительных настроек](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</Frame>
+
+</div>
 
 Пример YAML:
 
@@ -141,7 +163,15 @@ OpenTelemetry (OTel) тесно интегрирован в плагин.
 
 Пример экрана конфигурации журналов:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="Конфигурация журналов" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Конфигурация журналов](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</Frame>
+
+</div>
 
 Пример YAML-конфигурации журналов:
 
@@ -179,7 +209,15 @@ jsonData:
 
 Пример экрана конфигурации трассировки:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="Конфигурация трассировки" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Конфигурация трассировки](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</Frame>
+
+</div>
 
 Пример YAML-конфигурации трассировки:
 
@@ -282,11 +320,27 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 Затем эту таблицу можно настроить для использования в Grafana. Обратите внимание, что имя может быть любым и даже может быть задано в отдельной базе данных:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="Пример конфигурации таблицы псевдонимов" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Пример конфигурации таблицы псевдонимов](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</Frame>
+
+</div>
 
 Теперь Grafana будет видеть результаты таблицы псевдонимов вместо результатов `DESC example_table`:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="Пример выборки из таблицы псевдонимов" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Пример выборки из таблицы псевдонимов](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</Frame>
+
+</div>
 
 Оба типа использования псевдонимов можно применять для сложных преобразований типов или извлечения полей JSON.
 

@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <SelfManaged />
 
 本指南介绍如何以简单、最少的配置，让 ClickHouse 使用 OpenSSL 证书验证连接。为便于演示，这里会创建自签名的证书颁发机构 (CA) 证书和密钥，以及节点证书，并使用适当的配置建立连接。
@@ -461,7 +459,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     5. 使用 `https` 接口登录位于 `https://chnode1.marsnet.local:8443/play` 的 Play UI。
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="配置 TLS" size="md" border />
+       <div className="ch-image-md">
+
+       ![配置 TLS](/images/guides/sre/configuring-ssl_01.webp)
+
+       </div>
 
     <Note>
       浏览器会显示证书不受信任，因为这是从工作站访问的，而这些证书并不在客户端机器的根 CA 存储中。

@@ -7,8 +7,6 @@ sidebarTitle: '数据仓库'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -44,7 +42,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="ClickHouse 数据仓库架构" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse 数据仓库架构](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="dw-arch">

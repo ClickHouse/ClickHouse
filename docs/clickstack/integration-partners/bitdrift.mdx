@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'mobile observability', 'tracing']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge/>
@@ -37,7 +35,15 @@ Time required: 10-15 minutes
 
 bitdrift keeps mobile telemetry at the edge until it's requested, so teams can pull the full, unsampled session that led to a crash or performance issue instead of working from a fixed, pre-sampled set of signals. The bitdrift Capture platform is available as bitdrift-hosted SaaS or as a bring-your-own-cloud (or bucket) deployment in your AWS account.
 
-<Image img="/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png" alt="A bitdrift User Journey dashboard showing paths to an ANR" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![A bitdrift User Journey dashboard showing paths to an ANR](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
+
+</Frame>
+
+</div>
 
 *A bitdrift User Journey dashboard showing the paths users take to an ANR.*
 
@@ -77,7 +83,15 @@ For the platform-specific details of each step, see [How bitdrift and ClickStack
 
 Once configured, bitdrift timeline log rows and span views show a **View Trace** link that carries the captured trace ID into the ClickStack UI (HyperDX).
 
-<Image img="/images/clickstack/bitdrift/bitdrift-view-trace.jpg" alt="A bitdrift trace linking to a distributed trace in the ClickStack UI" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![A bitdrift trace linking to a distributed trace in the ClickStack UI](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
+
+</Frame>
+
+</div>
 
 *Following a View Trace link from a bitdrift session into a distributed trace in the ClickStack UI (HyperDX).*
 

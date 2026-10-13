@@ -8,7 +8,7 @@ keywords: ['clickstack', '服务地图', '拓扑', '链路追踪', '依赖关系
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
+
 import { Video } from "/snippets/zh/components/Video/Video.jsx";
 
 <BetaBadge />
@@ -17,7 +17,15 @@ import { Video } from "/snippets/zh/components/Video/Video.jsx";
 
 点击左侧导航面板中的 **服务地图** 以打开完整图谱。使用 OpenTelemetry [摄取链路追踪数据](/zh/clickstack/ingesting-data/overview) 后，服务就会显示出来。
 
-<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="显示服务节点及其之间请求流的服务地图" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示服务节点及其之间请求流的服务地图](/images/clickstack/service-maps/service-map-overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-the-service-map">
   ## 探索服务地图
@@ -29,15 +37,39 @@ import { Video } from "/snippets/zh/components/Video/Video.jsx";
 
 **数据源选择器** — 将地图过滤为特定的链路追踪数据源 (例如“ClickPy Traces”) 。
 
-<Image img="/images/clickstack/service-maps/source-selector.webp" alt="服务地图工具栏中高亮显示的数据源选择器" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![服务地图工具栏中高亮显示的数据源选择器](/images/clickstack/service-maps/source-selector.webp)
+
+</Frame>
+
+</div>
 
 **采样滑块** — 调整采样率，以平衡性能和准确性。在高流量集群上，较低的采样率加载速度更快。
 
-<Image img="/images/clickstack/service-maps/sampling.webp" alt="服务地图工具栏中高亮显示的采样滑块" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![服务地图工具栏中高亮显示的采样滑块](/images/clickstack/service-maps/sampling.webp)
+
+</Frame>
+
+</div>
 
 **日期范围选择器** — 设置用于构建地图的链路追踪数据时间窗口。
 
-<Image img="/images/clickstack/service-maps/date-selector.webp" alt="服务地图工具栏中高亮显示的日期范围选择器" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![服务地图工具栏中高亮显示的日期范围选择器](/images/clickstack/service-maps/date-selector.webp)
+
+</Frame>
+
+</div>
 
 使用地图左下角的 **+/-** 按钮，或滚动鼠标滚轮即可放大和缩小。
 

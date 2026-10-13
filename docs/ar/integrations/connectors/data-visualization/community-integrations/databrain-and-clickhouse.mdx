@@ -9,14 +9,21 @@ doc_type: 'guide'
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Databrain](https://usedatabrain.com) هي منصة تحليلات مضمّنة تتيح لك إنشاء لوحات معلومات تفاعلية ومقاييس وتصورات للبيانات ومشاركتها مع عملائك. يتصل Databrain بـ ClickHouse عبر واجهة HTTPS، مما يسهّل تصور بياناتك في ClickHouse وتحليلها من خلال واجهة حديثة وسهلة الاستخدام.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="واجهة لوحة معلومات Databrain تعرض تصورًا لبيانات ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![واجهة لوحة معلومات Databrain تعرض تصورًا لبيانات ClickHouse](/images/integrations/data-visualization/databrain_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -58,13 +65,21 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
     2. انقر على **Data Sources** في قائمة التنقل.
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="قائمة مصادر البيانات في Databrain" border />
+    <div className="ch-image-md">
+
+    ![قائمة مصادر البيانات في Databrain](/images/integrations/data-visualization/databrain_02.webp)
+
+    </div>
 
     3. انقر على **Add a Data Source** أو **Connect Data Source**.
 
     4. حدّد **ClickHouse** من قائمة الموصلات المتاحة.
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="اختيار الموصل في Databrain مع ظهور خيار ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![اختيار الموصل في Databrain مع ظهور خيار ClickHouse](/images/integrations/data-visualization/databrain_03.webp)
+
+    </div>
 
     5. املأ تفاصيل الاتصال:
        * **Destination Name**: أدخل اسمًا وصفيًا لهذا الاتصال (مثل: &quot;ClickHouse للإنتاج&quot; أو &quot;Analytics DB&quot;)
@@ -73,7 +88,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
        * **Username**: أدخل اسم مستخدم ClickHouse
        * **Password**: أدخل كلمة مرور ClickHouse
 
-    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="نموذج اتصال ClickHouse في Databrain مع حقول الإعداد" border />
+    <div className="ch-image-md">
+
+    ![نموذج اتصال ClickHouse في Databrain مع حقول الإعداد](/images/integrations/data-visualization/databrain_04.webp)
+
+    </div>
 
     6. انقر على **Test Connection** للتحقق من أن Databrain يمكنه الاتصال بمثيل ClickHouse لديك.
 
@@ -107,7 +126,15 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
 2. سترى جداول ClickHouse مدرجة في مستكشف البيانات.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="مستكشف البيانات في Databrain يعرض جداول ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مستكشف البيانات في Databrain يعرض جداول ClickHouse](/images/integrations/data-visualization/databrain_05.webp)
+
+</Frame>
+
+</div>
 
 3. انقر على أحد الجداول لاستكشاف المخطط ومعاينة البيانات.
 
@@ -137,7 +164,15 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
 3. خصّص تخطيط لوحة المعلومات ومظهرها.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="لوحة معلومات Databrain تضم عدة تصورات من ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![لوحة معلومات Databrain تضم عدة تصورات من ClickHouse](/images/integrations/data-visualization/databrain_06.webp)
+
+</Frame>
+
+</div>
 
 4. شارك لوحة المعلومات الخاصة بك مع فريقك أو ضمّنها في تطبيقك.
 

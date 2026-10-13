@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
@@ -63,7 +62,15 @@ tiene un patrón reconocible: una tasa de aciertos del búfer por encima del 90 
 que evoluciona con el tráfico de la aplicación, una tasa de errores estable o nula, y latencias
 percentilares que se mantienen muy próximas entre sí.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="Overview de Query Insights que muestra las seis tarjetas de estadísticas: consultas por segundo, percentiles de latencia de consultas, gráfico de anillo del desglose de operaciones, gráfico de áreas de filas devueltas, gráfico de anillo de la tasa de aciertos del búfer al 95,2 % y gráfico de columnas de errores" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Overview de Query Insights que muestra las seis tarjetas de estadísticas: consultas por segundo, percentiles de latencia de consultas, gráfico de anillo del desglose de operaciones, gráfico de áreas de filas devueltas, gráfico de anillo de la tasa de aciertos del búfer al 95,2 % y gráfico de columnas de errores](/images/managed-postgres/monitoring/query-insights-overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="slow-patterns">
   ## Slow patterns
@@ -74,7 +81,15 @@ empieza la investigación. Una fila por cada patrón de consulta normalizado, co
 literales eliminados para que las ejecuciones de la misma sentencia queden agrupadas en
 la misma fila.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Tabla de patrones de consultas lentas que muestra una fila por cada consulta normalizada con las columnas Base de datos, Usuario, Operación, Llamadas, Errores, Latencia media, P95, Latencia máxima, Tiempo de ejecución total, Filas devueltas y Aciertos en caché" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Tabla de patrones de consultas lentas que muestra una fila por cada consulta normalizada con las columnas Base de datos, Usuario, Operación, Llamadas, Errores, Latencia media, P95, Latencia máxima, Tiempo de ejecución total, Filas devueltas y Aciertos en caché](/images/managed-postgres/monitoring/query-insights-patterns.webp)
+
+</Frame>
+
+</div>
 
 <div id="sort">
   ### Ordena por lo que sospeches
@@ -127,7 +142,15 @@ instrucción ejecutada, no una fila por patrón. Úsalo cuando quieras ver el fl
 sin procesar en lugar de un agregado; por ejemplo, para comprobar puntualmente que una corrección
 se aplicó o para encontrar el momento exacto en que se produjo un error.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-recent-queries.webp" alt="Tabla de Recent queries con menús desplegables de filtro de Database, User, Operation y Application, y columnas para Time, Operation, Query, Duration, Rows, Database, User y Blks read" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Tabla de Recent queries con menús desplegables de filtro de Database, User, Operation y Application, y columnas para Time, Operation, Query, Duration, Rows, Database, User y Blks read](/images/managed-postgres/monitoring/query-insights-recent-queries.webp)
+
+</Frame>
+
+</div>
 
 Las columnas predeterminadas son Time, Operation, Query, Duration, Rows,
 Database, User y Blks read. Abre el selector de **columnas** para ver
@@ -161,9 +184,25 @@ El panel lateral es un único panel desplazable con cinco secciones:
 * **Ejecuciones recientes** — las ejecuciones individuales del mismo patrón,
   con contadores por ejecución.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="Panel lateral de detalles de la consulta que muestra el bloque de código de Patrón de consulta y la cuadrícula de Uso agregado de recursos con trece tarjetas de estadísticas, incluidas llamadas totales, percentiles de latencia, tiempo total de ejecución, filas devueltas, tasa de aciertos en caché, bloques leídos, bloques encontrados en caché, tiempo de CPU, bytes de WAL y errores" size="md" border />
+<div className="ch-image-md">
 
-<Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Continuación del panel lateral de detalles de la consulta, que muestra la sección Contexto de la consulta con base de datos, usuario, operación y aplicación, y una tarjeta de Ejecuciones recientes con timestamp, estado OK, rol del servidor, ID del host y contadores por ejecución de duración, filas, aciertos en caché, CPU, bloques compartidos leídos y bloques compartidos encontrados en caché" size="md" border />
+<Frame>
+
+![Panel lateral de detalles de la consulta que muestra el bloque de código de Patrón de consulta y la cuadrícula de Uso agregado de recursos con trece tarjetas de estadísticas, incluidas llamadas totales, percentiles de latencia, tiempo total de ejecución, filas devueltas, tasa de aciertos en caché, bloques leídos, bloques encontrados en caché, tiempo de CPU, bytes de WAL y errores](/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Continuación del panel lateral de detalles de la consulta, que muestra la sección Contexto de la consulta con base de datos, usuario, operación y aplicación, y una tarjeta de Ejecuciones recientes con timestamp, estado OK, rol del servidor, ID del host y contadores por ejecución de duración, filas, aciertos en caché, CPU, bloques compartidos leídos y bloques compartidos encontrados en caché](/images/managed-postgres/monitoring/query-insights-detail-recent.webp)
+
+</Frame>
+
+</div>
 
 <div id="counters">
   ### Contadores por ejecución

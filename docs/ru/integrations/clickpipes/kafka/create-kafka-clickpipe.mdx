@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > В этом руководстве мы пошагово рассмотрим процесс создания первого Kafka ClickPipe.
 
 Kafka ClickPipes можно развертывать и настраивать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
@@ -20,19 +18,31 @@ Kafka ClickPipes можно развертывать и настраивать �
   <Step title="Перейдите к источникам данных" id="1-load-sql-console">
     В левом меню выберите кнопку `Data Sources` и нажмите &quot;Set up a ClickPipe&quot;.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выберите импорт" size="md" />
+    <div className="ch-image-md">
+
+    ![Выберите импорт](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
   </Step>
 
   <Step title="Выберите источник данных" id="2-select-data-source">
     Выберите в списке источник данных Kafka.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Выберите тип источника данных" size="md" />
+    <div className="ch-image-md">
+
+    ![Выберите тип источника данных](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройте источник данных" id="3-configure-data-source">
     Заполните форму: укажите имя для ClickPipe, описание (необязательно), учетные данные и другие сведения о подключении.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="Заполните сведения о подключении" size="md" />
+    <div className="ch-image-md">
+
+    ![Заполните сведения о подключении](/images/integrations/data-ingestion/clickpipes/cp_step2.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройте реестр схем (необязательно)" id="4-configure-your-schema-registry">
@@ -55,7 +65,11 @@ Kafka ClickPipes можно развертывать и настраивать �
        * **SSH Port**: SSH-порт на бастион-хосте (по умолчанию `22`).
        * **SSH User**: имя пользователя для аутентификации на бастион-хосте.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp" alt="Конфигурация SSH-туннеля" size="md" />
+    <div className="ch-image-md">
+
+    ![Конфигурация SSH-туннеля](/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp)
+
+    </div>
 
     3. Чтобы использовать аутентификацию по ключу, нажмите &quot;Revoke and regenerate key pair&quot;, чтобы сгенерировать новую пару ключей, и скопируйте созданный открытый ключ на ваш SSH-сервер в `~/.ssh/authorized_keys`.
     4. Нажмите &quot;Verify Connection&quot;, чтобы проверить подключение.
@@ -70,17 +84,29 @@ Kafka ClickPipes можно развертывать и настраивать �
 
     Затем интерфейс отобразит пример документа из этого топика.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Выберите топик" size="md" />
+    <div className="ch-image-md">
+
+    ![Выберите топик](/images/integrations/data-ingestion/clickpipes/cp_step3.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройте целевую таблицу" id="8-configure-your-destination-table">
     На следующем шаге вы можете выбрать, выполнять ли приём данных в новую таблицу ClickHouse или использовать существующую. Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и настройки. Вверху страницы вы увидите предварительный просмотр изменений в таблице-образце в реальном времени.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Задайте таблицу, схему и настройки" size="md" />
+    <div className="ch-image-md">
+
+    ![Задайте таблицу, схему и настройки](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+    </div>
 
     Вы также можете настроить дополнительные параметры с помощью доступных элементов управления
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="Задайте дополнительные параметры" size="md" />
+    <div className="ch-image-md">
+
+    ![Задайте дополнительные параметры](/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройка разрешений" id="9-configure-permissions">
@@ -89,12 +115,20 @@ Kafka ClickPipes можно развертывать и настраивать �
     * `Full access`: полный доступ к кластеру. Это может быть полезно, если вы используете Materialized View или словарь с целевой таблицей.
     * `Only destination table`: только с разрешением `INSERT` для целевой таблицы.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Разрешения" size="md" />
+    <div className="ch-image-md">
+
+    ![Разрешения](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+    </div>
   </Step>
 
   <Step title="Завершение настройки" id="10-complete-setup">
     После нажатия на &quot;Create ClickPipe&quot; будет создан и запущен ваш ClickPipe. После этого он появится в разделе Data Sources.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Обзор" size="md" />
+    <div className="ch-image-md">
+
+    ![Обзор](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+    </div>
   </Step>
 </Steps>

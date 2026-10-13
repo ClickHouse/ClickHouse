@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['MySQL', '로그', 'OTEL', 'ClickStack', '데이터베이스 모니터링', '느린 쿼리']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -203,9 +201,17 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     3. `source:mysql-error` 또는 `source:mysql-slow`로 필터링하여 MySQL 관련 로그를 확인합니다
     4. `level`, `error_code`, `message`(오류 로그), `query_time`, `rows_examined`, `query`(느린 쿼리 로그) 등의 필드가 포함된 구조화된 로그 항목이 표시되어야 합니다
 
-    <Image img="/images/clickstack/mysql/search-view.webp" alt="Search view" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/mysql/log-view.webp" alt="Log view" />
+    ![Search view](/images/clickstack/mysql/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Log view](/images/clickstack/mysql/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -328,9 +334,17 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
       40개의 로그가 바로 모두 표시되지 않으면 collector가 처리를 마칠 때까지 약 1분 정도 기다리십시오. 기다린 후에도 로그가 표시되지 않으면 `docker restart clickstack-demo`를 실행한 뒤 1분 후 다시 확인하십시오. 이는 `start_at: beginning`으로 기존 파일을 일괄 로드할 때 OpenTelemetry filelog 수신기에서 발생하는 알려진 문제입니다. `start_at: end`를 사용하는 프로덕션 배포에서는 로그가 기록되는 즉시 실시간으로 처리되므로 이 문제가 발생하지 않습니다.
     </Note>
 
-    <Image img="/images/clickstack/mysql/search-view.webp" alt="Search view" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/mysql/log-view.webp" alt="Log view" />
+    ![Search view](/images/clickstack/mysql/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Log view](/images/clickstack/mysql/log-view.webp)
+
+    </div>
 
     <Info>
       **시간대 표시**
@@ -355,17 +369,29 @@ ClickStack로 MySQL 모니터링을 시작할 수 있도록 MySQL 로그용 핵�
     1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
     2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+    <div className="ch-image-lg">
+
+    ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `mysql-logs-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <Image img="/images/clickstack/mysql/finish-import.webp" alt="가져오기 완료" />
+    <div className="ch-image-lg">
+
+    ![가져오기 완료](/images/clickstack/mysql/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     대시보드는 모든 시각화가 미리 구성된 상태로 생성됩니다.
 
-    <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="예시 대시보드" />
+    <div className="ch-image-lg">
+
+    ![예시 대시보드](/images/clickstack/mysql/example-dashboard.webp)
+
+    </div>
 
     <Note>
       데모 데이터세트를 사용하는 경우 시간 범위를 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.

@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 本指南将分步介绍如何使用 PeerDB 将您的 PostgreSQL 数据库迁移至 ClickHouse Managed Postgres。
 
@@ -44,7 +43,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 填写主机、端口、数据库名称、用户名和密码等连接信息，为源 PostgreSQL 数据库创建一个 peer。填写完成后，点击 `Create peer` 按钮以保存该 peer。
 
-<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="创建源 Peer" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![创建源 Peer](/images/managed-postgres/peerdb/source-peer.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-peerdb-target-peer">
   ### 创建目标 peer
@@ -52,11 +59,27 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 同样，你需要为 ClickHouse Managed Postgres 实例创建一个 peer，并提供必要的连接信息。你可以从 ClickHouse Cloud 控制台获取该实例的[连接信息](/zh/products/managed-postgres/connection)。填写完这些信息后，点击 `Create peer` 按钮以保存目标 peer。
 
-<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="创建目标 peer" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![创建目标 peer](/images/managed-postgres/peerdb/target-peer.webp)
+
+</Frame>
+
+</div>
 
 现在，你应该能在“Peers”部分看到源 peer 和目标 peer 都已列出。
 
-<Image img="/images/managed-postgres/peerdb/peers.webp" alt="Peers 列表" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Peers 列表](/images/managed-postgres/peerdb/peers.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-peerdb-source-schema-dump">
   ### 获取源 schema 转储
@@ -144,7 +167,15 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 接下来，我们需要创建一个 mirror，用于定义源 peer 与目标 peer 之间的数据迁移过程。在 PeerDB UI 中，点击侧边栏中的“Mirrors”，进入“Mirrors”部分。要创建新的 mirror，请点击 `+ New mirror` 按钮。
 
-<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="创建 Mirror" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![创建 Mirror](/images/managed-postgres/peerdb/create-mirror.webp)
+
+</Frame>
+
+</div>
 
 1. 为 mirror 指定一个能够描述此次迁移的名称。
 2. 从下拉菜单中选择你之前创建的源 peer 和目标 peer。
@@ -153,11 +184,27 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 * Soft delete 为 OFF。
 * 展开 `Advanced settings`。确保 **Postgres type system is enabled**，并且 **PeerDB columns are disabled**。
 
-<Image img="/images/managed-postgres/peerdb/settings.webp" alt="Mirror 设置" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Mirror 设置](/images/managed-postgres/peerdb/settings.webp)
+
+</Frame>
+
+</div>
 
 4. 选择你要迁移的表。你可以选择特定表，也可以选择源数据库中的所有表。
 
-<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="表选择器" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![表选择器](/images/managed-postgres/peerdb/table-picker.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **选择表**
@@ -169,7 +216,15 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 你应该会在“Mirrors”部分看到新创建的 mirror。
 
-<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="Mirrors 列表" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Mirrors 列表](/images/managed-postgres/peerdb/mirrors.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-peerdb-initial-load">
   ## 等待初始加载
@@ -177,7 +232,15 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 创建 mirror 后，PeerDB 将开始把数据从源数据库初始加载到目标数据库。你可以点击该 mirror，再点击 **初始加载** 选项卡，以监控初始数据迁移的进度。
 
-<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="初始加载进度" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![初始加载进度](/images/managed-postgres/peerdb/initial-load.webp)
+
+</Frame>
+
+</div>
 
 初始加载完成后，你应会看到表明迁移已完成的状态。
 

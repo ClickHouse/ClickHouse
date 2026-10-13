@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Kinesis ClickPipes можно развертывать и настраивать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="prerequisite">
@@ -24,37 +22,101 @@ Kinesis ClickPipes можно развертывать и настраивать
 
 1. Откройте SQL Console для вашего сервиса ClickHouse Cloud.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Сервис ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Сервис ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. В левом меню нажмите кнопку `Data Sources`, затем — &quot;Set up a ClickPipe&quot;
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импорта" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор импорта](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. Выберите источник данных.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Выбор типа источника данных" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор типа источника данных](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+
+</Frame>
+
+</div>
 
 4. Заполните форму: укажите имя ClickPipe, описание (необязательно), роль IAM или учётные данные, а также другие сведения о подключении.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Заполнение сведений о подключении" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Заполнение сведений о подключении](/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp)
+
+</Frame>
+
+</div>
 
 5. Выберите поток Kinesis, **Data format** и начальное смещение. Для `Protobuf` загрузите файл `.proto` или сериализованный `FileDescriptorSet` (максимум 768 КиБ). Schema registry не требуется.
 
    В интерфейсе отображаются примеры данных из выбранного потока. Параметр **Use Kinesis Enhanced Fan-Out** включён по умолчанию. Подробнее см. в [документации Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Настройка формата данных и топика" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Настройка формата данных и топика](/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp)
+
+</Frame>
+
+</div>
 
 6. На следующем шаге можно выбрать, куда выполнять приём данных: в новую таблицу ClickHouse или в существующую. Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и настройки. Вверху страницы доступен предварительный просмотр изменений в образце таблицы в реальном времени.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Настройка таблицы, схемы и параметров" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Настройка таблицы, схемы и параметров](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</Frame>
+
+</div>
 
 Вы также можете изменить расширенные настройки с помощью доступных элементов управления
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Настройка дополнительных параметров" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Настройка дополнительных параметров](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</Frame>
+
+</div>
 
 7. Либо можно настроить приём данных в существующую таблицу ClickHouse. В этом случае интерфейс позволит сопоставить поля источника с полями ClickHouse в выбранной целевой таблице.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Использование существующей таблицы" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Использование существующей таблицы](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</Frame>
+
+</div>
 
 8. Наконец, вы можете настроить разрешения для внутреннего пользователя ClickPipes.
 
@@ -63,21 +125,61 @@ Kinesis ClickPipes можно развертывать и настраивать
 * `Full access`: полный доступ к кластеру. Это может быть полезно, если вы используете materialized view или словарь вместе с целевой таблицей.
   * `Only destination table`: только разрешения `INSERT` для целевой таблицы.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Разрешения" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Разрешения](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</Frame>
+
+</div>
 
 9. Нажмите &quot;Complete Setup&quot;, чтобы система зарегистрировала ClickPipe, после чего он появится в сводной таблице.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Уведомление об успешной настройке" size="sm" border />
+<div className="ch-image-sm">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Уведомление об удалении" size="lg" border />
+<Frame>
+
+![Уведомление об успешной настройке](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Уведомление об удалении](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
+
+</Frame>
+
+</div>
 
 В сводной таблице есть элементы управления для просмотра примеров данных из источника или из целевой таблицы в ClickHouse
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Просмотр пункта назначения" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Просмотр пункта назначения](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
+
+</Frame>
+
+</div>
 
 А также элементы управления для удаления ClickPipe и просмотра сводки задания приёма.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Просмотр обзора" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Просмотр обзора](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</Frame>
+
+</div>
 
 10. **Поздравляем!** Вы успешно настроили свой первый ClickPipe. Если это стриминговый ClickPipe, он будет непрерывно работать и выполнять ингестию данных в реальном времени из удалённого источника. В противном случае он обработает батч и завершит работу.
 

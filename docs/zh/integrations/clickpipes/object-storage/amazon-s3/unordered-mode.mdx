@@ -6,8 +6,6 @@ description: '在 S3 ClickPipes 中配置用于持续摄取的无序模式的分
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 默认情况下，S3 ClickPipe 会假定文件按[词典序](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order)添加到存储桶中。也可以通过设置一个与存储桶关联的 [Amazon SQS](https://aws.amazon.com/sqs/) 队列 (可选使用 [Amazon EventBridge](https://aws.amazon.com/eventbridge/) 作为事件路由) ，将 S3 ClickPipe 配置为摄取没有固有顺序的文件。这样，ClickPipes 就可以监听 `ObjectCreated:*` 事件，并摄取任何新文件，而不受文件命名约定的影响。
 
 <Note>
@@ -44,11 +42,19 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       <Tab title="通过 EventBridge">
         **a.** 在 S3 存储桶属性中，转到 **Event notifications &gt; Amazon EventBridge**，启用向 EventBridge 发送通知，然后点击 **Save changes**。
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="在 S3 存储桶属性中启用 Amazon EventBridge 通知" size="lg" border />
+        <div className="ch-image-lg">
+
+        ![在 S3 存储桶属性中启用 Amazon EventBridge 通知](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
+
+        </div>
 
         **b.** 在 AWS Console 中，转到 **Amazon EventBridge &gt; Rules &gt; Create rule**。为规则命名 (例如 `S3ObjectCreated`) ，选择 **default** 事件总线，然后点击 **Next**。在 **Build event pattern** 步骤中，选择 **AWS events or EventBridge partner events** 作为事件源，然后手动输入以下事件模式，并将 `<bucket-name>` 替换为你的存储桶名称：
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="定义 EventBridge 规则名称和事件总线" size="lg" border />
+        <div className="ch-image-lg">
+
+        ![定义 EventBridge 规则名称和事件总线](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
+
+        </div>
 
         ```json
         {
@@ -66,9 +72,17 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
         **c.** 在 **Select target(s)** 步骤中，选择 **AWS service** 作为目标类型，并选择 **SQS queue**。选取上一步创建的队列。保持 **Use execution role (recommended)** 为选中状态，让 EventBridge 自动创建所需的 IAM 角色，然后点击 **Next** 并完成向导。
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="将 SQS 队列设置为 EventBridge 规则目标" size="lg" border />
+        <div className="ch-image-lg">
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="EventBridge 规则已成功创建" size="lg" border />
+        ![将 SQS 队列设置为 EventBridge 规则目标](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
+
+        </div>
+
+        <div className="ch-image-lg">
+
+        ![EventBridge 规则已成功创建](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
+
+        </div>
 
         **d.** 编辑 SQS 队列访问策略，允许 EventBridge 向其发送消息。将 `<sqs-queue-arn>` 和 `<eventbridge-rule-arn>` 替换为相应的值：
 

@@ -7,8 +7,6 @@ description: 'Развертывание ClickHouse в собственной о
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="what-is-standard-onboarding">
   ## Что такое стандартный онбординг?
 </div>
@@ -41,7 +39,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <Steps>
   <Step title="Выберите облачного провайдера" id="choose-cloud-provider">
-    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="Выбор CSP для BYOC" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![Выбор CSP для BYOC](/images/cloud/reference/byoc-onboarding-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройка аккаунта/проекта/подписки" id="account-setup">
@@ -51,7 +53,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       **Применяйте артефакты онбординга строго в предоставленном виде.** Не изменяйте ничего в шаблоне CloudFormation или модуле Terraform — включая переименование ресурсов или добавление таких параметров, как `PermissionsBoundary`, — без явного одобрения ClickHouse. Автоматизация ClickHouse зависит от точного набора ресурсов, создаваемых этими артефактами; поддерживаемые настройки доступны в виде параметров. В частности, в AWS роль IAM должна сохранять имя по умолчанию `ClickHouseManagementRole` — без префикса или суффикса, — если ClickHouse заранее явно не согласовал другое имя. Технически модуль Terraform предоставляет входной параметр `role_name`, однако для этого необходимо соответствующим образом настроить автоматизацию ClickHouse. Поэтому его изменение без согласования (или переименование роли в шаблоне CloudFormation, где такого параметра нет) приводит к успешному применению стека, но сбою при подготовке инфраструктуры, поскольку ClickHouse не может принять ожидаемую роль.
     </Warning>
 
-    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="Инициализация аккаунта BYOC" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![Инициализация аккаунта BYOC](/images/cloud/reference/byoc-onboarding-2.webp)
+
+    </div>
 
     <Note>
       Бакеты хранилища, VPC/VNet, кластер Kubernetes и вычислительные ресурсы, необходимые для запуска ClickHouse, не входят в первоначальную настройку. Они будут подготовлены на следующем шаге.
@@ -100,7 +106,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     * **Зоны доступности**: Если вы планируете использовать пиринг VPC, согласование зон доступности между исходным аккаунтом и аккаунтом BYOC может помочь снизить затраты на межзональный трафик. Например, в AWS суффиксы зон доступности (`a`, `b`, `c`) могут соответствовать разным идентификаторам физических зон в разных аккаунтах. Подробнее см. в [руководстве AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html).
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="Настройте инфраструктуру BYOC" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![Настройте инфраструктуру BYOC](/images/cloud/reference/byoc-onboarding-3.webp)
+
+    </div>
 
 #### Предварительная проверка
 
@@ -116,7 +126,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Если проверки не пройдены, для каждой из них указывается соответствующее действие и причина сбоя (например, `iam:CreateRole · explicitDeny`). Разверните **Show passed checks**, чтобы просмотреть все успешно пройденные проверки.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="Предварительная проверка BYOC сообщает о неудачных проверках настройки Cloud" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![Предварительная проверка BYOC сообщает о неудачных проверках настройки Cloud](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
+
+    </div>
 
     Чтобы устранить сбои, повторно примените последнюю версию стека ClickHouse CloudFormation или Terraform — либо выдайте указанные действия управляющему удостоверению (роль IAM / сервисный аккаунт / сервисный субъект) — а затем выберите один из вариантов:
 
@@ -142,7 +156,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 После того как ваша BYOC-инфраструктура будет подготовлена, можно запускать первый сервис ClickHouse. Откройте консоль ClickHouse Cloud, выберите свою BYOC-среду и следуйте подсказкам, чтобы создать новый сервис.
 
-<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC создание нового сервиса" />
+<div className="ch-image-md">
+
+<Frame>
+
+![BYOC создание нового сервиса](/images/cloud/reference/byoc-new-service-1.webp)
+
+</Frame>
+
+</div>
 
 При создании сервиса вы настроите следующие параметры:
 

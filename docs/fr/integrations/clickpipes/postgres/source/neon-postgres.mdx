@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Voici comment configurer Neon Postgres pour l’utiliser avec la réplication dans ClickPipes.
 Assurez-vous d&#39;être connecté à votre [Console Neon](https://console.neon.tech/app/projects) pour cette configuration.
 
@@ -68,11 +66,27 @@ La publication `clickpipes` définit l’ensemble des tables dont les événemen
 Dans Neon, vous pouvez activer la réplication logique via l’UI. Cela est nécessaire pour que le CDC de ClickPipes puisse répliquer les données.
 Accédez à l’onglet **Settings**, puis à la section **Logical Replication**.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp" alt="Activer la réplication logique" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Activer la réplication logique](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
+
+</Frame>
+
+</div>
 
 Cliquez sur **Enable** pour finaliser cette étape. Vous devriez voir le message de réussite ci-dessous une fois l’option activée.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp" alt="Réplication logique activée" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Réplication logique activée](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
+
+</Frame>
+
+</div>
 
 Vérifions les paramètres ci-dessous dans votre instance Neon Postgres :
 
@@ -89,7 +103,15 @@ SHOW max_replication_slots; -- should be 10
 Si vous disposez du plan Neon Enterprise, vous pouvez ajouter les [ClickPipes IPs](/fr/integrations/clickpipes/networking/static-ips) à la liste d’autorisation afin d’autoriser la réplication depuis ClickPipes vers votre instance Neon Postgres.
 Pour cela, cliquez sur l’onglet **Settings**, puis accédez à la section **IP Allow**.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="Écran d’autorisation des IP" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Écran d’autorisation des IP](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
+
+</Frame>
+
+</div>
 
 <div id="copy-connection-details">
   ## Copier les informations de connexion
@@ -99,7 +121,15 @@ Maintenant que l&#39;utilisateur est créé, que la publication est prête et qu
 Rendez-vous dans le **Dashboard** et, dans la zone de texte où s&#39;affiche la chaîne de connexion,
 passez l&#39;affichage sur **Paramètres uniquement**. Nous aurons besoin de ces paramètres à l&#39;étape suivante.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp" alt="Informations de connexion" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Informations de connexion](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## Et ensuite ?

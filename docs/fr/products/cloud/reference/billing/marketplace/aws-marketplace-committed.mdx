@@ -6,8 +6,6 @@ keywords: ['aws', 'amazon', 'AWS Marketplace', 'facturation', 'engagement', "con
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Commencez à utiliser ClickHouse Cloud sur l’[AWS Marketplace](https://aws.amazon.com/marketplace) via un contrat d’engagement.
 Un contrat d’engagement, également appelé Private Offer, permet aux clients de s’engager sur un certain montant de dépenses pour ClickHouse Cloud sur une période donnée.
 
@@ -34,7 +32,11 @@ Autorisations requises pour consulter et accepter votre contrat d&#39;engagement
   <Step title="Acceptez votre Private Offer" id="private-offer-accept">
     Vous devriez avoir reçu un e-mail contenant un lien pour consulter et accepter votre Private Offer.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_1.webp" size="md" alt="E-mail de Private Offer AWS Marketplace" />
+    <div className="ch-image-md">
+
+    ![E-mail de Private Offer AWS Marketplace](/images/cloud/reference/mp_committed_spend_1.webp)
+
+    </div>
   </Step>
 
   <Step title="Consultez le lien de l’offre" id="review-offer-link">
@@ -47,14 +49,22 @@ Autorisations requises pour consulter et accepter votre contrat d&#39;engagement
     À ce stade, il est essentiel d’être redirigé vers ClickHouse Cloud et soit de créer un nouveau compte, soit de vous connecter avec un compte existant.
     Sans cette étape, nous ne pourrons pas associer votre contrat AWS Marketplace à ClickHouse Cloud.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_2.webp" size="md" alt="E-mail de Private Offer AWS Marketplace" />
+    <div className="ch-image-md">
+
+    ![E-mail de Private Offer AWS Marketplace](/images/cloud/reference/mp_committed_spend_2.webp)
+
+    </div>
   </Step>
 
   <Step title="Connectez-vous à Cloud" id="login-cloud">
     Une fois redirigé vers ClickHouse Cloud, vous pouvez soit vous connecter avec un compte existant, soit créer un nouveau compte.
     Cette étape est nécessaire pour que nous puissions lier votre organisation ClickHouse Cloud à la facturation AWS Marketplace.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_3.webp" size="md" alt="E-mail de Private Offer AWS Marketplace" />
+    <div className="ch-image-md">
+
+    ![E-mail de Private Offer AWS Marketplace](/images/cloud/reference/mp_committed_spend_3.webp)
+
+    </div>
   </Step>
 
   <Step title="Inscrivez-vous si vous êtes un nouvel utilisateur" id="register">
@@ -65,9 +75,17 @@ Autorisations requises pour consulter et accepter votre contrat d&#39;engagement
     Notez que si vous êtes un nouvel utilisateur, vous devrez également fournir quelques informations de base sur votre entreprise.
     Consultez les captures d’écran ci-dessous.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_4.png" size="md" alt="Fournir des informations sur l’entreprise" />
+    <div className="ch-image-md">
 
-    <Image img="/images/cloud/reference/mp_committed_spend_5.png" size="md" alt="Fournir des informations sur l’entreprise" />
+    ![Fournir des informations sur l’entreprise](/images/cloud/reference/mp_committed_spend_4.png)
+
+    </div>
+
+    <div className="ch-image-md">
+
+    ![Fournir des informations sur l’entreprise](/images/cloud/reference/mp_committed_spend_5.png)
+
+    </div>
 
     Si vous êtes déjà utilisateur de ClickHouse Cloud, connectez-vous simplement avec vos identifiants.
   </Step>
@@ -75,12 +93,20 @@ Autorisations requises pour consulter et accepter votre contrat d&#39;engagement
   <Step title="Créez ou sélectionnez l’organisation à facturer" id="create-select-org-to-bill">
     Après vous être connecté avec succès, vous pouvez soit créer une nouvelle organisation à facturer dans le cadre de ce contrat marketplace, soit choisir une organisation existante à facturer dans le cadre de ce contrat.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_6.webp" size="md" alt="Créer ou sélectionner une organisation à facturer dans le cadre de cet abonnement" />
+    <div className="ch-image-md">
+
+    ![Créer ou sélectionner une organisation à facturer dans le cadre de cet abonnement](/images/cloud/reference/mp_committed_spend_6.webp)
+
+    </div>
 
     Après avoir terminé cette étape, votre organisation sera associée à votre contrat AWS de dépenses engagées, et toute utilisation sera facturée via votre compte AWS.
     Vous pouvez le confirmer depuis la page de facturation de l’organisation dans l’interface utilisateur ClickHouse, où vous verrez que la facturation est désormais bien liée à AWS Marketplace.
 
-    <Image img="/images/cloud/reference/mp_committed_spend_7.webp" size="md" alt="Confirmer que la configuration est terminée" />
+    <div className="ch-image-md">
+
+    ![Confirmer que la configuration est terminée](/images/cloud/reference/mp_committed_spend_7.webp)
+
+    </div>
 
     Si vous rencontrez le moindre problème, n’hésitez pas à contacter notre [équipe d’assistance](https://clickhouse.com/support/program).
   </Step>

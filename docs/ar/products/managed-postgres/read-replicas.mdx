@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
@@ -16,11 +15,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لإدارة النسخ المتماثلة للقراءة، انقر على أيقونة Edit في الـ warehouse لديك:
 
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="عرض warehouse مع أيقونة Edit" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![عرض warehouse مع أيقونة Edit](/images/managed-postgres/warehouse-view.webp)
+
+</Frame>
+
+</div>
 
 سيؤدي ذلك إلى فتح مربع حوار warehouse، حيث يمكنك عرض الخدمات الحالية وإنشاء نسخ متماثلة جديدة للقراءة:
 
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="مربع حوار إدارة النسخ المتماثلة للقراءة" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مربع حوار إدارة النسخ المتماثلة للقراءة](/images/managed-postgres/read-replica-dialog.webp)
+
+</Frame>
+
+</div>
 
 ## إدارة النسخ المتماثلة للقراءة {#managing-read-replicas}
 
@@ -28,11 +43,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يعرض **Flow** بنية النسخ المتماثل — إذ يظهر المثيل الأساسي في الأعلى مع أسهم تتجه إلى الأسفل نحو كل نسخة متماثلة مرتبطة، مع إظهار الفئة والمنطقة والحالة بلمحة سريعة:
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="عرض التدفق للنسخ المتماثلة للقراءة الذي يوضّح بنية المثيل الأساسي والنسخ المتماثلة" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![عرض التدفق للنسخ المتماثلة للقراءة الذي يوضّح بنية المثيل الأساسي والنسخ المتماثلة](/images/managed-postgres/read-replicas-flow.webp)
+
+</Frame>
+
+</div>
 
 يسرد عرض **Table** كل نسخة متماثلة مع اسم الخدمة، وموفّر الخدمة السحابية والمنطقة، وحالة الخدمة، ووقت الإنشاء، وإجراء **Detach service**:
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="عرض الجدول للنسخ المتماثلة للقراءة" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![عرض الجدول للنسخ المتماثلة للقراءة](/images/managed-postgres/read-replicas-table.webp)
+
+</Frame>
+
+</div>
 
 لإنشاء نسخة متماثلة جديدة، انقر على **Create read replica** في الزاوية العلوية اليمنى من أيٍّ من العرضين.
 

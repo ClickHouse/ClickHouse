@@ -7,9 +7,15 @@ doc_type: 'guide'
 keywords: ['clickstack', 'observabilidad', 'logs', 'monitorización', 'plataforma']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
+<div className="ch-image-lg">
 
-<Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="Página de inicio" size="lg" />
+<Frame>
+
+![Página de inicio](/images/use-cases/observability/hyperdx-landing.webp)
+
+</Frame>
+
+</div>
 
 **ClickStack** es una plataforma de observabilidad preparada para producción, basada en ClickHouse, que unifica logs, trazas, métricas y sesiones en una única solución de alto rendimiento. Diseñado para la monitorización y depuración de sistemas complejos, ClickStack permite a desarrolladores y SREs rastrear problemas de extremo a extremo sin cambiar de herramienta ni correlacionar datos manualmente mediante marcas de tiempo o ID de correlación.
 
@@ -102,7 +108,11 @@ La arquitectura de ClickStack varía según cómo se implemente. Existen diferen
 
 <Tabs>
   <Tab title="Managed ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="Arquitectura de Managed ClickStack" size="md" />
+    <div className="ch-image-md">
+
+    ![Arquitectura de Managed ClickStack](/images/use-cases/observability/clickstack-simple-managed-architecture.webp)
+
+    </div>
 
     Managed ClickStack se ejecuta por completo en **ClickHouse Cloud**, proporcionando un backend de observabilidad totalmente gestionado y conservando el mismo modelo de datos y la misma experiencia de usuario de ClickStack.
 
@@ -137,7 +147,11 @@ La arquitectura de ClickStack varía según cómo se implemente. Existen diferen
   </Tab>
 
   <Tab title="Open Source ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="Arquitectura simple de OSS" size="md" />
+    <div className="ch-image-md">
+
+    ![Arquitectura simple de OSS](/images/use-cases/observability/clickstack-simple-oss-architecture.webp)
+
+    </div>
 
     Open Source ClickStack consta de tres componentes principales:
 

@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['ClickStack', 'OpenTelemetry collector', 'ClickHouse observability', 'OTel collector configuration', 'OpenTelemetry ClickHouse']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import ExtendingConfig from '/snippets/ar/_extending_config.mdx';
 
 <Tip>
@@ -420,7 +418,11 @@ import ExtendingConfig from '/snippets/ar/_extending_config.mdx';
 
     يضمن هذا التكامل تأمين نقطة نهاية OTLP باستخدام مفتاح API للإدخال يُولَّد تلقائيًا عند نشر تطبيق HyperDX. يجب أن تتضمن جميع بيانات القياس عن بُعد المُرسلة إلى الـ collector مفتاح API هذا للمصادقة. يمكنك العثور على المفتاح في تطبيق HyperDX ضمن `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح الإدخال" size="lg" />
+    <div className="ch-image-lg">
+
+    ![مفاتيح الإدخال](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     لمزيد من تأمين عملية النشر، نوصي بما يلي:
 
@@ -559,7 +561,15 @@ service:
 
 إذا تعذر ضمان دفعات كبيرة، يمكنك إسناد التجميع إلى ClickHouse باستخدام [عمليات الإدراج غير المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). ففي عمليات الإدراج غير المتزامنة، تُدرج البيانات أولًا في مخزن مؤقت، ثم تُكتب لاحقًا إلى تخزين قاعدة البيانات بشكل غير متزامن.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="عمليات الإدراج غير المتزامنة" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![عمليات الإدراج غير المتزامنة](/images/use-cases/observability/observability-6.webp)
+
+</Frame>
+
+</div>
 
 عند [تمكين عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، عندما يستقبل ClickHouse ① insert query، تُكتب بيانات الاستعلام ② فورًا إلى مخزن مؤقت داخل الذاكرة. وعندما يحدث ③ التفريغ التالي للمخزن المؤقت، تُرتَّب بياناته [sorted](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) وتُكتب كجزء إلى تخزين قاعدة البيانات. لاحظ أن البيانات لا تكون قابلة للبحث عبر الاستعلامات قبل تفريغها إلى تخزين قاعدة البيانات؛ كما أن تفريغ المخزن المؤقت [قابل للتهيئة](/ar/concepts/features/operations/insert/asyncinserts).
 
@@ -583,7 +593,15 @@ service:
 
 يعمل ClickStack OTel مجمّع كمثيل بوابة — راجع [أدوار المجمّع](#collector-roles). وتوفّر هذه المثيلات خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة. وهي تستقبل الأحداث من التطبيقات (أو من مجمّعات أخرى بدور وكيل) عبر OTLP endpoint واحد. وعادةً ما يُنشر عدد من مثيلات مجمّع، مع استخدام موازن تحميل جاهز لتوزيع الحمل بينها.
 
-<Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="التوسّع باستخدام البوابات" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![التوسّع باستخدام البوابات](/images/use-cases/observability/clickstack-with-gateways.webp)
+
+</Frame>
+
+</div>
 
 الهدف من هذه المعمارية هو تخفيف عبء المعالجة كثيفة الاستهلاك عن الوكلاء، مما يقلّل استخدامهم للموارد. ويمكن لبوابات ClickStack هذه تنفيذ مهام التحويل التي كان سيتعيّن على الوكلاء تنفيذها لولا ذلك. إضافةً إلى ذلك، من خلال تجميع الأحداث من عدد كبير من الوكلاء، يمكن للبوابات ضمان إرسال دفعات كبيرة إلى ClickHouse، مما يتيح إدراجًا بكفاءة. ويمكن توسيع مجمّعات البوابة هذه بسهولة مع إضافة المزيد من الوكلاء ومصادر SDK وزيادة throughput للأحداث.
 
@@ -599,7 +617,15 @@ service:
 
 ومع ذلك، إذا كنت تحتاج إلى ضمانات تسليم عالية أو إلى القدرة على إعادة تشغيل البيانات (وربما إلى مصادر متعددة)، فقد تكون Kafka إضافة معمارية مفيدة.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="إضافة Kafka" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![إضافة Kafka](/images/use-cases/observability/observability-8.webp)
+
+</Frame>
+
+</div>
 
 في هذه الحالة, يمكن تهيئة وكلاء OTel لإرسال البيانات إلى Kafka عبر [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). وتستهلك مثيلات بوابة الرسائل بدورها باستخدام [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). نوصي بالرجوع إلى وثائق Confluent وOTel لمزيد من التفاصيل.
 

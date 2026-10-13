@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', 'logs', 'OTEL', 'ClickStack', 'monitoreo de brokers', 'Log4j']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -163,9 +161,17 @@ Si desea probar la integración de logs de Kafka antes de configurar su propio e
   <Step title="Verificar los logs en HyperDX" id="verifying-logs">
     Una vez completada la configuración, inicia sesión en HyperDX y verifica que los logs se estén recibiendo:
 
-    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Vista de búsqueda" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Vista de logs" />
+    ![Vista de búsqueda](/images/clickstack/kafka/logs/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Vista de logs](/images/clickstack/kafka/logs/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -253,9 +259,17 @@ Prueba la integración de logs de Kafka con un conjunto de datos de ejemplo preg
     2. Ve a la vista Search y establece la fuente en `Logs`
     3. Ajusta el intervalo de tiempo para que incluya **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
-    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Vista Search" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Vista Log" />
+    ![Vista Search](/images/clickstack/kafka/logs/search-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Vista Log](/images/clickstack/kafka/logs/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -272,17 +286,29 @@ Prueba la integración de logs de Kafka con un conjunto de datos de ejemplo preg
     1. Abre HyperDX y ve a la sección Dashboards.
     2. Haz clic en &quot;Import Dashboard&quot; en la esquina superior derecha, en el menú de tres puntos.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Importar dashboard" />
+    <div className="ch-image-lg">
+
+    ![Importar dashboard](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Sube el archivo kafka-logs-dashboard.json y haz clic en Finalizar importación.
 
-    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Finalizar la importación del dashboard de logs de Kafka" />
+    <div className="ch-image-lg">
+
+    ![Finalizar la importación del dashboard de logs de Kafka](/images/clickstack/kafka/logs/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="El dashboard se creará con todas las visualizaciones preconfiguradas" id="created-dashboard">
     Para el conjunto de datos de demostración, establece el intervalo de tiempo para incluir **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
-    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Dashboard de ejemplo de logs de Kafka" />
+    <div className="ch-image-lg">
+
+    ![Dashboard de ejemplo de logs de Kafka](/images/clickstack/kafka/logs/example-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

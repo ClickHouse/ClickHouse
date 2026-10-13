@@ -10,8 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -385,7 +383,15 @@ WHERE trip_distance < 6.3
 <AxesSubplot: title={'center': "'trip_distance' from 'short-trips'"}, xlabel='trip_distance', ylabel='Count'>
 ```
 
-<Image img="/images/integrations/sql-clients/jupysql-plot-1.webp" size="md" alt="Histograma mostrando a distribuição das distâncias de viagem em 10 intervalos no conjunto de dados short-trips" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Histograma mostrando a distribuição das distâncias de viagem em 10 intervalos no conjunto de dados short-trips](/images/integrations/sql-clients/jupysql-plot-1.webp)
+
+</Frame>
+
+</div>
 
 ```python
 ax = %sqlplot histogram --table short-trips --column trip_distance --bins 50 --with short-trips
@@ -394,4 +400,12 @@ ax.set_title("Trip distance from trips < 6.3")
 _ = ax.set_xlabel("Trip distance")
 ```
 
-<Image img="/images/integrations/sql-clients/jupysql-plot-2.webp" size="md" alt="Histograma que mostra a distribuição das distâncias de viagem, com 50 intervalos e grade, intitulado 'Distância da viagem de trips < 6.3'" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Histograma que mostra a distribuição das distâncias de viagem, com 50 intervalos e grade, intitulado 'Distância da viagem de trips < 6.3'](/images/integrations/sql-clients/jupysql-plot-2.webp)
+
+</Frame>
+
+</div>

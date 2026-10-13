@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'Развертывание HyperDX в Docker', 'Руководство по развертыванию ClickStack', 'OpenTelemetry Docker Compose']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import JSONSupport from '/snippets/ru/_json_support.mdx';
 
 Все компоненты ClickStack с открытым исходным кодом поставляются по отдельности в виде отдельных Docker-образов:
@@ -67,7 +65,11 @@ Docker Compose открывает дополнительные порты для
       Вы можете переопределить подключение по умолчанию к встроенному экземпляру ClickHouse. Подробнее см. в разделе [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
     </Info>
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Интерфейс HyperDX" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Интерфейс HyperDX](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
 
     Пример использования другого экземпляра ClickHouse см. в разделе [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
@@ -79,7 +81,11 @@ Docker Compose открывает дополнительные порты для
 
     Если будет предложено создать источник, оставьте все значения по умолчанию и укажите в поле `Table` значение `otel_logs`. Все остальные настройки должны определиться автоматически, после чего можно нажать `Save New Source`.
 
-    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Создание источника логов" size="md" />
+    <div className="ch-image-md">
+
+    ![Создание источника логов](/images/use-cases/observability/hyperdx-logs.webp)
+
+    </div>
   </Step>
 </Steps>
 

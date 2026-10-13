@@ -8,13 +8,20 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 Managed mode runs on an Amazon EKS cluster you own. Each release ships four Terraform root modules (roots, below) that either create a cluster meeting its requirements or add what it needs to a VPC or cluster you already have. The roots create the cluster with its system node group and managed addons (`vpc-cni`, `kube-proxy`, `coredns`, `aws-ebs-csi-driver`), plus IAM roles, KMS keys, and tags; `existing-eks` installs only the addons you name in `install_addons`. On the Helm target, `clicklink clctl init` then installs the platform layer from the outputs and a platform bundle: Karpenter, the AWS Load Balancer controller, the StorageClass, and the pinned components (see [initialize the connector from Terraform outputs](#hand-off)). The roots need Terraform 1.10+ or OpenTofu 1.12+ and the AWS provider `~> 6.0`. `tofu` works in place of `terraform` in every command on this page.
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="Terraform provisioning flow for the ClickHouse Connector on AWS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Terraform provisioning flow for the ClickHouse Connector on AWS](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+
+</Frame>
+
+</div>
 
 ## Before you begin {#before-you-begin}
 

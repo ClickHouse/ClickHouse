@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '部署', '设置', '配置', '可观测性']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import JSONSupport from '/snippets/zh/_json_support.mdx';
 
 与[一体化镜像](/zh/clickstack/deployment/docker-compose)类似，这个完整的 Docker 镜像集成了所有 ClickStack 组件：
@@ -49,11 +47,19 @@ import JSONSupport from '/snippets/zh/_json_support.mdx';
 
     连接到你自己的外部 ClickHouse 集群，例如 ClickHouse Cloud。
 
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="创建登录" size="md" />
+    <div className="ch-image-md">
+
+    ![创建登录](/images/use-cases/observability/hyperdx-2.webp)
+
+    </div>
 
     创建一个数据源，保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其他设置应会自动检测，因此你可以直接点击 `Save New Source`。
 
-    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="创建日志数据源" size="md" />
+    <div className="ch-image-md">
+
+    ![创建日志数据源](/images/use-cases/observability/hyperdx-logs.webp)
+
+    </div>
   </Step>
 </Steps>
 

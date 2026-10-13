@@ -11,8 +11,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -21,11 +19,19 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   <Step title="إعداد اتصال ClickHouse" id="1-setup-a-clickhouse-connection">
     لإنشاء اتصال بـ ClickHouse، انتقل إلى **صفحة Connections**، وحدد **New Connection**، ثم اختر ClickHouse من نافذة **New Connection** المنبثقة.
 
-    <Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="واجهة Luzmo تعرض مربع الحوار Create a New Connection مع تحديد ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![واجهة Luzmo تعرض مربع الحوار Create a New Connection مع تحديد ClickHouse](/images/integrations/data-visualization/luzmo_01.webp)
+
+    </div>
 
     سيُطلب منك إدخال **المضيف** و**اسم المستخدم** و**كلمة المرور**:
 
-    <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="نموذج تكوين اتصال Luzmo يعرض حقول مضيف ClickHouse واسم المستخدم وكلمة المرور" border />
+    <div className="ch-image-md">
+
+    ![نموذج تكوين اتصال Luzmo يعرض حقول مضيف ClickHouse واسم المستخدم وكلمة المرور](/images/integrations/data-visualization/luzmo_02.webp)
+
+    </div>
 
     * **Host**: هذا هو المضيف الذي تكون قاعدة بيانات ClickHouse الخاصة بك مكشوفة عليه. لاحظ أنه لا يُسمح هنا إلا باستخدام `https` لنقل البيانات بأمان عبر الشبكة. ويتوقع URL الخاص بالمضيف البنية التالية: `https://url-to-clickhouse-db:port/database`
       افتراضيًا، ستتصل الإضافة بقاعدة البيانات &#39;default&#39; وعلى المنفذ 443. ومن خلال تحديد قاعدة بيانات بعد &#39;/&#39;، يمكنك تعيين قاعدة البيانات المطلوب الاتصال بها.
@@ -42,7 +48,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
     يمكنك الآن استخدام مجموعات البيانات الخاصة بك لإنشاء لوحات معلومات جميلة (مضمّنة)، أو حتى لتشغيل محلل بيانات بالذكاء الاصطناعي ([Luzmo IQ](https://luzmo.com/iq)) يمكنه الإجابة عن أسئلة عملائك.
 
-    <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="مثال على لوحة معلومات في Luzmo تعرض عدة تصورات للبيانات من ClickHouse" border />
+    <div className="ch-image-md">
+
+    ![مثال على لوحة معلومات في Luzmo تعرض عدة تصورات للبيانات من ClickHouse](/images/integrations/data-visualization/luzmo_03.webp)
+
+    </div>
   </Step>
 </Steps>
 

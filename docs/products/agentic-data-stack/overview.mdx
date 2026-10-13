@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 The easiest way to run agentic analytics on ClickHouse is [ClickHouse Agents](/products/cloud/features/ai-ml/agents) in ClickHouse Cloud: fully managed, with no infrastructure to run. Users ask questions in plain language, and an AI agent answers by querying the database directly.
 
 To self-host, the **Agentic Data Stack** is a composable open-source stack. You run it yourself, connect your own models, and keep your chat and data in your own environment. It's built from [ClickHouse](/get-started/setup/install), the [ClickHouse MCP server](/products/agentic-data-stack/components/mcp-server), [LibreChat](/products/agentic-data-stack/components/librechat), and [Langfuse](/products/agentic-data-stack/components/langfuse).
@@ -26,7 +24,15 @@ In agentic analytics, the model grounds its answers by running queries against y
 
 ## How the stack fits together {#architecture}
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Agentic Data Stack architecture: users interact with LibreChat, which connects to an LLM, to ClickHouse through the MCP server, and to Langfuse for tracing" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Agentic Data Stack architecture: users interact with LibreChat, which connects to an LLM, to ClickHouse through the MCP server, and to Langfuse for tracing](/images/agentic-data-stack/01-architecture.webp)
+
+</Frame>
+
+</div>
 
 A user asks a question in LibreChat. The model plans a response and, through the MCP server, calls tools to explore and query ClickHouse. Results flow back, and the agent composes an answer. Langfuse, built on OpenTelemetry, records each run from prompt to tool call to response, lets you score outputs automatically or with human review, and tracks quality, cost, and latency.
 

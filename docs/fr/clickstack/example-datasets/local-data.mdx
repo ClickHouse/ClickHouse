@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'données d’exemple', 'jeu de données d’exemple', 'logs', 'observability']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Ce guide de prise en main vous permet de collecter les logs et les métriques locales de votre système, puis de les envoyer à ClickStack pour les visualiser et les analyser.
 
 **Cet exemple fonctionne uniquement sur les systèmes OSX et Linux**
@@ -123,7 +121,11 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
       <Step title="Sélectionnez votre service" id="select-your-service">
         Sélectionnez le service Managed ClickStack depuis la page d’accueil principale de ClickHouse Cloud.
 
-        <Image img="/images/clickstack/select_service.webp" alt="Sélectionner le service" size="lg" />
+        <div className="ch-image-lg">
+
+        ![Sélectionner le service](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="Explorer les logs système" id="navigate-to-the-hyperdx-ui">
@@ -131,7 +133,11 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
 
         L’UI de recherche devrait déjà afficher les logs système locaux. Dépliez les filtres pour sélectionner `system.log` :
 
-        <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Logs locaux HyperDX" size="lg" />
+        <div className="ch-image-lg">
+
+        ![Logs locaux HyperDX](/images/use-cases/observability/hyperdx-20.webp)
+
+        </div>
       </Step>
 
       <Step title="Explorer les métriques système" id="explore-system-metrics">
@@ -143,15 +149,27 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
 
         Appuyez sur le bouton `Run` pour visualiser l’utilisation de la mémoire au fil du temps.
 
-        <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Mémoire au fil du temps" size="lg" />
+        <div className="ch-image-lg">
+
+        ![Mémoire au fil du temps](/images/use-cases/observability/hyperdx-21.webp)
+
+        </div>
 
         Notez que la valeur renvoyée est un `%` en virgule flottante. Pour l’afficher plus clairement, sélectionnez `Set number format`.
 
-        <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Format de nombre" size="lg" />
+        <div className="ch-image-lg">
+
+        ![Format de nombre](/images/use-cases/observability/hyperdx-22.webp)
+
+        </div>
 
         Dans le menu suivant, vous pouvez sélectionner `Percentage` dans la liste déroulante `Output format`, puis cliquer sur `Apply`.
 
-        <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="% de mémoire au fil du temps" size="lg" />
+        <div className="ch-image-lg">
+
+        ![% de mémoire au fil du temps](/images/use-cases/observability/hyperdx-23.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -268,7 +286,11 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
 
     Les sources de données doivent déjà être créées pour vous. La page Search de l&#39;UI doit être peuplée avec les logs système locaux. Développez les filtres pour sélectionner `system.log` :
 
-    <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Logs locaux HyperDX" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Logs locaux HyperDX](/images/use-cases/observability/hyperdx-20.webp)
+
+    </div>
 
     ### Explorer les métriques système
 
@@ -280,14 +302,26 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
 
     Appuyez sur le bouton `Run` pour visualiser l’utilisation de la mémoire au fil du temps.
 
-    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Mémoire au fil du temps" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Mémoire au fil du temps](/images/use-cases/observability/hyperdx-21.webp)
+
+    </div>
 
     Notez que la valeur renvoyée est un `%` en virgule flottante. Pour l&#39;afficher plus clairement, sélectionnez `Set number format`.
 
-    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Format numérique" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Format numérique](/images/use-cases/observability/hyperdx-22.webp)
+
+    </div>
 
     Dans le menu suivant, vous pouvez sélectionner `Percentage` dans la liste déroulante `Output format`, puis cliquer sur `Apply`.
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="% de mémoire au fil du temps" size="lg" />
+    <div className="ch-image-lg">
+
+    ![% de mémoire au fil du temps](/images/use-cases/observability/hyperdx-23.webp)
+
+    </div>
   </Tab>
 </Tabs>

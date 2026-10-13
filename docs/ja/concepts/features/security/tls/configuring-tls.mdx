@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <SelfManaged />
 
 このガイドでは、OpenSSL 証明書を使用して接続を検証するよう ClickHouse を設定するための、シンプルで最小限の構成を説明します。このデモでは、適切な設定で接続できるように、自己署名の認証局 (CA) 証明書と秘密鍵を作成し、あわせてノード証明書も用意します。
@@ -461,7 +459,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     5. `https://chnode1.marsnet.local:8443/play` の `https` インターフェイス経由で Play UI にログインします。
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="TLS の設定" size="md" border />
+       <div className="ch-image-md">
+
+       ![TLS の設定](/images/guides/sre/configuring-ssl_01.webp)
+
+       </div>
 
     <Note>
       ブラウザは、ワークステーションからアクセスしており、かつ証明書がクライアントマシンのルート CA ストアに含まれていないため、信頼されていない証明書として表示します。

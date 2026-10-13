@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Это один из самых эффективных и простых способов копирования данных из
 Azure Blob Storage или Azure Data Lake Storage в ClickHouse. С помощью этой табличной
 функции можно указать ClickHouse напрямую подключаться к хранилищу Azure и
@@ -38,11 +36,19 @@ Azure Blob Storage или Azure Data Lake Storage в ClickHouse. С помощь
 
 2. В меню слева в разделе **Security +
    networking** выберите **Access keys**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Настройки хранилища данных Azure" border />
+   <div className="ch-image-lg">
+
+   ![Настройки хранилища данных Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
+
+   </div>
 
 3. Выберите **key1** или **key2** и нажмите кнопку **Show** рядом с
    полем **Connection string**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Ключи доступа к хранилищу данных Azure" border />
+   <div className="ch-image-lg">
+
+   ![Ключи доступа к хранилищу данных Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
+
+   </div>
 
 4. Скопируйте строку подключения — она понадобится вам как параметр для табличной функции `azureBlobStorage`.
 

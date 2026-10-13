@@ -6,7 +6,6 @@ keywords: ['أقسام الجدول', 'partition by']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
@@ -46,7 +45,15 @@ PARTITION BY toStartOfMonth(date);
 
 عند إدراج مجموعة من الصفوف في الجدول، لا ينشئ ClickHouse جزء بيانات واحدًا يحتوي على جميع الصفوف المُدرجة (على [الأقل](/ar/reference/settings/session-settings/max-insert#max_insert_block_size))، كما هو موضح [هنا](/ar/concepts/core-concepts/parts)، بل ينشئ جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
 
-<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="معالجة INSERT" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![معالجة INSERT](/images/managing-data/core-concepts/partitions.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -61,7 +68,15 @@ PARTITION BY toStartOfMonth(date);
 
 عند تمكين التقسيم، لا يَدمج ClickHouse [أجزاء البيانات](/ar/concepts/core-concepts/merges) إلا داخل القسم نفسه، وليس عبر الأقسام. نوضّح ذلك في مثال الجدول أعلاه:
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="PART MERGES" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![PART MERGES](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -158,7 +173,15 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 يعالج ClickHouse هذا الاستعلام من خلال تطبيق سلسلة من تقنيات تقليم البيانات لتجنّب فحص البيانات غير ذات الصلة:
 
-<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="PART MERGES 2" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![PART MERGES 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

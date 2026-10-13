@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -41,7 +40,11 @@ QStudioはJDBCを使用してClickHouseに接続します。
     * QStudioを初めて開いたら、メニューの **Server-&gt;Add Server** をクリックするか、ツールバーのサーバー追加ボタンをクリックします。
     * 次に、詳細を設定します。
 
-    <Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="ClickHouse の接続設定を表示している QStudio のデータベース接続設定画面" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse の接続設定を表示している QStudio のデータベース接続設定画面](/images/integrations/sql-clients/qstudio-add-connection.webp)
+
+    </div>
 
     1. Server Type: ClickHouse.com
     2. Host には必ず `https://` を含めてください
@@ -63,7 +66,11 @@ QStudioはJDBCを使用してClickHouseに接続します。
 
     * クエリの例:
 
-    <Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="ClickHouse データベースに対するサンプル SQL クエリ実行を表示している QStudio のインターフェイス" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse データベースに対するサンプル SQL クエリ実行を表示している QStudio のインターフェイス](/images/integrations/sql-clients/qstudio-running-query.webp)
+
+    </div>
   </Step>
 </Steps>
 

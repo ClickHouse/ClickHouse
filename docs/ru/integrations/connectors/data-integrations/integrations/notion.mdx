@@ -10,7 +10,6 @@ integration:
   - category: 'data_integration'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -35,13 +34,29 @@ ClickHouse доступен в Notion как преднастроенное по
 1. В Notion создайте новый Custom Agent в разделе **Agents** на боковой панели.
 2. В **Settings** агента, в разделе **Tools and Access**, выберите **Add connection** и добавьте **ClickHouse** из списка доступных подключений.
 
-<Image img="/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp" size="md" alt="Выбор ClickHouse в списке Add connection в Notion" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Выбор ClickHouse в списке Add connection в Notion](/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp)
+
+</Frame>
+
+</div>
 
 3. Нажмите **Connect** и завершите OAuth-аутентификацию, используя свои учётные данные ClickHouse Cloud. Доступ будет ограничен организациями и сервисами, к которым у вашего аккаунта уже есть доступ.
 
 4. Разверните новое подключение ClickHouse в настройках агента и включите нужные инструменты для этого агента. Для каждого инструмента также можно выбрать, должен ли агент запускать его автоматически или всегда запрашивать подтверждение. Все инструменты, предоставляемые удалённым MCP-сервером ClickHouse, доступны только для чтения. Полный актуальный список см. в разделе [доступных инструментов](/ru/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
-<Image img="/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp" size="md" alt="Развёрнутое подключение ClickHouse в Notion с переключателями для отдельных инструментов" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Развёрнутое подключение ClickHouse в Notion с переключателями для отдельных инструментов](/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Для каждого Custom Agent требуется отдельное подключение ClickHouse, и только пользователь, выполнивший аутентификацию подключения, может изменять настройки его инструментов. Подробнее см. в Notion: [рекомендации по безопасности для подключений Agent](https://www.notion.com/help/security-best-practices-for-agent-connections).

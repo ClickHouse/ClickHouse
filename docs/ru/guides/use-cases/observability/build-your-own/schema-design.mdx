@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Мы рекомендуем пользователям всегда создавать собственную схему для журналов и трассировок по следующим причинам:
 
 * **Выбор первичного ключа** - В схемах по умолчанию используется `ORDER BY`, оптимизированный под определённые паттерны доступа. Маловероятно, что ваши паттерны доступа будут им соответствовать.
@@ -256,7 +254,15 @@ LIMIT 5
 
 Materialized Views позволяют перенести вычислительные затраты с этапа выполнения запроса на этап вставки. Materialized view в ClickHouse — это просто триггер, который запускает запрос на блоках данных по мере их вставки в таблицу. Результаты этого запроса вставляются во вторую, «целевую», таблицу.
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="Materialized view" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Materialized view](/images/use-cases/observability/observability-10.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **Обновления в реальном времени**
@@ -411,7 +417,15 @@ FROM otel_logs
 
 Это показано ниже:
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Otel MV](/images/use-cases/observability/observability-11.webp)
+
+</Frame>
+
+</div>
 
 Если теперь перезапустить конфигурацию коллектор, использованную в [&quot;Экспорт в ClickHouse&quot;](/ru/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse), данные появятся в `otel_logs_v2` в нужном нам формате. Обратите внимание на использование типизированных функций извлечения из JSON.
 
@@ -645,7 +659,15 @@ LIMIT 5
 
 [Словари](/ru/reference/statements/create/dictionary) — одна из [ключевых возможностей](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) ClickHouse: они предоставляют хранящееся в памяти представление данных в формате [ключ-значение](https://en.wikipedia.org/wiki/Key%E2%80%93value_database), поступающих из различных внутренних и внешних [источников](/ru/reference/statements/create/dictionary/sources/overview#dictionary-sources), оптимизированное для запросов с поиском по ключу со сверхнизкой задержкой.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="Обсервабилити и словари" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Обсервабилити и словари](/images/use-cases/observability/observability-12.webp)
+
+</Frame>
+
+</div>
 
 Это удобно в самых разных сценариях: от обогащения принимаемых данных на лету без замедления процесса ингестии до общего повышения производительности запросов, особенно при использовании JOIN.
 Хотя JOIN в сценариях обсервабилити требуются редко, словари всё равно могут быть полезны для обогащения — как при вставке, так и во время выполнения запроса. Ниже мы приводим примеры обоих вариантов.
@@ -1473,7 +1495,15 @@ LIMIT 1000
   Проекции предоставляют многие из тех же возможностей, что и materialized view, но использовать их следует с осторожностью, поскольку во многих случаях предпочтительнее именно materialized view. Важно понимать их недостатки и когда их уместно применять. Например, хотя проекции можно использовать для предварительного вычисления агрегаций, для этого мы рекомендуем использовать Materialized views.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="Обсервабилити и проекции" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Обсервабилити и проекции](/images/use-cases/observability/observability-13.webp)
+
+</Frame>
+
+</div>
 
 Рассмотрим следующий запрос, который фильтрует нашу таблицу `otel_logs_v2` по кодам ошибок 500. Вероятно, это распространенный сценарий для журналирования, когда пользователи хотят фильтровать данные по кодам ошибок:
 

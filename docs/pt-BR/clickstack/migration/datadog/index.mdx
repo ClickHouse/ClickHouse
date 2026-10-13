@@ -8,7 +8,6 @@ doc_type: 'guide'
 keywords: ['Datadog', 'receiver do Datadog', 'agente do Datadog', 'coletor OpenTelemetry', 'migração', 'observabilidade', 'ClickStack']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
@@ -23,7 +22,15 @@ Como o receiver fica dentro de um pipeline normal do coletor, você pode usá-lo
 * **Facilitar uma migração**, migrando para o ClickStack enquanto mantém sua camada de coleta atual e adota a instrumentação do OpenTelemetry gradualmente.
 * **Executar as duas stacks em paralelo** no longo prazo, usando cada plataforma naquilo que faz de melhor.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="Migrando agentes do Datadog" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migrando agentes do Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</Frame>
+
+</div>
 
 <div id="why-run-clickstack-alongside-datadog">
   ## Por que executar o ClickStack junto com o Datadog
@@ -47,17 +54,41 @@ A telemetria com fidelidade total é especialmente valiosa para investigações 
 
 Em uma implantação típica do OpenTelemetry, a telemetria é enviada para um coletor OpenTelemetry antes de chegar a um backend. O coletor recebe dados de coletores em modo agent e de [SDKs do OpenTelemetry](/pt-BR/clickstack/ingesting-data/sdks/index) que instrumentam aplicações, aplica filtros ou transformações, agrupa eventos em lotes e os exporta para o destino de destino.
 
-<Image img="/images/use-cases/observability/simple_otel_pipeline.png" alt="Pipeline simples do OTel" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Pipeline simples do OTel](/images/use-cases/observability/simple_otel_pipeline.png)
+
+</Frame>
+
+</div>
 
 O [receiver do Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) adiciona outra entrada a essa arquitetura. Ele expõe um endpoint que entende os protocolos usados por agentes e SDKs do Datadog e converte os payloads recebidos do Datadog para o modelo de dados do OpenTelemetry. A partir daí, eles passam pelo pipeline normal do coletor como qualquer outra telemetria.
 
 Os agentes do Datadog existentes são simplesmente reconfigurados para enviar logs e traces para o receiver em execução em um ClickStack collector. As aplicações mantêm seus SDKs do Datadog existentes, e os agentes já implantados em toda a sua infraestrutura permanecem no lugar.
 
-<Image img="/images/use-cases/observability/datadog_to_otel.png" alt="Datadog para OpenTelemetry" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Datadog para OpenTelemetry](/images/use-cases/observability/datadog_to_otel.png)
+
+</Frame>
+
+</div>
 
 Como um pipeline de coletor pode usar mais de um exporter, a mesma telemetria pode ser enviada para o Datadog e para o ClickStack ao mesmo tempo. É isso que torna possível a avaliação lado a lado e a operação paralela de longo prazo: você compara as duas plataformas usando dados idênticos e depois decide de forma independente se quer migrar.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="Migrando agentes do Datadog" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migrando agentes do Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</Frame>
+
+</div>
 
 <div id="what-the-receiver-handles">
   ## O que o receiver processa
@@ -201,7 +232,11 @@ Depois de habilitado, aponte seu agente do Datadog para o receiver e autentique-
       <Step title="Copie sua API key de ingestão" id="copy-ingestion-key-oss">
         Na interface do ClickStack (HyperDX), selecione seu usuário no canto inferior esquerdo, vá para **Team Settings &gt; API Keys** e copie a **API key de ingestão**.
 
-        <Image img="/images/use-cases/observability/hyperdx_ingestion_key.png" alt="API key de ingestão do ClickStack" size="lg" background />
+        <div className="ch-image-lg">
+
+        ![API key de ingestão do ClickStack](/images/use-cases/observability/hyperdx_ingestion_key.png)
+
+        </div>
       </Step>
 
       <Step title="Configure o agente Datadog" id="configure-datadog-agent-oss">
@@ -275,7 +310,11 @@ O exemplo a seguir usa um aplicativo de exemplo para mostrar o fluxo completo de
 
     Siga as [instruções no README](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) para executar o app.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="O aplicativo HackerNews Analyzer em execução localmente" />
+    <div className="ch-image-lg">
+
+    ![O aplicativo HackerNews Analyzer em execução localmente](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
   </Step>
 
   <Step title="Inicie o ClickStack com o receiver habilitado" id="launch-clickstack-example">
@@ -314,11 +353,23 @@ O exemplo a seguir usa um aplicativo de exemplo para mostrar o fluxo completo de
   <Step title="Explore sua telemetria no ClickStack" id="explore-telemetry">
     Abra a interface do HyperDX em [http://localhost:8080](http://localhost:8080) e explore os traces, logs e métricas capturados pelo agente do Datadog.
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_2.png" alt="Traces do Datadog no ClickStack 2" size="lg" background />
+    <div className="ch-image-lg">
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_1.png" alt="Traces do Datadog no ClickStack 1" size="lg" background />
+    ![Traces do Datadog no ClickStack 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_3.png" alt="Traces do Datadog no ClickStack 3" size="lg" background />
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Traces do Datadog no ClickStack 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Traces do Datadog no ClickStack 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+
+    </div>
   </Step>
 </Steps>
 

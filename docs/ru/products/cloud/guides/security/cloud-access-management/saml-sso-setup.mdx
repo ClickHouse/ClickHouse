@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'единый вход', 'IdP', 'Okta', 'Google']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <EnterprisePlanFeatureBadge feature="SAML SSO" />
@@ -50,7 +48,11 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
   <Step title="Включите единый вход через SAML" id="enable-saml-sso">
     Нажмите переключатель рядом с `Enable SAML single sign-on`. Оставьте этот экран открытым: в процессе настройки вам нужно будет несколько раз к нему возвращаться.
 
-    <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="Начало настройки SAML" force />
+    <div className="ch-image-lg">
+
+    ![Начало настройки SAML](/images/cloud/security/saml-self-serve-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте приложение в своём провайдере идентификации" id="create-idp-application">
@@ -65,19 +67,31 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
       ClickHouse не поддерживает вход, инициированный провайдером идентификации. Чтобы упростить пользователям доступ к ClickHouse Cloud, создайте для них закладку, используя URL для входа в следующем формате: `https://console.clickhouse.cloud/?connection={orgId}`, где `{orgID}` — идентификатор вашей организации на странице сведений об организации.
     </Tip>
 
-    <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="Создание приложения провайдера идентификации" force />
+    <div className="ch-image-lg">
+
+    ![Создание приложения провайдера идентификации](/images/cloud/security/saml-self-serve-2.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте URL метаданных в конфигурацию SAML" id="add-metadata-url">
     Получите `Metadata URL` у своего SAML-провайдера. Вернитесь в ClickHouse Cloud, нажмите `Next: Provide metadata URL` и вставьте URL в текстовое поле.
 
-    <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="Добавьте URL метаданных" force />
+    <div className="ch-image-lg">
+
+    ![Добавьте URL метаданных](/images/cloud/security/saml-self-serve-3.webp)
+
+    </div>
   </Step>
 
   <Step title="Получение кода для подтверждения домена" id="get-domain-verification-code">
     Нажмите `Next: Verify your domains`. Введите свой домен в текстовое поле и нажмите `Check domain`. Система сгенерирует случайный код подтверждения, который нужно добавить в TXT-запись у вашего DNS-провайдера.
 
-    <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="Добавьте домен для подтверждения" force />
+    <div className="ch-image-lg">
+
+    ![Добавьте домен для подтверждения](/images/cloud/security/saml-self-serve-4.webp)
+
+    </div>
   </Step>
 
   <Step title="Подтвердите свой домен" id="verify-your-domain">
@@ -87,7 +101,11 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
       Обновление и подтверждение DNS-записи может занять несколько минут. Вы можете покинуть страницу настройки и вернуться позже, чтобы завершить процесс, не начиная его заново. Значение подтверждения действительно в течение 48 часов с момента первой генерации.
     </Note>
 
-    <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="Подтвердите свой домен" force />
+    <div className="ch-image-lg">
+
+    ![Подтвердите свой домен](/images/cloud/security/saml-self-serve-5.webp)
+
+    </div>
   </Step>
 
   <Step title="Обновите роль по умолчанию и тайм-аут сеанса" id="update-defaults">
@@ -197,7 +215,11 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
 
     1. Перейдите в консоль администратора Google (admin.google.com).
 
-       <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Google SAML App" force />
+       <div className="ch-image-md">
+
+       ![Google SAML App](/images/cloud/security/saml-google-app.webp)
+
+       </div>
 
     2. Нажмите **Apps**, затем слева выберите **Web and mobile apps**.
 
@@ -251,7 +273,11 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
 
     5. Введите имя и выберите **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**, затем нажмите **Create**.
 
-       <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Приложение Azure не из коллекции" force />
+       <div className="ch-image-md">
+
+       ![Приложение Azure не из коллекции](/images/cloud/security/saml-azure-app.webp)
+
+       </div>
 
     6. Нажмите **Users and groups** слева и назначьте пользователей.
 
@@ -277,7 +303,11 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
         | (A) email                            | Basic         | user.mail        |
         | (U) /identity/claims/name            | Omitted       | user.mail        |
 
-        <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="Атрибуты и утверждения" force />
+        <div className="ch-image-md">
+
+        ![Атрибуты и утверждения](/images/cloud/security/saml-azure-claims.webp)
+
+        </div>
 
     11. Скопируйте metadata URL и вернитесь к разделу [Добавить metadata URL в конфигурацию SAML](#add-metadata-url), чтобы продолжить.
   </Tab>

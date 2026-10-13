@@ -11,7 +11,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 [AWS PrivateLink](https://aws.amazon.com/privatelink/)를 사용하면 ClickPipes와 AWS에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 VPC에 **역방향 private 엔드포인트(RPE)**를 생성하고 이를 데이터 소스용으로 게시된 프라이빗 엔드포인트 서비스에 연결하므로, 트래픽이 퍼블릭 인터넷에 노출되지 않습니다.
@@ -277,19 +276,51 @@ source에 프라이빗 연결을 통해 자체 호스트명으로 연결할 수 
 
 1. ClickHouse Cloud 서비스의 SQL 콘솔에 액세스합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 서비스" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickPipes 서비스](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. 왼쪽 메뉴에서 `Data Sources` 버튼을 선택하고 &quot;ClickPipe 설정&quot;을 클릭합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 선택" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![가져오기 선택](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. 데이터 소스로 Kafka 또는 Postgres를 선택합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="데이터 소스 선택" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![데이터 소스 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</Frame>
+
+</div>
 
 4. `Reverse private endpoint` 옵션을 선택합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="reverse private endpoint 선택" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![reverse private endpoint 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</Frame>
+
+</div>
 
 5. 기존 reverse private endpoint를 선택하거나 새로 만듭니다.
 
@@ -299,11 +330,27 @@ source에 프라이빗 연결을 통해 자체 호스트명으로 연결할 수 
   동일 Region 내에서 액세스할 때는 VPC 리소스를 생성하는 방식을 권장합니다.
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="reverse private endpoint 선택" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![reverse private endpoint 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</Frame>
+
+</div>
 
 6. 선택한 엔드포인트 유형에 필요한 매개변수를 입력합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="reverse private endpoint 선택" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![reverse private endpoint 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</Frame>
+
+</div>
 
 * VPC 리소스에는 구성 공유 ARN과 구성 ID를 입력합니다.
   * MSK multi-VPC에는 클러스터 ARN과 생성된 엔드포인트에 사용할 인증 메서드를 입력합니다.
@@ -316,7 +363,15 @@ source에 프라이빗 연결을 통해 자체 호스트명으로 연결할 수 
    엔드포인트가 Ready 상태가 되면 페이지가 자동으로 새로 고쳐집니다.
    VPC 엔드포인트 서비스는 AWS 콘솔에서 연결 요청을 수락해야 할 수 있습니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="reverse private endpoint 선택" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![reverse private endpoint 선택](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</Frame>
+
+</div>
 
 8. 엔드포인트가 Ready 상태가 되면 DNS 이름을 사용하여 데이터 소스에 연결할 수 있습니다.
 
@@ -337,11 +392,19 @@ ClickHouse Cloud 서비스 설정에서 기존 Reverse Private Endpoint를 관�
 
 1. 사이드바에서 `Settings` 버튼을 찾아 클릭합니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud 설정" size="lg" border />
+   <div className="ch-image-lg">
+
+   ![ClickHouse Cloud 설정](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+   </div>
 
 2. `ClickPipe reverse private endpoints` 섹션에서 `Reverse private endpoints`를 클릭합니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud 설정" size="md" border />
+   <div className="ch-image-md">
+
+   ![ClickHouse Cloud 설정](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+   </div>
 
    플라이아웃에 Reverse Private Endpoint의 상세 정보가 표시됩니다.
 

@@ -11,8 +11,6 @@ hidden: true
 
 import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Cette page explique comment configurer la CDC de DynamoDB vers ClickHouse à l’aide de ClickPipes. Cette intégration comporte 2 composants :
 
 1. L’instantané initial via S3 ClickPipes
@@ -28,14 +26,22 @@ Les données seront ingérées dans un `ReplacingMergeTree`. Ce moteur de table 
     Tout d’abord, vous devrez activer un Kinesis Stream sur votre table DynamoDB pour capturer les modifications en temps réel. Il est préférable de le faire avant de créer l’instantané afin d’éviter toute perte de données.
     Consultez le guide AWS disponible [ici](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="Flux Kinesis DynamoDB" border />
+    <div className="ch-image-lg">
+
+    ![Flux Kinesis DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+
+    </div>
   </Step>
 
   <Step title="Créer l’instantané" id="2-create-the-snapshot">
     Ensuite, nous allons créer un instantané de la table DynamoDB. Pour cela, vous pouvez effectuer une exportation AWS vers S3. Consultez le guide AWS disponible [ici](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
     **Vous devrez effectuer une &quot;exportation complète&quot; au format DynamoDB JSON.**
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="Exportation DynamoDB vers S3" border />
+    <div className="ch-image-md">
+
+    ![Exportation DynamoDB vers S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+
+    </div>
   </Step>
 
   <Step title="Charger l’instantané dans ClickHouse" id="3-load-the-snapshot-into-clickhouse">
@@ -128,7 +134,11 @@ Les données seront ingérées dans un `ReplacingMergeTree`. Ce moteur de table 
       * `ApproximateCreationDateTime` : `version`
       * Faites correspondre les autres champs aux colonnes de destination appropriées, comme indiqué ci-dessous
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="Correspondance des colonnes DynamoDB" border />
+    <div className="ch-image-md">
+
+    ![Correspondance des colonnes DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+
+    </div>
   </Step>
 
   <Step title="Nettoyage (facultatif)" id="5-cleanup-optional">

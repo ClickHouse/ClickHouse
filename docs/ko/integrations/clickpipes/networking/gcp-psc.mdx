@@ -11,8 +11,6 @@ integration:
   - category: "clickpipes"
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect)를 사용하여 ClickPipes와 GCP에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 자체 VPC에 **역방향 Private Endpoint(RPE)**를 생성하고 데이터 소스용으로 게시된 endpoint service를 가리키도록 구성하므로, 트래픽이 공용 인터넷에 노출되지 않습니다.
 
 <Check>

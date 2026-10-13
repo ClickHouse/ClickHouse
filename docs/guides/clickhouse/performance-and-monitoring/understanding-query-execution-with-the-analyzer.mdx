@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['query execution', 'analyzer', 'query optimization', 'explain', 'performance']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickHouse processes queries extremely quickly, but the execution of a query isn't a simple story. Let's try to understand how a `SELECT` query gets executed. To illustrate it, let's add some data in a table in ClickHouse:
 
 ```sql
@@ -29,7 +27,15 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 Now that we have some data in ClickHouse, we want to run some queries and understand their execution. The execution of a query is decomposed into many steps. Each step of the query execution can be analyzed and troubleshooted using the corresponding `EXPLAIN` query. These steps are summarized in the chart below:
 
-<Image img="/images/guides/developer/analyzer1.webp" alt="Explain query steps" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Explain query steps](/images/guides/developer/analyzer1.webp)
+
+</Frame>
+
+</div>
 
 Let's look at each entity in action during query execution. We're going to take a few queries and then examine them using the `EXPLAIN` statement.
 
@@ -353,7 +359,15 @@ digraph
 
 You can then copy this output and paste it [here](https://dreampuf.github.io/GraphvizOnline) and that will generate the following graph:
 
-<Image img="/images/guides/developer/analyzer3.webp" alt="Graph output" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Graph output](/images/guides/developer/analyzer3.webp)
+
+</Frame>
+
+</div>
 
 A white rectangle corresponds to a pipeline node, the gray rectangle corresponds to the query plan steps, and the `x` followed by a number corresponds to the number of inputs/outputs that are being used. If you don't want to see them in a compact form, you can always add `compact=0`:
 
@@ -393,7 +407,15 @@ digraph
 }
 ```
 
-<Image img="/images/guides/developer/analyzer4.webp" alt="Compact graph output" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Compact graph output](/images/guides/developer/analyzer4.webp)
+
+</Frame>
+
+</div>
 
 Why does ClickHouse not read from the table using multiple threads? Let's try to add more data to our table:
 
@@ -452,7 +474,15 @@ digraph
 }
 ```
 
-<Image img="/images/guides/developer/analyzer5.webp" alt="Parallel graph output" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Parallel graph output](/images/guides/developer/analyzer5.webp)
+
+</Frame>
+
+</div>
 
 So the executor decided not to parallelize operations because the volume of data wasn't high enough. By adding more rows, the executor then decided to use multiple threads as shown in the graph.
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'BigQuery']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 BigQuery 到 ClickHouse 的模板是一个批次管道，用于将 BigQuery 表中的数据摄取到 ClickHouse 表中。
 该模板可以读取整个表，也可以使用提供的 SQL 查询过滤特定记录。
 
@@ -98,11 +96,23 @@ BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
     登录 Google Cloud Console 并搜索 DataFlow。
 
     1. 点击 `CREATE JOB FROM TEMPLATE` 按钮
-       <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="DataFlow 控制台" />
+       <div className="ch-image-lg">
+
+       ![DataFlow 控制台](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+       </div>
     2. 打开Template表单后，输入作业名称并选择所需区域。
-       <Image img="/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp" border alt="DataFlow Template初始表单" />
+       <div className="ch-image-lg">
+
+       ![DataFlow Template初始表单](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+
+       </div>
     3. 在 `DataFlow Template` 输入框中，输入 `ClickHouse` 或 `BigQuery`，然后选择 `BigQuery to ClickHouse` Template
-       <Image img="/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp" border alt="选择 BigQuery 到 ClickHouse Template" />
+       <div className="ch-image-lg">
+
+       ![选择 BigQuery 到 ClickHouse Template](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+
+       </div>
     4. 选中后，表单会展开，以便你填写更多详细信息：
        * ClickHouse server JDBC URL，格式如下：`jdbc:clickhouse://host:port/schema`。
        * ClickHouse 用户名。
@@ -115,7 +125,11 @@ BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
       如需添加，请向下滚动到 `Password for ClickHouse Endpoint` 选项。
     </Note>
 
-    <Image img="/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp" border alt="BigQuery 到 ClickHouse 扩展Template表单" />
+    <div className="ch-image-lg">
+
+    ![BigQuery 到 ClickHouse 扩展Template表单](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+
+    </div>
 
     5. 根据[Template参数](#template-parameters)部分中的详细说明，自定义并添加任何与 BigQuery/ClickHouseIO 相关的配置
   </Tab>
@@ -168,7 +182,15 @@ BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
 
 前往 Google Cloud Console 中的 [Dataflow Jobs 选项卡](https://console.cloud.google.com/dataflow/jobs)，查看该作业的状态。你可以在这里找到作业的详细信息，包括进度以及任何错误：
 
-<Image img="/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp" size="lg" border alt="DataFlow 控制台显示一个正在运行的从 BigQuery 到 ClickHouse 的作业" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![DataFlow 控制台显示一个正在运行的从 BigQuery 到 ClickHouse 的作业](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+
+</Frame>
+
+</div>
 
 <div id="troubleshooting">
   ## 故障排查

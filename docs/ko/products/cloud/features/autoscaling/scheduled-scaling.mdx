@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge />
 
@@ -26,9 +25,25 @@ ClickHouse Cloud 서비스는 CPU 및 메모리 활용률에 따라 자동으로
 
 일정을 구성하려면 ClickHouse Cloud 콘솔에서 서비스로 이동한 다음 설정으로 이동합니다. 여기에서 **Schedule Override**를 선택하고 새 규칙을 추가합니다.
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="시간 기반 스케일링 규칙을 보여주는 ClickHouse Cloud 콘솔의 Scaling Schedules 인터페이스" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="ClickHouse Cloud 콘솔에서 예약 스케일링 규칙을 구성하는 모습" border />
+<Frame>
+
+![시간 기반 스케일링 규칙을 보여주는 ClickHouse Cloud 콘솔의 Scaling Schedules 인터페이스](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud 콘솔에서 예약 스케일링 규칙을 구성하는 모습](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
+
+</Frame>
+
+</div>
 
 각 규칙에는 다음 항목이 필요합니다:
 

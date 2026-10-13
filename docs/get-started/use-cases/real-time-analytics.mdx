@@ -7,8 +7,6 @@ sidebarTitle: 'Real-time analytics'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -33,12 +31,24 @@ Data availability requires thinking about end-to-end time-to-insight, which has 
 - **Time to transform and prepare**: How long does it take to clean, enrich, join, pre-aggregate, or update the serving structures (materialized views, rollups, indexes) that queries actually hit?
 - **Time to query**: How long does it take to plan and execute the read once the data is available?
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="Real-time analytics: time to ingest, transform, and query"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Real-time analytics: time to ingest, transform, and query](/images/use-cases/rta-considerations.webp)
+
+</Frame>
+
+</div>
 
 ## How ClickHouse powers real-time analytics {#clickhouse-rta}
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="How ClickHouse powers real-time analytics"/>
+    <div className="ch-image-lg">
+
+    ![How ClickHouse powers real-time analytics](/images/use-cases/real-time-analytics-architecture.webp)
+
+    </div>
   </div>
   <ExclusiveGroup name="rta-arch">
     <AccordionGroup>

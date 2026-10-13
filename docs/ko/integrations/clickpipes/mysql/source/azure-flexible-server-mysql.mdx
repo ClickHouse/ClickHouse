@@ -7,8 +7,6 @@ keywords: ['azure', 'flexible server', 'mysql', 'clickpipes', 'binlog']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 단계별 가이드는 [MySQL ClickPipe](/ko/integrations/clickpipes/mysql/index)를 사용하여 Azure Flexible Server for MySQL의 데이터를 ClickHouse Cloud로 복제하도록 구성하는 방법을 설명합니다. 이 서비스에서는 **일회성 수집**만 지원합니다. MySQL CDC와 관련된 일반적인 질문은 [MySQL FAQ 페이지](/ko/integrations/clickpipes/mysql/faq)를 참조하십시오.
 
 <Warning>
@@ -59,7 +57,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     3. **Firewall rules** 섹션에서 서비스가 배포된 Region에 해당하는 [ClickPipes 고정 IP 주소 목록](/ko/integrations/clickpipes/networking/static-ips)을 입력합니다.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="IP 허용 목록을 사용해 퍼블릭 액세스용 네트워킹을 구성합니다" size="lg" border />
+       <div className="ch-image-lg">
+
+       ![IP 허용 목록을 사용해 퍼블릭 액세스용 네트워킹을 구성합니다](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
+
+       </div>
 
     4. **Save**를 클릭하여 네트워크 보안 구성 변경 사항을 저장합니다.
   </Tab>

@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -119,7 +118,11 @@ Telflo предоставляет:
 
     Проведите связи от приёмников через процессоры к экспортёру — по одному конвейеру на каждый тип сигнала. В строке состояния отображается **config valid** либо количество ошибок, которые нужно исправить, а на вкладке **YAML** — сгенерированная конфигурация.
 
-    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="Конвейер коллектора в редакторе Telflo с настроенным экспортёром ClickHouse" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Конвейер коллектора в редакторе Telflo с настроенным экспортёром ClickHouse](/images/clickstack/telflo/telflo-configuration.webp)
+
+    </div>
 
     Перед развёртыванием вы можете пропустить через конфигурацию тестовую телеметрию и посмотреть, что получится на выходе. См. [тестирование в Telflo](https://docs.telflo.com/docs/testing/overview). Кроме того, вы можете описать, чего хотите добиться, и ИИ-ассистент Telflo, который открывается кнопкой **AI** на панели инструментов, сам построит, проверит и протестирует конфигурацию. Ваш собственный агент может сделать то же самое через [Telflo CLI](https://docs.telflo.com/docs/cli/).
   </Step>
@@ -136,7 +139,11 @@ Telflo предоставляет:
 
     Чтобы выполнить rollout изменения, опубликуйте новую version и назначьте её группе; чтобы откатиться, назначьте ранее развёрнутую version.
 
-    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="Парк Telflo, в котором после rollout все collectors синхронизированы" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Парк Telflo, в котором после rollout все collectors синхронизированы](/images/clickstack/telflo/telflo-fleet.webp)
+
+    </div>
   </Step>
 
   <Step title="Проверьте телеметрию" id="verify-telemetry">

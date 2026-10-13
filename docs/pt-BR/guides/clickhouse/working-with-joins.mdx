@@ -7,8 +7,6 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickHouse oferece suporte completo a junções SQL padrão, permitindo uma análise de dados eficiente.
 Neste guia, você vai explorar alguns dos tipos de junção mais usados e como utilizá-los com a ajuda de diagramas de Venn e consultas de exemplo em um conjunto de dados [IMDB](https://en.wikipedia.org/wiki/IMDb) normalizado, originado do [repositório de conjuntos de dados relacionais](https://relational.fit.cvut.cz/dataset/IMDb).
 
@@ -22,7 +20,15 @@ as tabelas localmente.
 
 Você usará as quatro tabelas a seguir do conjunto de dados de exemplo:
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="Esquema do IMDB" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Esquema do IMDB](/images/starter_guides/joins/imdb_schema.webp)
+
+</Frame>
+
+</div>
 
 Os dados nessas quatro tabelas representam filmes que podem ter um ou vários gêneros.
 Os papéis em um filme são interpretados por atores.
@@ -56,7 +62,15 @@ Nas seções a seguir, você escreverá consultas de exemplo para cada um dos ti
 O `INNER JOIN` retorna, para cada par de linhas que correspondem às chaves de junção, os valores das colunas da linha da tabela à esquerda, combinados com os valores das colunas da linha da tabela à direita.
 Se uma linha tiver mais de uma correspondência, todas elas serão retornadas (ou seja, o [produto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) é gerado para linhas com chaves de junção correspondentes).
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Inner Join](/images/starter_guides/joins/inner_join.webp)
+
+</Frame>
+
+</div>
 
 Esta consulta encontra os gêneros de cada filme ao unir a tabela `movies` à tabela `genres`:
 
@@ -104,7 +118,15 @@ Uma consulta `RIGHT OUTER JOIN` é semelhante e também retorna valores de linha
 
 Uma consulta `FULL OUTER JOIN` combina `LEFT` e `RIGHT OUTER JOIN` e retorna valores de linhas sem correspondência das tabelas da esquerda e da direita, junto com valores padrão para as colunas das tabelas da direita e da esquerda, respectivamente.
 
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="Junção externa" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Junção externa](/images/starter_guides/joins/outer_join.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   O ClickHouse pode ser [configurado](/pt-BR/reference/settings/session-settings/join#join_use_nulls) para retornar [NULL](/pt-BR/reference/syntax#null) em vez de valores padrão (no entanto, por [motivos de desempenho](/pt-BR/reference/data-types/nullable#storage-features), isso é menos recomendável).
@@ -149,7 +171,15 @@ LIMIT 10;
 O `CROSS JOIN` produz o produto cartesiano completo das duas tabelas, sem levar em conta as chaves de junção.
 Cada linha da tabela à esquerda é combinada com cada linha da tabela à direita.
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="Junção cruzada" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Junção cruzada](/images/starter_guides/joins/cross_join.webp)
+
+</Frame>
+
+</div>
 
 A consulta a seguir, portanto, combina cada linha da tabela `movies` com cada linha da tabela `genres`:
 
@@ -249,7 +279,15 @@ Apenas a primeira correspondência encontrada é retornada (o produto cartesiano
 
 Uma consulta `RIGHT SEMI JOIN` é semelhante e retorna valores para todas as linhas da tabela à direita com pelo menos uma correspondência na tabela à esquerda, mas apenas a primeira correspondência encontrada é retornada.
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="Junção semi" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Junção semi](/images/starter_guides/joins/semi_join.webp)
+
+</Frame>
+
+</div>
 
 Esta consulta encontra todos os atores/atrizes que atuaram em um filme em 2023.
 Observe que, com uma junção (`INNER`) normal, o mesmo ator/atriz apareceria mais de uma vez se tivesse mais de um papel em 2023:
@@ -288,7 +326,15 @@ Um `LEFT ANTI JOIN` retorna os valores das colunas de todas as linhas sem corres
 
 Da mesma forma, o `RIGHT ANTI JOIN` retorna os valores das colunas de todas as linhas sem correspondência da tabela à direita.
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Anti Join](/images/starter_guides/joins/anti_join.webp)
+
+</Frame>
+
+</div>
 
 Uma formulação alternativa da consulta de exemplo anterior com junção externa é usar uma anti junção para encontrar filmes que não têm gênero no conjunto de dados:
 
@@ -328,7 +374,15 @@ Da mesma forma, o `RIGHT ANY JOIN` é a combinação de `RIGHT OUTER JOIN` + `RI
 
 E o `INNER ANY JOIN` é um `INNER JOIN` com o produto cartesiano desabilitado.
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Any Join](/images/starter_guides/joins/any_join.webp)
+
+</Frame>
+
+</div>
 
 O exemplo a seguir demonstra o `LEFT ANY JOIN` com um exemplo abstrato usando duas tabelas temporárias (`left_table` e `right_table`) criadas com a [função de tabela](/pt-BR/reference/functions/table-functions/index) [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h):
 
@@ -403,14 +457,30 @@ Se uma linha da tabela à esquerda não tiver uma correspondência exata na tabe
 
 Isso é particularmente útil para análises de séries temporais e pode reduzir drasticamente a complexidade da consulta.
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Join](/images/starter_guides/joins/asof_join.webp)
+
+</Frame>
+
+</div>
 
 O exemplo a seguir faz uma análise de séries temporais de dados do mercado de ações.
 Uma tabela `quotes` contém cotações de símbolos de ações com base em horários específicos do dia.
 Nos dados de exemplo, o preço é atualizado a cada 10 segundos.
 Uma tabela `trades` lista negociações de símbolos — um determinado volume de um símbolo foi comprado em um horário específico:
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Example](/images/starter_guides/joins/asof_example.webp)
+
+</Frame>
+
+</div>
 
 Para calcular o custo efetivo de cada negociação, precisamos associar as negociações ao horário de cotação mais próximo.
 

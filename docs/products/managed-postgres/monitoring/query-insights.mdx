@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
@@ -60,7 +59,15 @@ has a familiar shape — buffer hit ratio in the high nineties, query volume
 moving with application traffic, error rate flat or zero, and percentile
 latencies tracking each other closely.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="Query Insights overview showing the six stats cards: queries per second, query latency percentiles, operations breakdown donut, rows returned area chart, buffer hit ratio donut at 95.2 percent, and an errors column chart" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Query Insights overview showing the six stats cards: queries per second, query latency percentiles, operations breakdown donut, rows returned area chart, buffer hit ratio donut at 95.2 percent, and an errors column chart](/images/managed-postgres/monitoring/query-insights-overview.webp)
+
+</Frame>
+
+</div>
 
 ## Slow patterns {#slow-patterns}
 
@@ -69,7 +76,15 @@ investigation starts. One row per normalized query pattern, with the
 literals stripped out so executions of the same statement collapse onto
 the same row.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Slow query patterns table showing one row per normalized query with Database, User, Operation, Calls, Errors, Avg latency, P95, Max latency, Total runtime, Rows returned, and Cache hit columns" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Slow query patterns table showing one row per normalized query with Database, User, Operation, Calls, Errors, Avg latency, P95, Max latency, Total runtime, Rows returned, and Cache hit columns](/images/managed-postgres/monitoring/query-insights-patterns.webp)
+
+</Frame>
+
+</div>
 
 ### Sort by what you suspect {#sort}
 
@@ -116,7 +131,15 @@ statement, not one row per pattern. Use it when you want the raw event
 stream instead of an aggregate, for example to spot-check that a fix
 landed or to find the exact moment an error fired.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-recent-queries.webp" alt="Recent Queries table with Database, User, Operation, and Application filter dropdowns and columns for Time, Operation, Query, Duration, Rows, Database, User, and Blks read" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Recent Queries table with Database, User, Operation, and Application filter dropdowns and columns for Time, Operation, Query, Duration, Rows, Database, User, and Blks read](/images/managed-postgres/monitoring/query-insights-recent-queries.webp)
+
+</Frame>
+
+</div>
 
 The default columns are Time, Operation, Query, Duration, Rows,
 Database, User, and Blks read. Open the **Columns** picker for
@@ -149,9 +172,25 @@ The flyout is a single scrolling layout with five sections:
 - **Recent executions** — the individual runs of the same pattern,
   with per-execution counters.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="Query detail flyout showing the Query pattern code block and the Aggregate resource usage grid with thirteen stat cards including total calls, latency percentiles, total runtime, rows returned, cache hit ratio, blocks read, blocks hit, CPU time, WAL bytes, and errors" size="md" border/>
+<div className="ch-image-md">
 
-<Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Query detail flyout continued, showing the Query context section with database, user, operation, and application, and a Recent executions card with timestamp, OK status, server role, host id, and per-execution counters for duration, rows, cache hit, CPU, shared blocks read, and shared blocks hit" size="md" border/>
+<Frame>
+
+![Query detail flyout showing the Query pattern code block and the Aggregate resource usage grid with thirteen stat cards including total calls, latency percentiles, total runtime, rows returned, cache hit ratio, blocks read, blocks hit, CPU time, WAL bytes, and errors](/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Query detail flyout continued, showing the Query context section with database, user, operation, and application, and a Recent executions card with timestamp, OK status, server role, host id, and per-execution counters for duration, rows, cache hit, CPU, shared blocks read, and shared blocks hit](/images/managed-postgres/monitoring/query-insights-detail-recent.webp)
+
+</Frame>
+
+</div>
 
 ### Per-execution counters {#counters}
 

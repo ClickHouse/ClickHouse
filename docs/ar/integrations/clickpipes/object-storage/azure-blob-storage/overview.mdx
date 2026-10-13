@@ -6,8 +6,6 @@ title: 'تكامل Azure Blob Storage مع ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوفّر ABS ClickPipe طريقة مُدارة بالكامل وموثوقة لاستيعاب البيانات من Azure Blob Storage إلى ClickHouse Cloud. وهو يدعم كلاً من **الاستيعاب لمرة واحدة** و**الاستيعاب المستمر**، مع ضمان معالجة كل سجل مرة واحدة فقط.
 
 يمكن نشر ABS ClickPipes وإدارتها يدويًا عبر ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
@@ -179,7 +177,15 @@ BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSig
 | `Parallel view processing`           | false         | ما إذا كان سيتم تمكين تمرير البيانات إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عقد.                                                                                                           |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة في ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![الإعدادات المتقدمة في ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="scaling">
   ### التحجيم

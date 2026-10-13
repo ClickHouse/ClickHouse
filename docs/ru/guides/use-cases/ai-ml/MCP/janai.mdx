@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > В этом руководстве показано, как использовать MCP-сервер ClickHouse с [Jan.ai](https://jan.ai/docs).
 
 <Steps>
@@ -25,14 +23,22 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Чтобы включить OpenAI, нужно указать API key, как показано ниже:
 
-    <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="Включение моделей OpenAI" size="md" />
+    <div className="ch-image-md">
+
+    ![Включение моделей OpenAI](/images/use-cases/AI_ML/MCP/0_janai_openai.webp)
+
+    </div>
   </Step>
 
   <Step title="Включите MCP-серверы" id="enable-mcp-servers">
     На момент написания MCP-серверы в Jan.ai являются экспериментальной возможностью.
     Их можно включить, активировав экспериментальные возможности:
 
-    <Image img="/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp" alt="Включение MCP-серверов" size="md" />
+    <div className="ch-image-md">
+
+    ![Включение MCP-серверов](/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp)
+
+    </div>
 
     После этого в меню слева появится пункт `MCP servers`.
   </Step>
@@ -40,43 +46,79 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Настройте MCP-сервер ClickHouse" id="configure-clickhouse-mcp-server">
     Если открыть меню `MCP servers`, появится список MCP-серверов, к которым можно подключиться:
 
-    <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="Список MCP-серверов" size="md" />
+    <div className="ch-image-md">
+
+    ![Список MCP-серверов](/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp)
+
+    </div>
 
     По умолчанию все эти серверы отключены, но их можно включить с помощью переключателя.
 
     Чтобы установить MCP-сервер ClickHouse, нажмите значок `+`, а затем заполните форму следующим образом:
 
-    <Image img="/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp" alt="Добавление MCP-сервера" size="md" />
+    <div className="ch-image-md">
+
+    ![Добавление MCP-сервера](/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp)
+
+    </div>
 
     После этого включите ClickHouse Server, если он еще не включен:
 
-    <Image img="/images/use-cases/AI_ML/MCP/4_janai_toggle.webp" alt="Включение MCP-сервера" size="md" />
+    <div className="ch-image-md">
+
+    ![Включение MCP-сервера](/images/use-cases/AI_ML/MCP/4_janai_toggle.webp)
+
+    </div>
 
     Инструменты MCP-сервера ClickHouse теперь будут видны в диалоге чата:
 
-    <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="Инструменты MCP-сервера ClickHouse" size="md" />
+    <div className="ch-image-md">
+
+    ![Инструменты MCP-сервера ClickHouse](/images/use-cases/AI_ML/MCP/5_jani_tools.webp)
+
+    </div>
   </Step>
 
   <Step title="Общение с MCP-сервером ClickHouse через Jan.ai" id="chat-to-clickhouse-mcp-server">
     Пора начать диалог с данными, хранящимися в ClickHouse!
     Давайте зададим вопрос:
 
-    <Image img="/images/use-cases/AI_ML/MCP/6_janai_question.webp" alt="Вопрос" size="md" />
+    <div className="ch-image-md">
+
+    ![Вопрос](/images/use-cases/AI_ML/MCP/6_janai_question.webp)
+
+    </div>
 
     Перед вызовом инструмента Jan.ai запросит подтверждение:
 
-    <Image img="/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp" alt="Подтверждение инструмента" size="md" />
+    <div className="ch-image-md">
+
+    ![Подтверждение инструмента](/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp)
+
+    </div>
 
     Затем он покажет список выполненных вызовов инструментов:
 
-    <Image img="/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp" alt="Вызванные инструменты" size="md" />
+    <div className="ch-image-md">
+
+    ![Вызванные инструменты](/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp)
+
+    </div>
 
     Если нажать на вызов инструмента, можно увидеть его подробности:
 
-    <Image img="/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp" alt="Развернутый список вызванных инструментов" size="md" />
+    <div className="ch-image-md">
+
+    ![Развернутый список вызванных инструментов](/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp)
+
+    </div>
 
     А ниже будет показан результат:
 
-    <Image img="/images/use-cases/AI_ML/MCP/10_janai_result.webp" alt="Результат" size="md" />
+    <div className="ch-image-md">
+
+    ![Результат](/images/use-cases/AI_ML/MCP/10_janai_result.webp)
+
+    </div>
   </Step>
 </Steps>

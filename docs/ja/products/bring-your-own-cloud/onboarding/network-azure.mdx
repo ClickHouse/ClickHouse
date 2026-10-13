@@ -7,8 +7,6 @@ description: 'Azure 上の BYOC 向けに VNet ピアリングまたはプライ
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse BYOC on Azure は、[Azure Virtual Network ピアリング](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview)と[Azure プライベートリンク](https://learn.microsoft.com/azure/private-link/private-link-overview)の 2 つのプライベート接続オプションをサポートしています。どちらのオプションでもトラフィックは Azure バックボーン内を通るため、パブリックインターネットを経由することはありません。
 
 <div id="common-prerequisites">
@@ -23,7 +21,15 @@ VNet ピアリングとプライベートリンクの両方に共通する前提
 
 ClickHouse Cloud コンソールで、BYOC インフラストラクチャの **プライベートロードバランサー** を有効にします。どちらの接続オプションもこの内部ロードバランサーを経由するため、有効にするまでどちらも利用できません。
 
-<Image img="/images/cloud/reference/byoc-private-load-balancer-azure.webp" size="md" alt="BYOC プライベートロードバランサーを有効化" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![BYOC プライベートロードバランサーを有効化](/images/cloud/reference/byoc-private-load-balancer-azure.webp)
+
+</Frame>
+
+</div>
 
 インフラストラクチャの **Spoken name** をメモしておきます。ClickHouse は、お客様自身の Azure サブスクリプション内の `clickhouse-cloud-<spoken-name>-default` という名前のマネージドリソースグループに BYOC インフラストラクャをデプロイします。以下の手順では、そのリソースグループ内で BYOC VNet を確認します。
 
@@ -51,11 +57,19 @@ ClickHouse Cloud コンソールで、BYOC インフラストラクチャの **�
     2. **Virtual networks** を検索し、`clickhouse-cloud-<spoken-name>-default` リソース グループ内の BYOC VNet を選択します。
     3. **Settings** で **Peerings** を選択し、**+ Add** を選択します。
 
-    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-1.webp" size="lg" alt="BYOC VNet ピアリングの作成" border />
+    <div className="ch-image-lg">
+
+    ![BYOC VNet ピアリングの作成](/images/cloud/reference/byoc-vnetpeering-azure-1.webp)
+
+    </div>
 
     4. ピアリングの両方の設定を入力します。
 
-    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-2.webp" size="md" alt="BYOC VNet ピアリングの構成" border />
+    <div className="ch-image-md">
+
+    ![BYOC VNet ピアリングの構成](/images/cloud/reference/byoc-vnetpeering-azure-2.webp)
+
+    </div>
 
     5. **Add** をクリックします。
   </Step>
@@ -76,7 +90,11 @@ ClickHouse Cloud コンソールで、BYOC インフラストラクチャの **�
 
     ルート テーブルを変更する必要はありません。Azure は、ピアリングされたアドレス空間用のシステム ルートを両側に自動的に追加します。VNet 内の任意のネットワーク インターフェイスの **Effective routes** で確認できます。BYOC のアドレス空間は、次ホップ タイプが **VNet peering** として表示されます。
 
-    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-3.webp" size="lg" alt="BYOC VNet ピアリングの確認" border />
+    <div className="ch-image-lg">
+
+    ![BYOC VNet ピアリングの確認](/images/cloud/reference/byoc-vnetpeering-azure-3.webp)
+
+    </div>
   </Step>
 
   <Step title="ネットワーク セキュリティ グループでピアリングされた VNet からのアクセスを許可する" id="step-4-allow-address-space-through-nsg">
@@ -123,33 +141,61 @@ Azure プライベートリンクは、ClickHouse BYOCサービスへの安全�
       前提条件として、**プライベートロードバランサー**を有効にしておいてください。
     </Note>
 
-    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink を有効化" border />
+    <div className="ch-image-md">
+
+    ![BYOC PrivateLink を有効化](/images/cloud/reference/byoc-privatelink.webp)
+
+    </div>
   </Step>
 
   <Step title={<>エンドポイントサービス名（<code>Service name</code>）を取得する</>} id="step-2-obtain-endpoint-service-name">
     1. ClickHouse Cloud console で、Private Link 経由で接続するサービスの Settings ページに移動します。
     2. &quot;プライベート エンドポイントを設定&quot; をクリックします。
     3. 開いたフライアウトで、`Service name` (Private Link サービスのエイリアス) と `DNS name` の値をコピーします。これらは次の手順で使用します。 (Private Link を有効にしてから値が生成されるまで、しばらく時間がかかる場合があります。)
-       <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="md" alt="プライベート エンドポイント" border />
+       <div className="ch-image-md">
+
+       ![プライベート エンドポイント](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+       </div>
   </Step>
 
   <Step title="ネットワーク内にプライベート エンドポイントを作成する" id="step-3-create-endpoint">
     1. **ご自身の Azure Portal** (クライアントアプリケーションが存在する Azure サブスクリプション) を開き、**Network Foundation** → **Private endpoints** → **Create** の順に選択します。
     2. **Basics** タブで、プライベート エンドポイントのサブスクリプション、リソース グループ、名前、リージョンを選択します。リージョンは、クライアントアプリケーションが接続元として使用する VNet と同じリージョンにします。
-       <Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="プライベート エンドポイントの基本設定を作成" border />
+       <div className="ch-image-md">
+
+       ![プライベート エンドポイントの基本設定を作成](/images/cloud/security/azure-pe-create-basic.webp)
+
+       </div>
     3. **Resource** タブで、**Connect to an Azure resource by resource ID or alias** を選択し、前の手順で取得した `Service name` を入力します。
-       <Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="プライベート エンドポイントのリソース選択" border />
+       <div className="ch-image-md">
+
+       ![プライベート エンドポイントのリソース選択](/images/cloud/security/azure-pe-resource.webp)
+
+       </div>
     4. **Virtual Network** タブで、プライベート エンドポイントを作成する仮想ネットワークとサブネットを選択します。必要に応じて、アプリケーション セキュリティ グループを関連付けて、プライベート エンドポイントへのトラフィックをフィルタリングします。
-       <Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="プライベート エンドポイントの仮想ネットワーク選択" border />
+       <div className="ch-image-md">
+
+       ![プライベート エンドポイントの仮想ネットワーク選択](/images/cloud/security/azure-pe-create-vnet.webp)
+
+       </div>
     5. 残りのタブを進み、**Create** をクリックします。作成したプライベート エンドポイントの **Connection status** は、次の手順でその `Resource ID` を ClickHouse service allow list に追加するまで、**Pending** 状態のままです。
     6. プライベート エンドポイントに関連付けられたネットワーク インターフェイスを開き、**Private IPv4 address** をコピーします。DNS 設定の手順で使用します。
-       <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="プライベート エンドポイントの IP アドレス" border />
+       <div className="ch-image-lg">
+
+       ![プライベート エンドポイントの IP アドレス](/images/cloud/security/azure-pe-ip.webp)
+
+       </div>
   </Step>
 
   <Step title={<>プライベート エンドポイントの<code>リソース ID</code>を ClickHouse サービスの許可リストに追加する</>} id="step-4-add-endpoint-id-to-services-allow-list">
     プライベート エンドポイントのリソース ID を取得するには、Azure Portal で先ほど作成したプライベート エンドポイントを開き、**JSON View** をクリックします。次に、最上位レベルの `id` フィールド (ビューの上部に表示される **Resource ID**。形式は `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) をコピーします。`properties` オブジェクト内にネストされている `id` フィールドは使用しないでください。
 
-    <Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="プライベート エンドポイントのリソース ID" border />
+    <div className="ch-image-lg">
+
+    ![プライベート エンドポイントのリソース ID](/images/cloud/security/azure-pe-resource-id.webp)
+
+    </div>
 
     1. ClickHouse Cloud console で、Private Link 経由で接続するサービスの Settings ページに移動します。
     2. 「Set up private endpoint」をクリックします。
@@ -161,7 +207,11 @@ Azure プライベートリンクは、ClickHouse BYOCサービスへの安全�
       ドロップダウンには、同じインフラストラクチャ内のサービスへの既存の Private Link 接続が表示されます。
     </Note>
 
-    <Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="md" alt="プライベート エンドポイントのフィルター" border />
+    <div className="ch-image-md">
+
+    ![プライベート エンドポイントのフィルター](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+    </div>
 
     <Note>
       Azure Portal で手動承認を行う必要はありません。`Resource ID` を許可リストに追加すると、エンドポイント接続は自動的に承認され、その `LinkID` が ClickHouse service の Istio `AuthorizationPolicy` に自動的に追加されます。サブスクリプション内のプライベート エンドポイントの **Connection status** は **Approved** に変わります。
@@ -190,7 +240,11 @@ Azure プライベートリンクは、ClickHouse BYOCサービスへの安全�
     1. ClickHouse Cloud コンソールで、サービスの Settings ページに移動します。
     2. 「プライベート エンドポイントを設定」をクリックします。
     3. 開いたフライアウトで、`DNS name` をコピーします。
-       <Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="md" alt="プライベート エンドポイントの DNS 名" border />
+       <div className="ch-image-md">
+
+       ![プライベート エンドポイントの DNS 名](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+       </div>
        <Note>
          Private Link 経由での ClickHouse サービスへのアクセスは、ClickHouse が BYOC インフラストラクチャ内で管理するサービスレベルの **Istio Authorization Policy** によって制御されます。
        </Note>

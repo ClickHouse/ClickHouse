@@ -9,8 +9,8 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import GatherCredentials from '/snippets/ru/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.mdx';
 
 Это руководство проведёт вас путь от пустого сервиса Управляемый ClickStack до логов, метрик, трассировок и воспроизведения сеансов из реального приложения. Вы развернёте новый OpenTelemetry Collector (или адаптируете существующий, если он у вас уже есть) для своего сервиса, проинструментируете тестовое приложение Node.js без изменений его бизнес-логики, а затем изучите телеметрию в интерфейсе ClickStack.
@@ -211,7 +211,11 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
 
     Откройте [http://localhost:5001](http://localhost:5001). Вы увидите выбор года, сводную статистику, диаграмму активности, таблицы с топом пользователей и доменов, а также поле поиска. Осмотритесь: переключайте годы, открывайте отдельные истории.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="Приложение HackerNews Analyzer, запущенное локально" />
+    <div className="ch-image-lg">
+
+    ![Приложение HackerNews Analyzer, запущенное локально](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
 
     На этом этапе приложение запущено, но в него еще не добавлен сбор телеметрии. ClickStack не показывает данных: он ждет телеметрии. Это состояние &quot;до&quot;.
   </Step>
@@ -300,31 +304,55 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
   <Step title="Запустите ClickStack и изучите свою телеметрию" id="launch-clickstack">
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud), выберите **ClickStack** в меню слева, затем **Start Ingestion**.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Запуск ClickStack" border />
+    <div className="ch-image-lg">
+
+    ![Запуск ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+
+    </div>
 
     Следующий шаг можно пропустить, так как вы уже настроили коллектор. Чтобы продолжить, нажмите **Launch ClickStack**.
 
     ClickStack откроется в новой вкладке, и вы должны автоматически перейти на страницу **Getting Started**. Если этого не произошло, выберите **Getting Started** в меню слева, затем нажмите **Start Ingestion**, а после этого — **Next**.
 
-    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
+
+    </div>
 
     ClickStack должен автоматически обнаружить ваши таблицы и телеметрию, чтобы вы могли продолжить. Чтобы начать изучение данных, выберите **Start Exploring**.
 
-    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border />
+    <div className="ch-image-lg">
+
+    ![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
+
+    </div>
 
     Теперь посмотрите, какие данные генерирует приложение:
 
     1. Перейдите в **Search** и отфильтруйте данные за последние 5 минут. Журналы для `hn-analyzer-api` начнут поступать в интерфейс.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Журналы ClickStack" />
+    <div className="ch-image-lg">
+
+    ![Журналы ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+
+    </div>
 
     2. Откройте запрос и поднимитесь вверх по трейсу. Вы увидите span обработчика Express, дочерний HTTP span, указывающий на кластер ClickHouse с реальной длительностью сетевого запроса, а также коррелированные записи `console.log` в том же трейсе.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Трассировки ClickStack" />
+    <div className="ch-image-lg">
+
+    ![Трассировки ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+
+    </div>
 
     3. Откройте **Session Replay**, чтобы воспроизвести видео сеанса браузера с возможностью перемотки, синхронизированное с временной шкалой трейса.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Сеансы ClickStack" />
+    <div className="ch-image-lg">
+
+    ![Сеансы ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+
+    </div>
 
     Журналы, метрики, трассировки и воспроизведения сеансов отображаются в одном интерфейсе, используют один и тот же язык запросов и автоматически коррелируются.
 

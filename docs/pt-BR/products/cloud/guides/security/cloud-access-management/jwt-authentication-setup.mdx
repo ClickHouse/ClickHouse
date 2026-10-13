@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'autenticação', 'provedor de identidade', 'RS256']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBadge.jsx";
@@ -58,7 +56,11 @@ O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um prov
   <Step title="Abra as configurações de segurança do serviço" id="open-security-settings">
     Acesse o serviço, abra **Settings** e role até a seção **Security**. Localize o cartão **JWT authentication**.
 
-    <Image img="/images/cloud/security/jwt/jwt-section.png" size="lg" alt="Seção de autenticação JWT nas configurações de segurança do serviço" force />
+    <div className="ch-image-lg">
+
+    ![Seção de autenticação JWT nas configurações de segurança do serviço](/images/cloud/security/jwt/jwt-section.png)
+
+    </div>
   </Step>
 
   <Step title="Abra o painel de provedores" id="open-flyout">

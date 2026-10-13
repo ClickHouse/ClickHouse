@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
@@ -37,19 +36,35 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   <Step title={<>أضِف خدمة وحدة التحكم <code>DBCPConnectionPool</code> واضبط خصائصها</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. لتهيئة خدمة وحدة تحكم في Apache NiFi، انتقل إلى صفحة تهيئة تدفق NiFi بالنقر على زر &quot;الترس&quot;
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="صفحة تهيئة تدفق NiFi مع تمييز زر الترس" />
+       <div className="ch-image-sm">
+
+       ![صفحة تهيئة تدفق NiFi مع تمييز زر الترس](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
+
+       </div>
 
     2. حدِّد علامة تبويب خدمات وحدة التحكم، ثم أضِف خدمة وحدة تحكم جديدة بالنقر على زر `+` في أعلى اليمين
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_02.webp" size="lg" border alt="علامة تبويب خدمات وحدة التحكم مع تمييز زر الإضافة" />
+       <div className="ch-image-lg">
+
+       ![علامة تبويب خدمات وحدة التحكم مع تمييز زر الإضافة](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
+
+       </div>
 
     3. ابحث عن `DBCPConnectionPool` وانقر على زر &quot;إضافة&quot;
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_03.webp" size="lg" border alt="مربع حوار اختيار خدمة وحدة التحكم مع تمييز DBCPConnectionPool" />
+       <div className="ch-image-lg">
+
+       ![مربع حوار اختيار خدمة وحدة التحكم مع تمييز DBCPConnectionPool](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
+
+       </div>
 
     4. ستكون `DBCPConnectionPool` المضافة حديثًا في حالة غير صالحة افتراضيًا. انقر على زر &quot;الترس&quot; لبدء التهيئة
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_04.webp" size="lg" border alt="قائمة خدمات وحدة التحكم تعرض DBCPConnectionPool غير صالحة مع تمييز زر الترس" />
+       <div className="ch-image-lg">
+
+       ![قائمة خدمات وحدة التحكم تعرض DBCPConnectionPool غير صالحة مع تمييز زر الترس](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
+
+       </div>
 
     5. ضمن قسم &quot;الخصائص&quot;، أدخل القيم التالية
 
@@ -63,25 +78,45 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
     6. في قسم الإعدادات، غيِّر اسم خدمة وحدة التحكم إلى &quot;ClickHouse JDBC&quot; لتسهيل الرجوع إليها
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_05.webp" size="lg" border alt="مربع حوار تهيئة DBCPConnectionPool مع تعبئة الخصائص" />
+       <div className="ch-image-lg">
+
+       ![مربع حوار تهيئة DBCPConnectionPool مع تعبئة الخصائص](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
+
+       </div>
 
     7. فعِّل خدمة وحدة التحكم `DBCPConnectionPool` بالنقر على زر &quot;البرق&quot; ثم زر &quot;تمكين&quot;
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_06.webp" size="lg" border alt="قائمة خدمات وحدة التحكم مع تمييز زر البرق" />
+       <div className="ch-image-lg">
+
+       ![قائمة خدمات وحدة التحكم مع تمييز زر البرق](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
+
+       </div>
 
        <br />
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_07.webp" size="lg" border alt="مربع حوار تأكيد تمكين خدمة وحدة التحكم" />
+       <div className="ch-image-lg">
+
+       ![مربع حوار تأكيد تمكين خدمة وحدة التحكم](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
+
+       </div>
 
     8. تحقّق من علامة تبويب خدمات وحدة التحكم وتأكد من أن خدمة وحدة التحكم مُمكَّنة
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="قائمة خدمات وحدة التحكم تعرض خدمة ClickHouse JDBC مُمكَّنة" />
+       <div className="ch-image-lg">
+
+       ![قائمة خدمات وحدة التحكم تعرض خدمة ClickHouse JDBC مُمكَّنة](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
+
+       </div>
   </Step>
 
   <Step title={<>القراءة من جدول باستخدام المعالج <code>ExecuteSQL</code></>} id="5-read-from-a-table-using-the-executesql-processor">
     1. أضف المعالج ​`​ExecuteSQL`، إلى جانب المعالجات المناسبة السابقة واللاحقة
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="لوحة NiFi تعرض المعالج ExecuteSQL ضمن سير عمل" />
+       <div className="ch-image-md">
+
+       ![لوحة NiFi تعرض المعالج ExecuteSQL ضمن سير عمل](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
+
+       </div>
 
     2. ضمن قسم &quot;Properties&quot; في المعالج ​`​ExecuteSQL`، أدخل القيم التالية
 
@@ -92,15 +127,27 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
     3. ابدأ المعالج `​​ExecuteSQL`
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_10.webp" size="lg" border alt="إعدادات المعالج ExecuteSQL بعد تعبئة الخصائص" />
+       <div className="ch-image-lg">
+
+       ![إعدادات المعالج ExecuteSQL بعد تعبئة الخصائص](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
+
+       </div>
 
     4. للتأكد من أن الاستعلام قد تمت معالجته بنجاح، افحص أحد عناصر `FlowFile` في قائمة انتظار الإخراج
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_11.webp" size="lg" border alt="نافذة قائمة الانتظار تعرض عناصر FlowFile الجاهزة للفحص" />
+       <div className="ch-image-lg">
+
+       ![نافذة قائمة الانتظار تعرض عناصر FlowFile الجاهزة للفحص](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
+
+       </div>
 
     5. بدّل العرض إلى &quot;formatted&quot; لعرض نتيجة `FlowFile` الناتج
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="عارض محتوى FlowFile يعرض نتائج الاستعلام في العرض المنسّق" />
+       <div className="ch-image-lg">
+
+       ![عارض محتوى FlowFile يعرض نتائج الاستعلام في العرض المنسّق](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
+
+       </div>
   </Step>
 
   <Step title={<>الكتابة إلى جدول باستخدام <code>MergeRecord</code> و <code>PutDatabaseRecord</code> المعالج</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
@@ -119,11 +166,19 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
        الإدخال
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_13.webp" size="sm" border alt="مدخلات المعالج MergeRecord التي تعرض سجلات مفردة" />
+       <div className="ch-image-sm">
+
+       ![مدخلات المعالج MergeRecord التي تعرض سجلات مفردة](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
+
+       </div>
 
        المخرجات
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_14.webp" size="sm" border alt="مخرجات المعالج MergeRecord التي تعرض مصفوفة مدمجة من السجلات" />
+       <div className="ch-image-sm">
+
+       ![مخرجات المعالج MergeRecord التي تعرض مصفوفة مدمجة من السجلات](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
+
+       </div>
 
     4. ضمن قسم &quot;الخصائص&quot; في المعالج `PutDatabaseRecord`، أدخل القيم التالية
 
@@ -139,7 +194,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
     5. للتأكد من أن كل عملية insert تحتوي على عدة صفوف، تحقق من أن عدد الصفوف في الجدول يزداد بمقدار لا يقل عن قيمة &quot;الحد الأدنى لعدد السجلات&quot; المحددة في `MergeRecord`.
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_15.webp" size="sm" border alt="نتائج الاستعلام التي تعرض عدد الصفوف في الجدول الوجهة" />
+       <div className="ch-image-sm">
+
+       ![نتائج الاستعلام التي تعرض عدد الصفوف في الجدول الوجهة](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
+
+       </div>
 
     6. تهانينا! لقد حمّلت بياناتك بنجاح إلى ClickHouse باستخدام Apache NiFi!
   </Step>

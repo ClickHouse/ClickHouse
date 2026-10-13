@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge />
 
@@ -20,7 +19,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В Конструкторе агентов включите **Веб-поиск** в разделе **Возможности**. После этого агент сам решает, когда выполнять поиск, исходя из вопроса пользователя и своих инструкций. Затем выполняется поиск, из результатов извлекается содержимое, а наиболее релевантный контент передается обратно в контекст модели.
 
-<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="Панель «Возможности» с выделенным разделом «Веб-поиск» и флажком «Веб-поиск»" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Панель «Возможности» с выделенным разделом «Веб-поиск» и флажком «Веб-поиск»](/images/cloud/agent-builder/web-search/web-search.webp)
+
+</Frame>
+
+</div>
 
 <div id="how-a-search-round-works">
   ## Как работает цикл поиска

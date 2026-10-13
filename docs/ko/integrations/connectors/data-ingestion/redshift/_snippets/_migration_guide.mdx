@@ -2,15 +2,21 @@
 title: 마이그레이션 가이드
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="introduction">
   ## 소개
 </div>
 
 [Amazon Redshift](https://aws.amazon.com/redshift/)는 Amazon Web Services에서 제공하는 널리 사용되는 클라우드 데이터 웨어하우징 솔루션입니다. 이 가이드에서는 Redshift 인스턴스에서 ClickHouse로 데이터를 마이그레이션하는 여러 접근 방식을 소개합니다. 여기서는 3가지 옵션을 다룹니다.
 
-<Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="Redshift에서 ClickHouse로 마이그레이션하는 옵션" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Redshift에서 ClickHouse로 마이그레이션하는 옵션](/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse 인스턴스 관점에서는 다음과 같은 방법을 사용할 수 있습니다.
 
@@ -30,7 +36,15 @@ ClickHouse 인스턴스 관점에서는 다음과 같은 방법을 사용할 수
 
 Push 시나리오에서는 서드파티 도구나 서비스(사용자 지정 코드 또는 [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT))를 활용해 데이터를 ClickHouse 인스턴스로 전송합니다. 예를 들어, [Airbyte](https://www.airbyte.com/)와 같은 소프트웨어를 사용해 Redshift 인스턴스(소스)와 ClickHouse(대상) 간에 데이터를 이동할 수 있습니다([Airbyte 통합 가이드 참조](/ko/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
-<Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="PUSH Redshift에서 ClickHouse로" />
+<div className="ch-image-md">
+
+<Frame>
+
+![PUSH Redshift에서 ClickHouse로](/images/integrations/data-ingestion/redshift/push.webp)
+
+</Frame>
+
+</div>
 
 <div id="pros">
   ### 장점
@@ -53,7 +67,15 @@ Push 시나리오에서는 서드파티 도구나 서비스(사용자 지정 코
 
 Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스턴스에서 Redshift 클러스터에 직접 연결한 뒤 `INSERT INTO ... SELECT` 쿼리를 수행합니다:
 
-<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="Redshift에서 ClickHouse로 가져오기" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Redshift에서 ClickHouse로 가져오기](/images/integrations/data-ingestion/redshift/pull.webp)
+
+</Frame>
+
+</div>
 
 <div id="pros">
   ### 장점
@@ -191,7 +213,15 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
 
 이 시나리오에서는 데이터를 중간 피벗 포맷으로 S3에 내보낸 다음, 두 번째 단계에서 S3의 데이터를 ClickHouse로 로드합니다.
 
-<Image img="/images/integrations/data-ingestion/redshift/pivot.webp" size="md" alt="S3를 사용한 Redshift 데이터 피벗" />
+<div className="ch-image-md">
+
+<Frame>
+
+![S3를 사용한 Redshift 데이터 피벗](/images/integrations/data-ingestion/redshift/pivot.webp)
+
+</Frame>
+
+</div>
 
 <div id="pros">
   ### 장점
@@ -216,11 +246,19 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
   <Step title="UNLOAD를 사용하여 데이터를 S3 버킷으로 내보내기" id="export-data-into-an-s3-bucket-using-unload">
     Redshift의 [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) 기능을 사용해 데이터를 기존의 비공개 S3 버킷으로 내보냅니다:
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="Redshift에서 S3로 UNLOAD" background="white" />
+    <div className="ch-image-md ch-image-background-white">
+
+    ![Redshift에서 S3로 UNLOAD](/images/integrations/data-ingestion/redshift/s3-1.webp)
+
+    </div>
 
     그러면 S3에 원시 데이터가 포함된 part 파일이 생성됩니다.
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="S3의 데이터" background="white" />
+    <div className="ch-image-md ch-image-background-white">
+
+    ![S3의 데이터](/images/integrations/data-ingestion/redshift/s3-2.webp)
+
+    </div>
   </Step>
 
   <Step title="ClickHouse에서 테이블 생성" id="create-the-table-in-clickhouse">

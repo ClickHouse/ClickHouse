@@ -8,7 +8,6 @@ sidebar_order: 1
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
@@ -52,7 +51,15 @@ ClickHouse автоматически анализирует первичные 
 дать тот же корректный результат, но при этом требует прочитать минимальный объём данных,
 как показано на рисунке ниже:
 
-<Image img="/images/data-modeling/projections_1.webp" size="md" alt="Проекции в ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Проекции в ClickHouse](/images/data-modeling/projections_1.webp)
+
+</Frame>
+
+</div>
 
 <div id="smarter_storage_with_part_offset">
   ### Более эффективное хранение с `_part_offset`
@@ -323,7 +330,15 @@ SETTINGS mutations_sync = 1
 На рисунке ниже показана визуализация основной таблицы `uk_price_paid_with_projections`
 и двух её проекций:
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="Визуализация основной таблицы uk_price_paid_with_projections и двух её проекций" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Визуализация основной таблицы uk_price_paid_with_projections и двух её проекций](/images/data-modeling/projections_2.webp)
+
+</Frame>
+
+</div>
 
 Если теперь снова выполнить запрос, который выводит районы Лондона с тремя
 самыми высокими ценами продажи, мы увидим улучшение производительности запроса:

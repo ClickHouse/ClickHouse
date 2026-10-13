@@ -6,8 +6,6 @@ keywords: ['демонстрационный набор данных', 'базо
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом руководстве вы узнаете, как использовать ClickHouse для работы с геоданными на примере набора данных о базовых станциях сотовой связи.
 Вы загрузите набор данных в ClickHouse Cloud, изучите его схему и выполните агрегирующие запросы по десяткам миллионов строк.
 Затем вы обогатите данные с помощью словаря, подсчитаете число вышек на территории Германии с помощью функции `pointInPolygon` и визуализируете результат на карте с помощью ClickHouse Agents.
@@ -234,7 +232,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Введите «Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables» и отправьте сообщение.
     В одном из запусков агент выполнил следующие шаги:
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="Чат ClickHouse Agent с шагами построения сетки плотности базовых станций сотовой связи для Германии" />
+    <div className="ch-image-lg">
+
+    ![Чат ClickHouse Agent с шагами построения сетки плотности базовых станций сотовой связи для Германии](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+    </div>
 
     * Нашёл в `mcc_country_dict` мобильный код страны (MCC) для Германии — `262`.
     * С помощью `pointInPolygon` подсчитал базовые станции с `mcc = 262`, попадающие внутрь полигона из `germany`, — получилось 2 588 635 станций. Это немного меньше, чем в подсчёте выше, поскольку дополнительный фильтр по `mcc` исключает станции внутри полигона, зарегистрированные в другой стране.
@@ -243,7 +245,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Откройте сгенерированный файл, чтобы увидеть результат. Яркие скопления — это крупнейшие агломерации: Берлин, Гамбург, Мюнхен и Франкфурт.
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="Тепловая карта плотности базовых станций сотовой связи в Германии на сетке с шагом 0,1 градуса и логарифмической цветовой шкалой" />
+    <div className="ch-image-md">
+
+    ![Тепловая карта плотности базовых станций сотовой связи в Германии на сетке с шагом 0,1 градуса и логарифмической цветовой шкалой](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+    </div>
   </Step>
 </Steps>
 

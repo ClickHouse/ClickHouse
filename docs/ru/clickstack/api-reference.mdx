@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'обсервабилити', 'API', 'REST API', 'панели мониторинга', 'оповещения', 'HyperDX']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickStack предоставляет REST API для программного управления панелями мониторинга, оповещениями и источниками данных. API доступен как для **Управляемого ClickStack** (ClickHouse Cloud), так и для развертываний **ClickStack с открытым исходным кодом**, хотя конечные точки и способы аутентификации в этих двух случаях различаются.
 
 <div id="api-docs">
@@ -74,7 +72,11 @@ ClickStack предоставляет REST API для программного �
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **Personal API Access Key**
 
-    <Image img="/images/clickstack/api-key-personal.webp" alt="Ключ API ClickStack" />
+    <div className="ch-image-lg">
+
+    ![Ключ API ClickStack](/images/clickstack/api-key-personal.webp)
+
+    </div>
 
     <Note>
       Не путайте его с **ключом API для приёма данных** в Team Settings — он используется для аутентификации телеметрических данных, отправляемых в OpenTelemetry Collector.

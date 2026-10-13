@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'リリースマーカー', 'デプロイメント追跡', 'service.version', 'annotations', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 レイテンシーやエラーが急増した際、まず確認したいのは何かがリリースされたかどうかです。ダッシュボードの時系列チャートなら、その場で確認できます。リリースマーカーをオンにすると、各タイルに、サービスのバージョンがテレメトリーに初めて現れた時点を示す破線の縦線が表示されます。
 
 バージョン情報は、すでに送信しているテレメトリーから、タイルのログソースに設定された式を通じて取得されます。CIインテグレーションを設定する必要はなく、デプロイ時に何かをプッシュする必要もありません。
@@ -19,7 +17,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 リリースマーカーはデフォルトでオフです。ダッシュボードのオーバーフローメニューを開き、**リリースマーカーを表示**を選択します。
 
-<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="ダッシュボードのオーバーフローメニュー。View セクション内の「Show alert annotations」の下に「Show release markers」項目がある" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![ダッシュボードのオーバーフローメニュー。View セクション内の「Show alert annotations」の下に「Show release markers」項目がある](/images/clickstack/dashboards/release-markers-menu.webp)
+
+</Frame>
+
+</div>
 
 このトグルにより、ダッシュボードの URL に `releaseMarkers=true` が追加されます。そのため、共有したリンクを開くと、マーカーはすでにオンになっています。これはダッシュボードの設定ではなく表示状態です。ダッシュボードとともに保存されることはなく、オフにするとパラメータも削除されます。
 
@@ -33,7 +39,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 別の場所からバージョンを読み取るには、ログまたはトレースソースで **Service Version Expression** を設定します。**Team Settings → Sources** でログソースを編集します。ログソースでは、このフィールドは **Configure Optional Fields** 内にあります。トレースソースでは、フォームの **Service Name Expression** の下に直接表示されます。
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="ログソースの任意フィールドにある Service Version Expression フィールド。デフォルトのプレースホルダー ResourceAttributes['service.version'] が表示されている" size="lg" />
+![ログソースの任意フィールドにある Service Version Expression フィールド。デフォルトのプレースホルダー ResourceAttributes\['service.version'\] が表示されている](/images/clickstack/dashboards/service-version-expression.webp)
 
 この値は属性名ではなく SQL 式であり、よくある次の 2 つのケースに対応できます。
 
@@ -80,7 +86,15 @@ coalesce(
 
 マーカーのラベルにカーソルを合わせると、その時点にあるすべてのリリースが一覧表示され、各リリースの提供元サービス、バージョン、時刻を確認できます。
 
-<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="2 つのサービスを示すチャート上で、サービス frontend、バージョン 2.0.2、そのバージョンが初めて表示された時刻を示すリリースマーカーのホバーツールチップ" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![2 つのサービスを示すチャート上で、サービス frontend、バージョン 2.0.2、そのバージョンが初めて表示された時刻を示すリリースマーカーのホバーツールチップ](/images/clickstack/dashboards/release-marker-tooltip.webp)
+
+</Frame>
+
+</div>
 
 色はマーカーとその系列を対応付けますが、チャートの凡例には最大 4 件しか表示されず、残りは &quot;+N more&quot; にまとめられます。その場合、画面上では色を照合できません。ツールチップにはサービス名が直接表示されるため、タイルに表示される系列数にかかわらず確認できます。
 

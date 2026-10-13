@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 > في هذا الدليل، سنأخذك خطوة بخطوة خلال عملية إنشاء أول Kafka ClickPipe.
 
 يمكن Deploy لـ Kafka ClickPipes وإدارتها يدويًا باستخدام ClickPipes UI، أو برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
@@ -20,19 +18,31 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="انتقل إلى مصادر البيانات" id="1-load-sql-console">
     اختر زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختر الواردات" size="md" />
+    <div className="ch-image-md">
+
+    ![اختر الواردات](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
   </Step>
 
   <Step title="اختر مصدر البيانات" id="2-select-data-source">
     اختر مصدر بيانات Kafka من القائمة.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="اختر نوع مصدر البيانات" size="md" />
+    <div className="ch-image-md">
+
+    ![اختر نوع مصدر البيانات](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+
+    </div>
   </Step>
 
   <Step title="إعداد مصدر البيانات" id="3-configure-data-source">
     املأ النموذج بإدخال اسم لـ ClickPipe، ووصف (اختياري)، وبيانات الاعتماد، وتفاصيل الاتصال الأخرى.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="املأ تفاصيل الاتصال" size="md" />
+    <div className="ch-image-md">
+
+    ![املأ تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/cp_step2.webp)
+
+    </div>
   </Step>
 
   <Step title="تهيئة schema registry (اختياري)" id="4-configure-your-schema-registry">
@@ -55,7 +65,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
        * **SSH Port**: المنفذ المستخدَم لـ SSH على مضيف Bastion (الافتراضي هو `22`).
        * **SSH User**: اسم المستخدم المستخدم للمصادقة على مضيف Bastion.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp" alt="تكوين نفق SSH" size="md" />
+    <div className="ch-image-md">
+
+    ![تكوين نفق SSH](/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp)
+
+    </div>
 
     3. لاستخدام المصادقة المستندة إلى المفتاح، انقر على &quot;Revoke and regenerate key pair&quot; لإنشاء زوج مفاتيح جديد، ثم انسخ المفتاح العام الذي تم إنشاؤه إلى خادم SSH لديك ضمن `~/.ssh/authorized_keys`.
     4. انقر على &quot;Verify Connection&quot; للتحقق من الاتصال.
@@ -70,17 +84,29 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     عندئذٍ ستعرض واجهة المستخدم مستندًا نموذجيًا من الموضوع.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="حدّد الموضوع" size="md" />
+    <div className="ch-image-md">
+
+    ![حدّد الموضوع](/images/integrations/data-ingestion/clickpipes/cp_step3.webp)
+
+    </div>
   </Step>
 
   <Step title="هيّئ جدول الوجهة" id="8-configure-your-destination-table">
     في الخطوة التالية، يمكنك تحديد ما إذا كنت تريد إدخال البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول حالي. اتبع الإرشادات المعروضة على الشاشة لتعديل اسم الجدول وبنيته وإعداداته. ويمكنك رؤية معاينة فورية لتغييراتك في جدول العينة بالأعلى.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="هيّئ الجدول وبنيته وإعداداته" size="md" />
+    <div className="ch-image-md">
+
+    ![هيّئ الجدول وبنيته وإعداداته](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+    </div>
 
     يمكنك أيضًا تخصيص الإعدادات المتقدمة باستخدام عناصر التحكم المتاحة
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="هيّئ عناصر التحكم المتقدمة" size="md" />
+    <div className="ch-image-md">
+
+    ![هيّئ عناصر التحكم المتقدمة](/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp)
+
+    </div>
   </Step>
 
   <Step title="تكوين الأذونات" id="9-configure-permissions">
@@ -89,12 +115,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * `Full access`: يمنح وصولًا كاملًا إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم Materialized View أو Dictionary مع جدول الوجهة.
     * `Only destination table`: يمنح أذونات `INSERT` على جدول الوجهة فقط.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" size="md" />
+    <div className="ch-image-md">
+
+    ![الأذونات](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+    </div>
   </Step>
 
   <Step title="إتمام الإعداد" id="10-complete-setup">
     سيؤدي النقر على &quot;Create ClickPipe&quot; إلى إنشاء ClickPipe وتشغيله. وسيظهر الآن ضمن قسم مصادر البيانات.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="عرض النظرة العامة" size="md" />
+    <div className="ch-image-md">
+
+    ![عرض النظرة العامة](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+    </div>
   </Step>
 </Steps>

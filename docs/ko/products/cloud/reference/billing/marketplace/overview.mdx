@@ -6,8 +6,6 @@ keywords: ['aws', 'azure', 'gcp', 'google cloud', 'marketplace', '청구']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 AWS, GCP, Azure 마켓플레이스를 통해 ClickHouse Cloud를 구독할 수 있습니다. 이를 통해 기존 클라우드 제공업체의 청구 체계로 ClickHouse Cloud 비용을 결제할 수 있습니다.
 
 마켓플레이스를 통해 종량제(PAYG)를 선택하거나 ClickHouse Cloud와 약정 계약을 체결할 수 있습니다. 청구는 클라우드 제공업체에서 처리되며, 모든 클라우드 서비스에 대해 하나의 인보이스를 받게 됩니다.
@@ -44,7 +42,15 @@ ClickHouse Cloud 콘솔의 왼쪽 하단 메뉴에서 조직을 전환할 수 �
 
 클라우드 제공업체 마켓플레이스를 통해 ClickHouse Cloud를 구독해야 합니다. 마켓플레이스에서 구독을 완료한 후 ClickHouse Cloud로 리디렉션되면, 기존 ClickHouse Cloud 조직을 마켓플레이스 청구에 연결할 수 있는 옵션이 제공됩니다. 그 시점부터 기존 리소스는 마켓플레이스를 통해 청구됩니다.
 
-<Image img="/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp" size="md" alt="마켓플레이스 가입 및 조직 연결" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![마켓플레이스 가입 및 조직 연결](/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp)
+
+</Frame>
+
+</div>
 
 조직의 청구 페이지에서 청구가 현재 마켓플레이스에 연결되어 있는지 확인할 수 있습니다. 문제가 발생하면 [ClickHouse Cloud 지원팀](https://clickhouse.com/support/program)에 문의하십시오.
 

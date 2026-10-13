@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge />
 
@@ -26,9 +25,25 @@ Scheduled Scaling est actuellement disponible en **Beta**.
 
 Pour configurer une planification, accédez à votre service dans la console ClickHouse Cloud, puis ouvrez les paramètres. Sélectionnez ensuite **Schedule Override** et ajoutez une nouvelle règle.
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="Interface des planifications de mise à l’échelle dans la console ClickHouse Cloud, avec des règles de mise à l’échelle définies selon l’heure" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Configuration d’une règle de mise à l’échelle planifiée dans la console ClickHouse Cloud" border />
+<Frame>
+
+![Interface des planifications de mise à l’échelle dans la console ClickHouse Cloud, avec des règles de mise à l’échelle définies selon l’heure](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Configuration d’une règle de mise à l’échelle planifiée dans la console ClickHouse Cloud](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
+
+</Frame>
+
+</div>
 
 Chaque règle nécessite :
 

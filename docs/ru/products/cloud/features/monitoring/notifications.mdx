@@ -7,8 +7,6 @@ sidebarTitle: 'Уведомления'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse Cloud отправляет уведомления о важных событиях, связанных с вашим сервисом или организацией. Чтобы понять, как отправляются и настраиваются уведомления, полезно учитывать несколько основных понятий:
 
 1. **Категория уведомлений**: группы уведомлений, например уведомления о биллинге, уведомления, связанные с сервисом, и т. д. В каждой категории есть несколько типов уведомлений, для которых можно настроить способ доставки.
@@ -21,9 +19,25 @@ ClickHouse Cloud отправляет уведомления о важных с�
 
 Уведомления можно получать по разным каналам. ClickHouse Cloud поддерживает получение уведомлений по электронной почте, через интерфейс ClickHouse Cloud и в Slack. Чтобы просмотреть текущие уведомления, нажмите на значок колокольчика в меню в левом верхнем углу — откроется выдвижная панель. Если нажать кнопку **View All** в нижней части выдвижной панели, вы перейдёте на страницу с журналом активности по всем уведомлениям.
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="Выдвижная панель уведомлений ClickHouse Cloud" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="Журнал активности уведомлений ClickHouse Cloud" border />
+<Frame>
+
+![Выдвижная панель уведомлений ClickHouse Cloud](/images/cloud/manage/notifications-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Журнал активности уведомлений ClickHouse Cloud](/images/cloud/manage/notifications-2.webp)
+
+</Frame>
+
+</div>
 
 <div id="customizing-notifications">
   ## Настройка уведомлений
@@ -35,9 +49,25 @@ ClickHouse Cloud отправляет уведомления о важных с�
 
 Чтобы настроить доставку для конкретного уведомления, нажмите значок карандаша и измените каналы доставки уведомлений.
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="Экран настроек уведомлений ClickHouse Cloud" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="Настройки доставки уведомлений ClickHouse Cloud" border />
+<Frame>
+
+![Экран настроек уведомлений ClickHouse Cloud](/images/cloud/manage/notifications-3.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Настройки доставки уведомлений ClickHouse Cloud](/images/cloud/manage/notifications-4.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Некоторые **обязательные** уведомления, такие как **Payment failed**, настраивать нельзя.

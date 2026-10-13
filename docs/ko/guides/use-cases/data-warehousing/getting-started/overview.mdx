@@ -7,8 +7,6 @@ keywords: ['데이터 레이크', '레이크하우스', '시작하기', 'Iceberg
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <Info>
   **요약**
 
@@ -41,7 +39,11 @@ ClickHouse는 오픈 테이블 포맷을 읽는 3가지 방법을 제공합니�
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/iceberg-query-direct.webp" alt="Iceberg 쿼리" />
+    <div className="ch-image-lg">
+
+    ![Iceberg 쿼리](/images/datalake/iceberg-query-direct.webp)
+
+    </div>
 
     ClickHouse는 S3에서 Iceberg 메타데이터를 직접 읽고 스키마를 자동으로 추론합니다. 같은 방식은 [`deltaLake()`](/ko/reference/functions/table-functions/deltalake), [`hudi()`](/ko/reference/functions/table-functions/hudi), [`paimon()`](/ko/reference/functions/table-functions/paimon)에도 적용됩니다.
 
@@ -68,7 +70,11 @@ ClickHouse는 오픈 테이블 포맷을 읽는 3가지 방법을 제공합니�
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/iceberg-query-engine.webp" alt="Iceberg 쿼리" />
+    <div className="ch-image-lg">
+
+    ![Iceberg 쿼리](/images/datalake/iceberg-query-engine.webp)
+
+    </div>
 
     이 테이블 엔진은 데이터 캐싱, 메타데이터 캐싱, 스키마 진화, 타임 트래블을 지원합니다. 테이블 엔진의 기능에 대한 자세한 내용은 [직접 쿼리하기](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly) 가이드를 참조하고, 전체 기능 비교는 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix)를 확인하십시오.
   </Step>
@@ -160,7 +166,11 @@ ClickHouse는 오픈 테이블 포맷을 읽는 3가지 방법을 제공합니�
 
     이 쿼리는 Iceberg가 `counterid` 필터를 인식하지 못하므로 S3의 전체 데이터셋을 스캔합니다. 실행에 몇 초 정도 걸릴 수 있습니다.
 
-    <Image img="/images/datalake/iceberg-query.webp" alt="Iceberg 쿼리" />
+    <div className="ch-image-lg">
+
+    ![Iceberg 쿼리](/images/datalake/iceberg-query.webp)
+
+    </div>
 
     이제 MergeTree 테이블을 생성하고 데이터를 로드합니다:
 
@@ -194,7 +204,11 @@ ClickHouse는 오픈 테이블 포맷을 읽는 3가지 방법을 제공합니�
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/clickhouse-query.webp" alt="ClickHouse 쿼리" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse 쿼리](/images/datalake/clickhouse-query.webp)
+
+    </div>
 
     `counterid`가 `ORDER BY` 키의 첫 번째 컬럼이므로, ClickHouse의 희소 프라이머리 인덱스는 관련 그래뉼로 바로 건너뛰어 1억 개 행 전체를 스캔하지 않고 `counterid = 38`에 해당하는 행만 읽습니다. 그 결과 속도가 크게 향상됩니다.
 

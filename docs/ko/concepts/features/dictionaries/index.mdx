@@ -6,8 +6,6 @@ description: '딕셔너리는 빠른 조회를 위해 데이터를 키-값 형�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)의 데이터를 메모리 내 [키-값](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 형태로 표현하며, 매우 짧은 지연 시간의 조회 쿼리에 최적화되어 있습니다.
 
 딕셔너리는 다음과 같은 용도에 유용합니다:
@@ -15,7 +13,15 @@ ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference
 * 특히 `JOIN`과 함께 사용할 때 쿼리 성능 향상
 * 수집 프로세스의 속도를 저하시키지 않으면서 수집된 데이터를 실시간으로 보강
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse 딕셔너리의 사용 사례" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse 딕셔너리의 사용 사례](/images/dictionary/dictionary-use-cases.webp)
+
+</Frame>
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## 딕셔너리를 사용해 조인 속도 높이기
@@ -23,7 +29,15 @@ ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference
 
 딕셔너리는 특정 유형의 `JOIN` 속도를 높이는 데 사용할 수 있습니다. 여기서 말하는 유형은 조인 키가 기반 키-값 저장소의 키 속성과 일치해야 하는 [`LEFT ANY` 유형](/ko/reference/statements/select/join#supported-types-of-join)입니다.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="딕셔너리를 사용한 LEFT ANY JOIN" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![딕셔너리를 사용한 LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</Frame>
+
+</div>
 
 이 경우 ClickHouse는 딕셔너리를 활용해 [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join)을 수행할 수 있습니다. 이는 ClickHouse에서 가장 빠른 조인 알고리즘이며, 오른쪽 테이블의 기반 [테이블 엔진](/ko/reference/engines/table-engines/index)이 지연 시간이 짧은 키-값 요청을 지원할 때 적용할 수 있습니다. ClickHouse는 이를 지원하는 3개의 테이블 엔진을 제공합니다. [Join](/ko/reference/engines/table-engines/special/join)(기본적으로 미리 계산된 해시 테이블), [EmbeddedRocksDB](/ko/reference/engines/table-engines/integrations/embedded-rocksdb), [Dictionary](/ko/reference/engines/table-engines/special/dictionary)입니다. 여기서는 딕셔너리 기반 접근 방식을 설명하지만, 동작 원리는 세 엔진 모두 동일합니다.
 

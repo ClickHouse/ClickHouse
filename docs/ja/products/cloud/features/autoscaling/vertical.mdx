@@ -7,8 +7,6 @@ title: '垂直オートスケーリング'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="自動垂直スケーリング" />
@@ -25,7 +23,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
   単一レプリカの Scale サービスおよび標準の `1:4` プロファイルを持つ Enterprise サービスでは、垂直オートスケーリングがサポートされます。カスタムプロファイルを持つ Enterprise サービスでは、サポートによる垂直リサイズが必要です。Basic tier のサービスはサイズが固定されており、スケーリングできません。
 </Note>
 
-<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="スケーリング設定ページ" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![スケーリング設定ページ](/images/cloud/manage/AutoScaling.webp)
+
+</Frame>
+
+</div>
 
 レプリカの **Maximum memory** は、**Minimum memory** より大きい値に設定してください。すると、サービスはその範囲内で必要に応じてスケーリングされます。これらの設定は、サービスの初回作成時にも指定できます。サービス内の各レプリカには、同じメモリおよび CPU リソースが割り当てられます。
 

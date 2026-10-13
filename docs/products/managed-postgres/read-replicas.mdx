@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
@@ -16,11 +15,27 @@ Read replicas allow you to create one or more copies of your primary ClickHouse 
 
 To manage read replicas, click the edit icon on your warehouse:
 
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="Warehouse view with edit icon" size="md" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Warehouse view with edit icon](/images/managed-postgres/warehouse-view.webp)
+
+</Frame>
+
+</div>
 
 This opens the warehouse dialog where you can view existing services and create new read replicas:
 
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Read replica management dialog" size="md" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Read replica management dialog](/images/managed-postgres/read-replica-dialog.webp)
+
+</Frame>
+
+</div>
 
 ## Managing read replicas {#managing-read-replicas}
 
@@ -28,11 +43,27 @@ The **Read replicas** page gives you two views, toggled with the **Flow** and **
 
 The **Flow** view displays the replication topology — your primary instance at the top with arrows flowing down to each attached replica, showing tier, region, and status at a glance:
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Read replicas flow view showing primary and replica topology" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Read replicas flow view showing primary and replica topology](/images/managed-postgres/read-replicas-flow.webp)
+
+</Frame>
+
+</div>
 
 The **Table** view lists each replica with its service name, cloud provider and region, service status, creation time, and a **Detach service** action:
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Read replicas table view" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Read replicas table view](/images/managed-postgres/read-replicas-table.webp)
+
+</Frame>
+
+</div>
 
 To create a new replica, click **Create read replica** in the top-right corner of either view.
 

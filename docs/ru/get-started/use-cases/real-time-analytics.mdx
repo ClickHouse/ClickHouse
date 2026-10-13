@@ -7,8 +7,6 @@ sidebarTitle: 'Real-time аналитика'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -36,7 +34,15 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **Время на преобразование и подготовку**: Сколько времени требуется, чтобы очистить данные, обогатить их, выполнить JOIN, предварительную агрегацию или обновить структуры, обслуживающие запросы (materialized views, rollups, индексы)?
 * **Время на выполнение запроса**: Сколько времени требуется, чтобы построить план и выполнить чтение после того, как данные стали доступны?
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="Real-time аналитика: время на приём, преобразование и выполнение запроса" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Real-time аналитика: время на приём, преобразование и выполнение запроса](/images/use-cases/rta-considerations.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickhouse-rta">
   ## Как ClickHouse обеспечивает Real-time аналитику
@@ -44,7 +50,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="Как ClickHouse обеспечивает Real-time аналитику" />
+    <div className="ch-image-lg">
+
+    ![Как ClickHouse обеспечивает Real-time аналитику](/images/use-cases/real-time-analytics-architecture.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">

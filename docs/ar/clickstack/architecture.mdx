@@ -7,8 +7,6 @@ doc_type: 'مرجع'
 keywords: ['معمارية ClickStack', 'معمارية Observability', 'HyperDX', 'OpenTelemetry Collector', 'MongoDB', 'تصميم النظام']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تختلف بنية ClickStack المعمارية بحسب طريقة نشره. وتوجد فروق معمارية مهمة بين **ClickStack Open Source**، حيث تُدار جميع المكوّنات ذاتيًا، و**Managed ClickStack**، حيث تُستضاف ClickHouse وHyperDX UI وتُشغَّلان في ClickHouse Cloud. ورغم أن المكوّنات الأساسية تبقى نفسها في كلا النموذجين، فإن مسؤولية استضافة كل مكوّن وتوسيع نطاقه وتأمينه تختلف.
 
 <div id="architecture-overview">
@@ -23,7 +21,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     في هذا النموذج، تتم استضافة **ClickHouse وواجهة ClickStack UI (HyperDX)** وتشغيلهما وتأمينهما بواسطة ClickHouse Cloud. ولا يقتصر دور المستخدمين إلا على تشغيل **OpenTelemetry (OTel) collector** لإرسال telemetry data إلى الخدمة المُدارة.
 
-    <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="البنية المُدارة" size="lg" />
+    <div className="ch-image-lg">
+
+    ![البنية المُدارة](/images/use-cases/observability/clickstack-managed-architecture.webp)
+
+    </div>
 
 ### ClickHouse Cloud: المحرّك
 
@@ -77,7 +79,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Tab title="ClickStack مفتوح المصدر">
     تعتمد بنية ClickStack Open Source على ثلاثة مكونات أساسية: **ClickHouse** و**HyperDX** و**مجمّع OpenTelemetry (OTel)**. ويوفّر مثيل **MongoDB** تخزينًا لحالة التطبيق. وتشكّل هذه المكونات معًا حزمة رصد عالية الأداء ومفتوحة المصدر، محسّنة للسجلات والمقاييس والتتبعات.
 
-    <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="البنية" size="lg" />
+    <div className="ch-image-lg">
+
+    ![البنية](/images/use-cases/observability/clickstack-oss-architecture.webp)
+
+    </div>
 
 ### ClickHouse: محرك قاعدة البيانات
 

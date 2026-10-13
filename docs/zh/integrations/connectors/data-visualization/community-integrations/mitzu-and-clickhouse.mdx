@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
@@ -47,19 +46,31 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
   <Step title="登录或注册 Mitzu 账号" id="2-sign-in-or-sign-up-to-mitzu">
     第一步，前往 [https://app.mitzu.io](https://app.mitzu.io) 注册。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="包含邮箱和密码字段的 Mitzu 登录页面" border />
+    <div className="ch-image-lg">
+
+    ![包含邮箱和密码字段的 Mitzu 登录页面](/images/integrations/data-visualization/mitzu_01.webp)
+
+    </div>
   </Step>
 
   <Step title="配置工作区" id="3-configure-your-workspace">
     创建组织后，按照左侧边栏中的 `Set up your workspace` 入门指南进行操作。然后，点击 `Connect Mitzu with your data warehouse` 链接。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="显示入门步骤的 Mitzu 工作区设置页面" border />
+    <div className="ch-image-lg">
+
+    ![显示入门步骤的 Mitzu 工作区设置页面](/images/integrations/data-visualization/mitzu_02.webp)
+
+    </div>
   </Step>
 
   <Step title="将 Mitzu 连接到 ClickHouse" id="4-connect-mitzu-to-clickhouse">
     首先，选择 ClickHouse 作为连接类型，并填写连接详细信息。然后，点击 `Test connection & Save` 按钮以保存设置。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="Mitzu 的 ClickHouse 连接设置页面，包含配置表单" border />
+    <div className="ch-image-lg">
+
+    ![Mitzu 的 ClickHouse 连接设置页面，包含配置表单](/images/integrations/data-visualization/mitzu_03.webp)
+
+    </div>
   </Step>
 
   <Step title="配置事件表" id="5-configure-event-tables">
@@ -67,7 +78,11 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
 
     使用复选框至少选择一个表，然后点击 `Configure table` 按钮。这会打开一个弹窗，你可以在其中为每个表设置关键列。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="显示数据库表的 Mitzu 表选择界面" border />
+    <div className="ch-image-lg">
+
+    ![显示数据库表的 Mitzu 表选择界面](/images/integrations/data-visualization/mitzu_04.webp)
+
+    </div>
 
     <br />
 
@@ -79,7 +94,11 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
     > * **事件时间** - 事件的时间戳列。
     > * 可选&#91;**事件名称**&#93; - 如果该表包含多种事件类型，此列会对事件进行分段。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="显示列映射选项的 Mitzu 事件目录配置" border />
+    <div className="ch-image-lg">
+
+    ![显示列映射选项的 Mitzu 事件目录配置](/images/integrations/data-visualization/mitzu_05.webp)
+
+    </div>
 
     <br />
 
@@ -91,7 +110,11 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
 
     Explore 页面左侧是事件选择区域，顶部区域则用于配置时间范围。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="包含事件选择和时间配置的 Mitzu 分群查询界面" border />
+    <div className="ch-image-lg">
+
+    ![包含事件选择和时间配置的 Mitzu 分群查询界面](/images/integrations/data-visualization/mitzu_06.webp)
+
+    </div>
 
     <br />
 
@@ -107,7 +130,11 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
     最多可为漏斗选择 9 个步骤。选择一个时间窗口，让用户在该时间范围内完成漏斗。
     无需编写任何 SQL 代码，即可立即获得转化率洞察。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="显示各步骤之间转化率的 Mitzu 漏斗分析视图" border />
+    <div className="ch-image-lg">
+
+    ![显示各步骤之间转化率的 Mitzu 漏斗分析视图](/images/integrations/data-visualization/mitzu_07.webp)
+
+    </div>
 
     <br />
 
@@ -122,7 +149,11 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
     最多可为留存率计算选择 2 个步骤。为循环窗口选择留存窗口，以便
     无需编写任何一行 SQL 代码，即可立即获得转化率洞察。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="显示群组留存率的 Mitzu 留存分析" border />
+    <div className="ch-image-lg">
+
+    ![显示群组留存率的 Mitzu 留存分析](/images/integrations/data-visualization/mitzu_08.webp)
+
+    </div>
 
     <br />
 
@@ -136,7 +167,11 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
   <Step title="执行旅程查询" id="7-run-journey-queries">
     最多可为漏斗选择 9 个步骤。选择一个时间窗口，用于限定用户完成这一旅程的时间。Mitzu 旅程图表会以可视化方式展示用户在所选事件之间经过的每一条路径。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="展示事件之间用户路径流转的 Mitzu 旅程可视化" border />
+    <div className="ch-image-lg">
+
+    ![展示事件之间用户路径流转的 Mitzu 旅程可视化](/images/integrations/data-visualization/mitzu_09.webp)
+
+    </div>
 
     <br />
 
@@ -152,13 +187,21 @@ Mitzu 是一款无代码、数据仓库原生的产品分析应用。与 Amplitu
   <Step title="执行营收查询" id="8-run-revenue-queries">
     如果已配置收入相关设置，Mitzu 可以根据你的支付事件计算总 MRR 和订阅数量。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="显示 MRR 指标的 Mitzu 收入分析仪表板" border />
+    <div className="ch-image-lg">
+
+    ![显示 MRR 指标的 Mitzu 收入分析仪表板](/images/integrations/data-visualization/mitzu_10.webp)
+
+    </div>
   </Step>
 
   <Step title="原生 SQL" id="9-sql-native">
     Mitzu 采用原生 SQL，这意味着它会根据你在 Explore 页面中选择的配置生成原生 SQL 代码。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="显示原生 ClickHouse 查询的 Mitzu SQL 代码生成视图" border />
+    <div className="ch-image-lg">
+
+    ![显示原生 ClickHouse 查询的 Mitzu SQL 代码生成视图](/images/integrations/data-visualization/mitzu_11.webp)
+
+    </div>
 
     <br />
 

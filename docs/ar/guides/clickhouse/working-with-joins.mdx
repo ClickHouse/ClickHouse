@@ -7,8 +7,6 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يدعم ClickHouse بشكل كامل عمليات JOIN القياسية في SQL، مما يتيح تحليل البيانات بكفاءة.
 في هذا الدليل، ستتعرّف على بعض أنواع JOIN الشائعة المتاحة وكيفية استخدامها بمساعدة مخططات فن واستعلامات مثال على مجموعة بيانات [IMDB](https://en.wikipedia.org/wiki/IMDb) مُطبَّعة من [مستودع مجموعات البيانات العلائقية](https://relational.fit.cvut.cz/dataset/IMDb).
 
@@ -22,7 +20,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ستستخدم الجداول الأربع التالية من مجموعة البيانات النموذجية:
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="مخطط IMDB" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مخطط IMDB](/images/starter_guides/joins/imdb_schema.webp)
+
+</Frame>
+
+</div>
 
 تمثل البيانات في هذه الجداول الأربع أفلامًا يمكن أن تنتمي إلى نوع واحد أو عدة أنواع.
 ويؤدي الممثلون الأدوار في هذه الأفلام.
@@ -56,7 +62,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يعيد `INNER JOIN`، لكل زوج من الصفوف المتطابقة بحسب مفاتيح الربط، قيم الأعمدة من الصف في الجدول الأيسر مدمجةً مع قيم الأعمدة من الصف في الجدول الأيمن.
 إذا كان للصف أكثر من تطابق واحد، فستُعاد جميع التطابقات (أي يُنتَج [الجداء الديكارتي](https://en.wikipedia.org/wiki/Cartesian_product) للصفوف ذات مفاتيح الربط المتطابقة).
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Inner Join](/images/starter_guides/joins/inner_join.webp)
+
+</Frame>
+
+</div>
 
 يستخرج هذا الاستعلام الأنواع لكل فيلم من خلال ربط جدول `movies` بجدول `genres`:
 
@@ -104,7 +118,15 @@ LIMIT 10;
 
 ويجمع استعلام `FULL OUTER JOIN` بين `LEFT OUTER JOIN` و`RIGHT OUTER JOIN`، ويعيد قيم الصفوف غير المتطابقة من الجدولين الأيسر والأيمن، مع القيم الافتراضية لأعمدة الجدول الأيمن والأيسر، على الترتيب.
 
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="الربط الخارجي" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![الربط الخارجي](/images/starter_guides/joins/outer_join.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   يمكن [تهيئة](/ar/reference/settings/session-settings/join#join_use_nulls) ClickHouse لإرجاع [NULL](/ar/reference/syntax#null)s بدلًا من القيم الافتراضية (لكن ذلك أقل توصيةً [لأسباب تتعلق بالأداء](/ar/reference/data-types/nullable#storage-features)).
@@ -149,7 +171,15 @@ LIMIT 10;
 ينتج `CROSS JOIN` حاصل الجداء الديكارتي الكامل للجدولين من دون مراعاة مفاتيح الربط.
 يُدمَج كل صف من الجدول الأيسر مع كل صف من الجدول الأيمن.
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="ربط تقاطعي" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ربط تقاطعي](/images/starter_guides/joins/cross_join.webp)
+
+</Frame>
+
+</div>
 
 لذلك، فإن الاستعلام التالي يدمج كل صف من جدول `movies` مع كل صف من جدول `genres`:
 
@@ -249,7 +279,15 @@ ALL
 
 ويعمل استعلام `RIGHT SEMI JOIN` بالطريقة نفسها، إذ يعيد القيم لجميع الصفوف من الجدول الأيمن التي لها تطابق واحد على الأقل في الجدول الأيسر، ولكن لا يُعاد إلا أول تطابق يتم العثور عليه.
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="ربط شبهي" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ربط شبهي](/images/starter_guides/joins/semi_join.webp)
+
+</Frame>
+
+</div>
 
 يعثر هذا الاستعلام على جميع الممثلين/الممثلات الذين شاركوا في فيلم خلال عام 2023.
 لاحظ أنه عند استخدام ربط عادي (`INNER`)، سيظهر الممثل/الممثلة نفسه أكثر من مرة إذا كان لديه أكثر من دور واحد في عام 2023:
@@ -288,7 +326,15 @@ LIMIT 10;
 
 وبالمثل، يعيد `RIGHT ANTI JOIN` قيم الأعمدة لجميع الصفوف غير المتطابقة من الجدول الأيمن.
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="ANTI JOIN" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ANTI JOIN](/images/starter_guides/joins/anti_join.webp)
+
+</Frame>
+
+</div>
 
 يمكن إعادة صياغة استعلام مثال الربط الخارجي السابق باستخدام anti join للعثور على الأفلام التي لا تملك نوعًا في مجموعة البيانات:
 
@@ -328,7 +374,15 @@ LIMIT 10;
 
 أما `INNER ANY JOIN` فهو `INNER JOIN` مع تعطيل الجداء الديكارتي.
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Any Join](/images/starter_guides/joins/any_join.webp)
+
+</Frame>
+
+</div>
 
 يوضح المثال التالي `LEFT ANY JOIN` من خلال مثال تجريدي يستخدم جدولين مؤقتين (`left_table` و`right_table`) أُنشئا باستخدام دالة الجدول [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [table function](/ar/reference/functions/table-functions/index):
 
@@ -403,14 +457,30 @@ INNER ANY JOIN right_table AS r ON l.c = r.c;
 
 ويُعد هذا مفيدًا بشكل خاص في تحليلات السلاسل الزمنية، ويمكن أن يقلّل تعقيد الاستعلام بشكل كبير.
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Join](/images/starter_guides/joins/asof_join.webp)
+
+</Frame>
+
+</div>
 
 يوضح المثال التالي تحليلات سلاسل زمنية لبيانات سوق الأسهم.
 يحتوي جدول `quotes` على أسعار لرموز الأسهم استنادًا إلى أوقات محددة خلال اليوم.
 ويُحدَّث السعر كل 10 ثوانٍ في بيانات المثال.
 أما جدول `trades` فيسرد صفقات الرموز — أي أن حجمًا محددًا من أحد الرموز قد تم شراؤه في وقت محدد:
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Asof Example](/images/starter_guides/joins/asof_example.webp)
+
+</Frame>
+
+</div>
 
 لحساب التكلفة الفعلية لكل صفقة، نحتاج إلى مطابقة الصفقات مع أقرب وقت لسعر العرض الخاص بها.
 

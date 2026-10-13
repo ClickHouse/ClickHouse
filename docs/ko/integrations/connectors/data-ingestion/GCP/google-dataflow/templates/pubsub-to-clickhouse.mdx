@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', '데드 레터']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 Pub/Sub to ClickHouse Template은 Pub/Sub subscription에서 JSON으로 인코딩된 메시지를 읽어 ClickHouse 테이블에 기록하는 스트리밍 파이프라인입니다.
 파싱에 실패하거나 대상 스키마에 맞게 매핑되지 않은 메시지는 데드 레터 대상, 즉 ClickHouse 테이블, Pub/Sub 토픽 또는 둘 다로 라우팅됩니다.
 
@@ -163,7 +161,11 @@ Pub/Sub to ClickHouse Template은 Google Cloud Console에서 사용할 수 있�
 Google Cloud Console에 로그인한 다음 Dataflow를 검색합니다.
 
 1. `CREATE JOB FROM TEMPLATE` 버튼을 누르십시오.
-   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Dataflow 콘솔" />
+   <div className="ch-image-lg">
+
+   ![Dataflow 콘솔](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+   </div>
 
 2. Template 양식이 열리면 작업 이름을 입력하고 원하는 리전을 선택합니다.
 
@@ -190,7 +192,15 @@ Google Cloud Console에 로그인한 다음 Dataflow를 검색합니다.
 
 작업 상태를 모니터링하려면 Google Cloud Console의 [Dataflow Jobs 탭](https://console.cloud.google.com/dataflow/jobs)으로 이동하십시오. 여기에서 진행 상황과 오류를 포함한 작업 세부 정보를 확인할 수 있습니다:
 
-<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="실행 중인 Pub/Sub-ClickHouse 작업을 보여주는 Dataflow 콘솔" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![실행 중인 Pub/Sub-ClickHouse 작업을 보여주는 Dataflow 콘솔](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+
+</Frame>
+
+</div>
 
 Template은 또한 `PubSubToClickHouse` 네임스페이스 아래에 다음과 같은 사용자 지정 메트릭을 내보내며, Dataflow 작업 페이지에서 확인할 수 있습니다:
 

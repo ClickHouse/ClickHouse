@@ -6,8 +6,6 @@ description: 'Мониторинг журналов Redis с помощью Clic
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -167,9 +165,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   <Step title="Проверка журналов в HyperDX" id="verifying-logs">
     После настройки войдите в HyperDX и убедитесь, что журналы поступают:
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Представление логов" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="Log" />
+    ![Представление логов](/images/clickstack/redis/redis-log-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Log](/images/clickstack/redis/redis-log.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -260,9 +266,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       HyperDX показывает временные метки в локальном часовом поясе вашего браузера. Демонстрационные данные охватывают период **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. Широкий временной диапазон гарантирует, что вы увидите демо-журналы независимо от своего местоположения. Когда журналы появятся, вы сможете сузить диапазон до 24 часов для более наглядной визуализации.
     </Info>
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="представление журналов" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="Log" />
+    ![представление журналов](/images/clickstack/redis/redis-log-view.webp)
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    ![Log](/images/clickstack/redis/redis-log.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -281,11 +295,19 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел Dashboards.
     2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Импорт панели мониторинга" />
+    <div className="ch-image-lg">
+
+    ![Импорт панели мониторинга](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Загрузите файл redis-logs-dashboard.json и нажмите &quot;Finish Import&quot;.
 
-    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="Завершение импорта" />
+    <div className="ch-image-lg">
+
+    ![Завершение импорта](/images/clickstack/redis/redis-import-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями" id="created-dashboard">
@@ -293,7 +315,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       Для демо-набора данных установите временной диапазон **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (скорректируйте его в соответствии с вашим часовым поясом). По умолчанию у импортированной панели мониторинга временной диапазон не задан.
     </Note>
 
-    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="Пример панели мониторинга" />
+    <div className="ch-image-lg">
+
+    ![Пример панели мониторинга](/images/clickstack/redis/redis-logs-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

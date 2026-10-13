@@ -7,15 +7,21 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Event deltas', 'heatmap', '속성 분포', '트레이스 분석', '관측성']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 Event deltas는 쿼리를 작성하지 않고도 지연 시간 히트맵과 자동 속성 분석을 결합해 트레이스 데이터의 양상을 파악하고, 느린 스팬이 왜 다른지 확인할 수 있게 해줍니다. 사용하는 방법은 세 가지입니다:
 
 * **분포 모드 (항상 켜짐)**: 히트맵에서 선택한 영역이 없으면 현재 스팬 집합에 대한 각 속성의 값 분포가 표시됩니다. 지배적인 값이나 유난히 드문 값(cardinality 이상치)을 찾는 데 유용합니다.
 * **비교 모드**: 히트맵에서 사각형을 드래그해 내부의 스팬(Selection)과 외부의 모든 스팬(Background)을 비교합니다. 편차를 분리해 파악하는 데 유용합니다.
 * **반복적 드릴다운**: 막대를 클릭해 해당 값으로 필터링하거나 제외합니다. 그러면 필터링된 집합을 기준으로 히트맵이 다시 렌더링되므로, 원인이 분명해질 때까지 범위를 계속 좁혀갈 수 있습니다.
 
-<Image img="/images/clickstack/event-deltas/overview.webp" alt="payment service의 Event deltas 개요. 화면 중간으로 갈수록 밝은 띠가 위로 올라가며, 화면 내에서는 회복되지 않은 상태" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![payment service의 Event deltas 개요. 화면 중간으로 갈수록 밝은 띠가 위로 올라가며, 화면 내에서는 회복되지 않은 상태](/images/clickstack/event-deltas/overview.webp)
+
+</Frame>
+
+</div>
 
 위 스크린샷에서 히트맵의 오른쪽 끝은 대략 10 ms에 머물러 있으며, 오전 내내 유지되던 1 ms 기준선으로는 아직 돌아가지 않았습니다. 성능 저하는 아직 진행 중이므로, 현재는 장애가 진행되는 도중의 상태를 포착한 것입니다.
 
@@ -76,7 +82,15 @@ Event deltas는 **Results Table** 및 **Event Patterns**와 나란히 제공되�
 
 히트맵에서 타임라인을 따라 지연 시간이 점차 높아지는 모습이 보이면(느린 대역이 두꺼워지거나, 밝은 대역이 위로 올라가거나, 정상 구간과 성능 저하 구간이 뚜렷한 변곡점으로 갈리는 경우), 그 상승 변곡점부터 윈도우의 오른쪽 끝까지 사각형을 드래그하십시오. 비교를 더 선명하게 하려면 사각형의 아래쪽 경계를 축 맨 아래가 아니라 정상 기준선에 맞추십시오. 이렇게 하면 같은 시간대에 있다는 이유로 아직 정상인 빠른 스팬까지 포함하지 않고, 성능이 저하된 윈도우에서 평소보다 실제로 더 느린 스팬만 분리할 수 있습니다.
 
-<Image img="/images/clickstack/event-deltas/before-after.webp" alt="상승 변곡점부터 오른쪽 끝까지 사각형을 그렸고 아래쪽은 1 ms 기준선에 놓인 payment service의 비교 모드" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![상승 변곡점부터 오른쪽 끝까지 사각형을 그렸고 아래쪽은 1 ms 기준선에 놓인 payment service의 비교 모드](/images/clickstack/event-deltas/before-after.webp)
+
+</Frame>
+
+</div>
 
 히트맵 아래의 속성 막대는 차이가 가장 큰 항목이 먼저 오도록 정렬됩니다. 이 예시에서는 맨 윗줄 차트가 가장 강한 신호를 보여줍니다. `SpanKind`, `SpanName`, `ScopeName`은 각각 느린 Selection과 정상적인 Background 사이의 뚜렷한 주황색 대 녹색 분리를 나타냅니다. 이들을 함께 보면 변곡점에서 무엇이 바뀌었는지 분명하게 드러납니다.
 
@@ -88,7 +102,15 @@ Event deltas는 **Results Table** 및 **Event Patterns**와 나란히 제공되�
 
 히트맵에 duration 축을 따라 두 개의 지연 시간 집단이 뚜렷하게 분리되어 보이면, 전체 시간 범위를 가로지르면서도 위쪽의 선명하게 분리된 밴드만 포함하도록 넓은 rectangle을 드래그하십시오. 그러면 느린 집단은 Selection이 되고, 빠른 대다수 집단은 Background가 됩니다.
 
-<Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="frontend-proxy에서의 느림과 빠름 비교. rectangle은 조밀한 대다수 집단과 충분히 떨어진, 선명하게 분리된 위쪽 밴드만 덮고 있습니다" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![frontend-proxy에서의 느림과 빠름 비교. rectangle은 조밀한 대다수 집단과 충분히 떨어진, 선명하게 분리된 위쪽 밴드만 덮고 있습니다](/images/clickstack/event-deltas/slow-vs-fast.webp)
+
+</Frame>
+
+</div>
 
 rectangle은 위쪽 밴드에 딱 맞게 그리되, 해당 밴드와 조밀한 대다수 집단 사이에 눈에 띄는 수평 간격이 남도록 하십시오. 빠른 집단까지 번져 들어가는 느슨한 rectangle은 차이를 흐리게 만듭니다.
 
@@ -106,7 +128,15 @@ rectangle은 위쪽 밴드에 딱 맞게 그리되, 해당 밴드와 조밀한 �
 * **Exclude**: 이 값을 가진 스팬을 제외합니다
 * **Copy**: 값을 클립보드에 복사합니다
 
-<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="Selection과 Background 비율, 그리고 filter, exclude, copy 작업이 표시된 ScopeVersion 막대의 클릭 팝오버" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Selection과 Background 비율, 그리고 filter, exclude, copy 작업이 표시된 ScopeVersion 막대의 클릭 팝오버](/images/clickstack/event-deltas/drill-down.webp)
+
+</Frame>
+
+</div>
 
 Filter 또는 Exclude를 적용하면 히트맵 선택이 해제되고, 히트맵이 새 모집단을 기준으로 다시 렌더링되며, 분포 모드는 필터링된 집합을 기준으로 다시 적용됩니다. 히트맵 형태가 어떻게 바뀌는지 확인하십시오. 필터가 제대로 적용되면 느린 구간이 눈에 띄게 사라지거나, 이봉 분포의 분리가 합쳐지거나, 우상향 드리프트가 완화됩니다. 이 과정을 반복하십시오. 다음으로 의심스러운 값을 찾고, 필터링한 뒤, 새 히트맵과 새 분포를 확인하십시오. 보통 몇 번만 반복해도 회귀 문제의 범위를 한두 개의 속성으로 좁힐 수 있습니다.
 
@@ -122,7 +152,15 @@ Filter 또는 Exclude를 적용하면 히트맵 선택이 해제되고, 히트�
 
 히트맵 오른쪽 상단의 톱니바퀴 아이콘을 클릭하면 **Display Settings** 드로어가 열립니다.
 
-<Image img="/images/clickstack/event-deltas/settings-drawer.webp" alt="Scale, Value, Count 필드가 있는 Display Settings 드로어" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Scale, Value, Count 필드가 있는 Display Settings 드로어](/images/clickstack/event-deltas/settings-drawer.webp)
+
+</Frame>
+
+</div>
 
 | 매개변수      | 기본값              | 설명                                                                                      |
 | --------- | ---------------- | --------------------------------------------------------------------------------------- |

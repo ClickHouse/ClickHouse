@@ -6,8 +6,6 @@ tags: ['Security and Authentication']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Steps to Follow {#steps-to-follow}
 The following steps can be used to enable SSL for a single ClickHouse Server using [Let's Encrypt](https://letsencrypt.org/), a free, automated, and open Certificate Authority (CA) designed to make it easy for anyone to secure their websites with HTTPS. By automating the certificate issuance and renewal process, Let's Encrypt ensures websites remain secure without requiring manual intervention.
 
@@ -54,7 +52,15 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 
 <br/>
 
-<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="AWS Security Group configuration showing port 80 open" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![AWS Security Group configuration showing port 80 open](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
+
+</Frame>
+
+</div>
 
 3. Install [`certbot`](https://certbot.eff.org/instructions) e.g. using `apt`
 

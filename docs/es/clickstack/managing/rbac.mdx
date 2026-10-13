@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'rbac', 'roles', 'permisos', 'control de acceso', 'seguridad']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickStack incluye control de acceso basado en roles (RBAC) para que puedas definir roles personalizados con permisos granulares sobre [dashboards](/es/clickstack/features/dashboards/overview), [búsquedas guardadas](/es/clickstack/features/search), fuentes, [alertas](/es/clickstack/features/alerts), webhooks y notebooks. Los permisos funcionan en dos niveles: acceso a nivel de recurso (sin acceso, lectura o administración según el tipo de recurso) y reglas granulares opcionales que restringen el acceso a recursos concretos por nombre, etiqueta o ID. ClickStack incluye tres roles predefinidos, y puedes crear roles personalizados para ajustarlos a las necesidades de tu equipo.
 
 <Info>
@@ -37,11 +35,19 @@ Una vez que un usuario tiene acceso a Cloud, aparece en la página **configuraci
 
 <Tabs>
   <Tab title="Cloud Users and roles">
-    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="Página Cloud Users and roles de ClickHouse Cloud" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Página Cloud Users and roles de ClickHouse Cloud](/images/clickstack/rbac/team-page-cloud.webp)
+
+    </div>
   </Tab>
 
   <Tab title="ClickStack configuración del equipo">
-    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="Página ClickStack configuración del equipo que muestra a los miembros del equipo y sus roles" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Página ClickStack configuración del equipo que muestra a los miembros del equipo y sus roles](/images/clickstack/rbac/team-page-clickstack.webp)
+
+    </div>
   </Tab>
 </Tabs>
 
@@ -84,7 +90,11 @@ Puede establecer un rol predeterminado para usuarios nuevos en [Políticas de se
   <Step title="Ve a configuración del equipo" id="step-navigate">
     Abre **configuración del equipo** y desplázate hasta **RBAC Roles**.
 
-    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="Roles de RBAC" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Roles de RBAC](/images/clickstack/rbac/rbac-section.webp)
+
+    </div>
   </Step>
 
   <Step title="Añade un rol nuevo" id="step-add-role">
@@ -94,7 +104,11 @@ Puede establecer un rol predeterminado para usuarios nuevos en [Políticas de se
   <Step title="Configura los permisos y guarda" id="step-configure">
     Establece los permisos del rol y, a continuación, haz clic en **Create Role**.
 
-    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Modal Add Role" size="md" />
+    <div className="ch-image-md">
+
+    ![Modal Add Role](/images/clickstack/rbac/add-role-modal.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -151,7 +165,15 @@ Cada tipo de recurso tiene un **Modo de control de acceso**:
 
 Para cambiar de modo, haz clic en el chevrón para expandir un tipo de recurso en el editor de roles y luego alterna el **Modo de control de acceso**.
 
-<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="Modos de Acceso predeterminado y Controles granulares en el editor de roles" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Modos de Acceso predeterminado y Controles granulares en el editor de roles](/images/clickstack/rbac/default-vs-fine-grained.webp)
+
+</Frame>
+
+</div>
 
 <div id="configuring-access-rules">
   #### Configuración de las reglas de acceso
@@ -159,7 +181,15 @@ Para cambiar de modo, haz clic en el chevrón para expandir un tipo de recurso e
 
 Cada regla de acceso consta de una **condición** y un **nivel de acceso**. Las condiciones hacen coincidir los recursos según sus propiedades:
 
-<Image img="/images/clickstack/rbac/condition-tip.webp" alt="Información sobre la condición: hacer coincidir recursos por Name o Tag (como muestra el título) o por ID (que aparece en la URL)" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Información sobre la condición: hacer coincidir recursos por Name o Tag (como muestra el título) o por ID (que aparece en la URL)](/images/clickstack/rbac/condition-tip.webp)
+
+</Frame>
+
+</div>
 
 | Campo de condición | Operadores       | Qué coincide                                                                                                                                                                  | Ejemplo                                                                                                      |
 | ------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -169,11 +199,27 @@ Cada regla de acceso consta de una **condición** y un **nivel de acceso**. Las 
 
 La siguiente captura de pantalla muestra tanto el ID del dashboard resaltado en la barra de URL como una tag &quot;TESTING&quot; visible en el panel de tags (arriba a la derecha).
 
-<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="Dashboard que muestra el ID del recurso en la barra de URL y una tag en la esquina superior derecha" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard que muestra el ID del recurso en la barra de URL y una tag en la esquina superior derecha](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+
+</Frame>
+
+</div>
 
 Puedes añadir varias reglas por tipo de recurso. Cada regla se evalúa de forma independiente con lógica OR: un recurso es accesible si coincide con **cualquiera** de las reglas. Los recursos que no coinciden con ninguna regla no son accesibles.
 
-<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="Información sobre reglas de acceso con lógica OR" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Información sobre reglas de acceso con lógica OR](/images/clickstack/rbac/access-rules-tip.webp)
+
+</Frame>
+
+</div>
 
 **Ejemplo**: Para dar a un rol acceso de solo lectura a dashboards de testing, expande Dashboards, cambia a control granular y añade dos reglas:
 
@@ -182,7 +228,15 @@ Puedes añadir varias reglas por tipo de recurso. Cada regla se evalúa de forma
 
 Un dashboard que coincida con cualquiera de las dos reglas será accesible.
 
-<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="Dos reglas de acceso granular unidas por OR: Name contains testing con acceso Read y Tag is testing con acceso Read" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dos reglas de acceso granular unidas por OR: Name contains testing con acceso Read y Tag is testing con acceso Read](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+
+</Frame>
+
+</div>
 
 <div id="security-policies">
   ## Políticas de seguridad
@@ -194,4 +248,12 @@ La sección **Políticas de seguridad** de **configuración del equipo** ofrece 
 
 **IA generativa** permite habilitar o deshabilitar funciones basadas en LLM (como la generación de consultas en lenguaje natural) con tecnología de Anthropic o Amazon Bedrock. Cuando está deshabilitada, no se envían datos a proveedores de IA.
 
-<Image img="/images/clickstack/rbac/security-policies.webp" alt="Políticas de seguridad" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Políticas de seguridad](/images/clickstack/rbac/security-policies.webp)
+
+</Frame>
+
+</div>

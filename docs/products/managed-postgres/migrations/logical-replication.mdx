@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 This guide provides step-by-step instructions on how to migrate your PostgreSQL database to ClickHouse Managed Postgres using Postgres native logical replication.
 
@@ -42,7 +41,15 @@ For logical replication to work, we need to ensure that the source database is s
     ```
 
 Make sure your source database is set up like this:
-<Image img="/images/managed-postgres/logical_replication/source-setup.webp" alt="Source PostgreSQL Replication Setup" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Source PostgreSQL Replication Setup](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</Frame>
+
+</div>
 
 ## Schema-only dump of the source database {#migration-logical-replication-schema-dump}
 Before setting up logical replication, we need to create the schema in the target ClickHouse Managed Postgres database. We can do this by creating a schema-only dump of the source database using `pg_dump`:
@@ -61,11 +68,27 @@ Here:
 - `-f rds-dump` specifies the output directory for the dump files. Note that this directory will be created automatically and shouldn't exist beforehand.
 
 In our case, we have two tables - `events` and `users`. `events` has a million rows, and `users` has a thousand rows.
-<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="Source PostgreSQL Tables Setup" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Source PostgreSQL Tables Setup](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</Frame>
+
+</div>
 
 ### Create a ClickHouse Managed Postgres instance {#migration-pgdump-pg-restore-create-pg}
 First, ensure you have a ClickHouse Managed Postgres instance set up, preferably in the same region as the source. You can follow the quick guide [here](/products/managed-postgres/quickstart#create-postgres-database). Here's what we're going to spin up for this guide:
-<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="Create ClickHouse Managed Postgres Instance" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Create ClickHouse Managed Postgres Instance](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</Frame>
+
+</div>
 
 ## Restore the schema to ClickHouse Managed Postgres {#migration-logical-replication-restore-schema}
 Now that we have the schema dump, we can restore it to our ClickHouse Managed Postgres instance using `pg_restore`:
@@ -81,7 +104,15 @@ Here:
 This command will create all the tables, indexes, views, and other schema objects in the target database without any data.
 
 In our case, after running this command, we have our two tables and they're empty:
-<Image img="/images/managed-postgres/logical_replication/target-initial-setup.webp" alt="Target ClickHouse Managed Postgres Initial Setup" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Target ClickHouse Managed Postgres Initial Setup](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</Frame>
+
+</div>
 
 ## Set up logical replication {#migration-logical-replication-setup-replication}
 With the schema in place, we can now set up logical replication from the source database to the target ClickHouse Managed Postgres database. This involves creating a publication on the source database and a subscription on the target database.
@@ -106,7 +137,15 @@ PUBLICATION <pub_name_you_entered_above>;
 This will automatically create a replication slot on the source database and start replicating data from the specified tables to the target database. Depending on the size of your data, this process may take some time.
 
 In our case, after setting up the subscription, the data flowed in:
-<Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="Migration Result after Logical Replication" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migration Result after Logical Replication](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</Frame>
+
+</div>
 
 New rows inserted into the source database will now be replicated to the target ClickHouse Managed Postgres database in near real-time.
 

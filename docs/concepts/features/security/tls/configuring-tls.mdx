@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <SelfManaged />
 
 This guide provides simple and minimal settings to configure ClickHouse to use OpenSSL certificates to validate connections. For this demonstration, a self-signed Certificate Authority (CA) certificate and key are created with node certificates to make the connections with appropriate settings.
@@ -451,7 +449,11 @@ The typical [4 letter word (4lW)](/guides/oss/deployment-and-scaling/keeper/inde
 
 5. Log into the Play UI using the `https` interface at `https://chnode1.marsnet.local:8443/play`.
 
-    <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="Configuring TLS" size="md" border />
+    <div className="ch-image-md">
+
+    ![Configuring TLS](/images/guides/sre/configuring-ssl_01.webp)
+
+    </div>
 
 <Note>
     the browser will show an untrusted certificate since it is being reached from a workstation and the certificates aren't in the root CA stores on the client machine.

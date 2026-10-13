@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'بيانات تجريبية', 'مجموعة بيانات نموذجية', 'السجلات', 'قابلية الرصد']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
 **يفترض هذا الدليل أنك نشرت ClickStack مفتوح المصدر باستخدام [إرشادات الصورة الشاملة](/ar/clickstack/getting-started/oss)، أو [الوضع المحلي فقط](/ar/clickstack/deployment/local-mode-only)، وأكملت إنشاء المستخدم الأولي. أو يمكنك بدلاً من ذلك تخطي الإعداد المحلي بالكامل والاتصال مباشرةً بالعرض التوضيحي المستضاف لـ ClickStack على [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)، والذي يستخدم مجموعة البيانات هذه.**
@@ -62,7 +60,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     انتقل إلى `Team Settings` وانقر على `Edit` بجانب `Local Connection`:
 
-    <Image img="/images/use-cases/observability/edit_connection.webp" alt="تعديل الاتصال" size="lg" />
+    <div className="ch-image-lg">
+
+    ![تعديل الاتصال](/images/use-cases/observability/edit_connection.webp)
+
+    </div>
 
     أعد تسمية الاتصال إلى `Demo`، ثم أكمل النموذج التالي باستخدام تفاصيل الاتصال التالية الخاصة بالخادم التجريبي:
 
@@ -71,7 +73,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
     * `Username`: `otel_demo`
     * `Password`: اتركه فارغًا
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp" alt="تعديل اتصال العرض التوضيحي" size="lg" />
+    <div className="ch-image-lg">
+
+    ![تعديل اتصال العرض التوضيحي](/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp)
+
+    </div>
   </Step>
 
   <Step title="عدّل المصادر" id="modify-sources">
@@ -83,7 +89,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     مرّر للأعلى إلى `Sources`، ثم عدّل كل مصدر من المصادر — `Logs` و`Traces` و`Metrics` و`Sessions` — لاستخدام قاعدة البيانات `otel_v2`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp" alt="تحرير مصدر العرض التوضيحي" size="lg" />
+    <div className="ch-image-lg">
+
+    ![تحرير مصدر العرض التوضيحي](/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp)
+
+    </div>
 
     <Note>
       قد تحتاج إلى إعادة تحميل الصفحة للتأكد من ظهور القائمة الكاملة لقواعد البيانات ضمن كل مصدر.
@@ -93,7 +103,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
   <Step title="عدّل النطاق الزمني" id="adjust-the-timeframe">
     اضبط النطاق الزمني لعرض جميع البيانات من `1 day` السابقة باستخدام منتقي الوقت في الزاوية العلوية اليمنى.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_2.webp" alt="الخطوة 2" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 2](/images/use-cases/observability/hyperdx-demo/step_2.webp)
+
+    </div>
 
     قد تلاحظ اختلافًا طفيفًا في عدد الأخطاء في المخطط الشريطي ضمن قسم النظرة العامة، مع زيادة طفيفة باللون الأحمر في عدة أشرطة متتالية.
 
@@ -107,7 +121,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     ينبغي أن يصبح الخطأ أكثر وضوحًا:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_3.webp" alt="الخطوة 3" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 3](/images/use-cases/observability/hyperdx-demo/step_3.webp)
+
+    </div>
   </Step>
 
   <Step title="حدّد أنماط الأخطاء" id="identify-error-patterns">
@@ -115,7 +133,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     تكشف مجموعات الأخطاء عن مشكلات مرتبطة بعمليات الدفع الفاشلة، بما في ذلك نمط مُسمّى `Failed to place order`. وتشير مجموعات أخرى أيضًا إلى مشكلات في خصم البطاقات وامتلاء الذاكرات المؤقتة.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_4.webp" alt="الخطوة 4" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 4](/images/use-cases/observability/hyperdx-demo/step_4.webp)
+
+    </div>
 
     لاحظ أن مجموعات الأخطاء هذه ترجع على الأرجح إلى خدمات مختلفة.
   </Step>
@@ -125,13 +147,21 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     سيؤدي ذلك إلى عرض قائمة بجميع حالات ظهور هذا الخطأ المرتبطة بخدمة `frontend`:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_5.webp" alt="الخطوة 5" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 5](/images/use-cases/observability/hyperdx-demo/step_5.webp)
+
+    </div>
 
     حدّد أيًّا من الأخطاء الناتجة. ستُعرض البيانات الوصفية للسجلات بالتفصيل. ويشير التمرير عبر كلٍّ من `Overview` و`Column Values` إلى وجود مشكلة في تحصيل رسوم البطاقات بسبب امتلاء ذاكرة التخزين المؤقت:
 
     `failed to charge card: could not charge the card: rpc error: code = Unknown desc = Visa cache full: cannot add new item.`
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_6.webp" alt="الخطوة 6" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 6](/images/use-cases/observability/hyperdx-demo/step_6.webp)
+
+    </div>
   </Step>
 
   <Step title="استكشاف البنية التحتية" id="explore-the-infrastructure">
@@ -141,7 +171,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     حدّد علامة التبويب `Infrastructure` لعرض المقاييس المرتبطة بالكبسولات الأساسية لخدمة `frontend`، ثم وسّع النطاق الزمني إلى `1d`:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_7.webp" alt="الخطوة 7" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 7](/images/use-cases/observability/hyperdx-demo/step_7.webp)
+
+    </div>
 
     لا يبدو أن المشكلة مرتبطة بالبنية التحتية — إذ لم تتغير أي من المقاييس بشكل ملحوظ خلال الفترة الزمنية، سواء قبل الخطأ أو بعده. أغلِق علامة تبويب البنية التحتية.
   </Step>
@@ -151,11 +185,19 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     حدِّد `Trace` لعرض الـ trace المرتبط. وعند التمرير إلى أسفل هذا العرض، يمكننا رؤية كيف يستطيع HyperDX عرض الـ trace الموزّع عبر الخدمات المصغّرة، مع ربط spans داخل كل خدمة. ومن الواضح أن عملية الدفع تتضمن عدة خدمات مصغّرة، بما في ذلك تلك التي تنفّذ إتمام الشراء وتحويل العملات.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_8.webp" alt="الخطوة 8" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 8](/images/use-cases/observability/hyperdx-demo/step_8.webp)
+
+    </div>
 
     وعند التمرير إلى أسفل العرض حتى نهايته، يمكننا أن نرى أن خدمة `payment` هي المتسببة في الخطأ، والذي ينتقل بدوره صعودًا عبر سلسلة الاستدعاءات.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_9.webp" alt="الخطوة 9" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 9](/images/use-cases/observability/hyperdx-demo/step_9.webp)
+
+    </div>
   </Step>
 
   <Step title="البحث في التتبعات" id="searching-traces">
@@ -163,25 +205,45 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     انتقل إلى عرض Search الرئيسي باختيار `Search`. بدّل مصدر البيانات لـ `Traces` وحدد عرض `Results table`. **تأكد من أن النطاق الزمني لا يزال مضبوطًا على آخر يوم.**
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_10.webp" alt="الخطوة 10" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 10](/images/use-cases/observability/hyperdx-demo/step_10.webp)
+
+    </div>
 
     يعرض هذا العرض جميع التتبعات خلال آخر يوم. ونحن نعلم أن المشكلة مصدرها خدمة الدفع، لذا طبّق عامل التصفية `payment` على `ServiceName`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_11.webp" alt="الخطوة 11" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 11](/images/use-cases/observability/hyperdx-demo/step_11.webp)
+
+    </div>
 
     إذا طبّقنا التجميع العنقودي للأحداث على التتبعات باختيار `Event Patterns`، فسنرى فورًا مشكلة ذاكرة التخزين المؤقت في خدمة `payment`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_12.webp" alt="الخطوة 12" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 12](/images/use-cases/observability/hyperdx-demo/step_12.webp)
+
+    </div>
   </Step>
 
   <Step title="استكشف البنية التحتية لأثر التتبّع" id="explore-infrastructure-for-a-trace">
     انتقل إلى عرض النتائج بالنقر على `Results table`. صفِّ النتائج لإظهار الأخطاء فقط باستخدام عامل التصفية `StatusCode` والقيمة `Error`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_13.webp" alt="الخطوة 13" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 13](/images/use-cases/observability/hyperdx-demo/step_13.webp)
+
+    </div>
 
     حدِّد الخطأ `Error: Visa cache full: cannot add new item.`، ثم انتقل إلى علامة التبويب `Infrastructure` ووسِّع النطاق الزمني إلى `1d`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_14.webp" alt="الخطوة 14" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 14](/images/use-cases/observability/hyperdx-demo/step_14.webp)
+
+    </div>
 
     من خلال ربط التتبعات بالمقاييس، يمكننا ملاحظة أن الذاكرة وCPU ارتفعا في خدمة `payment`، قبل أن ينخفضا إلى `0` (ويمكن أن نعزو ذلك إلى إعادة تشغيل البود) — مما يشير إلى أن مشكلة `cache` تسببت في مشكلات على مستوى الموارد. ويمكننا توقّع أن هذا قد أثّر في أزمنة إتمام عمليات الدفع.
   </Step>
@@ -193,17 +255,29 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     عُد إلى عرض جدول النتائج وحدد الفترة الزمنية التي تتضمن الأخطاء لتقليص نطاق البيانات. احرص على تحديد عدة ساعات تسبق الأخطاء، وإن أمكن تمتد إلى ما بعدها (فقد تكون المشكلة ما تزال مستمرة):
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_15.webp" alt="الخطوة 15" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 15](/images/use-cases/observability/hyperdx-demo/step_15.webp)
+
+    </div>
 
     أزل عامل تصفية الأخطاء، ثم اختر `Event Deltas` من قائمة `Analysis Mode` على اليسار.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_16.webp" alt="الخطوة 16" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 16](/images/use-cases/observability/hyperdx-demo/step_16.webp)
+
+    </div>
 
     تعرض اللوحة العلوية توزيع الأزمنة، وتشير الألوان إلى كثافة الأحداث (عدد الـ spans). وعادةً ما تكون المجموعة الفرعية من الأحداث الواقعة خارج نطاق التركز الرئيسي هي الأجدر بالتحقيق.
 
     إذا حددنا الأحداث التي تزيد مدتها على `1ms`، وطبّقنا عامل التصفية `Filter by selection`، فسنتمكن من تحليل الفروق بين الأحداث &quot;الطبيعية&quot; ومجموعة الـ spans عالية الكثافة ذات المدة القريبة من 0ms:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_17.webp" alt="الخطوة 17" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 17](/images/use-cases/observability/hyperdx-demo/step_17.webp)
+
+    </div>
 
     ومع إجراء التحليل على هذه المجموعة الفرعية من البيانات، يمكننا ملاحظة أن spans &quot;Background&quot; خارج التحديد هي في الغالب معاملات Visa، وترتبط باستجابات 0ms بسبب أخطاء الـ cache.
   </Step>
@@ -232,11 +306,19 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     سيُظهر النقر على `▶️` كيف تدهور أداء المدفوعات بمرور الوقت.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_18.webp" alt="الخطوة 18" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 18](/images/use-cases/observability/hyperdx-demo/step_18.webp)
+
+    </div>
 
     إذا ضبطنا `Group By` على `SpanAttributes['app.payment.card_type']` (اكتب فقط `card` للاستكمال التلقائي)، فسنتمكن من رؤية كيف تدهور أداء الخدمة في معاملات Visa مقارنةً بـ Mastercard:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_19.webp" alt="الخطوة 19" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 19](/images/use-cases/observability/hyperdx-demo/step_19.webp)
+
+    </div>
 
     لاحظ أنه بمجرد حدوث الخطأ، تُعاد الاستجابات خلال `0s`.
   </Step>
@@ -254,7 +336,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     يمكننا أن نرى كيف ازداد حجم `cache` على مدى 4-5 ساعات (على الأرجح بعد عملية نشر برمجي) قبل أن يصل إلى حدٍّ أقصى قدره `100,000`. ومن خلال `Sample Matched Events` نرى أن أخطاءنا ترتبط بوصول `cache` إلى هذا الحد، وبعد ذلك سُجِّل بحجم `0` مع عودة الاستجابات أيضًا خلال `0s`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_20.webp" alt="الخطوة 20" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 20](/images/use-cases/observability/hyperdx-demo/step_20.webp)
+
+    </div>
 
     باختصار، من خلال استكشاف السجلات، والتتبعات، وأخيرًا المقاييس، توصلنا إلى ما يلي:
 
@@ -274,11 +360,19 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     انتقل إلى علامة التبويب `Client Sessions` من القائمة اليسرى، ثم تأكد من ضبط مصدر البيانات على `Sessions` والفترة الزمنية على `Last 1 day`:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_21.webp" alt="الخطوة 21" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 21](/images/use-cases/observability/hyperdx-demo/step_21.webp)
+
+    </div>
 
     ابحث عن `SpanAttributes.userEmail: Ronny.Windler` للعثور على جلسة عميلنا. سيؤدي تحديد الجلسة إلى عرض أحداث المتصفح ووحدات span المرتبطة بجلسة العميل على اليسار، مع إعادة عرض تجربة المستخدم داخل المتصفح على اليمين:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_22.webp" alt="الخطوة 22" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 22](/images/use-cases/observability/hyperdx-demo/step_22.webp)
+
+    </div>
   </Step>
 
   <Step title="إعادة عرض الجلسات" id="replaying-sessions">
@@ -286,11 +380,19 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     إذا مررنا إلى أسفل الـ spans، يمكننا رؤية خطأ `500` مرتبطًا بـ `/api/checkout`. ويؤدي اختيار الزر ▶️ لهذا الـ span تحديدًا إلى نقل إعادة التشغيل إلى هذه النقطة من الجلسة، مما يتيح لنا التأكد من تجربة العميل — إذ يبدو أن الدفع ببساطة لا يعمل من دون ظهور أي خطأ.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_23.webp" alt="الخطوة 23" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 23](/images/use-cases/observability/hyperdx-demo/step_23.webp)
+
+    </div>
 
     من خلال تحديد الـ span، يمكننا التأكد من أن السبب كان خطأً داخليًا. وبالنقر على علامة التبويب `Trace` ثم التمرير عبر الـ spans المرتبطة، يمكننا التأكد من أن العميل كان بالفعل ضحية لمشكلة الـ cache لدينا.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_24.webp" alt="الخطوة 24" size="lg" />
+    <div className="ch-image-lg">
+
+    ![الخطوة 24](/images/use-cases/observability/hyperdx-demo/step_24.webp)
+
+    </div>
   </Step>
 </Steps>
 

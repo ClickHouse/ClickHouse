@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack Helm 차트', 'Helm ClickHouse 배포', 'HyperDX Helm 설치', 'Kubernetes 관측성 스택', 'ClickStack Kubernetes 배포']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import JSONSupport from '/snippets/ko/_json_support.mdx';
 
 <Warning>
@@ -119,7 +117,11 @@ v2.x 차트는 **2단계 설치** 방식을 사용합니다. 먼저 `clickstack-
 
     요구 사항을 충족하는 사용자 이름과 비밀번호를 입력해 사용자를 생성하세요.
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    <div className="ch-image-lg">
+
+    ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
 
     `Create`를 클릭하면 Helm 차트로 배포된 ClickHouse 인스턴스에 대한 데이터 소스가 생성됩니다.
 

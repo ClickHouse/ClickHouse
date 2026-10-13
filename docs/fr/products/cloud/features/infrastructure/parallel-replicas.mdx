@@ -6,8 +6,6 @@ description: 'Dans ce guide, nous verrons d’abord comment ClickHouse répartit
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="introduction">
   ## Introduction
 </div>
@@ -33,7 +31,15 @@ que sur le shard spécifié, ou bien elle peut être envoyée à la table distri
 cas chaque shard exécutera la requête donnée. Le serveur sur lequel la table distribuée
 a été interrogée agrégera les données et renverra la réponse au client :
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="architecture shardée" />
+<div className="ch-image-md">
+
+<Frame>
+
+![architecture shardée](/images/deployment-guides/parallel-replicas-1.webp)
+
+</Frame>
+
+</div>
 
 La figure ci-dessus illustre ce qui se passe lorsqu&#39;un client interroge une table distribuée :
 
@@ -74,7 +80,15 @@ infinie, le besoin de shards devient moins important.
 
 La figure ci-dessous montre l’architecture de ClickHouse Cloud :
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="architecture non shardée" />
+<div className="ch-image-md">
+
+<Frame>
+
+![architecture non shardée](/images/deployment-guides/parallel-replicas-2.webp)
+
+</Frame>
+
+</div>
 
 Cette architecture permet d’ajouter et de supprimer des répliques presque
 instantanément, ce qui garantit une très forte scalabilité du cluster. Le cluster
@@ -101,7 +115,15 @@ comme unité de travail.
 
 Voyons maintenant comment cela fonctionne en pratique à l&#39;aide de la figure ci-dessous :
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Répliques parallèles" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Répliques parallèles](/images/deployment-guides/parallel-replicas-3.webp)
+
+</Frame>
+
+</div>
 
 Avec les répliques parallèles :
 
@@ -163,7 +185,15 @@ Nous verrons dans les sections suivantes comment ces facteurs sont pris en compt
 
 Pour répondre aux points (1) et (2) de la liste ci-dessus, nous avons introduit le concept d&#39;annonce. Visualisons son fonctionnement à l&#39;aide de la figure ci-dessous :
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Annonces" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Annonces](/images/deployment-guides/parallel-replicas-4.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -206,7 +236,15 @@ une annonce avec toutes les parts.
 
 La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Coordination dynamique - partie 1" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordination dynamique - partie 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -219,7 +257,15 @@ La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Coordination dynamique - partie 2" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordination dynamique - partie 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -232,7 +278,15 @@ La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Coordination dynamique - partie 3" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordination dynamique - partie 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -505,7 +559,15 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN sans parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN sans parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+
+</Frame>
+
+</div>
 
 Et maintenant avec la réplique parallèle :
 
@@ -520,4 +582,12 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN avec parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN avec parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+
+</Frame>
+
+</div>

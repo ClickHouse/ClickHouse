@@ -7,8 +7,6 @@ description: '자체 클라우드 인프라에 ClickHouse를 배포합니다'
 doc_type: '참고'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="what-is-standard-onboarding">
   ## 표준 온보딩이란 무엇입니까?
 </div>
@@ -41,7 +39,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Steps>
   <Step title="클라우드 제공업체 선택" id="choose-cloud-provider">
-    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC CSP 선택" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![BYOC CSP 선택](/images/cloud/reference/byoc-onboarding-1.webp)
+
+    </div>
   </Step>
 
   <Step title="계정/프로젝트/subscription 준비" id="account-setup">
@@ -51,7 +53,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       **온보딩 아티팩트는 제공된 그대로 적용하십시오.** ClickHouse의 명시적 승인 없이 리소스 이름을 변경하거나 `PermissionsBoundary`와 같은 매개변수를 추가하는 것을 포함해 CloudFormation 템플릿 또는 Terraform 모듈의 어떤 내용도 변경하지 마십시오. ClickHouse 자동화는 이러한 아티팩트가 생성하는 정확한 리소스에 의존하며, 지원되는 사용자 지정 옵션은 매개변수로 제공됩니다. 특히 AWS에서는 ClickHouse가 사전에 다른 이름을 명시적으로 승인하지 않는 한 IAM role은 접두사나 접미사 없이 기본 이름인 `ClickHouseManagementRole`을 유지해야 합니다. Terraform 모듈은 기술적으로 `role_name` 입력을 제공하지만, 이에 맞게 ClickHouse 자동화도 구성해야 합니다. 따라서 조율 없이 이를 변경하거나(또는 이러한 매개변수가 없는 CloudFormation 템플릿에서 role 이름을 변경하면) 스택은 성공적으로 적용되지만, ClickHouse가 예상된 role을 assume할 수 없어 인프라 프로비저닝에 실패합니다.
     </Warning>
 
-    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC 계정 초기화" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![BYOC 계정 초기화](/images/cloud/reference/byoc-onboarding-2.webp)
+
+    </div>
 
     <Note>
       ClickHouse 실행에 필요한 스토리지 버킷, VPC/VNet, Kubernetes 클러스터 및 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 다음 단계에서 프로비저닝됩니다.
@@ -100,7 +106,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     * **가용 영역**: VPC 피어링을 사용할 계획이라면 소스 계정과 BYOC 계정의 가용 영역을 일치시키면 AZ 간 트래픽 비용을 줄이는 데 도움이 될 수 있습니다. 예를 들어 AWS에서는 가용 영역 접미사(`a`, `b`, `c`)가 계정마다 서로 다른 물리적 영역 ID를 나타낼 수 있습니다. 자세한 내용은 [AWS 가이드](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)를 참조하십시오.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC 인프라 구성" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![BYOC 인프라 구성](/images/cloud/reference/byoc-onboarding-3.webp)
+
+    </div>
 
 #### 사전 유효성 검사
 
@@ -116,7 +126,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     검사에 실패하면 각 항목이 매핑된 작업 및 실패 사유와 함께 나열됩니다(예: `iam:CreateRole · explicitDeny`). 성공한 항목을 모두 확인하려면 **Show passed checks**를 펼치십시오.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="BYOC 사전 유효성 검사에서 실패한 cloud-setup 검사 보고" background="black" />
+    <div className="ch-image-lg ch-image-background-black">
+
+    ![BYOC 사전 유효성 검사에서 실패한 cloud-setup 검사 보고](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
+
+    </div>
 
     이러한 실패를 해결하려면 최신 ClickHouse CloudFormation 또는 Terraform 스택을 다시 실행하거나, 보고된 actions를 관리용 아이덴티티(IAM role / service account / service principal)에 부여한 후 다음 중 하나를 선택하십시오:
 
@@ -142,7 +156,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 BYOC 인프라가 프로비저닝되면 첫 번째 ClickHouse 서비스를 생성할 준비가 됩니다. ClickHouse Cloud 콘솔을 열고 BYOC 환경을 선택한 다음, 안내에 따라 새 서비스를 생성하십시오.
 
-<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC 새 서비스 생성" />
+<div className="ch-image-md">
+
+<Frame>
+
+![BYOC 새 서비스 생성](/images/cloud/reference/byoc-new-service-1.webp)
+
+</Frame>
+
+</div>
 
 서비스를 생성하는 동안 다음 옵션을 구성합니다:
 

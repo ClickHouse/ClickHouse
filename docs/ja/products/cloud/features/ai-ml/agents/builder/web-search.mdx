@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
@@ -20,7 +19,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 エージェントビルダーの **Capabilities** セクションで **ウェブ検索** を有効にします。有効にすると、ユーザーの質問とエージェントへの指示に基づいて、検索を実行するタイミングをエージェントが判断します。検索が実行されると、結果が収集され、最も関連性の高い内容がモデルのコンテキストに渡されます。
 
-<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="ウェブ検索セクションが強調表示され、ウェブ検索のチェックボックスが表示されている Capabilities パネル" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![ウェブ検索セクションが強調表示され、ウェブ検索のチェックボックスが表示されている Capabilities パネル](/images/cloud/agent-builder/web-search/web-search.webp)
+
+</Frame>
+
+</div>
 
 <div id="how-a-search-round-works">
   ## 検索ラウンドの仕組み

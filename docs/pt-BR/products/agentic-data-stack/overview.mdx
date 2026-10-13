@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 A maneira mais fácil de usar analytics agêntico no ClickHouse é com [ClickHouse Agents](/pt-BR/products/cloud/features/ai-ml/agents) no ClickHouse Cloud: totalmente gerenciado, sem infraestrutura para administrar. Os usuários fazem perguntas em linguagem natural, e um agente de IA responde consultando o banco de dados diretamente.
 
 Para hospedar por conta própria, o **Agentic Data Stack** é uma stack de código aberto e componível. Você mesmo a opera, conecta seus próprios modelos e mantém seu chat e seus dados em seu próprio ambiente. Ela é composta por [ClickHouse](/pt-BR/get-started/setup/install), o [servidor MCP do ClickHouse](/pt-BR/products/agentic-data-stack/components/mcp-server), [LibreChat](/pt-BR/products/agentic-data-stack/components/librechat) e [Langfuse](/pt-BR/products/agentic-data-stack/components/langfuse).
@@ -32,7 +30,15 @@ Na analytics agêntica, o modelo baseia suas respostas na execução de consulta
   ## Como a stack se encaixa
 </div>
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Arquitetura do Agentic Data Stack: usuários interagem com o LibreChat, que se conecta a um LLM, ao ClickHouse por meio do servidor MCP e ao Langfuse para rastreamento" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Arquitetura do Agentic Data Stack: usuários interagem com o LibreChat, que se conecta a um LLM, ao ClickHouse por meio do servidor MCP e ao Langfuse para rastreamento](/images/agentic-data-stack/01-architecture.webp)
+
+</Frame>
+
+</div>
 
 Um usuário faz uma pergunta no LibreChat. O modelo planeja a resposta e, por meio do servidor MCP, chama ferramentas para explorar dados e executar consultas no ClickHouse. Os resultados retornam, e o agente formula a resposta. O Langfuse, baseado em OpenTelemetry, registra cada execução, do prompt à chamada de ferramenta e à resposta, permite avaliar os resultados automaticamente ou com revisão humana e acompanha qualidade, custo e latência.
 

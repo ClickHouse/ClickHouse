@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/ja/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 S3 から ClickHouse にデータを挿入でき、さらに S3 をエクスポートの宛先として使用することで、&quot;データレイク&quot; アーキテクチャと連携できます。さらに、S3 は &quot;コールド&quot; ストレージ階層を提供し、ストレージとコンピュートの分離にも役立ちます。以下の各節では、ニューヨーク市のタクシーデータセットを用いて、S3 と ClickHouse の間でデータを移動する手順を示すとともに、重要な設定パラメータを見極め、パフォーマンス最適化のヒントを紹介します。
 
 ## S3 テーブル関数 {#s3-table-functions}
@@ -859,7 +857,15 @@ SELECT * FROM s3_table1;
 6. AWS コンソールでバケットに移動し、新しく作成したバケットとそのフォルダを選択します。
    次のように表示されるはずです。
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="S3 に保存された ClickHouse のデータファイルを表示する AWS コンソールの S3 バケットビュー" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![S3 に保存された ClickHouse のデータファイルを表示する AWS コンソールの S3 バケットビュー](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</Frame>
+
+</div>
 
 <div id="s3-multi-region">
   ## S3オブジェクトストレージを使用して、1つの分片を2つのAWSリージョンにまたがってレプリケートする
@@ -1298,9 +1304,25 @@ sudo service clickhouse-server start
 
   各 S3 バケット内のデータを確認します (totals は表示されていませんが、INSERT 後は両方のバケットに約 36 MiB 保存されています) 。
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="ストレージ使用量メトリクスを示す、1つ目の S3 バケット内のデータサイズ" />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="ストレージ使用量メトリクスを示す、2つ目の S3 バケット内のデータサイズ" />
+<Frame>
+
+![ストレージ使用量メトリクスを示す、1つ目の S3 バケット内のデータサイズ](/images/integrations/data-ingestion/s3/bucket1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![ストレージ使用量メトリクスを示す、2つ目の S3 バケット内のデータサイズ](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</Frame>
+
+</div>
 
 <div id="s3express">
   ## S3Express

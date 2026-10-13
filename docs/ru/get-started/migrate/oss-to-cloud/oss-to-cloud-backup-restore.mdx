@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['миграция', 'ClickHouse Cloud', 'OSS', 'Миграция из самоуправляемого ClickHouse в Cloud', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="overview-migration-approaches">
   ## Обзор
 </div>
@@ -277,19 +275,31 @@ FROM s3(
   </Step>
 
   <Step title="Создайте новый сервис" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="создать новый сервис" />
+    <div className="ch-image-md">
+
+    ![создать новый сервис](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройте и создайте сервис" id="configure-and-create">
     Выберите нужный регион и конфигурацию, затем нажмите `Create service`
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="настройка параметров сервиса" />
+    <div className="ch-image-md">
+
+    ![настройка параметров сервиса](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте роль доступа" id="create-an-access-role">
     Откройте SQL Console
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="настройка параметров сервиса" />
+    <div className="ch-image-md">
+
+    ![настройка параметров сервиса](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+
+    </div>
 
     ### Настройте доступ к S3
 
@@ -393,7 +403,15 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 Если вы проверите свой ранее пустой S3 бакет, то увидите, что в нем появилось несколько папок:
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="резервная копия, данные и метаданные" />
+<div className="ch-image-md">
+
+<Frame>
+
+![резервная копия, данные и метаданные](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+
+</Frame>
+
+</div>
 
 Если вы выполняете полную миграцию, то можете запустить следующую команду, чтобы создать резервную копию всего сервера:
 

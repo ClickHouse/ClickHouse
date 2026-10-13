@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > このガイドでは、Docker を使用して [AnythingLLM](https://anythingllm.com/) を ClickHouse MCPサーバーと連携するようにセットアップし、
 > ClickHouse のサンプルデータセットに接続する方法を説明します。
 
@@ -102,18 +100,30 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="MCPサーバーの起動を待つ" id="wait-for-mcp-servers-to-start-up">
     UI の左下にあるツールアイコンをクリックします。
 
-    <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="ツールアイコン" size="md" />
+    <div className="ch-image-md">
+
+    ![ツールアイコン](/images/use-cases/AI_ML/MCP/alm_tool-icon.webp)
+
+    </div>
 
     `Agent Skills` をクリックし、`MCP servers` セクションを確認します。
     `Mcp ClickHouse` が `On` になるまで待ちます
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCPサーバーの準備完了" size="md" />
+    <div className="ch-image-md">
+
+    ![MCPサーバーの準備完了](/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp)
+
+    </div>
   </Step>
 
   <Step title="AnythingLLM で ClickHouse MCPサーバーとチャットする" id="chat-with-clickhouse-mcp-server-with-anythingllm">
     これでチャットを開始する準備ができました。
     MCPサーバーをチャットで使えるようにするには、conversation の最初のメッセージの先頭に `@agent` を付ける必要があります。
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="Conversation" size="md" />
+    <div className="ch-image-md">
+
+    ![Conversation](/images/use-cases/AI_ML/MCP/allm_conversation.webp)
+
+    </div>
   </Step>
 </Steps>

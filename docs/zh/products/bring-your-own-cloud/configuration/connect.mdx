@@ -7,8 +7,6 @@ description: '通过公网负载均衡器，或专用终结点（PrivateLink、P
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本页介绍了在 BYOC 中连接 ClickHouse 服务的不同方式。你可以根据安全和网络要求，选择公网负载均衡器、私有负载均衡器或专用终结点 (AWS PrivateLink、GCP Private Service Connect 或 Azure Private Link) 。
 
 <div id="connection-via">
@@ -27,7 +25,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 下拉列表中只会显示你的基础设施已启用的路径，并且每次打开对话框时都会刷新——新启用的私有负载均衡器或 PrivateLink 端点会在你下次打开 **Connect** 时显示出来，无需等待传播延迟。当只有一条路径可用时，下拉列表会以禁用状态显示，并选中该端点。
 
-<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="展开 Connection via 下拉列表的 Connect 对话框，显示公网负载均衡器、私有负载均衡器和 PrivateLink 路径" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![展开 Connection via 下拉列表的 Connect 对话框，显示公网负载均衡器、私有负载均衡器和 PrivateLink 路径](/images/cloud/reference/byoc-connect-via.png)
+
+</Frame>
+
+</div>
 
 <div id="public-load-balancer">
   ## 公网负载均衡器
@@ -51,7 +57,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 1. 从 ClickHouse Cloud 控制台**获取服务端点**。该端点显示在您的服务的 &quot;Connect&quot; 部分。
 
-<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="BYOC 连接" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC 连接](/images/cloud/reference/byoc-connect-1.webp)
+
+</Frame>
+
+</div>
 
 例如：
 

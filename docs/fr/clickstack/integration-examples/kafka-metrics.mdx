@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', 'métriques', 'OTEL', 'ClickStack', 'JMX']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -43,7 +41,11 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **Ingestion API Key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
+    <div className="ch-image-lg">
+
+    ![Clé API ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. Définissez-la comme variable d’environnement :
 
@@ -280,17 +282,29 @@ Pour vous aider à démarrer la supervision de Kafka avec ClickStack, nous fourn
     1. Ouvrez HyperDX et accédez à la section Dashboards
     2. Cliquez sur **Import Dashboard** dans l’angle supérieur droit, dans le menu à trois points
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’importation du tableau de bord" />
+    <div className="ch-image-lg">
+
+    ![Bouton d’importation du tableau de bord](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Téléversez le fichier `kafka-metrics-dashboard.json`, puis cliquez sur **Finish Import**
 
-    <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="Boîte de dialogue de fin d’importation" />
+    <div className="ch-image-lg">
+
+    ![Boîte de dialogue de fin d’importation](/images/clickstack/kafka/import-kafka-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations préconfigurées :
 
-    <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Tableau de bord des métriques Kafka" />
+    <div className="ch-image-lg">
+
+    ![Tableau de bord des métriques Kafka](/images/clickstack/kafka/kafka-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Par défaut, aucun intervalle de temps ne sera défini pour le tableau de bord importé.

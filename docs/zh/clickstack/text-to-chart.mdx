@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'text-to-chart', 'AI', '可视化', 'Chart Explorer', '自然语言', '可观测性']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickStack 的 Text-to-Chart 功能可让你通过用自然语言描述想查看的内容来创建可视化。你无需手动选择指标、过滤器和分组字段，只需输入类似“过去 24 小时内按服务划分的错误率”这样的提示词，ClickStack 就会自动生成相应的图表。
 
 该功能使用大语言模型 (LLM) 将文本提示词转换为查询，然后在 [Chart Explorer](/zh/clickstack/features/dashboards/overview#navigate-chart-explorer) 中生成可视化。它适用于任何已配置的数据源。
@@ -68,7 +66,11 @@ Text-to-Chart 需要一个 [Anthropic API 密钥](https://console.anthropic.com/
   <Step title="选择数据源" id="select-data-source">
     选择要可视化的数据源，例如 **日志**、**链路追踪** 或 **指标**。
 
-    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="图表浏览器" />
+    <div className="ch-image-lg">
+
+    ![图表浏览器](/images/clickstack/text-to-chart/chart-explorer.webp)
+
+    </div>
   </Step>
 
   <Step title="输入文本提示词" id="enter-text-prompt">
@@ -80,7 +82,11 @@ Text-to-Chart 需要一个 [Anthropic API 密钥](https://console.anthropic.com/
 
     ClickStack 会将提示词转换为查询，并自动渲染可视化结果。
 
-    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="文本生成图表" />
+    <div className="ch-image-lg">
+
+    ![文本生成图表](/images/clickstack/text-to-chart/text-to-chart.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -101,7 +107,15 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **用户名**: `otel_demo`
 * **密码**: 留空
 
-<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="创建连接" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![创建连接](/images/clickstack/text-to-chart/create-connection.webp)
+
+</Frame>
+
+</div>
 
 然后将各个数据源——**日志**、**链路追踪**、**指标** 和 **会话**——修改为使用 `otel_v2` 数据库。有关配置数据源的完整说明，请参阅[远程演示数据集指南](/zh/clickstack/example-datasets/remote-demo-data)。
 

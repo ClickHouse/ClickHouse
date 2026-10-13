@@ -8,13 +8,20 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge />
 
 Интерфейс чата в ClickHouse Agents поддерживает диалоги, ветвление и общий доступ.
 
-<Image img="/images/cloud/agent-builder/chat/chat.webp" alt="Интерфейс чата ClickHouse Agent с левой навигацией, заголовком с данными агента и полем ввода сообщения" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Интерфейс чата ClickHouse Agent с левой навигацией, заголовком с данными агента и полем ввода сообщения](/images/cloud/agent-builder/chat/chat.webp)
+
+</Frame>
+
+</div>
 
 <div id="conversations">
   ## Диалоги
@@ -24,7 +31,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 В окне выбора Agent в левом верхнем углу окна диалога выберите агента, которого хотите использовать; по умолчанию выбран **ClickHouse Agent**.
 Теперь вы можете ввести сообщение в поле ввода и нажать кнопку отправки. Каждый диалог сохраняется в истории на боковой панели, и позже его можно снова открыть, переименовать или удалить.
 
-<Image img="/images/cloud/agent-builder/chat/conversation.webp" alt="Интерфейс чата с выделенным значком создания сообщения на левой панели навигации, боковой панелью с историей чатов и сохраненным диалогом Top 10 Tables Ranked, а также полем ввода с набранным примером вопроса" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Интерфейс чата с выделенным значком создания сообщения на левой панели навигации, боковой панелью с историей чатов и сохраненным диалогом Top 10 Tables Ranked, а также полем ввода с набранным примером вопроса](/images/cloud/agent-builder/chat/conversation.webp)
+
+</Frame>
+
+</div>
 
 Вы можете редактировать любое из своих сообщений прямо в диалоге, и агент заново сгенерирует ответ начиная с этого места в истории диалога.
 Вы также можете заново сгенерировать только последний ответ агента, не отправляя сообщение повторно.
@@ -35,7 +50,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Добавьте в закладки сообщение или весь диалог, чтобы потом быстро к ним вернуться. Закладки видны только вам и сохраняются даже после переименования диалога.
 
-<Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="Заголовок чата с выделенным значком закладки и видимой подсказкой «Add Bookmarks»" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Заголовок чата с выделенным значком закладки и видимой подсказкой «Add Bookmarks»](/images/cloud/agent-builder/chat/bookmark.webp)
+
+</Frame>
+
+</div>
 
 <div id="pinned-conversations">
   ## Закреплённые диалоги
@@ -58,7 +81,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Диалоги, созданные через ветвление, независимы, поэтому изменения не синхронизируются с исходным диалогом.
 
-<Image img="/images/cloud/agent-builder/chat/fork.webp" alt="Окно выбора варианта ветвления с тремя значками режимов ветвления, флажками Start fork here и Remember, а также панелью действий сообщения ниже" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Окно выбора варианта ветвления с тремя значками режимов ветвления, флажками Start fork here и Remember, а также панелью действий сообщения ниже](/images/cloud/agent-builder/chat/fork.webp)
+
+</Frame>
+
+</div>
 
 <div id="sharing-chats">
   ## Общий доступ к чатам
@@ -72,11 +103,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Чтобы поделиться диалогом, откройте его меню на боковой панели и выберите **Поделиться**:
 
-<Image img="/images/cloud/agent-builder/chat/share.webp" alt="Меню диалога на боковой панели с видимыми вариантами Поделиться, Переименовать, Дублировать, Архивировать и Удалить" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Меню диалога на боковой панели с видимыми вариантами Поделиться, Переименовать, Дублировать, Архивировать и Удалить](/images/cloud/agent-builder/chat/share.webp)
+
+</Frame>
+
+</div>
 
 Затем нажмите **Создать ссылку** в окне общего доступа:
 
-<Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="Окно ссылки общего доступа к чату с кнопкой Создать ссылку и примечанием о том, что ваше имя и любые сообщения, добавленные после предоставления доступа, остаются приватными" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Окно ссылки общего доступа к чату с кнопкой Создать ссылку и примечанием о том, что ваше имя и любые сообщения, добавленные после предоставления доступа, остаются приватными](/images/cloud/agent-builder/chat/share-modal.webp)
+
+</Frame>
+
+</div>
 
 <div id="keyboard-shortcuts">
   ## Сочетания клавиш

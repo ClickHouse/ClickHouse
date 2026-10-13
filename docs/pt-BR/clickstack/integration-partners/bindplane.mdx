@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'gerenciamento de coletores']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -146,7 +144,11 @@ O Bindplane resolve isso oferecendo:
       O Bindplane oferece rollouts seguros com um clique e validação. Você pode monitorar a integridade do coletor, a vazão e eventuais erros em tempo real pela interface do Bindplane.
     </Tip>
 
-    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Sinais de telemetria no ClickStack via Bindplane" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Sinais de telemetria no ClickStack via Bindplane](/images/clickstack/bindplane/bindplane-configuration.webp)
+
+    </div>
   </Step>
 
   <Step title="Verifique a telemetria no ClickStack" id="verify-telemetry">
@@ -157,7 +159,11 @@ O Bindplane resolve isso oferecendo:
     3. Você deverá ver dados de telemetria dos seus coletores gerenciados pelo Bindplane
     4. Os dados que chegam ao ClickStack já são enriquecidos e estruturados pelos processadores do Bindplane
 
-    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Sinais de telemetria no ClickStack via Bindplane" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Sinais de telemetria no ClickStack via Bindplane](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+
+    </div>
   </Step>
 </Steps>
 

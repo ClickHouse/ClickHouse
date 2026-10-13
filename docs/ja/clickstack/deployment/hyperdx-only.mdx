@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['HyperDX 単体デプロイ', 'HyperDX と ClickHouse の連携', 'HyperDX のみをデプロイ', 'HyperDX の Docker インストール', 'ClickHouse 向け可視化ツール']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import JSONSupport from '/snippets/ja/_json_support.mdx';
 
 このオプションは、オブザーバビリティデータやイベントデータがすでに格納されている稼働中の ClickHouse インスタンスがある場合を想定したものです。
@@ -47,13 +45,21 @@ HyperDX はスタックの他の部分とは独立して使用でき、OpenTelem
 
     `Create` をクリックすると、接続情報の入力を求められます。
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    <div className="ch-image-lg">
+
+    ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="接続情報を入力" id="complete-connection-details">
     使用する外部 ClickHouse クラスター (例: ClickHouse Cloud) に接続します。
 
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="HyperDX Login" size="md" />
+    <div className="ch-image-md">
+
+    ![HyperDX Login](/images/use-cases/observability/hyperdx-2.webp)
+
+    </div>
 
     ログソースの作成を求められた場合は、すべてのデフォルト値をそのまま使用し、`Table` フィールドに `otel_logs` を入力します。その他の設定は自動検出されるため、`Save New Source` をクリックできます。
 

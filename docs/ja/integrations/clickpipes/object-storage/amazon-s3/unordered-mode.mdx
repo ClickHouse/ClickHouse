@@ -6,8 +6,6 @@ description: 'S3 ClickPipes で継続的インジェスト向けに順不同モ�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 デフォルトでは、S3 ClickPipe は、ファイルがバケットに[辞書式順序](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order)で追加されることを想定しています。[Amazon SQS](https://aws.amazon.com/sqs/) キューをバケットに接続し、必要に応じて [Amazon EventBridge](https://aws.amazon.com/eventbridge/) をイベントルーターとして使用することで、明確な順序を持たないファイルを取り込めるように S3 ClickPipe を設定できます。これにより、ClickPipes は `ObjectCreated:*` イベントを待ち受け、ファイル名の命名規則に関係なく、新しいファイルを取り込めるようになります。
 
 <Note>
@@ -44,11 +42,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       <Tab title="EventBridge 経由">
         **a.** S3 バケットのプロパティで **Event notifications &gt; Amazon EventBridge** に移動し、EventBridge への通知送信を有効にします。**Save changes** をクリックします。
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="S3 バケットのプロパティで Amazon EventBridge 通知を有効にする" size="lg" border />
+        <div className="ch-image-lg">
+
+        ![S3 バケットのプロパティで Amazon EventBridge 通知を有効にする](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
+
+        </div>
 
         **b.** AWS Console で **Amazon EventBridge &gt; Rules &gt; Create rule** に移動します。ルールに名前を付け (例: `S3ObjectCreated`) 、**default** event bus を選択して、**Next** をクリックします。**Build event pattern** ステップで、イベントソースとして **AWS events or EventBridge partner events** を選択し、次のイベントパターンを手動で入力します。このとき、`<bucket-name>` は使用するバケット名に置き換えてください。
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="EventBridge ルール名と event bus を設定する" size="lg" border />
+        <div className="ch-image-lg">
+
+        ![EventBridge ルール名と event bus を設定する](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
+
+        </div>
 
         ```json
         {
@@ -66,9 +72,17 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
         **c.** **Select target(s)** ステップで、ターゲットタイプとして **AWS service** を選択し、**SQS queue** を選びます。前のステップで作成したキューを選択してください。EventBridge が必要な IAM ロールを自動作成できるよう、**Use execution role (recommended)** はチェックしたままにして、**Next** をクリックし、ウィザードを完了します。
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="EventBridge ルールのターゲットとして SQS queue を設定する" size="lg" border />
+        <div className="ch-image-lg">
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="EventBridge ルールの作成完了" size="lg" border />
+        ![EventBridge ルールのターゲットとして SQS queue を設定する](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
+
+        </div>
+
+        <div className="ch-image-lg">
+
+        ![EventBridge ルールの作成完了](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
+
+        </div>
 
         **d.** SQS キューのアクセスポリシーを編集し、EventBridge がメッセージを送信できるようにします。`<sqs-queue-arn>` と `<eventbridge-rule-arn>` は適切な値に置き換えてください。
 

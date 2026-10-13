@@ -8,8 +8,6 @@ title: 'Advanced dashboard in ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Monitoring your database system in a production environment is vital to
 understanding your deployment health so that you can prevent or solve outages.
 
@@ -28,7 +26,15 @@ The advanced dashboard can be accessed by navigating to:
 * Left side panel
   * `Monitoring` → `Advanced dashboard`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 ## Accessing the native advanced dashboard {#accessing-the-native-advanced-dashboard}
 
@@ -41,12 +47,28 @@ The native advanced dashboard can be accessed by navigating to:
 This will open the native advanced dashboard in a new tab. You will need to 
 authenticate to access the dashboard.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 Each visualization has a SQL query associated with it that populates it. You can
 edit this query by clicking on the pen icon.
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="Advanced dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</Frame>
+
+</div>
 
 ## Out-of-box visualizations {#out-of-box-visualizations}
 
@@ -121,7 +143,15 @@ operations.
 The key metrics to spot sub-optimized insert are **Inserted Rows/sec** and 
 **Max Parts for Partition**
 
-<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="Unbatched inserts"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Unbatched inserts](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</Frame>
+
+</div>
 
 The example above shows two spikes in **Inserted Rows/sec** and **Max Parts for Partition**
 between 13h and 14h. This indicates that we ingest data at a reasonable speed.
@@ -145,7 +175,15 @@ dashboard is good.
 Below is an example of CPU usage peaking without significantly changing the 
 number of queries per second executed.
 
-<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="Resource intensive query"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Resource intensive query](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</Frame>
+
+</div>
 
 ### Bad primary key design {#bad-primary-key-design}
 
@@ -159,7 +197,15 @@ is **Selected Rows per second**. A sudden peak in the number of selected rows ca
 indicate both a general increase in overall query throughput, and queries that 
 select a large number of rows to execute their query.
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="Resource intensive query"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Resource intensive query](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</Frame>
+
+</div>
 
 Using the timestamp as a filter, you can find the queries executed at the time 
 of the peak in the table `system.query_log`.

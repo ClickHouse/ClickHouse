@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -88,7 +87,11 @@ Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscri
   <Step title="Registre e instale o conector" id="enroll-and-install">
     `init --enroll` resgata seu token, obtém um certificate de cliente assinado e o acesso cluster-wide do executor e, em seguida, instala e verifica o connector.
 
-    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="Fluxo de inscrição do ClickHouse Connector" />
+    <div className="ch-image-lg">
+
+    ![Fluxo de inscrição do ClickHouse Connector](/images/cloud/reference/byoc-connector-enrollment-flow.svg)
+
+    </div>
 
     Em um terminal, o `init` pergunta `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` com `yes` pré-selecionado. Passe `--managed` para pular o prompt, ou `--no-managed` para uma instalação somente de observação, sem o executor. Uma instalação nova não assistida sem nenhum dos dois flags deixa o modo gerenciado desativado (uma reexecução com `--force` mantém a postura da configuração substituída), portanto sempre passe `--managed` em scripts.
 

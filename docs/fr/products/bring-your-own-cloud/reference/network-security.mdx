@@ -7,8 +7,6 @@ description: 'Déployez ClickHouse dans votre propre infrastructure cloud'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ## Connexions entre le plan de contrôle ClickHouse et votre VPC BYOC {#connection-between-clickhouse-and-byoc}
 
 Le plan de contrôle ClickHouse Cloud maintient plusieurs types de connexions pour faire fonctionner et prendre en charge votre déploiement BYOC :
@@ -64,7 +62,15 @@ Tailscale crée un tunnel réseau privé et chiffré entre le plan de contrôle 
 
 ### Fonctionnement de Tailscale dans BYOC {#how-tailscale-works}
 
-<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
+
+</Frame>
+
+</div>
 
 Pour chaque service ou point de terminaison qui doit être accessible via Tailscale, ClickHouse BYOC déploie :
 

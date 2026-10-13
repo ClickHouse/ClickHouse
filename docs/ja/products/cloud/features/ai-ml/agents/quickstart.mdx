@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
@@ -29,7 +28,11 @@ Cloud Consoleでカスタムエージェントを作成し、サービスに対�
   <Step title="ClickHouse Agents を起動する" id="launch-agents">
     Cloud サービスで、左側のサイドバーにある **ClickHouse agents** をクリックして、エージェントのランチパッドを開きます。次に **Launch ClickHouse agents** をクリックして、エージェントビルダーを開きます。
 
-    <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="ClickHouse agents（ベータ）が選択された Cloud サービスのナビゲーションと、Launch ClickHouse agents ボタンが表示されたランチパッド" size="lg" />
+    <div className="ch-image-lg">
+
+    ![ClickHouse agents（ベータ）が選択された Cloud サービスのナビゲーションと、Launch ClickHouse agents ボタンが表示されたランチパッド](/images/cloud/agent-builder/launch-ch-agents.webp)
+
+    </div>
   </Step>
 
   <Step title="エージェントを作成する" id="create-the-agent">
@@ -41,7 +44,11 @@ Cloud Consoleでカスタムエージェントを作成し、サービスに対�
     * **Instructions** - システムプロンプトです。エージェントの役割、回答すべき質問、従うべき業務ルールを記述します。
     * **Model** - ドロップダウンからモデルを選択します。
 
-    <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Create New Agent ドロップダウン、フォームフィールド（Name、Description、Category、Instructions、Model）、および Capabilities セクションが表示されたエージェントビルダーパネル" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Create New Agent ドロップダウン、フォームフィールド（Name、Description、Category、Instructions、Model）、および Capabilities セクションが表示されたエージェントビルダーパネル](/images/cloud/agent-builder/agent-builder.webp)
+
+    </div>
   </Step>
 
   <Step title="機能とツールを追加する" id="attach-tools">
@@ -49,15 +56,27 @@ Cloud Consoleでカスタムエージェントを作成し、サービスに対�
 
     メインパネルの **Capabilities** — [Run Code](/ja/products/cloud/features/ai-ml/agents/builder/code-interpreter)、[ウェブ検索](/ja/products/cloud/features/ai-ml/agents/builder/web-search)、File Context、Artifacts、[MCPサーバー](/ja/products/cloud/features/ai-ml/agents/builder/mcp-servers)、[スキル](/ja/products/cloud/features/ai-ml/agents/builder/skills) などのファーストパーティ機能です。エージェントに必要なものを有効にします。
 
-    <Image img="/images/cloud/agent-builder/capabilities.webp" alt="Run Code、ウェブ検索、File Context、Artifacts、MCPサーバー、スキル の切り替えが表示されたエージェントビルダーパネルの Capabilities セクション" size="sm" />
+    <div className="ch-image-sm">
+
+    ![Run Code、ウェブ検索、File Context、Artifacts、MCPサーバー、スキル の切り替えが表示されたエージェントビルダーパネルの Capabilities セクション](/images/cloud/agent-builder/capabilities.webp)
+
+    </div>
 
     パネル下部の **Add Tools** ボタンから開く **Tools** — [画像生成](/ja/products/cloud/features/ai-ml/agents/builder/image-generation)、[ビジョン](/ja/products/cloud/features/ai-ml/agents/builder/vision)、検索 API、外部サービスなどのサードパーティのインテグレーションです。
 
-    <Image img="/images/cloud/agent-builder/tools-button.webp" alt="Add Tools ボタンが強調表示されたエージェントビルダーパネル下部" size="sm" />
+    <div className="ch-image-sm">
+
+    ![Add Tools ボタンが強調表示されたエージェントビルダーパネル下部](/images/cloud/agent-builder/tools-button.webp)
+
+    </div>
 
     **Add Tools** をクリックしてカタログを参照します。
 
-    <Image img="/images/cloud/agent-builder/tools-modal.webp" alt="Google、OpenAI Image Tools、Wolfram、DALL-E-3、Tavily Search、Calculator、Stable Diffusion などのサードパーティインテグレーションがグリッド表示された Agent Tools モーダル" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Google、OpenAI Image Tools、Wolfram、DALL-E-3、Tavily Search、Calculator、Stable Diffusion などのサードパーティインテグレーションがグリッド表示された Agent Tools モーダル](/images/cloud/agent-builder/tools-modal.webp)
+
+    </div>
 
     [サブエージェント](/ja/products/cloud/features/ai-ml/agents/builder/subagents) は **Advanced settings** で設定します。詳細はサブエージェントのページを参照してください。
 
@@ -67,7 +86,11 @@ Cloud Consoleでカスタムエージェントを作成し、サービスに対�
   <Step title="クエリを実行する" id="run-a-query">
     エージェントを保存し、新しい会話を開いて、エージェントピッカーから対象のエージェントを選択します。たとえば *&quot;What are my top 10 tables by row count this week?&quot;* のような質問を入力すると、エージェントが手順を計画し、必要に応じてツールを呼び出して、回答を返します。
 
-    <Image img="/images/cloud/agent-builder/chat-query.webp" alt="「What are my top 10 tables by row count this week?」という質問と、それに対するエージェントの応答を示すチャット。行数でサービス全体の上位 10 テーブルを順位付けした Markdown テーブルと、その下に Key Observations が表示されている" size="lg" />
+    <div className="ch-image-lg">
+
+    ![「What are my top 10 tables by row count this week?」という質問と、それに対するエージェントの応答を示すチャット。行数でサービス全体の上位 10 テーブルを順位付けした Markdown テーブルと、その下に Key Observations が表示されている](/images/cloud/agent-builder/chat-query.webp)
+
+    </div>
   </Step>
 </Steps>
 

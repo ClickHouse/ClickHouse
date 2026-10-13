@@ -8,8 +8,6 @@ keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud chang
 rss: true
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 En complément de ce journal des modifications de ClickHouse Cloud, consultez la page [Compatibilité Cloud](/fr/products/cloud/guides/cloud-compatibility).
 
 <Update label="2026-09-22">
@@ -354,7 +352,11 @@ En complément de ce journal des modifications de ClickHouse Cloud, consultez la
     * GCP us-east1 (Caroline du Sud)
   * Les préférences de collecte des rapports de crash peuvent désormais être configurées au niveau de l&#39;organisation. Ce paramètre n&#39;était auparavant disponible qu&#39;au niveau du service. Lorsqu&#39;il est désactivé au niveau de l&#39;organisation, tous les services existants et à venir sont automatiquement exclus.
 
-  <Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="Collecte des rapports de crash" />
+  <div className="ch-image-md">
+
+  ![Collecte des rapports de crash](/images/cloud/reference/crash-reports-collection.webp)
+
+  </div>
 </Update>
 
 <Update label="23 janvier 2026">

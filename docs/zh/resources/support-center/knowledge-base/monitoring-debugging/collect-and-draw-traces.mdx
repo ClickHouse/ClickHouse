@@ -6,8 +6,6 @@ keywords: ['查询 trace', 'OTel', 'Grafana']
 description: "本指南介绍如何在自管理 ClickHouse 中使用内置方法或 Grafana 收集并可视化查询 trace。当您处理复杂查询，并且需要了解 EXPLAIN 无法体现的内部执行机制时，这会特别有帮助。"
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 **前置条件**:
 
 * 熟悉 ClickHouse [配置文件](/zh/concepts/features/configuration/server-config/configuration-files)
@@ -145,7 +143,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     使用托管的 trace 可视化工具：[https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/)。
     加载上一步中的 `trace.json` 文件，以将 trace 可视化。
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="ClickHouse trace 可视化工具示例" />
+    <div className="ch-image-md">
+
+    ![ClickHouse trace 可视化工具示例](/images/knowledgebase/trace-visualizer-example.png)
+
+    </div>
   </Step>
 
   <Step title="使用 Grafana 可视化链路追踪" id="using-grafana">
@@ -174,10 +176,18 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     请确保将 `Query type` 设置为 `Traces`：
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Grafana 中的 ClickHouse trace 可视化" />
+    <div className="ch-image-md">
+
+    ![Grafana 中的 ClickHouse trace 可视化](/images/knowledgebase/trace-visualization-grafana.png)
+
+    </div>
 
     点击 &quot;Run Query&quot;，然后查看 trace 图：
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Grafana 中的 ClickHouse trace 可视化" />
+    <div className="ch-image-md">
+
+    ![Grafana 中的 ClickHouse trace 可视化](/images/knowledgebase/trace-visualization-diagram.png)
+
+    </div>
   </Step>
 </Steps>

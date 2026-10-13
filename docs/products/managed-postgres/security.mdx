@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
@@ -18,7 +17,15 @@ ClickHouse Managed Postgres is built with enterprise-grade security features to 
 
 IP filters control which source IP addresses are permitted to connect to your ClickHouse Managed Postgres instance, providing network-level access control to protect your database from unauthorized connections.
 
-<Image img="/images/managed-postgres/ip-filters.webp" alt="IP Access List configuration" size="md" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![IP Access List configuration](/images/managed-postgres/ip-filters.webp)
+
+</Frame>
+
+</div>
 
 ### Configuring IP filters {#configuring-ip-filters}
 

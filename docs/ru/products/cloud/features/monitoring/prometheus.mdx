@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 Эта возможность поддерживает интеграцию с [Prometheus](https://prometheus.io/) для мониторинга сервисов ClickHouse Cloud. Доступ к метрикам Prometheus предоставляется через конечную точку [ClickHouse Cloud API](/ru/products/cloud/features/admin-features/api/api-overview), которая позволяет безопасно подключаться и экспортировать метрики в ваш сборщик метрик Prometheus. Эти метрики можно интегрировать с панелями мониторинга, например Grafana и Datadog, для визуализации.
 
@@ -273,17 +272,41 @@ scrape_configs:
 * Настройте URL сбора так, чтобы он указывал на конечную точку Prometheus, и используйте базовую аутентификацию для настройки подключения с помощью API key/secret
 * Проверьте подключение, чтобы убедиться, что соединение устанавливается
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Настройка конечной точки метрик в Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Настройка конечной точки метрик в Grafana](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 После настройки вы увидите метрики в раскрывающемся списке, где их можно выбрать для настройки панелей мониторинга:
 
-<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Раскрывающийся список в обозревателе метрик Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Раскрывающийся список в обозревателе метрик Grafana](/images/integrations/prometheus-grafana-dropdown.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Диаграмма в обозревателе метрик Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Диаграмма в обозревателе метрик Grafana](/images/integrations/prometheus-grafana-chart.webp)
+
+</Frame>
+
+</div>
 
 <div id="grafana-cloud-with-alloy">
   ### Grafana Cloud с Alloy
@@ -291,7 +314,15 @@ scrape_configs:
 
 Если вы используете Grafana Cloud, Alloy можно установить, открыв меню Alloy в Grafana и следуя инструкциям на экране:
 
-<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -372,7 +403,15 @@ prometheus.scrape "clickhouse_cloud" {
 
 После настройки в обозревателе метрик должны появиться метрики, связанные с ClickHouse:
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Обозреватель метрик Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Обозреватель метрик Grafana](/images/integrations/prometheus-grafana-metrics-explorer.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -398,7 +437,15 @@ instances:
 
 <br />
 
-<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Интеграция Prometheus с Datadog" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Интеграция Prometheus с Datadog](/images/integrations/prometheus-datadog.webp)
+
+</Frame>
+
+</div>
 
 <div id="related">
   ## Связанные страницы

@@ -6,8 +6,6 @@ description: 'Dictionary は、高速なルックアップのためのデータ�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse の Dictionary は、さまざまな[内部および外部ソース](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources)のデータをメモリ内の[キー・バリュー](https://en.wikipedia.org/wiki/Key%E2%80%93value_database)形式で表現する機能で、超低レイテンシのルックアップクエリ向けに最適化されています。
 
 Dictionary は、次のような用途で役立ちます。
@@ -15,7 +13,15 @@ Dictionary は、次のような用途で役立ちます。
 * クエリのパフォーマンスを向上させる。特に `JOIN` と組み合わせて使用する場合
 * インジェスト処理を遅くすることなく、取り込みデータをその場でエンリッチする
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse における Dictionary のユースケース" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse における Dictionary のユースケース](/images/dictionary/dictionary-use-cases.webp)
+
+</Frame>
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## Dictionary を使用した JOIN の高速化
@@ -23,7 +29,15 @@ Dictionary は、次のような用途で役立ちます。
 
 Dictionary は、特定の種類の `JOIN` を高速化するために使用できます。具体的には、結合キーが基盤となるキー・バリュー ストレージのキー属性と一致している必要がある [`LEFT ANY` 型](/ja/reference/statements/select/join#supported-types-of-join) です。
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="LEFT ANY JOIN で Dictionary を使用する" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![LEFT ANY JOIN で Dictionary を使用する](/images/dictionary/dictionary-left-any-join.webp)
+
+</Frame>
+
+</div>
 
 この条件に該当する場合、ClickHouse は Dictionary を利用して [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join) を実行できます。これは ClickHouse で最も高速な JOIN アルゴリズムで、右側のテーブルの基盤となる[テーブルエンジン](/ja/reference/engines/table-engines/index)が低レイテンシのキー・バリュー リクエストをサポートしている場合に適用できます。ClickHouse には、これを実現する 3 つのテーブルエンジンがあります: [Join](/ja/reference/engines/table-engines/special/join) (基本的には事前計算済みの hash table)、[EmbeddedRocksDB](/ja/reference/engines/table-engines/integrations/embedded-rocksdb)、および [Dictionary](/ja/reference/engines/table-engines/special/dictionary) です。ここでは Dictionary ベースのアプローチを説明しますが、仕組みはこれら 3 つのエンジンすべてで同じです。
 

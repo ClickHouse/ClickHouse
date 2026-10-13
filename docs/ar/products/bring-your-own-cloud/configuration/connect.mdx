@@ -7,8 +7,6 @@ description: 'اتصل بخدمات ClickHouse لديك في BYOC عبر موا�
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 توضح هذه الصفحة الطرق المختلفة للاتصال بخدمات ClickHouse لديك في BYOC. يمكنك الاختيار بين موازنات التحميل العامة، أو موازنات التحميل الخاصة، أو نقاط النهاية الخاصة (AWS PrivateLink أو GCP Private Service Connect أو Azure Private Link)، وذلك استنادًا إلى متطلبات الأمان والشبكة لديك.
 
 <div id="connection-via">
@@ -27,7 +25,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لا تعرض القائمة المنسدلة إلا المسارات المُمكّنة لبنيتك التحتية، ويُحدَّث محتواها في كل مرة يُفتح فيها مربع الحوار — لذلك يظهر موازن التحميل الخاص أو نقطة نهاية PrivateLink المُمكّنة حديثًا عند فتح **Connect** في المرة التالية، من دون أي تأخير في الانتشار. وعندما لا يتوفر سوى مسار واحد، تظهر القائمة المنسدلة معطلة مع تحديد نقطة النهاية تلك.
 
-<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="مربع الحوار Connect مع توسيع القائمة المنسدلة Connection via، ويعرض مسارات موازن التحميل العام وموازن التحميل الخاص وPrivateLink" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![مربع الحوار Connect مع توسيع القائمة المنسدلة Connection via، ويعرض مسارات موازن التحميل العام وموازن التحميل الخاص وPrivateLink](/images/cloud/reference/byoc-connect-via.png)
+
+</Frame>
+
+</div>
 
 <div id="public-load-balancer">
   ## موازن التحميل العام
@@ -51,7 +57,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 1. **احصل على نقطة نهاية خدمتك** من وحدة تحكم ClickHouse Cloud. تُعرض نقطة النهاية في قسم &quot;Connect&quot; ضمن خدمتك.
 
-<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="اتصال BYOC" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![اتصال BYOC](/images/cloud/reference/byoc-connect-1.webp)
+
+</Frame>
+
+</div>
 
 على سبيل المثال:
 

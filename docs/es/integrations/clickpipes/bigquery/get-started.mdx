@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/es/_intro.mdx';
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <IntroClickPipe />
 
 <div id="pre-requisites">
@@ -24,11 +22,19 @@ import { Image } from "/snippets/es/components/Image.jsx";
   <Step title="Selecciona la fuente de datos" id="1-select-the-data-source">
     **1.** En ClickHouse Cloud, selecciona **Data sources** en el menú principal de navegación y haz clic en **Create ClickPipe**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Seleccionar importaciones](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
 
     **2.** Haz clic en el tile de **BigQuery**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Seleccionar el tile de BigQuery" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Seleccionar el tile de BigQuery](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </div>
   </Step>
 
   <Step title="Configura tu conexión de ClickPipe" id="2-setup-your-clickpipe-connection">
@@ -36,7 +42,11 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
     **1.** Sube la key `.json` de la cuenta de servicio que creaste para ClickPipes. Asegúrate de que la cuenta de servicio tenga el conjunto mínimo de [permisos](/es/integrations/clickpipes/bigquery/overview#permissions) requerido.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Subir la key de la cuenta de servicio" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Subir la key de la cuenta de servicio](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </div>
 
     **2.** Selecciona el **método de replicación**. En Private Preview, la única opción compatible es [**solo carga inicial**](/es/integrations/clickpipes/bigquery/overview#initial-load).
 
@@ -54,7 +64,11 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
     **2.** Selecciona las tablas y, opcionalmente, las columnas que quieres replicar. Solo aparecerán los datasets a los que tenga acceso la cuenta de servicio proporcionada.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="Permisos" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Permisos](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp)
+
+    </div>
 
     **3.** Para cada tabla seleccionada, asegúrate de definir una clave de ordenación personalizada en **Advanced settings** &gt; **Use a custom sorting key**. En el futuro, la clave de ordenación se inferirá automáticamente a partir de las claves de clustering o partición existentes en la base de datos de origen.
 
@@ -62,7 +76,11 @@ import { Image } from "/snippets/es/components/Image.jsx";
       **Debes** definir una [clave de ordenación](/es/concepts/best-practices/choosing-a-primary-key) para las tablas replicadas con el fin de optimizar el rendimiento de las consultas en ClickHouse. De lo contrario, la clave de ordenación se establecerá como `tuple()`, lo que significa que no se creará ningún índice primario y ClickHouse realizará escaneos completos de la tabla en todas las consultas sobre ella.
     </Warning>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Permisos" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Permisos](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp)
+
+    </div>
   </Step>
 
   <Step title="Configura los permisos" id="6-configure-permissions">
@@ -77,6 +95,10 @@ import { Image } from "/snippets/es/components/Image.jsx";
   <Step title="Completa la configuración" id="7-complete-setup">
     Haz clic en **Create ClickPipe** para completar la configuración. Se te redirigirá a la página de resumen, donde podrás ver el progreso de la carga inicial y acceder a los detalles de tus ClickPipes de BigQuery.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Permisos" size="lg" border />
+    <div className="ch-image-lg">
+
+    ![Permisos](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </div>
   </Step>
 </Steps>

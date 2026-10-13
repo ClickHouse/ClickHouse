@@ -7,8 +7,6 @@ title: '監視'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <Note>
   このガイドで説明する監視データは、ClickHouse Cloud で利用できます。以下で説明する組み込みダッシュボードで表示できるほか、基本的なものから高度なものまで、パフォーマンスメトリクスをメインのサービスコンソールで直接確認することもできます。
 </Note>
@@ -22,7 +20,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 組み込みの高度なオブザーバビリティダッシュボード
 </div>
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="ネイティブの高度なオブザーバビリティダッシュボード" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ネイティブの高度なオブザーバビリティダッシュボード](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse には組み込みの高度なオブザーバビリティダッシュボード機能があり、`$HOST:$PORT/dashboard` でアクセスできます (ユーザー名とパスワードが必要です) 。このダッシュボードでは、次のメトリクスを確認できます。
 

@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
@@ -124,7 +123,15 @@ scrape_configs:
 долю откатов, активность кортежей, I/O, хранилище по отдельным базам
 данных и взаимные блокировки.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Панель мониторинга Grafana для сервисов ClickHouse Managed Postgres" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Панель мониторинга Grafana для сервисов ClickHouse Managed Postgres](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="import-dashboard">
   ### Импорт панели мониторинга

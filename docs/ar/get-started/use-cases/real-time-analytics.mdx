@@ -7,8 +7,6 @@ sidebarTitle: 'التحليلات في الوقت الفعلي'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -36,7 +34,15 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **الوقت اللازم للتحويل والإعداد**: كم يستغرق تنظيف البيانات وإثراؤها وربطها وتجميعها مسبقًا أو تحديث البُنى المستخدمة لخدمة الاستعلامات (العروض المادية، والتجميعات التراكمية، والفهارس) التي تُنفَّذ عليها الاستعلامات فعليًا؟
 * **الوقت اللازم للاستعلام**: كم يستغرق تخطيط القراءة وتنفيذها بمجرد أن تصبح البيانات متاحة؟
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="التحليلات في الوقت الفعلي: الوقت اللازم لاستيعاب البيانات وتحويلها والاستعلام عنها" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![التحليلات في الوقت الفعلي: الوقت اللازم لاستيعاب البيانات وتحويلها والاستعلام عنها](/images/use-cases/rta-considerations.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickhouse-rta">
   ## كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي
@@ -44,7 +50,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي" />
+    <div className="ch-image-lg">
+
+    ![كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي](/images/use-cases/real-time-analytics-architecture.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">

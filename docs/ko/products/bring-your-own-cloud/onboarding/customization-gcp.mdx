@@ -7,8 +7,6 @@ description: '기존 GCP VPC에 ClickHouse BYOC를 배포합니다'
 doc_type: '참고'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ## GCP용 고객 관리형 VPC(BYO-VPC) {#customer-managed-vpc-gcp}
 
 ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC를 사용하여 ClickHouse BYOC를 배포하려면 아래 단계를 따르십시오. 이 방식은 네트워크 구성에 대한 제어 수준을 높여 주며, ClickHouse BYOC를 기존 네트워크 인프라에 통합할 수 있게 해줍니다.
@@ -23,7 +21,11 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
       [Private Service Connect](/ko/cloud/reference/byoc/onboarding/network-gcp#setup-psc)를 통해 서비스를 노출하려면 이 VPC에 용도가 `PRIVATE_SERVICE_CONNECT`인 전용 서브넷도 필요합니다. 지금 생성해도 되고, private link를 활성화하기 전에 나중에 생성해도 됩니다.
     </Note>
 
-    <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Private Google Access가 활성화된 기본 및 보조 IPv4 범위를 보여주는 BYOC GCP 서브넷 세부 정보" />
+    <div className="ch-image-lg">
+
+    ![Private Google Access가 활성화된 기본 및 보조 IPv4 범위를 보여주는 BYOC GCP 서브넷 세부 정보](/images/cloud/reference/byoc-gcp-subnet.webp)
+
+    </div>
   </Step>
 
   <Step title="네트워크 연결 확인" id="ensure-network-connectivity">
@@ -53,7 +55,11 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
     5. VPC가 공유 VPC 호스트 프로젝트에 있는 경우 **Shared VPC host project ID**를 입력하십시오. VPC가 인프라와 동일한 프로젝트에 있다면 비워 두십시오. 아래 [호스트 프로젝트의 공유 VPC](#shared-vpc-host-project)를 참조하십시오.
     6. 프로비저닝을 시작하려면 **Set up Infrastructure**를 클릭하십시오.
 
-    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="GCP용으로 Use existing VPC가 선택되어 VPC network name, subnet name, secondary range names, Shared VPC host project ID 필드를 보여주는 ClickHouse Cloud BYOC 설정 UI" />
+    <div className="ch-image-lg">
+
+    ![GCP용으로 Use existing VPC가 선택되어 VPC network name, subnet name, secondary range names, Shared VPC host project ID 필드를 보여주는 ClickHouse Cloud BYOC 설정 UI](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+
+    </div>
   </Step>
 </Steps>
 

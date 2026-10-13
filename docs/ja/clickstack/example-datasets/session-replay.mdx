@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'セッションリプレイ', 'Browser SDK', 'デモ', 'オブザーバビリティ', 'インストルメンテーション']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <Info>
   **要点**
 
@@ -62,7 +60,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     3. **Team Settings → API Keys** に移動します
     4. **インジェスト API キー** をコピーします
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
+    <div className="ch-image-lg">
+
+    ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. 環境変数として設定します。
 
@@ -82,7 +84,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ブラウザで [http://localhost:3000](http://localhost:3000) を開き、アプリを操作します。トピックを検索し、カテゴリで絞り込み、コード例を表示し、項目をブックマークしてください。
 
-    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="Session replay demo app" />
+    <div className="ch-image-lg">
+
+    ![Session replay demo app](/images/clickstack/session-replay/demo-app.webp)
+
+    </div>
 
     すべての操作は ClickStack Browser SDK によって自動的に記録されます。
   </Step>
@@ -90,11 +96,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="セッションリプレイを表示する" id="view-session-replay">
     [http://localhost:8080](http://localhost:8080) の HyperDX に戻り、左側のサイドバーから **Client Sessions** に移動します。
 
-    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Session replay search" />
+    <div className="ch-image-lg">
+
+    ![Session replay search](/images/clickstack/session-replay/replay-search-view.webp)
+
+    </div>
 
     継続時間とイベント数とともに、セッションが一覧に表示されるはずです。▶️ ボタンをクリックすると再生できます。
 
-    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="Session replay" />
+    <div className="ch-image-lg">
+
+    ![Session replay](/images/clickstack/session-replay/session-replay.webp)
+
+    </div>
 
     タイムラインの詳細度を調整するには、**Highlighted** モードと **All Events** モードを切り替えます。
   </Step>

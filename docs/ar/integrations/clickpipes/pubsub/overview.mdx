@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Note>
   يمكنك الانضمام إلى قائمة انتظار المعاينة الخاصة [من هنا](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
 </Note>
@@ -30,19 +28,51 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 1. افتح SQL Console لخدمة ClickHouse Cloud الخاصة بك.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</Frame>
+
+</div>
 
 2. اختر زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد عمليات الاستيراد" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تحديد عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</Frame>
+
+</div>
 
 3. اختر **GCP Pub/Sub** كمصدر للبيانات.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp" alt="تحديد GCP Pub/Sub كمصدر للبيانات" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تحديد GCP Pub/Sub كمصدر للبيانات](/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp)
+
+</Frame>
+
+</div>
 
 4. املأ النموذج بإدخال اسم لـ ClickPipe، و**GCP Project ID**، و**ملف JSON لحساب الخدمة** الخاص بحساب الخدمة الذي مُنِح حق الوصول إلى Pub/Sub. يجب أن يتكون Project ID من 6 إلى 30 حرفًا، ويمكن أن يحتوي على أحرف صغيرة وأرقام وواصلات، ويجب أن يبدأ بحرف، ولا يجوز أن ينتهي بواصلة.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![املأ تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp)
+
+</Frame>
+
+</div>
 
 5. اختر **موضوع Pub/Sub** الذي تريد إدخال البيانات منه. تُعبَّأ القائمة المنسدلة تلقائيًا من الموضوعات الموجودة في مشروع GCP الخاص بك (مرتبة أبجديًا) بمجرد التحقق من صحة بيانات الاعتماد.
 
@@ -51,19 +81,51 @@ import { Image } from "/snippets/ar/components/Image.jsx";
    * **تعبير التصفية (اختياري).** [عامل تصفية اشتراك](https://cloud.google.com/pubsub/docs/subscription-message-filter) في Pub/Sub على سمات الرسائل — على سبيل المثال، `attributes.type = "telemetry"`. تُطبَّق عوامل التصفية على سمات الرسائل فقط، وليس على الحمولة، ولا يمكن تغييرها بعد إنشاء الـ pipe (يتطلب تغيير عامل التصفية إعادة إنشاء الـ pipe).
    * ستعرض واجهة المستخدم رسالة نموذجية من الموضوع المحدد، مع مفتاح **تسطيح الكائن** الذي يتيح لك معاينة كيفية تسطيح JSON المتداخل في جهة الوجهة.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp" alt="تعيين موضوع Pub/Sub والتنسيق والإزاحة الابتدائية" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تعيين موضوع Pub/Sub والتنسيق والإزاحة الابتدائية](/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp)
+
+</Frame>
+
+</div>
 
 6. في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد إدخال البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول موجود. اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات. ويمكنك رؤية معاينة فورية لتغييراتك في جدول العينة بالأعلى.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="تعيين الجدول والمخطط والإعدادات" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تعيين الجدول والمخطط والإعدادات](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</Frame>
+
+</div>
 
 يمكنك أيضًا تخصيص الإعدادات المتقدمة باستخدام عناصر التحكم المتاحة
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="تعيين عناصر التحكم المتقدمة" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تعيين عناصر التحكم المتقدمة](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</Frame>
+
+</div>
 
 7. بدلاً من ذلك، يمكنك اختيار إدخال بياناتك في جدول ClickHouse موجود. في هذه الحالة، ستتيح لك واجهة المستخدم ربط الحقول من المصدر بحقول ClickHouse في جدول الوجهة المحدد.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="استخدام جدول موجود" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![استخدام جدول موجود](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</Frame>
+
+</div>
 
 8. أخيرًا، يمكنك تهيئة الأذونات لمستخدم ClickPipes الداخلي.
 
@@ -72,21 +134,61 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * `Full access`: مع وصول كامل إلى الـ cluster. قد يكون هذا مفيدًا إذا كنت تستخدم materialized view أو Dictionary مع جدول الوجهة.
   * `Only destination table`: مع أذونات `INSERT` على جدول الوجهة فقط.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![الأذونات](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</Frame>
+
+</div>
 
 9. عند النقر على &quot;Complete Setup&quot;، سيسجل النظام ClickPipe الخاص بك، وستتمكن من رؤيته مدرجًا في جدول الملخص.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="إشعار النجاح" size="sm" border />
+<div className="ch-image-sm">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="إشعار الإزالة" size="lg" border />
+<Frame>
+
+![إشعار النجاح](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![إشعار الإزالة](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
+
+</Frame>
+
+</div>
 
 يوفّر جدول الملخّص عناصر تحكّم لعرض بيانات عيّنة من المصدر أو من جدول الوجهة في ClickHouse
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="عرض الوجهة" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![عرض الوجهة](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
+
+</Frame>
+
+</div>
 
 بالإضافة إلى عناصر تحكّم لإزالة ClickPipe وعرض ملخّص لمهمة إدخال البيانات.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="عرض النظرة العامة" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![عرض النظرة العامة](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</Frame>
+
+</div>
 
 10. **تهانينا!** لقد أعددت بنجاح أول ClickPipe لـ Pub/Sub. وسيعمل بشكل مستمر، مع إدخال البيانات في الوقت الفعلي من موضوع ‏Pub/Sub إلى خدمة ClickHouse Cloud الخاصة بك.
 

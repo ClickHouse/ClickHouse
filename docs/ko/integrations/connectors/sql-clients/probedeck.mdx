@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -73,7 +72,11 @@ ProbeDeck이 구성된 메모리 제한을 확인하는 데 사용하는 `system
     ClickHouse Cloud는 Cloud API 및 Query API 엔드포인트에 **API Keys** 페이지의 조직 수준 키를 사용합니다.
     ProbeDeck의 SQL 연결 과정에서는 이러한 키를 사용하지 않습니다.
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="ClickHouse 사용자 이름을 사용해 포트 8443에서 HTTPS용으로 구성된 ProbeDeck 연결 양식" />
+    <div className="ch-image-sm">
+
+    ![ClickHouse 사용자 이름을 사용해 포트 8443에서 HTTPS용으로 구성된 ProbeDeck 연결 양식](/images/integrations/sql-clients/probedeck-add-connection.png)
+
+    </div>
   </Step>
 </Steps>
 
@@ -148,11 +151,27 @@ ProbeDeck은 연결 시크릿과 가져온 키 자료를 기기의 iOS Keychain�
 | 메모리 및 서버 메트릭                  | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | 쿼리 및 디스크 처리율 이력               | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="실행 중인 쿼리, 복제, 디스크, 파트, 뮤테이션, 머지, 쿼리 처리율 및 메모리를 표시하는 ProbeDeck 모니터링 대시보드" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![실행 중인 쿼리, 복제, 디스크, 파트, 뮤테이션, 머지, 쿼리 처리율 및 메모리를 표시하는 ProbeDeck 모니터링 대시보드](/images/integrations/sql-clients/probedeck-dashboard.png)
+
+</Frame>
+
+</div>
 
 **실행 중인 쿼리**를 선택하여 활성 쿼리를 경과 시간순으로 정렬하고 메모리 사용량과 읽은 행 수를 확인하십시오.
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="경과 시간순으로 정렬된 ProbeDeck 실행 중인 쿼리 목록" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![경과 시간순으로 정렬된 ProbeDeck 실행 중인 쿼리 목록](/images/integrations/sql-clients/probedeck-running-queries.png)
+
+</Frame>
+
+</div>
 
 <div id="query-the-uk-property-price-dataset">
   ## UK Property Price 데이터셋 쿼리

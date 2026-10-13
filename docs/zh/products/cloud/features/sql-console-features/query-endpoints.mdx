@@ -7,8 +7,6 @@ title: '查询 API 端点'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 构建交互式、数据驱动型应用，不仅需要高性能数据库、结构清晰的数据以及经过优化的查询。
 前端和微服务还需要一种便捷的方式来获取并使用这些查询返回的数据，最好是通过结构清晰的 API。
 
@@ -27,11 +25,19 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="打开 API 密钥设置" id="open-settings">
     1. 前往 ClickHouse Cloud 控制台 → **Organization** → **API Keys**
 
-    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API 密钥" />
+    <div className="ch-image-md">
+
+    ![API 密钥](/images/cloud/guides/query-endpoints/console-api-keys.webp)
+
+    </div>
 
     2. 点击用于查询 API 端点的 API 密钥旁边的 **Edit**
 
-    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="编辑" />
+    <div className="ch-image-md">
+
+    ![编辑](/images/cloud/guides/query-endpoints/api-key-edit.webp)
+
+    </div>
   </Step>
 
   <Step title="添加允许的 IP 地址" id="add-ips">
@@ -39,7 +45,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     2. 输入 IP 地址或 CIDR 范围 (例如 `203.0.113.1` 或 `203.0.113.0/24`)
     3. 根据需要添加多条记录
 
-    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="特定位置" />
+    <div className="ch-image-md">
+
+    ![特定位置](/images/cloud/guides/query-endpoints/specific-locations.webp)
+
+    </div>
 
     创建查询 API 端点需要 Admin Console Role，以及具有相应权限的 API 密钥。
   </Step>

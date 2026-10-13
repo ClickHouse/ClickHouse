@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
 
@@ -16,7 +15,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 選択した時間範囲におけるリソース使用状況とデータベースアクティビティの
 リアルタイムグラフが表示されます。
 
-<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="IOPS、CPU usage、メモリ、ディスク、Network traffic、Database size、Connection count、スループット、Transactions、キャッシュヒット率、Deadlocksを表示する監視ダッシュボード" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![IOPS、CPU usage、メモリ、ディスク、Network traffic、Database size、Connection count、スループット、Transactions、キャッシュヒット率、Deadlocksを表示する監視ダッシュボード](/images/managed-postgres/monitoring/dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="panels">
   ## パネル

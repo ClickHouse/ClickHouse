@@ -6,8 +6,6 @@ title: 'Google Cloud Storage を ClickHouse Cloud と統合する'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 GCS ClickPipe は、Google Cloud Storage (GCS) からデータを取り込むための、フルマネージドで高い耐障害性を備えた仕組みです。**一回限り**と**継続的インジェスト**の両方をサポートし、exactly-once セマンティクスを提供します。
 
 GCS ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムから実行することもできます。
@@ -157,7 +155,15 @@ Pub/Sub 通知で[順不同モード](#continuous-ingestion-any-order)を使用�
 
 [HMACキー](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) を使用して認証するには、ClickPipe 接続を設定する際に **Authentication method** で `Credentials` を選択します。次に、`Access key` と `Secret key` に、それぞれアクセスキー (例: `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) とシークレットキー (例: `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) を入力します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="GCS ClickPipes の HMAC認証情報" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![GCS ClickPipes の HMAC認証情報](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
+
+</Frame>
+
+</div>
 
 HMACキーを持つサービス アカウントを作成するには、[このガイド](/ja/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret) に従ってください。
 
@@ -195,7 +201,15 @@ ClickPipes には、ほとんどのユースケースの要件を満たす妥当
 | `Parallel view processing`           | false         | アタッチされたビューへのプッシュを、[順次ではなく同時実行で](/ja/reference/settings/session-settings/parallel#parallel_view_processing)行うかどうか。              |
 | `Use cluster function`               | true          | 複数ノードにまたがってファイルを並列処理するかどうか。                                                                                                 |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の詳細設定" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes の詳細設定](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="scaling">
   ### スケーリング

@@ -7,8 +7,6 @@ doc_type: 'руководство'
 keywords: ['ClickStack', 'обсервабилити', 'оповещение', 'оповещение-по-поиску', 'уведомления', 'пороги', 'slack', 'email', 'pagerduty', 'мониторинг-ошибок', 'мониторинг-производительности', 'пользовательские-события']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickStack включает встроенную систему оповещений, которая позволяет командам в реальном времени выявлять проблемы и реагировать на них по журналам, метрикам и трассировкам.
 
 Оповещения можно создавать прямо в интерфейсе HyperDX; они интегрируются с популярными системами уведомлений, такими как Slack и PagerDuty.
@@ -37,7 +35,11 @@ ClickStack поддерживает два взаимодополняющих с
   <Step title="Откройте диалог создания оповещения" id="open-dialog">
     Начните с ввода [поиска](/ru/clickstack/features/search) и нажмите кнопку `Alerts` в правом верхнем углу страницы `Search`.
 
-    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Представление поиска Alerts" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Представление поиска Alerts](/images/use-cases/observability/alerts_search_view.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте оповещение" id="create-the-alert">
@@ -50,13 +52,25 @@ ClickStack поддерживает два взаимодополняющих с
 
     Перед сохранением ClickStack визуализирует условие порога, чтобы вы могли убедиться, что оно будет работать ожидаемым образом.
 
-    <Image img="/images/use-cases/observability/search_alert.webp" alt="Оповещения на основе поиска" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Оповещения на основе поиска](/images/use-cases/observability/search_alert.webp)
+
+    </div>
   </Step>
 </Steps>
 
 Обратите внимание, что к одному поиску можно добавить несколько оповещений. Если повторить описанный выше процесс, вы увидите текущие оповещения в виде вкладок в верхней части диалога редактирования оповещения, причем каждому оповещению будет присвоен номер.
 
-<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="Несколько оповещений" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Несколько оповещений](/images/use-cases/observability/multiple_search_alerts.webp)
+
+</Frame>
+
+</div>
 
 <div id="dashboard-alerts">
   ### 2. Оповещения для диаграмм на панели мониторинга
@@ -80,19 +94,31 @@ ClickStack поддерживает два взаимодополняющих с
   <Step title="Откройте диалог редактирования диаграммы" id="open-chart-dialog">
     Откройте меню настроек диаграммы и нажмите кнопку оповещения. Откроется диалог редактирования диаграммы.
 
-    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="Редактирование оповещения диаграммы" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Редактирование оповещения диаграммы](/images/use-cases/observability/edit_chart_alert.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте оповещение" id="add-chart-alert">
     Выберите **Add Alert**.
 
-    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="Добавление оповещения к диаграмме" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Добавление оповещения к диаграмме](/images/use-cases/observability/add_chart_alert.webp)
+
+    </div>
   </Step>
 
   <Step title="Задайте условия оповещения" id="define-alert-conditions">
     Задайте условие (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), порог, длительность и вебхук. Длительность здесь также определяет, как часто будет срабатывать оповещение.
 
-    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="Создание оповещения для диаграммы" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Создание оповещения для диаграммы](/images/use-cases/observability/create_chart_alert.webp)
+
+    </div>
 
     Вы можете добавить новый вебхук прямо из этого окна. Подробности см. в разделе [Добавление вебхука](#add-webhook).
   </Step>
@@ -108,11 +134,27 @@ ClickStack поддерживает два взаимодополняющих с
 
 Например, рассмотрим создание оповещения для диаграммы ниже. Прежде чем указать вебхук, пользователь может выбрать `Add New Webhook`.
 
-<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="Добавить новый вебхук" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Добавить новый вебхук](/images/use-cases/observability/add_new_webhook.webp)
+
+</Frame>
+
+</div>
 
 Откроется диалог создания вебхука, где можно создать новый вебхук:
 
-<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="Создание вебхука" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Создание вебхука](/images/use-cases/observability/add_webhook_dialog.webp)
+
+</Frame>
+
+</div>
 
 Имя вебхука обязательно, а описание — необязательно. Остальные настройки, которые нужно заполнить, зависят от типа сервиса.
 
@@ -160,11 +202,27 @@ ClickStack поддерживает два взаимодополняющих с
 
 Оповещениями можно централизованно управлять через панель оповещений в левой части интерфейса HyperDX.
 
-<Image img="/images/use-cases/observability/manage_alerts.webp" alt="Управление оповещениями" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Управление оповещениями](/images/use-cases/observability/manage_alerts.webp)
+
+</Frame>
+
+</div>
 
 Здесь вы можете увидеть все оповещения, созданные и запущенные в ClickStack.
 
-<Image img="/images/use-cases/observability/alerts_view.webp" alt="Представление оповещений" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Представление оповещений](/images/use-cases/observability/alerts_view.webp)
+
+</Frame>
+
+</div>
 
 Здесь также отображается история проверок оповещений. Оповещения проверяются через регулярные интервалы времени (они задаются параметрами period/duration при создании оповещения). Во время каждой проверки HyperDX обращается к вашим данным, чтобы определить, выполнено ли условие оповещения:
 
@@ -184,7 +242,15 @@ ClickStack поддерживает два взаимодополняющих с
 Чтобы удалить оповещение, откройте диалог редактирования для соответствующего поиска или диаграммы, затем выберите **Remove Alert**.
 В примере ниже кнопка `Remove Alert` удалит оповещение с диаграммы.
 
-<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="Удаление оповещения с диаграммы" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Удаление оповещения с диаграммы](/images/use-cases/observability/remove_chart_alert.webp)
+
+</Frame>
+
+</div>
 
 <div id="sql-based-alerts">
   ## SQL-оповещения для графиков
@@ -218,7 +284,11 @@ SQL-оповещения для графиков позволяют задава
 
     В качестве типа отображения выберите **Line**, **Stacked Bar** или **Number**.
 
-    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="Создать SQL-диаграмму" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Создать SQL-диаграмму](/images/use-cases/observability/open_sql_chart_mode.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте оповещение" id="add-sql-alert">
@@ -229,7 +299,11 @@ SQL-оповещения для графиков позволяют задава
     * **Interval**: Как часто проверяется оповещение (1m, 5m, 15m, 30m, 1h, 6h, 12h или 1d). Это также задаёт временное окно для каждой проверки.
     * **Webhook**: Канал уведомлений, который используется при срабатывании оповещения. См. [Добавление вебхука](#add-webhook).
 
-    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="Редактирование оповещения диаграммы" size="lg" />
+    <div className="ch-image-lg">
+
+    ![Редактирование оповещения диаграммы](/images/use-cases/observability/add_raw_sql_alert.webp)
+
+    </div>
 
     <Warning>
       **Временной диапазон оповещения**

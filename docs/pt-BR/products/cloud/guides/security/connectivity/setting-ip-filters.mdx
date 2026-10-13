@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['filtros de IP', 'lista de acesso IP']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="setting-ip-filters">
   ## Configurar filtros de IP
 </div>
@@ -64,7 +62,15 @@ A notação Classless Inter-domain Routing (CIDR) permite especificar intervalos
 
 Esta captura de tela mostra uma lista de acesso que permite tráfego de um intervalo de endereços IP, descrito como &quot;faixa do escritório de NY&quot;:
 
-<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="Lista de acesso existente no ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Lista de acesso existente no ClickHouse Cloud](/images/cloud/security/ip-filtering-after-provisioning.webp)
+
+</Frame>
+
+</div>
 
 <div id="possible-actions">
   ### Ações possíveis
@@ -74,7 +80,15 @@ Esta captura de tela mostra uma lista de acesso que permite tráfego de um inter
 
 Este exemplo adiciona um único endereço IP, com a descrição `London server`:
 
-<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="Adicionando um único IP à lista de acesso no ClickHouse Cloud" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Adicionando um único IP à lista de acesso no ClickHouse Cloud](/images/cloud/security/ip-filter-add-single-ip.webp)
+
+</Frame>
+
+</div>
 
 2. Exclua uma entrada existente
 

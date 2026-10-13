@@ -7,15 +7,15 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'النشر', 'الإعداد', 'التهيئة', 'Observability']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 import JSONSupport from '/snippets/ar/_json_support.mdx';
+
 import ExampleOTelConfig from '/snippets/ar/clickstack/_config_example_otel.mdx';
 
 import SetupManagedIngestion from '/snippets/ar/clickstack/_setup_managed_ingestion.mdx';
 import NavigateClickStackUI from '/snippets/ar/clickstack/_navigate_managed.mdx';
+
 import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
 هذا **الدليل موجّه لمستخدمي ClickHouse Cloud الحاليين**. إذا كنت جديدًا على ClickHouse Cloud، فنوصي بدليل [البدء](/ar/clickstack/getting-started/managed) الخاص بـ ClickStack المُدار.
@@ -58,7 +58,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
       <Step title="أنشئ خدمة جديدة" id="create-a-service">
         من الصفحة الرئيسية لـ ClickHouse Cloud، اختر `New service` لإنشاء خدمة جديدة.
 
-        <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="الخدمة" border />
+        <div className="ch-image-lg">
+
+        ![الخدمة](/images/clickstack/getting-started/new_service.webp)
+
+        </div>
       </Step>
 
       <Step title="حدّد المزوّد والمنطقة والموارد" id="specify-your-region-and-resources">
@@ -94,7 +98,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
           إذا كانت خدمة ClickHouse لديك تستضيف بالفعل أعباء عمل قائمة، مثل تحليلات التطبيقات في الوقت الفعلي، فنوصي بإنشاء خدمة فرعية باستخدام [ميزة warehouses في ClickHouse Cloud](/ar/products/cloud/features/infrastructure/warehouses) لعزل عبء عمل الأوبزرفابيليتي. يضمن ذلك عدم تأثر تطبيقاتك الحالية، مع إبقاء مجموعات البيانات متاحة من كلتا الخدمتين.
         </Warning>
 
-        <Image img="/images/clickstack/select_service.webp" alt="حدد خدمة" size="lg" />
+        <div className="ch-image-lg">
+
+        ![حدد خدمة](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-the-clickstack-ui-existing">
@@ -110,7 +118,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
         إذا نجح الاكتشاف التلقائي، فمن المفترض أن يتم توجيهك إلى عرض البحث حيث يمكنك البدء فورًا في استكشاف بياناتك.
 
-        <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="واجهة ClickStack" />
+        <div className="ch-image-lg">
+
+        ![واجهة ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+        </div>
 
         إذا نجحت هذه الخطوة، فهذا كل ما في الأمر — أنت جاهز تمامًا 🎉، وإلا فانتقل إلى إعداد إدخال البيانات.
       </Step>
@@ -118,11 +130,19 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
       <Step title="إعداد الاستيعاب" id="setup-ingestion-existing-service">
         إذا فشل الاكتشاف التلقائي، أو لم تكن لديك جداول موجودة، سيُطلب منك إعداد الاستيعاب.
 
-        <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="إعداد الاستيعاب في واجهة ClickStack" size="lg" />
+        <div className="ch-image-lg">
+
+        ![إعداد الاستيعاب في واجهة ClickStack](/images/clickstack/clickstack-ui-setup-ingestion.webp)
+
+        </div>
 
         حدد &quot;Start Ingestion&quot; وستُطلب منك اختيار مصدر الاستيعاب. يدعم Managed ClickStack كلًّا من OpenTelemetry و[Vector](https://vector.dev/) كمصدري الاستيعاب الرئيسيين. ومع ذلك، يمكن للمستخدمين أيضًا إرسال البيانات مباشرةً إلى ClickHouse وفق مخططهم الخاص باستخدام أيٍّ من [التكاملات المدعومة في ClickHouse Cloud](/ar/integrations/home).
 
-        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="اختر المصدر - واجهة ClickStack" border />
+        <div className="ch-image-lg">
+
+        ![اختر المصدر - واجهة ClickStack](/images/clickstack/select-source-clickstack-ui.webp)
+
+        </div>
 
         <Info>
           **يُوصى باستخدام OpenTelemetry**
@@ -143,7 +163,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             للبدء بسرعة، انسخ أمر Docker الموضّح وشغّله.
 
-            <Image img="/images/clickstack/otel-collector-start-clickstack-ui.webp" size="md" alt="مصدر OTel collector" />
+            <div className="ch-image-md">
+
+            ![مصدر OTel collector](/images/clickstack/otel-collector-start-clickstack-ui.webp)
+
+            </div>
 
             **عدّل هذا الأمر باستخدام بيانات اعتماد الخدمة الخاصة بك، التي دوّنتها عند إنشاء خدمتك.**
 
@@ -169,7 +193,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             <ExampleOTelConfig />
 
-            <Image img="/images/clickstack/advanced-otel-collector-clickstack-ui.webp" size="lg" alt="مصدر OTel collector المتقدم" />
+            <div className="ch-image-lg">
+
+            ![مصدر OTel collector المتقدم](/images/clickstack/advanced-otel-collector-clickstack-ui.webp)
+
+            </div>
 
             لمزيد من التفاصيل حول تهيئة OpenTelemetry Collectors، راجع [&quot;إدخال البيانات باستخدام OpenTelemetry.&quot;](/ar/clickstack/ingesting-data/opentelemetry)
 
@@ -237,7 +265,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             بمجرد إنشاء الجدول، انسخ مقتطف الإعدادات الظاهر. عدّل المُدخل لاستهلاك مسارات المعالجة الحالية لديك، وكذلك الجدول الهدف وقاعدة البيانات إذا لزم الأمر. يجب أن تكون بيانات الاعتماد مُعبأة مسبقًا.
 
-            <Image img="/images/clickstack/vector-config-clickstack-ui.webp" size="lg" alt="إعداد Vector" />
+            <div className="ch-image-lg">
+
+            ![إعداد Vector](/images/clickstack/vector-config-clickstack-ui.webp)
+
+            </div>
 
             للمزيد من أمثلة إدخال البيانات باستخدام Vector، راجع [&quot;الإدخال باستخدام Vector&quot;](/ar/clickstack/ingesting-data/vector) أو [توثيق مصبّ ClickHouse في Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) للاطلاع على الخيارات المتقدمة.
 
@@ -253,7 +285,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
           <Tab title="OpenTelemetry">
             إذا كنت قد أدخلت بيانات OpenTelemetry باستخدام هذا الدليل، فسيتم إنشاء مصادر البيانات تلقائيًا، ولن تحتاج إلى أي إعداد إضافي. يمكنك البدء في استكشاف ClickStack فورًا. سيتم توجيهك إلى عرض البحث مع تحديد مصدر تلقائيًا، بحيث يمكنك بدء الاستعلام مباشرةً.
 
-            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="واجهة مستخدم ClickStack" />
+            <div className="ch-image-lg">
+
+            ![واجهة مستخدم ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+            </div>
 
             هذا كل ما في الأمر — أصبحت جاهزًا 🎉.
 
@@ -263,7 +299,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
           <Tab title="Vector">
             إذا كنت قد أدخلت البيانات عبر Vector أو أي مصدر آخر، فسيُطلب منك تهيئة مصدر البيانات.
 
-            <Image img="/images/clickstack/create-vector-datasource.webp" alt="إنشاء مصدر بيانات - vector" size="lg" />
+            <div className="ch-image-lg">
+
+            ![إنشاء مصدر بيانات - vector](/images/clickstack/create-vector-datasource.webp)
+
+            </div>
 
             يفترض الإعداد أعلاه مخططًا بأسلوب Nginx، مع استخدام العمود `time_local` كطابع زمني. ويُفضَّل، متى أمكن، أن يكون هذا هو عمود الطابع الزمني المعرَّف ضمن المفتاح الأساسي. **هذا العمود إلزامي**.
 
@@ -275,7 +315,11 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             بعد تهيئة المصدر، انقر فوق &quot;حفظ&quot; وابدأ في استكشاف بياناتك.
 
-            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="واجهة مستخدم ClickStack" />
+            <div className="ch-image-lg">
+
+            ![واجهة مستخدم ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+            </div>
 
             <br />
           </Tab>
@@ -298,7 +342,15 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
    * **Service Read Only → Read Only** - يمكنه عرض بيانات observability وإنشاء لوحات المعلومات
    * **No access** - لا يمكنه الوصول إلى HyperDX
 
-<Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud للقراءة فقط" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud للقراءة فقط](/images/clickstack/read-only-access.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
   **تتطلب التنبيهات وصول Admin**
@@ -353,15 +405,39 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
 إذا كنت تستخدم OTel collector لإنشاء قاعدة البيانات والجداول داخل ClickHouse، فاترك جميع القيم الافتراضية كما هي في نموذج إنشاء المصدر، واملأ الحقل `Table` بالقيمة `otel_logs` لإنشاء مصدر سجلات. ينبغي اكتشاف جميع الإعدادات الأخرى تلقائيًا، ما يتيح لك النقر على `Save New Source`.
 
-<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="مصدر بيانات HyperDX في ClickHouse Cloud" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مصدر بيانات HyperDX في ClickHouse Cloud](/images/use-cases/observability/hyperdx_cloud_datasource.webp)
+
+</Frame>
+
+</div>
 
 لإنشاء مصادر للتتبعات ومقاييس OTel، يمكنك اختيار `Create New Source` من القائمة العلوية.
 
-<Image img="/images/use-cases/observability/hyperdx_create_new_source.webp" alt="ClickStack: إنشاء مصدر جديد" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack: إنشاء مصدر جديد](/images/use-cases/observability/hyperdx_create_new_source.webp)
+
+</Frame>
+
+</div>
 
 من هنا، حدِّد نوع المصدر المطلوب ثم الجدول المناسب. على سبيل المثال، للتتبعات، حدِّد الجدول `otel_traces`. ينبغي اكتشاف جميع الإعدادات تلقائيًا.
 
-<Image img="/images/use-cases/observability/hyperdx_create_trace_datasource.webp" alt="ClickStack: إنشاء مصدر تتبعات" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack: إنشاء مصدر تتبعات](/images/use-cases/observability/hyperdx_create_trace_datasource.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **ربط المصادر**
