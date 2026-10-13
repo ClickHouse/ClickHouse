@@ -1393,6 +1393,9 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
 
     /// The other workers catch up on their next call.
     shrinkWorkerStoredBlocks(data->workers[worker_id]);
+    /// A forced shrink leaves the worker not done, so a shrink that the limits decide later still rewrites the blocks stored until then.
+    if (force_optimize)
+        data->workers[worker_id].shrink_done = false;
 
     auto new_total_bytes_in_join = getTotalByteCount();
     Int64 new_current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
