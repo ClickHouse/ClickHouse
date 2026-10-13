@@ -18,7 +18,10 @@ CREATE TABLE t_bf_signed_zero
     INDEX idx_a a TYPE bloom_filter GRANULARITY 1,
     INDEX idx_m mapKeys(m) TYPE bloom_filter GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY id
+-- A bucketed `Map` puts a key into a bucket by the raw bits of the value, which is a part of the format of a data part,
+-- so `m[0.0]` reads only the bucket of the positive zero, with and without the index.
+SETTINGS index_granularity = 1, map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 INSERT INTO t_bf_signed_zero VALUES (1, -0.0, -0.0, [-0.0], map(-0.0, 'x')), (2, 0.5, 0.5, [0.5], map(0.5, 'x')), (3, 0.0, 0.0, [0.0], map(0.0, 'x'));
 
