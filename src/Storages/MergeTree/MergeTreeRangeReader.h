@@ -484,6 +484,13 @@ private:
     Stream stream;
 
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
+
+    /// Positions in `read_sample_block` of the virtual columns that may be filled by this reader.
+    /// They are found once, so that a lookup by name is not needed for every block.
+    std::optional<size_t> part_offset_position;
+    std::optional<size_t> block_offset_position;
+    std::optional<size_t> part_granule_offset_position;
+    std::optional<size_t> distance_position;
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
     FilterWithCachedCount part_offsets_filter_for_vector_search;
