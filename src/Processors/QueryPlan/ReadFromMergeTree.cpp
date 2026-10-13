@@ -4200,11 +4200,13 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 
     /// The cache key (table, part, condition) cannot express the rows a unique key hides, the values a masking policy rewrites
     /// for this user, or a non-deterministic virtual column's value. Only a PREWHERE not probed before is probed, and a TopK read
-    /// only until its pending dynamic filter is installed: installing it yields the PREWHERE the pending probe already used.
+    /// only while its dynamic filter is pending or its analysis predates the stamp: installing a pending filter yields the
+    /// PREWHERE the pending probe already used.
     if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
         && query_info.prewhere_info && query_info.prewhere_info != query_condition_cache_probed_prewhere
         && !(is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
-        && (!top_k_filter_info || top_k_filter_info->dynamic_filter_pending)
+        && (!top_k_filter_info || top_k_filter_info->dynamic_filter_pending
+            || analyzed_result_ptr == query_condition_cache_analysis_before_top_k)
         && !storage_snapshot->metadata->hasUniqueKey()
         && !data.hasEnabledMaskingPolicies(context)
         && !filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info)
@@ -4212,6 +4214,7 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
             query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
     {
         query_condition_cache_probed_prewhere = query_info.prewhere_info;
+        query_condition_cache_analysis_before_top_k = nullptr;
 
         RangesInDataParts narrowed = analyzed_result_ptr->parts_with_ranges;
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
@@ -6529,6 +6532,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(IndexReadTasks text_index_re
 void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
+    query_condition_cache_analysis_before_top_k = analyzed_result_ptr;
 
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
     /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, turn the

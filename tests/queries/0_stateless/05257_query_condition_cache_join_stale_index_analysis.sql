@@ -28,6 +28,7 @@ SET max_rows_to_read = 0;
 
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS dim;
+DROP TABLE IF EXISTS ptab;
 
 CREATE TABLE tab (k Int32, v Int64) ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 8192, add_minmax_index_for_numeric_columns = 0;
@@ -176,5 +177,38 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryF
   AND current_database = currentDatabase() AND log_comment = 'qcc_nojoin_r2'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
+SELECT '-- a GROUP BY TopK read analyzed for a projection it does not use must prune the second run too';
+-- The projection matches the query but cannot use the condition on `k`, so it is analyzed and rejected, and its analysis
+-- of the table is kept. Only then the `GROUP BY ... ORDER BY ... LIMIT` heap adds `__topKFilter(w)` to the PREWHERE.
+CREATE TABLE ptab (k Int32, v Int64, w Int64, PROJECTION p (SELECT w, v, k, count() GROUP BY w, v, k)) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 8192, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO ptab SELECT number, number % 10, (number * 7919) % 1000003 FROM numbers(500000);
+SET optimize_use_projections = 1, enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1,
+    use_top_k_dynamic_filtering = 1, use_query_condition_cache_for_top_k = 1, query_plan_max_limit_for_top_k_optimization = 0,
+    max_rows_to_group_by = 0, optimize_aggregation_in_order = 0, optimize_read_in_order = 0, serialize_query_plan = 0,
+    max_threads = 1, max_block_size = 8192;
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3
+    SETTINGS query_plan_max_step_description_length = 1000)
+WHERE explain ILIKE '%prewhere filter column: and(\_\_topKFilter(w), %';
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3 SETTINGS log_comment = 'qcc_gbtopk_proj_r1' FORMAT Null;
+SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3 SETTINGS log_comment = 'qcc_gbtopk_proj_r2' FORMAT Null;
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3
+SETTINGS optimize_use_projections = 0, log_comment = 'qcc_gbtopk_noproj_r1' FORMAT Null;
+SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3
+SETTINGS optimize_use_projections = 0, log_comment = 'qcc_gbtopk_noproj_r2' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+-- Per arm, run 2's hits, misses, whether it read fewer marks than run 1, and whether it read the table, not the projection.
+-- The arm without the projection is the control that already pruned.
+SELECT replaceOne(r2.log_comment, '_r2', ''), r2.ProfileEvents['QueryConditionCacheHits'], r2.ProfileEvents['QueryConditionCacheMisses'],
+       r2.ProfileEvents['SelectedMarks'] < r1.ProfileEvents['SelectedMarks'], empty(r2.projections)
+FROM system.query_log AS r2 INNER JOIN system.query_log AS r1 ON replaceOne(r2.log_comment, '_r2', '_r1') = r1.log_comment
+WHERE r2.event_date >= yesterday() AND r1.event_date >= yesterday() AND r2.type = 'QueryFinish' AND r1.type = 'QueryFinish'
+  AND r2.current_database = currentDatabase() AND r1.current_database = currentDatabase()
+  AND r2.log_comment IN ('qcc_gbtopk_proj_r2', 'qcc_gbtopk_noproj_r2')
+ORDER BY r2.log_comment DESC;
+
+DROP TABLE ptab;
 DROP TABLE dim;
 DROP TABLE tab;
