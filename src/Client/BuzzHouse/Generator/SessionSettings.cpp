@@ -2473,6 +2473,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 60000)); },
                   {},
                   false)},
+             {"iceberg_orphan_files_min_retention_seconds",
+              CHSetting(
+                  [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 600)); },
+                  {},
+                  false)},
              {"iceberg_orphan_files_older_than_seconds",
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 600)); },
