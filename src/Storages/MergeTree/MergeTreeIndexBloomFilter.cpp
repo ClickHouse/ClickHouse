@@ -821,6 +821,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (set_contain_default_value)
             return false;
 
+        /// Over `Enum` map values `arrayElement` returns the zero of the underlying integer for a missing key,
+        /// which is not necessarily the default value of the `Enum` (its first value), so check it as well.
+        /// Over `Nullable(Enum)` map values a missing key gives `NULL` rather than the zero, so this is not needed.
+        if (const auto * dag_node = key_node.getDAGNode(); dag_node && isEnum(removeLowCardinality(dag_node->result_type)))
+        {
+            if (!isEnum(removeLowCardinalityAndNullable(type)))
+                return false;
+
+            auto zero_column = type->createColumn();
+            zero_column->insert(Field(Int64(0)));
+            auto set_contains_zero_column = prepared_set->execute({ColumnWithTypeAndName{std::move(zero_column), type, ""}}, false /*negative*/);
+            if (assert_cast<const ColumnUInt8 &>(*set_contains_zero_column).getData()[0])
+                return false;
+        }
+
         if (map_info->has_keys_index)
         {
             /// For mapKeys we serialize key argument with bloom filter

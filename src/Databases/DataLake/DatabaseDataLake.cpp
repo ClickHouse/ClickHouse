@@ -38,6 +38,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -60,6 +61,12 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -159,16 +166,21 @@ constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default"
 /// `TableNameFilter` so the catalog can restrict which namespaces it lists.
 DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
 {
+    DataLake::TableNameFilter filter;
     switch (tables_filter.kind)
     {
         case TablesFilter::Kind::None:
-            return {DataLake::TableNameFilter::Kind::All, {}};
-        case TablesFilter::Kind::Equals:
-            return {DataLake::TableNameFilter::Kind::Equals, tables_filter.pattern};
+            break;
+        case TablesFilter::Kind::In:
+            filter.kind = DataLake::TableNameFilter::Kind::In;
+            filter.values.assign(tables_filter.names->begin(), tables_filter.names->end());
+            break;
         case TablesFilter::Kind::Like:
-            return {DataLake::TableNameFilter::Kind::Like, tables_filter.pattern};
+            filter.kind = DataLake::TableNameFilter::Kind::Like;
+            filter.value = tables_filter.pattern;
+            break;
     }
-    return {DataLake::TableNameFilter::Kind::All, {}};
+    return filter;
 }
 
 }
@@ -1154,7 +1166,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     const bool want_stateful = use_stateful_tables && !lightweight
         && !can_use_parallel_replicas
-        && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction];
+        && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction]
+        && catalog->getTableFormat(table_metadata) == DataLake::DataLakeTableFormat::ICEBERG;
     if (want_stateful)
     {
         StoragePtr cached_storage;
@@ -1365,12 +1378,16 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
 
     /// Skip tables ClickHouse cannot read (Delta/raw files in mixed catalogs like Glue/Unity)
     /// and apply the name filter once, matching getLightweightTablesIterator (SHOW TABLES).
+    /// The catalog listing is scoped by namespace at best, so drop the names the query cannot
+    /// ask for here too - each surviving name costs a per-table metadata fetch below.
+    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
+
     DB::Names iceberg_tables;
     for (const auto & catalog_table : catalog_tables)
     {
         if (!catalog_table.is_readable)
             continue;
-        if (filter_by_table_name && !filter_by_table_name(catalog_table.name))
+        if (keep_table_name && !keep_table_name(catalog_table.name))
             continue;
         iceberg_tables.push_back(catalog_table.name);
     }
@@ -1476,6 +1493,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
         [[maybe_unused]] bool inserted = tables.emplace(table_name, table_ptr).second;
         chassert(inserted);
     }
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
@@ -1514,17 +1532,20 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
         LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
+    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
+
     for (const auto & catalog_table : catalog_tables)
     {
         /// Skip tables ClickHouse cannot read, so SHOW TABLES stays consistent with the
         /// full getTablesIterator path without a per-table metadata fetch.
         if (!catalog_table.is_readable)
             continue;
-        if (filter_by_table_name && !filter_by_table_name(catalog_table.name))
+        if (keep_table_name && !keep_table_name(catalog_table.name))
             continue;
         result.emplace_back(catalog_table.name);
     }
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, result.size());
     return result;
 }
 
@@ -2041,7 +2062,12 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
     /// for runtime-dependent or composite source checks exist.
-    factory.registerDatabase("DataLakeCatalog", create_fn, {
+    /// datalake catalog should support different storage types,
+    /// we need a function to check if the url is S3 or Azure.
+    /// right now we assume it's a S3 url
+    auto secret_arguments = s3DatabaseSecretArguments();
+    secret_arguments.secret_settings = DataLake::SETTINGS_TO_HIDE;
+    factory.registerDatabase("DataLakeCatalog", create_fn, std::move(secret_arguments), {
         .supports_arguments = true,
         .supports_settings = true,
         .is_external = true,
