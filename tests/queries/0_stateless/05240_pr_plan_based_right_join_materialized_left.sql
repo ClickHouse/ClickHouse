@@ -9,7 +9,7 @@
 --
 -- Plan-based ships the join itself when the left side is shippable - a `View` or a materialized view
 -- over `MergeTree` - and then the fragment contains `JoinLogical`. When the left side is not
--- shippable - a `Memory` table, say - only the right side's read is
+-- shippable - a `Merge` table, say - only the right side's read is
 -- distributed and the join runs on the initiator. Both cases answer correctly, so the difference
 -- costs parallelism rather than correctness.
 --
@@ -19,7 +19,8 @@
 
 DROP TABLE IF EXISTS t_right SYNC;
 DROP TABLE IF EXISTS t_left SYNC;
-DROP TABLE IF EXISTS t_mem;
+DROP TABLE IF EXISTS t_merge;
+DROP TABLE IF EXISTS t_merge_src SYNC;
 DROP VIEW IF EXISTS v_left;
 DROP TABLE IF EXISTS mv_left SYNC;
 
@@ -29,8 +30,11 @@ INSERT INTO t_right SELECT number FROM numbers(10);
 CREATE TABLE t_left (key UInt64) ENGINE = MergeTree ORDER BY key;
 INSERT INTO t_left SELECT number FROM numbers(5);
 
-CREATE TABLE t_mem (key UInt64) ENGINE = Memory;
-INSERT INTO t_mem SELECT number FROM numbers(5);
+-- `Merge` rather than `Memory`: the stress runner rewrites `Log` and `Memory` tables to `MergeTree`
+-- (`--replace-log-memory-with-mergetree`), which would make the left side shippable.
+CREATE TABLE t_merge_src (key UInt64) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_merge_src SELECT number FROM numbers(5);
+CREATE TABLE t_merge (key UInt64) ENGINE = Merge(currentDatabase(), '^t_merge_src$');
 
 CREATE VIEW v_left AS SELECT key FROM t_left;
 
@@ -48,11 +52,27 @@ SET join_algorithm = 'hash', join_use_nulls = 0;
 
 SELECT 'non-MergeTree left: reads from replicas';
 SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
-SELECT count(), sum(r.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key;
+    EXPLAIN SELECT count(), sum(r.key) FROM t_merge AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+SELECT count(), sum(r.key) FROM t_merge AS l RIGHT JOIN t_right AS r ON l.key = r.key;
 SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN SELECT count(), sum(r.key) FROM t_merge AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+
+-- A plain `MergeTree` left side is shippable only while `parallel_replicas_for_non_replicated_merge_tree`
+-- admits it; without it only the replicated right side's read is distributed.
+SELECT 'non-replicated MergeTree left: reads from replicas';
+SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
+    EXPLAIN SELECT count(), sum(r.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key)
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT count(), sum(r.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT 'the join is not shipped';
+SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
+    EXPLAIN SELECT count(), sum(r.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key)
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT 'the same left admitted: the join is shipped to the replicas';
+SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
+    EXPLAIN SELECT count(), sum(r.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 SELECT 'view left: reads from replicas';
 SELECT countIf(explain ILIKE '%ParallelReplicas%') FROM (
@@ -88,6 +108,7 @@ SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
 
 DROP TABLE mv_left SYNC;
 DROP VIEW v_left;
-DROP TABLE t_mem;
+DROP TABLE t_merge;
+DROP TABLE t_merge_src SYNC;
 DROP TABLE t_left SYNC;
 DROP TABLE t_right SYNC;

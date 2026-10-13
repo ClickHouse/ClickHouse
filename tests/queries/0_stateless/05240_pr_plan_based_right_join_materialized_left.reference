@@ -3,6 +3,13 @@ non-MergeTree left: reads from replicas
 10	45
 the join is shipped to the replicas
 0
+non-replicated MergeTree left: reads from replicas
+1
+10	45
+the join is not shipped
+0
+the same left admitted: the join is shipped to the replicas
+1
 view left: reads from replicas
 1
 10	45
