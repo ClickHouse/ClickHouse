@@ -1,0 +1,769 @@
+---
+sidebarTitle: 'chdb_hook'
+description: 'Полная справочная документация по модулю chdb_hook для Postgres'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb_hook'
+title: 'Справочная документация по модулю chdb_hook'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb_hook', 'Parquet', 'CSV', 'TSV']
+---
+
+## Краткое описание {#synopsis}
+
+```psql
+# LOAD 'chdb_hook';
+LOAD
+
+# CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+CREATE TABLE
+
+# COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+COPY 18
+```
+
+## Описание {#description}
+
+Модуль chdb&#95;hook встраивается в команду PostgreSQL [COPY](#copy-overloading),
+позволяя с помощью [chDB] копировать данные `TO` или `FROM` в любом из поддерживаемых
+[форматов данных, предоставляемых chDB][formats], — в локальные файлы, бакеты [AWS S3],
+[Google Cloud Storage] и другие хранилища. Он также встраивается в [CREATE TABLE], благодаря чему
+таблица может получить описание своих столбцов и загрузить строки из любого из тех же
+источников.
+
+## Загрузка {#loading}
+
+Загрузите chdb&#95;hook одним из следующих способов от имени суперпользователя. Выберите тот,
+который лучше всего подходит для вашего сценария:
+
+* Явно, командой [LOAD]; действует на протяжении сеанса:
+
+  ```sql
+  LOAD 'chdb_hook';
+  ```
+
+  <Note>
+    SQL Console в ClickHouse Cloud пока не поддерживает команду `LOAD 'chdb_hook'`,
+    однако её можно выполнить через psql или любое другое подключение к базе данных.
+    Либо обратитесь к своему представителю службы поддержки, чтобы её добавили
+    в конфигурацию вашего сервиса Postgres, после чего её можно будет использовать в SQL Console.
+  </Note>
+
+* Для всех сеансов — с помощью настройки [session&#95;preload&#95;libraries] в
+  `postgresql.conf`:
+
+  ```ini
+  session_preload_libraries = chdb_hook
+  ```
+
+  Или через [ALTER SYSTEM]:
+
+  ```sql
+  ALTER SYSTEM SET session_preload_libraries = 'chdb_hook';
+  ```
+
+  Эту настройку можно задать и на уровне отдельной базы данных с помощью [ALTER DATABASE]:
+
+  ```sql
+  ALTER DATABASE name SET session_preload_libraries = 'chdb_hook';
+  ```
+
+  Или для конкретных пользователей и групп с помощью [ALTER ROLE]:
+
+  ```sql
+  ALTER ROLE name SET session_preload_libraries = 'chdb_hook';
+  ```
+
+* При запуске сервера — с помощью настройки [shared&#95;preload&#95;libraries], чтобы расширение всегда
+  было доступно во всех сеансах и базах данных:
+
+  ```ini
+  shared_preload_libraries = chdb_hook
+  ```
+
+<Warning>
+  Учтите, что загрузка chdb&#95;hook даёт пользователям с ролями `pg_read_server_files`
+  или `pg_write_server_files` возможность выполнять `COPY` данных из файлов и в файлы на
+  сервере Postgres, а также в облачное хранилище.
+</Warning>
+
+## Перегрузка COPY {#copy-overloading}
+
+При [загрузке](#loading) chdb&#95;hook встраивается в команду Postgres [COPY],
+что позволяет копировать данные `TO` или `FROM` в любом из поддерживаемых [форматов данных,
+предоставляемых chDB][formats], — в локальные файлы, бакеты [AWS S3], [Google Cloud Storage] и
+другие хранилища. Например, чтобы загрузить таблицу из CSV-файла в S3, создайте таблицу,
+а затем вызовите `COPY`, указав URL вида `s3://`:
+
+```sql
+CREATE TABLE times (
+    id     INT PRIMARY KEY,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv';
+```
+
+### Привилегии {#privileges}
+
+Для `COPY` с chdb&#95;hook требуются те же привилегии, что и для заменяемой им команды [COPY]:
+`SELECT` на отношение или на каждый копируемый столбец для `COPY TO` и `INSERT`
+для `COPY FROM`. URL вида `file://` читает или записывает файл на сервере, поэтому
+также требуется членство в `pg_read_server_files` или `pg_write_server_files`.
+Для `COPY FROM` требуется транзакция с возможностью чтения и записи.
+
+### Схемы URL {#url-schemes}
+
+chdb&#95;hook выполняется только для тех целей `COPY` в виде URL, которые используют одну из следующих
+схем:
+
+| Схемы                          | Цель                                  | Функция chDB           |
+| ------------------------------ | ------------------------------------- | ---------------------- |
+| `file`                         | Абсолютный путь на сервере Postgres   | [`file()`]             |
+| `http`, `https`                | HTTP URL                              | [`url()`]              |
+| `s3`                           | [AWS S3]                              | [`s3()`]               |
+| `gs`, `gcs`, `oss`             | [Google Cloud Storage]                | [`gcs()`]              |
+| `az`, `azure`, `abfss`, `abfs` | [Azure Blob Storage] или [Azure ABFS] | [`azureBlobStorage()`] |
+| `hdfs`                         | [Hadoop Distributed File System]      | [`hdfs()`]             |
+
+### Форматы URL {#url-formats}
+
+Формат URL зависит от целевой системы (target).
+
+#### File {#file}
+
+Должен быть абсолютным путём на сервере Postgres. Относительный путь приводит к
+ошибке. Пользователь Postgres должен входить в роль `pg_read_server_files` или
+`pg_write_server_files` — в зависимости от ситуации. Системный пользователь Postgres должен
+иметь доступ к файлу на чтение или запись — в зависимости от ситуации. Для `COPY TO`, если
+путь не существует, chdb&#95;hook создаст все отсутствующие родительские каталоги; для этого
+у него должны быть соответствующие разрешения в файловой системе. Пример:
+
+```
+file:///tmp/users.parquet
+```
+
+#### HTTP {#http}
+
+Любой обычный HTTP URL, в том числе в публичном облачном хранилище. Для `COPY TO`
+chdb&#95;hook попытается отправить данные на этот URL методом `POST`. Пример:
+
+```
+https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv
+```
+
+#### S3 {#s3}
+
+URL-адреса S3 могут иметь форму S3 URI
+
+```
+s3://{bucket}/{path}
+```
+
+Либо URL объекта:
+
+```
+s3://{bucket}.s3.{region}.amazonaws.com/{path}
+```
+
+#### GCS {#GCS}
+
+URL для GCS имеют форму публичного URL:
+
+```
+gs://storage.googleapis.com/{bucket}/{path}
+```
+
+Либо URI облачного хранилища, который chdb&#95;hook преобразует в публичный URL:
+
+```
+gs://{bucket}/{path}
+```
+
+#### Azure Blob Storage {#azure-blob-storage}
+
+Используйте URL вида `blob.windows.net`, указав имя аккаунта в качестве субдомена:
+
+```
+az://{account}.blob.core.windows.net/{container}/{blob}
+```
+
+Либо используйте другое имя хоста:
+
+```
+az://{host}/{container}/{blob}
+```
+
+#### Azure ABFS {#azure-abfs}
+
+URL-адреса ABFS должны иметь следующий формат:
+
+```
+abfs://{container}@{account}.dfs.core.windows.net/{blob}
+```
+
+#### URL-адреса HDFS {#hdfs-urls}
+
+URL-адреса HDFS могут задаваться в обычном HTTP-подобном формате с необязательным указанием порта:
+
+```
+hdfs://{host}/{path}
+hdfs://{host}:{port}/{path}
+```
+
+### Подстановочные шаблоны в путях {#path-wildcards}
+
+URL-пути в командах `COPY FROM` могут содержать глоб-шаблоны. Файлы должны соответствовать
+шаблону пути целиком, а не только его суффиксу или префиксу. Единственное исключение: если
+путь указывает на существующий каталог и не содержит глоб-шаблонов, к пути неявно
+добавляется `*`, чтобы выбрать все файлы в этом каталоге.
+
+Поддерживаемые подстановочные шаблоны:
+
+* `*`: соответствует произвольному количеству символов, кроме `/`, включая пустую строку.
+* `?`: соответствует любому одиночному символу.
+* `{groucho,harpo,chico}`: подставляет любую из строк «groucho», «harpo» и
+  «chico». Строки могут содержать `/`.
+* `{N..M}`: соответствует любому числу `>= N` и `<= M`.
+* `**`: рекурсивно соответствует всем файлам в каталоге.
+
+Например, чтобы загрузить данные из этих файлов одной командой:
+
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv
+
+Используйте `{some,another}_prefix`, чтобы охватить оба имени каталогов, и
+`some_file_{1..3}.csv'`, чтобы охватить нужные файлы — вот так:
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+```
+
+### Параметры {#options}
+
+Команда `COPY` в chdb&#95;hook поддерживает следующие параметры:
+
+#### `format`: {#format}
+
+Формат для чтения или записи. Должен быть одним из [formats], поддерживаемых [chDB],
+среди которых TSV, CSV, Parquet, Iceberg, JSON и другие. Опустите этот параметр или задайте значение
+`auto`, чтобы chDB определил формат по расширению имени файла в конце
+URL.
+
+#### `structure` {#structure}
+
+Структура данных [chDB] для строки. Состоит из списка имён столбцов, [типов данных ClickHouse] и модификаторов. Если параметр не указан, chdb&#95;hook сопоставляет типы данных Postgres с наиболее подходящими типами ClickHouse; подробнее см. [Postgres в chDB](#postgres-to-chdb). Если задано значение `auto`, chDB пытается определить типы автоматически.
+
+Пример:
+
+```sql
+COPY users TO 'file:///tmp/users.parquet' (
+    structure 'id Int64, name String, age Nullable(UInt8), attributes JSON'
+);
+```
+
+#### `access_key` и `access_secret` {#access_key-and-access_secret}
+
+Долгосрочные учётные данные пользователя AWS account для аутентификации запросов.
+
+* **S3:** AWS [ключ доступа ID и access secret], которые чаще всего задаются переменными окружения `AWS_ACCESS_KEY_ID` и `AWS_SECRET_ACCESS_KEY`
+* **GCS:** GCP [HMAC key and secret]
+* **Azure:** имя Azure Storage account и [ключ доступа]
+
+#### `session_token` {#session_token}
+
+Сеансовый токен AWS, используемый вместе с `access_key` и `access_secret`; часто
+задаётся переменной окружения `AWS_SESSION_TOKEN`. Применяется только для
+URL-адресов S3.
+
+#### `compression` {#compression}
+
+Формат сжатия файла. Используйте, если сжатие нельзя определить по имени
+файла. Поддерживаемые значения:
+
+* `auto` (по умолчанию)
+* `none`
+* `gzip` или `gz`
+* `brotli` или `br`
+* `xz` или `LZMA`
+* `zstd` или `zst`
+* `lz4`
+* `bz2`
+* `snappy`
+
+#### `timeout` {#timeout}
+
+Тайм-аут запроса в миллисекундах. Применяется к URL-адресам HTTP, S3, GCS и Azure.
+Значение по умолчанию — `30000` (30 с).
+
+### Отладка {#debugging}
+
+При ошибке команда `COPY` из chdb&#95;hook добавляет в контекст ошибки
+запрос chDB, который она пыталась выполнить:
+
+```
+ERROR:  chdb: error executing chDB query
+DETAIL:  Code: 53. DB::Exception: Requested type of column p doesn't match parquet schema
+CONTEXT:  query: SELECT * FROM file({path:String}, {format:String}, {structure:String})
+STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
+```
+
+chdb&#95;hook использует плейсхолдеры вида `{name:Type}` для параметров запроса,
+чтобы защититься от SQL-инъекций и снизить риск
+попадания в журнал конфиденциальных данных, например учётных данных.
+
+Если же вам нужно посмотреть содержимое этих параметров для отладки
+проблемы, временно задайте для GUC Postgres [log&#95;min&#95;messages] значение `DEBUG1` или
+выше — тогда chdb&#95;hook будет отправлять запрос и параметры в журнал Postgres
+(но никогда не клиенту), где они будут выглядеть так:
+
+```
+2026-08-08 09:41:06.842 EDT [59940] LOG:  executing chDB query
+2026-08-08 09:41:06.842 EDT [59940] DETAIL:  query: SELECT * FROM file({path:String}, {format:String}, {structure:String})
+2026-08-08 09:41:06.842 EDT [59940] CONTEXT:  params: { path: "/tmp/users.data", format: "Parquet", structure: "user_id Nullable(Int64), username Nullable(String), password Nullable(String)" }
+2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
+```
+
+<Warning>
+  Не оставляйте &#91;log&#95;min&#95;messages&#93; на уровне отладки дольше, чем на один
+  сеанс отладки: это позволит избежать попадания в журнал конфиденциальных данных,
+  таких как учётные данные, к тому же PostgreSQL и сам пишет отладочную информацию
+  и может быстро заполнить журнал.
+</Warning>
+
+## Перегрузка CREATE TABLE {#create-table-overloading}
+
+chdb&#95;hook также встраивается в [CREATE TABLE], благодаря чему таблица может
+получать свои столбцы и загружать строки из URL.
+
+Чтобы создать таблицу со структурой, полученной из URL, передайте URL в
+параметре `structure_from` и оставьте список столбцов пустым:
+
+```sql
+CREATE TABLE reviews () WITH (
+    structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+Используйте `copy_from`, чтобы загрузить не только столбцы, но и строки:
+
+```sql
+CREATE TABLE reviews () WITH (
+    copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+`copy_from` определяет столбцы автоматически только в том случае, если сам оператор не задаёт ни одного столбца. Список столбцов, clause `INHERITS`, тип в `OF` или партиция — каждый из них задаёт столбцы, поэтому в таком случае `copy_from` копирует только:
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
+```
+
+Оба варианта поддерживают те же [URL schemes](#url-schemes) и
+[options](#options), что и `COPY`: учётные данные, format, сжатие, тайм-аут и
+даже явно заданная [structure](#structure) — всё это работает. Postgres сохраняет все
+оставшиеся storage parameters:
+
+```sql
+CREATE TABLE users () WITH (
+    copy_from     = 's3://my-bucket/users.csv',
+    access_key    = 'AKIAIOSFODNN7EXAMPLE',
+    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+    format        = 'CSVWithNames',
+    fillfactor    = 90
+);
+```
+
+Ни `structure_from`, ни `copy_from` не работают с `IF NOT EXISTS`. Для загрузки
+существующего отношения используйте [COPY].
+
+## Ограничения {#limitations}
+
+Из-за ряда известных проблем и различий в поведении типов данных
+между Postgres и chDB у chdb&#95;hook есть следующие ограничения:
+
+* Невозможно выполнить `COPY` для отношений с политиками [безопасность на уровне строк],
+  которые применяются к копирующей роли. Postgres применяет такие политики,
+  переписывая `COPY TO` в запрос, а chdb&#95;hook этого не поддерживает.
+* В ClickHouse нет NULL-массива, поэтому вместо `NULL` `COPY TO` сохраняет пустой массив (`[]`).
+* ClickHouse представляет эквиваленты `lseg`, `path` и `polygon` в виде
+  массивов, поэтому NULL-значения этих типов при `COPY TO` также превращаются в пустой массив
+  (`[]`).
+* Если в заданной [структуре](#structure) столбец не определён как Nullable,
+  NULL-значения будут выведены как значения по умолчанию. Всегда
+  явно определяйте столбцы с типом Nullable в [структуре](#structure), чтобы избежать
+  такого преобразования.
+* Незамкнутый `path`, последняя точка которого совпадает с первой, выводится как замкнутый путь.
+* В Protobuf в повторяющемся поле нет null, поэтому NULL-значения в массивах опускаются.
+* [JSON type] в chDB поддерживает только объекты JSON; заменяйте отображение по умолчанию
+  `String` для `json` и `jsonb` на `JSON` только в том случае, если все значения являются
+  объектами JSON. (ClickHouse/ClickHouse#68428)
+* [JSON type] в chDB игнорирует `null`: ключи объекта со значениями NULL будут
+  опущены при выводе. Заменяйте отображение по умолчанию `String` для `json` и
+  `jsonb` на `JSON` только в том случае, если значения объекта не равны `null` либо их потеря
+  допустима. (ClickHouse/ClickHouse#68428)
+* Форматы JSON, JSONCompact и JSONColumnsWithMetadata всегда проверяют
+  UTF-8, поэтому выводят значения bytea с символами замены.
+* `COPY FROM` читает поле Protobuf `Nullable`, содержащее пустую строку или
+  ноль, как `NULL`. (chdb-io/chdb-core#152)
+* `COPY TO` в Parquet отбрасывает `NULL` из собственного null map типа Nullable Tuple.
+  (ClickHouse/ClickHouse#112427)
+* В форматах Parquet, Arrow, ArrowStream, ORC, Avro, Protobuf, ProtobufList, MsgPack
+  и BSONEachRow нет типа, соответствующего `time` в Postgres или
+  `Time64` в chDB. Чтобы сохранить значения, задавайте столбцы `time` как `String` в явной
+  [структуре](#structure).
+* Вывод Protobuf усекает значения временных меток до секунд.
+* Вывод Protobuf не поддерживает даты ранее 1970-01-01. Чтобы сохранить значения,
+  задавайте столбцы `time` как `String` в явной [структуре](#structure). (ClickHouse/ClickHouse#111860)
+* Форматы CSVWithNames и CSVWithNamesAndTypes в настоящее время не могут импортировать
+  `NULL`-значения box или circle. (ClickHouse/ClickHouse#115523)
+
+## Типы данных {#data-types}
+
+[COPY](#copy-overloading) сопоставляет типы Postgres отношения с типами chDB,
+а [CREATE TABLE](#create-table-overloading) — типы chDB для URL
+с типами Postgres.
+
+### Postgres в chDB {#postgres-to-chdb}
+
+Если параметр [structure](#structure) не задан явно, chdb&#95;hook сопоставляет
+типы Postgres с подходящими эквивалентами chDB. Если такое сопоставление не
+подходит для вашего сценария, укажите [structure](#structure), чтобы заменить
+сгенерированные типы на нужные вам.
+
+| Postgres    | chDB                                     | Примечания                                                                  |
+| ----------- | ---------------------------------------- | --------------------------------------------------------------------------- |
+| boolean     | Bool                                     |                                                                             |
+| name        | String                                   |                                                                             |
+| text        | String                                   |                                                                             |
+| inet        | String                                   | Замените на `IPv4` или `IPv6`, если данные содержат только один из них.     |
+| cidr        | String                                   |                                                                             |
+| macaddr     | String                                   |                                                                             |
+| macaddr8    | String                                   |                                                                             |
+| interval    | String                                   | Замените на единицу `Interval`, например `IntervalDay`.                     |
+| tsvector    | String                                   |                                                                             |
+| tsquery     | String                                   |                                                                             |
+| jsonpath    | String                                   |                                                                             |
+| money       | String                                   |                                                                             |
+| enum        | String                                   |                                                                             |
+| varchar     | String                                   |                                                                             |
+| varbit      | String                                   |                                                                             |
+| char        | FixedString                              |                                                                             |
+| bit         | FixedString                              |                                                                             |
+| bpchar      | String                                   |                                                                             |
+| int2        | Int16                                    |                                                                             |
+| int4        | Int32                                    |                                                                             |
+| int8        | Int64                                    |                                                                             |
+| oid         | UInt32                                   |                                                                             |
+| oid8        | UInt64                                   |                                                                             |
+| xid8        | UInt64                                   |                                                                             |
+| json        | String                                   | Замените на `JSON`, если данные содержат только объекты.                    |
+| jsonb       | String                                   | Замените на `JSON`, если данные содержат только объекты.                    |
+| float4      | Float32                                  |                                                                             |
+| float8      | Float64                                  |                                                                             |
+| date        | Date32                                   |                                                                             |
+| time        | Time64(6)                                | Замените на `String` для форматов, не поддерживающих время.                 |
+| timetz      | String                                   |                                                                             |
+| timestamp   | DateTime64(6)                            | Объявляется с часовым поясом `UTC`, преобразуется из часового пояса сеанса. |
+| timestamptz | DateTime64(6)                            | Объявляется с часовым поясом `UTC`.                                         |
+| numeric     | Decimal                                  |                                                                             |
+| uuid        | UUID                                     |                                                                             |
+| point       | `Point`                                  | Те же две координаты, что и в Postgres.                                     |
+| lseg        | `LineString`                             | Линия ровно из двух точек.                                                  |
+| path        | `LineString`                             | В замкнутом пути первая точка повторяется.                                  |
+| polygon     | `Ring`                                   | Ring замыкается неявно, как и полигон.                                      |
+| box         | `Tuple(high Point, low Point)`           | Два угла в том же порядке, что и в Postgres.                                |
+| circle      | `Tuple(center Point, radius Float64)`    |                                                                             |
+| line        | `Tuple(a Float64, b Float64, c Float64)` | Уравнение `Ax + By + C = 0`.                                                |
+
+Массивы сопоставляются с `Array` соответствующего типа элементов. В ClickHouse
+допустимость NULL задаётся для каждого столбца, а в Postgres — для всего
+массива, поэтому элементы всегда `Nullable`.
+
+Ни один тип Postgres не сопоставляется с `Map` или `Tuple`, однако
+[structure](#structure) может указать такой тип. `Map` можно преобразовать в
+массив пар «ключ — значение», а `Tuple` преобразуется в массив. Для поддержки
+разнородных данных используйте `text[]`.
+
+### Преобразование временных меток {#timestamp-conversion}
+
+В текстовых форматах (TSV, CSV и др.) hook `COPY` выводит значения DateTime и
+DateTime64 в формате ISO-8601, `YYYY-MM-DDThh:mm:ssZ`, независимо от текущего
+значения настройки `datestyle`. Это гарантирует, что значения timestamptz
+останутся согласованными, даже если система, импортирующая эти значения,
+использует другой часовой пояс. Указание другого типа в выводе `structure`,
+например `Datetime64(3, 'America/Los_Angeles')`, не влияет на смещение в
+выводе, но меняет precision.
+
+Примеры Timestamp TZ:
+
+| timestamptz                               | `DateTime64(6, 'UTC')`        | `DateTime64(3 'Japan')`    |
+| ----------------------------------------- | ----------------------------- | -------------------------- |
+| `2026-08-28T12:00:00Z`                    | `2026-08-28T12:00:00.000000Z` | `2026-08-28T12:00:00.000Z` |
+| `2026-08-28T11:00:00 America/Los_Angeles` | `2026-08-28T18:00:00.000000Z` | `2026-08-28T18:00:00.000Z` |
+| `2026-08-28T10:00:00.723923 Asia/Tokyo`   | `2026-08-28T01:00:00.723923Z` | `2026-08-28T01:00:00.723Z` |
+
+Hook `COPY` также переводит значения timestamp из часового пояса сеанса в
+UTC, благодаря чему они выводятся относительно этого часового пояса. При
+загрузке в новую систему та должна преобразовать их в свой локальный часовой
+пояс. Таким образом, сами значения будут различаться при разных часовых
+поясах, но будут совпадать с точностью до разницы часовых поясов.
+
+Пример влияния настройки `timezone` на временную метку
+`2026-08-28T12:00:00`:
+
+| настройка timezone    | `DateTime64(6, 'UTC')`        | `DateTime64(3 'Japan')`    |
+| --------------------- | ----------------------------- | -------------------------- |
+| `UTC`                 | `2026-08-28T12:00:00.000000Z` | `2026-08-28T12:00:00.000Z` |
+| `America/Los_Angeles` | `2026-08-28T19:00:00.000000Z` | `2026-08-28T19:00:00.000Z` |
+| `America/New_York`    | `2026-08-28T16:00:00.000000Z` | `2026-08-28T16:00:00.000Z` |
+| `Japan`               | `2026-08-28T03:00:00.000000Z` | `2026-08-28T03:00:00.000Z` |
+
+### chDB в Postgres {#chdb-to-postgres}
+
+chdb&#95;hook сопоставляет типы ClickHouse, возвращаемые [`DESCRIBE`], со следующими
+типами Postgres:
+
+{/* TYPE-TABLE-BEGIN сгенерировано `make type-table` */}
+
+| chDB                | Postgres                    | Примечания                                              |
+| ------------------- | --------------------------- | ------------------------------------------------------- |
+| Array(T)            | T[]                         | По одному типу массива PG на каждый уровень вложенности |
+| BFloat16            | real                        | При записи младшие биты мантиссы отбрасываются          |
+| Bool                | boolean                     |                                                         |
+| Date                | date                        |                                                         |
+| Date32              | date                        |                                                         |
+| DateTime            | timestamp with time zone    |                                                         |
+| DateTime64(P)       | timestamp(P) with time zone | Значения P больше 6 ограничиваются до 6                 |
+| Decimal(P,S)        | numeric(P,S)                |                                                         |
+| Decimal32(S)        | numeric(9,S)                |                                                         |
+| Decimal64(S)        | numeric(18,S)               |                                                         |
+| Decimal128(S)       | numeric(38,S)               |                                                         |
+| Decimal256(S)       | numeric(76,S)               |                                                         |
+| Enum8               | text                        |                                                         |
+| Enum16              | text                        |                                                         |
+| FixedString(N)      | text                        | N задаёт байты в CH и символы в PG                      |
+| Float32             | real                        |                                                         |
+| Float64             | double precision            |                                                         |
+| IPv4                | inet                        |                                                         |
+| IPv6                | inet                        |                                                         |
+| Int8                | smallint                    |                                                         |
+| Int16               | smallint                    |                                                         |
+| Int32               | integer                     |                                                         |
+| Int64               | bigint                      |                                                         |
+| Int128              | numeric(39,0)               |                                                         |
+| Int256              | numeric(77,0)               |                                                         |
+| IntervalDay         | interval                    |                                                         |
+| IntervalHour        | interval                    |                                                         |
+| IntervalMicrosecond | interval                    |                                                         |
+| IntervalMillisecond | interval                    |                                                         |
+| IntervalMinute      | interval                    |                                                         |
+| IntervalMonth       | interval                    |                                                         |
+| IntervalNanosecond  | interval                    | Усекается до микросекунд                                |
+| IntervalQuarter     | interval                    |                                                         |
+| IntervalSecond      | interval                    |                                                         |
+| IntervalWeek        | interval                    |                                                         |
+| IntervalYear        | interval                    |                                                         |
+| JSON                | jsonb                       |                                                         |
+| LineString          | path                        |                                                         |
+| LowCardinality(T)   | T                           |                                                         |
+| Map(K,V)            | text[][]                    | По одной строке текстовых элементов на каждую пару      |
+| MultiLineString     | path[]                      |                                                         |
+| MultiPolygon        | polygon[][]                 |                                                         |
+| Nullable(T)         | T                           | Задаёт для столбца признак nullable                     |
+| Point               | point                       |                                                         |
+| Polygon             | polygon[]                   |                                                         |
+| Ring                | polygon                     |                                                         |
+| String              | text                        |                                                         |
+| Time                | time without time zone      |                                                         |
+| Time64(P)           | time(P) without time zone   | Значения P больше 6 ограничиваются до 6                 |
+| Tuple(...)          | text[]                      | Поля становятся текстовыми элементами                   |
+| UInt8               | smallint                    |                                                         |
+| UInt16              | integer                     |                                                         |
+| UInt32              | bigint                      |                                                         |
+| UInt64              | numeric(20,0)               |                                                         |
+| UInt128             | numeric(39,0)               |                                                         |
+| UInt256             | numeric(78,0)               |                                                         |
+| UUID                | uuid                        |                                                         |
+
+{/* TYPE-TABLE-END */}
+
+Любой тип chDB, отсутствующий в этой таблице, приводит к ошибке — в том числе `Nested`,
+`Variant` и `Dynamic`. Чтобы читать их как текст, используйте [structure](#structure), сопоставляющую их с
+`String`.
+
+Для некоторых из этих типов Postgres поддерживает более узкий диапазон, чем chDB, поэтому копирование
+завершается ошибкой для `Time` или `Time64` свыше 24 часов, а также для `Date32`
+за пределами диапазона дат Postgres.
+
+### Кодирование текста {#text-encoding}
+
+chDB читает `String`, `FixedString`, `Enum` и `JSON` как байты, без каких-либо
+гарантий кодирования. При копировании такого столбца в `text` или в любой другой
+небинарный тип байты проверяются на соответствие кодированию базы данных, и для
+данных, которые невозможно представить, вызывается ошибка:
+
+```
+ERROR:  invalid byte sequence for encoding "UTF8": 0x00
+```
+
+Любое кодирование отвергает NUL-символы, которые Postgres не может хранить в `text`.
+
+Копируйте в `bytea`, чтобы сохранить байты в том виде, в котором их записал chDB. Задавайте таким полям соответствующие имена, поскольку [CREATE TABLE](#create-table-overloading) выводит для этих типов `text`:
+
+```sql
+CREATE TABLE logs (id bigint, payload bytea) WITH (
+    copy_from = 's3://my-bucket/logs.parquet'
+);
+```
+
+`FixedString(N)` дополняет более короткие значения байтами NUL. При копировании в `text` завершающие NUL отбрасываются, тогда как `bytea` сохраняет все N байт.
+
+## Настройки {#settings}
+
+### `chdb_hook.max_memory` {#chdb_hookmax_memory}
+
+```sql
+SET chdb_hook.max_memory = '1 GB';
+```
+
+Определяет максимальный объём памяти для запроса chDB; используется для установки настройки chDB
+[`max_memory_usage`]. Требует привилегий суперпользователя. Укажите целое число, задающее
+количество мегабайт, либо значение с одной из следующих единиц измерения памяти:
+
+* `B` (байты)
+* `kB` (килобайты)
+* `MB` (мегабайты)
+* `GB` (гигабайты)
+* `TB` (терабайты)
+
+Значение по умолчанию — `0`: память не ограничивается.
+
+### `chdb_hook.max_threads` {#chdb_hookmax_threads}
+
+```sql
+SET chdb_hook.max_threads = 4;
+```
+
+Максимальное количество потоков обработки запросов для запроса chDB; используется для установки настройки chDB [`max_threads`]. Требует привилегий суперпользователя. Значение по умолчанию — `0`: в этом случае chDB определяет значение самостоятельно.
+
+Мы настоятельно рекомендуем задавать `chdb_hook.max_threads` перед выполнением крупной операции `COPY`, чтобы chDB не загружал CPU полностью в ущерб PostgreSQL.
+
+### `chdb_hook.max_parsing_threads` {#chdb_hookmax_parsing_threads}
+
+```sql
+SET chdb_hook.max_parsing_threads = 2;
+```
+
+Максимальное число потоков, которые chDB может использовать для разбора данных во входных форматах, поддерживающих параллельный разбор; используется для установки настройки chDB [`max_parsing_threads`]. Требует привилегий суперпользователя. Значение по умолчанию — `0`: в этом случае chDB определяет значение самостоятельно.
+
+Рекомендуем задавать `chdb_hook.max_parsing_threads` перед выполнением `COPY` для больших объёмов данных, чтобы chDB не загружал CPU до предела в ущерб PostgreSQL.
+
+## Политика версионирования {#versioning-policy}
+
+chdb&#95;hook придерживается [Semantic Versioning] для своих публичных релизов.
+
+* Мажорная версия увеличивается при изменениях API
+* Минорная версия увеличивается при обратно совместимых изменениях SQL
+* Патч-версия увеличивается при изменениях, затрагивающих только бинарный файл
+
+После установки версию можно узнать с помощью функции
+[`pg_get_loaded_modules()`] в Postgres 18.
+
+```sql
+SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
+```
+
+## Авторы {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## Авторские права {#copyright}
+
+Copyright (c) 2026, ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB — быстрая, надёжная и масштабируемая встраиваемая база данных"
+
+[Semantic Versioning]: https://semver.org/spec/v2.0.0.html "Semantic Versioning 2.0.0"
+
+[COPY]: https://www.postgresql.org/docs/current/sql-copy.html "Документация Postgres: COPY"
+
+[CREATE TABLE]: https://www.postgresql.org/docs/current/sql-createtable.html "Документация Postgres: CREATE TABLE"
+
+[`DESCRIBE`]: https://clickhouse.com/docs/sql-reference/statements/describe-table "ClickHouse Docs: DESCRIBE TABLE"
+
+[formats]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "Документация chDB: полная таблица имён форматов"
+
+[access key ID and access secret]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management: управление ключами доступа для пользователей IAM"
+
+[HMAC key and secret]: https://docs.cloud.google.com/storage/docs/authentication/hmackeys "Google Cloud Storage: HMAC-ключи"
+
+[access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure: управление ключами доступа к учётной записи хранения"
+
+[row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Документация Postgres: политики безопасности на уровне строк"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs: тип данных JSON"
+
+[LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Документация Postgres: LOAD"
+
+[session_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "Документация Postgres: `session_preload_libraries`"
+
+[shared_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "Документация Postgres: `shared_preload_libraries`"
+
+[ALTER SYSTEM]: https://www.postgresql.org/docs/18/sql-altersystem.html "Документация Postgres: ALTER SYSTEM"
+
+[ALTER DATABASE]: https://www.postgresql.org/docs/current/sql-alterdatabase.html "Документация Postgres: ALTER DATABASE"
+
+[ALTER ROLE]: https://www.postgresql.org/docs/18/sql-alterrole.html "Документация Postgres: ALTER ROLE"
+
+[AWS S3]: https://aws.amazon.com/s3/ "Объектное хранилище Cloud — Amazon S3 — Amazon Web Services"
+
+[Google Cloud Storage]: https://cloud.google.com/storage "Cloud Storage — Google Cloud"
+
+[`file()`]: https://clickhouse.com/docs/sql-reference/table-functions/file "ClickHouse Docs: табличная функция file"
+
+[`url()`]: https://clickhouse.com/docs/sql-reference/table-functions/url "ClickHouse Docs: табличная функция url"
+
+[`s3()`]: https://clickhouse.com/docs/sql-reference/table-functions/s3 "ClickHouse Docs: табличная функция s3"
+
+[`gcs()`]: https://clickhouse.com/docs/sql-reference/table-functions/gcs "ClickHouse Docs: табличная функция gcs"
+
+[Azure Blob Storage]: https://azure.microsoft.com/en-us/products/storage/blobs/
+
+[Azure ABFS]: https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri "Использование URI Azure Data Lake Storage (ABFS) — Azure Storage"
+
+[`azureBlobStorage()`]: https://clickhouse.com/docs/sql-reference/table-functions/azureBlobStorage "ClickHouse Docs: табличная функция azureBlobStorage"
+
+[Hadoop Distributed File System]: https://en.wikipedia.org/wiki/Apache_Hadoop#Overview "Википедия: обзор Apache Hadoop"
+
+[`hdfs()`]: https://clickhouse.com/docs/sql-reference/table-functions/hdfs "ClickHouse Docs: табличная функция hdfs"
+
+[ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: типы данных в ClickHouse"
+
+[log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "Документация PostgreSQL: log_min_messages"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: настройки сеанса max_memory_usage_*"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: настройки сеанса max_threads_*"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: настройка сеанса max_parsing_threads"

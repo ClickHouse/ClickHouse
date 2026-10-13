@@ -256,7 +256,7 @@ public:
      * returns true if there are no replicas left
      */
     static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info,
-                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            LoggerPtr logger, std::optional<bool> * has_metadata_out = nullptr);
 
     bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
@@ -484,6 +484,11 @@ private:
     std::atomic<bool> shutdown_prepared_called {false};
     std::optional<ShutdownDeadline> shutdown_deadline;
 
+    /// Serializes concurrent calls to shutdown(). A repeated call (e.g. from the failure path of
+    /// startupImpl racing with the first, full shutdown) tears down whatever a concurrent startup()
+    /// re-armed, and some of the members it touches are not atomic.
+    std::mutex shutdown_mutex;
+
     /// We call flushAndPrepareForShutdown before acquiring DDLGuard, so we can shutdown a table that is being created right now
     mutable std::mutex flush_and_shutdown_mutex;
 
@@ -633,8 +638,6 @@ private:
         String part_name,
         NameSet & absent_replicas_paths);
 
-    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
-
     bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
                                              std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
                                              Coordination::Requests & ops, size_t & num_check_ops);
@@ -751,6 +754,7 @@ private:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         bool cleanup,
+        bool bypass_min_unreserved_space,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
@@ -968,7 +972,7 @@ private:
     void startBackgroundMovesIfNeeded() override;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

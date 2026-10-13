@@ -13,7 +13,7 @@ For use cases which don't require transformation between ClickHouse data and nat
 
 ### Client `raw_query` method {#client-rawquery-method}
 
-The `Client.raw_query` method allows direct usage of the ClickHouse HTTP query interface using the client connection. The return value is an unprocessed `bytes` object. It offers a convenient wrapper with parameter binding, error handling, retries, and settings management using a minimal interface:
+The `Client.raw_query` method allows direct usage of the ClickHouse HTTP query interface using the client connection. The return value is an unprocessed `bytes` object. It offers a convenient wrapper with parameter binding, error handling, retries for eligible reads, and settings management using a minimal interface. See [HTTP retries](/integrations/language-clients/python/driver-api#http-retries).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -45,6 +45,8 @@ The `Client.raw_insert` method allows direct inserts of `bytes` objects or `byte
 | `transport_settings` | dict | `None` | HTTP headers added to this request. |
 
 It is the caller's responsibility to ensure that the `insert_block` is in the specified format and uses the specified compression method. ClickHouse Connect uses these raw inserts for file uploads and PyArrow Tables, delegating parsing to the ClickHouse server.
+
+String and bytes payloads can be retried after a remote connection close. Generators and open files cannot be replayed. See [Insert retries and deduplication](/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 ## Saving query results as files {#saving-query-results-as-files}
 
@@ -84,7 +86,7 @@ Similarly, you could save data in [TabSeparated](/reference/formats/TabSeparated
 
 ## Multithreaded, multiprocess, and async/event driven use cases {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
-ClickHouse Connect works well in multithreaded, multiprocess, and event-loop-driven/asynchronous applications. All query and insert processing occurs within a single thread, so operations are generally thread-safe. (Parallel processing of some operations at a low level is a possible future enhancement to overcome the performance penalty of a single thread, but even in that case thread safety will be maintained.)
+ClickHouse Connect supports multithreaded, multiprocess, and asyncio applications. A synchronous HTTP client can be shared across threads as long as concurrent calls do not use the same ClickHouse session. See the session discussion below. The async client runs some parsing and insert preparation in worker threads.
 
 Because each query or insert executed maintains state in its own `QueryContext` or `InsertContext` object, respectively, these helper objects aren't thread-safe, and they shouldn't be shared between multiple processing streams. See the additional discussion about context objects in the [QueryContexts](/integrations/language-clients/python/advanced-querying#querycontexts) and [InsertContexts](/integrations/language-clients/python/advanced-inserting#insertcontexts) sections.
 
@@ -118,6 +120,8 @@ asyncio.run(main())
 ```
 
 The async client follows the same query, insert, raw, Arrow, and streaming contract as the synchronous client. It uses aiohttp for network I/O. CPU-bound Native-format parsing may run in an executor so that it doesn't block the event loop.
+
+`insert_arrow` and `insert_df_arrow` run DataFrame conversion and Arrow encoding in a dedicated worker for each client, separate from streaming query readers. Each client runs one preparation operation at a time to limit temporary memory use. Close the client with `async with` or `await client.close()` when finished. PyArrow operations that hold Python's global interpreter lock can still pause other coroutines.
 
 An async client owns an aiohttp session created in one event loop. Before moving the client to another event loop, close it in the owning loop, then call `await client._initialize()` in the new loop before making requests. If the owning loop has already closed, call `await client.close()` followed by `await client._initialize()` in the current loop. aiohttp may still report an unclosed transport when cleanup begins only after the owning loop has closed, so close before transfer when possible.
 

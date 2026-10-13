@@ -1,5 +1,3 @@
--- Tags: no-darwin
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 -- The Cascades optimizer forces an `IN` -> `JOIN` rewrite, but that only applies to `IN (subquery)`.
 -- A constant or tuple right-hand side needs no rewrite and must not require correlated subqueries.
 SET enable_parallel_replicas = 0;
