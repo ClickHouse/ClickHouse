@@ -40,39 +40,73 @@ function file_format()
     esac
 }
 
-# Print the name of the error from the exception message in the file $1.
-function error_name()
+# Read the files given as pairs of arguments: the file and its format. Files are read in batches by one `clickhouse-local`
+# per batch, because starting a process per file is slow in the sanitizer builds. `--ignore-error` continues with the next
+# query after an exception. The output of the queries and the exceptions are merged into one stream, which is ordered,
+# because the output is flushed after every query. Each file is preceded by a marker line, and every exception message
+# ends with the line with the query. The stream is split into one result per file.
+function read_files()
 {
-    # `-a`: the message may contain binary column names from the fuzzer-generated files.
-    grep -a -m1 -oE '\(([A-Z][A-Z0-9_]+)\)$' "$1" | tr -d '()'
-}
+    # Not named after the files: `clickhouse-local` infers the output format and compression from the name of the output file.
+    local batch
+    batch=$(mktemp "$RESULTS_DIR/batch_XXXXXX")
+    local queries=""
+    while [ $# -gt 0 ]
+    do
+        local file=$1
+        local format=$2
+        shift 2
+        queries+="SELECT '$MARKER', '$file', '$format' FORMAT TSVRaw;"$'\n'
+        queries+="DESCRIBE file('$CORPUS_DIR/$file', $format) SETTINGS describe_compact_output = 1, format_custom_escaping_rule = 'Escaped', format_custom_field_delimiter = ' ', format_custom_row_between_delimiter = ', ', format_custom_row_after_delimiter = '', format_custom_result_after_delimiter = '\n' FORMAT CustomSeparated;"$'\n'
+        queries+="SELECT count(), sum(sipHash64(toString(tuple(*)))) FROM file('$CORPUS_DIR/$file', $format);"$'\n'
+    done
 
-function read_file()
-{
-    local file=$1
-    local format=$2
-    local result
-    result="$RESULTS_DIR/$(echo "$file" | tr '/' '_')"
     # Single-threaded reading, so that the error is deterministic for files with several corrupted columns.
     # Fixed time zone, because timestamps without a time zone are formatted in the session time zone.
-    $CLICKHOUSE_LOCAL --max_threads=1 --max_parsing_threads=1 --session_timezone=UTC --print_pretty_type_names=0 --query "
-        DESCRIBE file('$CORPUS_DIR/$file', $format) SETTINGS describe_compact_output = 1,
-            format_custom_escaping_rule = 'Escaped', format_custom_field_delimiter = ' ', format_custom_row_between_delimiter = ', ',
-            format_custom_row_after_delimiter = '', format_custom_result_after_delimiter = '\n'
-            FORMAT CustomSeparated;
-        SELECT count(), sum(sipHash64(toString(tuple(*)))) FROM file('$CORPUS_DIR/$file', $format);
-    " > "$result.out" 2> "$result.err"
+    $CLICKHOUSE_LOCAL --ignore-error --max_threads=1 --max_parsing_threads=1 --session_timezone=UTC --print_pretty_type_names=0 \
+        --query "$queries" > "$batch" 2>&1
 
-    {
-        echo -ne "$file\t$format"
-        [ -s "$result.out" ] && echo -ne "\t$(tr '\n' '\t' < "$result.out" | sed 's/\t$//')"
-        [ -s "$result.err" ] && echo -ne "\tError: $(error_name "$result.err")"
-        echo
-    } > "$result"
+    # `LC_ALL=C`: the messages may contain binary column names from the fuzzer-generated files.
+    # For every file print the format, the output of the queries and the name of the first error, if any.
+    LC_ALL=C awk -v marker="$MARKER" -v results="$RESULTS_DIR" '
+        function flush()
+        {
+            if (file == "")
+                return;
+            line = file "\t" format;
+            if (num_lines)
+                line = line "\t" output;
+            if (has_error)
+                line = line "\tError: " error;
+            result = file;
+            gsub("/", "_", result);
+            result = results "/" result;
+            print line > result;
+            close(result);
+        }
+        in_error {
+            if (error == "" && match($0, /\([A-Z][A-Z0-9_]+\)$/))
+                error = substr($0, RSTART + 1, RLENGTH - 2);
+            if (index($0, "(query: ") == 1)
+                in_error = 0;
+            next;
+        }
+        $0 == "Received exception:" { in_error = 1; has_error = 1; next; }
+        index($0, marker "\t") == 1 {
+            flush();
+            split($0, fields, "\t");
+            file = fields[2]; format = fields[3];
+            output = ""; num_lines = 0; error = ""; has_error = 0;
+            next;
+        }
+        { output = num_lines ? output "\t" $0 : $0; ++num_lines; }
+        END { flush(); }
+    ' "$batch"
 }
 
-export CORPUS_DIR RESULTS_DIR
-export -f error_name read_file
+MARKER="ARROW_TESTING_CORPUS_FILE"
+export CORPUS_DIR RESULTS_DIR MARKER
+export -f read_files
 
 FILES=""
 for file in $(cd "$CORPUS_DIR" && find data -type f | LC_ALL=C sort)
@@ -81,7 +115,7 @@ do
     [ -n "$format" ] && FILES+="$file $format"$'\n'
 done
 
-echo -n "$FILES" | xargs -P 8 -L1 bash -c 'read_file "$@"' _
+echo -n "$FILES" | xargs -P 8 -L 16 bash -c 'read_files "$@"' _
 
 echo -n "$FILES" | while read -r file _
 do
@@ -110,8 +144,8 @@ $CLICKHOUSE_LOCAL --query "
     SELECT '$file',
         (SELECT count() FROM actual),
         (SELECT count() FROM expected),
-        (SELECT count() FROM (SELECT * FROM actual EXCEPT SELECT * FROM expected)),
-        (SELECT count() FROM (SELECT * FROM expected EXCEPT SELECT * FROM actual));
+        (SELECT count() FROM (SELECT * FROM actual EXCEPT ALL SELECT * FROM expected)),
+        (SELECT count() FROM (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual));
 "
 
 rm -rf "$RESULTS_DIR"
