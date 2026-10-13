@@ -287,7 +287,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     {
         auto index_read_step = std::make_shared<PrewhereExprStep>();
         index_read_step->type = PrewhereExprStep::None;
-        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.columns), actions_settings);
+        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.getNamesAndTypesList()), actions_settings);
         prewhere_actions.steps.emplace_back(std::move(index_read_step));
     }
 
@@ -363,11 +363,16 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// Some rows survived PREWHERE, but individual granules within this batch may
             /// still have been fully filtered out. Record those granules immediately so that
             /// future queries can skip them without waiting for an entire batch to be zero.
-            if (prewhere_info && !res.unmatched_mark_ranges.empty()
+            if (prewhere_info
                 && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                 && !current_task.appliesMutationsBeforePrewhere()
                 && !row_level_filter)
-                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+            {
+                if (!res.unmatched_mark_ranges.empty())
+                    current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+                if (!res.query_condition_cache_attributable_marks.empty())
+                    current_task.addQueryConditionCacheAttributableMarks(res.query_condition_cache_attributable_marks);
+            }
         }
 
         return ChunkAndProgress{
@@ -388,7 +393,11 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
         && !current_task.appliesMutationsBeforePrewhere()
         && !row_level_filter)
+    {
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
+        /// Not `read_mark_ranges`: the steps after the attribution boundary may be what emptied them.
+        current_task.addQueryConditionCacheAttributableMarks(res.query_condition_cache_attributable_marks);
+    }
 
     return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
 }
@@ -479,6 +488,23 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
                     && task->getInfo().data_part_info->getDataPart())
                 {
+                    const auto & data_part_info = task->getInfo().data_part_info;
+                    auto write_to_query_condition_cache = [&](UInt64 condition_hash, const String & condition, const MarkRanges & marks)
+                    {
+                        String part_name = data_part_info->isProjectionPart()
+                            ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+                            : data_part_info->getPartName();
+                        Context::getGlobalContextInstance()->getQueryConditionCache()->write(
+                            /// QueryConditionCache is a coordinator feature; concrete part present here.
+                            data_part_info->getDataPart()->storage.getStorageID().uuid,
+                            part_name,
+                            condition_hash,
+                            condition,
+                            marks,
+                            data_part_info->getIndexGranularity().getMarksCount(),
+                            data_part_info->getIndexGranularity().hasFinalMark());
+                    };
+
                     for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                     {
                         if (output->result_name == prewhere_info->prewhere_column_name)
@@ -504,25 +530,18 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
                             }
 
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            const auto & data_part_info = task->getInfo().data_part_info;
-
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
-                            query_condition_cache->write(
-                                /// QueryConditionCache is a coordinator feature; concrete part present here.
-                                data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
+                            write_to_query_condition_cache(
                                 condition_hash,
                                 prewhere_info->prewhere_actions.getNames()[0],
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
-
+                                task->getPrewhereUnmatchedMarks());
                             break;
                         }
                     }
+
+                    /// An empty write would still create an entry.
+                    const auto & attribution = prewhere_info->query_condition_cache_attribution;
+                    if (attribution && !task->getQueryConditionCacheAttributableMarks().empty())
+                        write_to_query_condition_cache(attribution->key, attribution->condition, task->getQueryConditionCacheAttributableMarks());
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());
