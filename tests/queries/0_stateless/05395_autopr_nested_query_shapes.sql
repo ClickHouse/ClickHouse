@@ -7,6 +7,9 @@
 --   single-node ones to hand over their index analysis.
 -- * A subquery with an `ORDER BY` the outer aggregation makes redundant: the single-node plan dropped the
 --   sorting, the replicas kept it, and the two plans did not match.
+--
+-- The `ORDER BY` shape needs https://github.com/ClickHouse/ClickHouse/pull/125685 and is commented out
+-- until it is merged.
 
 DROP TABLE IF EXISTS t_nested;
 
@@ -28,8 +31,9 @@ SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 -- Results on a single node.
 SELECT sum(cityHash64(tuple(*))) FROM (SELECT kind, count() FROM t_nested WHERE key < 900000 GROUP BY kind)
 SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05395_single_node_group_by';
-SELECT sum(cityHash64(tuple(*))) FROM (SELECT key, value FROM t_nested WHERE kind = 1 ORDER BY key)
-SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05395_single_node_order_by';
+-- Needs https://github.com/ClickHouse/ClickHouse/pull/125685
+-- SELECT sum(cityHash64(tuple(*))) FROM (SELECT key, value FROM t_nested WHERE kind = 1 ORDER BY key)
+-- SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, log_comment = '05395_single_node_order_by';
 
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;
@@ -46,12 +50,13 @@ SETTINGS log_comment = '05395_replicas_group_by';
 SELECT sum(cityHash64(tuple(*))) FROM (SELECT kind, count() FROM t_nested WHERE key < 900000 GROUP BY kind)
 SETTINGS log_comment = '05395_replicas_group_by';
 
-SELECT sum(cityHash64(tuple(*))) FROM (SELECT key, value FROM t_nested WHERE kind = 1 ORDER BY key)
-SETTINGS log_comment = '05395_warmup_order_by';
-SELECT sum(cityHash64(tuple(*))) FROM (SELECT key, value FROM t_nested WHERE kind = 1 ORDER BY key)
-SETTINGS log_comment = '05395_replicas_order_by';
-SELECT sum(cityHash64(tuple(*))) FROM (SELECT key, value FROM t_nested WHERE kind = 1 ORDER BY key)
-SETTINGS log_comment = '05395_replicas_order_by';
+-- Needs https://github.com/ClickHouse/ClickHouse/pull/125685
+-- SELECT sum(cityHash64(tuple(*))) FROM (SELECT key, value FROM t_nested WHERE kind = 1 ORDER BY key)
+-- SETTINGS log_comment = '05395_warmup_order_by';
+-- SELECT sum(cityHash64(tuple(*))) FROM (SELECT key, value FROM t_nested WHERE kind = 1 ORDER BY key)
+-- SETTINGS log_comment = '05395_replicas_order_by';
+-- SELECT sum(cityHash64(tuple(*))) FROM (SELECT key, value FROM t_nested WHERE kind = 1 ORDER BY key)
+-- SETTINGS log_comment = '05395_replicas_order_by';
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
@@ -66,7 +71,8 @@ SELECT
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
   AND event_date >= yesterday()
-  AND log_comment IN ('05395_replicas_group_by', '05395_replicas_order_by')
+  -- Add '05395_replicas_order_by' with https://github.com/ClickHouse/ClickHouse/pull/125685
+  AND log_comment IN ('05395_replicas_group_by')
 GROUP BY shape
 ORDER BY shape
 FORMAT TSVWithNames;

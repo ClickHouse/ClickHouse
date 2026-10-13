@@ -51,6 +51,9 @@ SET use_statistics_cache = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
+-- Only the big table is read in parts; each replica reads the other two whole, which on this data is
+-- about half of what the query reads, at the default limit of what may be read by every replica.
+SET automatic_parallel_replicas_max_duplicated_read_ratio = 1;
 
 -- Baselines planned for a single node.
 SELECT sum(b.v), sum(m.v), sum(s.v) FROM t_order_mid AS m, t_order_small AS s, t_order_big AS b
