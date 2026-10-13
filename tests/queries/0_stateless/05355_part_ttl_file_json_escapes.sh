@@ -58,11 +58,12 @@ attach_broken 'the value is not a string:' "$(part_name 1)"
 attach_broken 'the string is never closed:' "$(part_name 2)"
 attach_broken 'no hex digits after backslash-u:' "$(part_name 3)"
 
-# Every escape the decoder knows, in the order it tries them, then `\q`, which is not an escape and
-# decodes to `q`. `\u0416` is CYRILLIC CAPITAL LETTER ZHE, two bytes in UTF-8. The decoded value is
-# padded with `x` to keep the TTL file at its original size; the padding is not part of the check,
-# only the first 22 bytes are, which is what the escapes above decode to.
-escapes='{"moves":[{"min":1,"max":2,"finished":0,"expression":"A\"B\\C\/D\bE\fF\nG\rH\tI\u0416J\qK'
+# Every escape the decoder knows, in the order it tries them. Only the escapes that JSON documents
+# are used here: an unknown escape is malformed input, for which `base/base/JSON.h` promises no
+# result. `\u0416` is CYRILLIC CAPITAL LETTER ZHE, two bytes in UTF-8. The decoded value is padded
+# with `x` to keep the TTL file at its original size; the padding is not part of the check, only the
+# first 20 bytes are, which is what the escapes above decode to.
+escapes='{"moves":[{"min":1,"max":2,"finished":0,"expression":"A\"B\\C\/D\bE\fF\nG\rH\tI\u0416J'
 closing='"}]}'
 padding=$(( ttl_size - ${#header} - 1 - ${#escapes} - ${#closing} ))
 {
@@ -75,7 +76,7 @@ ${CLICKHOUSE_LOCAL} --path "${workdir}" -m -q "
 SYSTEM STOP MERGES tab;
 ALTER TABLE tab ATTACH PART '$(part_name 4)';
 SELECT 'rows in the table', count() FROM tab;
-SELECT 'decoded escapes', hex(substring(move_ttl_info.expression[1], 1, 22))
+SELECT 'decoded escapes', hex(substring(move_ttl_info.expression[1], 1, 20))
 FROM system.parts WHERE database = currentDatabase() AND table = 'tab' AND active;
 SELECT 'parts left in detached', count() FROM system.detached_parts
 WHERE database = currentDatabase() AND table = 'tab';
