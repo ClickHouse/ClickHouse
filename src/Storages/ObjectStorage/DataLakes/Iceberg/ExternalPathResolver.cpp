@@ -220,11 +220,6 @@ std::pair<std::string, std::string> splitAbfsAuthority(const std::string & autho
     return {authority.substr(0, at_pos), account_name};
 }
 
-void checkRemoteHostIsAllowed(const ContextPtr & context, const std::string & url)
-{
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url));
-}
-
 std::pair<ObjectStoragePtr, std::string> getOrCreateStorage(
     const std::string & cache_key,
     const std::string & key_to_use,
@@ -349,11 +344,12 @@ SchemeAuthorityKey::SchemeAuthorityKey(const std::string & uri)
 #if USE_AVRO
 namespace
 {
+/// Probe mode of `tryResolveObjectStorageForPathImpl`: only the grant is evaluated and no storage is created.
+/// Path restrictions are skipped, because they do not affect grants and are enforced when the storage is resolved.
 struct PathAccessCheck
 {
     DB::AccessType access_type = DB::AccessType::READ;
     bool granted = true;
-    bool openable = true;
 };
 }
 
@@ -371,7 +367,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     auto check_local_path_inside_user_files = [&](const std::string & local_path)
     {
         /// `clickhouse-local` intentionally leaves `user_files_path` unrestricted.
-        if (context->getApplicationType() != Context::ApplicationType::SERVER)
+        if (access_check || context->getApplicationType() != Context::ApplicationType::SERVER)
             return;
 
         const auto target_path = std::filesystem::path(local_path).lexically_normal();
@@ -381,16 +377,11 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         if (user_files_path.empty()
             || !fileOrSymlinkPathStartsWith(target_path.string(), user_files_path.string())
             || !pathStartsWith(target_path.string(), user_files_path.string()))
-        {
-            if (access_check)
-                access_check->openable = false;
-            else
-                throw DB::Exception(
-                    DB::ErrorCodes::PATH_ACCESS_DENIED,
-                    "File URI '{}' is outside of allowed `user_files` path '{}'",
-                    local_path,
-                    user_files_path.string());
-        }
+            throw DB::Exception(
+                DB::ErrorCodes::PATH_ACCESS_DENIED,
+                "File URI '{}' is outside of allowed `user_files` path '{}'",
+                local_path,
+                user_files_path.string());
     };
 
     /// Grants must match the file that is actually opened, so symlinks are resolved; `user_files` keeps its configured spelling.
@@ -426,18 +417,13 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             remote_authority = target_decomposed.authority;
         target_decomposed.authority.clear();
 
-        if (!remote_authority.empty())
-        {
-            if (access_check)
-                access_check->openable = false;
-            else
-                throw DB::Exception(
-                    DB::ErrorCodes::BAD_ARGUMENTS,
-                    "File URI '{}' refers to host '{}', but `file://` paths are always read from the local "
-                    "filesystem. Only an empty authority (`file:///path`) or `localhost` is supported",
-                    path,
-                    remote_authority);
-        }
+        if (!remote_authority.empty() && !access_check)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "File URI '{}' refers to host '{}', but `file://` paths are always read from the local "
+                "filesystem. Only an empty authority (`file:///path`) or `localhost` is supported",
+                path,
+                remote_authority);
 
         check_local_path_inside_user_files(target_decomposed.key);
     }
@@ -448,10 +434,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         if (!source)
         {
             if (access_check)
-            {
-                access_check->openable = false;
                 return;
-            }
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported storage scheme '{}' in path '{}'", target_scheme_normalized, path);
         }
@@ -463,6 +446,12 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         else
             context->getAccess()->checkAccessWithFilter(
                 DB::AccessType::READ, AccessTypeObjects::toStringSource(*source), uri_to_check);
+    };
+
+    auto check_remote_host = [&](const std::string & url)
+    {
+        if (!access_check)
+            context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url));
     };
 
     #if USE_AWS_S3
@@ -575,7 +564,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 endpoint_to_use = make_endpoint_with_bucket();
         }
 
-        checkRemoteHostIsAllowed(context, endpoint_to_use);
+        check_remote_host(endpoint_to_use);
         check_access();
         if (access_check != nullptr)
             return std::nullopt;
@@ -747,10 +736,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     if (type_for_factory.empty())
     {
         if (access_check)
-        {
-            access_check->openable = false;
             return std::nullopt;
-        }
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported storage scheme '{}' in path '{}'", target_scheme_normalized, path);
     }
 
@@ -783,7 +769,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             const std::string target_account = Poco::toLower(account_name);
             const std::string base_account = azureAccountFromServiceUrl(conn_params.getConnectionURL());
 
-            if (!target_account.empty() && !base_account.empty() && target_account != base_account)
+            if (!access_check && !target_account.empty() && !base_account.empty() && target_account != base_account)
                 throw DB::Exception(
                     DB::ErrorCodes::BAD_ARGUMENTS,
                     "Iceberg metadata references Azure storage account '{}', which differs from the table's "
@@ -791,7 +777,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                     "account '{}'.",
                     account_name, base_account, account_name);
 
-            checkRemoteHostIsAllowed(context, conn_params.getConnectionURL());
+            check_remote_host(conn_params.getConnectionURL());
             check_access();
             if (access_check != nullptr)
                 return std::nullopt;
@@ -824,7 +810,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 #endif
 
     if (!target_decomposed.authority.empty())
-        checkRemoteHostIsAllowed(context, target_scheme_normalized + "://" + target_decomposed.authority + "/");
+        check_remote_host(target_scheme_normalized + "://" + target_decomposed.authority + "/");
 
     check_access();
     if (access_check != nullptr)
@@ -901,14 +887,14 @@ bool isPathWriteGranted(
     return checkPathAccess(table_location, path, base_storage, context, DB::AccessType::WRITE).granted;
 }
 
-bool isPathReadable(
+void checkPathReadable(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
+    ExternalStorageCache & external_storages,
     const DB::ContextPtr & context)
 {
-    const auto access_check = checkPathAccess(table_location, path, base_storage, context, DB::AccessType::READ);
-    return access_check.granted && access_check.openable;
+    tryResolveObjectStorageForPath(table_location, path, base_storage, external_storages, context);
 }
 
 std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(

@@ -1433,8 +1433,8 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     const auto summary_total_rows = actual_data_snapshot->getTotalRows();
     const Int32 schema_id = actual_table_state_snapshot.schema_id;
 
-    /// Metadata-only counts must not bypass access or path restrictions enforced by a scan,
-    /// so the data file paths are checked even when the snapshot summary provides the count.
+    /// Metadata-only counts must not bypass the access, path, or credential restrictions enforced by a scan,
+    /// so the storage of each data file is resolved even when the snapshot summary provides the count.
     UInt64 result = 0;
     bool exact = true;
     Iceberg::decodeManifestsInOrder(
@@ -1449,12 +1449,12 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
                 object_storage, persistent_components, local_context, log, manifest_list_entry, schema_id, *external_storages);
 
             for (const auto & processed : manifest_file_ptr.getFilesWithoutDeleted(FileContentType::DATA))
-                if (!isPathReadable(
-                        persistent_components.table_location,
-                        processed->parsed_entry->file_path_key.serialize(),
-                        object_storage,
-                        local_context))
-                    return std::nullopt;
+                checkPathReadable(
+                    persistent_components.table_location,
+                    processed->parsed_entry->file_path_key.serialize(),
+                    object_storage,
+                    *external_storages,
+                    local_context);
 
             if (use_summary)
                 return 0;
@@ -1502,12 +1502,12 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id, *external_storages);
 
         for (const auto & processed : manifest_file_ptr.getFilesWithoutDeleted(FileContentType::DATA))
-            if (!isPathReadable(
-                    persistent_components.table_location,
-                    processed->parsed_entry->file_path_key.serialize(),
-                    object_storage,
-                    local_context))
-                return {};
+            checkPathReadable(
+                persistent_components.table_location,
+                processed->parsed_entry->file_path_key.serialize(),
+                object_storage,
+                *external_storages,
+                local_context);
 
         auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())

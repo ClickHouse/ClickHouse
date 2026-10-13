@@ -201,3 +201,11 @@ def test_external_endpoint_is_rejected_by_remote_host_filter(started_cluster):
     error = instance.query_and_get_error(f"SELECT * FROM icebergS3({args})")
     assert "not allowed in configuration file" in error, error
     assert "not-allowed-host" in error, error
+
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+
+    paths = instance.query(
+        f"SELECT file_path FROM system.iceberg_files "
+        f"WHERE database = 'default' AND table = '{TABLE_NAME}' AND content = 'DATA' ORDER BY file_path").split()
+    assert paths, "The unreadable table was dropped from system.iceberg_files"
+    assert all(p.startswith("http://not-allowed-host:") for p in paths), paths

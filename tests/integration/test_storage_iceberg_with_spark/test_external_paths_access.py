@@ -27,6 +27,10 @@ def test_propagate_credentials_to_other_endpoint(started_cluster_iceberg_with_sp
     error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id")
     assert "not allowed to use the server's own credentials" in error, error
 
+    # The metadata-only count must hit the same credential restriction as the scan.
+    error = instance.query_and_get_error(f"SELECT count() FROM {table_function}")
+    assert "not allowed to use the server's own credentials" in error, error
+
     error = instance.query_and_get_error(
         f"SELECT * FROM {table_function} ORDER BY id "
         f"SETTINGS object_storage_propagate_credentials_to_other_storages = 1")

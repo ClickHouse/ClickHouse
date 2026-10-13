@@ -50,11 +50,13 @@ bool isPathWriteGranted(
     const ObjectStoragePtr & base_storage,
     const ContextPtr & context);
 
-/// Also checks path restrictions, for metadata-only answers that must not bypass a failing scan.
-bool isPathReadable(
+/// Resolves the storage of `path` as a scan does, so a metadata-only answer fails where the scan would:
+/// on a missing grant, a rejected path, or the credential restrictions of a new `S3` client.
+void checkPathReadable(
     const std::string & table_location,
     const std::string & path,
     const ObjectStoragePtr & base_storage,
+    ExternalStorageCache & external_storages,
     const ContextPtr & context);
 
 std::pair<ObjectStoragePtr, std::string> resolveObjectStorageForPath(
