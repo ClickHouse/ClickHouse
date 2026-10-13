@@ -394,7 +394,6 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
 
     pipeline.dropTotalsAndExtremes();
 
-    /// A widened column gets NULLs only from the source: a non-NULL value converts as without the widening.
     std::vector<bool> nulls_from_source_only(query_sample_block.columns(), false);
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.

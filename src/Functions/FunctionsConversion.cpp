@@ -3039,7 +3039,6 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
-    /// With result_nulls_from_source_only, a non-NULL value converts as for the non-Nullable result type.
     auto wrapper = prepareImpl(from_nested_type, to_nested_type, result_is_nullable && !strict_text_conversion && !result_nulls_from_source_only);
 
     if (result_is_nullable)

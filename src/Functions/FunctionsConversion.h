@@ -5816,7 +5816,6 @@ private:
 
     std::optional<CastDiagnostic> diagnostic;
     CastType cast_type;
-    /// A Nullable result holds only the NULLs of the source; other rows convert as for the non-Nullable result type.
     bool nulls_from_source_only;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
