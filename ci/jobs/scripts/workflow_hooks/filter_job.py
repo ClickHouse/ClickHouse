@@ -1,7 +1,7 @@
 import re
 from pathlib import PurePosixPath
 
-from ci.defs.defs import BuildTypes, JobNames
+from ci.defs.defs import ArtifactNames, BuildTypes, JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
@@ -74,6 +74,41 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Stateless tests (amd_binary, flaky check)",
 ]
 
+
+def _is_llvm_coverage_family_job(job_name):
+    """The LLVM coverage family: the coverage build, the `amd_llvm_coverage` test shards and unit
+    tests, the `excluded_from_llvm` jobs that run the tests the shards skip, and the
+    `LLVM Coverage` merge job. The family runs or is skipped as a whole, see `should_skip_job`."""
+    return (
+        "llvm_coverage" in job_name
+        or "excluded_from_llvm" in job_name
+        or job_name == JobNames.LLVM_COVERAGE
+    )
+
+
+# With the `ci-llvm-coverage` label a pull request runs the LLVM coverage family and these jobs
+# only: the style check, the `amd_binary` build that the `excluded_from_llvm` jobs need, and the
+# flaky check of the changed tests on that build. The coverage shards cannot serve as the flaky
+# check: they run without random settings and never fail the pipeline (`functional_tests.py`).
+# Made for pull requests that only add tests and need the coverage report, such as the pull
+# requests of the test-writing agents: `ci-force-all` runs about three times as many machine
+# minutes for them.
+LLVM_COVERAGE_ONLY_JOBS = [
+    JobNames.STYLE_CHECK,
+    f"{JobNames.BUILD} ({BuildTypes.AMD_BINARY})",
+    *[j.name for j in JobConfigs.stateless_tests_flaky_mq_jobs],
+]
+
+assert f"{JobNames.BUILD} ({BuildTypes.AMD_BINARY})" in {
+    j.name for j in JobConfigs.build_jobs
+}, "LLVM_COVERAGE_ONLY_JOBS names a build that does not exist"
+assert all(
+    j.requires == [ArtifactNames.CH_AMD_BINARY]
+    for j in JobConfigs.functional_test_excluded_from_llvm_job
+    + JobConfigs.integration_test_excluded_from_llvm_job
+    + JobConfigs.stateless_tests_flaky_mq_jobs
+), "LLVM_COVERAGE_ONLY_JOBS keeps the amd_binary build for jobs that no longer need it"
+
 # Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
 KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
 
@@ -136,7 +171,8 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     # Narrows the `arm_binary` replacement jobs down to the batches containing a changed test.
     "ci/jobs/scripts/find_tests.py",
-    # Defines the `ci-coverage` label that switches between the coverage jobs and their replacements.
+    # Defines the `ci-coverage` and `ci-llvm-coverage` labels that switch between the coverage jobs
+    # and their replacements.
     "ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
     # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
     # are continuous-mode kill-safe.
@@ -184,9 +220,12 @@ def _has_llvm_coverage_only_changes(changed_files):
 
 def _llvm_coverage_requested():
     """True if a pull request runs the LLVM coverage jobs instead of their `arm_binary`
-    replacements: it has the `ci-coverage` label or changes the coverage-only code."""
-    return Labels.CI_COVERAGE in _info_cache.pr_labels or _has_llvm_coverage_only_changes(
-        _info_cache.get_changed_files() or []
+    replacements: it has the `ci-coverage` or `ci-llvm-coverage` label or changes the
+    coverage-only code."""
+    return (
+        Labels.CI_COVERAGE in _info_cache.pr_labels
+        or Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels
+        or _has_llvm_coverage_only_changes(_info_cache.get_changed_files() or [])
     )
 
 
@@ -581,6 +620,9 @@ _PIPELINE_NOTES = {
     Labels.CI_COVERAGE: (
         "Label `ci-coverage` (or a change of the coverage code) runs the LLVM coverage jobs and the `LLVM Coverage` merge job."
     ),
+    Labels.CI_LLVM_COVERAGE: (
+        "Label `ci-llvm-coverage` runs the LLVM coverage jobs, the `LLVM Coverage` merge job and the `amd_binary` flaky check only."
+    ),
 }
 
 
@@ -843,29 +885,45 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
+    # The coverage family and `LLVM_COVERAGE_ONLY_JOBS` only. The family jobs go on to the family
+    # rule below, which runs them (`_llvm_coverage_requested`), and the flaky check to its own rule,
+    # which skips it when the pull request changes no test.
+    if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels and not (
+        _is_llvm_coverage_family_job(job_name) or job_name in LLVM_COVERAGE_ONLY_JOBS
+    ):
+        _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_LLVM_COVERAGE}' - run the LLVM coverage jobs only",
+        )
+
     # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
     # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
     #
-    # Pull requests run the family only with the `ci-coverage` label; by default they run the same
-    # test configurations on the `arm_binary` build instead (`COVERAGE_REPLACEMENT_JOBS`), which
-    # finds the same failures several times cheaper. Outside pull requests (pr_number gate) the family is
-    # never skipped here: master does not run it, it runs in the scheduled coverage workflow.
-    if (
-        "llvm_coverage" in job_name
-        or "excluded_from_llvm" in job_name
-        or job_name == JobNames.LLVM_COVERAGE
-    ):
+    # Pull requests run the family only with the `ci-coverage` or `ci-llvm-coverage` label; by
+    # default they run the same test configurations on the `arm_binary` build instead
+    # (`COVERAGE_REPLACEMENT_JOBS`), which finds the same failures several times cheaper. Outside
+    # pull requests (pr_number gate) the family is never skipped here: master does not run it, it
+    # runs in the scheduled coverage workflow.
+    if _is_llvm_coverage_family_job(job_name):
         if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
             _add_pipeline_note(Labels.CI_NO_COVERAGE)
             return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
         if _info_cache.pr_number > 0:
             if not _llvm_coverage_requested():
-                return True, f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' label or when changing the coverage code"
-            _add_pipeline_note(Labels.CI_COVERAGE)
+                return (
+                    True,
+                    f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' "
+                    f"or '{Labels.CI_LLVM_COVERAGE}' label or when changing the coverage code",
+                )
+            if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels:
+                _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
+            else:
+                _add_pipeline_note(Labels.CI_COVERAGE)
 
-    # With `ci-coverage` (or changed coverage code) the coverage jobs run these configurations
-    # themselves. `ci-no-coverage` wins over `ci-coverage` for the coverage jobs, so with both labels
-    # the replacement jobs still run.
+    # With `ci-coverage` or `ci-llvm-coverage` (or changed coverage code) the coverage jobs run these
+    # configurations themselves. `ci-no-coverage` wins over both for the coverage jobs, so with both
+    # labels the replacement jobs still run.
     if (
         job_name in COVERAGE_REPLACEMENT_JOBS
         and _info_cache.pr_number > 0

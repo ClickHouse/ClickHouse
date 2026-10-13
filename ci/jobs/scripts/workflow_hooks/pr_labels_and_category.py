@@ -94,6 +94,8 @@ class Labels:
     CI_NO_COVERAGE = "ci-no-coverage"
     # Pull requests run the LLVM coverage jobs only with this label.
     CI_COVERAGE = "ci-coverage"
+    # Runs the LLVM coverage jobs and nothing else, see `LLVM_COVERAGE_ONLY_JOBS` in `filter_job.py`.
+    CI_LLVM_COVERAGE = "ci-llvm-coverage"
 
     # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"
