@@ -4,6 +4,7 @@
 #include <optional>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <base/PackedStringRef.h>
@@ -31,6 +32,11 @@ namespace DB
 /// numeric key used as an argument shares its key bytes instead of occupying another field.
 struct AdaptiveArgumentLayout
 {
+    /// The producers stage the normalized argument columns (`LowCardinality` removed, constant, sparse and replicated
+    /// columns materialized), so the layout follows the types without `LowCardinality`.
+    static std::unique_ptr<const AdaptiveArgumentLayout>
+    build(const Block & header, const ColumnNumbers & keys_positions, const ColumnNumbersList & aggregates_positions);
+
     struct FixedField
     {
         size_t position;
@@ -53,11 +59,6 @@ struct AdaptiveArgumentLayout
     /// One past the highest argument position, the size of the column vectors the positions index.
     size_t num_positions = 0;
 };
-
-/// See `AdaptiveArgumentLayout`. The producers stage the normalized argument columns (`LowCardinality` removed,
-/// constant, sparse and replicated columns materialized), so the layout follows the types without `LowCardinality`.
-std::unique_ptr<const AdaptiveArgumentLayout>
-buildAdaptiveArgumentLayout(const Block & header, const ColumnNumbers & keys_positions, const ColumnNumbersList & aggregates_positions);
 
 /// String-like keys stage their bytes: a packed reference copied as a plain value would
 /// carry a pointer into the source block, which is released once the block is consumed. The
@@ -124,19 +125,28 @@ inline void ALWAYS_INLINE zeroStagedRecordPadding(char * fields_end)
     unalignedStore<UInt32>(fields_end, 0);
 }
 
+/// Every format offers the readers the same interface: `bytes(record)`, the size of the record; `key(record)`, the
+/// position and the size of its key; and `hash(table, record)`, the routing hash of its key, which `table` hashes as
+/// the producer's table did. A format of argument records also names the offsets of the key and of the fixed-size
+/// arguments, `key_offset` and `fixed_arguments_offset`. The key formats are empty types, and the argument formats
+/// carry the size of the query's fixed-size argument area.
+
 /// Count and key-only records: {[UInt64 hash,] [UInt32 count,] [UInt32 size,] key}. The count is
 /// a contribution within one block, which a UInt32 holds. A key whose width varies is staged with
 /// the hash and its UInt32 size; a fixed-width key has the compile-time width, so its records
 /// have a fixed stride, and carries no hash.
-template <typename Key, bool with_count>
+template <typename Key, bool with_count_>
 struct StagedKeyRecord
 {
+    static constexpr bool with_count = with_count_;
+    static constexpr bool with_arguments = false;
     static constexpr bool variable_width = adaptive_key_stages_bytes<Key>;
     static constexpr size_t count_offset = variable_width ? sizeof(UInt64) : 0;
     static constexpr size_t size_offset = count_offset + (with_count ? sizeof(UInt32) : 0);
     static constexpr size_t key_offset = size_offset + (variable_width ? sizeof(UInt32) : 0);
 
-    static size_t bytes(size_t key_size) { return alignStagedRecord(key_offset + key_size); }
+    /// The size of the record of a key of `key_size` bytes.
+    static size_t bytesForKey(size_t key_size) { return alignStagedRecord(key_offset + key_size); }
 
     static void writeHeader(char * record, [[maybe_unused]] UInt64 routing_hash, UInt32 count, [[maybe_unused]] size_t key_size)
     {
@@ -149,7 +159,10 @@ struct StagedKeyRecord
             unalignedStore<UInt32>(record + count_offset, count);
     }
 
-    /// The routing hash of the record's key, which `table` hashes as the producer's table did.
+    static size_t bytes(const char * record) { return bytesForKey(keySize(record)); }
+
+    static std::pair<const char *, size_t> key(const char * record) { return {record + key_offset, keySize(record)}; }
+
     template <typename Table>
     static UInt64 hash([[maybe_unused]] const Table & table, const char * record)
     {
@@ -161,6 +174,7 @@ struct StagedKeyRecord
 
     static UInt32 count(const char * record) { return unalignedLoad<UInt32>(record + count_offset); }
 
+private:
     static size_t keySize(const char * record)
     {
         if constexpr (variable_width)
@@ -175,14 +189,25 @@ struct StagedKeyRecord
 template <typename Key>
 struct StagedFixedArgumentRecord
 {
+    static constexpr bool with_count = false;
+    static constexpr bool with_arguments = true;
     static constexpr size_t key_offset = 0;
-    static constexpr size_t arguments_offset = key_offset + sizeof(Key);
+    static constexpr size_t fixed_arguments_offset = key_offset + sizeof(Key);
 
-    static size_t bytes(size_t fixed_argument_bytes) { return arguments_offset + fixed_argument_bytes; }
+    explicit StagedFixedArgumentRecord(const AdaptiveArgumentLayout & layout)
+        : stride(fixed_arguments_offset + layout.fixed_bytes)
+    {
+    }
 
-    /// The routing hash of the record's key, which `table` hashes as the producer's table did.
+    size_t bytes(const char *) const { return stride; }
+
+    static std::pair<const char *, size_t> key(const char * record) { return {record + key_offset, sizeof(Key)}; }
+
     template <typename Table>
     static UInt64 hash(const Table & table, const char * record) { return table.hash(unalignedLoad<Key>(record + key_offset)); }
+
+    /// The size of every record of the query.
+    const size_t stride;
 };
 
 /// General records otherwise: {UInt64 hash, UInt32 size, UInt32 key size, fixed-size arguments, key,
@@ -190,7 +215,14 @@ struct StagedFixedArgumentRecord
 /// whole padded record.
 struct StagedArgumentRecord
 {
-    static constexpr size_t header_bytes = 16;
+    static constexpr bool with_count = false;
+    static constexpr bool with_arguments = true;
+    static constexpr size_t fixed_arguments_offset = 16;
+
+    explicit StagedArgumentRecord(const AdaptiveArgumentLayout & layout)
+        : key_offset(fixed_arguments_offset + layout.fixed_bytes)
+    {
+    }
 
     static void writeHeader(char * record, UInt64 routing_hash, size_t bytes, size_t key_size)
     {
@@ -199,10 +231,35 @@ struct StagedArgumentRecord
         unalignedStore<UInt32>(record + 12, static_cast<UInt32>(key_size));
     }
 
-    static UInt64 hash(const char * record) { return unalignedLoad<UInt64>(record); }
     static size_t bytes(const char * record) { return unalignedLoad<UInt32>(record + 8); }
-    static size_t keySize(const char * record) { return unalignedLoad<UInt32>(record + 12); }
-    static size_t keyOffset(size_t fixed_argument_bytes) { return header_bytes + fixed_argument_bytes; }
+
+    std::pair<const char *, size_t> key(const char * record) const { return {record + key_offset, unalignedLoad<UInt32>(record + 12)}; }
+
+    template <typename Table>
+    static UInt64 hash(const Table &, const char * record) { return unalignedLoad<UInt64>(record); }
+
+    /// The key follows the fixed-size arguments, whose area has one size for the query.
+    const size_t key_offset;
 };
+
+/// Calls `f` with the format of the records that `Key` and the layout produce: count records for an aggregation by a
+/// lone `count`, key-only records for one without aggregate functions, which has no layout, and argument records
+/// otherwise, of a fixed stride when the key has a fixed width and every argument a fixed size. The writer and every
+/// reader of the records dispatch through it, so they agree on the format. It is inlined with `f` into the caller, so
+/// the caller's loops keep their state in registers.
+template <typename Key, typename F>
+ALWAYS_INLINE decltype(auto) visitStagedRecordFormat(const AdaptiveArgumentLayout * layout, bool is_simple_count, F && f)
+{
+    if (is_simple_count)
+        return f(StagedKeyRecord<Key, /*with_count_=*/true>{});
+    if (!layout)
+        return f(StagedKeyRecord<Key, /*with_count_=*/false>{});
+    if constexpr (!adaptive_key_stages_bytes<Key>)
+    {
+        if (layout->variable_fields.empty())
+            return f(StagedFixedArgumentRecord<Key>(*layout));
+    }
+    return f(StagedArgumentRecord(*layout));
+}
 
 }

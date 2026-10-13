@@ -896,7 +896,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
-        adaptive_argument_layout = buildAdaptiveArgumentLayout(header_, keys_positions, aggregates_positions);
+        adaptive_argument_layout = AdaptiveArgumentLayout::build(header_, keys_positions, aggregates_positions);
         /// Distinct tuples of the arguments describe one set-valued aggregate. Multiple independent sets
         /// can have different reduction factors, so they cannot share this estimate. The fixed states of
         /// the other aggregates are covered by the per-key state cost.

@@ -165,8 +165,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         if (!found)
         {
             stage_miss(key, hash, row_begin);
-            appendDelayedRecords<RecordKey>(
-                columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false, /*key_row_override=*/0);
+            appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool, /*key_row_override=*/0);
         }
         if (frozen.recordLocalProbeResults(found ? row_end - row_begin : 0, row_end - row_begin))
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationProbeBypasses);
@@ -192,8 +191,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     if (frozen.recordLocalProbeResults(hits, row_end - row_begin))
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationProbeBypasses);
 
-    appendDelayedRecords<RecordKey>(
-        columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
+    appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool);
 }
 
 template <typename LocalMethod, typename SharedMethod>
@@ -279,8 +277,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
                     recordStagedKey<RecordKey>(adaptive, key);
                 }
             }
-            appendDelayedRecords<RecordKey>(
-                columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/is_simple_count, /*key_row_override=*/0);
+            appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool, /*key_row_override=*/0);
         }
         record_local_probes(found ? row_end - row_begin : 0, row_end - row_begin);
         keyHolderDiscardKey(key_holder);
@@ -442,7 +439,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             hits = collect_count_misses.template operator()<false>(row_begin).hits;
         }
         record_local_probes(hits, row_end - row_begin);
-        appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/true);
+        appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool);
         return;
     }
 
@@ -486,7 +483,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     {
         const size_t hits = probe_rows.template operator()<false>(nullptr);
         record_local_probes(hits, row_end - row_begin);
-        appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
+        appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool);
         return;
     }
 
@@ -501,7 +498,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
     const size_t hits = probe_rows.template operator()<true>(places.get());
     record_local_probes(hits, row_end - row_begin);
-    appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
+    appendDelayedRecords<RecordKey>(columns, adaptive, local_find_state, scratch_pool);
 
     /// With no local hits every place is null and the batch pass would only skip rows; the
     /// staged records carry the block's whole contribution.
@@ -525,7 +522,6 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     AdaptiveAggregationProducer & adaptive,
     State & local_find_state,
     Arena & scratch_pool,
-    bool counts_only,
     std::optional<UInt32> key_row_override) const
 {
     const size_t total = adaptive.miss_hashes.size();
@@ -572,38 +568,28 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     size_t key_bytes = 0;
     size_t variable_argument_bytes = 0;
 
-    const auto append_key_records = [&]<bool with_count>()
+    const auto append_key_records = [&]<typename Record>(Record) ALWAYS_INLINE
     {
-        using Record = StagedKeyRecord<RecordKey, with_count>;
         for (size_t i = 0; i < total; ++i)
         {
             prefetch_append(i);
             const UInt64 hash = hashes[i];
             const size_t partition = layout.partitionOf(hash);
             const size_t key_size = key_size_of(i);
-            char * record = partitions.append(partition, Record::bytes(key_size));
-            Record::writeHeader(record, hash, with_count ? adaptive.miss_multiplicities[i] : 0, key_size);
+            char * record = partitions.append(partition, Record::bytesForKey(key_size));
+            Record::writeHeader(record, hash, Record::with_count ? adaptive.miss_multiplicities[i] : 0, key_size);
             write_key(i, key_size, record + Record::key_offset);
             zeroStagedRecordPadding(record + Record::key_offset + key_size);
             key_bytes += key_size;
         }
     };
 
-    if (counts_only)
-    {
-        append_key_records.template operator()<true>();
-    }
-    else if (!params.aggregates_size)
-    {
-        append_key_records.template operator()<false>();
-    }
-    else
+    const auto append_argument_records = [&]<typename Record>(Record format) ALWAYS_INLINE
     {
         const auto & argument_layout = *adaptive_argument_layout;
-        const size_t fixed_argument_bytes = argument_layout.fixed_bytes;
 
         /// The arguments are staged in the form the drain rebuilds and the instructions consume: the representation
-        /// wrappers stripped recursively, then `LowCardinality` (see `buildAdaptiveArgumentLayout`).
+        /// wrappers stripped recursively, then `LowCardinality` (see `AdaptiveArgumentLayout::build`).
         Columns arguments(argument_layout.num_positions);
         const auto normalize_argument = [&](size_t position) -> const IColumn &
         {
@@ -619,10 +605,6 @@ void NO_INLINE Aggregator::appendDelayedRecords(
         for (const auto & field : argument_layout.variable_fields)
             variable_sources.push_back(&normalize_argument(field.position));
 
-        bool fixed_stride = false;
-        if constexpr (!adaptive_key_stages_bytes<RecordKey>)
-            fixed_stride = variable_sources.empty();
-
         /// A value whose serialized size cannot be computed in advance is serialized into a scratch arena first and
         /// copied from there. The values of one row form one contiguous range, which is rolled back once the record is
         /// written, so the scratch copies do not accumulate until the spill check. The arena is separate from
@@ -635,17 +617,15 @@ void NO_INLINE Aggregator::appendDelayedRecords(
         for (size_t batch_begin = 0; batch_begin < total; batch_begin += argument_rows.size())
         {
             const size_t batch_end = std::min(total, batch_begin + argument_rows.size());
-            if (fixed_stride)
+            if constexpr (!std::is_same_v<Record, StagedArgumentRecord>)
             {
-                using Record = StagedFixedArgumentRecord<RecordKey>;
-                const size_t bytes = Record::bytes(fixed_argument_bytes);
                 for (size_t i = batch_begin; i < batch_end; ++i)
                 {
                     prefetch_append(i);
                     const size_t partition = layout.partitionOf(hashes[i]);
-                    char * record = partitions.append(partition, bytes);
+                    char * record = partitions.append(partition, format.stride);
                     write_key(i, sizeof(RecordKey), record + Record::key_offset);
-                    argument_rows[i - batch_begin] = record + Record::arguments_offset;
+                    argument_rows[i - batch_begin] = record + Record::fixed_arguments_offset;
                 }
                 key_bytes += (batch_end - batch_begin) * sizeof(RecordKey);
             }
@@ -683,17 +663,14 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                         }
                     }
 
-                    const size_t key_offset = StagedArgumentRecord::keyOffset(fixed_argument_bytes);
-                    const size_t bytes = alignStagedRecord(key_offset + key_size + variable_bytes);
+                    const size_t bytes = alignStagedRecord(format.key_offset + key_size + variable_bytes);
                     char * record = partitions.append(partition, bytes);
-                    StagedArgumentRecord::writeHeader(record, hash, bytes, key_size);
-
-                    char * fixed = record + StagedArgumentRecord::header_bytes;
-                    argument_rows[i - batch_begin] = fixed;
+                    Record::writeHeader(record, hash, bytes, key_size);
+                    argument_rows[i - batch_begin] = record + Record::fixed_arguments_offset;
 
                     /// The key goes before the variable-size arguments, which overwrite whatever its copy
                     /// scribbled past it.
-                    char * key = record + key_offset;
+                    char * key = record + format.key_offset;
                     write_key(i, key_size, key);
 
                     char * variable = key + key_size;
@@ -726,7 +703,15 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                     {argument_rows.data(), batch_rows},
                     field.offset);
         }
-    }
+    };
+
+    visitStagedRecordFormat<RecordKey>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
+    {
+        if constexpr (Record::with_arguments)
+            append_argument_records(format);
+        else
+            append_key_records(format);
+    });
 
     /// The rows behind the records go to the count bins of the top-K pruning: a count record carries
     /// its combined multiplicity.
@@ -734,7 +719,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     {
         UInt16 * bins = adaptive.count_bins.get();
         for (size_t i = 0; i < total; ++i)
-            addToCountBin(bins[adaptiveCountBin(hashes[i])], counts_only ? adaptive.miss_multiplicities[i] : 1);
+            addToCountBin(bins[adaptiveCountBin(hashes[i])], is_simple_count ? adaptive.miss_multiplicities[i] : 1);
     }
 
     adaptive.total_staged_records += total;
@@ -770,7 +755,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     if (params.adaptiveMayThaw())
     {
         chassert(!adaptive_state_bytes_per_distinct_input || adaptive_distinct_input_aggregate < aggregates_positions.size());
-        size_t batch_bytes = key_bytes + (counts_only ? total * sizeof(UInt32) : variable_argument_bytes);
+        size_t batch_bytes = key_bytes + (is_simple_count ? total * sizeof(UInt32) : variable_argument_bytes);
         batch_bytes += total * (sizeof(UInt64) + (adaptive_key_stages_bytes<RecordKey> ? sizeof(UInt64) : 0));
 
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);

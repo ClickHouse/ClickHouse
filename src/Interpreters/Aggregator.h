@@ -931,17 +931,17 @@ private:
         AdaptiveAggregationProducer & adaptive,
         bool all_keys_are_const) const;
 
-    /// Appends the current block's misses to the producer's partitions. Each record carries a key and either
-    /// a run length (`counts_only`), no payload (no aggregates), or the row's aggregate arguments laid out by
-    /// `adaptive_argument_layout`. Variable-size records also carry a hash and lengths; fixed-size records
-    /// recover the hash from the key when drained. Folds the batch into the thaw sampler.
+    /// Appends the current block's misses to the producer's partitions in the format `visitStagedRecordFormat`
+    /// selects. Each record carries a key and either a run length (an aggregation by a lone `count`), no payload (no
+    /// aggregates), or the row's aggregate arguments laid out by `adaptive_argument_layout`. Variable-size records
+    /// also carry a hash and lengths; fixed-size records recover the hash from the key when drained. Folds the batch
+    /// into the thaw sampler.
     template <typename RecordKey, typename State>
     void appendDelayedRecords(
         const Columns & columns,
         AdaptiveAggregationProducer & adaptive,
         State & local_find_state,
         Arena & scratch_pool,
-        bool counts_only,
         std::optional<UInt32> key_row_override = std::nullopt) const;
 
     template <typename Method>
@@ -973,6 +973,17 @@ private:
         PaddedPODArray<AggregateDataPtr> & places,
         RowStorePointers & records,
         const OnCount & on_count = nullptr) const;
+
+    /// Rebuilds the aggregate arguments of drained argument records into dense columns and applies them to the places
+    /// of their groups, as the batch executor applies a block. `key_offset` and `fixed_arguments_offset` locate the key
+    /// and the fixed-size arguments in the records' format (see `visitStagedRecordFormat`).
+    void executeStagedArgumentRecords(
+        Arena * arena,
+        PaddedPODArray<AggregateDataPtr> & places,
+        const RowStorePointers & records,
+        size_t key_offset,
+        size_t fixed_arguments_offset,
+        bool use_compiled_functions) const;
 
     /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the producer's
     /// top-K bins. Both statistics visit the same cells before the producer hands its table to the merge.

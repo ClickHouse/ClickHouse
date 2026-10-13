@@ -8,11 +8,8 @@
 namespace DB
 {
 
-/// See `AdaptiveArgumentLayout`. The producers stage the normalized argument columns (`LowCardinality` removed,
-/// constant, sparse and replicated columns materialized), so the layout follows the types without `LowCardinality`.
 std::unique_ptr<const AdaptiveArgumentLayout>
-buildAdaptiveArgumentLayout(
-    const Block & header, const ColumnNumbers & keys_positions, const ColumnNumbersList & aggregates_positions)
+AdaptiveArgumentLayout::build(const Block & header, const ColumnNumbers & keys_positions, const ColumnNumbersList & aggregates_positions)
 {
     auto layout = std::make_unique<AdaptiveArgumentLayout>();
     std::vector<UInt8> staged;

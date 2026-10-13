@@ -83,37 +83,27 @@ namespace
             table.prefetch(std::string_view(key_pos, key_size), routing_hash);
     }
 
-    /// Calls `callback(record, bytes, hash)` for every general record of `ranges`, in the record shape the producers
-    /// chose for `Key` and the argument layout (see `Aggregator::appendDelayedRecords`), with the routing hash of its
-    /// key as `table` hashes it.
+    /// Calls `callback(record, bytes, hash)` for every general record of `ranges`, in the format the producers wrote for
+    /// `Key` and the argument layout, with the routing hash of its key as `table` hashes it.
     template <typename Key, typename Table, typename Callback>
     void forEachArgumentRecord(
         const Table & table, const DB::AdaptiveArgumentLayout & argument_layout, const DB::AdaptiveRecordRanges & ranges, Callback && callback)
     {
-        bool fixed_stride = false;
-        if constexpr (!adaptive_key_stages_bytes<Key>)
-            fixed_stride = argument_layout.variable_fields.empty();
-
-        if (fixed_stride)
-        {
-            using Record = StagedFixedArgumentRecord<Key>;
-            const size_t bytes = Record::bytes(argument_layout.fixed_bytes);
-            for (const auto & range : ranges)
-                for (const char * record = range.data(); record < range.data() + range.size(); record += bytes)
-                    callback(record, bytes, Record::hash(table, record));
-        }
-        else
-        {
-            for (const auto & range : ranges)
+        DB::visitStagedRecordFormat<Key>(
+            &argument_layout,
+            /*is_simple_count=*/false,
+            [&](auto format) ALWAYS_INLINE
             {
-                for (const char * record = range.data(); record < range.data() + range.size();)
+                for (const auto & range : ranges)
                 {
-                    const size_t bytes = StagedArgumentRecord::bytes(record);
-                    callback(record, bytes, StagedArgumentRecord::hash(record));
-                    record += bytes;
+                    for (const char * record = range.data(); record < range.data() + range.size();)
+                    {
+                        const size_t bytes = format.bytes(record);
+                        callback(record, bytes, format.hash(table, record));
+                        record += bytes;
+                    }
                 }
-            }
-        }
+            });
     }
 
     /// Visits every cell of a map table with its key as the table stores it, its mapped value and its hash: from the
@@ -381,8 +371,8 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     size_t drained = 0;
     size_t skipped = 0;
     /// The callers' lambdas run once per record, so all of them are inlined into the walk. `apply` receives the record
-    /// with the routing hash of its key, which `hash_of` reads from the record or recomputes from its key.
-    const auto walk = [&](auto record_bytes, auto key_of, auto hash_of, auto apply) ALWAYS_INLINE
+    /// with the routing hash of its key, which the format reads from the record or recomputes from its key.
+    const auto walk = [&](auto format, auto apply) ALWAYS_INLINE
     {
         const auto walk_ranges = [&]<bool with_prefetch, bool filtered>() ALWAYS_INLINE
         {
@@ -421,13 +411,13 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                             __builtin_prefetch(next, /*rw=*/0, /*locality=*/2);
                     }
                 }
-                const UInt64 hash = hash_of(ahead);
+                const UInt64 hash = format.hash(table, ahead);
                 if (takes(hash))
                 {
-                    const auto [key_pos, key_size] = key_of(ahead);
+                    const auto [key_pos, key_size] = format.key(ahead);
                     prefetchStagedKey<Key>(table, key_pos, key_size, hash);
                 }
-                ahead += record_bytes(ahead);
+                ahead += format.bytes(ahead);
             };
             if constexpr (with_prefetch)
                 for (size_t i = 0; i < adaptive_drain_prefetch_look_ahead; ++i)
@@ -441,7 +431,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     if constexpr (with_prefetch)
                         prefetch_next();
-                    const UInt64 hash = hash_of(record);
+                    const UInt64 hash = format.hash(table, record);
                     if (takes(hash))
                     {
                         apply(record, hash);
@@ -451,7 +441,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                     {
                         ++skipped;
                     }
-                    record += record_bytes(record);
+                    record += format.bytes(record);
                 }
             }
         };
@@ -468,233 +458,192 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
             walk_filtered_or_not.template operator()<false>();
     };
 
-    if (is_simple_count)
+    visitStagedRecordFormat<Key>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
     {
-        using Record = StagedKeyRecord<Key, true>;
-        walk(
-            [](const char * record) ALWAYS_INLINE { return Record::bytes(Record::keySize(record)); },
-            [](const char * record) ALWAYS_INLINE { return std::pair{record + Record::key_offset, Record::keySize(record)}; },
-            [&](const char * record) ALWAYS_INLINE { return Record::hash(table, record); },
-            [&](const char * record, UInt64 hash) ALWAYS_INLINE
-            {
-                typename Table::LookupResult it;
-                bool inserted = false;
-                emplaceStagedKey<Key>(table, record + Record::key_offset, Record::keySize(record), hash, it, inserted);
-                if constexpr (MapAggregationMethod<Method>)
+        if constexpr (Record::with_count)
+        {
+            walk(
+                format,
+                [&](const char * record, UInt64 hash) ALWAYS_INLINE
                 {
-                    if (inserted)
-                        getInlineCountState(it->getMapped()) = Record::count(record);
-                    else
-                        getInlineCountState(it->getMapped()) += Record::count(record);
-                }
-            });
-    }
-    else if (!params.aggregates_size)
-    {
-        /// A map method without aggregate functions still gives a new key a place, of no size.
-        using Record = StagedKeyRecord<Key, false>;
-        walk(
-            [](const char * record) ALWAYS_INLINE { return Record::bytes(Record::keySize(record)); },
-            [](const char * record) ALWAYS_INLINE { return std::pair{record + Record::key_offset, Record::keySize(record)}; },
-            [&](const char * record) ALWAYS_INLINE { return Record::hash(table, record); },
-            [&](const char * record, UInt64 hash) ALWAYS_INLINE
-            {
-                typename Table::LookupResult it;
-                bool inserted = false;
-                emplaceStagedKey<Key>(table, record + Record::key_offset, Record::keySize(record), hash, it, inserted);
-                if constexpr (MapAggregationMethod<Method>)
-                {
-                    if (inserted)
+                    typename Table::LookupResult it;
+                    bool inserted = false;
+                    const auto [key_pos, key_size] = format.key(record);
+                    emplaceStagedKey<Key>(table, key_pos, key_size, hash, it, inserted);
+                    if constexpr (MapAggregationMethod<Method>)
                     {
-                        it->getMapped() = nullptr;
-                        AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                        createAggregateStates(place);
-                        it->getMapped() = place;
+                        if (inserted)
+                            getInlineCountState(it->getMapped()) = Record::count(record);
+                        else
+                            getInlineCountState(it->getMapped()) += Record::count(record);
                     }
-                }
-            });
-    }
-    else if constexpr (MapAggregationMethod<Method>)
-    {
-        const auto & argument_layout = *adaptive_argument_layout;
-
-        /// The same record shapes the producers chose (see `appendDelayedRecords`).
-        bool fixed_stride = false;
-        if constexpr (!adaptive_key_stages_bytes<Key>)
-            fixed_stride = argument_layout.variable_fields.empty();
-
-        const auto key_of = [&](const char * record) ALWAYS_INLINE
+                });
+        }
+        else if constexpr (!Record::with_arguments)
         {
-            return std::pair{
-                record + StagedArgumentRecord::keyOffset(argument_layout.fixed_bytes), StagedArgumentRecord::keySize(record)};
-        };
-
-        if constexpr (count_only)
+            /// A map method without aggregate functions still gives a new key a place, of no size.
+            walk(
+                format,
+                [&](const char * record, UInt64 hash) ALWAYS_INLINE
+                {
+                    typename Table::LookupResult it;
+                    bool inserted = false;
+                    const auto [key_pos, key_size] = format.key(record);
+                    emplaceStagedKey<Key>(table, key_pos, key_size, hash, it, inserted);
+                    if constexpr (MapAggregationMethod<Method>)
+                    {
+                        if (inserted)
+                        {
+                            it->getMapped() = nullptr;
+                            AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                            createAggregateStates(place);
+                            it->getMapped() = place;
+                        }
+                    }
+                });
+        }
+        else if constexpr (MapAggregationMethod<Method>)
         {
-            const auto count = [&](const char * key_pos, size_t key_size, UInt64 hash) ALWAYS_INLINE
+            if constexpr (count_only)
             {
-                typename Table::LookupResult it;
-                bool inserted = false;
-                const Key key = readStagedKey<Key>(key_pos, key_size, hash);
-                table.emplace(key, it, inserted, hash);
-                UInt64 & group_count = getInlineCountState(it->getMapped());
-                if (inserted)
-                    group_count = 1;
-                else
-                    ++group_count;
-                on_count(group_count, key, hash);
-            };
-            if (fixed_stride)
-            {
-                using Record = StagedFixedArgumentRecord<Key>;
-                const size_t bytes = Record::bytes(argument_layout.fixed_bytes);
                 walk(
-                    [bytes](const char *) ALWAYS_INLINE { return bytes; },
-                    [](const char * record) ALWAYS_INLINE { return std::pair{record + Record::key_offset, sizeof(Key)}; },
-                    [&](const char * record) ALWAYS_INLINE { return Record::hash(table, record); },
-                    [&](const char * record, UInt64 hash) ALWAYS_INLINE { count(record + Record::key_offset, sizeof(Key), hash); });
+                    format,
+                    [&](const char * record, UInt64 hash) ALWAYS_INLINE
+                    {
+                        typename Table::LookupResult it;
+                        bool inserted = false;
+                        const auto [key_pos, key_size] = format.key(record);
+                        const Key key = readStagedKey<Key>(key_pos, key_size, hash);
+                        table.emplace(key, it, inserted, hash);
+                        UInt64 & group_count = getInlineCountState(it->getMapped());
+                        if (inserted)
+                            group_count = 1;
+                        else
+                            ++group_count;
+                        on_count(group_count, key, hash);
+                    });
             }
             else
             {
-                walk(
-                    [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::bytes(record); },
-                    key_of,
-                    [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::hash(record); },
-                    [&](const char * record, UInt64 hash) ALWAYS_INLINE
-                    {
-                        const auto [key_pos, key_size] = key_of(record);
-                        count(key_pos, key_size, hash);
-                    });
-            }
-            /// The records were counted, not drained into states.
-            return skipped;
-        }
-
-        bool use_compiled_functions = false;
+                bool use_compiled_functions = false;
 #if USE_EMBEDDED_COMPILER
-        use_compiled_functions = compiled_aggregate_functions_holder != nullptr;
+                use_compiled_functions = compiled_aggregate_functions_holder != nullptr;
 #endif
 
-        places.clear();
-        records.ptrs.clear();
-        const auto apply = [&](const char * record, const char * key_pos, size_t key_size, UInt64 hash) ALWAYS_INLINE
-        {
-            typename Table::LookupResult it;
-            bool inserted = false;
-            emplaceStagedKey<Key>(table, key_pos, key_size, hash, it, inserted);
-            if (inserted)
-            {
-                it->getMapped() = nullptr;
-                AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                createAggregateStates(place, use_compiled_functions);
-                it->getMapped() = place;
-            }
-            places.push_back(it->getMapped());
-            records.ptrs.push_back(record);
-        };
+                places.clear();
+                records.ptrs.clear();
+                walk(
+                    format,
+                    [&](const char * record, UInt64 hash) ALWAYS_INLINE
+                    {
+                        typename Table::LookupResult it;
+                        bool inserted = false;
+                        const auto [key_pos, key_size] = format.key(record);
+                        emplaceStagedKey<Key>(table, key_pos, key_size, hash, it, inserted);
+                        if (inserted)
+                        {
+                            it->getMapped() = nullptr;
+                            AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                            createAggregateStates(place, use_compiled_functions);
+                            it->getMapped() = place;
+                        }
+                        places.push_back(it->getMapped());
+                        records.ptrs.push_back(record);
+                    });
 
-        size_t fixed_arguments_offset = StagedArgumentRecord::header_bytes;
-        if (fixed_stride)
-        {
-            using Record = StagedFixedArgumentRecord<Key>;
-            const size_t bytes = Record::bytes(argument_layout.fixed_bytes);
-            const auto fixed_key_of = [](const char * record) ALWAYS_INLINE { return std::pair{record + Record::key_offset, sizeof(Key)}; };
-            walk(
-                [bytes](const char *) ALWAYS_INLINE { return bytes; },
-                fixed_key_of,
-                [&](const char * record) ALWAYS_INLINE { return Record::hash(table, record); },
-                [&](const char * record, UInt64 hash) ALWAYS_INLINE { apply(record, record + Record::key_offset, sizeof(Key), hash); });
-            fixed_arguments_offset = Record::arguments_offset;
+                /// A numeric key that is also an argument is read from the key's bytes in the record.
+                chassert(!adaptive_argument_layout->key_field
+                    || adaptive_argument_layout->key_field->type->getSizeOfValueInMemory() == sizeof(Key));
+                if (!places.empty())
+                    executeStagedArgumentRecords(
+                        arena, places, records, format.key_offset, Record::fixed_arguments_offset, use_compiled_functions);
+            }
         }
-        else
-        {
-            walk(
-                [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::bytes(record); },
-                key_of,
-                [](const char * record) ALWAYS_INLINE { return StagedArgumentRecord::hash(record); },
-                [&](const char * record, UInt64 hash) ALWAYS_INLINE
-                {
-                    const auto [key_pos, key_size] = key_of(record);
-                    apply(record, key_pos, key_size, hash);
-                });
-        }
+    });
 
-        const size_t rows = places.size();
-        if (rows)
-        {
-            /// The arguments are rebuilt into dense columns while the records are hot, so the
-            /// ordinary batch executor, and the compiled functions, apply to them as to a block.
-            Columns arguments(argument_layout.num_positions);
-            if (const auto & field = argument_layout.key_field)
-            {
-                const size_t key_offset = fixed_stride
-                    ? StagedFixedArgumentRecord<Key>::key_offset : StagedArgumentRecord::keyOffset(argument_layout.fixed_bytes);
-                auto column = field->type->createColumn();
-                const size_t key_size = column->sizeOfValueIfFixed();
-                chassert(key_size == sizeof(Key));
-                column->fillFromRowStorePtrs(field->type, records, key_offset, key_size, 0, rows);
-                arguments[field->position] = std::move(column);
-            }
-            for (const auto & field : argument_layout.fixed_fields)
-            {
-                auto column = field.type->createColumn();
-                column->fillFromRowStorePtrs(field.type, records, fixed_arguments_offset + field.offset, field.size, 0, rows);
-                arguments[field.position] = std::move(column);
-            }
+    /// The records of a count-only drain were counted, not drained into states.
+    if constexpr (!count_only)
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
+    return skipped;
+}
 
-            if (!argument_layout.variable_fields.empty())
-            {
-                MutableColumns variable_columns;
-                variable_columns.reserve(argument_layout.variable_fields.size());
-                for (const auto & field : argument_layout.variable_fields)
-                {
-                    variable_columns.push_back(field.type->createColumn());
-                    variable_columns.back()->reserve(rows);
-                }
+void Aggregator::executeStagedArgumentRecords(
+    Arena * arena,
+    PaddedPODArray<AggregateDataPtr> & places,
+    const RowStorePointers & records,
+    size_t key_offset,
+    size_t fixed_arguments_offset,
+    bool use_compiled_functions) const
+{
+    const auto & argument_layout = *adaptive_argument_layout;
+    const size_t rows = places.size();
 
-                const IColumn::SerializationSettings serialization_settings;
-                for (const char * record : records.ptrs)
-                {
-                    const auto [key_pos, key_size] = key_of(record);
-                    const char * values = key_pos + key_size;
-                    ReadBufferFromMemory in(values, record + StagedArgumentRecord::bytes(record) - values);
-                    for (auto & column : variable_columns)
-                        column->deserializeAndInsertFromArena(in, &serialization_settings);
-                }
-
-                for (size_t j = 0; j < variable_columns.size(); ++j)
-                    arguments[argument_layout.variable_fields[j].position] = std::move(variable_columns[j]);
-            }
-
-            AggregateColumns aggregate_columns(params.aggregates_size);
-            AggregateFunctionInstructions instructions(params.aggregates_size + 1);
-            NestedColumnsHolder nested_columns_holder;
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-            {
-                aggregate_columns[i].resize(aggregates_positions[i].size());
-                for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
-                    aggregate_columns[i][j] = arguments[aggregates_positions[i][j]].get();
-                buildAggregateFunctionInstruction(
-                    i, /*has_sparse_arguments=*/false, aggregate_columns, instructions, nested_columns_holder);
-            }
-            instructions[params.aggregates_size].that = nullptr;
-
-            executeAggregateInstructions(
-                arena,
-                0,
-                rows,
-                instructions.data(),
-                places.data(),
-                /*key_start=*/0,
-                /*has_only_one_value_since_last_reset=*/false,
-                /*all_keys_are_const=*/false,
-                /*all_places_are_non_null=*/true,
-                use_compiled_functions);
-        }
+    /// The arguments are rebuilt into dense columns while the records are hot, so the
+    /// ordinary batch executor, and the compiled functions, apply to them as to a block.
+    Columns arguments(argument_layout.num_positions);
+    if (const auto & field = argument_layout.key_field)
+    {
+        auto column = field->type->createColumn();
+        column->fillFromRowStorePtrs(field->type, records, key_offset, column->sizeOfValueIfFixed(), 0, rows);
+        arguments[field->position] = std::move(column);
+    }
+    for (const auto & field : argument_layout.fixed_fields)
+    {
+        auto column = field.type->createColumn();
+        column->fillFromRowStorePtrs(field.type, records, fixed_arguments_offset + field.offset, field.size, 0, rows);
+        arguments[field.position] = std::move(column);
     }
 
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
-    return skipped;
+    /// Only the records of the variable format carry variable-size arguments.
+    if (!argument_layout.variable_fields.empty())
+    {
+        MutableColumns variable_columns;
+        variable_columns.reserve(argument_layout.variable_fields.size());
+        for (const auto & field : argument_layout.variable_fields)
+        {
+            variable_columns.push_back(field.type->createColumn());
+            variable_columns.back()->reserve(rows);
+        }
+
+        const StagedArgumentRecord format(argument_layout);
+        const IColumn::SerializationSettings serialization_settings;
+        for (const char * record : records.ptrs)
+        {
+            const auto [key_pos, key_size] = format.key(record);
+            const char * values = key_pos + key_size;
+            ReadBufferFromMemory in(values, record + format.bytes(record) - values);
+            for (auto & column : variable_columns)
+                column->deserializeAndInsertFromArena(in, &serialization_settings);
+        }
+
+        for (size_t j = 0; j < variable_columns.size(); ++j)
+            arguments[argument_layout.variable_fields[j].position] = std::move(variable_columns[j]);
+    }
+
+    AggregateColumns aggregate_columns(params.aggregates_size);
+    AggregateFunctionInstructions instructions(params.aggregates_size + 1);
+    NestedColumnsHolder nested_columns_holder;
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        aggregate_columns[i].resize(aggregates_positions[i].size());
+        for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
+            aggregate_columns[i][j] = arguments[aggregates_positions[i][j]].get();
+        buildAggregateFunctionInstruction(
+            i, /*has_sparse_arguments=*/false, aggregate_columns, instructions, nested_columns_holder);
+    }
+    instructions[params.aggregates_size].that = nullptr;
+
+    executeAggregateInstructions(
+        arena,
+        0,
+        rows,
+        instructions.data(),
+        places.data(),
+        /*key_start=*/0,
+        /*has_only_one_value_since_last_reset=*/false,
+        /*all_keys_are_const=*/false,
+        /*all_places_are_non_null=*/true,
+        use_compiled_functions);
 }
 
 size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & variants, UInt16 * bins) const
