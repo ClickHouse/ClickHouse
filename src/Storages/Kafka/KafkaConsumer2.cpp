@@ -153,11 +153,11 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
     for (const auto & topic_partition : topic_partitions)
         new_partitions.emplace(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
 
-    /// `queues` holds exactly the current assignment, so these are the partitions that leave this consumer.
+    /// After a failed call `queues` may not match the consumer's assignment, so take the assignment from librdkafka.
     cppkafka::TopicPartitionList removed_partitions;
-    for (const auto & [topic_partition, _] : queues)
-        if (!new_partitions.contains(topic_partition))
-            removed_partitions.emplace_back(topic_partition.topic, topic_partition.partition_id);
+    for (const auto & topic_partition : consumer->get_assignment())
+        if (!new_partitions.contains(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()}))
+            removed_partitions.emplace_back(topic_partition.get_topic(), topic_partition.get_partition());
 
     if (!removed_partitions.empty())
     {
@@ -174,6 +174,9 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
         for (const auto & topic_partition : removed_partitions)
         {
             TopicPartition key{topic_partition.get_topic(), topic_partition.get_partition()};
+            /// The handle is lost if the previous call failed after the assignment.
+            if (!queues.contains(key))
+                queues.emplace(key, consumer->get_partition_queue(topic_partition));
             const auto & queue = queues.at(key);
             LOG_DEBUG(
                 log,
