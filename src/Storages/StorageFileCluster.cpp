@@ -152,11 +152,21 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
 
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context,
         /*distributed_processing_=*/ false, /*archive_member_path_=*/ String{}, user_files_volume);
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator), volume = user_files_volume](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();
         if (file.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
+        /// With a `user_files_policy` volume `file` is prefixed with the root of the disk of this
+        /// server, which can differ on the workers. Send the disk-relative path instead: each
+        /// worker resolves it against its own disk in `StorageFileSource::FilesIterator::next`.
+        if (volume)
+        {
+            auto [disk, relative_path] = splitUserFilesAbsolutePath(file, volume->getDisks());
+            if (!disk)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not on the user files disk", file);
+            file = std::move(relative_path);
+        }
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(file));
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));

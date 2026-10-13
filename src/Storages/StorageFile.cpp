@@ -2334,10 +2334,18 @@ String StorageFileSource::FilesIterator::next()
         if (!task || task->isEmpty())
             return {};
 
-        /// The read task may come from a client impersonating an initiator server, so validate the path.
-        checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
+        /// With a `user_files_policy` volume the initiator sends the path relative to the root of
+        /// its disk, because the backing path of the disk (e.g. the local directory of
+        /// `DiskEncrypted` or of a cache) can differ between servers. Resolve it against the disk
+        /// of this server, which `Context::setUserFilesPolicy` guarantees to be the only one.
+        String path = task->path;
+        if (user_files_volume)
+            path = getDiskPathWithSlash(user_files_volume->getDisks().front()) + path;
 
-        return task->path;
+        /// The read task may come from a client impersonating an initiator server, so validate the path.
+        checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), path, /*can_be_directory=*/ true);
+
+        return path;
     }
 
     const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
