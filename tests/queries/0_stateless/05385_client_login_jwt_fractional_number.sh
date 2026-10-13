@@ -23,7 +23,7 @@ import base64, http.server, json, os, ssl, sys
 d = sys.argv[1]
 b64 = lambda o: base64.urlsafe_b64encode(json.dumps(o).encode()).rstrip(b"=").decode()
 # No `expires_in` in the token response, so the client takes the expiry from the token itself.
-token = b64({"alg": "none", "typ": "JWT"}) + "." + b64({"sub": "test", "exp": 4102444800, "iat": 1700000000.5}) + ".c2ln"
+token = b64({"alg": "none", "typ": "JWT"}) + "." + b64({"sub": "test", "aud": "test", "iss": "test", "exp": 4102444800, "iat": 1700000000.5}) + ".c2ln"
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -62,8 +62,10 @@ for _ in {1..100}; do
 done
 PORT=$(cat "$DIR/port")
 
-# The server does not know the user from the token, so a client that decoded it ends with AUTHENTICATION_FAILED.
+# A client that decoded the token sends it to the server, which rejects it: a server without JWT authentication
+# does not know the user (AUTHENTICATION_FAILED), a server with JWT authentication refuses the unsigned token
+# (AUTHENTICATION_FAILED or BAD_ARGUMENTS). A client that died while decoding the token prints neither.
 PATH="$DIR/bin:$PATH" "$CLICKHOUSE_CLIENT_BINARY" --host "$CLICKHOUSE_HOST" --port "$CLICKHOUSE_PORT_TCP" \
     --login --oauth-client-id test \
     --oauth-device-uri "https://127.0.0.1:$PORT/device" --oauth-token-uri "https://127.0.0.1:$PORT/token" \
-    --accept-invalid-certificate -q "SELECT 1" 2>&1 | grep -o -m1 "AUTHENTICATION_FAILED"
+    --accept-invalid-certificate -q "SELECT 1" 2>&1 | grep -q -E "AUTHENTICATION_FAILED|BAD_ARGUMENTS" && echo "rejected by the server"
