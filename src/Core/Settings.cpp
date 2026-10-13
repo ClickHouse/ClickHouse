@@ -10349,7 +10349,7 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW, \
         {"26.8", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."}) \
-    DECLARE(Bool, allow_experimental_pulsar_storage_engine, false, R"(
+    DECLARE(Bool, enable_pulsar, false, R"(
 Allows creation of tables with the `Pulsar` table engine. Possible values:
 - 0 — the `Pulsar` table engine is disabled.
 - 1 — the `Pulsar` table engine is enabled.

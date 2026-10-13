@@ -103,7 +103,7 @@ def test_experimental_gate(pulsar_cluster):
     instance.query("CREATE DATABASE IF NOT EXISTS test")
     error = instance.query_and_get_error(
         pulsar_table("test.pulsar_reader", "gate_topic", "gate_group"),
-        settings={"allow_experimental_pulsar_storage_engine": 0},
+        settings={"enable_pulsar": 0},
     )
     assert "SUPPORT_IS_DISABLED" in error
 
@@ -115,7 +115,7 @@ def test_experimental_gate(pulsar_cluster):
         "ATTACH TABLE test.pulsar_reader_full_attach UUID '00000000-0000-0000-0000-000000000001'",
         1,
     )
-    error = instance.query_and_get_error(full_attach, settings={"allow_experimental_pulsar_storage_engine": 0})
+    error = instance.query_and_get_error(full_attach, settings={"enable_pulsar": 0})
     assert "SUPPORT_IS_DISABLED" in error
 
 
@@ -539,7 +539,7 @@ def test_experimental_gate_allows_attach(pulsar_cluster):
     instance.query("DETACH TABLE test.pulsar_reader")
     instance.query(
         "ATTACH TABLE test.pulsar_reader",
-        settings={"allow_experimental_pulsar_storage_engine": 0},
+        settings={"enable_pulsar": 0},
     )
     assert instance.query("EXISTS TABLE test.pulsar_reader") == "1\n"
     instance.query("SELECT * FROM test.pulsar_reader")

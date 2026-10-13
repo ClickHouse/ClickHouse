@@ -44,7 +44,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_pulsar_storage_engine;
+    extern const SettingsBool enable_pulsar;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
@@ -832,11 +832,11 @@ void registerStoragePulsar(StorageFactory & factory)
         /// regardless of the current value of the setting. A full ATTACH supplies a new
         /// engine definition and is therefore gated exactly like CREATE.
         if (is_fresh_definition
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_pulsar_storage_engine])
+            && !args.getLocalContext()->getSettingsRef()[Setting::enable_pulsar])
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental Pulsar table engine is not enabled (the setting 'allow_experimental_pulsar_storage_engine')");
+                "Experimental Pulsar table engine is not enabled (the setting `enable_pulsar`)");
         }
 
         auto pulsar_settings = std::make_unique<PulsarSettings>();
@@ -942,7 +942,7 @@ This engine allows integrating ClickHouse with [Apache Pulsar](https://pulsar.ap
 - Subscribe to one or more Pulsar topics and publish to a single Pulsar topic (`INSERT` is supported only for tables with exactly one topic).
 - Process new messages as they become available.
 
-The engine is experimental. To create a table with it, the setting `allow_experimental_pulsar_storage_engine` must be enabled.
+The engine is experimental. To create a table with it, the setting `enable_pulsar` must be enabled.
 
 ## Creating a table {#creating-a-table}
 
