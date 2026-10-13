@@ -114,10 +114,6 @@ bool hasExplicitDeleteChecksumAlgorithm(const S3RequestSettings & request_settin
 /// or `SHA256` when `MD5` is unavailable or the server already rejected it (`md5_rejected_by_server`).
 Algorithm getDeleteChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool md5_rejected_by_server);
 
-/// Like `getUploadChecksumAlgorithm`, but for `DeleteObjects`, which cannot go without a digest: under FIPS
-/// the default is `CRC32` instead of the unavailable `MD5`.
-Algorithm getDeleteChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
-
 template <typename R>
 inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 {
