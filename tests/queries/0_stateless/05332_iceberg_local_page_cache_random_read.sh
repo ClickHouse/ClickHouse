@@ -12,8 +12,8 @@
 # the cold pass as well as on the warm one, and checks per query in `system.query_log` that the cold
 # pass misses the cache while the warm pass is served from it without a single miss.
 #
-# The CI server configures no page cache (`page_cache_max_size` is 0 by default), so each step runs a
-# private clickhouse-local that has one, as in 04039_page_cache_in_local.sh and
+# The CI server configures no page cache (`page_cache_max_size` is 0 by default), so everything runs
+# in a private clickhouse-local that has one, as in 04039_page_cache_in_local.sh and
 # 05293_packed_archive_read_through_page_cache.sh.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -34,11 +34,6 @@ query_log:
     table: query_log
 "
 
-# The writer is given no config file, so it has no page cache of its own and cannot warm one up.
-${CLICKHOUSE_LOCAL} --path "./${work_dir}/write" --allow_insert_into_iceberg 1 --query "
-    CREATE TABLE ice ENGINE = IcebergLocal('${work_dir}/icedata/')
-    AS SELECT number AS k, repeat('x', 200) AS v FROM numbers(200000);"
-
 # Pinned because tests/clickhouse-test randomizes all but the third and the last of these:
 #  - use_page_cache_for_object_storage: off, the read never reaches the page cache at all;
 #  - remote_filesystem_read_method=read: `threadpool` puts an asynchronous prefetch in front of the
@@ -58,7 +53,13 @@ page_cache=(
     --read_from_page_cache_if_exists_otherwise_bypass_cache 0
 )
 
-${CLICKHOUSE_LOCAL} --path "./${work_dir}/read" "${page_cache[@]}" --log_queries 1 --query "
+# The writing query never reads the data files back, so it cannot warm the cache for them; that the
+# cold read below really starts from nothing is asserted per query and not assumed.
+# The key is written as Int64: the widest Iceberg integer type is the signed 64-bit long, so Iceberg
+# rejects the UInt64 that `number` has.
+${CLICKHOUSE_LOCAL} --path "./${work_dir}/db" "${page_cache[@]}" --allow_insert_into_iceberg 1 --log_queries 1 --query "
+    CREATE TABLE ice ENGINE = IcebergLocal('${work_dir}/icedata/')
+    AS SELECT toInt64(number) AS k, repeat('x', 200) AS v FROM numbers(200000);
     -- Cold cache: every block the Parquet reader asks for is a miss and has to be populated.
     SELECT count(), sum(k), uniqExact(v) FROM icebergLocal('${work_dir}/icedata/', 'Parquet') SETTINGS log_comment = 'cold';
     -- Warm cache: the same blocks are already held, and the rows must still be the same.
