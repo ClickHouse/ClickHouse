@@ -208,7 +208,7 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    /// The join executes an `INTERSECT DISTINCT` or `EXCEPT DISTINCT`, see `JoinNode::isSetOperation`.
+    /// The join executes an `INTERSECT` or `EXCEPT`, see `JoinNode::isSetOperation`.
     bool isSetOperation() const { return is_set_operation; }
     void setIsSetOperation(bool value) { is_set_operation = value; }
 

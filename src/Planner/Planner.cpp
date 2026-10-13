@@ -2569,6 +2569,7 @@ static std::unique_ptr<JoinStepLogical> tryBuildIntersectExceptAllAsJoin(
         join_step->setStepDescription("INTERSECT ALL");
     else
         join_step->setStepDescription("EXCEPT ALL");
+    join_step->setIsSetOperation(true);
     return join_step;
 }
 
