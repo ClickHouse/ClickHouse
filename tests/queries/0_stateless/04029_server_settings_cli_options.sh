@@ -32,8 +32,10 @@ trap finish EXIT
 function wait_for_server()
 {
     local log=$1
+    # Bound every probe: a connection made while the server is still starting up may never get a reply,
+    # and with the default `receive_timeout` (300 s) a single such probe would exceed the test time limit.
     for _ in {1..300}; do
-        $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && return
+        $CLICKHOUSE_CLIENT --connect_timeout 2 --receive_timeout 5 --send_timeout 5 --query "SELECT 1" >/dev/null 2>&1 && return
         if ! kill -0 "$PID" 2>/dev/null; then
             break
         fi
