@@ -221,11 +221,15 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
     for (size_t i = 0; i < targets.size(); ++i)
     {
         const auto & metrics = file_metrics[i];
-        /// A missing metric adds nothing, as a MergeTree part without the statistic.
+        addToDistinctValuesInputs(distinct_values_inputs[i], metrics);
+        /// A file without the NULL count and the bounds adds nothing, as a MergeTree part without the statistic; with the
+        /// bounds alone its NULL count is taken as 0.
+        if (!metrics.nulls && metrics.min_value.isNull())
+            continue;
         statistics_builder.addStatistics(
             targets[i].name,
-            ColumnStatistics::createBasicFromSummary(targets[i].storage_type, rows, metrics.min_value, metrics.max_value, metrics.nulls));
-        addToDistinctValuesInputs(distinct_values_inputs[i], metrics);
+            ColumnStatistics::createBasicFromSummary(
+                targets[i].storage_type, rows, metrics.min_value, metrics.max_value, metrics.nulls.value_or(0)));
     }
 }
 

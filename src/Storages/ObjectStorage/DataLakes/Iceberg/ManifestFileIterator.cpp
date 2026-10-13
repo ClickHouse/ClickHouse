@@ -191,7 +191,7 @@ namespace
             LOG_DEBUG(
                 getLogger("ManifestFileIterator"),
                 "Manifest file '{}' declares a bound that cannot be read as a usable range border "
-                "for column id {} of data file '{}'; skipping min/max pruning for this column",
+                "for column id {} of data file '{}'; ignoring the bounds of this column",
                 path_to_manifest_file,
                 column_id,
                 parsed_entry.file_path_key.serialize());
@@ -219,7 +219,7 @@ namespace
             LOG_WARNING(
                 getLogger("ManifestFileIterator"),
                 "Manifest file '{}' declares a lower bound above the upper bound for column id "
-                "{} of data file '{}'; skipping min/max pruning for this column",
+                "{} of data file '{}'; ignoring the bounds of this column",
                 path_to_manifest_file,
                 column_id,
                 parsed_entry.file_path_key.serialize());
