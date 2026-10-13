@@ -1115,9 +1115,9 @@ static bool decideAtBoundary(
         /// `enable_memory_bound_merging_of_aggregation_results`), the plan-based one in
         /// `applyParallelReplicas` (`distributed_aggregation_memory_efficient` alone). Only the replica's
         /// own step knows which of the two built it.
-        const auto * replicas_aggregating = typeid_cast<const AggregatingStep *>(final_node_in_replica_plan->step.get());
+        const auto * replicas_aggregating = typeid_cast<const AggregatingStep *>(replicas_plan_boundary->step.get());
         const auto * local_aggregating
-            = typeid_cast<const AggregatingStep *>(corresponding_node_in_single_replica_plan->step.get());
+            = typeid_cast<const AggregatingStep *>(single_replica_plan_boundary->step.get());
         if (replicas_aggregating && local_aggregating && replicas_aggregating->memoryBoundMergingWillBeUsed()
             && !local_aggregating->memoryBoundMergingWillBeUsed())
             updater->setReplicasSendOutputInKeyOrder();
