@@ -5,7 +5,6 @@
 
 SET max_threads = 8;
 SET join_algorithm = 'hash';
-SET parallel_hash_join_threshold = 1;
 SET max_block_size = 8192;
 SET query_plan_join_swap_table = 0;
 SET query_plan_join_shard_by_pk_ranges = 0;

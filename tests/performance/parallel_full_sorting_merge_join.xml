@@ -49,7 +49,7 @@
     <!-- Unsorted input: a full parallel sort scattered into shards. -->
     <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
     <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
-    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</query>
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
 
     <!-- Read-in-order input (join on the ORDER BY key): not scattered, falls back to a single merge join. -->
     <query>SELECT count() FROM pfsm_sorted_left AS a JOIN pfsm_sorted_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
@@ -60,7 +60,7 @@
          key-only case to keep the total volume comparable. -->
     <query>SELECT sum(length(a.s)) + sum(length(b.s)) FROM pfsm_payload_left AS a JOIN pfsm_payload_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
     <query>SELECT sum(length(a.s)) + sum(length(b.s)) FROM pfsm_payload_left AS a JOIN pfsm_payload_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
-    <query>SELECT sum(length(a.s)) + sum(length(b.s)) FROM pfsm_payload_left AS a JOIN pfsm_payload_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</query>
+    <query>SELECT sum(length(a.s)) + sum(length(b.s)) FROM pfsm_payload_left AS a JOIN pfsm_payload_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
 
     <drop_query>DROP TABLE IF EXISTS pfsm_left</drop_query>
     <drop_query>DROP TABLE IF EXISTS pfsm_right</drop_query>

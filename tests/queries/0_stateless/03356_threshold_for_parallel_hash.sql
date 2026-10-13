@@ -10,9 +10,8 @@ insert into rhs select * from numbers_mt(1e6);
 set enable_parallel_replicas = 0; -- join optimization (and table size estimation) disabled with parallel replicas
 set enable_analyzer = 1, use_query_condition_cache = 0;
 set query_plan_optimize_join_order_limit = 10; -- CI may inject 0; chooseJoinOrder skipped → join swap never happens → right table stays large → parallel layout instead of serial
-set max_threads = 4;
+set use_statistics = 0;
 
-set join_algorithm = 'hash';
 set parallel_hash_join_threshold = 100001;
 
 -- Tables should be swapped; the new right table is below the threshold - serial layout
@@ -29,10 +28,14 @@ select * from lhs t0 join rhs t1 on t0.a = t1.a settings query_plan_join_swap_ta
 select * from lhs t0 join (select a % 10000 as a from rhs) t1 on t0.a = t1.a settings query_plan_join_swap_table = false, query_plan_optimize_join_order_limit = 10, log_comment = '03356_modulo_cold' format Null;
 select * from lhs t0 join (select a % 10000 as a from rhs) t1 on t0.a = t1.a settings query_plan_join_swap_table = false, query_plan_optimize_join_order_limit = 10, log_comment = '03356_modulo_warm' format Null;
 
+-- Right table is big, but only a small fraction of rows reaches the join - parallel layout on a cold run, serial with its size in the cache
+select * from lhs t0 join rhs t1 on t0.a = t1.a where t1.a < 10000 settings query_plan_join_swap_table = false, query_plan_optimize_join_order_limit = 10, log_comment = '03356_filter_cold' format Null;
+select * from lhs t0 join rhs t1 on t0.a = t1.a where t1.a < 10000 settings query_plan_join_swap_table = false, query_plan_optimize_join_order_limit = 10, log_comment = '03356_filter_warm' format Null;
+
 system flush logs query_log;
 
 select log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] as serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] as parallel
 from system.query_log
 where current_database = currentDatabase() and type = 'QueryFinish'
-    and log_comment in ('03356_swap_auto', '03356_swap_false', '03356_swap_true', '03356_modulo_cold', '03356_modulo_warm')
+    and log_comment in ('03356_swap_auto', '03356_swap_false', '03356_swap_true', '03356_modulo_cold', '03356_modulo_warm', '03356_filter_cold', '03356_filter_warm')
 order by event_time_microseconds;

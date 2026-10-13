@@ -36,8 +36,8 @@ SETTINGS join_algorithm = 'partial_merge,hash';
 SELECT 'prefer_partial_merge,hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'prefer_partial_merge,hash';
 
-SELECT 'fsm,hash parallel layout', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'full_sorting_merge,hash', parallel_hash_join_threshold = 0;
+SELECT 'fsm,parallel_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
+SETTINGS join_algorithm = 'full_sorting_merge,parallel_hash', parallel_hash_join_threshold = 0;
 
 SELECT 'fsm,grace_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge,grace_hash';
@@ -95,8 +95,8 @@ SELECT '-- the hash family was already correct and must stay so --';
 SELECT 'hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'hash';
 
-SELECT 'hash parallel layout', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 0;
+SELECT 'parallel_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
+SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0;
 
 SELECT 'grace_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'grace_hash';

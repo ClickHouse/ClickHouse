@@ -67,12 +67,6 @@
 \N	50000	\N	r50000
 \N	65535	\N	r65535
 1
--- range uint32 inner conversion on vs off
-1
--- range uint32 right conversion on vs off
-1
--- range int32 inner conversion on vs off
-1
 -- shared rf key8 serial
 rf0	2500
 rf1	2500
@@ -81,9 +75,5 @@ rf1	2500
 04891_key16_serial	['key16']	[]	1
 04891_key8_compare	['key8','two_level_key8']	[]	1
 04891_key8_serial	['key8']	[]	1
-04891_range_i32	['two_level_key32']	[]	0
-04891_range_i32_serial	['key32']	['range8_key32']	1
-04891_range_u32	['two_level_key32']	[]	0
-04891_range_u32_serial	['key32']	['range8_key32']	1
 04891_rf_serial_off	['key8']	[]	0
 04891_rf_serial_on	['key8']	[]	1

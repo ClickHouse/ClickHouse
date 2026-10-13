@@ -1,6 +1,6 @@
 -- Regression test: with `max_bytes_before_external_join` set, the in-memory peak of
 -- a spilling hash join must stay below `max_memory_usage`. Previously several issues
--- in `HashJoin`, `SpillingHashJoin` and `GraceHashJoin` could conspire to
+-- in `ConcurrentHashJoin`, `SpillingHashJoin` and `GraceHashJoin` could conspire to
 -- make the in-memory hash table grow well past the configured external-join
 -- threshold, causing a `MEMORY_LIMIT_EXCEEDED` exception during the build phase.
 
@@ -27,7 +27,7 @@ FROM (SELECT number AS k FROM numbers(3000000)) AS t1
 INNER JOIN (SELECT number AS k FROM numbers(3000000) LIMIT 3000000) AS t2
 USING (k);
 
-SELECT 'parallel layout';
+SELECT 'concurrent parallel_hash';
 SET parallel_hash_join_threshold = 0;
 SET max_threads = 4;
 SELECT count()

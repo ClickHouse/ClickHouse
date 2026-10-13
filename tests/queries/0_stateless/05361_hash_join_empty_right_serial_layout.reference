@@ -12,8 +12,6 @@ full, empty right
 FillingRightJoinSide × 4
 inner, empty right, spilling hash join
 FillingRightJoinSide
-inner, empty right, join_algorithm = auto
-FillingRightJoinSide
 inner, right is an inner join of empty tables
 FillingRightJoinSide
 FillingRightJoinSide
@@ -39,15 +37,3 @@ four empty tables, reordered
 FillingRightJoinSide
 FillingRightJoinSide
 FillingRightJoinSide
-inner	0
-inner	0
-right	0
-right	0
-left semi	0
-left semi	0
-left	10	45
-left	10	45
-left anti	10	45
-left anti	10	45
-full	10	45
-full	10	45

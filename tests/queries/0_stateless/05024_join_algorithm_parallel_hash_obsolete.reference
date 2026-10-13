@@ -1,8 +1,3 @@
-default
-direct,hash,ie_join
 hash
 0
-05024_inner_parallel	0	1
-05024_inner_serial	1	0
-explicit_parallel_hash_join
 10

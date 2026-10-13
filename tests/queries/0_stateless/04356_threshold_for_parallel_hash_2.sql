@@ -1,4 +1,4 @@
--- The opposite direction of 05056_join_hash_stats_cache_serial_layout:
+-- The opposite direction of 03356_threshold_for_parallel_hash:
 -- switching from the serial to the parallel layout based on runtime statistics.
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
@@ -15,9 +15,7 @@ SET query_plan_optimize_join_order_randomize = 0;
 
 SET use_statistics = 0; -- statistics does not override estimation from cache
 
-set join_algorithm = 'hash';
 set parallel_hash_join_threshold = 100001;
-set max_threads = 4;
 
 -- Pretend the right table is small so the first run is planned with the serial layout, even though it actually has 1e6 rows.
 set param__internal_join_table_stat_hints = '{ "rhs": { "cardinality": 50000 } }';

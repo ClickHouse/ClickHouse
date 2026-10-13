@@ -2,7 +2,7 @@ SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET join_use_nulls = 1;
 SET enable_analyzer = 1;
-SET join_algorithm = 'hash';
+SET join_algorithm = 'parallel_hash';
 SET parallel_hash_join_threshold = 0;
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 0;
@@ -151,22 +151,22 @@ SET max_threads = 8;
 SET query_plan_optimize_join_order_limit = 10;
 
 SET parallel_hash_join_threshold = 1000000000;
-SELECT 'serial' AS alg, count() AS cnt
+SELECT 'hash' AS alg, count() AS cnt
 FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
 
 SET parallel_hash_join_threshold = 0;
-SELECT 'parallel' AS alg, count() AS cnt
+SELECT 'parallel_hash' AS alg, count() AS cnt
 FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
 
 SET parallel_hash_join_threshold = 1000000000;
-SELECT 'serial right-only', countIf(l.k IS NULL) FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
+SELECT 'hash right-only', countIf(l.k IS NULL) FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
 SET parallel_hash_join_threshold = 0;
 SELECT 'parallel right-only', countIf(l.k IS NULL) FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
 
 SET parallel_hash_join_threshold = 1000000000;
-SELECT 'serial', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
+SELECT 'hash', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
 SET parallel_hash_join_threshold = 0;
-SELECT 'parallel', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
+SELECT 'parallel_hash', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
 
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;

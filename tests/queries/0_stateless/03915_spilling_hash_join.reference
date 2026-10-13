@@ -19,29 +19,29 @@ right join spill non-joined
 10000	5000	5000
 full join spill non-joined
 15000	5000	5000	5000
-parallel inner join small
+concurrent inner join small
 100	49500
-parallel left join small
+concurrent left join small
 100	1225
-parallel right join small
+concurrent right join small
 100
-parallel full join small
+concurrent full join small
 150
-parallel right join non-joined
+concurrent right join non-joined
 10000	5000	5000
-parallel full join non-joined
+concurrent full join non-joined
 15000	5000	5000	5000
-parallel inner join spill
+concurrent inner join spill
 10000	49995000
-parallel left join spill
+concurrent left join spill
 10000
-parallel right join spill
+concurrent right join spill
 10000
-parallel full join spill
+concurrent full join spill
 15000
-parallel right join spill non-joined
+concurrent right join spill non-joined
 10000	5000	5000
-parallel full join spill non-joined
+concurrent full join spill non-joined
 15000	5000	5000	5000
 profile events
 query_03915_01	0	0	0	0	0

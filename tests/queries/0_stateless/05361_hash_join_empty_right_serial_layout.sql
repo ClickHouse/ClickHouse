@@ -50,10 +50,6 @@ SELECT 'inner, empty right, spilling hash join';
 SELECT trimLeft(explain) FROM (EXPLAIN PIPELINE SELECT * FROM t_l AS l INNER JOIN t_e1 AS r ON l.k = r.k SETTINGS max_bytes_before_external_join = 1000000000)
 WHERE explain LIKE '%FillingRightJoinSide%';
 
-SELECT 'inner, empty right, join_algorithm = auto';
-SELECT trimLeft(explain) FROM (EXPLAIN PIPELINE SELECT * FROM t_l AS l INNER JOIN t_e1 AS r ON l.k = r.k SETTINGS join_algorithm = 'auto')
-WHERE explain LIKE '%FillingRightJoinSide%';
-
 SELECT 'inner, right is an inner join of empty tables';
 SELECT trimLeft(explain) FROM (EXPLAIN PIPELINE
     SELECT * FROM t_l AS l INNER JOIN (SELECT e1.k AS k FROM t_e1 AS e1 INNER JOIN t_e2 AS e2 ON e1.k = e2.k) AS x ON l.k = x.k)
@@ -99,17 +95,3 @@ SELECT trimLeft(explain) FROM (EXPLAIN PIPELINE
     INNER JOIN t_e4 AS d ON c.k = d.k
     SETTINGS query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'greedy')
 WHERE explain LIKE '%FillingRightJoinSide%';
-
--- The same results with either layout.
-SELECT 'inner', count() FROM t_l AS l INNER JOIN t_e1 AS r ON l.k = r.k;
-SELECT 'inner', count() FROM t_l AS l INNER JOIN t_e1 AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0;
-SELECT 'right', count() FROM t_l AS l RIGHT JOIN t_e1 AS r ON l.k = r.k;
-SELECT 'right', count() FROM t_l AS l RIGHT JOIN t_e1 AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0;
-SELECT 'left semi', count() FROM t_l AS l LEFT SEMI JOIN t_e1 AS r ON l.k = r.k;
-SELECT 'left semi', count() FROM t_l AS l LEFT SEMI JOIN t_e1 AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0;
-SELECT 'left', count(), sum(l.v) FROM t_l AS l LEFT JOIN t_e1 AS r ON l.k = r.k;
-SELECT 'left', count(), sum(l.v) FROM t_l AS l LEFT JOIN t_e1 AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0;
-SELECT 'left anti', count(), sum(l.v) FROM t_l AS l LEFT ANTI JOIN t_e1 AS r ON l.k = r.k;
-SELECT 'left anti', count(), sum(l.v) FROM t_l AS l LEFT ANTI JOIN t_e1 AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0;
-SELECT 'full', count(), sum(l.v) FROM t_l AS l FULL JOIN t_e1 AS r ON l.k = r.k;
-SELECT 'full', count(), sum(l.v) FROM t_l AS l FULL JOIN t_e1 AS r ON l.k = r.k SETTINGS parallel_hash_join_threshold = 0;

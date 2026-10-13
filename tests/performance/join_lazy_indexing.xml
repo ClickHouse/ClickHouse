@@ -1,8 +1,4 @@
 <test>
-    <settings>
-        <parallel_hash_join_threshold>18446744073709551615</parallel_hash_join_threshold>
-    </settings>
-
     <substitutions>
         <substitution>
             <name>lazy_indexing</name>

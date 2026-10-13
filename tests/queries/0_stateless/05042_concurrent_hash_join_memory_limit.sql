@@ -1,15 +1,13 @@
 -- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas
 -- no sanitizers -- the memory a hash join's parallel layout needs is unpredictable with sanitizers
 
--- With `parallel_hash_join_threshold = 0` a hash join builds the parallel layout. That layout costs
--- about a megabyte, so sixteen nested joins need around 16 MiB before a single row is read.
--- An 8 MiB limit has to stop them.
+-- A hash join's parallel layout costs about 1 MiB, so sixteen nested joins need around 16 MiB before a
+-- row is read, and an 8 MiB limit has to stop them.
 
 SET max_threads = 8;
 SET join_algorithm = 'hash';
 
--- Once a join has run here, the hash table statistics can give a later run a row estimate, and an
--- estimate below `parallel_hash_join_threshold` picks the serial layout, which costs nothing.
+-- `parallel_hash_join_threshold = 0` keeps the parallel layout even when an earlier run left a small row estimate.
 SET parallel_hash_join_threshold = 0;
 
 SET max_memory_usage = '8Mi';

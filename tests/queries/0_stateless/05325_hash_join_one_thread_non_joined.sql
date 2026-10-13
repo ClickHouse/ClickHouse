@@ -1,6 +1,5 @@
 -- With one build thread, unmatched rows of a RIGHT or FULL join stay on `JoiningTransform`,
 -- even when the right side is above `parallel_hash_join_threshold`.
--- Random settings limits: max_threads=(1, 1)
 
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';

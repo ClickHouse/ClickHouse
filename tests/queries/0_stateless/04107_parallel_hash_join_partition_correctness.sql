@@ -1,12 +1,8 @@
 -- Joins with a Nullable right key must return the same rows with the serial and the parallel layout.
 -- `parallel_hash_join_threshold = 1000000000` builds the serial layout and `0` the parallel one. The
 -- threshold needs an estimate of the right table size, and `query_plan_optimize_join_order_limit` gives
--- the join one. An ASOF join with a Nullable time column must return the same rows on one thread and on
--- four. It gets no estimate, so it always builds the parallel layout, with one slot on one thread. The
--- join reads `max_threads` from the whole query and not from a subquery, so each ASOF run stores its rows
--- in a table, and EXCEPT compares the two tables. Then a few results are checked row by row with the
--- parallel layout.
--- Random settings limits: max_threads=(4, 4)
+-- the join one. An ASOF join gets no estimate and always builds the parallel layout, so it is compared
+-- on one thread against four. `max_threads` applies to the whole query, so each run stores its rows in a table.
 
 DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right_nullable;
@@ -118,19 +114,19 @@ SETTINGS parallel_hash_join_threshold=0, log_comment='04107_asof_left_parallel';
 SELECT count() FROM (SELECT * FROM asof_serial EXCEPT SELECT * FROM asof_parallel);
 SELECT count() FROM (SELECT * FROM asof_parallel EXCEPT SELECT * FROM asof_serial);
 
-SELECT '--- exact rows: INNER ---';
+SELECT '--- parallel_hash exact rows: INNER ---';
 SELECT l.k, l.v, r.k, r.v
 FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
 ORDER BY l.k, r.v
 SETTINGS parallel_hash_join_threshold=0;
 
-SELECT '--- exact rows: RIGHT (right-only rows have NULL/empty left) ---';
+SELECT '--- parallel_hash exact rows: RIGHT (right-only rows have NULL/empty left) ---';
 SELECT l.k, l.v, r.k, r.v
 FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
 ORDER BY r.k NULLS LAST, r.v
 SETTINGS join_use_nulls=1, parallel_hash_join_threshold=0;
 
-SELECT '--- exact rows: ASOF (rows where r.ts was NULL must NOT appear) ---';
+SELECT '--- parallel_hash exact rows: ASOF (rows where r.ts was NULL must NOT appear) ---';
 SELECT l.k, l.ts, r.ts, r.tag
 FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
 ORDER BY l.k, l.ts

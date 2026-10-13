@@ -172,30 +172,25 @@ INSERT INTO ins SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a
 SETTINGS log_comment = '05042_join_views_insert_plain', join_algorithm = 'hash';
 
 
--- `parallel_hash` is an alias of `hash`, and a hash join reports `HASH` also when it runs with the
--- parallel layout. That layout needs an INNER, LEFT, RIGHT or FULL join. It is
--- never used for a special storage on the right. The right table also must not be estimated below
--- `parallel_hash_join_threshold`. A threshold of 0 keeps the size estimate out of the decision, so the
--- layout is the same whatever the tables hold.
+-- `parallel_hash` is an alias of `hash`, so a join that lists it reports `HASH` whatever layout it builds.
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a
 FORMAT Null
-SETTINGS log_comment = '05042_join_algorithms_parallel_hash', join_algorithm = 'parallel_hash', max_threads = 4, parallel_hash_join_threshold = 0;
+SETTINGS log_comment = '05042_join_algorithms_parallel_hash', join_algorithm = 'parallel_hash', max_threads = 4;
 
 
--- The parallel layout is built for INNER, which is above, and these three kinds. Strictness is not part
--- of the condition, so an ASOF join of an allowed kind gets the layout as well.
+-- The same holds for the other kinds, and for an ASOF join.
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a
 FORMAT Null
-SETTINGS log_comment = '05042_join_algorithms_ph_kind_a_left', join_algorithm = 'parallel_hash', max_threads = 4, parallel_hash_join_threshold = 0;
+SETTINGS log_comment = '05042_join_algorithms_ph_kind_a_left', join_algorithm = 'parallel_hash', max_threads = 4;
 SELECT count() FROM t1 RIGHT JOIN t2 ON t1.a = t2.a
 FORMAT Null
-SETTINGS log_comment = '05042_join_algorithms_ph_kind_b_right', join_algorithm = 'parallel_hash', max_threads = 4, parallel_hash_join_threshold = 0;
+SETTINGS log_comment = '05042_join_algorithms_ph_kind_b_right', join_algorithm = 'parallel_hash', max_threads = 4;
 SELECT count() FROM t1 FULL JOIN t2 ON t1.a = t2.a
 FORMAT Null
-SETTINGS log_comment = '05042_join_algorithms_ph_kind_c_full', join_algorithm = 'parallel_hash', max_threads = 4, parallel_hash_join_threshold = 0;
+SETTINGS log_comment = '05042_join_algorithms_ph_kind_c_full', join_algorithm = 'parallel_hash', max_threads = 4;
 SELECT count() FROM ta ASOF LEFT JOIN tb ON ta.a = tb.a AND ta.t >= tb.t
 FORMAT Null
-SETTINGS log_comment = '05042_join_algorithms_ph_kind_d_asof_left', join_algorithm = 'parallel_hash', max_threads = 4, parallel_hash_join_threshold = 0;
+SETTINGS log_comment = '05042_join_algorithms_ph_kind_d_asof_left', join_algorithm = 'parallel_hash', max_threads = 4;
 
 
 -- A `parallel_hash` join with a spilling threshold is a `SpillingHashJoin` wrapping a parallel
@@ -203,7 +198,7 @@ SETTINGS log_comment = '05042_join_algorithms_ph_kind_d_asof_left', join_algorit
 -- the query is already running, and both algorithms are reported for the one join.
 SELECT count() FROM (SELECT number AS a FROM numbers(10000)) s1 JOIN (SELECT number AS a FROM numbers(10000)) s2 ON s1.a = s2.a
 FORMAT Null
-SETTINGS log_comment = '05042_join_algorithms_parallel_hash_switch', join_algorithm = 'parallel_hash', max_threads = 4, parallel_hash_join_threshold = 0, max_bytes_before_external_join = 65536;
+SETTINGS log_comment = '05042_join_algorithms_parallel_hash_switch', join_algorithm = 'parallel_hash', max_threads = 4, max_bytes_before_external_join = 65536;
 
 
 CREATE TABLE dict_source (key UInt64, value String) ENGINE = Memory;

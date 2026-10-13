@@ -19,8 +19,8 @@
 
     <!-- ANTI on a `UInt64` key: the `key64` set map, and the right blocks go away as they are built. -->
     <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 1000000000 FORMAT Null</query>
-    <!-- With threshold 0 the same join builds on several threads: the `two_level_key64` set map. -->
-    <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0 FORMAT Null</query>
+    <!-- The same under `parallel_hash`: the `two_level_key64` set map. -->
+    <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
     <!-- Spilling may reclaim the right blocks, so they are kept and only the smaller cell is left to win. -->
     <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 1000000000, max_bytes_before_external_join = 10000000000 FORMAT Null</query>
     <!-- A right column is selected: ANTI fills it with defaults, so the set map still fits. -->
@@ -30,8 +30,8 @@
     <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k OR l.k2 = r.k2 SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 1000000000 FORMAT Null</query>
     <!-- SEMI qualifies only when nothing of the right side is selected. -->
     <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 1000000000 FORMAT Null</query>
-    <!-- SEMI built on several threads. -->
-    <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0 FORMAT Null</query>
+    <!-- SEMI under `parallel_hash`. -->
+    <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
     <!-- SEMI with the right blocks kept, so only the smaller cell is left to win. -->
     <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 1000000000, max_bytes_before_external_join = 10000000000 FORMAT Null</query>
     <!-- SEMI with several disjuncts, which qualifies as soon as the join adds no right key column

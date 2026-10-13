@@ -83,9 +83,9 @@ right_all_large
 full_all_large
 15500	500	0
 Consistency of results with HashJoin for multiple conditions
-serial	200
-parallel	200
-serial right-only	200
+hash	200
+parallel_hash	200
+hash right-only	200
 parallel right-only	200
-serial	400
-parallel	400
+hash	400
+parallel_hash	400
