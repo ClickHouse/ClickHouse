@@ -131,10 +131,17 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         run(node_off, "truncate table t3", workload="regular")
         run(node_off, "drop view v sync", workload="regular")
         run(node_off, "drop table t3 sync", workload="regular")
+        run(node_off, "alter table t drop partition tuple()", workload="regular")
+        run(node_off, "system reload config", workload="regular")
+        run(node_off, "system flush logs", workload="regular")
 
         # Statements that may move a lot of data stay under `workload`.
         run_times_out(node_off, "create table t2 engine=MergeTree order by x as select 1 as x", workload="regular")
+        run_times_out(node_off, "create table t2 as numbers(10)", workload="regular")
         run_times_out(node_off, "optimize table t final", workload="regular")
+        run_times_out(node_off, "alter table t freeze", workload="regular")
+        run_times_out(node_off, "system prewarm mark cache t", workload="regular")
+        run_times_out(node_off, "system load primary key t", workload="regular")
 
 
 def test_metadata_statements_use_metadata_workload_when_enabled() -> None:
