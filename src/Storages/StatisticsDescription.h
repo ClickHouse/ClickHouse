@@ -46,17 +46,9 @@ struct SingleStatisticsDescription
         bool is_implicit_,
         StatisticsMaterialization materialization_ = StatisticsMaterialization::Default);
 
-    SingleStatisticsDescription(const SingleStatisticsDescription & other)
-        : type{}
-    {
-        *this = other;
-    }
+    SingleStatisticsDescription(const SingleStatisticsDescription & other) : type{} { *this = other; }
     SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
-    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept
-        : type{}
-    {
-        *this = std::move(other);
-    }
+    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept : type{} { *this = std::move(other); }
     SingleStatisticsDescription & operator=(SingleStatisticsDescription && other) noexcept;
 
     bool operator==(const SingleStatisticsDescription & other) const;
@@ -85,8 +77,7 @@ struct ColumnStatisticsDescription
     String getNameForLogs() const;
 
     /// get a vector of <column name, statistics desc> pair
-    static std::vector<std::pair<String, ColumnStatisticsDescription>>
-    fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
+    static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
     static ColumnStatisticsDescription fromStatisticsDescriptionAST(
         const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type, bool is_implicit_ = false);
 

@@ -25,11 +25,11 @@ enum class StatisticsFileVersion : UInt16
     V3 = 3, /// PR #102356 added the `NullCount` statistic and wrote V3; it was reverted, so only
             /// builds of `master` between the two commits produced such files (no stable release did).
     V4 = 4, /// per-statistic size prefix added (`stat_size: UInt64` precedes each stat payload),
-    /// so unknown statistics types can be skipped on deserialize.
-    /// Also stores the column type name (`stored_type_name: String`) immediately after
-    /// the version field; deserialization returns nullptr if the stored type differs from
-    /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
-    /// are never used.
+            /// so unknown statistics types can be skipped on deserialize.
+            /// Also stores the column type name (`stored_type_name: String`) immediately after
+            /// the version field; deserialization returns nullptr if the stored type differs from
+            /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
+            /// are never used.
 };
 
 class Field;
@@ -47,8 +47,8 @@ struct StatisticsUtils
     /// same integer type so that values near `2^53` are not collapsed by the Float64 conversion;
     /// falls back to Float64 otherwise. Returns std::nullopt if the Fields cannot be brought to
     /// a common numeric representation.
-    static std::optional<Float64>
-    interpolateLessLinear(const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
+    static std::optional<Float64> interpolateLessLinear(
+        const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
 
     /// Returns true iff two aggregate functions have the same state size and identical argument
     /// types. Statistics implementations use this to decide whether states from two parts can be
@@ -106,7 +106,7 @@ public:
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
     /// (e.g. the value cannot be converted to the column type).
     virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
-    virtual std::optional<Float64> estimateLess(const Field & val) const; /// summarized cardinality of values < val in the column
+    virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
@@ -232,16 +232,14 @@ public:
     /// only when the current CREATE/ALTER does not newly introduce `minmax`, so unrelated ALTERs of
     /// such old tables are not rejected.
     void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax = false) const;
-    ColumnStatisticsDescription
-    cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
+    ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
-    ColumnStatisticsDescription::StatisticsTypeDescMap
-    get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
+    ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
     /// Create a single statistics object by type. Returns `nullptr` if the type is unknown
     /// or unsupported for `data_type`. Used by the V4 deserializer to instantiate statistics
     /// types one at a time (and to silently skip types the current build doesn't know about).

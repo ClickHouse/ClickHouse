@@ -58,7 +58,7 @@ UInt64 estimateRowsFor(const Estimator & estimator, const String & expression, c
     ParserExpressionWithOptionalAlias parser(false);
     ASTPtr ast = parseQuery(parser, expression, 10000, 10000, 10000);
     auto syntax_result = TreeRewriter(context).analyze(ast, columns);
-    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/false, /*remove_unused_result=*/false);
+    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/ false, /*remove_unused_result=*/ false);
     const auto * node = &dag.findInOutputs(ast->getColumnName());
     return estimator->estimateRelationProfile(nullptr, node).rows;
 }
@@ -80,6 +80,7 @@ TEST(Statistics, TDigestLessThan)
                              const std::vector<double> & answers,
                              const std::vector<double> & eps)
     {
+
         DB::QuantileTDigest<Int64> t_digest;
 
         for (Int64 i : data1)
@@ -87,7 +88,7 @@ TEST(Statistics, TDigestLessThan)
 
         t_digest.compress();
 
-        for (int i = 0; i < v.size(); i++)
+        for (int i = 0; i < v.size(); i ++)
         {
             auto value = v[i];
             auto result = t_digest.getCountLessThan(value);
@@ -116,7 +117,8 @@ TEST(Statistics, TryConvertToFloat64)
     EXPECT_DOUBLE_EQ(*converted_string, 1.25);
 
     const auto decimal_type = std::make_shared<DataTypeDecimal64>(18, 2);
-    auto converted_decimal = StatisticsUtils::tryConvertToFloat64(Field(DecimalField<Decimal64>(Decimal64(12345), 2)), decimal_type);
+    auto converted_decimal = StatisticsUtils::tryConvertToFloat64(
+        Field(DecimalField<Decimal64>(Decimal64(12345), 2)), decimal_type);
     ASSERT_TRUE(converted_decimal.has_value());
     EXPECT_DOUBLE_EQ(*converted_decimal, 123.45);
 
@@ -146,17 +148,16 @@ TEST(Statistics, Estimator)
     Int32 c_value[] = {-100000, -1000, -100, -10, -1, 1, 10, 100};
     for (Int32 i = 0; i < 10000; i++)
     {
-        a->insert(i + 1);
+        a->insert(i+1);
         b->insert(i % 2 == 0 ? 500 : 600);
-        c->insert(i < 8 ? c_value[i] : 1000 + i);
+        c->insert(i < 8 ? c_value[i]: 1000+i);
     }
 
     auto mock_statistics = [&](const String & column_name)
     {
         ColumnStatisticsDescription mock_description;
         mock_description.data_type = data_type;
-        std::vector<StatisticsType> stats_type_to_create(
-            {StatisticsType::TDigest, /*StatisticsType::Uniq,*/ StatisticsType::CountMinSketch});
+        std::vector<StatisticsType> stats_type_to_create({StatisticsType::TDigest, /*StatisticsType::Uniq,*/ StatisticsType::CountMinSketch});
         for (auto stats_type : stats_type_to_create)
         {
             mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr, false));
@@ -194,17 +195,17 @@ TEST(Statistics, Estimator)
     {
         test_impl(expression, real_result, eps);
         /// Let's test 'not expression'
-        test_impl("not(" + expression + ")", 10000 - real_result, eps);
+        test_impl("not(" + expression + ")", 10000-real_result, eps);
     };
     ///
     test_f("a in (1,2,3,4,5)", 5);
-    test_f("a not in (1,2,3,4,5)", 10000 - 5);
+    test_f("a not in (1,2,3,4,5)", 10000-5);
     test_f("a < '3'", 2); /// Quoted numeric literal reaches statistics as a String Field.
     test_f("b in (2, 500, 500)", 5000);
     test_f("a < 3 and b = 500", 1);
     test_f("a < 3 and b = 500 and a < b", 1); /// unknown condition 'a < b' assumes 100% selectivity
     test_f("a < 3 or b = 600", 5001);
-    test_f("not (a < 3 and b = 500)", 10000 - 1);
+    test_f("not (a < 3 and b = 500)", 10000-1);
     test_f("c between -1000 and -10", 3);
     test_f("b != 500 and b != 600", 0);
     test_f("not (b != 500 and b != 600)", 10000);
@@ -235,20 +236,20 @@ TEST(Statistics, MinMaxEstimateLess)
     };
 
     /// UInt64: interpolation over [0, 9] with 10 rows
-    test_minmax(UInt64(0), UInt64(9), 10, UInt64(0), 0.0); /// at min    → (0/9)*10 = 0
-    test_minmax(UInt64(0), UInt64(9), 10, UInt64(9), 10.0); /// at max    → (9/9)*10 = 10
-    test_minmax(UInt64(0), UInt64(9), 10, UInt64(10), 10.0); /// above max → all rows
-    test_minmax(UInt64(0), UInt64(9), 10, UInt64(5), 5.0 / 9.0 * 10.0); /// midpoint
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(0),  0.0);           /// at min    → (0/9)*10 = 0
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(9),  10.0);          /// at max    → (9/9)*10 = 10
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(10), 10.0);          /// above max → all rows
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(5),  5.0/9.0*10.0); /// midpoint
 
     /// Int64: negative range [-100, 100] with 201 rows
-    test_minmax(Int64(-100), Int64(100), 201, Int64(-200), 0.0); /// below min
-    test_minmax(Int64(-100), Int64(100), 201, Int64(200), 201.0); /// above max
-    test_minmax(Int64(-100), Int64(100), 201, Int64(0), 100.0 / 200.0 * 201.0); /// midpoint
+    test_minmax(Int64(-100), Int64(100), 201, Int64(-200), 0.0);               /// below min
+    test_minmax(Int64(-100), Int64(100), 201, Int64(200),  201.0);             /// above max
+    test_minmax(Int64(-100), Int64(100), 201, Int64(0),    100.0/200.0*201.0); /// midpoint
 
     /// All rows have the same value: min == max
     test_minmax(UInt64(42), UInt64(42), 50, UInt64(42), 50.0); /// v == min == max → all rows
     test_minmax(UInt64(42), UInt64(42), 50, UInt64(43), 50.0); /// v > max         → all rows
-    test_minmax(UInt64(42), UInt64(42), 50, UInt64(41), 0.0); /// v < min         → 0 rows
+    test_minmax(UInt64(42), UInt64(42), 50, UInt64(41), 0.0);  /// v < min         → 0 rows
 
     /// Precision: UInt64 values near 2^53 where Float64 loses consecutive integers.
     /// Float64(2^53 + 1) rounds to Float64(2^53), so naive conversion gives numerator = 0.
@@ -491,7 +492,10 @@ TEST(Statistics, AssumedAllDistinctRoundTripPreservesLogicalType)
 
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
 /// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
-ColumnStatisticsPtr buildNullableInt32Stats(const std::vector<StatisticsType> & types, size_t total, size_t null_every)
+ColumnStatisticsPtr buildNullableInt32Stats(
+    const std::vector<StatisticsType> & types,
+    size_t total,
+    size_t null_every)
 {
     auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
     MutableColumnPtr col = data_type->createColumn();
@@ -507,6 +511,7 @@ ColumnStatisticsPtr buildNullableInt32Stats(const std::vector<StatisticsType> & 
     stats->build(std::move(col));
     return stats;
 }
+
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)
@@ -542,15 +547,15 @@ TEST(Statistics, NullableEstimatorWithBasic)
     };
 
     /// Single column — plain ranges (NULL rows are excluded).
-    check("a > 500", 400.0, 1.0);
-    check("a < 500", 400.0, 1.0);
-    check("b > 500", 450.0, 1.0);
-    check("b < 500", 450.0, 1.0);
+    check("a > 500",       400.0, 1.0);
+    check("a < 500",       400.0, 1.0);
+    check("b > 500",       450.0, 1.0);
+    check("b < 500",       450.0, 1.0);
 
     /// Single column — IS NULL / IS NOT NULL.
-    check("a IS NULL", 200.0, 1e-6);
+    check("a IS NULL",     200.0, 1e-6);
     check("a IS NOT NULL", 800.0, 1e-6);
-    check("b IS NULL", 100.0, 1e-6);
+    check("b IS NULL",     100.0, 1e-6);
     check("b IS NOT NULL", 900.0, 1e-6);
 
     /// Single column — IS NULL AND range → contradiction (the range is FALSE on NULL rows).
@@ -558,8 +563,8 @@ TEST(Statistics, NullableEstimatorWithBasic)
     check("b IS NULL AND b < 500", 0.0, 1e-6);
 
     /// Single column — IS NULL OR range → null rows ∪ matching range rows.
-    check("a IS NULL OR a > 500", 600.0, 1.0); /// 200 + 400
-    check("b IS NULL OR b < 500", 550.0, 1.0); /// 100 + 450
+    check("a IS NULL OR a > 500", 600.0, 1.0);   /// 200 + 400
+    check("b IS NULL OR b < 500", 550.0, 1.0);   /// 100 + 450
 
     /// Single column — IS NOT NULL AND range → equals the range (NULL filtering is implicit).
     check("a IS NOT NULL AND a > 500", 400.0, 1.0);
@@ -600,7 +605,7 @@ TEST(Statistics, NullableEstimatorWithBasic)
     check("a IS NOT NULL AND a > 500 AND b IS NULL", 40.0, 2.0);
 
     /// Contradictions spanning two columns.
-    check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6); /// b > 500 contradicts b IS NULL
+    check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6);  /// b > 500 contradicts b IS NULL
     check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
 }
 
@@ -638,7 +643,10 @@ TEST(Statistics, LikeSelectivity)
     NamesAndTypesList columns{{"a", data_type}};
 
     /// Helper: estimate rows for a condition string.
-    auto estimate = [&](const String & expression) -> UInt64 { return estimateRowsFor(estimator, expression, columns); };
+    auto estimate = [&](const String & expression) -> UInt64
+    {
+        return estimateRowsFor(estimator, expression, columns);
+    };
 
     /// default_like_factor = 0.1, total_rows = 10000.
     /// LIKE: 0.1 * 10000 = 1000 rows.
@@ -881,12 +889,12 @@ TEST(Statistics, BasicDefaultCountFixedString)
     auto data_type = std::make_shared<DataTypeFixedString>(4);
     MutableColumnPtr col = data_type->createColumn();
     /// 6 rows: 3 all-zero (default), 3 non-zero.
-    col->insertDefault(); /// "\0\0\0\0"
-    col->insertDefault(); /// "\0\0\0\0"
-    col->insertDefault(); /// "\0\0\0\0"
-    col->insert(Field(String("abc\0", 4))); /// non-default
-    col->insert(Field(String("xyz\0", 4))); /// non-default
-    col->insert(Field(String("hi\0\0", 4))); /// non-default
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insert(Field(String("abc\0", 4)));         /// non-default
+    col->insert(Field(String("xyz\0", 4)));         /// non-default
+    col->insert(Field(String("hi\0\0", 4)));        /// non-default
     auto stats = createTestStats({StatisticsType::Basic}, data_type);
     stats->build(std::move(col));
 
@@ -910,15 +918,15 @@ TEST(Statistics, BasicDefaultCountEnum)
     /// Insert via raw integer values — ColumnVector<Int8> does not accept String fields directly.
     {
         MutableColumnPtr col = enum_zero->createColumn();
-        col->insert(Field(Int64(0))); /// 'a'
-        col->insert(Field(Int64(1))); /// 'b'
-        col->insert(Field(Int64(0))); /// 'a'
-        col->insert(Field(Int64(0))); /// 'a'
-        col->insert(Field(Int64(1))); /// 'b'
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(1)));  /// 'b'
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(1)));  /// 'b'
         auto stats = createTestStats({StatisticsType::Basic}, enum_zero);
         stats->build(std::move(col));
 
-        EXPECT_EQ(stats->estimateDefaults(), 3u); /// 3 rows with raw value 0 ('a')
+        EXPECT_EQ(stats->estimateDefaults(), 3u);  /// 3 rows with raw value 0 ('a')
 
         /// col = 'a' — 'a' maps to raw 0, which is the column default → exact count.
         auto eq_a = stats->estimateEqual(Field(String("a")));
@@ -936,11 +944,11 @@ TEST(Statistics, BasicDefaultCountEnum)
     {
         MutableColumnPtr col = enum_nonzero->createColumn();
         for (int i = 0; i < 100; ++i)
-            col->insert(Field(Int64(1))); /// 100 rows of 'a' (raw 1)
+            col->insert(Field(Int64(1)));  /// 100 rows of 'a' (raw 1)
         auto stats = createTestStats({StatisticsType::Basic}, enum_nonzero);
         stats->build(std::move(col));
 
-        EXPECT_EQ(stats->estimateDefaults(), 0u); /// no rows with raw value 0
+        EXPECT_EQ(stats->estimateDefaults(), 0u);  /// no rows with raw value 0
 
         /// col = 'a' — 'a' is the first enumerator but maps to raw 1, not the column default.
         /// Must return nullopt, not 0 (which would suppress `col = 'a'` predicates entirely).
@@ -1021,14 +1029,11 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
 
     /// A numeric column: min and max.
     {
-        auto rewritten = load_legacy_and_rewrite(
-            data_type,
-            numeric_min_max,
-            [](WriteBuffer & buf)
-            {
-                writeFieldBinary(Field(Int64(0)), buf);
-                writeFieldBinary(Field(Int64(999)), buf);
-            });
+        auto rewritten = load_legacy_and_rewrite(data_type, numeric_min_max, [](WriteBuffer & buf)
+        {
+            writeFieldBinary(Field(Int64(0)), buf);
+            writeFieldBinary(Field(Int64(999)), buf);
+        });
         auto estimate = rewritten->getEstimate();
         EXPECT_FALSE(estimate.estimated_default_count.has_value());
         /// Without the count there is no estimate for `x = 0`, rather than an estimate of zero rows.
@@ -1042,8 +1047,10 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     /// A `String` column: the total byte length of the values.
     {
         auto string_type = DataTypeFactory::instance().get("String");
-        auto rewritten = load_legacy_and_rewrite(
-            string_type, string_length_sum, [](WriteBuffer & buf) { writeIntBinary(static_cast<UInt64>(2890), buf); });
+        auto rewritten = load_legacy_and_rewrite(string_type, string_length_sum, [](WriteBuffer & buf)
+        {
+            writeIntBinary(static_cast<UInt64>(2890), buf);
+        });
         EXPECT_FALSE(rewritten->getEstimate().estimated_default_count.has_value());
         EXPECT_FALSE(rewritten->estimateEqual(Field(String(""))).has_value());
         const auto & basic = assert_cast<const StatisticsBasic &>(*rewritten->getStats().at(StatisticsType::Basic));
@@ -1053,15 +1060,12 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     /// A `Nullable` column: min, max and the NULL count, which is the default-value count of a `Nullable` column.
     {
         auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
-        auto rewritten = load_legacy_and_rewrite(
-            nullable_type,
-            numeric_min_max | null_count,
-            [](WriteBuffer & buf)
-            {
-                writeFieldBinary(Field(Int64(1)), buf);
-                writeFieldBinary(Field(Int64(999)), buf);
-                writeIntBinary(static_cast<UInt64>(250), buf);
-            });
+        auto rewritten = load_legacy_and_rewrite(nullable_type, numeric_min_max | null_count, [](WriteBuffer & buf)
+        {
+            writeFieldBinary(Field(Int64(1)), buf);
+            writeFieldBinary(Field(Int64(999)), buf);
+            writeIntBinary(static_cast<UInt64>(250), buf);
+        });
         EXPECT_TRUE(rewritten->hasNullCount());
         EXPECT_EQ(rewritten->getNullCount(), 250u);
         EXPECT_EQ(rewritten->estimateDefaults(), 250u);
@@ -1074,10 +1078,10 @@ TEST(Statistics, BasicDefaultCountArray)
     EXPECT_TRUE(basicStatisticsValidator(SingleStatisticsDescription(StatisticsType::Basic, nullptr, false), data_type));
 
     MutableColumnPtr col = data_type->createColumn();
-    col->insert(Field(Array{})); /// empty (default)
-    col->insert(Field(Array{Field(UInt64(1))})); /// non-empty
-    col->insert(Field(Array{})); /// empty (default)
-    col->insert(Field(Array{Field(UInt64(2)), Field(UInt64(3))})); /// non-empty
+    col->insert(Field(Array{}));                                     /// empty (default)
+    col->insert(Field(Array{Field(UInt64(1))}));                     /// non-empty
+    col->insert(Field(Array{}));                                     /// empty (default)
+    col->insert(Field(Array{Field(UInt64(2)), Field(UInt64(3))}));   /// non-empty
     auto stats = createTestStats({StatisticsType::Basic}, data_type);
     stats->build(std::move(col));
 
