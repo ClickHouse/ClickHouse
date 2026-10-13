@@ -121,6 +121,13 @@ protected:
 
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
+    /// The raw indexes of the arguments that are not `key = value` pairs, in order. A positional
+    /// argument after the first named one is hidden instead of listed.
+    std::vector<size_t> classifyPositionalArguments();
+
+    /// Hides the positional argument at `slot`, counting only the positional arguments.
+    void markPositionalSecretArgument(size_t slot);
+
     /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
     /// (`extra_credentials` carries the assume-role secrets `external_id` and `role_session_name`; its
     /// non-secret identifier `role_arn` stays visible, see isNonSecretExtraCredentialsKey). The parsers
