@@ -610,6 +610,12 @@ def test_session_keeps_user_settings():
                 f"the session settings of the user were not preserved: {output!r}"
             )
 
+            # Wait for the next prompt: while a query runs, the client reads the
+            # keyboard (to toggle the progress table) and would swallow the next query.
+            if ":) " not in output.split("settings_1_5000000\r\n", 1)[1]:
+                output = _read_pty_until(sock, timeout=10, marker=":) ")
+                assert ":) " in output, f"no prompt after the first query: {output!r}"
+
             _ws_send_binary(sock, b"SELECT 'bypassed' SETTINGS readonly = 0 FORMAT TSV\r")
             output = _read_pty_until(sock, timeout=10, marker="READONLY")
             assert "READONLY" in output and "bypassed\r\n" not in output, (
