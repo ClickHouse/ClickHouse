@@ -123,6 +123,10 @@ private:
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
 
+    /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
+    /// in the command, before the normalization done for `rename_map` and `dropped_columns`.
+    NameSet columns_touched_by_metadata_mutations;
+
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
 
