@@ -29,8 +29,11 @@ FROM numbers_mt(1e5);
 
 -- The plan of the outer aggregation has no counterpart in the single-node plan:
 -- "Cannot find step with matching hash in single-node plan".
+-- Pinned to the query-based implementation: the plan-based one does find a counterpart here (the
+-- fragment root is the inner aggregation, which the single-node plan also has) and collects
+-- statistics, so this case documents a query-based limitation only.
 SELECT AVG(transfer) FROM (SELECT number, SUM(number) AS transfer FROM t GROUP BY number) FORMAT Null
-SETTINGS log_comment='unsupported_aggregation_over_aggregation';
+SETTINGS log_comment='unsupported_aggregation_over_aggregation', parallel_replicas_plan_based=0;
 
 -- "Unsupported steps: Union".
 SELECT * FROM t UNION ALL SELECT * FROM t FORMAT Null
