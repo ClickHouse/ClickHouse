@@ -21,6 +21,7 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Common/NetException.h>
@@ -1227,6 +1228,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             remote_database = named_collection->getAnyOrDefault<String>({"database", "db"}, "default");
             username = named_collection->getAnyOrDefault<String>({"username", "user"}, "default");
             password = named_collection->getOrDefault<String>("password", "");
+            NamedCollectionFactory::instance().addDatabaseDependency(named_collection->getName(), args.database_name);
         }
         else
         {

@@ -527,4 +527,27 @@ std::vector<StorageID> NamedCollectionFactory::getDependents(const String & coll
     return result;
 }
 
+void NamedCollectionFactory::addDatabaseDependency(const String & collection_name, const String & database_name)
+{
+    std::lock_guard lock(mutex);
+    LOG_TRACE(log, "Adding dependency: collection={}, database={}", collection_name, database_name);
+    database_dependencies[database_name] = collection_name;
+}
+
+void NamedCollectionFactory::removeDatabaseDependency(const String & database_name)
+{
+    std::lock_guard lock(mutex);
+    database_dependencies.erase(database_name);
+}
+
+std::vector<String> NamedCollectionFactory::getDependentDatabases(const String & collection_name) const
+{
+    std::lock_guard lock(mutex);
+    std::vector<String> result;
+    for (const auto & [database_name, used_collection_name] : database_dependencies)
+        if (used_collection_name == collection_name)
+            result.push_back(database_name);
+    return result;
+}
+
 }

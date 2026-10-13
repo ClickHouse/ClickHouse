@@ -33,6 +33,7 @@
 #    include <Storages/AlterCommands.h>
 #    include <Storages/MySQL/MySQLHelpers.h>
 #    include <Storages/MySQL/MySQLSettings.h>
+#    include <Common/NamedCollections/NamedCollectionsFactory.h>
 #    include <Storages/NamedCollectionsHelpers.h>
 #    include <Storages/StorageMySQL.h>
 #    include <base/isSharedPtrUnique.h>
@@ -815,6 +816,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 engine_define->settings))
         {
             configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
+            NamedCollectionFactory::instance().addDatabaseDependency(named_collection->getName(), args.database_name);
         }
         else
         {

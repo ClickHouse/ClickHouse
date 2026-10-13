@@ -19,6 +19,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -206,7 +207,7 @@ void DatabaseS3::shutdown()
 {
 }
 
-DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_)
+DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_, const String & database_name_)
 {
     Configuration result;
 
@@ -238,6 +239,8 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         {
             result.no_sign_request = true;
         }
+
+        NamedCollectionFactory::instance().addDatabaseDependency(collection.getName(), database_name_);
     }
     else
     {
@@ -338,7 +341,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
         if (engine->arguments && !engine->arguments->children.empty())
         {
             ASTs & engine_args = engine->arguments->children;
-            config = DatabaseS3::parseArguments(engine_args, args.context);
+            config = DatabaseS3::parseArguments(engine_args, args.context, args.database_name);
         }
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);

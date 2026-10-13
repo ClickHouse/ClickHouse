@@ -10,6 +10,7 @@
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/mem_fun.hpp>
+#include <unordered_map>
 
 namespace DB
 {
@@ -95,10 +96,17 @@ public:
     void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     std::vector<StorageID> getDependents(const String & collection_name) const;
 
+    /// A database depends on at most one named collection, the one its engine arguments refer to.
+    void addDatabaseDependency(const String & collection_name, const String & database_name);
+    void removeDatabaseDependency(const String & database_name);
+    std::vector<String> getDependentDatabases(const String & collection_name) const;
+
 protected:
     mutable NamedCollectionsMap loaded_named_collections;
     mutable std::mutex mutex;
     NamedCollectionDependencies dependencies;
+    /// Database name -> name of the named collection the database uses.
+    std::unordered_map<String, String> database_dependencies;
 
     const LoggerPtr log = getLogger("NamedCollectionFactory");
 

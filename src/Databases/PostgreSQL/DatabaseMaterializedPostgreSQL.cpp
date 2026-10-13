@@ -25,6 +25,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
@@ -751,6 +752,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
             configuration = StoragePostgreSQL::processNamedCollectionResult(
                 *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false);
+            NamedCollectionFactory::instance().addDatabaseDependency(named_collection->getName(), args.database_name);
         }
         else
         {

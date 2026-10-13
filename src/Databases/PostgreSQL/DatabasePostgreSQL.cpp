@@ -4,6 +4,7 @@
 
 #if USE_LIBPQXX
 
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
@@ -733,6 +734,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
+            NamedCollectionFactory::instance().addDatabaseDependency(named_collection->getName(), args.database_name);
         }
         else
         {

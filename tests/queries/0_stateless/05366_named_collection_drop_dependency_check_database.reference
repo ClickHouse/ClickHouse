@@ -1,0 +1,13 @@
+-- Each database blocks the drop of its collection
+Named collection `nc_pg_test_db` is used by databases: test_db_pg. (NAMED_COLLECTION_IS_USED)
+Named collection `nc_s3_test_db` is used by databases: test_db_s3. (NAMED_COLLECTION_IS_USED)
+Named collection `nc_remote_test_db` is used by databases: test_db_remote. (NAMED_COLLECTION_IS_USED)
+-- A table and a database are both reported
+Named collection `nc_pg_test_db` is used by tables: test_db_tables.pg_table; databases: test_db_pg. (NAMED_COLLECTION_IS_USED)
+-- The dependency is registered again when the database is attached
+Named collection `nc_pg_test_db` is used by databases: test_db_pg. (NAMED_COLLECTION_IS_USED)
+-- A dropped database does not block the drop
+nc_pg_test_db dropped
+-- A database created after a failed creation under the same name does not inherit its dependency
+BAD_ARGUMENTS
+nc_pg_test_db dropped

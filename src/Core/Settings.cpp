@@ -8514,7 +8514,7 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
 )", 0) \
     DECLARE(Bool, check_named_collection_dependencies, true, R"(
-Check that DROP NAMED COLLECTION will not break tables that depend on it
+Check that DROP NAMED COLLECTION will not break tables and databases that depend on it
 )", 0, \
         {"26.2", true, true, "New setting to check if dropping a named collection would break dependent tables."}) \
     \

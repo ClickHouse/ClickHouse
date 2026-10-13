@@ -31,6 +31,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/levenshteinDistance.h>
 #include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/noexcept_scope.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
@@ -836,6 +837,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
     }
+
+    /// The engine registers the dependency again when the database is attached.
+    NamedCollectionFactory::instance().removeDatabaseDependency(database_name);
     return db;
 }
 

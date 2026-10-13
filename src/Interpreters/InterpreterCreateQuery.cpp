@@ -304,6 +304,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
+    /// A dependency on a named collection registered for this name is stale, left by a failed creation:
+    /// the engine of the new database registers its own one.
+    NamedCollectionFactory::instance().removeDatabaseDependency(database_name);
+
     auto db_num_limit = getContext()->getGlobalContext()->getMaxDatabaseNumToThrow();
     if (db_num_limit > 0 && !internal)
     {

@@ -60,7 +60,8 @@ public:
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const override;
 
-    static Configuration parseArguments(ASTs engine_args, ContextPtr context);
+    /// Registers the database `database_name_` as a dependency of the named collection it uses, if any.
+    static Configuration parseArguments(ASTs engine_args, ContextPtr context, const String & database_name_);
 
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
