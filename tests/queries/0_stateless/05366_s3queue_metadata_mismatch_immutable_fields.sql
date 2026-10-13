@@ -9,6 +9,7 @@
 -- The object storage is never contacted: the metadata check happens while the engine is built.
 
 DROP TABLE IF EXISTS tq_base;
+DROP TABLE IF EXISTS tq_bucket_base;
 
 CREATE TABLE tq_base (x String)
 ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
@@ -20,11 +21,18 @@ CREATE TABLE tq1 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_
 SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366',
          after_processing = 'delete'; -- { serverError METADATA_MISMATCH }
 
--- `bucketing_mode`: stored as 'path', local 'partition'. A 'partition' bucketing mode is only
--- accepted together with a partitioning mode, and the bucketing field is compared first.
+-- `bucketing_mode`: stored as 'path', local 'partition'. A 'partition' bucketing mode hashes the
+-- partition key instead of the path, so it is only meaningful together with a partitioning mode.
+-- To vary `bucketing_mode` alone, a second keeper path already stores `partitioning_mode = 'hive'`.
+CREATE TABLE tq_bucket_base (x String)
+ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
+SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_bucket',
+         partitioning_mode = 'hive', processing_threads_num = 1,
+         polling_min_timeout_ms = 1, polling_max_timeout_ms = 1, polling_backoff_ms = 0;
+
 CREATE TABLE tq2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
-SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366',
-         bucketing_mode = 'partition', partitioning_mode = 'hive'; -- { serverError METADATA_MISMATCH }
+SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_bucket',
+         partitioning_mode = 'hive', bucketing_mode = 'partition'; -- { serverError METADATA_MISMATCH }
 
 -- `partitioning_mode`: stored as 'none', local 'hive'.
 CREATE TABLE tq3 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
@@ -56,7 +64,7 @@ CREATE TABLE tq8 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_
 SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366',
          last_processed_path = 'a.csv'; -- { serverError METADATA_MISMATCH }
 
--- Every mismatching table was rejected, so only the first one exists.
+-- Every mismatching table was rejected, so only the two base tables exist.
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE 'tq%';
 
 -- The check is selective: a table that agrees on all of the immutable fields joins the same path.
@@ -68,4 +76,5 @@ SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366', proce
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE 'tq%';
 
 DROP TABLE tq_same;
+DROP TABLE tq_bucket_base;
 DROP TABLE tq_base;
