@@ -4,8 +4,8 @@
 -- has it announces `WithOrder` to the shared coordinator against the other's `Default`. So a conjunct
 -- the splice leaves out stays above the initiator's copy, unless it cannot fix a column - a range, a
 -- join runtime filter (05056) - and then it only prunes. The shapes the splice refuses as a whole are
--- 05161 and 05183, a condition on a column the fragment computes 05366, and the switch's effect on the
--- replicas 03733.
+-- 05183, a fragment with several coordinated reads 05161, a condition on a column the fragment computes
+-- 05366, and the switch's effect on the replicas 03733.
 -- https://github.com/ClickHouse/ClickHouse/issues/95524
 
 DROP TABLE IF EXISTS t_pr_local_pd;

@@ -9,7 +9,7 @@
 --     function a second time.
 --
 -- The other refusals answer the same way for the same reason: a window or stateful function in the
--- shipped `SELECT` list, a `LIMIT`, an `OFFSET`, a `LIMIT AFTER .. UNTIL`, a `UNION ALL` (05161). A `WITH`
+-- shipped `SELECT` list, a `LIMIT`, an `OFFSET`, a `LIMIT AFTER .. UNTIL`, a `UNION ALL`. A `WITH`
 -- list is inlined by the analyzer and a named subquery rewritten into the `FROM` before either reaches the
 -- rewrite, and a `FINAL` query is not run by parallel replicas at all.
 
