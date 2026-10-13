@@ -154,7 +154,7 @@ public:
             }
         }
 
-        checkError(err);
+        checkError(err, current_archive);
         valid = false;
         return false;
     }
@@ -168,7 +168,7 @@ public:
             err = readNextHeader(current_archive, &current_entry);
         } while (err == ARCHIVE_RETRY);
 
-        checkError(err);
+        checkError(err, current_archive);
         valid = err == ARCHIVE_OK;
         return valid;
     }
@@ -195,7 +195,7 @@ public:
             error = readNextHeader(archive, &entry, rs.get());
         }
 
-        checkError(error);
+        checkError(error, archive);
         return files;
     }
 
@@ -247,13 +247,13 @@ private:
     using Archive = struct archive *;
     using Entry = struct archive_entry *;
 
-    void checkError(int error) const
+    static void checkError(int error, Archive archive)
     {
         if (error == ARCHIVE_FATAL)
             throw Exception(
                 ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                 "Failed to read archive while fetching all files: {}",
-                getArchiveErrorMessage(current_archive));
+                getArchiveErrorMessage(archive));
     }
 
     void resetFileInfo()
