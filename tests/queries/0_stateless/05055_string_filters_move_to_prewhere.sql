@@ -66,7 +66,9 @@ SELECT count() FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_
 SELECT sum(cityHash64(s)) FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 0;
 SELECT sum(cityHash64(s)) FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1;
 
-SELECT count() FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied';
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
+-- and its `ProfileEvents` never reach this query's `query_log` row.
+SELECT count() FROM t_string_filter_move WHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, log_comment = '05055_string_filter_applied';
 SYSTEM FLUSH LOGS query_log;
 SELECT
     sum(ProfileEvents['StringValueFilterValuesChecked']) > 0,

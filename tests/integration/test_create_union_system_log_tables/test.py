@@ -27,10 +27,13 @@ node2 = cluster.add_instance(
     stay_alive=True,
 )
 
-# Only the rotated versions of the local log tables.
+# Only the rotated versions of the local log tables. Drops are synchronous, as in the
+# stateless test harness: replacing an obsolete union table then waits for the old one
+# to be dropped (see `test_recreated_on_rotation`).
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/union_merge.xml"],
+    user_configs=["configs/drop_sync.xml"],
     stay_alive=True,
 )
 
@@ -113,7 +116,9 @@ def test_recreated_on_rotation(start_cluster):
     # created anew, and the union table is recreated as well.
     node3.query("ALTER TABLE system.query_log ADD COLUMN test_rotation UInt8")
     node3.restart_clickhouse()
-    node3.query("SYSTEM FLUSH LOGS query_log")
+    # With synchronous drops, this flush used to wait forever for the obsolete union table
+    # to be dropped while the flush thread itself kept it alive.
+    node3.query("SYSTEM FLUSH LOGS query_log", timeout=60)
 
     assert node3.query("EXISTS TABLE system.query_log_0").strip() == "1"
     assert "AS merge" in node3.query(

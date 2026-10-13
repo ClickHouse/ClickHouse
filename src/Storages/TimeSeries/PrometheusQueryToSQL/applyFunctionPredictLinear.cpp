@@ -214,11 +214,10 @@ SQLQueryPiece applyFunctionPredictLinear(
     const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
     const size_t result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
-    /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
-    /// range vector holds series, and a scalar grid if it was made from a scalar.
-    const bool has_group = (range_argument.store_method == StoreMethod::VECTOR_GRID) || (range_argument.store_method == StoreMethod::RAW_DATA);
-    const bool can_fuse_drop_metric_name = has_group
-        && (range_argument.store_method == StoreMethod::RAW_DATA)
+    /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
+    /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
+    const bool from_scalar = (range_argument.store_method != StoreMethod::VECTOR_GRID) && (range_argument.store_method != StoreMethod::RAW_DATA);
+    const bool can_fuse_drop_metric_name = (range_argument.store_method == StoreMethod::RAW_DATA)
         && hasExactMetricNameMatcher(range_argument.node);
 
     SelectQueryBuilder builder;
@@ -230,23 +229,25 @@ SQLQueryPiece applyFunctionPredictLinear(
         builder.from_table = subqueries.back().name;
     }
 
-    if (has_group)
+    if (from_scalar)
     {
-        if (can_fuse_drop_metric_name)
-        {
-            auto remove_tag = makeASTFunction(
-                "timeSeriesRemoveTag",
-                make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Group}),
-                make_intrusive<ASTLiteral>(kMetricName));
-            remove_tag->setAlias(ColumnNames::Group);
-            builder.select_list.push_back(std::move(remove_tag));
-            builder.group_by.push_back(make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Group}));
-        }
-        else
-        {
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-        }
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+    }
+    else if (can_fuse_drop_metric_name)
+    {
+        auto remove_tag = makeASTFunction(
+            "timeSeriesRemoveTag",
+            make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Group}),
+            make_intrusive<ASTLiteral>(kMetricName));
+        remove_tag->setAlias(ColumnNames::Group);
+        builder.select_list.push_back(std::move(remove_tag));
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Group}));
+    }
+    else
+    {
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
     }
 
     ASTPtr regression = addParametersToAggregateFunction(
@@ -277,7 +278,7 @@ SQLQueryPiece applyFunctionPredictLinear(
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     SQLQueryPiece res = range_argument;
-    res.store_method = has_group ? StoreMethod::VECTOR_GRID : StoreMethod::SCALAR_GRID;
+    res.store_method = StoreMethod::VECTOR_GRID;
     res.scalar_value = {};
     res.node = function_node;
 
@@ -289,8 +290,10 @@ SQLQueryPiece applyFunctionPredictLinear(
     if (can_fuse_drop_metric_name)
         res.metric_name_dropped = true;
 
-    /// `predict_linear` always drops the metric name (PromQL: function outputs have no `__name__`).
-    if (has_group && !res.metric_name_dropped)
+    /// `predict_linear` always drops the metric name (PromQL: function outputs have no `__name__`). A scalar has no metric name.
+    if (from_scalar)
+        res.metric_name_dropped = true;
+    else if (!res.metric_name_dropped)
         res = dropMetricName(std::move(res), context);
 
     return res;
