@@ -127,7 +127,9 @@ public:
     /// Requested `x.size` columns that are the sizes of the String column `x`, not columns named `x.size`.
     virtual void setStringSizesColumns(const NameSet & /*columns*/) {}
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
+    template <typename Buffer>
+    void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 
@@ -147,6 +149,8 @@ public:
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
+    /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
+    virtual bool isMinMaxFromStatisticsApplied() const { return false; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
