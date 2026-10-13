@@ -1,17 +1,9 @@
 #pragma once
 
 #include <Analyzer/IQueryTreePass.h>
-#include <Core/Joins.h>
 
 namespace DB
 {
-
-struct Settings;
-
-/// Whether the algorithms of `join_algorithm`, tried in their order the way `chooseJoinAlgorithm` tries them,
-/// execute a left join of two subqueries with this strictness the way the set operation compares its rows: the
-/// first algorithm that either runs the join or fails it decides.
-bool joinAlgorithmExecutesSetOperationJoin(const Settings & settings, JoinStrictness strictness, bool has_merge_unsafe_key);
 
 /** Rewrite `INTERSECT DISTINCT` and `EXCEPT DISTINCT` to `SELECT DISTINCT l.* FROM (arm_1) l SEMI|ANTI LEFT JOIN (arm_2) r
   * ON l.c_i <=> r.c_i ...`, folding more than two arms from the left, so that the set operations use the join
@@ -21,7 +13,7 @@ bool joinAlgorithmExecutesSetOperationJoin(const Settings & settings, JoinStrict
   *
   * A union whose columns have a `Dynamic` type (which cannot be a join key), or whose arm has duplicate column
   * names (which cannot be referenced from the join), keeps the set-operation step, as do the `ALL` modes and
-  * every union when none of the enabled join algorithms can execute a semi join.
+  * every union when the join would not be a hash join reading all of both sides.
   */
 class RewriteIntersectExceptToJoinPass final : public IQueryTreePass
 {

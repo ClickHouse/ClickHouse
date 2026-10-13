@@ -1,0 +1,19 @@
+a merge join compares floats differently, so it keeps the set-operation step
+0
+0
+0
+the join limits would cut the right side short, so they keep the set-operation step
+0
+1
+2
+3
+4
+3
+4
+the limits of DISTINCT bound the result, not the inputs of the join
+2
+5
+executed as a join
+1
+0
+0

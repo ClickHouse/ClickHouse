@@ -121,7 +121,15 @@ IProcessor::Status JoiningTransform::prepare()
 
             /// The left side starts to work before the right one is filled, up to what the ports in between hold.
             if (join->getTableJoin().readsLeftWhileFillingRight())
-                inputs.front().setNeeded();
+            {
+                auto & left = inputs.front();
+                left.setNeeded();
+                if (empty_left_streams && !counted_as_empty_left_stream && left.isFinished())
+                {
+                    counted_as_empty_left_stream = true;
+                    empty_left_streams->isLast();
+                }
+            }
 
             return Status::NeedData;
         }
@@ -365,6 +373,11 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
     auto & input = inputs.front();
 
+    /// A set operation outputs only left rows, so once all its left streams are exhausted, the rest of the right
+    /// side, which may be unbounded, is not read. The build completes with the rows read so far.
+    if (empty_left_streams && empty_left_streams->isFinished())
+        stop_reading = true;
+
     if (stop_reading)
     {
         input.close();
@@ -435,6 +448,8 @@ void FillingRightJoinSideTransform::work()
 
     if (for_totals)
         join->setTotals(block);
+    else if (empty_left_streams && empty_left_streams->isFinished())
+        stop_reading = true;
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);

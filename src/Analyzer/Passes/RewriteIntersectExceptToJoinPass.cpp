@@ -8,13 +8,10 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Joins.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/JoinOperator.h>
-#include <Interpreters/TableJoin.h>
-#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -25,9 +22,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsBool legacy_join_size_limits_trigger_spilling;
-    extern const SettingsUInt64 max_bytes_before_external_join;
-    extern const SettingsDouble max_bytes_ratio_before_external_join;
+    extern const SettingsUInt64 max_bytes_in_join;
+    extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsBool optimize_rewrite_intersect_except_to_join;
 }
 
@@ -170,73 +166,36 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, JoinStrictness str
     return left.node;
 }
 
-/// A merge join compares its keys with `compareAt`, while both the set operation and the hash join compare the
-/// bytes of the key. The two disagree for the types of `keyTypeBreaksHashSharding` (`compareAt` equates `-0.0`
-/// with `0.0` and every `NaN` with every other, and compares a `JSON` by its logical value rather than by its
-/// layout) and for the states of aggregate functions, all of which `compareAt` reports as equal.
-bool keyBreaksMergeJoinEquivalence(const DataTypePtr & type)
+/// The rewrite keeps the semantics of the set operation only for a hash join, which compares the keys by their bytes
+/// like the set operation does (a merge join equates `-0.0` with `0.0`, and all states of aggregate functions), and
+/// which reads all of both sides: the limits of `max_rows_in_join` and `max_bytes_in_join` either throw or, with
+/// `join_overflow_mode = 'break'`, cut the right side short. `direct` and `ie_join` never take a join of two subqueries
+/// on `<=>` keys, so they are passed over.
+bool joinExecutesSetOperation(const Settings & settings)
 {
-    return QueryPlanOptimizations::keyTypeBreaksHashSharding(*type) || hasAggregateFunctionType(type);
-}
-
-}
-
-/// The algorithms are tried in the order they are listed in, so a hash algorithm that is enabled does not keep
-/// a merge join from being chosen. For a key that a merge join compares differently, the rewrite is therefore
-/// only equivalent when no algorithm that a merge join can be reached through is enabled: `PARTIAL_MERGE`,
-/// `PREFER_PARTIAL_MERGE` and `FULL_SORTING_MERGE` run one directly, and `AUTO` switches to one once the right
-/// side outgrows the limits.
-///
-/// The walk over the list mirrors `tryCreateJoin`: an algorithm that cannot execute the join is passed over, and
-/// the set-operation step is kept where the planner would throw, since the step needs neither a spill threshold
-/// nor temporary storage. `grace_hash` with a spill threshold throws without temporary storage, and the join is
-/// built on every server that executes the plan (parallel replicas, a distributed plan) from that server's own
-/// temporary storage, which the server rewriting the query cannot see, so it keeps the set-operation step too.
-bool joinAlgorithmExecutesSetOperationJoin(const Settings & settings, JoinStrictness strictness, bool has_merge_unsafe_key)
-{
-    const auto & algorithms = settings[Setting::join_algorithm].value;
-    auto enabled = [&](JoinAlgorithm algorithm) { return TableJoin::isEnabledAlgorithm(algorithms, algorithm); };
-
-    const bool can_reach_merge_join = enabled(JoinAlgorithm::AUTO) || enabled(JoinAlgorithm::PREFER_PARTIAL_MERGE)
-        || enabled(JoinAlgorithm::PARTIAL_MERGE) || enabled(JoinAlgorithm::FULL_SORTING_MERGE);
-    if (has_merge_unsafe_key && can_reach_merge_join)
+    if (settings[Setting::max_rows_in_join] || settings[Setting::max_bytes_in_join])
         return false;
 
-    const bool grace_hash_has_spill_trigger = settings[Setting::legacy_join_size_limits_trigger_spilling]
-        || JoinSettings::getMaxBytesBeforeExternalJoin(
-            settings[Setting::max_bytes_before_external_join], settings[Setting::max_bytes_ratio_before_external_join]) > 0;
-
-    for (const auto algorithm : algorithms)
+    bool has_hash = false;
+    for (const auto algorithm : settings[Setting::join_algorithm].value)
     {
         switch (algorithm)
         {
             case JoinAlgorithm::DEFAULT:
             case JoinAlgorithm::HASH:
             case JoinAlgorithm::PARALLEL_HASH:
-            case JoinAlgorithm::AUTO:
-            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
-                return true;
-            /// The partial merge join executes semi joins but not anti joins.
-            case JoinAlgorithm::PARTIAL_MERGE:
-                if (strictness == JoinStrictness::Semi)
-                    return true;
+                has_hash = true;
                 break;
-            /// Without a spill threshold, `grace_hash` is passed over when another algorithm is listed and fails
-            /// the join when listed alone. With one, it fails the join on a server without temporary storage.
-            case JoinAlgorithm::GRACE_HASH:
-                if (!grace_hash_has_spill_trigger && algorithms.size() > 1)
-                    break;
-                return false;
-            /// `direct` needs a key-value storage on the right, the sorting merge joins execute neither a semi
-            /// nor an anti join, and the IE join needs inequality conditions.
             case JoinAlgorithm::DIRECT:
-            case JoinAlgorithm::FULL_SORTING_MERGE:
-            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
             case JoinAlgorithm::IE_JOIN:
                 break;
+            default:
+                return false;
         }
     }
-    return false;
+    return has_hash;
+}
+
 }
 
 namespace
@@ -269,10 +228,7 @@ public:
         if (!getSettings()[Setting::optimize_rewrite_intersect_except_to_join])
             return;
 
-        const auto result_columns = union_node->computeProjectionColumns();
-        const bool has_merge_unsafe_key
-            = std::ranges::any_of(result_columns, [](const auto & column) { return keyBreaksMergeJoinEquivalence(column.type); });
-        if (!joinAlgorithmExecutesSetOperationJoin(getSettings(), strictness, has_merge_unsafe_key))
+        if (!joinExecutesSetOperation(getSettings()))
             return;
 
         auto join_query = buildJoinQuery(*union_node, strictness, aliases, getContext());

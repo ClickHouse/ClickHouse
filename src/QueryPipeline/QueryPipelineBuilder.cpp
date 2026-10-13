@@ -632,7 +632,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     terminatePendingSealInputs(*right, collected_processors);
 
     /// A join not marked as gating carries the probe-side pending seal inputs upward.
-    FillingRightJoinSideTransformRawPtrs filling_transforms_for_seal;
+    FillingRightJoinSideTransformRawPtrs filling_transforms;
     const bool wire_seal_gates = seal_gate.has_value() && !left->pipe.pending_seal_inputs.empty();
 
     /// Collect the NEW processors for the right pipeline.
@@ -687,8 +687,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                     processors.emplace_back(squashing);
                     auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
                         right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(next_stream++, outports.size()));
-                    if (wire_seal_gates)
-                        filling_transforms_for_seal.push_back(adding_joined.get());
+                    filling_transforms.push_back(adding_joined.get());
                     connect(squashing->getOutputPort(), adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -699,8 +698,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                 {
                     auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
                         right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(next_stream++, outports.size()));
-                    if (wire_seal_gates)
-                        filling_transforms_for_seal.push_back(adding_joined.get());
+                    filling_transforms.push_back(adding_joined.get());
                     connect(*outport, adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -717,8 +715,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto filling_finish_counter = std::make_shared<FinishCounter>(1);
         auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
             right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::serial());
-        if (wire_seal_gates)
-            filling_transforms_for_seal.push_back(adding_joined.get());
+        filling_transforms.push_back(adding_joined.get());
         InputPort * totals_port = nullptr;
         if (right->hasTotals())
             totals_port = adding_joined->addTotalsPort();
@@ -732,7 +729,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     /// Gate the probe-side reading by the build completion. The seal ports are added after all
     /// pipe transformations of the right pipeline, so they do not interfere with the resizes.
     if (wire_seal_gates)
-        wireSealGatedReading(*left, *right, filling_transforms_for_seal, *seal_gate, collected_processors);
+        wireSealGatedReading(*left, *right, filling_transforms, *seal_gate, collected_processors);
 
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
@@ -771,6 +768,18 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     auto joining_finish_counter = std::make_shared<FinishCounter>(num_streams);
     auto joining_right_rows_match_counter = std::make_shared<RightRowsMatchCounter>();
 
+    /// A set operation stops reading its right side once all its left streams turn out empty, since then it returns
+    /// nothing, unless it is a right anti join (its sides were swapped), which returns the unmatched right rows.
+    FinishCounterPtr empty_left_streams;
+    const auto & table_join = join->getTableJoin();
+    if (table_join.readsLeftWhileFillingRight()
+        && (isLeft(table_join.kind()) || (isRight(table_join.kind()) && table_join.strictness() == JoinStrictness::Semi)))
+    {
+        empty_left_streams = std::make_shared<FinishCounter>(num_streams);
+        for (auto * filling : filling_transforms)
+            filling->setEmptyLeftStreams(empty_left_streams);
+    }
+
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -786,6 +795,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
 
+        joining->setEmptyLeftStreams(empty_left_streams);
         connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
