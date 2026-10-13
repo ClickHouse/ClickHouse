@@ -80,7 +80,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             String{},
             distributed_settings,
             LoadingStrictnessLevel::CREATE,
-            /* is_fresh_definition = */ true,
             cluster,
             remote_table_function_ptr,
             !is_cluster_function);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-parallel, no-fasttest
+# Tags: no-shared-merge-tree, no-parallel
 # no-shared-merge-tree: SharedMergeTree doesn't load inactive parts to memory after restart
 # no-parallel: SYSTEM ENABLE FAILPOINT is process-wide, the pause failpoint would block the
 # loading of outdated parts of the tables of other tests.

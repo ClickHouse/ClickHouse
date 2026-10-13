@@ -49,7 +49,7 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
-    std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context);
+    std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context->getCurrentDatabase());
     auto load_result = external_loader.load(resolved_name);
     if (load_result)
     {

@@ -50,14 +50,11 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerSwitcher.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
-#include <Common/checkSSLReturnCode.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/quoteString.h>
 #include <Common/SettingSource.h>
@@ -102,6 +99,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
@@ -422,9 +420,7 @@ void TCPHandler::runImpl()
         /// client observes 'Connection reset by peer' without any explanation. Send the
         /// exception into the socket directly instead.
         tryLogCurrentException(log, "Cannot initialize connection");
-        /// Writing to a timed-out TLS handshake would start it over for another window.
-        if (e.code() != ErrorCodes::SOCKET_TIMEOUT || !secureHandshakePending(socket().impl()))
-            trySendExceptionWithoutConnectionBuffers(e);
+        trySendExceptionWithoutConnectionBuffers(e);
         return;
     }
 
@@ -1451,18 +1447,6 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     startInsertQuery(state);
     Squashing squashing(std::make_shared<const Block>(state.input_header), 0, state.query_context->getSettingsRef()[Setting::async_insert_max_data_size]);
 
-    /// The block outlives this query once queued, so it is charged to a tracker of its own from the start.
-    auto queued_data_tracker = tryCreateMemoryTrackerUnderCurrentQuery(VariableContext::Process);
-    if (queued_data_tracker)
-        queued_data_tracker->setDriftExpected();
-
-    /// The reader lives as long as the query, so it is not queued data.
-    initBlockInput(state);
-
-    std::optional<MemoryTrackerSwitcher> switcher;
-    if (queued_data_tracker)
-        switcher.emplace(queued_data_tracker.get());
-
     while (receivePacketsExpectDataConcurrentWithExecutor(state))
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
@@ -1471,20 +1455,15 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         auto result_chunk = Squashing::squash(squashing.generate(/*flush_if_enough_size*/ true), squashing.getHeader());
 
         {
-            /// Log rows and writers are the query's, not queued data.
-            switcher.reset();
             std::lock_guard lock(*callback_mutex);
             /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
             sendLogs(state);
             sendInsertProfileEvents(state);
             out->sync();
-            if (queued_data_tracker)
-                switcher.emplace(queued_data_tracker.get());
         }
 
         if (result_chunk)
         {
-            switcher.reset();
             auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {
@@ -1499,14 +1478,11 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         squashing.getHeader());
     if (!result_chunk)
     {
-        switcher.reset();
-        return insert_queue.pushQueryWithBlock(
-            state.parsed_query, squashing.getHeader()->cloneWithoutColumns(), state.query_context, std::move(queued_data_tracker));
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader()->cloneWithoutColumns(), state.query_context);
     }
 
     auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
-    switcher.reset();
-    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), state.query_context, std::move(queued_data_tracker));
+    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), state.query_context);
 }
 
 
@@ -2143,6 +2119,16 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 /// from consuming excessive memory. See #52501.
 static constexpr size_t MAX_HELLO_STRING_SIZE = 64 * 1024;
 
+/** The externally granted roles are a serialized list of role names. Both the size of the list and
+  * the number of names in it come from the peer, and in interserver mode they are read before the
+  * secret hash of the query is checked, so bound them.
+  */
+static constexpr size_t MAX_EXTRA_ROLES_SIZE = 1024 * 1024;
+/// Only read on the interserver path, which is compiled out without SSL.
+[[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLES = 65536;
+/// A role name is an identifier, and it is resized to its declared size before its value arrives.
+[[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLE_NAME_SIZE = 64 * 1024;
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -2638,7 +2624,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     // TODO: check if having `is_interserver_mode` doesn't break interoperability with the CH-client.
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
     {
-        readStringBinary(received_extra_roles, *in);
+        readStringBinary(received_extra_roles, *in, MAX_EXTRA_ROLES_SIZE);
     }
 
     /// Interserver secret.
@@ -2753,7 +2739,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             {
                 ReadBufferFromString buffer(received_extra_roles);
 
-                readVectorBinary(external_roles, buffer);
+                readVectorBinary(external_roles, buffer, MAX_EXTRA_ROLES, MAX_EXTRA_ROLE_NAME_SIZE);
                 LOG_DEBUG(log, "Parsed extra roles [{}]", fmt::join(external_roles, ", "));
             }
 
@@ -2838,6 +2824,20 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// the *previous* query's kind on this connection (and `NO_QUERY` for the first one).
     query_kind = state->query_context->getClientInfo().query_kind;
 
+    /// FIXME: Remove together with the old query analysis itself.
+    /// Analyzer became Beta in 24.3 and started to be enabled by default.
+    /// We have to disable it for ourselves to make sure we don't have different settings on
+    /// different servers. `enable_analyzer` is an obsolete setting a user cannot disable anymore,
+    /// but an initiator this old has no analyzer at all, so a query it sends has to keep being
+    /// analyzed the old way. The value survives `clampToSettingsConstraints` below because a
+    /// change disabling the analyzer is only refused on the throwing paths (see
+    /// `SettingsConstraints`), which a secondary query does not take.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
+            < VersionNumber(23, 3, 0)
+        && !passed_settings[Setting::allow_experimental_analyzer].changed)
+        passed_settings.set("allow_experimental_analyzer", false);
+
     if (state->stage == QueryProcessingStage::WithMergeableState
         && VersionNumber(client_info.connection_client_version_major, client_info.connection_client_version_minor, client_info.connection_client_version_patch)
             < VersionNumber(25, 10, 0)
@@ -2894,7 +2894,7 @@ void TCPHandler::processUnexpectedQuery()
     UInt64 skip_uint_64 = 0;
     String skip_string;
 
-    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
 
     ClientInfo skip_client_info;
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -2904,6 +2904,10 @@ void TCPHandler::processUnexpectedQuery()
     auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                       : SettingsWriteFormat::BINARY;
     skip_settings.read(*in, settings_format);
+
+    /// The same layout as in `processQuery`: the externally granted roles precede the interserver hash.
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+        readStringBinary(skip_string, *in, MAX_EXTRA_ROLES_SIZE);
 
     std::string skip_hash;
     bool interserver_secret = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET;
@@ -2918,7 +2922,7 @@ void TCPHandler::processUnexpectedQuery()
     readStringBinary(skip_string, *in);
 
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        skip_settings.read(*in, settings_format);
+        std::ignore = readQueryParameters(*in);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
 }

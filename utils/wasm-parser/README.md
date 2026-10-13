@@ -78,8 +78,6 @@ and for one that does not (`SELECT 1 +`):
   reports is always one it can read back, because it is read back before it is reported: whatever
   `ch_format_json` would refuse - a document larger than the 1 MiB the module accepts as input, or
   a tree past its depth or element budget - is reported as a `null` `ast` with the reason instead.
-  So is a tree too deep for the module's stack: `ast_error` then says "Stack size too large". The
-  query itself still parses. That happens with about 36 terms of `+` or 10 levels of subqueries.
   Note that the element budget is not a count of AST nodes: the reader counts every value of a
   structured `Field` too, and an `Array`, `Tuple` or `Map` literal of any width is a single AST
   node, so how much of the budget a tree needs is not visible from the tree alone.
@@ -97,18 +95,9 @@ and for one that does not (`SELECT 1 +`):
 
 `ch_format_json` is the reverse half: it takes an `ast` document - from `ch_parse` here, or from
 `parseQueryToJSON` on a server - and formats it as SQL, one-line or multi-line. Anything wrong
-with the document (malformed JSON, an unknown node type, a field of the wrong shape, brackets
-nested more than 2000 levels deep, a tree past the depth or element limits) comes back as 0 with
-the message; hostile input cannot stop the module. Both directions exist only in a build with
-formatting, and `ch_features` bit 2 says so.
-
-That guarantee, like everything else here, assumes the engine gives WebAssembly at least as much
-of its own stack as a Web Worker in Chrome has, which is where the limits were measured: the
-module's stack in linear memory is checked (`checkStackSize`, see `-z stack-size` in
-`CMakeLists.txt`), but the frames also take the engine's stack, and running out of that one is a
-`RangeError: Maximum call stack size exceeded` in JavaScript. `test.mjs` drives the deepest inputs
-again in a worker whose V8 stack is limited to about that much. A module that has thrown a
-`RangeError` or trapped is not safe to call again: create a new instance.
+with the document (malformed JSON, an unknown node type, a field of the wrong shape, a tree past
+the depth or element limits) comes back as 0 with the message; hostile input cannot stop the
+module. Both directions exist only in a build with formatting, and `ch_features` bit 2 says so.
 
 No C++ exception ever unwinds here. `tryParseQuery` reports a syntax error by returning null
 rather than by throwing, and no code in `src/Parsers` catches anything, so the build passes

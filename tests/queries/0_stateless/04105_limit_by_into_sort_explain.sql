@@ -122,9 +122,8 @@ SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
 ORDER BY k, v LIMIT 2, 3 BY k;
 
--- With `full_sorting_merge`, the join emits its result in join-key order, so the final `ORDER BY k, v`
--- above it only finishes the sort by `v` within each `k` (a `FinishSorting`): there is no full sort to
--- push the `LIMIT BY` into, and neither the input sorts used by the join algorithm are touched.
+-- With `full_sorting_merge`, the optimization applies to the final `ORDER BY` sort above
+-- the `JOIN`, not to the input sorts used by the join algorithm.
 EXPLAIN PIPELINE
 SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k

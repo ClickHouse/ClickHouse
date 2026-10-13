@@ -22,8 +22,6 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
 
-struct DistributedPlanLocalObject;
-
 struct QueryPlanOptimizationSettings
 {
     QueryPlanOptimizationSettings(
@@ -64,12 +62,10 @@ struct QueryPlanOptimizationSettings
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
-    bool legacy_array_join_function_nondeterministic_evaluation;
     bool enable_lazy_columns_replication;
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
-    bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
@@ -91,9 +87,7 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
-    bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
-    bool top_k_optimization_shared_boundary = true;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -139,15 +133,11 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
-    bool join_seal_gated_reading;
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
-    /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the
-    /// query context's, read by the fallback decision. Null outside a query.
-    std::shared_ptr<const DistributedPlanLocalObject> distributed_plan_local_object;
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
@@ -174,8 +164,6 @@ struct QueryPlanOptimizationSettings
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;
-    /// `EXPLAIN WHATIF` plans cannot see the projections that it weighs, so a forced projection must not fail them
-    bool skip_forced_projection_check = false;
     String force_projection_name;
 
     /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate

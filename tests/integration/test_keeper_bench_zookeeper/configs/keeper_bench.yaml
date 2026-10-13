@@ -1,0 +1,39 @@
+concurrency: 2
+iterations: 100
+report_delay: 0
+timelimit: 0
+
+connections:
+  operation_timeout_ms: 10000
+  connection_timeout_ms: 30000
+  host: "zoo1:2181"
+
+setup:
+  node:
+    name: "keeper_bench_list"
+    node:
+      repeat: 4
+      name:
+        random_string:
+          size: 12
+
+generator:
+  requests:
+    # A standalone `list` and a `list` nested in a `multi` reach different request
+    # validation on the server, so both shapes are generated.
+    list:
+      path:
+        - "/keeper_bench_list"
+      path:
+        children_of: "/keeper_bench_list"
+
+    multi:
+      get:
+        path:
+          children_of: "/keeper_bench_list"
+      list:
+        path:
+          - "/keeper_bench_list"
+
+output:
+  stdout: true

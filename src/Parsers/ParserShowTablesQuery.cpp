@@ -7,6 +7,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -201,21 +203,21 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->set(query->from, database);
 
     if (like)
-    {
         query->like = like->as<ASTLiteral &>().value.safeGet<String>();
-        query->has_like = true;
-    }
 
     node = query;
 
     return true;
 }
 
-std::map<String, Documentation> ParserShowTablesQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["SHOW"] =
+namespace DB
+{
+
+void registerStatementShow(StatementFactory & factory)
+{
+    factory.registerStatement("SHOW",
     {
         .description = R"DOCS_MD(
 <Note>
@@ -959,9 +961,7 @@ SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
 SHOW MERGES [[NOT] LIKE|ILIKE '<table_pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 )",
         .related = {"DESCRIBE TABLE", "EXISTS", "SELECT", "GRANT"},
-    };
-
-    return documentation;
+    });
 }
 
 }

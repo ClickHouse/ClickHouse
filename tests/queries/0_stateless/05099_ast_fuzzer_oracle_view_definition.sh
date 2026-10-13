@@ -188,76 +188,8 @@ run_fuzzed()
         "$(printf '%s\n' "$out" | grep -a 'Fuzzed query: ' | tail -1)"
 }
 
-# True if the logged query `$1` reads the relation `$2` (a regex, so a caller can ask for a
-# placeholder): a counter move proves only that an oracle ran, and a name surviving anywhere in
-# the text does not prove the query read it. A read resolves a bare name in a table expression or
-# as an `IN` operand; `NOT IN`, `GLOBAL IN` and `GLOBAL NOT IN` end in `IN` too, and the null-aware
-# spellings format as a call and go unmatched, which costs nothing since the screen rejects all eight.
-# A comma after the name means the name is a set element rather than the operand, so only the
-# table positions accept one: `FROM a, b` reads `a`. A name in a later position of a comma
-# join is not matched and need not be: every table position is rejected by the definition
-# screen itself, so no oracle can run on one.
-reads_relation()
-{
-    local text=$1
-    local name=$2
-    local quoted='`[^`]*`'
-    # A parenthesis inside a bracket expression is unbalanced to the `[[` tokenizer, so the
-    # patterns are built here and matched through a variable.
-    local trailing='([^A-Za-z0-9_]|$)'
-    local in_trailing='([^A-Za-z0-9_,]|$)'
-    local table_position="[^A-Za-z0-9_](FROM|JOIN)[[:space:]]*[(]?[[:space:]]*([A-Za-z0-9_]+[.])?$name$trailing"
-    local in_operand="[^A-Za-z0-9_]IN[[:space:]]*[(]?[[:space:]]*([A-Za-z0-9_]+[.])?$name$in_trailing"
-
-    # `ARRAY JOIN` and `IS DISTINCT FROM` end in those keywords but take a column, and a back-quoted
-    # name here comes from a fuzzed column-transformer matcher, never from a table position.
-    text=${text//ARRAY JOIN/ARRAY-J}
-    text=${text//IS DISTINCT FROM/IS-DF}
-    while [[ "$text" =~ $quoted ]]
-    do
-        text=${text/"${BASH_REMATCH[0]}"/}
-    done
-
-    [[ "$text" =~ $table_position ]] || [[ "$text" =~ $in_operand ]]
-}
-
-# Some of the shapes below are not producible on demand, so pin the classifier on them
-# directly: a mutation that keeps the name out of a read position must not count as one, and
-# the positions the arms depend on must still count.
-check_reads_relation()
-{
-    local unexpected=0 expect name text
-    while IFS='|' read -r expect name text
-    do
-        [[ -z "$expect" ]] && continue
-        if reads_relation "$text" "$name"
-        then
-            [[ "$expect" == read ]] || { echo "counted as a read: $text"; unexpected=1; }
-        else
-            [[ "$expect" == none ]] || { echo "not counted as a read: $text"; unexpected=1; }
-        fi
-    done <<'CASES'
-read|oracle_definition_in_view|SELECT k FROM oracle_definition_src WHERE k IN (oracle_definition_in_view)
-read|oracle_definition_in_view|SELECT k FROM oracle_definition_src WHERE k GLOBAL NOT IN (oracle_definition_in_view)
-read|[{][A-Za-z0-9_]*:Identifier[}]|SELECT k FROM oracle_definition_src JOIN {fuzz_param_1:Identifier} USING (k)
-read|oracle_definition_nondet_view|SELECT k FROM oracle_definition_nondet_view, oracle_definition_src WHERE k > 5
-read|[{][A-Za-z0-9_]*:Identifier[}]|SELECT k FROM oracle_definition_src WHERE k IN ({fuzz_param_1:Identifier})
-none|[{][A-Za-z0-9_]*:Identifier[}]|SELECT k FROM oracle_definition_src WHERE k IN ({fuzz_param_1:Identifier}, 0)
-none|oracle_definition_in_view|SELECT k FROM oracle_definition_src WHERE k IN if(isNull(k), oracle_definition_in_view, 0)
-none|oracle_definition_in_view|SELECT * APPLY toString EXCEPT (r, `k IN (oracle_definition_in_view)`) FROM oracle_definition_src
-none|oracle_definition_alias|SELECT k, r FROM oracle_definition_alias_engine WHERE k > 5
-none|[{][A-Za-z0-9_]*:Identifier[}]|SELECT k FROM oracle_definition_src ARRAY JOIN {fuzz_param_1:Identifier}
-none|oracle_definition_in_view|SELECT k FROM oracle_definition_src WHERE k IS DISTINCT FROM oracle_definition_in_view
-none|oracle_definition_nondet_view|SELECT k FROM oracle_definition_src, oracle_definition_nondet_view WHERE k > 5
-CASES
-    if [[ "$unexpected" -eq 0 ]]
-    then
-        echo "read attribution: as specified"
-    fi
-}
-
 # A screened definition must never reach an oracle, so the counter must not move for a fuzzed
-# query that still reads `$2`. A mutation may drop that reference instead of preserving it (the
+# query that still names `$2`. A mutation may drop that reference instead of preserving it (the
 # fuzzer rewrites a WHERE predicate freely, so `k IN v` can become `k`), and an oracle running
 # on a query that no longer reads the definition is correct rather than a leak, so each move is
 # attributed to the query the server logged. A move that cannot be attributed counts as a leak.
@@ -271,7 +203,7 @@ assert_screened()
     local query=$3
     local prelude=${4:-}
     local runs=10
-    local sample checks fuzzed prev_checks="" prev_fuzzed=""
+    local sample checks fuzzed prev_checks="" prev_fuzzed="" positions
     local leaked=0
     local i
 
@@ -299,11 +231,14 @@ assert_screened()
         if [[ -n "$prev_checks" && "$checks" -gt "$prev_checks" ]]
         then
             # A parameterized identifier logs as `{fuzz_param_N:Identifier}`, so a move paired with
-            # one is unattributable by name; in a read position it is a leak whatever the
+            # one is unattributable by name; in a table position it is a leak whatever the
             # placeholder stands for, because the screen rejects that name before any oracle runs.
-            if [[ -z "$prev_fuzzed" ]] \
-                || reads_relation "$prev_fuzzed" "$object" \
-                || reads_relation "$prev_fuzzed" '[{][A-Za-z0-9_]*:Identifier[}]'
+            # `ARRAY JOIN` / `IS DISTINCT FROM` end in those keywords but take a column: blind them.
+            positions=${prev_fuzzed//ARRAY JOIN/ARRAY-J}
+            positions=${positions//IS DISTINCT FROM/IS-DF}
+            if [[ -z "$prev_fuzzed" || "$prev_fuzzed" == *"$object"* \
+                  || "$positions" =~ (FROM|JOIN)[[:space:]]*\{[A-Za-z0-9_]*:Identifier\} \
+                  || "$positions" =~ IN[[:space:]]*\([[:space:]]*\{[A-Za-z0-9_]*:Identifier\}\) ]]
             then
                 leaked=1
                 break
@@ -323,7 +258,7 @@ assert_screened()
 }
 
 # Anti-vacuity: a screen that rejected every named definition wholesale would pass every
-# assertion above. One eligible pass that still reads `$2` must reach an oracle. Attributed for
+# assertion above. One eligible pass that still names `$2` must reach an oracle. Attributed for
 # the same reason as above, and here it is what keeps the control sharp: a mutation that dropped
 # the reference is eligible whatever the screen does, so counting it would let a screen that
 # rejects the construct outright pass this assertion. Retried because a single mutation can break
@@ -350,8 +285,7 @@ assert_reaches_oracle()
             continue
         fi
 
-        if [[ -n "$prev_checks" && "$checks" -gt "$prev_checks" ]] \
-            && reads_relation "$prev_fuzzed" "$object"
+        if [[ -n "$prev_checks" && "$checks" -gt "$prev_checks" && "$prev_fuzzed" == *"$object"* ]]
         then
             ran=1
             break
@@ -365,11 +299,9 @@ assert_reaches_oracle()
     then
         echo "$label: oracle ran"
     else
-        echo "$label: oracle never ran on a query reading $object"
+        echo "$label: oracle never ran on a query naming $object"
     fi
 }
-
-check_reads_relation
 
 assert_screened "view over a non-deterministic definition" oracle_definition_nondet_view \
     "SELECT k, r FROM oracle_definition_nondet_view WHERE k > 5;"

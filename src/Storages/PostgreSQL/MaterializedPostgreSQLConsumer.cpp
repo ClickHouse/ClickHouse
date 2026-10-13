@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -671,7 +671,7 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
         select_context->makeQueryContext();
         select_context->setInternalQuery(true);
 
-        InterpreterSelectQueryAnalyzer interpreter(
+        InterpreterSelectQuery interpreter(
             select,
             select_context,
             SelectQueryOptions().setInternal(true).ignoreAccessCheck());
@@ -1207,7 +1207,7 @@ void MaterializedPostgreSQLConsumer::updateLsn()
 
 String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
 {
-    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance({}, {})", quoteStringPostgreSQL(replication_slot_name), quoteStringPostgreSQL(final_lsn));
+    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn);
     pqxx::result result{tx->exec(query_str)};
 
     final_lsn = result[0][0].as<std::string>();
@@ -1369,8 +1369,8 @@ bool MaterializedPostgreSQLConsumer::consume()
         /// (`publication "..." does not exist`). Quote the name so its case is preserved on this side too.
         std::string query_str = fmt::format(
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("
-                "{}, NULL, {}, 'publication_names', {}, 'proto_version', '1')",
-                quoteStringPostgreSQL(replication_slot_name), max_block_size, quoteStringPostgreSQL(doubleQuoteStringPostgreSQL(publication_name)));
+                "'{}', NULL, {}, 'publication_names', {}, 'proto_version', '1')",
+                replication_slot_name, max_block_size, quoteStringPostgreSQL(doubleQuoteString(publication_name)));
 
         auto stream{pqxx::stream_from::query(*tx, query_str)};
 
