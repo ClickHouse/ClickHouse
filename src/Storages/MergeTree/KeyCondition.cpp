@@ -6591,12 +6591,12 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// If we apply function to open interval, we can get empty intervals in result.
                 /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
                 /// To avoid this we make range left and right included.
-                /// Any function that treats NULL specially is not monotonic.
-                /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
+                /// A NULL bound is an -inf/+inf stand-in and is left as is. A function that returns NULL for a non-NULL
+                /// argument leaves a bound with no position in the `Range` order, so the range cannot be analyzed.
                 if (!key_range.left.isNull())
                 {
                     auto transformed = applyFunction(func, current_type, key_range.left);
-                    if (!transformed)
+                    if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
                         return {};
@@ -6608,7 +6608,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 if (!key_range.right.isNull())
                 {
                     auto transformed = applyFunction(func, current_type, key_range.right);
-                    if (!transformed)
+                    if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
                         return {};

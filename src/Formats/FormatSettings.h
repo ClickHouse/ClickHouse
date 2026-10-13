@@ -35,6 +35,7 @@ struct FormatSettings
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
     bool precise_float_parsing = true;
+    bool check_integer_text_overflow = false;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;

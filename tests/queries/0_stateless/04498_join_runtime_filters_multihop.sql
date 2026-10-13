@@ -21,8 +21,9 @@ SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
--- Left-side join pruning is intentionally disabled under parallel replicas; pin PR off so the
--- multi-hop pruning assertions are exercised (the ParallelReplicas CI job otherwise forces it on).
+-- Under parallel replicas the pruning is split among the replicas, so the per-query counters this
+-- test asserts would depend on the coordinator's assignment; pin PR off so the multi-hop pruning
+-- assertions are exercised (the ParallelReplicas CI job otherwise forces it on).
 SET enable_parallel_replicas = 0;
 
 -- Pin the join order so the chained runtime filters reliably reach mh_fact (otherwise the

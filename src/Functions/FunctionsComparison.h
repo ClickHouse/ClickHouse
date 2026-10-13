@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
@@ -1214,7 +1215,8 @@ private:
 
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
-        /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range.
+        /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range,
+        /// or throws for an Array, Tuple or Map.
         if (converted.isNull())
         {
             if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
@@ -1235,9 +1237,15 @@ private:
                         : IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals;
                     return DataTypeUInt8().createColumnConst(input_rows_count, static_cast<UInt8>(result));
                 }
+
+                /// A composite constant is rejected as a whole, so the side of it every value lies on is unknown.
+                const WhichDataType which_to_compare(type_to_compare);
+                if (which_to_compare.isArray() || which_to_compare.isTuple() || which_to_compare.isMap())
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot compare with '{}': it cannot be represented as {}",
+                        string_value.safeGet<String>(), type_to_compare->getName());
             }
 
-            return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+            return result_type->createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
         ColumnPtr column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
