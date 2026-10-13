@@ -30,6 +30,13 @@ SELECT count() FROM (
         input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0
 ) WHERE explain LIKE '%File ×%';
 
+-- `compatibility` with a pre-26.10 version must restore exactly those values through the settings
+-- changes history, so the file is split by row-group count alone as well.
+SELECT count() FROM (
+    EXPLAIN PIPELINE SELECT sum(length(big)) FROM file('04812.parquet')
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, compatibility = '26.9'
+) WHERE explain LIKE '%File ×%';
+
 -- The result must not depend on whether the file was split.
 SELECT sum(length(big)) FROM file('04812.parquet')
     SETTINGS max_threads = 8, parallelize_output_from_storages = 1,
