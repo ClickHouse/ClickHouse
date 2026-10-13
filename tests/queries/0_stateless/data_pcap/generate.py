@@ -149,6 +149,19 @@ truncated_headers = [(chain[:chain_start + cut], len(chain)) for cut in (4, 8 + 
 truncated_headers.append((packets[0][:14 + 20 + 4], len(packets[0])))
 write_pcap(out_dir / "truncated_headers.pcap", truncated_headers, snaplen=chain_start + 16 + 4)
 
+# Packets cut by the snapshot length before the end of the IP header: Ethernet
+# frames cut inside the IPv4 header, inside the IPv6 header, and inside a VLAN
+# tag, and raw IP packets cut inside the IPv4 and the IPv6 header. They are
+# dissected up to the Ethernet header, if there is one, and the rest is raw.
+truncated_ip = [
+    (packets[0][:18], len(packets[0])),
+    (chain[:14 + 20], len(chain)),
+    (ethernet(ipv4(6, tcp), vlan_id=7)[:16], len(ethernet(ipv4(6, tcp), vlan_id=7))),
+]
+write_pcap(out_dir / "truncated_ip.pcap", truncated_ip, snaplen=34)
+truncated_raw_ip = [(ipv4(6, tcp)[:10], len(ipv4(6, tcp))), (ipv6(17, udp)[:20], len(ipv6(17, udp)))]
+write_pcap(out_dir / "truncated_raw_ip.pcap", truncated_raw_ip, snaplen=20, linktype=101)
+
 # A short Ethernet frame: UDP with a 4-byte payload is 46 bytes, so the sender
 # pads it to the 60-byte minimum. The padding is past the IP length and is not
 # part of `payload`, so `payload` is not a suffix of `raw` here.

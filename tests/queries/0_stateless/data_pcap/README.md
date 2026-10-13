@@ -17,6 +17,10 @@ rewrite each other's files.
   chain cut inside the Hop-by-Hop header, inside the Routing header, and inside
   the TCP header, and an IPv4 TCP packet cut inside the TCP header, so the
   packets are dissected up to the last header captured completely.
+- `truncated_ip.pcap`, `truncated_raw_ip.pcap` — Ethernet frames cut inside the
+  IPv4 header, the IPv6 header, and a VLAN tag, and raw IP packets cut inside the
+  IPv4 and the IPv6 header, so the packets are dissected up to the Ethernet
+  header, if there is one, and the rest is raw.
 - `padded.pcap` — a UDP packet with a 4-byte payload in an Ethernet frame padded
   to the 60-byte minimum, so `raw` ends with padding bytes that are not part of
   `payload`.

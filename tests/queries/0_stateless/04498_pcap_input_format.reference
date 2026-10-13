@@ -95,11 +95,19 @@ UDP	4	1
 2	66	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	IPv6-Route	\N
 3	74	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	TCP	\N
 4	38	76	['ETHERNET_II','IP']	4	TCP	\N
+--- headers cut by the snapshot length before the end of the IP header: the rest is raw ---
+1	18	76	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	\N	18
+2	34	112	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	\N	34
+3	16	80	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	\N	16
+1	10	62	RAW	['RAW']	\N	\N	10
+2	20	48	RAW	['RAW']	\N	\N	20
 --- length invariants hold across all fixtures ---
 packets.pcap	0	0	0
 packets.pcapng	0	0	0
 truncated.pcap	0	0	0
 truncated_headers.pcap	0	0	0
+truncated_ip.pcap	0	0	0
+truncated_raw_ip.pcap	0	0	0
 raw_ip.pcap	0	0	0
 ipv4.pcap	0	0	0
 ipv6.pcap	0	0	0
