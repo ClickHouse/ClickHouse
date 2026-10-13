@@ -10,10 +10,11 @@ class MergeTreeSelectProcessor;
 using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 /// Reads from MergeTree like MergeTreeSource, but only after receiving a "seal" chunk through
-/// its input port (see BuildRuntimeFilterTransform::addSealPort): the seal signals that the
-/// build side of a JOIN is complete, and carries the runtime filter which is handed to the
-/// ranges refiner of the read pool before the first read. Gating is expressed as an ordinary
-/// pipeline edge, so the executor sees the dependency and never schedules the read early.
+/// its input port (see FillingRightJoinSideTransform::addSealPort): the seal signals that the
+/// build side of a JOIN is complete, and carries the runtime filter, if it is complete too,
+/// which is handed to the ranges refiner of the read pool before the first read. Gating is
+/// expressed as an ordinary pipeline edge, so the executor sees the dependency and never
+/// schedules the read early.
 ///
 /// Fail-open: if the input finishes without a seal (query cancellation, or a join pipeline
 /// which did not wire the seal), reading proceeds without the filter, which is always correct.
