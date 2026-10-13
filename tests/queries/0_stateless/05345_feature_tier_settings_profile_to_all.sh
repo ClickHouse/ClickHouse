@@ -14,7 +14,7 @@ rm -rf "${dir}"
 ${CLICKHOUSE_LOCAL} --path "${dir}" -m -q "
     CREATE USER u;
     CREATE SETTINGS PROFILE p SETTINGS enable_funnel_functions = 1;
-    CREATE SETTINGS PROFILE p_all SETTINGS allow_experimental_kusto_dialect = 1 TO ALL;
+    CREATE SETTINGS PROFILE p_all SETTINGS allow_experimental_prql_dialect = 1 TO ALL;
 "
 
 function restricted()
