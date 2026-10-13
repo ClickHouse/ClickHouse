@@ -1,0 +1,12 @@
+-- Put other data into the filesystem cache
+499500
+the other data is cached
+-- Write entries of the query cache on disk
+other_data_intact	query_cache_keys
+1	2
+-- DROP QUERY CACHE TAG
+other_data_intact	query_cache_keys
+1	1
+-- DROP QUERY CACHE
+other_data_intact	query_cache_keys
+1	0

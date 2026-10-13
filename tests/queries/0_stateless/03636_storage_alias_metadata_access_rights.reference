@@ -15,8 +15,6 @@ Test ENGINE = Merge creation without target permission
 ACCESS_DENIED
 Test ENGINE = Buffer structure inference without target permission
 ACCESS_DENIED
-Test SHOW CREATE without target permission
-ACCESS_DENIED
 Test SHOW COLUMNS without target permission
 Test table statistics without target permission
 1	1	1	1	1

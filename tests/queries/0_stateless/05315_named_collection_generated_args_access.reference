@@ -1,0 +1,20 @@
+Inferred format and structure replace a stored auto value without the secrets privilege
+1
+3
+3
+3
+3
+A stored auto value that is not overridable stays locked
+BAD_ARGUMENTS
+Resolving a stored relative s3 url against s3_base needs the secrets privilege
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+Resolving a stored relative url against url_base needs the secrets privilege
+ACCESS_DENIED
+ACCESS_DENIED
+With the privilege the relative urls are resolved
+3
+3
+1
+1

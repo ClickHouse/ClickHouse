@@ -155,9 +155,8 @@ SELECT x, y FROM t_reverse_final FINAL ORDER BY x DESC;
 
 DROP TABLE t_reverse_final;
 
--- The `Merge` engine does not pass a reverse order request with `FINAL` to its child tables
--- (see `ReadFromMerge::requestReadingInOrder`), so the optimization does not apply there,
--- but the result must still be correct.
+-- The `Merge` engine passes the reverse order request with `FINAL` to its child tables
+-- (see `ReadFromMerge::requestReadingInOrder`; covered in 05076_read_in_reverse_order_final_merge_table).
 CREATE TABLE t_reverse_final (x Int32, y Int32) ENGINE = ReplacingMergeTree ORDER BY x;
 CREATE TABLE t_reverse_final_merge (x Int32, y Int32) ENGINE = Merge(currentDatabase(), '^t_reverse_final$');
 
