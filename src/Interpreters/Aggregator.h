@@ -687,18 +687,9 @@ private:
     /// - There's no need to allocate and maintain full aggregation state.
     bool is_simple_count = false;
 
-    /// How a group's rank by the aggregate of `Params::bucket_top_k` is read: the inline count of an aggregation by a
-    /// lone `count`, the state of a `count` among other aggregates, which is the count itself, or the result of
-    /// `uniqExact` or `uniqExactIf`, which `finalizeBucketTopKRank` reads from its state.
-    enum class BucketTopKRank : UInt8
-    {
-        InlineCount,
-        CountState,
-        FinalizedResult,
-    };
-
-    /// Set when `Params::bucket_top_k` is.
-    BucketTopKRank bucket_top_k_rank = BucketTopKRank::InlineCount;
+    /// Whether the aggregate `Params::bucket_top_k` ranks the groups by is `count`, whose state is the count itself.
+    /// Otherwise it is `uniqExact` or `uniqExactIf`, whose count `finalizeBucketTopKRank` reads.
+    bool bucket_top_k_ranks_by_count_state = false;
 
     LoggerPtr log = getLogger("Aggregator");
 
@@ -1318,10 +1309,11 @@ private:
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
 
-    /// The bucket-local Top-K conversion for the rank read as `rank` says (see `bucket_top_k_rank`).
-    template <BucketTopKRank rank, typename Method>
+    /// The bucket-local Top-K conversion when the rank count is the result of `uniqExact` or `uniqExactIf` rather than a
+    /// `count` state.
+    template <typename Method>
     requires MapAggregationMethod<Method>
-    AggregatedChunk convertOneBucketToChunkTopKImpl(
+    AggregatedChunk convertOneBucketToChunkTopKByFinalizedRank(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
 
     /// The rank count of the group with state `place` when `Params::bucket_top_k` ranks by `uniqExact` or
