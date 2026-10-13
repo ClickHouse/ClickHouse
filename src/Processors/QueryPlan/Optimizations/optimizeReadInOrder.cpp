@@ -217,7 +217,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
                         && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective({}))
+                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
                     {
                         maybe_injective = maybe_injective->children.front();
                         fixed_columns.insert(maybe_injective);
