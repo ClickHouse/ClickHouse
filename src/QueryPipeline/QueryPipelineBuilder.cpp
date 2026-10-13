@@ -550,8 +550,8 @@ void QueryPipelineBuilder::wireSealGatedReading(
     };
 
     /// The optional seal payload: the runtime filter built from this join's build side, if it is complete.
-    /// A join which stops reading its build side early (`join_overflow_mode = 'break'`) completes the build
-    /// before the stopped streams publish their parts, and the gated read then proceeds without the filter.
+    /// A join which stops reading its build side early (`join_overflow_mode = 'break'`) can complete the build
+    /// before the stopped streams publish their parts; the gated read then proceeds without the filter.
     FillingRightJoinSideTransform::SealPayloadGetter payload_getter;
     if (!runtime_filter_key.empty())
     {
