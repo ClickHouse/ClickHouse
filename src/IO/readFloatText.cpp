@@ -453,7 +453,9 @@ ALWAYS_INLINE inline fast_float::from_chars_result_t<char> parseFloatFromBuffer(
     if (unlikely(begin == last || *begin == '-' || *begin == '+'))
         return {first, std::errc::invalid_argument};
     auto res = parseUnsignedFloatFromBuffer(x, begin, last);
-    x = withSign(x, negative);
+    /// On a parse failure `x` is left as the caller passed it.
+    if (likely(res.ec == std::errc() || res.ec == std::errc::result_out_of_range))
+        x = withSign(x, negative);
     return res;
 }
 
@@ -564,7 +566,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
     /// Fast path (avoid copying) if the buffer has at least MAX_LENGTH bytes or the whole input is in memory.
     /// The bounds check comes first, so the virtual isMemoryBuffer() is only called near the end of the buffer.
-    if (likely(!buf.eof() && (buf.position() + MAX_LENGTH <= buf.buffer().end() || buf.isMemoryBuffer())))
+    if (likely(!buf.eof() && (buf.buffer().end() - buf.position() >= MAX_LENGTH || buf.isMemoryBuffer())))
     {
         auto * initial_position = buf.position();
         auto * const buf_end = buf.buffer().end();
