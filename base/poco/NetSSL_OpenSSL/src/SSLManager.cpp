@@ -340,9 +340,7 @@ void SSLManager::initDefaultContext(bool server)
 	{
 		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
 	}
-	/// Only an outbound connection has a requested host name to check: on an accepted socket this
-	/// would run against the client's address, which a client certificate does not name.
-	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, !server);
+	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
 	else
