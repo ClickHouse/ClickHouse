@@ -189,6 +189,9 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         ExchangeDescription exchange;
         UInt64 kind = 0;
         readVarUInt(kind, in);
+        if (kind != static_cast<UInt64>(ExchangeDescription::Kind::Persisted)
+            && kind != static_cast<UInt64>(ExchangeDescription::Kind::Streaming))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown exchange kind {}", kind);
         exchange.kind = static_cast<ExchangeDescription::Kind>(kind);
         readVarUInt(exchange.source_bucket_count, in);
         readVarUInt(exchange.destination_bucket_count, in);
@@ -204,11 +207,7 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         StreamSourceAddress address;
         readStringBinary(address.host, in);
         if (version >= 2)
-        {
-            UInt64 port = 0;
-            readVarUInt(port, in);
-            address.port = static_cast<UInt16>(port);
-        }
+            readVarUInt(address.port, in);
         task_description.exchange_stream_sources.stream_hosts[stream] = address;
     }
 
