@@ -271,12 +271,9 @@ public:
     {
         chain_top = chain_top_;
 
-        size_t joins = 0;
-        if (!checkSteps(chain_top, joins))
-            return false;
-
-        /// A subtree reading one source is what `optimizeLazyMaterialization2` handles.
-        if (joins == 0)
+        /// A subtree reading one source is what `optimizeLazyMaterialization2` handles. A join is the only step with more
+        /// than one child the merged DAG goes through, so more sources than one mean a join.
+        if (merged.sources.size() < 2 || !collectParents())
             return false;
 
         const auto & outputs = merged.getOutputs();
@@ -584,40 +581,32 @@ private:
         LazyObjectStorageFileRegistryPtr row_index_registry;
     };
 
-    /// Whether every step between `node` and the sources is one this rebuilds.
-    bool checkSteps(QueryPlan::Node * node, size_t & joins)
+    /// Records the parent of every node between `chain_top` and the sources: the ones the walk building the merged DAG
+    /// entered. The columns this pass adds are found by name, so a name of this pass in a header of theirs rules the plan
+    /// out.
+    bool collectParents()
     {
-        /// The steps are pruned and reconciled by position, but the columns this pass adds are found by name.
-        for (const auto & column : *node->step->getOutputHeader())
-            if (isNameOfThisPass(column.name))
-                return false;
-
-        if (source_numbers.contains(node))
-            return true;
-
-        auto * step = node->step.get();
-        for (auto * child : node->children)
-            parents.emplace(child, node);
-
-        if (auto * join = typeid_cast<JoinStepLogical *>(step))
+        std::vector<QueryPlan::Node *> stack{chain_top};
+        while (!stack.empty())
         {
-            if (node->children.size() != 2 || !join->canRemoveUnusedColumns())
-                return false;
+            auto * node = stack.back();
+            stack.pop_back();
 
-            ++joins;
-            return checkSteps(node->children.front(), joins) && checkSteps(node->children.back(), joins);
+            for (const auto & column : *node->step->getOutputHeader())
+                if (isNameOfThisPass(column.name))
+                    return false;
+
+            if (source_numbers.contains(node))
+                continue;
+
+            for (auto * child : node->children)
+            {
+                parents.emplace(child, node);
+                stack.push_back(child);
+            }
         }
 
-        if (node->children.size() != 1)
-            return false;
-
-        if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step) && !typeid_cast<BuildRuntimeFilterStep *>(step))
-            return false;
-
-        if (!step->canRemoveUnusedColumns())
-            return false;
-
-        return checkSteps(node->children.front(), joins);
+        return true;
     }
 
     /// Picks the columns each source reads lazily. A column the frontier wants read lazily that something

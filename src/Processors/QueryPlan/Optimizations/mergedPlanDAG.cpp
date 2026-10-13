@@ -287,8 +287,9 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
         return built;
     }
 
+    /// A join that cannot prune its columns keeps them all, which a caller pruning the plan cannot have, so it is a source.
     auto * join_step = typeid_cast<JoinStepLogical *>(step);
-    if (!join_step || node.children.size() != 2)
+    if (!join_step || node.children.size() != 2 || !join_step->canRemoveUnusedColumns())
         return {};
 
     const auto & step_dag = join_step->getActionsDAG();
