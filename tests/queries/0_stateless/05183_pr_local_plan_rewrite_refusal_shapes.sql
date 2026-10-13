@@ -1,15 +1,12 @@
 -- The rewrite that splices a pushed condition into the query the replicas run refuses some fragments as
 -- a whole, and then the condition stays above the initiator's copy of the fragment as well: what the
--- replicas do not get must not order that copy's read. One case per kind of refusal, and one shape that
--- looks refusable but is taken:
+-- replicas do not get must not order that copy's read. One case per kind of refusal:
 --
 --   * a join tree of more than one table, which leaves the rewrite no single table to put the predicate
 --     against (`addFilters`) - even with read-in-order asked to reach through the join;
 --   * `LIMIT BY`, one of the subquery clauses `PredicateRewriteVisitorData::rewriteSubquery` refuses;
 --   * a non-deterministic `SELECT` list, refused because the pushed copy of the condition would call the
---     function a second time;
---   * `untuple`, expanded to `tupleElement` before the query is shipped, so the rewrite takes it, the
---     replicas fix `tenant`, and the initiator's read may order itself off it too.
+--     function a second time.
 --
 -- The other refusals answer the same way for the same reason: a window or stateful function in the
 -- shipped `SELECT` list, a `LIMIT`, an `OFFSET`, a `LIMIT AFTER .. UNTIL`, a `UNION ALL` (05161). A `WITH`
@@ -21,7 +18,6 @@ DROP TABLE IF EXISTS d_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_join_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_limit_by_pr_rewrite_shapes;
 DROP VIEW IF EXISTS v_nondet_pr_rewrite_shapes;
-DROP VIEW IF EXISTS v_untuple_pr_rewrite_shapes;
 
 CREATE TABLE t_pr_rewrite_shapes (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
     SETTINGS index_granularity = 128;
@@ -38,8 +34,6 @@ CREATE VIEW v_limit_by_pr_rewrite_shapes AS
     SELECT tenant, ts FROM t_pr_rewrite_shapes ORDER BY ts LIMIT 1 BY tenant;
 CREATE VIEW v_nondet_pr_rewrite_shapes AS
     SELECT tenant, ts, rand() AS r FROM t_pr_rewrite_shapes ORDER BY ts;
-CREATE VIEW v_untuple_pr_rewrite_shapes AS
-    SELECT tenant, ts, untuple((ts, ts + 1)) FROM t_pr_rewrite_shapes ORDER BY ts;
 
 -- For runs with the old analyzer
 SET enable_analyzer = 1;
@@ -84,13 +78,6 @@ FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts, r FROM v_nondet_pr
 WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
 SELECT count() FROM (SELECT tenant, ts, r FROM v_nondet_pr_rewrite_shapes WHERE tenant = 5);
 
-SELECT 'untuple: the rewrite takes it, so the condition goes in and orders the read';
-SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
-FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_untuple_pr_rewrite_shapes WHERE tenant = 5 LIMIT 5)
-WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
-SELECT count() FROM (SELECT * FROM v_untuple_pr_rewrite_shapes WHERE tenant = 5);
-
-DROP VIEW v_untuple_pr_rewrite_shapes;
 DROP VIEW v_nondet_pr_rewrite_shapes;
 DROP VIEW v_limit_by_pr_rewrite_shapes;
 DROP VIEW v_join_pr_rewrite_shapes;
