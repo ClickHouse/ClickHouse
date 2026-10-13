@@ -3016,7 +3016,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
             KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
-                /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes],
+                /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning],
                 require_ready_sets};
             /// The part minmax bound comes from `getExtremes`, which skips NaN.
             condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
@@ -7274,9 +7274,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     bool has_input_order_info = false;
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
     {
-        UInt64 flag = 0;
-        readVarUInt(flag, ctx.in);
-        has_input_order_info = flag != 0;
+        readVarUInt(has_input_order_info, ctx.in);
         if (has_input_order_info)
         {
             readVarUInt(input_order_prefix_size, ctx.in);
