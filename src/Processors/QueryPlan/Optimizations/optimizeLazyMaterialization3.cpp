@@ -599,18 +599,6 @@ private:
         for (auto * child : node->children)
             parents.emplace(child, node);
 
-        /// Passes its input through, and reads its key by name, so the key has to be there once.
-        if (auto * runtime_filter = typeid_cast<BuildRuntimeFilterStep *>(step))
-        {
-            if (node->children.size() != 1)
-                return false;
-            const auto & key = runtime_filter->getFilterColumnName();
-            const auto & input = *node->children.front()->step->getOutputHeader();
-            if (std::ranges::count_if(input, [&](const auto & column) { return column.name == key; }) != 1)
-                return false;
-            return checkSteps(node->children.front(), joins);
-        }
-
         if (auto * join = typeid_cast<JoinStepLogical *>(step))
         {
             if (node->children.size() != 2 || !join->canRemoveUnusedColumns())
@@ -623,7 +611,7 @@ private:
         if (node->children.size() != 1)
             return false;
 
-        if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step))
+        if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step) && !typeid_cast<BuildRuntimeFilterStep *>(step))
             return false;
 
         if (!step->canRemoveUnusedColumns())
@@ -1013,50 +1001,31 @@ private:
 
         auto * step = node->step.get();
 
-        IQueryPlanStep::UnneededInputPositions child_unneeded;
-        if (auto * runtime_filter = typeid_cast<BuildRuntimeFilterStep *>(step))
-        {
-            /// Passes its input through, so it needs what is needed above it, and its key, which `checkSteps` made sure
-            /// is there once.
-            const auto & header = *node->children.front()->step->getOutputHeader();
-            const auto key_position = header.getPositionByName(runtime_filter->getFilterColumnName());
-            auto & positions = child_unneeded.emplace_back(unneeded);
-            std::erase(positions, key_position);
-        }
-        else
-            child_unneeded = step->getUnneededColumns(unneeded);
+        const auto child_unneeded = step->getUnneededColumns(unneeded);
 
         std::vector<Assembled> children;
         for (size_t child = 0; child < node->children.size(); ++child)
             children.push_back(assemble(node->children[child], child_unneeded.at(child), nodes));
 
         Assembled result;
-        if (typeid_cast<BuildRuntimeFilterStep *>(step))
+        std::vector<IQueryPlanStep::PrunedInput> pruned;
+        for (size_t child = 0; child < children.size(); ++child)
+            pruned.push_back(prunedInputOf(children[child], step->getInputHeaders()[child]->columns()));
+        result.dropped_positions = step->removeUnusedColumns(unneeded, pruned).dropped_output_positions;
+
+        /// The columns this rebuild added below pass through: a join is told to, the other steps do by themselves,
+        /// after their own columns, since those columns come last in their input.
+        if (auto * join = typeid_cast<JoinStepLogical *>(step))
         {
-            result.dropped_positions = children.front().dropped_positions;
-            step->updateInputHeader(children.front().plan.getCurrentHeader());
+            for (size_t side = 0; side < 2; ++side)
+                for (const auto & column : *children[side].plan.getCurrentHeader())
+                    if (isAddedColumn(column.name))
+                        join->addPassThroughColumn(column, side == 0 ? JoinTableSide::Left : JoinTableSide::Right);
+
+            join->updateInputHeaders({children[0].plan.getCurrentHeader(), children[1].plan.getCurrentHeader()});
         }
         else
-        {
-            std::vector<IQueryPlanStep::PrunedInput> pruned;
-            for (size_t child = 0; child < children.size(); ++child)
-                pruned.push_back(prunedInputOf(children[child], step->getInputHeaders()[child]->columns()));
-            result.dropped_positions = step->removeUnusedColumns(unneeded, pruned).dropped_output_positions;
-
-            /// The columns this rebuild added below pass through: a join is told to, the other steps do by
-            /// themselves, after their own columns, since those columns come last in their input.
-            if (auto * join = typeid_cast<JoinStepLogical *>(step))
-            {
-                for (size_t side = 0; side < 2; ++side)
-                    for (const auto & column : *children[side].plan.getCurrentHeader())
-                        if (isAddedColumn(column.name))
-                            join->addPassThroughColumn(column, side == 0 ? JoinTableSide::Left : JoinTableSide::Right);
-
-                join->updateInputHeaders({children[0].plan.getCurrentHeader(), children[1].plan.getCurrentHeader()});
-            }
-            else
-                step->updateInputHeader(children.front().plan.getCurrentHeader());
-        }
+            step->updateInputHeader(children.front().plan.getCurrentHeader());
 
         if (children.size() == 1)
         {
