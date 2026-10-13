@@ -54,62 +54,21 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
     return false;
 }
 
-/// The length of the valid UTF-8 sequence at the beginning of `text` (RFC 3629: without overlong forms,
-/// surrogates and code points above U+10FFFF), or 0 if it is not valid.
-size_t validUTF8SequenceLength(std::string_view text)
-{
-    auto byte = [&](size_t i) -> unsigned char { return i < text.size() ? static_cast<unsigned char>(text[i]) : 0; };
-    auto is_continuation = [&](size_t i, unsigned char min = 0x80, unsigned char max = 0xbf) { return byte(i) >= min && byte(i) <= max; };
-
-    if (text.empty())
-        return 0;
-    const unsigned char lead = byte(0);
-    if (lead < 0x80)
-        return 1;
-    if (lead >= 0xc2 && lead <= 0xdf)
-        return is_continuation(1) ? 2 : 0;
-    if (lead >= 0xe0 && lead <= 0xef)
-    {
-        const unsigned char min = lead == 0xe0 ? 0xa0 : 0x80;
-        const unsigned char max = lead == 0xed ? 0x9f : 0xbf;
-        return is_continuation(1, min, max) && is_continuation(2) ? 3 : 0;
-    }
-    if (lead >= 0xf0 && lead <= 0xf4)
-    {
-        const unsigned char min = lead == 0xf0 ? 0x90 : 0x80;
-        const unsigned char max = lead == 0xf4 ? 0x8f : 0xbf;
-        return is_continuation(1, min, max) && is_continuation(2) && is_continuation(3) ? 4 : 0;
-    }
-    return 0;
-}
-
-/// The text from the user, such as a user name or a file name, is escaped in a prompt as `\xNN`, so that it is shown
-/// on one line, its width in the terminal is known, and it does not affect the terminal. These bytes are escaped:
-/// control characters of ASCII, C1 control characters (U+0080..U+009F), which some terminals interpret,
-/// bytes that are not a part of a valid UTF-8 sequence, and all the bytes of non-ASCII characters if the terminal is not UTF-8.
+/// The text from the user, such as a user name or a file name, is shown in a prompt with all its bytes except printable
+/// ASCII escaped as `\xNN`. So the prompt stays on one line, the text does not affect the terminal, and the width of
+/// the prompt is known exactly: the width of non-ASCII text in a terminal cannot be known reliably (emoji, joined
+/// sequences, combining characters and ambiguous widths are shown differently by different terminals).
 std::string escapeForPrompt(std::string_view text)
 {
-    const bool utf8 = terminalSupportsUTF8();
     std::string result;
     result.reserve(text.size());
-    auto append_escaped = [&](std::string_view bytes)
+    for (char c : text)
     {
-        for (char c : bytes)
-            result += fmt::format("\\x{:02x}", static_cast<unsigned char>(c));
-    };
-
-    size_t i = 0;
-    while (i < text.size())
-    {
-        const auto byte = static_cast<unsigned char>(text[i]);
-        const size_t length = utf8 ? validUTF8SequenceLength(text.substr(i)) : (byte < 0x80 ? 1 : 0);
-        const std::string_view sequence = text.substr(i, std::max<size_t>(length, 1));
-        const bool is_c1_control = length == 2 && byte == 0xc2 && static_cast<unsigned char>(sequence[1]) <= 0x9f;
-        if (length == 0 || byte < 0x20 || byte == 0x7f || is_c1_control)
-            append_escaped(sequence);
+        const auto byte = static_cast<unsigned char>(c);
+        if (byte < 0x20 || byte >= 0x7f)
+            result += fmt::format("\\x{:02x}", byte);
         else
-            result += sequence;
-        i += sequence.size();
+            result += c;
     }
     return result;
 }
