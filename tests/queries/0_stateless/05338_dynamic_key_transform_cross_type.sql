@@ -66,7 +66,8 @@ SELECT 'explicit CAST', count() FROM t_date WHERE d::String = '2024-01-05' SETTI
 SELECT '-- the other key columns are still used';
 CREATE TABLE t_tuple (a UInt32, d Dynamic) ENGINE = MergeTree ORDER BY (a, d::String) SETTINGS index_granularity = 1;
 INSERT INTO t_tuple SELECT number % 10, number FROM numbers(100);
-SELECT 'AND', count() FROM t_tuple WHERE (a = 1 AND d = 11) OR (a = 2 AND d = 22) SETTINGS force_primary_key = 1, max_rows_to_read = 21;
-SELECT 'has', count() FROM t_tuple WHERE has([(1, 11), (2, 22)], (a, d)) SETTINGS force_primary_key = 1, max_rows_to_read = 21;
+-- The key on `a` selects 21 of 100 granules. The limit is looser because a read pool may read a boundary granule in two streams.
+SELECT 'AND', count() FROM t_tuple WHERE (a = 1 AND d = 11) OR (a = 2 AND d = 22) SETTINGS force_primary_key = 1, max_rows_to_read = 50;
+SELECT 'has', count() FROM t_tuple WHERE has([(1, 11), (2, 22)], (a, d)) SETTINGS force_primary_key = 1, max_rows_to_read = 50;
 
 DROP TABLE t_date, t_uint, t_uuid, t_array, t_datetime, t_tostring, t_uint8, t_float, t_variant_constant, t_json, t_tuple;
