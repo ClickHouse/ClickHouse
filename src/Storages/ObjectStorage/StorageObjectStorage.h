@@ -238,6 +238,8 @@ public:
     }
 
 protected:
+    void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & local_context);
+
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 

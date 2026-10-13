@@ -19,6 +19,15 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Interpreters/PreparedSets.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/SetSerialization.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/Base64.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -39,6 +48,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsString cluster_table_function_pushed_down_filter;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -59,6 +69,46 @@ IStorageCluster::IStorageCluster(
 {
 }
 
+namespace
+{
+
+bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
+{
+    if (!node.isDeterministic() || node.is_runtime_filter_id)
+        return false;
+    if (node.type == ActionsDAG::ActionType::INPUT)
+        return replica_columns.contains(node.result_name);
+    if (node.type == ActionsDAG::ActionType::COLUMN)
+    {
+        const auto * column_set = node.column ? checkAndGetColumn<ColumnSet>(&node.column->getDataColumn()) : nullptr;
+        return !column_set || typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
+    }
+    for (const auto * child : node.children)
+        if (!isSerializableFilterNode(*child, replica_columns))
+            return false;
+    return node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS;
+}
+
+String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
+{
+    ActionsDAG::NodeRawConstPtrs serializable;
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(&predicate))
+        if (isSerializableFilterNode(*atom, replica_columns))
+            serializable.push_back(atom);
+
+    auto filter = ActionsDAG::buildFilterActionsDAG(serializable, replica_columns);
+    if (!filter)
+        return {};
+
+    WriteBufferFromOwnString out;
+    SerializedSetsRegistry registry;
+    filter->serialize(out, registry);
+    QueryPlan::serializeReadySets(registry, out);
+    return base64Encode(out.str());
+}
+
+}
+
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
@@ -67,6 +117,27 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
     if (filter)
         predicate = filter->getOutputs().at(0);
+
+    pushed_down_filter.clear();
+    const auto * select = query_to_send->as<ASTSelectQuery>();
+    if (filter_actions_dag && !filter_actions_dag->getOutputs().empty() && select && select->select())
+    {
+        const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
+        const auto & select_expressions = select->select()->children;
+        std::unordered_map<String, ColumnWithTypeAndName> replica_columns;
+        for (size_t i = 0; i < select_expressions.size() && select_expressions.size() == header_columns.size(); ++i)
+        {
+            if (const auto * identifier = select_expressions[i]->as<ASTIdentifier>())
+            {
+                ColumnWithTypeAndName replica_column(nullptr, header_columns[i].type, identifier->shortName());
+                replica_columns.emplace(header_columns[i].name, replica_column);
+                replica_columns.emplace(select_expressions[i]->getAliasOrColumnName(), replica_column);
+            }
+        }
+
+        if (!replica_columns.empty())
+            pushed_down_filter = serializeFilterForReplicas(*filter_actions_dag->getOutputs().at(0), replica_columns);
+    }
 
     createExtension(predicate);
 }
@@ -239,6 +310,7 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
+    new_settings[Setting::cluster_table_function_pushed_down_filter] = pushed_down_filter;
 
     /// Strip the initiator-only settings (the query-shaping settings, the result-serialisation
     /// settings, and `database`): they are materialized on the initiator and must not be forwarded
