@@ -204,6 +204,8 @@ String getSampleURI(String uri, ContextPtr context)
     return uri;
 }
 
+static bool maskURLCredentials(String & url);
+
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
     return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
@@ -717,12 +719,15 @@ StorageURLSource::StorageURLSource(
                 if ((*matching_marks)[i])
                     matching_row_groups.push_back(i);
 
+            /// The URL can carry credentials or a signature, which must not reach the log.
+            String masked_uri = curr_uri.toString();
+            maskURLCredentials(masked_uri);
             LOG_DEBUG(getLogger("StorageURLSource"),
                 "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
                 matching_marks->size() - matching_row_groups.size(),
                 matching_marks->size(),
                 format_filter_info->filter_actions_dag->dumpNames(),
-                curr_uri.toString());
+                masked_uri);
 
             if (!matching_row_groups.empty())
             {
