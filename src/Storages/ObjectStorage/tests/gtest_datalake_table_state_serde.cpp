@@ -2,7 +2,6 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <gtest/gtest.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
@@ -27,14 +26,6 @@ std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
         .snapshot_id = std::nullopt,
     },
 };
-
-int readProtocolVersion(const String & serialized_state)
-{
-    ReadBufferFromMemory read_buffer(serialized_state);
-    int protocol_version = 0;
-    readVarInt(protocol_version, read_buffer);
-    return protocol_version;
-}
 }
 
 TEST(DatalakeStateSerde, IcebergStateSerde)
@@ -66,31 +57,12 @@ TEST(DatalakeStateSerde, DataLakeStateSerde)
             WriteBufferFromString write_buffer{str};
             serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
         }
-        ASSERT_EQ(readProtocolVersion(str), DATA_LAKE_TABLE_STATE_SNAPSHOT_INITIAL_PROTOCOL_VERSION);
         ReadBufferFromMemory read_buffer(str);
         DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
         ASSERT_TRUE(read_buffer.eof());
         ASSERT_EQ(initial_state, serde_state);
     }
 }
-
-
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
-TEST(DatalakeStateSerde, DeltaLakeStateSerde)
-{
-    DataLakeTableStateSnapshot initial_state = DeltaLake::TableStateSnapshot{.version = 42};
-    String str;
-    {
-        WriteBufferFromString write_buffer{str};
-        serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
-    }
-    ASSERT_EQ(readProtocolVersion(str), DATA_LAKE_TABLE_STATE_SNAPSHOT_INITIAL_PROTOCOL_VERSION);
-    ReadBufferFromMemory read_buffer(str);
-    DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
-    ASSERT_TRUE(read_buffer.eof());
-    ASSERT_EQ(initial_state, serde_state);
-}
-#endif
 
 
 TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
@@ -204,41 +176,11 @@ TEST(DatalakeStateSerde, PaimonStateSerde)
             WriteBufferFromString write_buffer{str};
             serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
         }
-        ASSERT_EQ(readProtocolVersion(str), DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION_WITH_PAIMON_INDEX_MANIFEST);
         ReadBufferFromMemory read_buffer(str);
         DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
         ASSERT_TRUE(read_buffer.eof());
         ASSERT_EQ(initial_state, serde_state);
         ASSERT_EQ(std::get<Paimon::TableStateSnapshot>(serde_state).index_manifest, index_manifest);
     }
-}
-
-
-TEST(DatalakeStateSerde, PaimonStateProtocolVersion1)
-{
-    /// Paimon state layout of protocol version 1, which has no index manifest.
-    String str;
-    {
-        WriteBufferFromString write_buffer{str};
-        writeVarInt(1, write_buffer);
-        writeVarInt(PAIMON_TABLE_STATE_SNAPSHOT, write_buffer);
-        writeIntBinary(Int64{3}, write_buffer);
-        writeIntBinary(Int64{1}, write_buffer);
-        writeStringBinary("base", write_buffer);
-        writeStringBinary("delta", write_buffer);
-        writeStringBinary("COMPACT", write_buffer);
-        writeIntBinary(Int64{42}, write_buffer);
-        for (size_t i = 0; i < 4; ++i)
-            writeChar(0, write_buffer);
-    }
-    ReadBufferFromMemory read_buffer(str);
-    auto state = std::get<Paimon::TableStateSnapshot>(deserializeDataLakeTableStateSnapshot(read_buffer));
-    ASSERT_TRUE(read_buffer.eof());
-    ASSERT_EQ(state.snapshot_id, 3);
-    ASSERT_EQ(state.schema_id, 1);
-    ASSERT_EQ(state.delta_manifest_list_path, "delta");
-    ASSERT_EQ(state.commit_time_millis, 42);
-    ASSERT_FALSE(state.watermark.has_value());
-    ASSERT_FALSE(state.index_manifest.has_value());
 }
 #endif

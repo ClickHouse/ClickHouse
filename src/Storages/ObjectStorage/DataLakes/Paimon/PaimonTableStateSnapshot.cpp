@@ -79,16 +79,13 @@ TableStateSnapshot TableStateSnapshot::deserialize(DB::ReadBuffer & in, const in
     read_optional_int64(state.changelog_record_count);
     read_optional_int64(state.watermark);
 
-    if (datalake_state_protocol_version >= DB::DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION_WITH_PAIMON_INDEX_MANIFEST)
+    char has_index_manifest = 0;
+    DB::readChar(has_index_manifest, in);
+    if (has_index_manifest != 0)
     {
-        char has_index_manifest = 0;
-        DB::readChar(has_index_manifest, in);
-        if (has_index_manifest != 0)
-        {
-            String value;
-            DB::readStringBinary(value, in);
-            state.index_manifest = std::move(value);
-        }
+        String value;
+        DB::readStringBinary(value, in);
+        state.index_manifest = std::move(value);
     }
 
     return state;

@@ -38,7 +38,7 @@ TableStateSnapshot TableStateSnapshot::deserialize(ReadBuffer & in, const int da
             "Cannot serialize Iceberg::TableStateSnapshot with protocol version {}, maximum supported version is {}",
             datalake_state_protocol_version,
             DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION);
-    if (datalake_state_protocol_version <= DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION_WITH_PAIMON_INDEX_MANIFEST)
+    if (datalake_state_protocol_version == 1)
     {
         TableStateSnapshot state;
         readStringBinary(state.metadata_file_path, in);

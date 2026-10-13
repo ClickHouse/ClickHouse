@@ -24,17 +24,15 @@ namespace DB
 
 void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, WriteBuffer & out)
 {
-    /// Each type is written with the lowest version that has its layout, so that older peers can still read the unchanged ones.
+    writeVarInt(DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION, out);
     if (std::holds_alternative<Iceberg::TableStateSnapshot>(state))
     {
-        writeVarInt(DATA_LAKE_TABLE_STATE_SNAPSHOT_INITIAL_PROTOCOL_VERSION, out);
         writeVarInt(ICEBERG_TABLE_STATE_SNAPSHOT, out);
         std::get<Iceberg::TableStateSnapshot>(state).serialize(out);
     }
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
     else if (std::holds_alternative<DeltaLake::TableStateSnapshot>(state))
     {
-        writeVarInt(DATA_LAKE_TABLE_STATE_SNAPSHOT_INITIAL_PROTOCOL_VERSION, out);
         writeVarInt(DELTA_LAKE_TABLE_STATE_SNAPSHOT, out);
         std::get<DeltaLake::TableStateSnapshot>(state).serialize(out);
     }
@@ -42,7 +40,6 @@ void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, Write
 #if USE_AVRO
     else if (std::holds_alternative<Paimon::TableStateSnapshot>(state))
     {
-        writeVarInt(DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION_WITH_PAIMON_INDEX_MANIFEST, out);
         writeVarInt(PAIMON_TABLE_STATE_SNAPSHOT, out);
         std::get<Paimon::TableStateSnapshot>(state).serialize(out);
     }
@@ -63,7 +60,7 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
             "Cannot deserialize DataLakeTableStateSnapshot with protocol version {}, maximum supported version is {}",
             protocol_version,
             DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION);
-    if (protocol_version <= DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION_WITH_PAIMON_INDEX_MANIFEST)
+    if (protocol_version == 1)
     {
         int type = 0;
         readVarInt(type, in);
