@@ -41,6 +41,8 @@ namespace Setting
     extern const SettingsBool input_format_parquet_allow_missing_columns;
     extern const SettingsBool input_format_orc_allow_missing_columns;
     extern const SettingsBool input_format_arrow_allow_missing_columns;
+    extern const SettingsBool input_format_parquet_use_offset_index;
+    extern const SettingsBool input_format_parquet_local_time_as_utc;
 }
 
 /// The entries for files are written from the row groups the reader pruned, not from evaluating the
@@ -50,6 +52,8 @@ namespace Setting
 /// which physical column a predicate is evaluated against, so they are part of the key as well. So are
 /// the settings allowing missing columns: a read that fills a missing column with defaults may cache
 /// a verdict, and a read that must throw for that column would otherwise skip the file instead.
+/// `input_format_parquet_use_offset_index` enables page pruning, and `input_format_parquet_local_time_as_utc`
+/// decides the time zone in which the timestamp statistics are decoded.
 UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
 {
     SipHash hash;
@@ -65,6 +69,8 @@ UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::input_format_parquet_allow_missing_columns].value);
     hash.update(settings[Setting::input_format_orc_allow_missing_columns].value);
     hash.update(settings[Setting::input_format_arrow_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_parquet_use_offset_index].value);
+    hash.update(settings[Setting::input_format_parquet_local_time_as_utc].value);
     return hash.get64();
 }
 
@@ -84,6 +90,8 @@ UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
     hash.update(format_settings.parquet.allow_missing_columns);
     hash.update(format_settings.orc.allow_missing_columns);
     hash.update(format_settings.arrow.allow_missing_columns);
+    hash.update(format_settings.parquet.use_offset_index);
+    hash.update(format_settings.parquet.local_time_as_utc);
     return hash.get64();
 }
 
