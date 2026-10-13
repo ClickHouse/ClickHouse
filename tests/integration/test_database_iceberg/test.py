@@ -203,7 +203,7 @@ def started_cluster():
                 "configs/cluster.xml",
                 "configs/text_log.xml",
             ],
-            user_configs=[],
+            user_configs=["configs/delete_data_on_drop.xml"],
             stay_alive=True,
             with_iceberg_catalog=True,
         )
@@ -1175,7 +1175,11 @@ def test_remove_orphan_files_with_catalog(started_cluster):
     node.query(
         f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files("
         f"older_than = '{time.strftime('%Y-%m-%d %H:%M:%S')}');",
-        settings={"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 1},
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        },
     )
 
     assert data_files() == data_before, (
@@ -1764,6 +1768,39 @@ def test_drop_table_in_multi_level_namespace(started_cluster):
     drop_clickhouse_iceberg_table(node, namespace, table_name)
     assert not catalog.table_exists(f"{namespace}.{table_name}")
     assert catalog.list_tables(namespace) == []
+
+
+def test_drop_table_purge(started_cluster):
+    # DROP asks the catalog to purge the table's files only with `iceberg_delete_data_on_drop`,
+    # which node2's default profile enables.
+    catalog = load_catalog_impl(started_cluster)
+
+    def data_files(table_name):
+        return sorted(
+            name
+            for name in list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/")
+            if name.endswith(".parquet")
+        )
+
+    for node_name, purge in (("node2", True), ("node1", False)):
+        node = started_cluster.instances[node_name]
+        test_ref = f"test_drop_table_purge_{uuid.uuid4()}"
+        table_name = f"{test_ref}_table"
+        root_namespace = f"{test_ref}_namespace"
+
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+        node.query(
+            f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1)",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+
+        files = data_files(table_name)
+        assert files
+        drop_clickhouse_iceberg_table(node, root_namespace, table_name)
+        assert not catalog.table_exists(f"{root_namespace}.{table_name}")
+        assert data_files(table_name) == ([] if purge else files)
+        node.wait_for_log_line(rf"tables/{table_name}\?purgeRequested={str(purge).lower()}")
 
 
 def test_create_table_order_by(started_cluster):
@@ -2945,7 +2982,7 @@ def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_iceberg_table(
-        started_cluster, node, root_namespace, table_name, "(x UInt64)"
+        started_cluster, node, root_namespace, table_name, "(x Int64)"
     )
 
     # Every sink reads the branch tip in its constructor, and all `max_insert_threads` sinks are
