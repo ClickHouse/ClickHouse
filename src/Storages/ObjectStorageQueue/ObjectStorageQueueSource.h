@@ -132,9 +132,11 @@ public:
         /// exhausted are taken over by the next iterator, see `inheritForeignProcessingRechecks`.
         std::deque<ObjectInfoPtr> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
 
-        /// Paths in `foreign_processing_files_to_recheck` taken over from the previous iterator.
-        /// The listing pass of this iterator lists them again, and then the listed object
-        /// replaces the inherited one, so that the file is not handed out twice.
+        /// Paths taken over from the previous iterator which the listing pass of this iterator
+        /// has not listed again yet. A path stays here after its inherited recheck is taken,
+        /// because the file can be queued for a recheck again. When the pass lists the path,
+        /// the listed object replaces every pending recheck of it, so that the file is neither
+        /// handed out twice nor queued twice.
         std::unordered_set<std::string> inherited_foreign_processing_rechecks TSA_GUARDED_BY(next_mutex);
 
         /// Ordered mode only. An ordering domain is the scope of one `processed` pointer:

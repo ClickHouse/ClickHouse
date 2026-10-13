@@ -247,7 +247,9 @@ ObjectStorageQueueSource::FileIterator::next()
                 ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
 
                 /// A file taken over from the previous iterator is listed again by this pass:
-                /// drop the inherited copy, the listed one goes through the regular filtering.
+                /// drop any pending recheck of it (the inherited copy, or the one queued again
+                /// after the inherited copy was rechecked), the listed one goes through the
+                /// regular filtering.
                 if (!inherited_foreign_processing_rechecks.empty())
                 {
                     std::unordered_set<std::string> relisted;
@@ -666,7 +668,9 @@ ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRech
         if (status && status->isProcessingObservedInKeeperTrusted(ttl_sec))
             return false;
 
-        inherited_foreign_processing_rechecks.erase(object->getPath());
+        /// The path stays in `inherited_foreign_processing_rechecks` until this pass lists it
+        /// again: if the file is still foreign-held, `recheckForeignProcessingLater` queues it
+        /// again, and the relisted copy must replace that entry instead of being added next to it.
         due.push_back(std::move(object));
         return true;
     });
