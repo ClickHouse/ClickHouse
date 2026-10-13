@@ -106,7 +106,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, created_from_ddl);
     };
 
-    factory.registerSource("file", create_table_source, Documentation{
+    factory.registerSource("file", create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = R"DOCS_MD(
 # Local File dictionary source
 

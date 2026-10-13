@@ -35,6 +35,12 @@ public:
         setInMemoryMetadata(cached_metadata);
     }
 
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     StoragePtr getNestedImpl() const
     {
         std::lock_guard lock{nested_mutex};
