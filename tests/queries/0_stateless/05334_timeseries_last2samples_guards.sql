@@ -14,11 +14,10 @@
 -- parametric arguments are passed (e.g. timeSeriesLastTwoSamples(1)(...)).
 -- The function takes no parameters; this guard is never tested.
 
--- Disabled-feature guard (lines 85-88): calling with default setting (=0) must
--- throw UNKNOWN_AGGREGATE_FUNCTION with an informative message.
-SELECT timeSeriesLastTwoSamples(toDateTime('2024-01-15 12:00:00'), toFloat64(1.0)) FROM numbers(1); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
-
--- Same with explicit setting = 0
+-- Disabled-feature guard (lines 85-88): calling with the feature disabled must throw
+-- UNKNOWN_AGGREGATE_FUNCTION with an informative message. The setting is pinned to 0
+-- explicitly, as the nearby time_series tests pin it, so the test does not depend on the
+-- ambient default of the harness.
 SELECT timeSeriesLastTwoSamples(toDateTime('2024-01-15 12:00:00'), toFloat64(1.0)) FROM numbers(1)
 SETTINGS enable_time_series_aggregate_functions = 0; -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 
