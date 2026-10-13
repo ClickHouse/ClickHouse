@@ -190,5 +190,37 @@ TEST(CompactSymbols, RejectsHugeAdvertisedNameGranuleSize)
     EXPECT_THROW(reader.maximumNameGranuleSize(), std::runtime_error);
 }
 
+TEST(CompactSymbols, ValidatesNames)
+{
+    std::vector<Symbol> symbols{{0x1234, 17, "only_symbol"}};
+    auto encoded = encode(symbols);
+
+    {
+        Reader reader(std::string_view(encoded.data(), encoded.size()));
+        EXPECT_NO_THROW(reader.validateNames());
+    }
+
+    /// Replace the only name granule with a well-formed zstd frame of the same size whose
+    /// front-coded payload is invalid: the first name must not share a prefix.
+    constexpr size_t marks_offset_field = 40;
+    constexpr size_t names_offset_field = 56;
+    size_t marks_offset = static_cast<size_t>(readLittleEndian64(encoded, marks_offset_field));
+    size_t names_offset = static_cast<size_t>(readLittleEndian64(encoded, names_offset_field));
+    size_t compressed_offset = static_cast<size_t>(readLittleEndian64(encoded, marks_offset));
+    size_t compressed_size = static_cast<size_t>(readLittleEndian64(encoded, marks_offset + sizeof(uint64_t)));
+
+    const std::string invalid_payload = std::string("\x01\x0b") + "only_symbol";
+    std::vector<char> invalid_frame(ZSTD_compressBound(invalid_payload.size()));
+    size_t invalid_frame_size
+        = ZSTD_compress(invalid_frame.data(), invalid_frame.size(), invalid_payload.data(), invalid_payload.size(), compression_level);
+    if (ZSTD_isError(invalid_frame_size) || invalid_frame_size != compressed_size)
+        throw std::runtime_error("Compact symbols test cannot build a replacement name granule");
+    std::copy_n(invalid_frame.data(), invalid_frame_size, encoded.data() + names_offset + compressed_offset);
+
+    Reader reader(std::string_view(encoded.data(), encoded.size()));
+    EXPECT_NO_THROW(reader.maximumNameGranuleSize());
+    EXPECT_THROW(reader.validateNames(), std::runtime_error);
+}
+
 }
 }

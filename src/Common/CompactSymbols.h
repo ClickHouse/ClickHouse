@@ -62,6 +62,9 @@ public:
 
     std::vector<AddressEntry> decodeAddresses() const;
     size_t maximumNameGranuleSize() const;
+    /// Decompresses and decodes every name granule, so that a corrupted name payload is rejected
+    /// before the table is used instead of silently producing empty names on lookups.
+    void validateNames() const;
     NameGranuleDecoder decodeNameGranule(uint32_t granule_index, ZSTD_DCtx * decompression_context, std::span<char> destination) const;
 
 private:

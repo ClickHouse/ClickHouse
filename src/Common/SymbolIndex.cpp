@@ -108,6 +108,8 @@ public:
         : reader(data)
         , maximum_name_granule_size(reader.maximumNameGranuleSize())
     {
+        /// Lookups cannot report errors, so reject a corrupted name payload up front and keep the section absent.
+        reader.validateNames();
     }
 
     CompactSymbols::Reader reader;

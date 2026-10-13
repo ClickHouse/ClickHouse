@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <memory>
+#include <new>
 #include <numeric>
 #include <stdexcept>
 #include <type_traits>
@@ -403,6 +405,30 @@ size_t Reader::maximumNameGranuleSize() const
         result = std::max(result, granule_size);
     }
     return result;
+}
+
+void Reader::validateNames() const
+{
+    std::unique_ptr<ZSTD_DCtx, decltype(&ZSTD_freeDCtx)> decompression_context(ZSTD_createDCtx(), &ZSTD_freeDCtx);
+    if (!decompression_context)
+        throw std::bad_alloc();
+
+    size_t maximum_granule_size = maximumNameGranuleSize();
+    std::vector<char> granule_buffer(maximum_granule_size);
+    std::string name;
+    name.reserve(maximum_granule_size);
+
+    uint64_t decoded_names = 0;
+    for (uint32_t granule_index = 0; granule_index < granule_count; ++granule_index)
+    {
+        auto decoder = decodeNameGranule(granule_index, decompression_context.get(), granule_buffer);
+        name.clear();
+        while (decoder.next(name))
+            ++decoded_names;
+    }
+
+    if (decoded_names != name_count)
+        throw std::runtime_error("Compact symbol name count mismatch");
 }
 
 NameGranuleDecoder Reader::decodeNameGranule(uint32_t granule_index, ZSTD_DCtx * decompression_context, std::span<char> destination) const
