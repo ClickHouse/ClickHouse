@@ -1,0 +1,5 @@
+SELECT `inf`, `infinity`, `nan`, `true`, `false`
+SELECT `Inf`, `INF`, `Infinity`, `NaN`, `NAN`, `True`, `TRUE`, `False`, `FALSE`
+SELECT `null`, `NULL`, infx, nanx, inf_1
+`inf`, `nan`, `true`
+1

@@ -44,12 +44,18 @@ export const AgentPrompt = ({
         <div className="ch-agent-prompt-left">
           <span className="ch-agent-prompt-title">{title}</span>
         </div>
-        <div className="ch-agent-prompt-prompt-area">
-          <code className="ch-agent-prompt-prompt-text">{prompt}</code>
+        <div className="ch-agent-prompt-prompt-area" style={{ overflow: "hidden" }}>
+          <code className="ch-agent-prompt-prompt-text" style={{ overflowX: "auto" }}>{prompt}</code>
         </div>
         <button
           type="button"
           className="ch-agent-prompt-copy-button"
+          style={{
+            boxSizing: "border-box",
+            justifyContent: "center",
+            minWidth: "8.25rem",
+            whiteSpace: "nowrap",
+          }}
           onClick={handleCopy}
           aria-label={copied ? "Copied" : "Copy prompt"}
         >
@@ -83,7 +89,14 @@ export const AgentPrompt = ({
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
             </svg>
           )}
-          <span>{copied ? "Copied" : "Copy Prompt"}</span>
+          <span style={{ display: "grid", justifyItems: "center" }}>
+            <span style={{ gridArea: "1 / 1", visibility: copied ? "hidden" : "visible" }}>
+              Copy Prompt
+            </span>
+            <span style={{ gridArea: "1 / 1", visibility: copied ? "visible" : "hidden" }}>
+              Copied
+            </span>
+          </span>
         </button>
       </div>
       {(description || repositoryUrl) && (

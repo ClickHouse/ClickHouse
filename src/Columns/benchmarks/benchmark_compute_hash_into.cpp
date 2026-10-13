@@ -1,7 +1,7 @@
 /// Microbenchmark for IColumn::computeHashInto.
 ///
 /// Measures per-row throughput for the hash-production step used by
-/// hash-partitioning operators (e.g. BufferedShardByHashTransform).
+/// hash-partitioning operators (e.g. ScatterByPartitionTransform).
 ///
 /// Each benchmark name encodes: <ColumnType>_K<K>_B<batch>
 ///   K = number of key columns chained
@@ -126,7 +126,7 @@ void BM_ComputeHashInto(benchmark::State & state, const std::vector<ColumnPtr> &
 /// ─── End-to-end hash → selector benchmark ────────────────────────────────
 ///
 /// Captures the full pipeline exactly as executed by
-/// BufferedShardByHashTransform::generateOutputChunks:
+/// ScatterByPartitionTransform::generateOutputChunks:
 /// seed hash_buffer with WEAK_HASH32_INITIAL_VALUE, chain computeHashInto with
 /// initial=false over every key column (0 allocations), then mapToRange SIMD.
 ///
@@ -231,6 +231,7 @@ int main(int argc, char ** argv)
     REGISTER_E2E(UInt32, makeUInt32Columns, 4, 16384, 16);
     REGISTER_E2E(UInt32, makeUInt32Columns, 4, 16384, 256);
 
+    benchmark::MaybeReenterWithoutASLR(argc, argv);
     benchmark::Initialize(&argc, argv);
     benchmark::RunSpecifiedBenchmarks();
     return 0;

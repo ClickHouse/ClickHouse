@@ -1,3 +1,4 @@
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 DROP TABLE IF EXISTS t_lwu_bytes_limits;
 
 CREATE TABLE t_lwu_bytes_limits (id UInt64, s String)

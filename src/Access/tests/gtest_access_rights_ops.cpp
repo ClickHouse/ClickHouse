@@ -640,6 +640,55 @@ TEST(AccessRights, ParialRevokeWithGrantOption)
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "default", "zoo"));
 }
 
+TEST(AccessRights, PartialRevokeGrantOptionWithSharedPrefix)
+{
+    /// Each arm pairs a grant-option-only revoke whose name shares a prefix with a plain revoke
+    /// (the shape that used to be dropped) with a control name that shares nothing.
+
+    /// Database level.
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "db1");
+    root.revokeGrantOption(AccessType::SELECT, "db2");
+    root.revokeGrantOption(AccessType::SELECT, "zdb2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT ON db1.*, "
+                               "REVOKE GRANT OPTION SELECT ON db2.*, REVOKE GRANT OPTION SELECT ON zdb2.*");
+
+    /// Database level, grant-option name is a strict prefix of the plain one.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "dbx");
+    root.revokeGrantOption(AccessType::SELECT, "db");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT ON db.*, "
+                               "REVOKE SELECT ON dbx.*");
+
+    /// Table level.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "d", "t1");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t2");
+    root.revokeGrantOption(AccessType::SELECT, "d", "zt2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT ON d.t1, "
+                               "REVOKE GRANT OPTION SELECT ON d.t2, REVOKE GRANT OPTION SELECT ON d.zt2");
+
+    /// Column level.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "d", "t", "c1");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t", "c2");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t", "zc2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT(c1) ON d.t, "
+                               "REVOKE GRANT OPTION SELECT(c2, zc2) ON d.t");
+
+    /// Wildcard grant-option revoke whose name is a strict prefix of the plain one.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "dbx1");
+    root.revokeWildcardGrantOption(AccessType::SELECT, "db");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT ON db*.*, "
+                               "REVOKE SELECT ON dbx1.*");
+}
+
 TEST(AccessRights, WildcardGrantEdgeCases)
 {
     AccessRights root;

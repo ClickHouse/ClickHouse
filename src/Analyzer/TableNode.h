@@ -7,6 +7,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/IASTHash.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
@@ -166,6 +167,21 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
+    struct CloneTag
+    {
+    };
+
+    /// Construct a copy for `cloneImpl`: the parameterized view query hash is carried over from the
+    /// source node instead of being recomputed, because the traversal of the substituted inner query
+    /// is exactly what the cache is there to avoid, and the analyzer clones subtrees repeatedly.
+    TableNode(
+        CloneTag,
+        StoragePtr storage_,
+        StorageID storage_id_,
+        TableLockHolder storage_lock_,
+        StorageSnapshotPtr storage_snapshot_,
+        std::optional<IASTHash> parameterized_view_query_hash_);
+
     StoragePtr storage;
     StorageID storage_id;
     TableLockHolder storage_lock;
@@ -174,6 +190,8 @@ private:
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
     MaterializedCTEPtr materialized_cte;
+    /// Hash of the substituted inner query if `storage` is a parameterized view, see `isEqualImpl`.
+    std::optional<IASTHash> parameterized_view_query_hash;
 
     static constexpr size_t materialized_cte_subquery_index = 0;
     static constexpr size_t children_size = materialized_cte_subquery_index + 1;

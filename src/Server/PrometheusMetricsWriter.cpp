@@ -237,14 +237,15 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
 {
     size_t total_count = 0;
 
-    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+    for (const auto code : ErrorCodes::getCodes())
     {
-        const auto & error = ErrorCodes::values[i].get();
-        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
+        std::string_view name = ErrorCodes::getName(code);
 
+        /// Custom error codes have no name, and are not exported.
         if (name.empty())
             continue;
 
+        const auto & error = ErrorCodes::values[code].get();
         std::string key{error_metrics_prefix + toString(name)};
         std::string help = fmt::format("The number of {} errors since last server restart", name);
 
@@ -417,14 +418,21 @@ void PrometheusMetricsWriter::writeInfo(WriteBuffer & wb) const
 
 
 std::unordered_set<std::string> PrometheusMetricsWriter::getReservedLabelNames(
-    bool expose_info, bool expose_asynchronous_metrics, bool expose_histograms, bool expose_dimensional_metrics) const
+    bool expose_info,
+    bool expose_asynchronous_metrics,
+    AsynchronousMetricsKeyValuesMode async_metrics_mode,
+    bool expose_histograms,
+    bool expose_dimensional_metrics) const
 {
     std::unordered_set<std::string> reserved_names;
 
     if (expose_info)
         reserved_names.insert({"name", "version", "version_describe", "version_major", "version_minor", "version_patch"});
 
-    if (expose_asynchronous_metrics)
+    /// Every one of these labels belongs to a metric family that also has a pre-26.8 scalar name, so in
+    /// `legacy_names` mode none of them is written and a configuration that was valid before 26.8 - a
+    /// constant `device` label, for example - is valid again.
+    if (expose_asynchronous_metrics && async_metrics_mode != AsynchronousMetricsKeyValuesMode::LegacyNames)
         reserved_names.insert({"channel", "cpu", "device", "disk", "interface", "mc", "sensor"});
 
     if (expose_histograms)
@@ -501,6 +509,7 @@ void KeeperPrometheusMetricsWriter::writeErrors(WriteBuffer &) const
 std::unordered_set<std::string> KeeperPrometheusMetricsWriter::getReservedLabelNames(
     [[maybe_unused]] bool expose_info,
     [[maybe_unused]] bool expose_asynchronous_metrics,
+    [[maybe_unused]] AsynchronousMetricsKeyValuesMode async_metrics_mode,
     [[maybe_unused]] bool expose_histograms,
     [[maybe_unused]] bool expose_dimensional_metrics) const
 {
@@ -511,7 +520,8 @@ std::unordered_set<std::string> KeeperPrometheusMetricsWriter::getReservedLabelN
         reserved_names.insert({"name", "version", "version_describe", "version_major", "version_minor", "version_patch"});
 
 #if USE_NURAFT
-    if (expose_asynchronous_metrics)
+    /// As above: these labels disappear together with the key-value form.
+    if (expose_asynchronous_metrics && async_metrics_mode != AsynchronousMetricsKeyValuesMode::LegacyNames)
         reserved_names.insert({"channel", "cpu", "device", "disk", "interface", "mc", "sensor"});
 #endif
 

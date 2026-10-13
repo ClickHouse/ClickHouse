@@ -16,18 +16,18 @@
 
 SET use_query_condition_cache = 0;
 
-DROP TABLE IF EXISTS t_cv_neg SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_neg SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_pos SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_pos SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_i8n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_i8n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_i8p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_i8p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_i64n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_i64n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_i64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_i64p SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_cv_neg;
+DROP TABLE IF EXISTS m_cv_neg;
+DROP TABLE IF EXISTS t_cv_pos;
+DROP TABLE IF EXISTS m_cv_pos;
+DROP TABLE IF EXISTS t_cv_i8n;
+DROP TABLE IF EXISTS m_cv_i8n;
+DROP TABLE IF EXISTS t_cv_i8p;
+DROP TABLE IF EXISTS m_cv_i8p;
+DROP TABLE IF EXISTS t_cv_i64n;
+DROP TABLE IF EXISTS m_cv_i64n;
+DROP TABLE IF EXISTS t_cv_i64p;
+DROP TABLE IF EXISTS m_cv_i64p;
 
 -- ---------------------------------------------------------------------------------------------
 -- Case 1: strictly-negative range, signed constant, integer divisor.
@@ -117,15 +117,15 @@ SELECT 'c8 live pos eq', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FR
 SELECT 'c8 live pos ge', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_pos WHERE intDiv(toInt32(1000), a) >= 50) WHERE explain ILIKE '%Granules: 2/4%';
 SELECT 'c8 live u8 flip', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_i8p WHERE intDiv(toUInt8(200), a) <= -2) WHERE explain ILIKE '%Granules: 2/4%';
 
-DROP TABLE t_cv_neg SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_neg SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_pos SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_pos SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_i8n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_i8n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_i8p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_i8p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_i64n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_i64n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_i64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_i64p SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_cv_neg;
+DROP TABLE m_cv_neg;
+DROP TABLE t_cv_pos;
+DROP TABLE m_cv_pos;
+DROP TABLE t_cv_i8n;
+DROP TABLE m_cv_i8n;
+DROP TABLE t_cv_i8p;
+DROP TABLE m_cv_i8p;
+DROP TABLE t_cv_i64n;
+DROP TABLE m_cv_i64n;
+DROP TABLE t_cv_i64p;
+DROP TABLE m_cv_i64p;

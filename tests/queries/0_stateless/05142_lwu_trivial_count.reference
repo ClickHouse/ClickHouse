@@ -1,0 +1,19 @@
+--- V2: value-only patches ---
+1000
+1
+990
+10
+--- V2: pending delete patches ---
+1	1
+980
+0
+1000
+970
+--- V1: value-only patches ---
+1
+--- V1: pending delete patches ---
+990
+0
+--- FINAL: value-only patches ---
+1000
+500

@@ -17,7 +17,7 @@ from helpers.s3_queue_common import (
 from helpers.config_cluster import minio_secret_key
 from helpers.test_tools import assert_eq_with_retry
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 
 
 @pytest.fixture(autouse=True)
@@ -248,6 +248,92 @@ def test_filtering_files(started_cluster, mode):
     ) or node1.contains_in_log(
         f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
     )
+
+
+@pytest.mark.parametrize("mode", ["exclusive", "unordered"])
+def test_filtering_files_multinode(started_cluster, mode):
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+    nodes = [node1, node2]
+
+    table_name = f"test_replicated_{mode}_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 100
+
+    for i, node in enumerate(nodes):
+        node.query("DROP DATABASE IF EXISTS r")
+        node.query(
+            f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node{i+1}')"
+        )
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            mode,
+            files_path if mode != "exclusive" else f"{files_path}{{replica}}",
+            additional_settings={
+                "keeper_path": keeper_path,
+                "polling_min_timeout_ms": 100,
+                "polling_max_timeout_ms": 100,
+                "polling_backoff_ms": 0,
+            },
+            database_name="r",
+        )
+
+    chunk = files_to_generate//len(nodes)
+    for i in range(len(nodes)):
+        files_path_node = f"{files_path}node{i+1}" if mode == "exclusive" else files_path
+        files = [(f"{files_path_node}/test_{i}.csv", i) for i in range(i*chunk, i*chunk + chunk)]
+        generate_random_files(
+            started_cluster,
+            files_path_node,
+            chunk,
+            start_ind=i*chunk,
+            row_num=1,
+            files=files,
+        )
+
+    incorrect_values = [
+        ["failed", 1, 1],
+    ]
+    incorrect_values_csv = (
+        "\n".join((",".join(map(str, row)) for row in incorrect_values)) + "\n"
+    ).encode()
+
+    failed_files = []
+    for i in range(len(nodes)):
+        files_path_node = f"{files_path}node{i+1}" if mode == "exclusive" else files_path
+        failed_files.append(f"{files_path_node}/testz_fff.csv")
+
+    for failed_file in failed_files:
+        put_s3_file_content(started_cluster, failed_file, incorrect_values_csv)
+
+    for node in nodes:
+        create_mv(node, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        query = f"SELECT count() FROM default.{dst_table_name}"
+        return sum(int(node.query(query)) for node in nodes)
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    if mode == "exclusive":
+        log_line = lambda failed_file: f"StorageObjectStorageQueue({keeper_path}): File {failed_file} failed to process and will not be retried"
+    else:
+        log_line = lambda failed_file: f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
+
+    skips = [node.contains_in_log(log_line(failed_files[i])) for i, node in enumerate(nodes)]
+    if mode == "exclusive":
+        assert all(skips)
+    else:
+        assert any(skips)
 
 
 def test_ordered_start_after_avoids_deep_relisting(started_cluster):
@@ -1100,7 +1186,7 @@ def test_shutdown_dedup_off_no_duplicates(started_cluster):
     node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 @pytest.mark.parametrize("limit", [1, 9999999999])
 def test_mv_settings(started_cluster, mode, limit):
     node = started_cluster.instances["instance"]

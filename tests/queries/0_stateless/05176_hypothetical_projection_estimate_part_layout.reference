@@ -1,0 +1,90 @@
+--- a row count that is not a multiple of the granule ---
+real projection part marks:	3
+hypothetical:
+marks: 3
+rows: 250
+status: applicable
+marks: 1
+rows: 100
+read_ratio: 0.33x
+verdict: chosen
+reason: 1 mark would be read instead of 3 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_r)
+Granules: 1
+--- Compact parts, where a wide column the projection does not store must not inflate its marks ---
+real projection part marks:	5
+hypothetical:
+marks: 89
+rows: 2050
+status: applicable
+marks: 4
+rows: 2050
+read_ratio: 0.04x
+verdict: chosen
+reason: 4 marks would be read instead of 89 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_c)
+Granules: 4
+--- a sort key over a subcolumn ---
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 1
+rows: 100
+read_ratio: 0.10x
+verdict: chosen
+reason: 1 mark would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_s)
+Granules: 1
+--- a byte-driven projection index counts the parent offset it stores ---
+hypothetical:
+marks: 120
+rows: 5000
+status: applicable
+marks: 3
+rows: 192
+read_ratio: 0.03x
+verdict: chosen
+reason: 3 marks would be read instead of 120 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_i)
+Granules: 3
+--- a merged part whose rows differ in width along the projection key ---
+b >= 4000: within a granule of the real count: 1
+b < 2000: within a granule of the real count: 1
+--- a materialized lightweight delete ---
+rows the rebuilt projection kept:	1000
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 3
+rows: 300
+read_ratio: 0.30x
+verdict: chosen
+reason: 3 marks would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_d)
+Granules: 3
+--- a full projection scan that is cheaper than the base read ---
+hypothetical:
+marks: 162
+rows: 5000
+status: applicable
+marks: 4
+rows: 5000
+read_ratio: 0.02x
+verdict: chosen
+reason: 4 marks would be read instead of 162 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_n)
+Granules: 4

@@ -32,7 +32,7 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "برامج عميلة تابعة لجهات خارجية",
+      "group": "عملاء الجهات الخارجية",
       "icon": "users",
       "pages": [
         "ar/integrations/language-clients/third-party/client-libraries"

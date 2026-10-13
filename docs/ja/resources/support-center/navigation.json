@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "クエリとSQL",
+          "group": "クエリと SQL",
           "pages": [
             "ja/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "ja/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -131,7 +131,8 @@
             "ja/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ja/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "ja/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "ja/resources/support-center/knowledge-base/materialized-views/projection-example"
+            "ja/resources/support-center/knowledge-base/materialized-views/projection-example",
+            "ja/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
           ]
         },
         {
@@ -185,7 +186,7 @@
           ]
         },
         {
-          "group": "一般情報とよくある質問",
+          "group": "一般事項とよくある質問",
           "pages": [
             "ja/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
