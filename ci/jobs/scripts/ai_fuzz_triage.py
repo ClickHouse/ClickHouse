@@ -204,7 +204,7 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
     if not fingerprint:
         return NO_FINGERPRINT_NOTE
     if occurrences is None:
-        return f"""\
+        return """\
 - Known occurrences of this failure could not be looked up. An issue carrying
   its fingerprint may have been written by this same triage, so it is not
   evidence: do not look for one here. Judge from the code and the logs alone.
