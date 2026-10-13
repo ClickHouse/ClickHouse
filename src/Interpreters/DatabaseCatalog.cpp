@@ -1640,6 +1640,8 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
                 table_id.getNameForLogs());
         /// Check the limits before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot or rows.
+        /// This is a best-effort preflight: the attach checks both limits again, so a concurrent `CREATE`
+        /// or `INSERT` can still make it fail after the metadata file is moved.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
         {
             database_on_disk->checkTablesLimit();
