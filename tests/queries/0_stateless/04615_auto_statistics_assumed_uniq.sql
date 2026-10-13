@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS t_auto_stats_default_heavy_float_normal;
 DROP TABLE IF EXISTS t_auto_stats_materialize_assume;
 DROP TABLE IF EXISTS t_auto_stats_merge_assume;
 DROP TABLE IF EXISTS t_auto_stats_disable_rebuild;
+DROP TABLE IF EXISTS t_auto_stats_mixed_real_and_assumed;
 
 SET allow_statistics = 1;
 SET allow_suspicious_low_cardinality_types = 1;
@@ -286,6 +287,39 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_stats_disable_rebuild' AND active AND column = 'x'
 ORDER BY name;
 
+-- A real sketch is preferred over an assumed statistic for cardinality estimation: here the implicit
+-- `uniq` is converted by the setting, while the explicit `uniq_v2` stays a real sketch and must win.
+CREATE TABLE t_auto_stats_mixed_real_and_assumed
+(
+    x Float64 STATISTICS(uniq_v2)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'uniq',
+    auto_statistics_assume_floats_distinct = 1,
+    ratio_of_defaults_for_sparse_serialization = 1,
+    materialize_statistics_on_merge = 1;
+
+INSERT INTO t_auto_stats_mixed_real_and_assumed
+SELECT toFloat64(number % 5) FROM numbers(1000);
+INSERT INTO t_auto_stats_mixed_real_and_assumed
+SELECT toFloat64(number % 5) FROM numbers(1000);
+
+SELECT 'mixed real and assumed';
+SELECT column, statistics, estimates.cardinality
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_mixed_real_and_assumed' AND active AND column = 'x'
+ORDER BY name;
+
+OPTIMIZE TABLE t_auto_stats_mixed_real_and_assumed FINAL;
+
+SELECT 'mixed real and assumed after merge';
+SELECT column, statistics, estimates.cardinality
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_mixed_real_and_assumed' AND active AND column = 'x'
+ORDER BY name;
+
 DROP TABLE t_auto_stats_float_assume;
 DROP TABLE t_auto_stats_float_normal;
 DROP TABLE t_auto_stats_explicit_float_exact;
@@ -298,3 +332,4 @@ DROP TABLE t_auto_stats_default_heavy_float_normal;
 DROP TABLE t_auto_stats_materialize_assume;
 DROP TABLE t_auto_stats_merge_assume;
 DROP TABLE t_auto_stats_disable_rebuild;
+DROP TABLE t_auto_stats_mixed_real_and_assumed;

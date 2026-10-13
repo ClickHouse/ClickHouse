@@ -15,9 +15,9 @@ struct StatisticsBuildOptions;
 
 using StatisticsMap = std::map<StatisticsType, StatisticsPtr>;
 
-/// Returns the preferred cardinality estimator: Uniq over UniqV2 (Uniq has better precision),
-/// real sketches and assumed-all-distinct statistics alike. Shared by ColumnStatistics
-/// estimation and the merge policy.
+/// Returns the preferred cardinality estimator: any real sketch over any assumed-all-distinct
+/// statistic (the latter is only a row-count heuristic), then Uniq over UniqV2 (Uniq has better
+/// precision). Shared by ColumnStatistics estimation and the merge policy.
 const IStatistics * findPreferredCardinalityStatistics(const StatisticsMap & stats);
 
 struct AssumedAllDistinctBuildDecision

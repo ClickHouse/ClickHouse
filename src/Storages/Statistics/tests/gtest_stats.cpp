@@ -456,6 +456,64 @@ TEST(Statistics, StaleAssumedStatisticsDetection)
     EXPECT_FALSE(explicit_assumed_metadata->hasStaleAssumedStatistics(*part_stats, StatisticsBuildOptions{}));
 }
 
+TEST(Statistics, CardinalityEstimationPrefersRealSketchOverAssumed)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    auto make_column = [&]
+    {
+        auto column = data_type->createColumn();
+        for (UInt64 i = 0; i < 100; ++i)
+            column->insert(static_cast<Float64>(i % 5));
+        return ColumnPtr(std::move(column));
+    };
+
+    auto make_stats = [&](std::initializer_list<SingleStatisticsDescription> descs)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = data_type;
+        for (const auto & single : descs)
+            desc.types_to_desc.emplace(single.type, single);
+        return MergeTreeStatisticsFactory::instance().get(desc);
+    };
+
+    StatisticsBuildOptions assume_options;
+    assume_options.assume_floats_distinct = true;
+
+    /// An implicit `uniq` converted by the settings next to an explicit `STATISTICS(uniq_v2)`: the
+    /// real UniqV2 sketch must win over the assumed Uniq even though Uniq is otherwise preferred.
+    auto settings_mixed = make_stats({
+        SingleStatisticsDescription(StatisticsType::Uniq, nullptr, /*is_implicit_=*/true),
+        SingleStatisticsDescription(StatisticsType::UniqV2, nullptr, /*is_implicit_=*/false),
+    });
+    settings_mixed->build(make_column(), assume_options);
+    ASSERT_TRUE(isAssumedAllDistinctStatistics(*settings_mixed->getStats().at(StatisticsType::Uniq)));
+    ASSERT_FALSE(isAssumedAllDistinctStatistics(*settings_mixed->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(settings_mixed->estimateCardinality(), 5);
+    EXPECT_EQ(settings_mixed->getEstimate().estimated_cardinality, 5);
+    EXPECT_DOUBLE_EQ(*settings_mixed->estimateEqual(Field(1.0)), 20.0);
+
+    /// `STATISTICS(uniq(assumed_all_distinct), uniq_v2)` declared explicitly.
+    auto declared_mixed = make_stats({
+        SingleStatisticsDescription(StatisticsType::Uniq, nullptr, /*is_implicit_=*/false, StatisticsMaterialization::AssumedAllDistinct),
+        SingleStatisticsDescription(StatisticsType::UniqV2, nullptr, /*is_implicit_=*/false),
+    });
+    declared_mixed->build(make_column());
+    EXPECT_EQ(declared_mixed->estimateCardinality(), 5);
+
+    /// Without a real sketch the assumption is still used, preferring Uniq over UniqV2.
+    auto all_assumed = make_stats({
+        SingleStatisticsDescription(StatisticsType::Uniq, nullptr, /*is_implicit_=*/true),
+        SingleStatisticsDescription(StatisticsType::UniqV2, nullptr, /*is_implicit_=*/true),
+    });
+    all_assumed->build(make_column(), assume_options);
+    EXPECT_TRUE(all_assumed->hasCardinality());
+    EXPECT_EQ(all_assumed->estimateCardinality(), 100);
+    EXPECT_EQ(findPreferredCardinalityStatistics(all_assumed->getStats()), all_assumed->getStats().at(StatisticsType::Uniq).get());
+}
+
 TEST(Statistics, AssumedAllDistinctRoundTripPreservesLogicalType)
 {
     auto data_type = std::make_shared<DataTypeUInt64>();

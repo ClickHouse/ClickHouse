@@ -25,3 +25,8 @@ x	1	1000
 x	1	1000
 after disable and merge
 x	1	1
+mixed real and assumed
+x	['Uniq','UniqV2']	5
+x	['Uniq','UniqV2']	5
+mixed real and assumed after merge
+x	['Uniq','UniqV2']	5

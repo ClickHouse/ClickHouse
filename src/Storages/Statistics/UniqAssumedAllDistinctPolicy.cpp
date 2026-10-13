@@ -15,11 +15,22 @@ namespace DB
 
 const IStatistics * findPreferredCardinalityStatistics(const StatisticsMap & stats)
 {
-    if (auto it = stats.find(StatisticsType::Uniq); it != stats.end())
-        return it->second.get();
-    if (auto it = stats.find(StatisticsType::UniqV2); it != stats.end())
-        return it->second.get();
-    return nullptr;
+    /// A real sketch measures the data, while an assumed-all-distinct statistic is only the non-NULL
+    /// row count, so any real sketch wins over any assumption. Within each group Uniq is preferred
+    /// over UniqV2 for its better precision. Mixed columns are legal, e.g. an explicit
+    /// `STATISTICS(uniq_v2)` next to an implicit `uniq` converted by `auto_statistics_assume_*`.
+    const IStatistics * assumed = nullptr;
+    for (auto type : {StatisticsType::Uniq, StatisticsType::UniqV2})
+    {
+        auto it = stats.find(type);
+        if (it == stats.end())
+            continue;
+        if (!isAssumedAllDistinctStatistics(*it->second))
+            return it->second.get();
+        if (!assumed)
+            assumed = it->second.get();
+    }
+    return assumed;
 }
 
 namespace
