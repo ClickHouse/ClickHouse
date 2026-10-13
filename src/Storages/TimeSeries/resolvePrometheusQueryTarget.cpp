@@ -12,6 +12,7 @@
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -260,6 +261,30 @@ namespace
             return answered;
         };
 
+        /// CHECK GRANT needs no grant itself, and asks on the connection the sink's own insert uses.
+        String check_insert_grant = "CHECK GRANT INSERT(";
+        for (size_t i = 0; i != columns_to_send.size(); ++i)
+            check_insert_grant += (i ? ", " : "") + backQuoteIfNeed(columns_to_send[i]);
+        check_insert_grant += ") ON " + qualified_name;
+        const auto grant_header = std::make_shared<const Block>(Block{{std::make_shared<DataTypeUInt8>(), "result"}});
+        /// Why the sink's insert would be refused on the replica, empty when it would not.
+        auto insert_refusal = [&](const auto & pool, const String & replica_table) -> String
+        {
+            bool granted = false;
+            try
+            {
+                ask(pool, check_insert_grant, grant_header, [&](const Block & block)
+                {
+                    granted = block.rows() && (*block.getByPosition(0).column)[0].safeGet<UInt64>();
+                });
+            }
+            catch (const Exception &)
+            {
+                return "unreachable";
+            }
+            return granted ? "" : fmt::format("no INSERT grant on {}", replica_table);
+        };
+
         for (const auto [shard_info, shard_addresses] : std::views::zip(cluster->getShardsInfo(), cluster->getShardsAddresses()))
         {
             unavailable_on_shard.clear();
@@ -331,12 +356,21 @@ namespace
                     /// a replica that may not answer here is left to the check its own insert makes on its target.
                     if (e.code() == ErrorCodes::ACCESS_DENIED)
                     {
-                        if (!for_write || checks_own_insert(pool))
+                        if (!for_write)
                         {
                             ++verified_on_shard;
                             continue;
                         }
-                        unavailable = "denies the probe and does not check its own insert";
+                        if (!checks_own_insert(pool))
+                            unavailable = "denies the probe and does not check its own insert";
+                        /// Refused before any shard is written, rather than by that insert once another shard took its rows.
+                        else
+                            unavailable = insert_refusal(pool, replica_table);
+                        if (unavailable.empty())
+                        {
+                            ++verified_on_shard;
+                            continue;
+                        }
                     }
                     /// The entry's own database is selected on the connection and the wrapper's qualifies the
                     /// name, so either of the two can be the one the replica could not find; name both, once each.
@@ -422,11 +456,50 @@ void checkNoBypassedReadRestriction(
     }
 }
 
+namespace
+{
+    /// The caller's filters reach every shard, whose selector refuses one on its table only after the fan-out:
+    /// refused here instead, for every name that table answers to on some replica (the planner's matching).
+    void checkNoShardLocalFilter(
+        const IStorage & storage, const PrometheusQueryDistributedTarget & target, const Cluster & cluster, const ContextPtr & context)
+    {
+        const auto & remote_id = target.remote_time_series_storage_id;
+        for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+        {
+            const auto & name_and_filter = filter_entry.safeGet<Tuple>();
+            const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
+            bool binds = false;
+            for (const auto & shard_addresses : cluster.getShardsAddresses())
+            {
+                for (const auto & address : shard_addresses)
+                {
+                    /// The replica's current database, empty when only the replica itself knows it.
+                    const String current_database = address.is_local ? context->getCurrentDatabase() : address.default_database;
+                    const String database = remote_id.database_name.empty() ? current_database : remote_id.database_name;
+                    if (filtered_table == remote_id.table_name)
+                        binds |= current_database.empty() || current_database == database;
+                    else if (database.empty())
+                        binds |= filtered_table.ends_with("." + remote_id.table_name);
+                    else
+                        binds |= filtered_table == database + "." + remote_id.table_name;
+                }
+            }
+            if (binds && isRestrictiveFilter(name_and_filter.at(1).safeGet<String>(), context))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "A prometheus query over a Distributed table is not supported on table {} with an additional_table_filters "
+                    "entry for its shard-local table `{}`: the read is rewritten to the shard-local TimeSeries tables and the "
+                    "filter would not be applied",
+                    storage.getStorageID().getNameForLogs(), filtered_table);
+        }
+    }
+}
+
 void checkPrometheusQueryDistributedRead(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context)
 {
     /// A plain SELECT through the wrapper applies both; the generated read never names the wrapper.
-    /// The shard-local table's own policy and filters are each shard's to check, in the selector.
+    /// The shard-local table's own policy is each shard's to check, in the selector.
     checkNoBypassedReadRestriction(storage.getStorageID(), context, "A prometheus query over a Distributed table",
         "the read is rewritten to the shard-local TimeSeries tables");
 
@@ -442,6 +515,8 @@ void checkPrometheusQueryDistributedRead(
         if (const auto local_id = context->tryResolveStorageID(target.remote_time_series_storage_id))
             context->checkAccess(AccessType::SELECT, local_id);
     }
+
+    checkNoShardLocalFilter(storage, target, *cluster, context);
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
     checkShardTargets(storage, target, context, cluster, /* for_write = */ false);

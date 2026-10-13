@@ -90,6 +90,13 @@
                     <table>default.prom_column_granted_replicated</table>
                 </handler>
             </column_granted_replicated_write>
+            <half_granted_write>
+                <url>/half_granted/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_half_granted</table>
+                </handler>
+            </half_granted_write>
             <!-- Wrappers retyped away from the outer schema of a TimeSeries table, and one declaring it. -->
             <retyped_name_write>
                 <url>/retyped_name/write</url>

@@ -156,6 +156,14 @@ def start_cluster():
             "CREATE TABLE prom_column_granted_replicated AS prom_column_granted "
             "ENGINE = Distributed(one_shard_column_granted_replicated, '', ts_column_granted)"
         )
+        # Over the same credentials, shard tables of their own the cluster user may write on shard_0 only.
+        node.query("CREATE TABLE shard_0.ts_half_granted ENGINE=TimeSeries")
+        node.query("CREATE TABLE shard_1.ts_half_granted ENGINE=TimeSeries")
+        grant_half_granted("GRANT", "shard_0")
+        node.query(
+            "CREATE TABLE prom_half_granted AS prom_column_granted "
+            "ENGINE = Distributed(two_shards_column_granted, '', ts_half_granted, cityHash64(tags['host']))"
+        )
 
         # Wrappers retyped away from the outer schema a TimeSeries table generates for itself, over
         # shard tables of their own, so the exact counts of the other tests are untouched.
@@ -188,6 +196,21 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def grant_half_granted(statement, shard_db):
+    """GRANT or REVOKE the cluster user's INSERT on one shard's `ts_half_granted` and its inner tables."""
+    preposition = "TO" if statement == "GRANT" else "FROM"
+    ts_uuid = node.query(
+        f"SELECT uuid FROM system.tables WHERE database = '{shard_db}' AND name = 'ts_half_granted'"
+    ).strip()
+    tables = ["ts_half_granted"] + node.query(
+        f"SELECT name FROM system.tables WHERE database = '{shard_db}' AND endsWith(name, '{ts_uuid}')"
+    ).split()
+    for table in tables:
+        node.query(
+            f"{statement} INSERT ON {shard_db}.`{table}` {preposition} {CLUSTER_COLUMN_USER}"
+        )
 
 
 def write(path, metric_name, hosts=("h0",)):
@@ -631,6 +654,42 @@ def test_a_replica_denying_the_probe_is_the_checked_target_of_its_replicated_sha
         table="ts_column_granted",
     )
     assert on_the_shards == 1
+
+
+def test_a_shard_the_cluster_user_may_not_write_is_refused_before_any_shard_is():
+    """The cluster user may not read either shard's metadata, and may write only shard_0: the batch is
+    refused with a retryable status before shard_0 takes its rows, not with a 403 by shard_1's insert."""
+    response = write("/half_granted/write", "half_granted_metric", HOSTS)
+    assert response.status_code == 500, response.text
+    assert "ALL_CONNECTION_TRIES_FAILED" in response.text
+    assert "no INSERT grant on shard_1.ts_half_granted" in response.text
+    assert (
+        count_on_the_shards(
+            "prom_half_granted", "half_granted_metric", table="ts_half_granted"
+        )
+        == 0
+    )
+
+
+def test_a_shard_denying_the_insert_after_the_check_is_a_retryable_refusal():
+    """A grant revoked between the check and the insert is refused by the shard's own insert, and that
+    refusal must stay retryable: a 403 would make Prometheus drop the batch."""
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    grant_half_granted("GRANT", "shard_1")
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        pending = pool.submit(write, "/half_granted/write", "revoked_metric", HOSTS)
+        node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_INSERT} PAUSE", timeout=60)
+        grant_half_granted("REVOKE", "shard_1")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
+        response = pending.result(timeout=60)
+        assert response.status_code == 500, response.text
+        assert "ALL_CONNECTION_TRIES_FAILED" in response.text
+        assert "Not enough privileges" in response.text
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+        pool.shutdown(wait=True)
+        grant_half_granted("REVOKE", "shard_1")
 
 
 def test_remote_write_metadata_needs_a_wrapper_declaring_its_columns():

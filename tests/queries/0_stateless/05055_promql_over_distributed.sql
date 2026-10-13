@@ -18,6 +18,8 @@ DROP TABLE IF EXISTS ts_nested;
 DROP TABLE IF EXISTS ts_coarse;
 DROP TABLE IF EXISTS ts_dead;
 DROP TABLE IF EXISTS ts_dead_skip;
+DROP TABLE IF EXISTS ts_stored;
+DROP TABLE IF EXISTS ts_moved SYNC;
 DROP ROW POLICY IF EXISTS p_05055_dist ON ts_dist;
 DROP ROW POLICY IF EXISTS p_05055_all ON ts_all;
 DROP ROW POLICY IF EXISTS p_05055_local ON shard_0.ts_local;
@@ -141,9 +143,38 @@ SELECT count() FROM prometheusQuery(ts_dist, 'm', 140); -- { serverError NOT_IMP
 DROP ROW POLICY p_05055_local ON shard_0.ts_local;
 -- Keyed to the wrapper, to the shard-local table or to a single table: refused; a literal true restricts nothing, so it is not.
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
-SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_local': 'metric_name != \'m\''}, log_comment = '05055_shard_local_filter'; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'shard_0.ts_local': 'metric_name != \'m\''}, log_comment = '05055_shard_local_filter'; -- { serverError NOT_IMPLEMENTED }
+-- Refused on the initiator, before any shard is asked anything; a name no shard resolves restricts nothing.
+SYSTEM FLUSH LOGS query_log;
+SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND NOT is_initial_query AND initial_query_id IN (
+    SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND is_initial_query AND current_database = currentDatabase() AND log_comment = '05055_shard_local_filter');
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'other_db.ts_local': 'metric_name != \'m\''};
 SELECT count() FROM prometheusQuery(ts_all, 'm', 140) SETTINGS additional_table_filters = {'ts_all': 'metric_name != \'m\''}; -- { serverError NOT_IMPLEMENTED }
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS additional_table_filters = {'ts_dist': '1'};
+
+SELECT '--- a table created AS prometheusQuery reads the wrapper as it is at read time ---';
+CREATE TABLE shard_0.ts_moved_to ENGINE = TimeSeries;
+CREATE TABLE shard_1.ts_moved_to ENGINE = TimeSeries;
+INSERT INTO shard_0.ts_moved_to (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(140, 3), 1000000)]);
+-- Recreated under the same UUID, which is what the stored table names it by.
+CREATE TABLE ts_moved UUID '05055000-0000-4000-8000-000000000001' AS shard_0.ts_local
+    ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local);
+CREATE TABLE ts_stored AS prometheusQuery(ts_moved, 'sum(m)', 140);
+SELECT value FROM ts_stored;
+DROP TABLE ts_moved SYNC;
+CREATE TABLE ts_moved UUID '05055000-0000-4000-8000-000000000001' AS shard_0.ts_local
+    ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_moved_to);
+SELECT value FROM ts_stored;
+-- Its columns and parsed times follow the samples type it was created with: another one is refused.
+CREATE TABLE shard_0.ts_moved_fine (samples Array(Tuple(DateTime64(6), Float64))) ENGINE = TimeSeries;
+CREATE TABLE shard_1.ts_moved_fine (samples Array(Tuple(DateTime64(6), Float64))) ENGINE = TimeSeries;
+DROP TABLE ts_moved SYNC;
+CREATE TABLE ts_moved UUID '05055000-0000-4000-8000-000000000001' AS shard_0.ts_moved_fine
+    ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_moved_fine);
+SELECT value FROM ts_stored; -- { serverError INCOMPATIBLE_COLUMNS }
+DROP TABLE ts_stored;
+DROP TABLE ts_moved SYNC;
 
 SELECT '--- the TimeSeries table functions still need a real TimeSeries table ---';
 SELECT count() FROM timeSeriesData(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }

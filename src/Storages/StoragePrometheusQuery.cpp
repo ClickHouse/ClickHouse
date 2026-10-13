@@ -32,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCOMPATIBLE_COLUMNS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_TABLE_ENGINE;
 }
@@ -221,6 +222,7 @@ void StoragePrometheusQuery::readImpl(
     size_t /* num_streams */)
 {
     const auto & time_series_storage_id = config.evaluation_settings.time_series_storage_id;
+    auto evaluation_settings = config.evaluation_settings;
     /// The shard-local tables' versions are checked by the selector on each shard.
     if (!config.evaluation_settings.distributed)
         checkTimeSeriesVersionSupportedByPromQL(
@@ -234,11 +236,25 @@ void StoragePrometheusQuery::readImpl(
         if (!distributed_target)
             throw Exception(
                 ErrorCodes::UNEXPECTED_TABLE_ENGINE, "Table {} is no longer a Distributed table", time_series_storage_id.getNameForLogs());
+
+        /// This table's columns and the parsed query follow the samples column the table had when this one was created.
+        const auto metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+        const auto version = outerSamplesVersion(*time_series_storage, *metadata);
+        const auto * samples_column = TimeSeriesColumnNames::getOuterSamples(version);
+        const auto * samples = metadata->columns.tryGet(samples_column);
+        if (version != config.evaluation_settings.time_series_version || !samples
+            || !splitTimeSeriesType(samples->type).first->equals(*config.evaluation_settings.table_timestamp_type))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Table {} no longer declares the samples column table {} was created with: recreate {}",
+                time_series_storage_id.getNameForLogs(), getStorageID().getNameForLogs(), getStorageID().getNameForLogs());
+
         checkPrometheusQueryDistributedRead(*time_series_storage, *distributed_target, context);
+        /// Read the target just checked: the table may point elsewhere since this one was created.
+        evaluation_settings.distributed = distributed_target;
     }
 
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
-    auto evaluation_settings = config.evaluation_settings;
     evaluation_settings.push_down_label_matchers = context->getSettingsRef()[Setting::promql_push_down_label_matchers];
     PrometheusQueryToSQL::Converter converter{config.promql_query, evaluation_settings};
     ASTPtr select_query = converter.getSQL();

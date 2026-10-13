@@ -44,5 +44,10 @@ b	2
 4
 --- row policies and additional_table_filters: refused wherever the read would leave them unapplied ---
 2
+0
 4
+4
+--- a table created AS prometheusQuery reads the wrapper as it is at read time ---
+5555
+1000000
 --- the TimeSeries table functions still need a real TimeSeries table ---

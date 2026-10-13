@@ -47,6 +47,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
     extern const int ILLEGAL_COLUMN;
@@ -466,9 +467,10 @@ void PrometheusRemoteWriteProtocol::write(
     }
     catch (const Exception & e)
     {
-        /// A shard-local table gone since the check is as transient as an unreachable shard, but
-        /// `UNKNOWN_TABLE` is a 404, which Prometheus drops instead of resending.
-        if (!distributed_target || (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE))
+        /// A shard-local table gone since the check, or a shard denying the insert, is as transient as an unreachable
+        /// shard, but `UNKNOWN_TABLE` is a 404 and `ACCESS_DENIED` a 403, which Prometheus drops instead of resending.
+        const bool shard_denied = e.code() == ErrorCodes::ACCESS_DENIED && e.isRemoteException();
+        if (!distributed_target || (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE && !shard_denied))
             throw;
         throw Exception(
             ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
