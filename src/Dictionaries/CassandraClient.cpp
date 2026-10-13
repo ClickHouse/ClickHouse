@@ -59,6 +59,10 @@ constexpr size_t MAX_FRAME_BODY_SIZE = 256 * 1024 * 1024;
 /// The nesting of collection, tuple, and UDT types in the column metadata.
 constexpr size_t MAX_TYPE_NESTING_DEPTH = 64;
 
+/// The number of columns in a result. A column spec takes only a few bytes in a message,
+/// but much more in memory, so the size of the message alone does not bound the allocation.
+constexpr size_t MAX_RESULT_COLUMNS = 65536;
+
 namespace Opcode
 {
     constexpr UInt8 ERROR = 0x00;
@@ -687,9 +691,9 @@ ResultPage Connection::query(const String & query_text, Consistency consistency,
         reader.readString();
     }
 
-    /// Every column spec takes at least two bytes, which bounds the allocation by the size of the message.
-    if (static_cast<size_t>(columns_count) > reader.remaining() / 2)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many columns {} in a result from Cassandra server {}", columns_count, address.toString());
+    if (static_cast<size_t>(columns_count) > MAX_RESULT_COLUMNS)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many columns {} in a result from Cassandra server {}, the maximum is {}",
+            columns_count, address.toString(), MAX_RESULT_COLUMNS);
 
     page.column_specs.reserve(columns_count);
     for (Int32 i = 0; i < columns_count; ++i)
@@ -708,7 +712,9 @@ ResultPage Connection::query(const String & query_text, Consistency consistency,
     if (rows_count < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of rows {} in a result from Cassandra server {}", rows_count, address.toString());
 
-    /// Every value takes at least four bytes (its length).
+    /// Every value takes at least four bytes (its length) in the message and eight bytes in memory,
+    /// so the allocation is at most twice the size of the message.
+    static_assert(sizeof(ResultPage::Value) == 8);
     const size_t values_count = static_cast<size_t>(rows_count) * static_cast<size_t>(columns_count);
     if (values_count > reader.remaining() / 4)
         throw Exception(ErrorCodes::INCORRECT_DATA,
