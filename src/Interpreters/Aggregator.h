@@ -870,12 +870,18 @@ private:
     /// The thaw transition: the producer returns to the baseline path for good, keeping the records it staged.
     void thawAdaptive(const AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
-    /// Merges the source states of a merge unit into their destinations (`scratch.places` and `scratch.source_places`)
-    /// and destroys the sources after all aggregates merge successfully. Source table slots keep ownership until
-    /// this call returns, when the caller clears them. A group's states use the pool when their combined work
-    /// amortizes its setup or would hold up the remaining merge; smaller groups use the parallelism across buckets.
+    /// Merges the source states of a merge unit into their destinations, the state of `*source_slots[i]` into
+    /// `places[i]`, then destroys the sources and clears their slots. The source tables keep ownership until all
+    /// aggregates merged successfully. `scratch` holds the working memory of the merge. A group's states use the pool
+    /// when their combined work amortizes its setup or would hold up the remaining merge; smaller groups use the
+    /// parallelism across buckets.
     void mergeAdaptiveSourceStates(
-        AdaptiveMergeScratch & scratch, const AdaptiveAggregationSession & session, Arena * arena, std::atomic<bool> & is_cancelled) const;
+        PaddedPODArray<AggregateDataPtr> & places,
+        const PaddedPODArray<AggregateDataPtr *> & source_slots,
+        AdaptiveMergeScratch & scratch,
+        const AdaptiveAggregationSession & session,
+        Arena * arena,
+        std::atomic<bool> & is_cancelled) const;
 
     /// The adaptive verdict of a finished run: whether its staged streams were repeat-dominated, so that later runs of
     /// the query should not engage the adaptive aggregation, or nothing when the run measured nothing.
@@ -958,21 +964,55 @@ private:
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
         size_t * full_group_count) const;
 
-    /// Drains one partition's records into `table`, with `alive_bins` only those whose count bin within the bucket is
-    /// marked alive (see `AdaptiveTopKPruning`). String-like keys are emplaced pointing into the records, which are
-    /// freed only after the table is converted or written. With `on_count`, a general record only adds one row to the
-    /// count its group keeps in the mapped value, as a lone `count()` keeps it, and builds no state (see the
-    /// count-first units of `mergeAndConvertAdaptiveBucket`); `on_count(count, key, hash)` then takes the grown count.
-    /// Returns how many records it skipped.
-    template <typename Method, typename Table, typename OnCount = std::nullptr_t>
+    /// Drains one partition's records into `table`, only those whose routing hash `filter` takes: every record, those
+    /// whose count bin the top-K pruning keeps alive (see `AdaptiveTopKPruning`), or those of the best groups of a
+    /// count-first unit. String-like keys are emplaced pointing into the records, which are freed only after the table
+    /// is converted or written. Returns how many records it skipped.
+    template <typename Method, typename Table, typename Filter>
     size_t drainAdaptivePartition(
         Table & table,
         Arena * arena,
         const AdaptiveRecordRanges & ranges,
-        const bool * alive_bins,
+        const Filter & filter,
         PaddedPODArray<AggregateDataPtr> & places,
-        RowStorePointers & records,
-        const OnCount & on_count = nullptr) const;
+        RowStorePointers & records) const;
+
+    /// Counts the groups of one partition's argument records into `counting_table`, only those whose routing hash
+    /// `filter` takes: a record adds one row to the count its group keeps in the mapped value, as a lone `count()`
+    /// keeps it, and builds no state. `update_candidates(count, key, hash)` then takes the grown count by reference, so
+    /// a tracker of the best groups can keep its metadata in the count's high bits. Returns how many records it
+    /// skipped.
+    template <typename Method, typename Table, typename Filter, typename UpdateCandidates>
+    requires MapAggregationMethod<Method>
+    size_t countPartitionGroups(
+        Table & counting_table, const AdaptiveRecordRanges & ranges, const Filter & filter, const UpdateCandidates & update_candidates) const;
+
+    /// Destroys the states of a source cell whose group cannot reach the top, and clears the cell's slot.
+    void discardAdaptiveSourceState(AggregateDataPtr & place) const;
+
+    /// Takes the source cells of a merge unit that `filter` takes into `table`, and discards the others with their
+    /// states. A cell whose key is new in `table` hands its state over, and an aggregation by a lone `count` adds the
+    /// count. Otherwise the cell's state is to merge into the table's: its place and its slot go to `scratch.places`
+    /// and `scratch.source_slots` for `mergeAdaptiveSourceStates`.
+    template <typename Method, typename Table, typename Cells, typename Filter>
+    void adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeScratch & scratch) const;
+
+    /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
+    /// cells and the records of every partition `for_each_partition` hands out, in the count bins `alive_bins` keeps
+    /// (all bins when null), and puts the hashes of its best groups by the count into `scratch.best_hashes`. With a
+    /// descending order `top_k` keeps the best groups up to date while they are counted, and `pruning`, if any, drops
+    /// those below its threshold; an ascending order selects them by a pass over the counted groups. Adds the records
+    /// the bins skipped to `pruned_records`. Returns the unit's group count.
+    template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachPartition>
+    size_t selectCountFirstBestGroups(
+        Table & counting_table,
+        const Cells & cells,
+        const bool * alive_bins,
+        TopK * top_k,
+        const AdaptiveTopKPruning * pruning,
+        const ForEachPartition & for_each_partition,
+        AdaptiveMergeScratch & scratch,
+        size_t & pruned_records) const;
 
     /// Rebuilds the aggregate arguments of drained argument records into dense columns and applies them to the places
     /// of their groups, as the batch executor applies a block. `key_offset` and `fixed_arguments_offset` locate the key

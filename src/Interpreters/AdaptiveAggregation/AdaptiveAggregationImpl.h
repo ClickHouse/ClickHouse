@@ -183,14 +183,14 @@ struct AdaptiveAggregationSession
 };
 
 /// The working memory of one adaptive merge task, kept across the buckets it merges so their units do not allocate
-/// it again: the places and the source places of a unit's merge, the record pointers and ranges of a partition, and
-/// for a count-first unit the hashes of its best groups, the counts an ascending selection keeps, and the records of
-/// its best groups.
+/// it again: the places of a unit's merge and the source slots whose states merge into them, the record pointers and
+/// ranges of a partition, and for a count-first unit the hashes of its best groups and the counts an ascending
+/// selection keeps.
 struct AdaptiveMergeScratch
 {
     PaddedPODArray<AggregateDataPtr> places;
-    PaddedPODArray<AggregateDataPtr> source_places;
-    /// The merges of `source_places` into `places` ordered by their destination, and one destination's states, for the
+    PaddedPODArray<AggregateDataPtr *> source_slots;
+    /// The merges of `source_slots` into `places` ordered by their destination, and one destination's states, for the
     /// pool-parallel merge of a group many producers hold (see `Aggregator::mergeAdaptiveSourceStates`).
     PaddedPODArray<UInt32> merge_order;
     AggregateDataPtrs merge_group;
@@ -198,7 +198,6 @@ struct AdaptiveMergeScratch
     AdaptiveRecordRanges ranges;
     std::vector<std::pair<UInt64, UInt64>> best_counts_and_hashes;
     PaddedPODArray<UInt64> best_hashes;
-    AdaptiveRecordRanges best_records;
 };
 
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
