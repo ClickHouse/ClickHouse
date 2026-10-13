@@ -55,6 +55,7 @@
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -63,6 +64,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -1365,12 +1367,27 @@ static void replaceAliasColumns(ASTPtr & ast, const std::unordered_map<String, A
     {
         if (auto it = alias_expressions.find(identifier->name()); it != alias_expressions.end())
             ast = it->second->clone();
+        return;
     }
-    else
+
+    /// `TTL ... GROUP BY key SET column = expr` keeps the keys and assignments outside `children`.
+    if (auto * ttl_element = ast->as<ASTTTLElement>())
     {
-        for (auto & child : ast->children)
-            replaceAliasColumns(child, alias_expressions);
+        for (auto & key : ttl_element->group_by_key)
+            replaceAliasColumns(key, alias_expressions);
+        for (auto & assignment : ttl_element->group_by_assignments)
+            replaceAliasColumns(assignment, alias_expressions);
     }
+    /// The assigned column is a name, not an expression, so only an alias to a renamed column can be mapped.
+    else if (auto * assignment = ast->as<ASTAssignment>())
+    {
+        if (auto it = alias_expressions.find(assignment->column_name); it != alias_expressions.end())
+            if (const auto * target = it->second->as<ASTIdentifier>())
+                assignment->column_name = target->name();
+    }
+
+    for (auto & child : ast->children)
+        replaceAliasColumns(child, alias_expressions);
 }
 
 template <typename LogElement>

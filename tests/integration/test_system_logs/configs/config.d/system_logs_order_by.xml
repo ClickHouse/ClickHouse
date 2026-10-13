@@ -9,5 +9,6 @@
     <opentelemetry_span_log>
         <partition_by>toYYYYMM(finish_date)</partition_by>
         <order_by>finish_date, finish_time_us</order_by>
+        <ttl>finish_date + INTERVAL 30 DAY GROUP BY finish_date SET finish_date = max(finish_date)</ttl>
     </opentelemetry_span_log>
 </clickhouse>
