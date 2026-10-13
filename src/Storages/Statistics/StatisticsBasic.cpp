@@ -288,7 +288,8 @@ bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
 
 size_t StatisticsBasic::memoryUsageBytes() const
 {
-    return sizeof(*this) + StatisticsUtils::fieldMemoryUsageBytes(min) + StatisticsUtils::fieldMemoryUsageBytes(max);
+    return sizeof(*this) + StatisticsUtils::fieldMemoryUsageBytes(min) + StatisticsUtils::fieldMemoryUsageBytes(max)
+        + StatisticsUtils::fieldMemoryUsageBytes(column_default_field);
 }
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)

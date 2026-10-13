@@ -66,13 +66,43 @@ def _assert_hit(node, tag):
 def _assert_load(node, tag):
     assert _loaded_stats_us(node, tag) > 0
 
+def _last_loaded_stats_us(node, tag):
+    _flush_logs(node)
+    v = _query(node, f"""
+        SELECT toInt64(argMax(ProfileEvents['LoadedStatisticsMicroseconds'], event_time_microseconds))
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND type = 'QueryFinish'
+          AND log_comment = '{tag}'
+        FORMAT TabSeparated
+    """).strip()
+    return int(v or "0")
+
+def _wait_unchanged_part_set_tick(node, table, since):
+    for _ in range(50):
+        _query(node, "SYSTEM FLUSH LOGS text_log")
+        skipped = int(_query(node, f"""
+            SELECT count() FROM system.text_log
+            WHERE logger_name LIKE '{TEST_DB}.{table}%'
+              AND message LIKE 'The parts in this storage did not change%'
+              AND event_time_microseconds >= toDateTime64('{since}', 6)
+            FORMAT TabSeparated
+        """).strip())
+        if skipped:
+            return
+        time.sleep(0.2)
+    assert False, f"the statistics prewarm of `{table}` never reported an unchanged part set"
+
 def _wait_hit(node, tag, query_sql, retry_count=20, sleep_time=0.2):
-    return node.query_with_retry(
+    # Only the latest attempt counts: an earlier attempt that loaded the statistics must not hide a
+    # later hit, and `query_with_retry` returns without an error when every check fails.
+    node.query_with_retry(
         SET_PREFIX + "\n" + query_sql,
         retry_count=retry_count,
         sleep_time=sleep_time,
-        check_callback=lambda _: (_loaded_stats_us(node, tag) == 0),
+        check_callback=lambda _: _last_loaded_stats_us(node, tag) == 0,
     )
+    assert _last_loaded_stats_us(node, tag) == 0, f"`{tag}` loaded statistics on every attempt"
 
 def _create_tbl(node, name, interval):
     _query_retry(node, f"DROP TABLE IF EXISTS {name} SYNC")
@@ -291,21 +321,11 @@ def test_prewarm_runs_once_per_part_set():
     since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
     # A skipped tick after the last part change proves the prewarm has caught up with the
     # current part set, so no tick after the drop below can refill the cache.
-    for _ in range(50):
-        _query(ch1, "SYSTEM FLUSH LOGS text_log")
-        skipped = int(_query(ch1, f"""
-            SELECT count() FROM system.text_log
-            WHERE logger_name LIKE '{TEST_DB}.once_tbl%'
-              AND message LIKE 'The parts in this storage did not change%'
-              AND event_time_microseconds >= toDateTime64('{since}', 6)
-            FORMAT TabSeparated
-        """).strip())
-        if skipped:
-            break
-        time.sleep(0.2)
-    assert skipped, "the statistics prewarm never reported an unchanged part set"
+    _wait_unchanged_part_set_tick(ch1, "once_tbl", since)
     _query(ch1, "SYSTEM DROP STATISTICS CACHE")
-    time.sleep(3)
+    # A skipped tick after the drop proves the prewarm ran and declined to refill the cache.
+    since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
+    _wait_unchanged_part_set_tick(ch1, "once_tbl", since)
     _query(ch1, "SELECT count() FROM once_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='once-after-drop' FORMAT Null")
     _assert_load(ch1, "once-after-drop")
     _query(ch1, f"INSERT INTO once_tbl SELECT number+{ROWS_SMALL}, toFloat64(rand())/4294967296.0 FROM numbers({ROWS_SMALL})")
@@ -321,19 +341,7 @@ def test_reenabled_interval_prewarms_unchanged_table():
     _create_tbl(ch1, "reenable_tbl", 1)
     since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
     # A skipped tick proves the prewarm has completed for the current part set.
-    for _ in range(50):
-        _query(ch1, "SYSTEM FLUSH LOGS text_log")
-        skipped = int(_query(ch1, f"""
-            SELECT count() FROM system.text_log
-            WHERE logger_name LIKE '{TEST_DB}.reenable_tbl%'
-              AND message LIKE 'The parts in this storage did not change%'
-              AND event_time_microseconds >= toDateTime64('{since}', 6)
-            FORMAT TabSeparated
-        """).strip())
-        if skipped:
-            break
-        time.sleep(0.2)
-    assert skipped, "the statistics prewarm never reported an unchanged part set"
+    _wait_unchanged_part_set_tick(ch1, "reenable_tbl", since)
     _query_retry(ch1, "ALTER TABLE reenable_tbl MODIFY SETTING refresh_statistics_interval = 0")
     _query(ch1, "SYSTEM DROP STATISTICS CACHE")
     since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
