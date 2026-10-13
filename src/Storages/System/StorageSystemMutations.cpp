@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
+#include <Common/HiddenSecret.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <Storages/System/extractTablesFilter.h>
@@ -30,6 +31,13 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
 }
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_SLOW_PARSING;
+}
+
 /// The mutation entry keeps the real text of the command, because the mutation is executed from it
 /// (on every replica, for replicated tables). Hide the secrets on the way out instead, the way
 /// `system.distributed_ddl_queue` does. The command is formatted the same way as the stored text,
@@ -42,7 +50,21 @@ static String hideSecretsInCommand(const ContextPtr & context, const String & co
 
     const auto & settings = context->getSettingsRef();
     ParserAlterCommandList parser;
-    auto ast = parseQuery(parser, command, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    ASTPtr ast;
+    try
+    {
+        ast = parseQuery(parser, command, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
+    catch (const Exception & e)
+    {
+        /// The text may be unparseable on another server version, so hide the whole command instead of failing the table.
+        if (e.code() != ErrorCodes::SYNTAX_ERROR
+            && e.code() != ErrorCodes::TOO_DEEP_RECURSION
+            && e.code() != ErrorCodes::TOO_SLOW_PARSING)
+            throw;
+        return String(HIDDEN_SECRET);
+    }
+
     return ast->formatWithPossiblyHidingSensitiveData(
         /*max_length=*/0,
         /*one_line=*/true,
