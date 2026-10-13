@@ -54,7 +54,38 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
     return false;
 }
 
+/// The text from the user, such as a user name or a file name, is escaped in a prompt, so that it is shown on one line
+/// and its control characters do not affect the terminal: control characters of ASCII as `\x1b`, and C1 control
+/// characters (U+0080..U+009F), which are interpreted by some terminals, as their bytes in UTF-8: `\xc2\x9b`.
+std::string escapeForPrompt(std::string_view text)
+{
+    std::string result;
+    result.reserve(text.size());
+    auto append_escaped = [&](unsigned char byte) { result += fmt::format("\\x{:02x}", byte); };
+    for (size_t i = 0; i < text.size(); ++i)
+    {
+        const auto byte = static_cast<unsigned char>(text[i]);
+        const unsigned char next = i + 1 < text.size() ? static_cast<unsigned char>(text[i + 1]) : 0;
+        if (byte < 0x20 || byte == 0x7f)
+        {
+            append_escaped(byte);
+        }
+        else if (byte == 0xc2 && next >= 0x80 && next <= 0x9f)
+        {
+            append_escaped(byte);
+            append_escaped(next);
+            ++i;
+        }
+        else
+        {
+            result += text[i];
+        }
+    }
+    return result;
+}
+
 /// Echo every typed character as a mask, so the user can notice a stray character.
+/// The prompt must be on one line, see `escapeForPrompt`.
 char * readMaskedPassphrase(const std::string & prompt, char * buf, size_t size)
 {
     const size_t prompt_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(prompt.data()), prompt.size());
@@ -119,7 +150,7 @@ String readPublicKeyBlob(const String & private_key_filename)
 
 String askPassphrase(const String & key_name)
 {
-    String prompt = fmt::format("Enter the passphrase for the SSH key {}: ", key_name);
+    String prompt = fmt::format("Enter the passphrase for the SSH key {}: ", escapeForPrompt(key_name));
     char buf[1000] = {};
     if (auto * result = readMaskedPassphrase(prompt, buf, sizeof(buf)))
         return result;
@@ -367,7 +398,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         }
         if (password_prompt)
         {
-            std::string prompt{"Password for user (" + user + "): "};
+            std::string prompt{"Password for user (" + escapeForPrompt(user) + "): "};
             char buf[1000] = {};
             if (auto * result = readMaskedPassphrase(prompt, buf, sizeof(buf)))
                 password = result;

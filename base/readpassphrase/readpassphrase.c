@@ -151,13 +151,13 @@ erase_mask(struct masked_input *m)
     m->columns--;
 }
 
-/* Remove the last character from the buffer and its mask from the terminal. */
+/* Remove the last character after `begin` from the buffer and its mask from the terminal. */
 static void
-erase_char(struct masked_input *m, char *buf, char **p)
+erase_char(struct masked_input *m, char *begin, char **p)
 {
     char ch;
 
-    while (*p > buf) {
+    while (*p > begin) {
         ch = *--(*p);
         **p = '\0';
         /* Each character is masked once, at its first byte. */
@@ -168,20 +168,20 @@ erase_char(struct masked_input *m, char *buf, char **p)
     }
 }
 
-/* Remove the trailing non-alphanumeric characters and the word before them, as the kernel does. */
+/* Remove the trailing non-alphanumeric characters after `begin` and the word before them, as the kernel does. */
 static void
-erase_word(struct masked_input *m, char *buf, char **p)
+erase_word(struct masked_input *m, char *begin, char **p)
 {
     int seen_alnum = 0;
     unsigned char c;
 
-    while (*p > buf) {
+    while (*p > begin) {
         c = (unsigned char)(*p)[-1];
         if (isalnum(c) || c == '_')
             seen_alnum = 1;
         else if (seen_alnum)
             break;
-        erase_char(m, buf, p);
+        erase_char(m, begin, p);
     }
 }
 
@@ -206,6 +206,11 @@ read_masked(int input, struct masked_input *m, char *buf, char **p, char *end, i
     int literal = 0;
     ssize_t nr;
     char ch;
+    /*
+     * In the canonical mode, the end of file character passes the line typed so far to `read`,
+     * so it cannot be erased anymore, and it finishes the input if nothing was typed after that.
+     */
+    char *line_start = buf;
 
     while ((nr = read(input, &ch, 1)) == 1) {
         if (literal) {
@@ -214,14 +219,14 @@ read_masked(int input, struct masked_input *m, char *buf, char **p, char *end, i
             || (extended && is_control_char(term, VEOL2, ch))) {
             break;
         } else if (ch == '\b' || ch == 0x7f || is_control_char(term, VERASE, ch)) {
-            erase_char(m, buf, p);
+            erase_char(m, line_start, p);
             continue;
         } else if (is_control_char(term, VKILL, ch)) {
-            while (*p > buf)
-                erase_char(m, buf, p);
+            while (*p > line_start)
+                erase_char(m, line_start, p);
             continue;
         } else if (extended && is_control_char(term, VWERASE, ch)) {
-            erase_word(m, buf, p);
+            erase_word(m, line_start, p);
             continue;
         } else if (extended && is_control_char(term, VLNEXT, ch)) {
             literal = 1;
@@ -230,9 +235,9 @@ read_masked(int input, struct masked_input *m, char *buf, char **p, char *end, i
             reprint(m, buf, *p);
             continue;
         } else if (is_control_char(term, VEOF, ch)) {
-            /* Like in the canonical mode, the end of file only finishes an empty input. */
-            if (*p == buf)
+            if (*p == line_start)
                 break;
+            line_start = *p;
             continue;
         }
         if (*p < end) {

@@ -6,7 +6,9 @@
 #include <cerrno>
 #include <csignal>
 #include <cstring>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #if defined(OS_LINUX)
     #include <syscall.h>
@@ -847,28 +849,39 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 return readpassphrase_masked(prompt, prompt_width, buf, size, mask_flags | flags);
             };
 
+            /// Without a controlling terminal, `readpassphrase` reads the password from stdin.
+            /// Decide it once, so that an error with the terminal is not taken for its absence later.
+            bool password_from_terminal = false;
+            {
+                int tty_fd = open("/dev/tty", O_RDWR | O_CLOEXEC);
+                if (tty_fd >= 0)
+                {
+                    password_from_terminal = true;
+                    close(tty_fd);
+                }
+                else if (errno != ENXIO && errno != ENOENT)
+                    throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open /dev/tty to ask the password for the default user");
+            }
+            const int tty_flags = password_from_terminal ? RPP_REQUIRE_TTY : 0;
+
             /// The password typed in the terminal is asked twice, so that a typo does not lock the user out.
             /// If the password cannot be read, the installation fails instead of leaving the default user without a password.
             std::string password;
             while (true)
             {
                 char buf[1000] = {};
-                const char * result = read_password("Set up the password for the default user: ", buf, sizeof(buf), 0);
+                const char * result = read_password("Set up the password for the default user: ", buf, sizeof(buf), tty_flags);
                 if (!result)
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read the password for the default user");
                 password = result;
-                if (password.empty())
+                /// There is nothing to repeat if the password is read from stdin.
+                if (password.empty() || !password_from_terminal)
                     break;
 
                 char confirmation_buf[1000] = {};
-                const char * confirmation = read_password("Repeat the password: ", confirmation_buf, sizeof(confirmation_buf), RPP_REQUIRE_TTY);
+                const char * confirmation = read_password("Repeat the password: ", confirmation_buf, sizeof(confirmation_buf), tty_flags);
                 if (!confirmation)
-                {
-                    /// Without a terminal, the password is read from stdin, and there is nothing to repeat.
-                    if (errno == ENOTTY)
-                        break;
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read the confirmation of the password for the default user");
-                }
                 /// An empty confirmation (as on Ctrl+D) cancels setting up the password.
                 if (!*confirmation)
                 {
