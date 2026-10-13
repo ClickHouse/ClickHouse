@@ -183,12 +183,6 @@ bool Aggregator::advanceAdaptiveProducer(
     /// its two-level twin.
     if (adaptive.isLearning() && adaptiveFreezeBoundReached(result, worth_convert_to_two_level))
         freezeAdaptive(result, adaptive);
-
-    /// A learning table stays below every freeze bound, the two-level condition among them, so like a small baseline
-    /// table it neither converts nor spills. A frozen one is written to disk over the external-aggregation threshold
-    /// when its states grow, and its producer learns again.
-    if (adaptive.isFrozen() && over_external_threshold && adaptiveFrozenTableWorthSpilling(adaptive))
-        spillFrozenAdaptiveTable(result, adaptive, current_memory_usage + params.min_free_disk_space);
     return true;
 }
 

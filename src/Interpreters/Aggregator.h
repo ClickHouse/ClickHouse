@@ -833,11 +833,10 @@ private:
         size_t row_end,
         bool all_keys_are_const) const;
 
-    /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion and spill: writes
-    /// its staged records to disk over the external-aggregation threshold, thaws a frozen table whose staged stream
-    /// repeats, freezes a learning table at its bounds, and writes a frozen table with growing states to disk, after
-    /// which the producer learns again. `worth_convert_to_two_level` is the baseline's conversion condition, a bound of
-    /// the freeze. Returns false once the producer is on the baseline path, whose checks then apply.
+    /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
+    /// records to disk over the external-aggregation threshold, thaws a frozen table whose staged stream repeats, and
+    /// freezes a learning table at its bounds. `worth_convert_to_two_level` is the baseline's conversion condition, a
+    /// bound of the freeze. Returns false once the producer is on the baseline path, whose checks then apply.
     bool advanceAdaptiveProducer(
         AggregatedDataVariants & result,
         AdaptiveAggregationProducer & adaptive,

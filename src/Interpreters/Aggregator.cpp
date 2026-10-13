@@ -2501,10 +2501,23 @@ bool Aggregator::executeOnBlock(Columns columns,
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
-    /// An adaptive producer advances its phase in place of the conversion and the spill below, until it is on the
-    /// baseline path.
+    /// An adaptive producer advances its phase in place of the conversion below, until it is on the baseline path. Like
+    /// the baseline, it checks the limits after the transition and before its table goes to disk.
     if (adaptive && advanceAdaptiveProducer(result, *adaptive, worth_convert_to_two_level, current_memory_usage))
-        return checkLimits(result_size, no_more_keys);
+    {
+        /// Checking the constraints.
+        if (!checkLimits(result_size, no_more_keys))
+            return false;
+
+        /// A learning table stays below every freeze bound, the two-level condition among them, so like a small
+        /// baseline table it neither converts nor spills. A frozen one is written to disk over the
+        /// external-aggregation threshold when its states grow, and its producer learns again.
+        if (adaptive->isFrozen() && params.max_bytes_before_external_group_by
+            && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
+            && adaptiveFrozenTableWorthSpilling(*adaptive))
+            spillFrozenAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
+        return true;
+    }
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
