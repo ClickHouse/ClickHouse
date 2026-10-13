@@ -4505,7 +4505,7 @@ bool ClientBase::processAIChat(const String & text_)
     if (ai_agent_reset_pending)
     {
         ai_agent_reset_pending = false;
-        ai_agent.reset();
+        ai_agent = nullptr;
         output_stream << "The connection to the server was re-established, so the AI conversation was started over." << std::endl;
     }
 
