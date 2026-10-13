@@ -1602,7 +1602,8 @@ HashJoin::~HashJoin()
     {
         if (build_phase_finished)
         {
-            if (stats_collecting_params.build.isCollectionAndUseEnabled())
+            /// Like `ConcurrentHashJoin`, a parallel build of a fixed-key map leaves no entry: it has nothing to preallocate.
+            if (stats_collecting_params.build.isCollectionAndUseEnabled() && !(build_layout.two_level && isFixedHashTableType(data->type)))
             {
                 if (const auto ht_size = getTotalRowCount())
                     getHashTablesStatistics<HashJoinEntry>().update(
