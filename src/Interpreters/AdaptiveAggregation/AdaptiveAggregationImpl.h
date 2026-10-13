@@ -327,9 +327,8 @@ struct AdaptiveAggregationProducer
     PaddedPODArray<char> miss_keys;
     PaddedPODArray<UInt32> miss_multiplicities;
 
-    /// The producer's count bins when the aggregation prunes by the top-K (see `AdaptiveTopKPruning`), created by its
-    /// freeze, or by its finish if it never froze, and handed over at the finish.
-    std::unique_ptr<UInt16[]> count_bins;
+    /// The producer's count bins when the aggregation prunes by the top-K, handed over at the finish.
+    AdaptiveTopKCountBins count_bins;
 };
 
 }

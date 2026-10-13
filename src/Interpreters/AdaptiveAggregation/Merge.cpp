@@ -9,6 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/CacheLine.h>
+#include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
@@ -719,7 +720,7 @@ size_t Aggregator::selectCountFirstBestGroups(
     {
         /// With the pruning, which serves a descending order only, a group counted below the threshold cannot reach
         /// the top.
-        const UInt64 threshold = pruning ? pruning->threshold.load(std::memory_order_relaxed) : 0;
+        const UInt64 threshold = pruning ? pruning->currentThreshold() : 0;
         for (const auto & group : top_k->getGroups())
             if (group.count >= threshold)
                 best_hashes.push_back(group.hash);
@@ -833,7 +834,7 @@ void Aggregator::executeStagedArgumentRecords(
         use_compiled_functions);
 }
 
-size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & variants, UInt16 * bins) const
+size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & variants, AdaptiveTopKCountBins * bins) const
 {
     size_t work = 0;
 #define M(NAME) \
@@ -852,8 +853,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & varia
 }
 
 template <typename Method>
-/// NOLINTNEXTLINE(readability-non-const-parameter): The map-table callback updates the count bins.
-size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena, UInt16 * bins) const
+size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena, AdaptiveTopKCountBins * bins) const
 {
     size_t work = 0;
     if constexpr (MapAggregationMethod<Method>)
@@ -879,7 +879,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
                 [&](AggregateDataPtr & mapped, const auto & hash_of)
                 {
                     if (bins)
-                        addToCountBin(bins[adaptiveCountBin(hash_of())], rank_count(mapped));
+                        bins->add(hash_of(), rank_count(mapped));
                     for (size_t i : adaptive_parallel_merge_indices)
                         work += aggregate_functions[i]->getEstimatedMergeWork(mapped + offsets_of_aggregate_states[i]);
                 });
@@ -1001,9 +1001,9 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
 
     /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`).
     AdaptiveTopKPruning * const pruning = session.top_k_pruning.get();
-    std::array<UInt64, adaptive_count_bins_per_bucket> bin_bounds{};
+    AdaptiveTopKPruning::BucketBounds bin_bounds{};
     if (pruning)
-        bin_bounds = sumBucketCountBins(*pruning, bucket);
+        bin_bounds = pruning->boundsForBucket(bucket);
     std::array<bool, adaptive_count_bins_per_bucket> alive{};
     const size_t bins_per_unit = adaptive_count_bins_per_bucket / units;
     size_t pruned_records = 0;
@@ -1046,7 +1046,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         size_t alive_count = bins_per_unit;
         if (pruning)
         {
-            const UInt64 threshold = pruning->threshold.load(std::memory_order_relaxed);
+            const UInt64 threshold = pruning->currentThreshold();
             alive_count = 0;
             for (size_t bin = unit * bins_per_unit; bin < (unit + 1) * bins_per_unit; ++bin)
             {
@@ -1139,7 +1139,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types);
         }
         if (pruning)
-            offerTopKCounts(*pruning, *chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_rank_index]);
+            pruning->offerCounts(
+                assert_cast<const ColumnUInt64 &>(*chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_rank_index]).getData());
         chunks.push_back(std::move(chunk));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 

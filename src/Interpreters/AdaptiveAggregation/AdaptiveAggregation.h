@@ -61,8 +61,10 @@ struct AdaptiveArgumentLayout;
 /// The working memory an adaptive merge task keeps across the buckets it merges.
 struct AdaptiveMergeScratch;
 
-/// The bin-bound pruning of an aggregation ranked by `count`, `uniqExact` or `uniqExactIf` in descending order.
-struct AdaptiveTopKPruning;
+/// The bin-bound pruning of an aggregation ranked by `count`, `uniqExact` or `uniqExactIf` in descending order, and a
+/// producer's count bins for it.
+class AdaptiveTopKPruning;
+class AdaptiveTopKCountBins;
 
 /// The staged records of one partition as contiguous byte ranges of whole records: a producer's chunk, or a block
 /// read back from a spill stream.

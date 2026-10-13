@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <functional>
-#include <numeric>
 #include <optional>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -161,8 +159,8 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
         adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(
             layout.numPartitions(), adaptive_staging_block_buckets * layout.partitionsPerBucket());
     }
-    if (params.adaptiveTopKPrunes() && !adaptive.count_bins)
-        adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
+    if (params.adaptiveTopKPrunes() && !adaptive.count_bins.isAllocated())
+        adaptive.count_bins.allocate();
     const size_t keys = result.sizeWithoutOverflowRow();
     /// A zero key-count threshold or byte pressure can freeze a table before its first group is inserted.
     /// Without a measured per-key allocation cost, the aggregate state size supplies a lower bound
@@ -198,24 +196,21 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
 
     /// The bins take the rows of the producer's own table as well, whatever its phase: a producer that never froze
     /// has no records but its table is a source of the merge.
-    if (params.adaptiveTopKPrunes() && !adaptive.count_bins)
-        adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
-
-    size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
-    if (adaptive.count_bins || !adaptive_parallel_merge_indices.empty())
-        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, adaptive.count_bins.get());
-
-    std::optional<AdaptiveTopKPruning::ProducerBins> bins;
+    AdaptiveTopKCountBins * count_bins = nullptr;
     if (params.adaptiveTopKPrunes())
     {
-        bins.emplace();
-        bins->bins = std::move(adaptive.count_bins);
-        for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
-        {
-            const UInt16 * bucket_bins = bins->bins.get() + bucket * adaptive_count_bins_per_bucket;
-            bins->bucket_maxima[bucket] = *std::max_element(bucket_bins, bucket_bins + adaptive_count_bins_per_bucket);
-        }
+        if (!adaptive.count_bins.isAllocated())
+            adaptive.count_bins.allocate();
+        count_bins = &adaptive.count_bins;
     }
+
+    size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
+    if (count_bins || !adaptive_parallel_merge_indices.empty())
+        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, count_bins);
+
+    std::optional<AdaptiveTopKPruning::ProducerBins> bins;
+    if (count_bins)
+        bins = AdaptiveTopKPruning::finalizeProducerCounts(std::move(*count_bins));
 
     /// A producer that thawed was repeat-dominated. One that finishes frozen is when its whole staged stream repeated
     /// past the bound of the verdict.
@@ -252,34 +247,20 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         shared.producer_buffers.push_back(std::move(adaptive.partitions));
     }
     if (bins)
-        shared.top_k_pruning->producer_bins.push_back(std::move(*bins));
+        shared.top_k_pruning->addProducerBins(std::move(*bins));
 }
 
 void Aggregator::prepareAdaptiveTopKPruning(
     AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const
 {
-    if (!shared.top_k_pruning)
-        return;
-
-    auto & pruning = *shared.top_k_pruning;
-    if (external_merge || collects_statistics || pruning.producer_bins.size() != producers)
-    {
-        shared.top_k_pruning.reset();
-        return;
-    }
-
-    /// A bucket's largest bin is at most the sum of the producers' largest bins in it, which orders the buckets.
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> priorities{};
-    for (const auto & producer : pruning.producer_bins)
-        for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
-            priorities[bucket] += producer.bucket_maxima[bucket];
-    std::iota(pruning.bucket_order.begin(), pruning.bucket_order.end(), 0);
-    std::ranges::stable_sort(pruning.bucket_order, [&](UInt8 lhs, UInt8 rhs) { return priorities[lhs] > priorities[rhs]; });
+    auto & pruning = shared.top_k_pruning;
+    if (pruning && (external_merge || collects_statistics || !pruning->prepare(producers)))
+        pruning.reset();
 }
 
 UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const
 {
-    return top_k_pruning ? top_k_pruning->bucket_order[claim] : claim;
+    return top_k_pruning ? top_k_pruning->bucketToMerge(claim) : claim;
 }
 
 void Aggregator::spillFrozenAdaptiveTable(

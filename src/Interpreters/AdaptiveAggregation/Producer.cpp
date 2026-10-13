@@ -715,12 +715,9 @@ void NO_INLINE Aggregator::appendDelayedRecords(
 
     /// The rows behind the records go to the count bins of the top-K pruning: a count record carries
     /// its combined multiplicity.
-    if (adaptive.count_bins)
-    {
-        UInt16 * bins = adaptive.count_bins.get();
+    if (adaptive.count_bins.isAllocated())
         for (size_t i = 0; i < total; ++i)
-            addToCountBin(bins[adaptiveCountBin(hashes[i])], is_simple_count ? adaptive.miss_multiplicities[i] : 1);
-    }
+            adaptive.count_bins.add(hashes[i], is_simple_count ? adaptive.miss_multiplicities[i] : 1);
 
     adaptive.total_staged_records += total;
 

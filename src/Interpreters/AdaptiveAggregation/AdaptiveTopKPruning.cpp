@@ -2,19 +2,43 @@
 
 #include <algorithm>
 #include <limits>
-
-#include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
+#include <numeric>
 
 namespace DB
 {
 
-std::array<UInt64, adaptive_count_bins_per_bucket> sumBucketCountBins(const AdaptiveTopKPruning & pruning, size_t bucket)
+AdaptiveTopKPruning::ProducerBins AdaptiveTopKPruning::finalizeProducerCounts(AdaptiveTopKCountBins && counts)
 {
-    std::array<UInt64, adaptive_count_bins_per_bucket> bounds{};
-    for (const auto & producer : pruning.producer_bins)
+    ProducerBins producer{.counts = std::move(counts)};
+    for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
     {
-        const UInt16 * bins = producer.bins.get() + bucket * adaptive_count_bins_per_bucket;
+        const UInt16 * bucket_bins = producer.counts.bins.get() + bucket * adaptive_count_bins_per_bucket;
+        producer.bucket_maxima[bucket] = *std::max_element(bucket_bins, bucket_bins + adaptive_count_bins_per_bucket);
+    }
+    return producer;
+}
+
+bool AdaptiveTopKPruning::prepare(size_t expected_producers)
+{
+    if (producer_bins.size() != expected_producers)
+        return false;
+
+    /// A bucket's largest bin is at most the sum of the producers' largest bins in it, which orders the buckets.
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> priorities{};
+    for (const auto & producer : producer_bins)
+        for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
+            priorities[bucket] += producer.bucket_maxima[bucket];
+    std::iota(bucket_order.begin(), bucket_order.end(), 0);
+    std::ranges::stable_sort(bucket_order, [&](UInt8 lhs, UInt8 rhs) { return priorities[lhs] > priorities[rhs]; });
+    return true;
+}
+
+AdaptiveTopKPruning::BucketBounds AdaptiveTopKPruning::boundsForBucket(size_t bucket) const
+{
+    BucketBounds bounds{};
+    for (const auto & producer : producer_bins)
+    {
+        const UInt16 * bins = producer.counts.bins.get() + bucket * adaptive_count_bins_per_bucket;
         for (size_t bin = 0; bin < adaptive_count_bins_per_bucket; ++bin)
         {
             if (bins[bin] == std::numeric_limits<UInt16>::max())
@@ -26,24 +50,23 @@ std::array<UInt64, adaptive_count_bins_per_bucket> sumBucketCountBins(const Adap
     return bounds;
 }
 
-void offerTopKCounts(AdaptiveTopKPruning & pruning, const IColumn & column)
+void AdaptiveTopKPruning::offerCounts(std::span<const UInt64> counts)
 {
-    const auto & counts = assert_cast<const ColumnUInt64 &>(column).getData();
-    std::lock_guard lock(pruning.best_mutex);
+    std::lock_guard lock(best_mutex);
     for (const UInt64 count : counts)
     {
-        if (pruning.best.size() < pruning.limit)
+        if (best.size() < limit)
         {
-            pruning.best.push(count);
+            best.push(count);
         }
-        else if (count > pruning.best.top())
+        else if (count > best.top())
         {
-            pruning.best.pop();
-            pruning.best.push(count);
+            best.pop();
+            best.push(count);
         }
     }
-    if (pruning.best.size() == pruning.limit)
-        pruning.threshold.store(pruning.best.top(), std::memory_order_relaxed);
+    if (best.size() == limit)
+        threshold.store(best.top(), std::memory_order_relaxed);
 }
 
 }

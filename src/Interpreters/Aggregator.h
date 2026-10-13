@@ -1027,9 +1027,9 @@ private:
 
     /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the producer's
     /// top-K bins. Both statistics visit the same cells before the producer hands its table to the merge.
-    size_t collectAdaptiveTableStatistics(AggregatedDataVariants & variants, UInt16 * bins) const;
+    size_t collectAdaptiveTableStatistics(AggregatedDataVariants & variants, AdaptiveTopKCountBins * bins) const;
     template <typename Method>
-    size_t collectAdaptiveTableStatistics(Method & method, Arena * arena, UInt16 * bins) const;
+    size_t collectAdaptiveTableStatistics(Method & method, Arena * arena, AdaptiveTopKCountBins * bins) const;
 
     /// Writes the producer's staged records to the session's spill streams, a partition block at a time, and frees
     /// them; the producer then keeps appending into new chunks. Called over the external-aggregation threshold.
