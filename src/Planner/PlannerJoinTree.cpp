@@ -1778,7 +1778,10 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
             && left_table_expr->getNodeType() != QueryTreeNodeType::CROSS_JOIN;
     }
 
-    if (join_kind == JoinKind::Right)
+    /// RightAny picks one right row per left row out of the whole right table, so its right side cannot be split.
+    /// In plan-based mode this gate only sizes the read, and `liftSplitAboveJoin` keeps such a join local.
+    if (join_kind == JoinKind::Right
+        && (join_strictness != JoinStrictness::RightAny || query_settings[Setting::parallel_replicas_plan_based]))
     {
         // parallel replicas is allowed only simple RIGHT JOINs i.e. t1 RIGHT JOIN t2
         if (left_table_expr->getNodeType() != QueryTreeNodeType::TABLE
@@ -2490,6 +2493,25 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                         column_checks_passed = false;
                                         break;
                                     }
+
+                                    /// Any other name the view does not declare is either one of its
+                                    /// virtual columns, materialized the same way on both paths, or a
+                                    /// subcolumn of a view column: `arr.size0`, a `Tuple` element, `m.keys`,
+                                    /// `n.null`, a `JSON` path, a `Dynamic` typed subcolumn. Subcolumns are
+                                    /// read straight from a table, so the outer query holds a plain column
+                                    /// node named after the subcolumn; the inlined body projects the view's
+                                    /// columns and not their subcolumns, so after the rewrite that node would
+                                    /// name a column the subquery does not produce and planning would fail
+                                    /// with `NOT_FOUND_COLUMN_IN_BLOCK`. `readImpl` instead wraps the body as
+                                    /// `SELECT <subcolumn> FROM (<body>)`, where the analyzer rewrites the
+                                    /// read into `getSubcolumn(<column>, '<subcolumn>')` over the body's
+                                    /// output, so fall back to it.
+                                    if (!storage_snapshot->metadata->virtuals.has(name))
+                                    {
+                                        column_checks_passed = false;
+                                        break;
+                                    }
+
                                     continue;
                                 }
                                 auto it = inner_types.find(name);
