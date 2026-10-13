@@ -293,6 +293,17 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
         throw;
     }
 
+    /// `finalizeExecution` runs on the calling thread after every reservation taken in
+    /// `executeImpl` has been released, and it can do substantial work with its own memory
+    /// (`onPipelineFinished` epilogues of the output formats). Cover it with a separate
+    /// reservation, and flush the deferred allocations before releasing it, like for any
+    /// other pipeline worker. `executeUntil` keeps its guard alive through finalization.
+    SpeculativeMemoryReservation speculative_memory_reservation;
+    SCOPE_EXIT({
+        if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+            CurrentThread::flushUntrackedMemory();
+    });
+
     finalizeExecution();
 }
 
