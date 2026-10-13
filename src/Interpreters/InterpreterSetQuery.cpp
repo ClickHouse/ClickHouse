@@ -5,6 +5,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -187,6 +188,9 @@ std::optional<String> getTableStorageName(const ASTCreateQuery & create, Context
     if (auto inherited_engine = getInheritedEngineName(create, context))
         return inherited_engine;
 
+    if (auto engine_name = InterpreterCreateQuery::getDatabaseDefaultTableEngineName(create, context); !engine_name.empty())
+        return engine_name;
+
     auto default_engine = context->getSettingsRef()[Setting::default_table_engine];
     if (default_engine == DefaultTableEngine::None)
         return {};
@@ -263,11 +267,17 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         {
             std::optional<EngineSettingsSupport> engine_settings_support;
             if (create_query->select)
+            {
                 applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
+            }
             else if (
                 !create_query->settings_ast && create_query->storage && create_query->storage->settings
-                && context_->getApplicationType() != Context::ApplicationType::CLIENT
-                && (engine_settings_support = getEngineSettingsSupport(*create_query, context_)))
+                && context_->getApplicationType() != Context::ApplicationType::CLIENT)
+            {
+                engine_settings_support = getEngineSettingsSupport(*create_query, context_);
+            }
+
+            if (engine_settings_support)
             {
                 /// If we parsed one set of settings we don't know if it was the engine settings or the query settings
                 /// We also want to allow users to mix them (so they don't need to declare SETTINGS engine_setting=0 SETTINGS query_setting=0

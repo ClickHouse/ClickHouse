@@ -100,7 +100,7 @@ If `DATABASE_URL` contains `sslmode` or `sslrootcert`, `pg` builds its TLS setti
 
 Also note that:
 
-- Without either an `ssl` object or `sslmode` in the URL, `pg` connects **without TLS**.
+- Without either an `ssl` object or `sslmode` in the URL, `pg` doesn't use TLS or verify the server.
 - `pg` reads `PGHOST`, `PGUSER`, `PGPASSWORD`, and similar variables, but it doesn't read `PGSSLROOTCERT`. The variables in the **env** tab of the Connect modal therefore aren't enough on their own to verify the server.
 - If you prefer to keep everything in the URL, the URL that the Connect modal shows with **Use SSL** on also works with `pg`, for example `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`. In that case, remove the `ssl` option, and note that `sslrootcert` is resolved relative to the directory you start Node.js from.
 </Warning>

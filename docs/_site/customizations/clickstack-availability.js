@@ -257,6 +257,24 @@
       "/clickstack/observability/demo-days/2026/2026-09-17"
     ]
   ],
+  "/clickstack/demo-days/2026/2026-09-24": [
+    [
+      "Open Source",
+      "/clickstack/demo-days/2026/2026-09-24"
+    ]
+  ],
+  "/clickstack/demo-days/2026/2026-10-01": [
+    [
+      "Open Source",
+      "/clickstack/demo-days/2026/2026-10-01"
+    ]
+  ],
+  "/clickstack/demo-days/2026/2026-10-08": [
+    [
+      "Open Source",
+      "/clickstack/demo-days/2026/2026-10-08"
+    ]
+  ],
   "/clickstack/deployment/all-in-one": [
     [
       "Open Source",

@@ -27,6 +27,7 @@ from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
+from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -71,6 +72,7 @@ FROM query_metrics_v2
 WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
+    AND workflow_name = 'MasterCI'
 -- The display name is part of the key: compare.sh joins this file on all three.
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
@@ -150,6 +152,8 @@ TEST_PERF_CHANGES_TABLE = "perf_test_perf_changes_v1"
 PARTIAL_QUERIES_TABLE = "perf_partial_queries_v1"
 SKIPPED_TESTS_TABLE = "perf_skipped_tests_v1"
 RUN_ERRORS_TABLE = "perf_run_errors_v1"
+# Run warnings share the run errors table, told apart by this `test` value.
+RUN_WARNING_TEST = "(warning)"
 METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
 FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
 
@@ -341,6 +345,13 @@ REPORT_UPLOADS = [
         "table_columns": ["test", "error"],
         "input_schema": "test String, error String",
         "select_exprs": ["test", "error"],
+    },
+    {
+        "table": RUN_ERRORS_TABLE,
+        "source": f"{perf_wd}/run-warnings.tsv",
+        "table_columns": ["test", "error"],
+        "input_schema": "warning String",
+        "select_exprs": [f"'{RUN_WARNING_TEST}'", "warning"],
     },
     {
         "table": METRIC_CHANGES_TABLE,
@@ -1030,7 +1041,7 @@ def export_system_logs(servers):
     return True
 
 
-def insert_into_cidb(cidb, info, table, query, data, deadline):
+def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
     """Run a REPORT-stage INSERT into `table`. Returns None on success and the
     reason of the failure otherwise.
 
@@ -1038,8 +1049,9 @@ def insert_into_cidb(cidb, info, table, query, data, deadline):
     `DASHBOARD_INPUT_TABLES` that CIDB failed without rejecting it
     (`last_rejected`) is retried while another attempt fits. Every attempt
     carries the same `insert_deduplication_token`, so the server drops a
-    resent block that an attempt abandoned by the client did commit."""
-    token = f"{info.pr_number}/{info.sha}/{info.job_name}/{get_check_start_time()}/{table}"
+    resent block that an attempt abandoned by the client did commit.
+    `token_key` tells apart several uploads into the same table."""
+    token = f"{info.pr_number}/{info.sha}/{info.job_name}/{get_check_start_time()}/{token_key or table}"
     settings = {"insert_deduplication_token": token}
     if deadline is None:
         if cidb.do_insert_query(
@@ -1114,7 +1126,9 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, d
     )
     line_count = data.count("\n")
     print(f"Do insert into [{cfg['table']}]: >>>\n{query}\n<<<")
-    error = insert_into_cidb(cidb, info, cfg["table"], query, data, deadline)
+    error = insert_into_cidb(
+        cidb, info, cfg["table"], query, data, deadline, token_key=f"{cfg['table']}/{source_path.name}"
+    )
     if error is None:
         print(f"Inserted [{line_count}] rows into [{cfg['table']}]")
     else:
@@ -1337,6 +1351,8 @@ class CHServer:
         if res != 0:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
+        else:
+            Path(f"{results_path}/{test_name}-err.log").unlink(missing_ok=True)
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
@@ -1396,11 +1412,12 @@ def master_build_links(sha, build_type):
 
 
 def find_master_build(commits, build_type):
-    for sha in commits:
+    """The build link of the first of `commits` that has a build and its index in `commits`, or `(None, None)`."""
+    for index, sha in enumerate(commits):
         for link in master_build_links(sha, build_type):
             if Shell.check(f"curl -sfI {link} > /dev/null"):
-                return link
-    return None
+                return link, index
+    return None, None
 
 
 def local_master_track_commits(local_master_commits_to_check_for_build):
@@ -1461,13 +1478,14 @@ LOCAL_REFERENCE_FALLBACK_WARNING = (
 
 
 def find_prev_build(info, build_type):
+    """The reference build link and the master commits from the tested one down to the reference."""
     commits = info.get_kv_data("master_track_commits_sha") or []
     if not commits and info.is_local_run:
         # for a local run let's check 50 commits
         commits = local_master_track_commits(50)
-    link = find_master_build(commits, build_type)
+    link, index = find_master_build(commits, build_type)
     if link or not info.is_local_run:
-        return link
+        return link, commits[: index + 1] if link else []
 
     # `build_master_head_hook` publishes these release binaries even when the
     # master tip has no build yet. No local history or GitHub credentials are needed.
@@ -1475,15 +1493,30 @@ def find_prev_build(info, build_type):
     link = f"{LATEST_MASTER_BUILD_PREFIX}{arch}/clickhouse"
     if Shell.check(f"curl --connect-timeout 5 --max-time 15 -sfI {link} > /dev/null"):
         print(f"WARNING: {LOCAL_REFERENCE_FALLBACK_WARNING} Reference: {link}")
-        return link
+        return link, []
     print(f"WARNING: latest master reference build is also unavailable: {link}")
-    return None
+    return None, []
+
+
+def stale_reference_warning(reference_chain):
+    """Why the reference build is older than the tested master revision, or "" when it is not.
+
+    `reference_chain` is the master commits from the tested one down to the reference, as `find_prev_build` returns."""
+    if len(reference_chain) < 2:
+        return ""
+    tested, reference = reference_chain[0], reference_chain[-1]
+    behind = len(reference_chain) - 1
+    return (
+        f"The reference is master {reference[:12]}, {behind} commit{'s' if behind > 1 else ''} behind master {tested[:12]} "
+        "tested with this change, which had no build yet. Changes merged into master in between show up as "
+        f"changes of this PR: https://github.com/ClickHouse/ClickHouse/compare/{reference}...{tested}"
+    )
 
 
 def find_base_release_build(info, build_type):
     commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
-    return find_master_build(commits, build_type)
+    return find_master_build(commits, build_type)[0]
 
 
 # The number of distinct "slower" queries that fails the whole performance
@@ -2277,10 +2310,11 @@ def main():
 
     # release_version = CHVersion.get_release_version()
     info = Info()
+    reference_chain = []
 
     if Utils.is_arm():
         if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_arm_release")
+            link_for_ref_ch, reference_chain = find_prev_build(info, "build_arm_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
@@ -2289,7 +2323,7 @@ def main():
             assert False
     elif Utils.is_amd():
         if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_amd_release")
+            link_for_ref_ch, reference_chain = find_prev_build(info, "build_amd_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
@@ -2299,11 +2333,13 @@ def main():
     else:
         Utils.raise_with_error("Unknown processor architecture")
 
-    reference_warning = (
-        LOCAL_REFERENCE_FALLBACK_WARNING
-        if info.is_local_run and link_for_ref_ch.startswith(LATEST_MASTER_BUILD_PREFIX)
-        else ""
+    use_latest_master = info.is_local_run and link_for_ref_ch.startswith(
+        LATEST_MASTER_BUILD_PREFIX
     )
+    if use_latest_master:
+        reference_warning = LOCAL_REFERENCE_FALLBACK_WARNING
+    else:
+        reference_warning = stale_reference_warning(reference_chain)
 
     if compare_against_release:
         print("It's a comparison against latest release baseline")
@@ -2325,6 +2361,40 @@ def main():
         )
 
     test_keyword = args.test
+
+    # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
+    test_files = test_discovery.list_test_files("./tests/performance/")
+    # TODO: in PRs filter test files against changed files list if only tests has been changed
+    # changed_files = info.get_custom_data("changed_files")
+    if test_keyword:
+        test_files = [file for file in test_files if test_keyword in file]
+    else:
+        test_files = test_files[batch_num::total_batches]
+    print(f"Job Batch: [{batch_num}/{total_batches}]")
+    print(f"Test Files ({len(test_files)}): [{test_files}]")
+    assert test_files
+
+    # Test metadata keeps S3 off for old release_base vintages and shards without S3 tests.
+    needs_s3 = any(
+        test_discovery.test_requires_s3(f"./tests/performance/{file}")
+        for file in test_files
+    )
+    needs_s3_read_dataset = any(
+        test_discovery.test_requires_read_dataset(f"./tests/performance/{file}")
+        for file in test_files
+    )
+
+    def prepare_s3():
+        # Configure and stage re-entry must produce the same S3 fixture.
+        if not s3_service.ensure(f"{perf_wd}/s3_server.log"):
+            return False
+        if needs_s3_read_dataset and not s3_service.seed_read_dataset(
+            f"{db_path}/user_files/{s3_service.READ_DATASET_DIRECTORY}"
+        ):
+            return False
+        if not s3_service.write_side_override(perf_left_config, "left"):
+            return False
+        return s3_service.write_side_override(perf_right_config, "right")
 
     ch_path = args.ch_path
     assert (
@@ -2417,7 +2487,7 @@ def main():
         # The latest-master URL is mutable: refresh it when entering the install
         # stage. Also invalidate a cached binary when the selected baseline changes.
         if (
-            reference_warning
+            use_latest_master
             or not Path(f"{perf_left}/.done").is_file()
             or not reference_source.is_file()
             or reference_source.read_text() != link_for_ref_ch
@@ -2574,7 +2644,28 @@ def main():
         # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
         commands += iceberg_database_ddl_commands(perf_left)
         commands += iceberg_database_ddl_commands(perf_right)
+        if needs_s3_read_dataset:
+            commands += s3_service.iceberg_s3_database_ddl_commands(perf_left)
+            commands += s3_service.iceberg_s3_database_ddl_commands(perf_right)
+
+        if needs_s3:
+            commands.append(prepare_s3)
+        else:
+            print(
+                "No selected test uses the job-local S3 endpoint - skip its provisioning"
+            )
         results.append(Result.from_commands_run(name="Configure", command=commands))
+        res = results[-1].is_ok()
+
+    if res and needs_s3 and JobStages.CONFIGURE not in stages and any(
+        stage in stages for stage in (JobStages.RESTART, JobStages.TEST, JobStages.REPORT)
+    ):
+        results.append(
+            Result.from_commands_run(
+                name="Restore S3 endpoint",
+                command=[prepare_s3],
+            )
+        )
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
@@ -2647,18 +2738,14 @@ def main():
 
     if res and JobStages.TEST in stages:
         print("Tests")
-        test_files = [
-            file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
-        ]
-        # TODO: in PRs filter test files against changed files list if only tests has been changed
-        # changed_files = info.get_custom_data("changed_files")
-        if test_keyword:
-            test_files = [file for file in test_files if test_keyword in file]
-        else:
-            test_files = test_files[batch_num::total_batches]
-        print(f"Job Batch: [{batch_num}/{total_batches}]")
-        print(f"Test Files ({len(test_files)}): [{test_files}]")
-        assert test_files
+        # test_files was selected at the start of the job, where the S3 provisioning decision needs it.
+
+        # A local rerun reuses perf_wd for downloaded datasets. The report scans
+        # all *-raw.tsv and *-err.log files, including tests not selected this
+        # time, so keep only results produced by this invocation.
+        for pattern in ("*-raw.tsv", "*-err.log", "wall-clock-times.tsv"):
+            for old_result in Path(perf_wd).glob(pattern):
+                old_result.unlink()
 
         def cleanup_user_files():
             # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
@@ -2730,6 +2817,8 @@ def main():
                 reference.write(
                     f"\nWARNING: {reference_warning}\nReference commit: {reference_sha}\n"
                 )
+        with open(f"{perf_wd}/run-warnings.tsv", "w", encoding="utf-8") as warnings:
+            warnings.write(reference_warning + "\n" if reference_warning else "")
         Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
             Utils.normalize_string(info.job_name)
@@ -2738,8 +2827,12 @@ def main():
         # `CHPC_CHECK_START_TIMESTAMP` is initialized once at the start of the
         # job - do not reset it here, the export stage has already used it.
 
+        # Local runs use PR_NUMBER=-1 as a sentinel. compare.sh formats the
+        # generated ci-checks.tsv using UInt32, so use the master sentinel (0)
+        # for this local-only report instead of passing a negative PR number.
+        report_pr_number = 0 if info.is_local_run else info.pr_number
         commands = [
-            f"PR_TO_TEST={info.pr_number} "
+            f"PR_TO_TEST={report_pr_number} "
             f"SHA_TO_TEST={info.sha} "
             "stage=get_profiles "
             f"{script_path}",
@@ -3053,6 +3146,10 @@ def main():
                 results=check_sub_results,
             )
         )
+
+    # Only after Report: its confirm_changes step reruns flagged queries, which may read the object store.
+    if needs_s3:
+        s3_service.stop()
 
     files_to_attach = []
     if res:
