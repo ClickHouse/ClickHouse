@@ -1269,22 +1269,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
-/// Resolves the storage policy the way `create` does: the `storage_policy` setting, otherwise the default one of the engine.
-template <bool replicated>
-static StoragePolicyPtr getStoragePolicy(const ASTStorage & storage_def, const ContextPtr & context)
-{
-    const auto * changes = storage_def.settings ? &storage_def.settings->changes : nullptr;
-    if (const auto * storage_policy = changes ? changes->tryGet("storage_policy") : nullptr)
-        return context->getStoragePolicy(storage_policy->safeGet<String>());
-
-    /// A table with the `disk` setting gets a policy of its own, which can only be resolved by creating the table.
-    if (changes && changes->tryGet("disk"))
-        return nullptr;
-
-    const auto & default_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
-    return context->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
-}
-
 void registerStorageMergeTree(StorageFactory & factory);
 void registerStorageMergeTree(StorageFactory & factory)
 {
@@ -1297,7 +1281,6 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
-        .get_storage_policy_fn = getStoragePolicy<false>,
     };
 
     factory.registerStorage("MergeTree", create, features, Documentation{
@@ -4420,7 +4403,6 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
-    features.get_storage_policy_fn = getStoragePolicy<true>;
 
     factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(

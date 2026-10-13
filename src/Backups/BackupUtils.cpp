@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
@@ -240,17 +241,19 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
 {
     auto is_on_backup_metadata_only_policy = [&](const ASTStorage * storage)
     {
-        if (!storage || !storage->engine)
+        /// Only an explicit `storage_policy` matters: a policy marked `backup_metadata_only` is read-only, so it can't be
+        /// the default one of tables, which have to be written.
+        const auto * policy_name = storage && storage->engine && storage->settings ? storage->settings->changes.tryGet("storage_policy") : nullptr;
+        if (!policy_name)
             return false;
 
-        /// An unknown engine is reported by `CREATE`.
+        /// Only the engines with the setting keep their data on a storage policy. An unknown engine is reported by `CREATE`.
         const auto & storages = StorageFactory::instance().getAllStorages();
         auto it = storages.find(storage->engine->name);
-        if (it == storages.end() || !it->second.features.get_storage_policy_fn)
+        if (it == storages.end() || !it->second.features.has_builtin_setting_fn || !it->second.features.has_builtin_setting_fn("storage_policy"))
             return false;
 
-        auto policy = it->second.features.get_storage_policy_fn(*storage, context);
-        return policy && policy->isBackupMetadataOnly();
+        return context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly();
     };
 
     if (is_on_backup_metadata_only_policy(create_query.storage))
