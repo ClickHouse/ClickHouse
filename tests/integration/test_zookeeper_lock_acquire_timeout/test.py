@@ -50,26 +50,24 @@ def session_expirations():
 
 @contextlib.contextmanager
 def keeper_not_answering(zk_name):
-    # session_expirations counts the attempts of all clients, so the default client must stay connected in the
-    # zookeeper2 case. zookeeper2 uses zoo3, which no other client uses, and zoo3 is not paused: if it is the Raft
-    # leader, the election expires the default client too, and a background thread can reconnect it during the count.
-    # The packets are dropped, not rejected, so that an attempt takes long enough for all its waiters to share it.
+    # session_expirations counts the reconnect attempts of all clients, and pausing zoo3 as the Raft leader would expire
+    # the default client too. DROP, not REJECT, so that an attempt lasts long enough for all its waiters to share it.
     if zk_name == "default":
         with cluster.pause_container("zoo1"):
             yield
-        return
-    with PartitionManager() as pm:
-        pm.add_rule(
-            {
-                "instance": node,
-                "chain": "OUTPUT",
-                "destination": cluster.get_instance_ip("zoo3"),
-                "destination_port": 2181,
-                "protocol": "tcp",
-                "action": "DROP",
-            }
-        )
-        yield
+    else:
+        with PartitionManager() as pm:
+            pm.add_rule(
+                {
+                    "instance": node,
+                    "chain": "OUTPUT",
+                    "destination": cluster.get_instance_ip("zoo3"),
+                    "destination_port": 2181,
+                    "protocol": "tcp",
+                    "action": "DROP",
+                }
+            )
+            yield
 
 
 @pytest.mark.parametrize("zk_name", ["default", "zookeeper2"])
@@ -158,7 +156,7 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
             finally:
                 node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
-    # zoo1 rejects connections until it has rejoined the ensemble, so the next test waits for it here.
+    # After its pause, zoo1 rejects connections until it has rejoined the ensemble, so the next test waits for it here.
     node.query_with_retry(base_query, retry_count=60, sleep_time=1)
     node.query(f"DROP TABLE IF EXISTS rmt_{suffix} SYNC")
 
