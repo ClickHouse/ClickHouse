@@ -1,13 +1,16 @@
 
 #include <Common/logger_useful.h>
+#include <Common/Allocator.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
@@ -26,6 +29,7 @@
 #include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
@@ -239,11 +243,10 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
     if (file_size <= 8)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file too short: {} bytes", file_size);
 
-    /// Read a tail sized to the file (1%, clamped to [128 KiB, 2 MiB]) so it usually covers the whole
-    /// footer - FileMetaData for wider range of layouts - in one read. A non-zero
-    /// `footer_read_size` overrides this adaptive size with a fixed read size.
+    /// A second read of a local file is cheap. Elsewhere a tail sized to the file (1%, clamped to [128 KiB, 2 MiB])
+    /// usually covers the whole footer in one round trip. A non-zero `footer_read_size` is a fixed read size.
     if (footer_read_size == 0)
-        footer_read_size = std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
+        footer_read_size = prefetcher.isLocalFile() ? 64ul << 10 : std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
     /// The read must cover at least the 8-byte trailer (metadata size + magic) so the offsets below
     /// don't underflow; an explicit `footer_read_size` smaller than that is bumped up to 8.
     size_t initial_read_size = std::min(file_size, std::max<size_t>(footer_read_size, 8));
@@ -339,8 +342,10 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             Range & range = hyperrectangle[column_info.idx_in_output_block];
 
             bool nullable = column_info.levels.back().def > 0;
+            /// Without arrays a valid chunk has num_values == num_rows.
             bool always_null = column_meta.statistics.__isset.null_count &&
-                            column_meta.statistics.null_count == column_meta.num_values;
+                            column_meta.statistics.null_count == column_meta.num_values &&
+                            (column_info.levels.back().rep > 0 || column_meta.num_values == meta->num_rows);
             bool can_be_null = !column_meta.statistics.__isset.null_count ||
                             column_meta.statistics.null_count != 0;
             bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
@@ -508,6 +513,163 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     if (boundary.isNull())
         return false;
     return !tracker.isValueInsideThreshold(boundary);
+}
+
+std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const
+{
+    /// Statistics cannot describe a subset of rows inside a row group.
+    if (format_filter_info->rows_to_read)
+        return std::nullopt;
+
+    const size_t num_columns = sample_block->columns();
+    std::vector<const PrimitiveColumnInfo *> columns_info(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const auto & output_idx = sample_block_to_output_columns_idx.at(i);
+        if (!output_idx.has_value())
+            return std::nullopt;
+        const OutputColumnInfo & output_info = output_columns.at(*output_idx);
+        if (output_info.is_missing_column || !output_info.is_primitive)
+            return std::nullopt;
+        const PrimitiveColumnInfo & column_info = primitive_columns.at(output_info.primitive_start);
+        if (!column_info.decoder.allow_stats || column_info.levels.back().rep > 0)
+            return std::nullopt;
+        /// Without the `TYPE_ORDER` column order, `min_value` / `max_value` have no defined meaning (parquet.thrift).
+        if (!file_metadata.__isset.column_orders || column_info.column_idx >= file_metadata.column_orders.size()
+            || !file_metadata.column_orders[column_info.column_idx].__isset.TYPE_ORDER)
+            return std::nullopt;
+
+        /// Statistics of these types are the exact extremes in `min` / `max` order; strings may be truncated, floats
+        /// omit `nan`, and `Bool` or physical `BOOLEAN` statistics can hold integers above 1.
+        const DataTypePtr type = removeNullable(sample_block->getByPosition(i).type);
+        const WhichDataType which(type);
+        if (isBool(type) || column_info.decoder.physical_type == parq::Type::BOOLEAN
+            || !(which.isNativeInt() || which.isNativeUInt() || which.isDate() || which.isDate32()
+                || which.isDateTime() || which.isDateTime64() || which.isDecimal()))
+            return std::nullopt;
+
+        columns_info[i] = &column_info;
+    }
+
+    std::vector<Field> mins(num_columns);
+    std::vector<Field> maxs(num_columns);
+    bool has_rows = false;
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    {
+        const auto & meta = file_metadata.row_groups[row_group_idx];
+        if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
+            return std::nullopt;
+        if (meta.num_rows == 0 || (row_groups_to_read.has_value() && !row_groups_to_read->contains(row_group_idx)))
+            continue;
+        has_rows = true;
+
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            const PrimitiveColumnInfo & column_info = *columns_info[i];
+            const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
+            if (!column_meta.__isset.statistics)
+                return std::nullopt;
+            const auto & statistics = column_meta.statistics;
+            const IDataType & output_type = *sample_block->getByPosition(i).type;
+
+            /// Statistics describe non-null values only, but a null read into a non-`Nullable` column becomes a value.
+            if (column_info.levels.back().def > 0)
+            {
+                if (!statistics.__isset.null_count || statistics.null_count < 0 || statistics.null_count > meta.num_rows)
+                    return std::nullopt;
+                if (statistics.null_count > 0 && !output_type.isNullable())
+                    return std::nullopt;
+                if (statistics.null_count == meta.num_rows)
+                    continue;
+            }
+
+            if (!statistics.__isset.min_value || !statistics.__isset.max_value)
+                return std::nullopt;
+
+            /// Bounds may be inexact: fixed-width integers are exact unless flagged otherwise, binary values only if flagged exact.
+            switch (column_info.decoder.physical_type)
+            {
+                case parq::Type::INT32:
+                case parq::Type::INT64:
+                    if ((statistics.__isset.is_min_value_exact && !statistics.is_min_value_exact)
+                        || (statistics.__isset.is_max_value_exact && !statistics.is_max_value_exact))
+                        return std::nullopt;
+                    break;
+                case parq::Type::BYTE_ARRAY:
+                case parq::Type::FIXED_LEN_BYTE_ARRAY:
+                    if (!statistics.__isset.is_min_value_exact || !statistics.is_min_value_exact
+                        || !statistics.__isset.is_max_value_exact || !statistics.is_max_value_exact)
+                        return std::nullopt;
+                    break;
+                default:
+                    return std::nullopt;
+            }
+
+            try
+            {
+                /// Both bounds must be exactly representable in the output type, so the conversion moves no value across them.
+                Range range = Range::createWholeUniverse();
+                column_info.decoder.decodeField(statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_type, range.left);
+                column_info.decoder.decodeField(statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_type, range.right);
+                if (range.left.isNull() || range.right.isNull())
+                    return std::nullopt;
+                Field left = tryConvertFieldToType(range.left, output_type, /*from_type_hint=*/ nullptr, /*format_settings=*/ {}, /*strict=*/ true);
+                Field right = tryConvertFieldToType(range.right, output_type, /*from_type_hint=*/ nullptr, /*format_settings=*/ {}, /*strict=*/ true);
+                if (left.isNull() || right.isNull())
+                    return std::nullopt;
+                if (accurateLess(right, left))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Statistics have min_value > max_value: {} > {}.", left, right);
+
+                if (mins[i].isNull() || accurateLess(left, mins[i]))
+                    mins[i] = std::move(left);
+                if (maxs[i].isNull() || accurateLess(maxs[i], right))
+                    maxs[i] = std::move(right);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("in column chunk statistics for column '{}'; use optimize_min_max_from_files=0 to ignore", column_info.name);
+                throw;
+            }
+        }
+    }
+
+    MutableColumns columns = sample_block->cloneEmptyColumns();
+    if (!has_rows)
+        return Chunk(std::move(columns), 0);
+
+    /// A column without a single non-null value is `Nullable` (checked above): NULL in both rows.
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        columns[i]->insert(mins[i]);
+        columns[i]->insert(maxs[i]);
+    }
+    return Chunk(std::move(columns), 2);
+}
+
+void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) const
+{
+    if (column.empty())
+        return;
+
+    /// The same comparison the sorting transforms use, so "best" means "sorts first".
+    const auto & tracker = *format_filter_info->top_k_filter->threshold_tracker;
+    const int direction = tracker.getDirection();
+    const int nulls_direction = tracker.getNullsDirection();
+    const Collator * collator = tracker.getCollator().get();
+    auto compare = [&](const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row)
+    {
+        int res = collator ? lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_direction, *collator)
+                           : lhs.compareAt(lhs_row, rhs_row, rhs, nulls_direction);
+        return direction * res;
+    };
+
+    size_t best_row = 0;
+    for (size_t row = 1; row < column.size(); ++row)
+        if (compare(column, row, column, best_row) < 0)
+            best_row = row;
+
+    if (!row_group.top_k_best_value || compare(column, best_row, *row_group.top_k_best_value, 0) < 0)
+        row_group.top_k_best_value = column.cut(best_row, 1);
 }
 
 bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
@@ -767,6 +929,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
+    if (format_filter_info->min_max_from_statistics)
+    {
+        min_max_chunk = readMinMaxFromStatistics(row_groups_to_read);
+        if (min_max_chunk.has_value())
+            return;
+    }
+
     if (format_filter_info->key_condition)
     {
         for (size_t idx_in_output_block : format_filter_info->key_condition->getUsedColumns())
@@ -887,6 +1056,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                     && output_info.is_primitive
                     && primitive_columns[output_info.primitive_start].decoder.allow_stats)
                     top_k_primitive_idx = output_info.primitive_start;
+
+                if (top_k_column_is_read && format_filter_info->top_k_filter->track_row_group_best_values)
+                    top_k_best_value_column_pos = sample_block->findPositionByName(format_filter_info->top_k_filter->column_name);
             }
         }
     }
@@ -1126,6 +1298,8 @@ void Reader::prepareBloomFilterCondition()
     {
         const PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
         if (!column_info.used_by_key_condition)
+            continue;
+        if (!column_info.decoder.allow_hash_filters)
             continue;
 
         /// We hash query constants for any column that has either a bloom filter or a usable
@@ -2798,19 +2972,33 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     return res;
 }
 
+size_t Reader::memoryEstimateLimit() const
+{
+    size_t watermark = std::max(options.format.parquet.memory_low_watermark, options.format.parquet.memory_high_watermark);
+    return std::min(watermark, MAX_ALLOCATION_SIZE / 4) + 1;
+}
+
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup)
 {
     /// Allocate columns for values, null map, and array offsets.
+    /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
+    constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE) / 4;
 
     size_t output_num_values_estimate = 0;
     if (column_info.levels.back().rep == 0)
         output_num_values_estimate = row_subgroup.filter.rows_pass; // no arrays, rows == values
-    else if (row_subgroup.filter.rows_pass == size_t(row_group.meta->num_rows))
-        output_num_values_estimate = column.meta->meta_data.num_values; // whole column chunk
     else
-        /// There are arrays, so we can't know exactly how many primitive values there are in
-        /// rows that pass the filter. Make a guess using average array length.
-        output_num_values_estimate = size_t(1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows) * static_cast<double>(column.meta->meta_data.num_values));
+    {
+        double num_values = static_cast<double>(column.meta->meta_data.num_values); // whole column chunk
+        if (row_subgroup.filter.rows_pass != size_t(row_group.meta->num_rows))
+            /// There are arrays, so we can't know exactly how many primitive values there are in
+            /// rows that pass the filter. Make a guess using average array length.
+            num_values *= 1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows);
+        size_t value_bytes = std::max(sizeof(IColumn::Offset),
+            column_info.decoded_type->haveMaximumSizeOfValue() ? column_info.decoded_type->getMaximumSizeOfValueInMemory() : 0);
+        if (num_values * static_cast<double>(value_bytes) < estimate_limit)
+            output_num_values_estimate = size_t(num_values);
+    }
 
     subchunk.arrays_offsets.resize(column_info.levels.back().rep);
     for (size_t i = 0; i < subchunk.arrays_offsets.size(); ++i)
@@ -2830,8 +3018,9 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (auto * string_column = typeid_cast<ColumnString *>(subchunk.column.get()))
     {
         double avg_len = estimateAverageStringLengthPerRow(column, row_group);
-        size_t bytes_to_reserve = size_t(1.2 * avg_len * static_cast<double>(row_subgroup.filter.rows_pass));
-        string_column->getChars().reserve(bytes_to_reserve);
+        double bytes_to_reserve = 1.2 * avg_len * static_cast<double>(row_subgroup.filter.rows_pass);
+        if (bytes_to_reserve < estimate_limit)
+            string_column->getChars().reserve(size_t(bytes_to_reserve));
     }
 
     /// Find ranges of rows that pass filter and decode them.
@@ -3679,9 +3868,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
     }
 
-    TypeIndex kind = output_info.nullable_group
-        ? removeNullable(output_info.input_type)->getColumnType()
-        : output_info.input_type->getColumnType();
+    /// Nullable wraps the type of a physically nullable tuple group and of a variant read as `Nullable(JSON)`.
+    TypeIndex kind = removeNullable(output_info.input_type)->getColumnType();
 
     if (output_info.is_primitive)
     {
@@ -3732,6 +3920,16 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             res = ColumnTuple::create(num_rows);
         else
             res = ColumnTuple::create(std::move(columns));
+    }
+    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+    {
+        chassert(output_info.nested_columns.size() == 2);
+        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
+        MutableColumnPtr value = formOutputColumn(row_subgroup, output_info.nested_columns[1], num_rows);
+
+        res = output_info.input_type->createColumn();
+        res->reserve(num_rows);
+        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, options.format);
     }
     else
     {

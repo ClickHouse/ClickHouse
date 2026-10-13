@@ -32,6 +32,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
     {
         const bool run_access_check = !global_skip_access_check && !config.getBool(config_prefix + ".skip_access_check", false);
         const bool run_local_paths_check = custom_disk && !attach;
+        const bool run_remote_host_filter_check = custom_disk;
 
         std::unordered_map<Location, ObjectStoragePtr> object_storage_registry;
         std::unordered_map<Location, LocationInfo> cluster_registry;
@@ -46,14 +47,14 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
                 const std::string object_storage_config_prefix = config_prefix + ".locations." + location;
                 const bool local = config.getBool(object_storage_config_prefix + ".local");
                 const bool enabled = config.getBool(object_storage_config_prefix + ".enabled");
-                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, run_access_check && enabled, run_local_paths_check);
+                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, run_access_check && enabled, run_local_paths_check, run_remote_host_filter_check);
                 object_storage_registry[location] = object_storage;
                 cluster_registry[location] = {enabled, local, object_storage_config_prefix};
             }
         }
         else
         {
-            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, run_access_check, run_local_paths_check);
+            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, run_access_check, run_local_paths_check, run_remote_host_filter_check);
             object_storage_registry["main"] = object_storage;
             cluster_registry["main"] = { .enabled = true, .local = true, .config_prefix = config_prefix };
         }
