@@ -520,13 +520,12 @@ struct MatchImpl
 
     /// Match a single haystack against a single needle pattern.
     /// Shared by `vectorVector`, `vectorFixedVector` and `constantVector` (the cases where the needle is non-constant)
-    /// so that their per-row logic stays in sync. `regexp` and `required_substr` are reused scratch storage owned by the caller.
+    /// so that their per-row logic stays in sync. `required_substr` is reused scratch storage owned by the caller.
     static UInt8 matchOneRow(
         const char * haystack_data,
         size_t haystack_length,
         std::string_view needle,
         Regexps::LocalCacheTable & cache,
-        Regexps::RegexpPtr & regexp,
         String & required_substr)
     {
         const auto * const haystack_begin = reinterpret_cast<const UInt8 *>(haystack_data);
@@ -550,18 +549,18 @@ struct MatchImpl
             return negate ^ (match != haystack_end);
         }
 
-        regexp = cache.getOrSet<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(String(needle));
+        const OptimizedRegularExpression & regexp = cache.getOrSet<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle);
 
         bool is_trivial = false;
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
-        regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
+        regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
         if (required_substr.empty())
         {
-            if (!regexp->getRE2()) /// An empty regexp. Always matches.
+            if (!regexp.getRE2()) /// An empty regexp. Always matches.
                 return !negate;
 
-            const bool match = regexp->getRE2()->Match(
+            const bool match = regexp.getRE2()->Match(
                 {haystack_data, haystack_length}, 0, haystack_length, re2::RE2::UNANCHORED, nullptr, 0);
             return negate ^ match;
         }
@@ -575,12 +574,12 @@ struct MatchImpl
         if (is_trivial)
             return !negate; /// no wildcards in pattern
 
-        if (isAnchoredLiteralMatchKind(regexp->getMatchKind()))
-            return negate ^ impl::matchesAnchoredLiteral(regexp->getMatchKind(), required_substr, haystack_begin, haystack_end, match);
+        if (isAnchoredLiteralMatchKind(regexp.getMatchKind()))
+            return negate ^ impl::matchesAnchoredLiteral(regexp.getMatchKind(), required_substr, haystack_begin, haystack_end, match);
 
         const size_t start_pos = required_substring_is_prefix ? (match - haystack_begin) : 0;
         const size_t end_pos = haystack_length;
-        const bool match2 = regexp->getRE2()->Match(
+        const bool match2 = regexp.getRE2()->Match(
             {haystack_data, haystack_length}, start_pos, end_pos, re2::RE2::UNANCHORED, nullptr, 0);
         return negate ^ match2;
     }
@@ -612,7 +611,6 @@ struct MatchImpl
         size_t prev_needle_offset = 0;
 
         Regexps::LocalCacheTable cache;
-        Regexps::RegexpPtr regexp;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -623,7 +621,7 @@ struct MatchImpl
                 reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
                 needle_offset[i] - prev_needle_offset);
 
-            res[i] = matchOneRow(cur_haystack_data, cur_haystack_length, needle, cache, regexp, required_substr);
+            res[i] = matchOneRow(cur_haystack_data, cur_haystack_length, needle, cache, required_substr);
 
             prev_haystack_offset = haystack_offsets[i];
             prev_needle_offset = needle_offset[i];
@@ -657,7 +655,6 @@ struct MatchImpl
         size_t prev_needle_offset = 0;
 
         Regexps::LocalCacheTable cache;
-        Regexps::RegexpPtr regexp;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -668,7 +665,7 @@ struct MatchImpl
                 reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
                 needle_offset[i] - prev_needle_offset);
 
-            res[i] = matchOneRow(cur_haystack_data, cur_haystack_length, needle, cache, regexp, required_substr);
+            res[i] = matchOneRow(cur_haystack_data, cur_haystack_length, needle, cache, required_substr);
 
             prev_haystack_offset += N;
             prev_needle_offset = needle_offset[i];
@@ -700,7 +697,6 @@ struct MatchImpl
         size_t prev_needle_offset = 0;
 
         Regexps::LocalCacheTable cache;
-        Regexps::RegexpPtr regexp;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -708,7 +704,7 @@ struct MatchImpl
                 reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
                 needle_offsets[i] - prev_needle_offset);
 
-            res[i] = matchOneRow(haystack_data, haystack_length, needle, cache, regexp, required_substr);
+            res[i] = matchOneRow(haystack_data, haystack_length, needle, cache, required_substr);
 
             prev_needle_offset = needle_offsets[i];
         }
