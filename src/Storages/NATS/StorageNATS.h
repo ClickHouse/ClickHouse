@@ -145,6 +145,7 @@ private:
     void threadFunc();
 
     NATSConnectionPtr getConsumersConnection() const;
+    void setConsumersConnection(NATSConnectionPtr connection) TSA_REQUIRES(consumers_setup_mutex);
     void createConsumersConnection();
     void createConsumers();
     void dropConsumers() TSA_REQUIRES(consumers_setup_mutex);

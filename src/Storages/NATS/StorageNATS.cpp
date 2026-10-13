@@ -422,16 +422,30 @@ NATSConnectionPtr StorageNATS::getConsumersConnection() const
     return consumers_connection;
 }
 
+void StorageNATS::setConsumersConnection(NATSConnectionPtr connection)
+{
+    std::lock_guard lock(consumers_connection_mutex);
+    consumers_connection = std::move(connection);
+}
+
 void StorageNATS::createConsumersConnection()
 {
-    std::lock_guard setup_lock(consumers_setup_mutex);
-    auto connection = getConsumersConnection();
-
     /// The NATS client library closes a connection for good once the server has rejected the same
     /// credentials on two consecutive reconnect attempts - a rotated password and an expired token
     /// both take that path - and it never reopens a closed connection. Build a new one, otherwise
     /// the table would stay silently idle until it is detached and attached again.
-    if (connection && connection->isClosed())
+    NATSConnectionPtr closed_connection;
+    {
+        std::lock_guard setup_lock(consumers_setup_mutex);
+        if (auto connection = getConsumersConnection(); connection && connection->isClosed())
+        {
+            dropConsumers();
+            setConsumersConnection(nullptr);
+            closed_connection = std::move(connection);
+        }
+    }
+
+    if (closed_connection)
     {
         /// The table name is in the logger. The error handler of the client library reports the
         /// rejected credentials too, but it knows only the connection, so this is the line which
@@ -439,25 +453,17 @@ void StorageNATS::createConsumersConnection()
         LOG_WARNING(
             log,
             "The NATS client library closed the connection to {} for good. Last error: {}. Creating a new one",
-            connection->connectionInfoForLog(),
-            connection->lastErrorForLog());
-
-        dropConsumers();
-        {
-            std::lock_guard lock(consumers_connection_mutex);
-            consumers_connection.reset();
-        }
-        connection.reset();
+            closed_connection->connectionInfoForLog(),
+            closed_connection->lastErrorForLog());
+        closed_connection.reset();
     }
 
-    if (connection)
+    std::lock_guard setup_lock(consumers_setup_mutex);
+    if (getConsumersConnection())
         return;
 
     auto connect_future = event_handler.createConnection(configuration);
-    auto new_connection = connect_future.get();
-
-    std::lock_guard lock(consumers_connection_mutex);
-    consumers_connection = std::move(new_connection);
+    setConsumersConnection(connect_future.get());
 }
 
 void StorageNATS::dropConsumers()
