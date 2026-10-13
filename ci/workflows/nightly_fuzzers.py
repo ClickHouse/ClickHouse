@@ -44,6 +44,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
+        *ArtifactConfigs.compact_symbols,
         ArtifactConfigs.clickhouse_examples,
     ],
     # Mangle appends the docker job names to every job's run_after, and run_after
