@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: rewrite rules are global server state
+-- no-fasttest: the secret arguments of `s3` are declared by its table function, which is not built in the fast test
 
 -- A rule template can embed table-function credentials. For a user who is allowed to read
 -- `system.query_rules` (they hold a rule grant), the `rule` column must still mask those secrets,

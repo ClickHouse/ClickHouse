@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: rewrite rules are global server state
+-- no-fasttest: the secret arguments of `s3` are declared by its table function, which is not built in the fast test
 
 -- A query rejected by a REJECT rule is logged via the exception-before-start path. Its `query`
 -- column must still hide table-function secrets (e.g. s3 credentials) via AST masking, the same
