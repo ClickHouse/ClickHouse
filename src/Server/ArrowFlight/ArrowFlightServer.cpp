@@ -1101,7 +1101,10 @@ arrow::Status ArrowFlightServer::DoGet(
 
                 Block block;
                 while (executor.pull(block))
-                    chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                {
+                    if (!block.empty())
+                        chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                }
 
                 auto header = executor.getHeader();
                 auto ch_to_arrow_converter = createCHToArrowConverter(header, query_context);
