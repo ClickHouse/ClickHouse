@@ -79,7 +79,8 @@ public:
         const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
 
     /// Delta tables only: Iceberg tables get write credentials from the Iceberg REST catalog.
-    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(
+        const DB::StorageID & table_id, StorageType storage_type) override;
 
     /// Iceberg tables go through the Iceberg REST endpoint, which commits atomically.
     /// Without this, a write would leave metadata files in the table location before failing.

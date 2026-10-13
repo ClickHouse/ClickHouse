@@ -332,7 +332,8 @@ public:
 
     virtual void setVendedCredentialsCacheTTL(std::chrono::seconds /*ttl*/) {}
 
-    virtual CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    virtual CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(
+        const DB::StorageID & /*storage_id*/, StorageType /*storage_type*/)
     {
         return std::nullopt;
     }

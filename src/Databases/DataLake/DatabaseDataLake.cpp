@@ -824,25 +824,6 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
     return result;
 }
 
-static DatabaseDataLakeStorageType toDataLakeStorageType(ObjectStorageType type)
-{
-    switch (type)
-    {
-        case ObjectStorageType::S3:
-            return DatabaseDataLakeStorageType::S3;
-        case ObjectStorageType::Azure:
-            return DatabaseDataLakeStorageType::Azure;
-        case ObjectStorageType::HDFS:
-            return DatabaseDataLakeStorageType::HDFS;
-        case ObjectStorageType::Local:
-            return DatabaseDataLakeStorageType::Local;
-        case ObjectStorageType::None:
-        case ObjectStorageType::Web:
-        case ObjectStorageType::Max:
-            return DatabaseDataLakeStorageType::Other;
-    }
-}
-
 void DatabaseDataLake::applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const
 {
     const auto settings_version = database_settings.get();

@@ -589,7 +589,8 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCa
 }
 
 /// `StorageID::uuid` of a `DataLakeCatalog` table is the `table_id` returned by Unity.
-ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id)
+ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurationCallback(
+    const DB::StorageID & table_id, StorageType storage_type)
 {
     if (table_id.uuid == DB::UUIDHelpers::Nil)
         throw DB::Exception(
@@ -597,7 +598,7 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurat
             "Cannot build a Unity credentials refresh callback for `{}`: the table has no UUID",
             table_id.getNameForLogs());
 
-    return getCredentialsCallbackForOperation(DB::toString(table_id.uuid), StorageType::S3, "READ_WRITE");
+    return getCredentialsCallbackForOperation(DB::toString(table_id.uuid), storage_type, "READ_WRITE");
 }
 
 ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOperation(
