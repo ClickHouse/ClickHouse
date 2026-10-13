@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
@@ -1319,6 +1320,15 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
                     {
                         std::swap(frame.node->step, child_node.step);
                         frame.node->step->updateInputHeader(expression_header);
+                        /// The moved step and the gather above it pass the same rows: the moved step's estimate, or, for
+                        /// a step that keeps every row and has no estimate, the estimate of the rows the gather passed.
+                        const auto * moved_step = dynamic_cast<const ITransformingStep *>(child_node.step.get());
+                        const bool moved_step_keeps_rows = moved_step && moved_step->getTransformTraits().preserves_number_of_rows;
+                        const bool moved_step_has_rows = frame.node->cost_estimation && frame.node->cost_estimation->rows;
+                        if (moved_step_has_rows || !moved_step_keeps_rows)
+                            child_node.cost_estimation = frame.node->cost_estimation;
+                        else
+                            frame.node->cost_estimation = child_node.cost_estimation;
                     }
                 }
             }
