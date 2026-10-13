@@ -295,6 +295,13 @@ public:
     explicit ThreadStatus(NoOSThreadTag);
     ~ThreadStatus();
 
+#if defined(OS_DARWIN)
+    /// The ThreadStatus of another OS thread, or nullptr. The lock keeps it alive; its fields are
+    /// only safe to read while that thread is stopped (StackTrace::SuspendedThread), since this is
+    /// how `system.stack_trace` reads them without signalling the thread.
+    static std::pair<std::unique_lock<std::mutex>, ThreadStatus *> findByThreadId(UInt64 thread_id);
+#endif
+
     ThreadGroupPtr getThreadGroup() const;
 
     void setQueryId(std::string && new_query_id) noexcept;

@@ -39,6 +39,11 @@
 /// Which will be used for stack unwinding on Mac.
 /// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
 #include <execinfo.h>
+#include <mutex>
+#include <pthread.h>
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
+#include <mach/thread_act.h>
 #endif
 
 #pragma clang diagnostic push
@@ -675,6 +680,151 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
     , offset(offset_)
     , frame_pointers(std::move(frame_pointers_))
 {}
+
+#if defined(OS_DARWIN)
+namespace
+{
+
+/// Frame-pointer walk of a stopped thread. Reads only addresses inside [lo, hi), a range known to be
+/// mapped and readable, so a torn or foreign chain ends the walk instead of faulting. A fiber's chain
+/// ends at the null frame pointer that make_fcontext plants (issue #111579).
+__attribute__((no_sanitize("address", "thread")))
+size_t walkFramePointers(uintptr_t pc, uintptr_t fp, uintptr_t lo, uintptr_t hi, FramePointers & frames)
+{
+    size_t size = 0;
+    frames[size++] = reinterpret_cast<void *>(pc);
+    while (size < FRAMEPOINTER_CAPACITY)
+    {
+        if (fp < lo || fp >= hi || fp % alignof(uintptr_t) != 0 || hi - fp < 2 * sizeof(uintptr_t))
+            break;
+        const auto * frame = reinterpret_cast<const uintptr_t *>(fp);
+        uintptr_t next_fp = frame[0];
+        uintptr_t return_address = frame[1];
+        if (return_address == 0)
+            break;
+        frames[size++] = reinterpret_cast<void *>(return_address);
+        /// Frames only grow towards higher addresses; anything else is a terminator or garbage.
+        if (next_fp <= fp)
+            break;
+        fp = next_fp;
+    }
+    return size;
+}
+
+/// The readable mapping containing `address`, for a frame pointer that is off the thread's own stack
+/// (a boost::context fiber stack).
+bool findReadableRegion(uintptr_t address, uintptr_t & lo, uintptr_t & hi)
+{
+    mach_vm_address_t region_address = address;
+    mach_vm_size_t region_size = 0;
+    vm_region_basic_info_data_64_t info{};
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object_name = MACH_PORT_NULL;
+    if (mach_vm_region(mach_task_self(), &region_address, &region_size, VM_REGION_BASIC_INFO_64,
+            reinterpret_cast<vm_region_info_t>(&info), &count, &object_name) != KERN_SUCCESS)
+        return false;
+    if (object_name != MACH_PORT_NULL)
+        mach_port_deallocate(mach_task_self(), object_name);
+    /// mach_vm_region returns the first region at or above the address: it may start past it.
+    if (region_address > address || !(info.protection & VM_PROT_READ))
+        return false;
+    lo = region_address;
+    hi = region_address + region_size;
+    return true;
+}
+
+/// One suspension at a time in the process: two threads stopping each other at once (the profiler
+/// sampler and a `system.stack_trace` reader) would never resume.
+std::mutex suspension_mutex;
+
+}
+
+StackTrace::ThreadHandle StackTrace::ThreadHandle::current()
+{
+    pthread_t thread = pthread_self();
+    ThreadHandle handle;
+    handle.mach_thread = pthread_mach_thread_np(thread);
+    handle.thread = thread;
+    handle.stack_hi = reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread));
+    handle.stack_lo = handle.stack_hi - pthread_get_stacksize_np(thread);
+    return handle;
+}
+
+std::optional<StackTrace::ThreadHandle> StackTrace::ThreadHandle::fromMachThread(mach_port_t mach_thread)
+{
+    pthread_t thread = pthread_from_mach_thread_np(mach_thread);
+    if (!thread)
+        return {};
+    ThreadHandle handle;
+    handle.mach_thread = mach_thread;
+    handle.thread = thread;
+    /// Racy with the thread exiting right here; harmless, as `thread_suspend` then fails and nothing
+    /// below is read.
+    handle.stack_hi = reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread));
+    handle.stack_lo = handle.stack_hi - pthread_get_stacksize_np(thread);
+    return handle;
+}
+
+StackTrace::SuspendedThread::SuspendedThread(const ThreadHandle & handle_)
+    : handle(handle_)
+{
+    if (handle.thread == pthread_self())
+        return;
+    suspension_mutex.lock();
+    suspended = thread_suspend(handle.mach_thread) == KERN_SUCCESS;
+    if (!suspended)
+        suspension_mutex.unlock();
+}
+
+StackTrace::SuspendedThread::~SuspendedThread()
+{
+    if (suspended)
+    {
+        thread_resume(handle.mach_thread);
+        suspension_mutex.unlock();
+    }
+}
+
+StackTrace StackTrace::SuspendedThread::captureStackTrace() const
+{
+    if (!suspended)
+        return StackTrace(NoCapture{});
+
+    uintptr_t pc = 0;
+    uintptr_t fp = 0;
+#if defined(__aarch64__)
+    arm_thread_state64_t state{};
+    mach_msg_type_number_t count = ARM_THREAD_STATE64_COUNT;
+    if (thread_get_state(handle.mach_thread, ARM_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state), &count) != KERN_SUCCESS)
+        return StackTrace(NoCapture{});
+    pc = arm_thread_state64_get_pc(state);
+    fp = arm_thread_state64_get_fp(state);
+#elif defined(__x86_64__)
+    x86_thread_state64_t state{};
+    mach_msg_type_number_t count = x86_THREAD_STATE64_COUNT;
+    if (thread_get_state(handle.mach_thread, x86_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state), &count) != KERN_SUCCESS)
+        return StackTrace(NoCapture{});
+    pc = state.__rip;
+    fp = state.__rbp;
+#endif
+    if (!pc)
+        return StackTrace(NoCapture{});
+
+    uintptr_t lo = handle.stack_lo;
+    uintptr_t hi = handle.stack_hi;
+
+    FramePointers frames;
+    size_t num_frames = 0;
+    if ((fp >= lo && fp < hi) || findReadableRegion(fp, lo, hi))
+        num_frames = walkFramePointers(pc, fp, lo, hi, frames);
+    else
+    {
+        frames[0] = reinterpret_cast<void *>(pc);
+        num_frames = 1;
+    }
+    return StackTrace(frames, num_frames);
+}
+#endif
 
 void StackTrace::tryCapture()
 {
