@@ -33,8 +33,9 @@ import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
+from ci.praktika.gh import GH
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.utils import Utils
 
 # Name of the result this module reports inside the job.
 RESULT_NAME = "Clang-tidy"
@@ -166,16 +167,25 @@ GENERATOR_INPUT_PATHS = {
     "contrib/prometheus-protobufs-gogo": ("gogo.pb.h", "remote.pb.h", "types.pb.h"),
 }
 # Generator inputs in `contrib` whose generated headers the analyzed code does not
-# include by name, but only through the library's own public headers, mapped to
-# the names of those public headers. `llvm-config.h` and the other templates of
-# `contrib/llvm-project-cmake/config` are reached through `<llvm/...>` headers,
-# the `liburing-cmake` templates through `liburing.h`. A path matches an entry the
-# way it matches one of `GENERATOR_INPUT_PATHS`. The public headers only select
-# the consumers: they are not regenerated, so diagnostics in them are not
-# reported.
+# include by name, but only through the library's own public headers, and
+# submodules whose public headers the analyzed code includes directly, mapped to
+# the include spellings of those public headers: a spelling ending in `/` stands
+# for every header under that directory. `llvm-config.h` and the other templates
+# of `contrib/llvm-project-cmake/config` are reached through `<llvm/...>`
+# headers, the `liburing-cmake` templates through `liburing.h`, and a bump of
+# `contrib/arrow` or `contrib/llvm-project` can break any of the `<arrow/...>`,
+# `<parquet/...>` or `<llvm/...>` headers the analyzed code includes. A path
+# matches an entry the way it matches one of `GENERATOR_INPUT_PATHS`. Unlike the
+# consumers of a generated header, every analyzed file directly including one of
+# these is selected, not a few representatives: the surface of a submodule is a
+# few dozen files, and each of them uses a different part of it. The public
+# headers only select the consumers: they are not part of the analyzed tree, so
+# diagnostics in them are not reported.
 GENERATOR_INPUT_INCLUDED_THROUGH = {
-    "contrib/llvm-project": ("IRBuilder.h", "PassBuilder.h", "TargetMachine.h"),
-    "contrib/llvm-project-cmake": ("IRBuilder.h", "PassBuilder.h", "TargetMachine.h"),
+    "contrib/arrow": ("arrow/", "parquet/"),
+    "contrib/arrow-cmake": ("arrow/", "parquet/"),
+    "contrib/llvm-project": ("llvm/",),
+    "contrib/llvm-project-cmake": ("llvm/",),
     "contrib/liburing": ("liburing.h",),
     "contrib/liburing-cmake": ("liburing.h",),
 }
@@ -482,17 +492,18 @@ def generated_header_consumers(inputs, repo_dir, limit, is_coverable):
     that files no translation unit in the build covers cannot crowd out ones it
     does. The include is matched by file name: the generated header is found
     through the build directory's include path, so it is included by its name
-    alone. An input reached only through a library's public headers is matched by
-    their names instead (see `GENERATOR_INPUT_INCLUDED_THROUGH`).
+    alone. An input reached through a library's public headers selects every
+    coverable file directly including one of them instead, see
+    `GENERATOR_INPUT_INCLUDED_THROUGH`.
     """
     index = include_index(repo_dir)
     consumers = set()
+    spellings = set()
     for path in inputs:
-        included = list(generated_headers(path))
         entry = generator_input_path_entry(path, GENERATOR_INPUT_INCLUDED_THROUGH)
         if entry is not None:
-            included += GENERATOR_INPUT_INCLUDED_THROUGH[entry]
-        for header in included:
+            spellings.update(GENERATOR_INPUT_INCLUDED_THROUGH[entry])
+        for header in generated_headers(path):
             includers = {includer for includer, _ in index.get(header, ())}
             found = sorted(
                 includers,
@@ -505,6 +516,15 @@ def generated_header_consumers(inputs, repo_dir, limit, is_coverable):
                 if is_coverable(candidate):
                     consumers.add(candidate)
                     taken += 1
+    if spellings:
+        prefixes = tuple(s for s in spellings if s.endswith("/"))
+        consumers.update(
+            includer
+            for directives in index.values()
+            for includer, spelling in directives
+            if (spelling in spellings or spelling.startswith(prefixes))
+            and is_coverable(includer)
+        )
     return sorted(consumers)
 
 
@@ -1032,12 +1052,13 @@ def changed_files_from_ci(info):
     files: with an empty list there is nothing to analyze, and a check that
     analyzes nothing is a green one that guards nothing.
     """
-    if info.is_local_run:
-        return Shell.get_output(
-            f"gh pr diff {info.pr_number} --repo {info.repo_name} --name-only",
-            strict=True,
-        ).splitlines()
-    changed_files = info.get_changed_files()
+    # Locally the files are fetched the way `store_data.py` fetches them for the
+    # workflow, so that the old path of a rename is a changed file here as well.
+    changed_files = (
+        GH.get_changed_files(strict=True)
+        if info.is_local_run
+        else info.get_changed_files()
+    )
     if changed_files is None:
         raise RuntimeError(
             "The workflow data holds no changed files, so there is nothing to "
@@ -1149,6 +1170,31 @@ def self_test(repo_dir, build_dir, compile_commands):
         consumers,
         f"`generated_header_consumers` found no file including the headers "
         f"generated from {generator_input}",
+    )
+    # A submodule bump is covered through every coverable file directly
+    # including one of the submodule's public headers, not through a few
+    # representative ones.
+    surface_header = "parquet/file_reader.h"
+    surface = {
+        includer
+        for includer, spelling in include_index(repo_dir).get(
+            os.path.basename(surface_header), ()
+        )
+        if spelling == surface_header
+        and is_coverable(includer, repo_dir, compile_commands)
+    }
+    submodule_consumers = set(
+        generated_header_consumers(
+            ["contrib/arrow"],
+            repo_dir,
+            MAX_INCLUDERS_PER_HEADER,
+            lambda path: is_coverable(path, repo_dir, compile_commands),
+        )
+    )
+    expect(
+        surface and surface <= submodule_consumers,
+        f"`generated_header_consumers` for contrib/arrow misses files including "
+        f"<{surface_header}>: {sorted(surface - submodule_consumers)}",
     )
     # A `contrib` template of the same name generates an unrelated header: it
     # must not be attributed to the one generated from `generator_input`.
