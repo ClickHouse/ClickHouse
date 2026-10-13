@@ -155,7 +155,7 @@ RUN_ERRORS_TABLE = "perf_run_errors_v1"
 RUN_WARNING_TEST = "(warning)"
 METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
 FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
-FLAMEGRAPH_CHUNK_ROWS = 250_000
+CIDB_CHUNK_ROWS = 250_000
 
 # --- Performance dashboard gate -------------------------------------------
 # The dashboard reads the tables this job uploads in the REPORT stage and
@@ -1190,7 +1190,7 @@ def insert_flamegraph_stacks(
     cidb, info, reference_sha, tested_sha, compare_against_release, deadline, nightly=False
 ):
     """Build and upload the merged flamegraph stacks TSV. A nightly run uploads
-    it in chunks of `FLAMEGRAPH_CHUNK_ROWS`, each with its own dedup token,
+    it in chunks of `CIDB_CHUNK_ROWS`, each with its own dedup token,
     so that no INSERT outlasts the socket timeout."""
     if not build_flamegraph_upload_tsv():
         return True
@@ -1211,7 +1211,7 @@ def insert_flamegraph_stacks(
         CUR_SHA=escape_sql_string(tested_sha),
         **insert_metadata,
     )
-    chunks = split_into_chunks(data, FLAMEGRAPH_CHUNK_ROWS) if nightly else [data]
+    chunks = split_into_chunks(data, CIDB_CHUNK_ROWS) if nightly else [data]
     print(f"Do insert flamegraph stacks query: >>>\n{query}\n<<<")
     ok = True
     for i, chunk in enumerate(chunks):
@@ -2996,7 +2996,6 @@ def main():
 
             with open(raw_query_metrics_path, "r", encoding="utf-8") as f:
                 data = f.read()
-            line_count = data.count("\n")
 
             insert_metadata = get_insert_metadata(info, compare_against_release)
             query = INSERT_RAW_QUERY_METRICS_DATA.format(
@@ -3010,14 +3009,27 @@ def main():
             )
 
             print(f"Do insert raw query metrics query: >>>\n{query}\n<<<")
-            error = insert_into_cidb(
-                cidb, info, RAW_QUERY_METRICS_TABLE, query, data, upload_deadline
-            )
+            chunks = split_into_chunks(data, CIDB_CHUNK_ROWS) if nightly else [data]
+            error = None
+            for i, chunk in enumerate(chunks):
+                line_count = chunk.count("\n")
+                chunk_error = insert_into_cidb(
+                    cidb,
+                    info,
+                    RAW_QUERY_METRICS_TABLE,
+                    query,
+                    chunk,
+                    upload_deadline,
+                    token_key=f"{RAW_QUERY_METRICS_TABLE}/{i}" if nightly else None,
+                )
+                if chunk_error is None:
+                    print(f"Inserted [{line_count}] raw query metric lines")
+                else:
+                    print(f"Inserted [{line_count}] raw query metric lines - failed: {chunk_error}")
+                    error = error or chunk_error
             if error is None:
-                print(f"Inserted [{line_count}] raw query metric lines")
                 del missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE]
             else:
-                print(f"Inserted [{line_count}] raw query metric lines - failed: {error}")
                 missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = error
             return error is None or not nightly
 
