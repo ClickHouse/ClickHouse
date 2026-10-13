@@ -64,11 +64,14 @@ TEST(AggregateMergeWork, WrappersWithSameStateRepresentation)
         {"uniqExactState", {value_type}},
         {"uniqExactMerge", {state->getResultType()}},
         {"uniqExactArrayIfState", {std::make_shared<DataTypeArray>(value_type), condition_type}},
+        {"uniqExactOrNull", {value_type}},
+        {"uniqExactOrDefault", {value_type}},
     };
     for (const auto & [name, arguments] : cases)
     {
         SCOPED_TRACE(name);
         const auto function = getFunction(name, arguments);
+        EXPECT_EQ(function->isAbleToParallelizeMerge(), getFunction("uniqExact", {value_type})->isAbleToParallelizeMerge());
         /// These wrappers retain the base function's state layout, so the base can populate their states directly.
         checkWork(*function, function->getBaseAggregateFunctionWithSameStateRepresentation(), {values()}, 3);
         /// An empty state has no merge work, but still retains the nested function's preparation requirement.
@@ -143,6 +146,8 @@ TEST(AggregateMergeWork, RetainedStateCostThroughWrappers)
     /// sampler hashes bound its distinct inputs from above.
     EXPECT_EQ(getFunction("uniqExactIf", {type, condition_type})->getStateBytesPerDistinctInput(), bytes);
     EXPECT_EQ(getFunction("uniqExactState", {type})->getStateBytesPerDistinctInput(), bytes);
+    EXPECT_EQ(getFunction("uniqExactOrNull", {type})->getStateBytesPerDistinctInput(), bytes);
+    EXPECT_EQ(getFunction("uniqExactOrDefault", {type})->getStateBytesPerDistinctInput(), bytes);
     EXPECT_EQ(getFunction("uniqExact", {nullable_type})->getStateBytesPerDistinctInput(), bytes);
     EXPECT_EQ(
         getFunction("uniqExactTuple", {std::make_shared<DataTypeTuple>(DataTypes{type, type})})->getStateBytesPerDistinctInput(),
