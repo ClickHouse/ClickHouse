@@ -570,7 +570,8 @@ void ReplxxLineReader::setupVimKeybindings()
 
         rx.bind_key(
             Replxx::KEY::control('J'),
-            [this](char32_t code) {
+            [this](char32_t code)
+            {
                 return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
             },
             i);
@@ -640,7 +641,8 @@ void ReplxxLineReader::setupVimKeybindings()
 
     bindKey(
         Replxx::KEY::ENTER,
-        [this](int &pos, std::string & text, char32_t) {
+        [this](int &pos, std::string & text, char32_t)
+        {
             pos++;
             text.insert(pos - 1, 1, '\n');
             resetVim(&pos, &text);
@@ -649,7 +651,8 @@ void ReplxxLineReader::setupVimKeybindings()
 
     bindKey(
         Replxx::KEY::ENTER,
-        [this](int &pos, std::string & text, char32_t) {
+        [this](int &pos, std::string & text, char32_t)
+        {
             int length = static_cast<int>(text.length());
             int reps = vimReps();
             for (int rep = 0; rep < reps; rep++)
