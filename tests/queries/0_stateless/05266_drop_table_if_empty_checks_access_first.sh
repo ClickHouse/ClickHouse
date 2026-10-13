@@ -7,7 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `DROP TABLE ... IF EMPTY` checks the privilege to drop before it looks at the table: otherwise a
 # user who may not drop a table could tell an empty one (`ACCESS_DENIED`) from a non-empty one
 # (`TABLE_NOT_EMPTY`). Once the user may drop it, a row policy that hides every row from them
-# does not make a non-empty table look empty.
+# does not make a non-empty table look empty. A table function needs only `DROP TABLE`, as its
+# plain `DROP` does.
 
 user="user_${CLICKHOUSE_DATABASE}"
 
@@ -16,6 +17,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_full (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE t_empty (x UInt64) ENGINE = MergeTree ORDER BY x;
     INSERT INTO t_full VALUES (1);
+    CREATE TABLE tf_merge (x UInt64) AS merge(currentDatabase(), '^t_full\$');
     CREATE USER ${user} IDENTIFIED WITH no_password;
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${user};
 "
@@ -38,6 +40,8 @@ ${CLICKHOUSE_CLIENT} --user "${user}" \
     | grep -o -m1 -E 'ACCESS_DENIED|TABLE_NOT_EMPTY'
 ${CLICKHOUSE_CLIENT} --user "${user}" \
     --query "DROP TABLE IF EMPTY ${CLICKHOUSE_DATABASE}.t_empty SETTINGS ignore_drop_queries_probability = 0"
+${CLICKHOUSE_CLIENT} --user "${user}" \
+    --query "DROP TABLE IF EMPTY ${CLICKHOUSE_DATABASE}.tf_merge SETTINGS ignore_drop_queries_probability = 0"
 
 ${CLICKHOUSE_CLIENT} --query "
     SELECT name FROM system.tables WHERE database = currentDatabase() AND name LIKE 't_%' ORDER BY name;

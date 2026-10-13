@@ -237,13 +237,18 @@ bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDr
             return true;
     }
 #endif
-    /// Do not resolve a table function that has not been resolved yet: that would instantiate the
-    /// external storage and start it up. Dropping or detaching it only removes the table from the
-    /// catalog and leaves the rows it would read untouched, so it holds no rows of its own.
-    /// `TRUNCATE` would resolve it and truncate the external storage, and the unknown row count
-    /// refuses that.
-    if (isUnresolvedTableFunction(table))
-        return kind != ASTDropQuery::Kind::Truncate;
+    /// Dropping or detaching a table function only removes the table from the catalog and leaves
+    /// the rows it reads untouched, whether it has been resolved or not, so it holds no rows of its
+    /// own. Do not resolve a table function that has not been resolved yet: that would instantiate
+    /// the external storage and start it up. `TRUNCATE` would resolve it and truncate the external
+    /// storage, and the unknown row count refuses that.
+    if (typeid_cast<const StorageTableFunctionProxy *>(table.get()))
+    {
+        if (kind != ASTDropQuery::Kind::Truncate)
+            return true;
+        if (isUnresolvedTableFunction(table))
+            return false;
+    }
     if (table->isView())
     {
         const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
@@ -302,16 +307,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         if (query.if_empty)
         {
             /// Check the access first: otherwise `IF EMPTY` would tell a user who may not drop
-            /// the table whether it is empty. Telling a view from a table would resolve a table
-            /// function that has not been resolved yet, so such a table requires both grants instead. Nothing is loaded before the check: a
-            /// `lazy_load_tables` stand-in is never a view, a dictionary or a table function (see
-            /// `DatabaseOrdinary::shouldLazyLoad`), and loading it would start the storage up for a
-            /// user who may not touch it.
+            /// the table whether it is empty. The access is the same as the drop below requires
+            /// (`StorageTableFunctionProxy::isView` does not resolve the table function). Nothing is
+            /// loaded before the check: a `lazy_load_tables` stand-in is never a view, a dictionary or
+            /// a table function (see `DatabaseOrdinary::shouldLazyLoad`), and loading it would start
+            /// the storage up for a user who may not touch it.
             AccessFlags required_access;
             if (query.kind == ASTDropQuery::Kind::Truncate)
                 required_access = AccessType::TRUNCATE;
-            else if (isUnresolvedTableFunction(resolveStorageProxy(table)))
-                required_access = AccessFlags(AccessType::DROP_TABLE) | AccessType::DROP_VIEW;
             else if (table->isView())
                 required_access = AccessType::DROP_VIEW;
             else if (table->isDictionary())
@@ -320,14 +323,16 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 required_access = AccessType::DROP_TABLE;
             context_->checkAccess(required_access, table_id);
             /// `TRUNCATE` of an `Alias` truncates its target, which checks the grant on the target
-            /// only when it runs. Check it before the emptiness probe looks at the target. An
-            /// `Alias` is never a `lazy_load_tables` stand-in, and its target is never an `Alias`.
+            /// only when it runs. Check it before the emptiness probe looks at the target, and probe
+            /// the authorized target itself. An `Alias` is never a `lazy_load_tables` stand-in, and
+            /// its target is never an `Alias`.
+            StoragePtr table_to_probe = table;
             if (query.kind == ASTDropQuery::Kind::Truncate)
             {
                 if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
-                    alias->getTargetTable(StorageAlias::TargetAccess{context_, AccessType::TRUNCATE});
+                    table_to_probe = alias->getTargetTable(StorageAlias::TargetAccess{context_, AccessType::TRUNCATE});
             }
-            if (!isTableEmpty(table, query.kind))
+            if (!isTableEmpty(table_to_probe, query.kind))
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
                     "Table {} is not empty or its storage does not know how many rows it has",
                     backQuoteIfNeed(table_id.table_name));
