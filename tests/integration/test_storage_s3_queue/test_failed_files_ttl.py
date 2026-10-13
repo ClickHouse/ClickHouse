@@ -1461,3 +1461,33 @@ def test_wait_for_path_reads_loading_retries_live(started_cluster):
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
+def test_ordered_mode_tracked_files_limit_is_alterable(started_cluster):
+    node = started_cluster.instances["instance"]
+    table = f"test_ordered_limit_alter_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table}"
+    files_path = f"{table}_data"
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    create_table(
+        started_cluster, node, table, "ordered", files_path,
+        additional_settings={"keeper_path": keeper_path, "tracked_files_limit": 1000},
+    )
+    try:
+        node.query(f"ALTER TABLE {table} MODIFY SETTING tracked_files_limit = 5")
+
+        deadline = time.monotonic() + 30
+        limit = None
+        while time.monotonic() < deadline:
+            raw, _ = zk.get(f"{keeper_path}/metadata")
+            limit = int(json.loads(raw.decode())["tracked_files_limit"])
+            if limit == 5:
+                break
+            time.sleep(0.2)
+        assert limit == 5, f"tracked_files_limit was not updated in Keeper metadata: {limit}"
+    finally:
+        try:
+            node.query(f"DROP TABLE IF EXISTS {table}")
+        except Exception:
+            pass

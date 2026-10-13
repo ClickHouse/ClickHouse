@@ -1458,6 +1458,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
     "loading_retries",
     "after_processing",
+    "tracked_files_limit",
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
