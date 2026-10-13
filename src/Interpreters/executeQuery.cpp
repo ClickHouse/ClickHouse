@@ -1441,7 +1441,6 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     planning_context->setPlanCacheStorageIdentities(planning_identities);
 
     auto analyzer_interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(ast, planning_context, logical_plan_options);
-    auto & logical_plan = analyzer_interpreter->getQueryPlan();
 
     /// The cacheable logical-plan execution path is only equivalent to normal execution for
     /// queries that are actually eligible for the cache: it expands view bodies at plan time and
@@ -1450,6 +1449,9 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// not eligible for caching, fall back to the normal interpreter (return nullptr) instead of
     /// executing the cacheable plan, so cache-enabled execution can never change a query's result
     /// or security context.
+    /// The check reads only the analyzed query tree, which the interpreter has already built
+    /// (scalar subqueries are folded during analysis), so it runs before the logical plan is
+    /// built: a permanently uncacheable query must not pay for planning twice.
     if (!queryTreeIsEligibleForPlanCache(
             analyzer_interpreter->getQueryTree(), context, settings[Setting::query_plan_cache_allow_scalar_subqueries]))
     {
@@ -1457,6 +1459,8 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             "Not caching plan: query uses non-deterministic functions or scalar subqueries (see query_plan_cache_allow_scalar_subqueries)");
         return nullptr;
     }
+
+    auto & logical_plan = analyzer_interpreter->getQueryPlan();
 
     /// Lets a test replace a table between analysis and execution of the plan, which is otherwise a
     /// narrow race; see `04655_query_plan_cache_table_replaced_while_planning`.
@@ -1507,6 +1511,27 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     {
         return !analyzed_identities.contains({dep.database, dep.table});
     });
+
+    /// The reverse direction must hold as well: every storage that analysis read has to be a
+    /// dependency. The AST collector cannot tell a CTE reference from a table that was dropped
+    /// after analysis (both fail the catalog lookup), so a view or a scalar-subquery source dropped
+    /// in that window would silently vanish from the dependencies - the inlined plan does not read
+    /// it, so `resolveStorages` would not notice either - and the entry would keep serving the
+    /// semantics of an object that no longer exists. Fall back to the normal interpreter, which
+    /// analyzes the current catalog from scratch.
+    for (const auto & [name, identity] : analyzed_identities)
+    {
+        const bool is_dependency = std::ranges::any_of(*dependencies, [&name](const auto & dep)
+        {
+            return dep.database == name.first && dep.table == name.second;
+        });
+        if (!is_dependency)
+        {
+            LOG_DEBUG(getLogger("QueryPlanCache"),
+                "Not caching plan: analyzed table {}.{} is not among the collected dependencies", name.first, name.second);
+            return nullptr;
+        }
+    }
 
     for (const auto & dep : *dependencies)
     {
