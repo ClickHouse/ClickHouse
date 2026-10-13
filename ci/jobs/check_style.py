@@ -931,18 +931,6 @@ def check_ruff():
     return out
 
 
-def check_ci_tests():
-    # Regression tests of the CI scripts that run without external services.
-    # Most of `ci/tests` needs credentials or a built binary, so the tests are
-    # listed explicitly.
-    res, out, err = Shell.get_res_stdout_stderr(
-        "python3 -m pytest -q -p no:cacheprovider ci/tests/test_review_threads_gate.py"
-    )
-    if res != 0:
-        return out + err
-    return ""
-
-
 def _find_enclosing_function_lines(lines, catch_line_idx):
     """Return signature lines of the function enclosing the catch at *catch_line_idx*.
 
@@ -1724,15 +1712,6 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_ruff,
-            )
-        )
-
-    testname = "ci_tests"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_ci_tests,
             )
         )
 

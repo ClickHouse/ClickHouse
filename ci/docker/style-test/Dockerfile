@@ -15,7 +15,6 @@ RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xa
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         curl \
         git \
-        jq \
         libxml2-utils \
         locales \
         python3-pip \
