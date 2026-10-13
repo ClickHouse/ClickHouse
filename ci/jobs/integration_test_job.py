@@ -2111,7 +2111,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # too, counted from the job start like the flaky one. It runs the selection once,
     # and a session-timeout of a targeted check is not a job failure (see below), so a
     # selection that does not fit is cut short rather than holding the queue.
-    MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT = 40 * 60
+    MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT = 30 * 60
     check_time_limit = 0
     if is_flaky_check:
         check_time_limit = FLAKY_CHECK_TIME_LIMIT

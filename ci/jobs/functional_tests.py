@@ -1255,9 +1255,9 @@ def main():
             )
 
         elif is_targeted_check:
-            # The merge-queue run delays merges directly; its time limit bounds
-            # the queue latency, and its reduced rerun_count usually ends earlier.
-            TARGETED_CHECK_TIME_LIMIT = 40 * 60 if info.is_merge_queue_event else 30 * 60
+            # Also bounds the merge-queue latency; there the reduced rerun_count
+            # usually ends the run earlier.
+            TARGETED_CHECK_TIME_LIMIT = 30 * 60  # 30 min
             global_time_limit = max(
                 TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )

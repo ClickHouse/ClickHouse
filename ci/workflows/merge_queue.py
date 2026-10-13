@@ -28,7 +28,7 @@ workflow = Workflow.Config(
         # against an older `master` can break tests that landed after its last CI
         # run, e.g. https://github.com/ClickHouse/ClickHouse/pull/117198 broke two
         # `test_storage_delta` tests added to `master` meanwhile. Both jobs stop
-        # at 40 minutes from their start, so they bound the queue latency.
+        # at 30 minutes from their start, so they bound the queue latency.
         *JobConfigs.stateless_tests_targeted_mq_jobs,
         *JobConfigs.integration_test_targeted_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a
