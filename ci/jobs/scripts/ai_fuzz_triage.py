@@ -2,8 +2,11 @@
 AI triage for fuzzer/stress job failures.
 
 After a fuzz-style job (AST Fuzzer, BuzzHouse, Stress test) fails, an AI agent
-inspects the failure evidence, attempts a minimal reproducer, and files or
-references a tracking issue. Behaviour depends on the run kind:
+inspects the failure evidence and files or references a tracking issue. A
+failure that an open, independent issue already tracks (see below) is linked to
+it with no agent run at all. A second, separately budgeted agent run reduces a
+minimal reproducer, only for a `related` verdict or a newly filed issue.
+Behaviour depends on the run kind:
 
 PR runs - the agent judges whether the failure was introduced by the PR:
   - `related`   -> the job stays red; the agent's reasoning and (best-effort)
@@ -68,15 +71,28 @@ from ci.praktika.result import Result
 
 TRIAGE_DIR = Path("./ci/tmp/ai_fuzz_triage")
 VERDICT_FILE = TRIAGE_DIR / "verdict.json"
+REPRO_FILE = TRIAGE_DIR / "repro.json"
 AGENT_LOG = TRIAGE_DIR / "agent.log"
 
 MAX_ATTEMPTS = 2
-# Default hard cap on one agent attempt. Callers running inside tighter job
-# timeouts (e.g. the 2h Upgrade check) pass a smaller `agent_timeout_sec`;
+# Only a fast failure (auth, network, CLI start-up) is retried; a slow one, a
+# timeout above all, would just spend the budget a second time.
+RETRY_IF_FASTER_THAN_SEC = 300
+# Exit codes of `timeout -k`: the agent got SIGTERM, then SIGKILL.
+TIMEOUT_EXIT_CODES = (124, 137)
+# Default budget for all agent runs of one triage. Callers running inside tighter
+# job timeouts (e.g. the 2h Upgrade check) pass a smaller `agent_timeout_sec`;
 # `AI_FUZZ_TRIAGE_TIMEOUT` overrides either for operational tuning.
 AGENT_TIMEOUT_SEC = 2400
+# The verdict needs the diff and the logs, not a reproducer: a short, cheap run.
+VERDICT_TIMEOUT_SEC = 600
+VERDICT_EFFORT = "medium"
+# The reproducer gets the rest of the budget, when there is enough left.
+REPRO_EFFORT = "xhigh"
+MIN_AGENT_RUN_SEC = 120
 
 VERDICTS = ("related", "unrelated", "uncertain")
+REPRO_STATUSES = ("reproduced", "not_reproduced", "not_attempted")
 ISSUE_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/issues/\d+$")
 
 # Agents that already analyse a failing job on their own PRs. A second pass adds
@@ -317,12 +333,12 @@ def _issue_task(job_kind, repo_name, found_in, tested_change, pr_mode, fingerpri
         # Without a dedup key every job would file its own issue, or point at
         # an unrelated one, so the failure is left to the job report.
         return """\
-## Task 3 - GitHub issue (SKIP)
+## Task 2 - GitHub issue (SKIP)
 
 This failure has no stable signature: its name is a generic fallback shared by
 unrelated failures, so no fingerprint can tell whether an issue already exists.
 Do not create or comment on any issue. Leave `issue_url` empty and
-`issue_created` false; the job report carries your reasoning and reproducer.
+`issue_created` false; the job report carries your reasoning.
 """
     if pr_mode:
         scope = "ONLY when your verdict is `unrelated`"
@@ -342,7 +358,7 @@ Do not create or comment on any issue. Leave `issue_url` empty and
     else:
         provenance = f"    `Found by {job_kind} in CI: {found_in}`"
     return f"""\
-## Task 3 - GitHub issue ({scope})
+## Task 2 - GitHub issue ({scope})
 
 This failure's fingerprint is `{fingerprint}`. Every job that hits the same bug
 computes the same value, so the fingerprint - not your own wording, and not how
@@ -368,9 +384,10 @@ similar two titles look - decides whether an issue already exists.
   - Body must contain this line verbatim, on its own line, or every later job
     will file a duplicate:
     `{FINGERPRINT_FIELD}: {fingerprint}`
-  - Body also carries what failed, the error/stack excerpt (trimmed), the
-    reproducer from Task 2 (or the raw failing query when not reduced), and
-    these provenance lines, each on its own line:
+  - Body also carries what failed, the error/stack excerpt (trimmed), the raw
+    failing query from the logs (a later step comments with a reduced
+    reproducer when it finds one), and these provenance lines, each on its own
+    line:
 {provenance}
 {caused_by}\
   - Use full GitHub URLs when linking anything.
@@ -386,24 +403,17 @@ def _build_prompt(
     job_kind,
     failures,
     evidence_paths,
-    repro_hint,
     pr_mode,
     fingerprint,
     occurrences,
+    timeout_sec,
 ):
     repo_name = _triage_repo(info)
-    try:
-        report_url = info.get_report_url(latest=True)
-    except Exception:
-        report_url = ""
-    evidence = "\n".join(f"- {p}" for p in evidence_paths) or "- (none collected)"
-
+    report_url = _report_url(info)
     if pr_mode:
         run_kind = "on a ClickHouse pull request"
-        change_line = f"- PR: {info.pr_url} (head sha `{info.sha}`)"
     else:
         run_kind = f"on the `{info.git_branch}` branch (post-merge run)"
-        change_line = f"- Commit: {info.commit_url} (sha `{info.sha}`)"
     tested_change = info.pr_url if pr_mode else info.commit_url
     found_in = report_url or tested_change
     if pr_mode and fingerprint and occurrences is None:
@@ -435,35 +445,20 @@ def _build_prompt(
     return f"""\
 You are triaging a failed `{job_kind}` CI job {run_kind}.
 
-## Failure reported by the job
-
-{_failures_section(failures)}
-
-## Evidence on disk (read as needed; directories may hold several logs)
-
-{evidence}
-
+{_evidence_sections(failures, evidence_paths)}
 ## Context
 
-{change_line}
+{_change_line(info, pr_mode)}
 - CI job: `{info.job_name}`, report: {report_url or "(unavailable)"}
 - GitHub repository: `{repo_name}`. Pass `--repo {repo_name}` to gh where applicable.
 - The `gh` CLI is pre-authenticated. Never run destructive gh commands (close,
   edit, delete); you may only search/read and create ONE issue as described below.
+- Do not reduce a reproducer or replay queries: a separate step does that when
+  it is needed. Read the code and the logs, and finish within {timeout_sec // 60} minutes.
 
 {_relatedness_task(info, repo_name, pr_mode, fingerprint, occurrences)}
-## Task 2 - minimal reproducer (best effort, <= 15 minutes)
-
-{repro_hint}
-
-- Extract the failing query/queries from the logs, replay them, and shrink the
-  case (drop irrelevant settings, columns, and clauses) while the failure still
-  reproduces.
-- Set `repro_status` to `reproduced` ONLY if you observed the failure yourself
-  with the final snippet. Otherwise use `not_reproduced` or `not_attempted`.
-
 {_issue_task(job_kind, repo_name, found_in, tested_change, pr_mode, fingerprint)}
-## Task 4 - verdict file (MANDATORY)
+## Task 3 - verdict file (MANDATORY)
 
 Write a single JSON object to `{VERDICT_FILE}`:
 
@@ -474,21 +469,92 @@ Write a single JSON object to `{VERDICT_FILE}`:
   "issue_url": "https://github.com/owner/repo/issues/N or empty string",
   "issue_created": true | false,
   "label_applied": true | false,
-  "culprit_pr": "full PR URL when attributed, else empty string",
-  "repro": "SQL or shell snippet, or empty string",
-  "repro_status": "reproduced" | "not_reproduced" | "not_attempted"
+  "culprit_pr": "full PR URL when attributed, else empty string"
 }}
 
 {outcome_note} Do not post PR comments; the job report carries your output.
 """
 
 
-def _drop_stale_verdict():
-    if VERDICT_FILE.exists():
+def _build_repro_prompt(
+    info, job_kind, failures, evidence_paths, repro_hint, pr_mode, verdict, timeout_sec
+):
+    issue_url = verdict.get("issue_url") or ""
+    if verdict.get("issue_created") and issue_url:
+        comment_task = f"""\
+- Only when `repro_status` is `reproduced`: post the final snippet as ONE
+  comment on {issue_url} (`gh issue comment {issue_url} --body-file <file>`).
+"""
+        allowed = "post at most the one issue comment described below"
+    else:
+        comment_task = ""
+        allowed = "only read"
+    return f"""\
+You are reducing a minimal reproducer for a failed `{job_kind}` CI job. An
+earlier step judged the failure `{verdict["verdict"]}`:
+{(verdict.get("reasoning") or "(no reasoning given)").strip()[:1200]}
+
+{_evidence_sections(failures, evidence_paths)}
+## Context
+
+{_change_line(info, pr_mode)}
+- CI job: `{info.job_name}`
+- The `gh` CLI is pre-authenticated. Never create, edit, close or delete
+  anything on GitHub; you may {allowed}.
+
+## Task 1 - minimal reproducer (finish within {timeout_sec // 60} minutes)
+
+{repro_hint}
+
+- Extract the failing query/queries from the logs, replay them, and shrink the
+  case (drop irrelevant settings, columns, and clauses) while the failure still
+  reproduces.
+- Set `repro_status` to `reproduced` ONLY if you observed the failure yourself
+  with the final snippet. Otherwise use `not_reproduced` or `not_attempted`.
+{comment_task}
+## Task 2 - result file (MANDATORY)
+
+Write a single JSON object to `{REPRO_FILE}`:
+
+{{
+  "repro": "SQL or shell snippet, or empty string",
+  "repro_status": "reproduced" | "not_reproduced" | "not_attempted"
+}}
+"""
+
+
+def _report_url(info):
+    try:
+        return info.get_report_url(latest=True)
+    except Exception:  # noqa: BLE001 - the link is a convenience
+        return ""
+
+
+def _change_line(info, pr_mode):
+    if pr_mode:
+        return f"- PR: {info.pr_url} (head sha `{info.sha}`)"
+    return f"- Commit: {info.commit_url} (sha `{info.sha}`)"
+
+
+def _evidence_sections(failures, evidence_paths):
+    evidence = "\n".join(f"- {p}" for p in evidence_paths) or "- (none collected)"
+    return f"""\
+## Failure reported by the job
+
+{_failures_section(failures)}
+
+## Evidence on disk (read as needed; directories may hold several logs)
+
+{evidence}
+"""
+
+
+def _drop_stale_output(output_file):
+    if output_file.exists():
         try:
-            VERDICT_FILE.unlink()
+            output_file.unlink()
         except OSError as e:
-            print(f"WARNING: cannot remove stale {VERDICT_FILE}: {e}")
+            print(f"WARNING: cannot remove stale {output_file}: {e}")
 
 
 def _run_shell_to_agent_log(command):
@@ -503,8 +569,8 @@ def _run_shell_to_agent_log(command):
         ).returncode
 
 
-def _run_codex_once(prompt, robot_name, timeout_sec):
-    _drop_stale_verdict()
+def _run_codex_once(prompt, robot_name, timeout_sec, effort, output_file):
+    _drop_stale_output(output_file)
     with tempfile.TemporaryDirectory() as gh_config_dir, tempfile.TemporaryDirectory(
         dir="./ci/tmp"
     ) as codex_home:
@@ -517,7 +583,7 @@ def _run_codex_once(prompt, robot_name, timeout_sec):
             f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
             f"timeout -k 60 {timeout_sec} "
             f"codex exec "
-            f"-m {AGENT_MODEL} -c 'model_reasoning_effort=xhigh' "
+            f"-m {AGENT_MODEL} -c 'model_reasoning_effort={effort}' "
             f"-s workspace-write "
             f"-c sandbox_workspace_write.network_access=true "
             f"-c approval_policy=never "
@@ -526,26 +592,31 @@ def _run_codex_once(prompt, robot_name, timeout_sec):
         )
 
 
-def _run_copilot_once(prompt, robot_name, timeout_sec):
-    _drop_stale_verdict()
+def _run_copilot_once(prompt, robot_name, timeout_sec, effort, output_file):
+    _drop_stale_output(output_file)
     with tempfile.TemporaryDirectory() as gh_config_dir:
         gh_auth_with_robot_token(gh_config_dir, robot_name)
         return _run_shell_to_agent_log(
             f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
             f"timeout -k 60 {timeout_sec} "
             f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-            f"--add-dir . --model {AGENT_MODEL} --effort xhigh"
+            f"--add-dir . --model {AGENT_MODEL} --effort {effort}"
         )
 
 
-def _load_verdict():
+def _load_json_object(path):
+    if not path.exists():
+        raise ValueError(f"{path} was not written")
+    with open(path, encoding="utf-8") as fh:
+        value = json.load(fh)
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} is not a JSON object")
+    return value
+
+
+def _load_verdict(path=VERDICT_FILE):
     """Parse and validate the verdict file; returns dict or raises ValueError."""
-    if not VERDICT_FILE.exists():
-        raise ValueError(f"{VERDICT_FILE} was not written")
-    with open(VERDICT_FILE, encoding="utf-8") as fh:
-        verdict = json.load(fh)
-    if not isinstance(verdict, dict):
-        raise ValueError("verdict is not a JSON object")
+    verdict = _load_json_object(path)
     if verdict.get("verdict") not in VERDICTS:
         raise ValueError(f"invalid verdict value: {verdict.get('verdict')!r}")
     issue_url = verdict.get("issue_url") or ""
@@ -554,8 +625,19 @@ def _load_verdict():
     return verdict
 
 
-def _run_agent(prompt, timeout_sec):
-    """Run the configured backend with retries; returns a validated verdict."""
+def _load_repro(path=REPRO_FILE):
+    repro = _load_json_object(path)
+    if repro.get("repro_status") not in REPRO_STATUSES:
+        raise ValueError(f"invalid repro_status: {repro.get('repro_status')!r}")
+    return {"repro": repro.get("repro") or "", "repro_status": repro["repro_status"]}
+
+
+def _run_agent(prompt, deadline, cap_sec, effort, output_file, load):
+    """Run the configured backend and return `load(output_file)`.
+
+    Each attempt gets `cap_sec`, cut to what is left before `deadline`
+    (`time.monotonic()`). Only a fast failure is retried.
+    """
     backend = os.environ.get("AI_FUZZ_TRIAGE_BACKEND", "codex")
     run_once = {"codex": _run_codex_once, "copilot": _run_copilot_once}.get(backend)
     if run_once is None:
@@ -565,26 +647,41 @@ def _run_agent(prompt, timeout_sec):
     robots = ROBOT_NAMES.copy()
     random.shuffle(robots)
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        timeout_sec = int(min(cap_sec, deadline - time.monotonic()))
+        if timeout_sec < MIN_AGENT_RUN_SEC:
+            raise RuntimeError(
+                f"triage budget exhausted after {attempt - 1} attempts: {last_error}"
+            )
+        started = time.monotonic()
         try:
             exit_code = run_once(
-                prompt, robots[(attempt - 1) % len(robots)], timeout_sec
+                prompt,
+                robots[(attempt - 1) % len(robots)],
+                timeout_sec,
+                effort,
+                output_file,
             )
-            # A valid verdict counts even on non-zero exit (e.g. the timeout
+            # A valid output counts even on non-zero exit (e.g. the timeout
             # fired after the file was already written).
             try:
-                verdict = _load_verdict()
+                output = load(output_file)
                 if exit_code != 0:
                     print(
                         f"WARNING: {backend} exited with {exit_code}, "
-                        f"but wrote a valid verdict - accepting it"
+                        f"but wrote a valid {output_file.name} - accepting it"
                     )
-                return verdict
+                return output
             except (ValueError, json.JSONDecodeError) as e:
-                last_error = f"{backend} exit code {exit_code}; verdict: {e}"
-        except Exception as e:  # noqa: BLE001 - any failure here is retryable
+                if exit_code in TIMEOUT_EXIT_CODES:
+                    last_error = f"{backend} timed out after {timeout_sec}s"
+                else:
+                    last_error = f"{backend} exit code {exit_code}; output: {e}"
+        except Exception as e:  # noqa: BLE001 - any failure here may be retried
             last_error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
         print(f"WARNING: triage attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+        if time.monotonic() - started >= RETRY_IF_FASTER_THAN_SEC:
+            raise RuntimeError(f"triage failed, not retried: {last_error}")
         if attempt < MAX_ATTEMPTS:
             time.sleep(min(2**attempt * 5, 60))
     raise RuntimeError(f"triage failed after {MAX_ATTEMPTS} attempts: {last_error}")
@@ -822,7 +919,7 @@ def _apply_verdict(
         if issue_url:
             lines.append(f"AI triage: related tracking issue: {issue_url}{issue_note}")
     elif pr_mode and kind == "unrelated" and regression:
-        # The new issue Task 3 files for the regression would vouch for the very
+        # The new issue Task 2 files for the regression would vouch for the very
         # verdict in doubt.
         lines.append(
             "AI triage: verdict was `unrelated`, but this failure's fingerprint is "
@@ -924,13 +1021,76 @@ def _apply_verdict(
         lines.append(f"AI triage reproducer (verified):\n{repro}")
     elif repro:
         lines.append(f"AI triage reproducer (NOT verified):\n{repro}")
+    elif verdict.get("repro_error"):
+        lines.append(f"AI triage reproducer: unavailable ({verdict['repro_error']})")
+    elif repro_status == "not_attempted":
+        lines.append("AI triage reproducer: not attempted")
     else:
         lines.append("AI triage reproducer: none produced")
     result.set_info("\n".join(lines))
 
-    for path in (VERDICT_FILE, AGENT_LOG):
+    for path in (VERDICT_FILE, REPRO_FILE, AGENT_LOG):
         if path.exists() and path.stat().st_size > 0:
             result.set_files([path])
+
+
+def known_issue_verdict(failures, uncovered, occurrences, pr_mode):
+    """The verdict for a failure an independent open issue already tracks, or None.
+
+    Such an issue settles relatedness without an agent: the failure predates the
+    change. It vouches only for the failures its fingerprint covers.
+    """
+    if uncovered or not occurrences or not occurrences.older:
+        return None
+    issue_url = occurrences.older[0]
+    change = "PR" if pr_mode else "commit"
+    return {
+        "verdict": "unrelated",
+        "reasoning": (
+            f"Known issue: {issue_url} is open, carries this failure's fingerprint "
+            f"and was filed before this {change}, not by triage of a PR run, so "
+            f"the failure predates the {change}. No agent was run."
+        ),
+        "signature": _tracked_signature(failures),
+        "issue_url": issue_url,
+        "issue_created": False,
+        "label_applied": True,
+        "culprit_pr": "",
+        "repro": "",
+        "repro_status": "not_attempted",
+    }
+
+
+def _needs_repro(verdict):
+    """Someone reads a reproducer only on a red verdict or in a new issue."""
+    return verdict["verdict"] == "related" or bool(verdict.get("issue_created"))
+
+
+def _reproduce(
+    info, job_kind, failures, evidence_paths, repro_hint, pr_mode, verdict, deadline
+):
+    """The reproducer fields for `verdict`; a failure here never loses the verdict."""
+    timeout_sec = int(deadline - time.monotonic())
+    if timeout_sec < MIN_AGENT_RUN_SEC:
+        error = "the verdict used up the triage budget"
+        return {"repro": "", "repro_status": "not_attempted", "repro_error": error}
+    try:
+        prompt = _build_repro_prompt(
+            info,
+            job_kind,
+            failures,
+            evidence_paths,
+            repro_hint,
+            pr_mode,
+            verdict,
+            timeout_sec,
+        )
+        return _run_agent(
+            prompt, deadline, timeout_sec, REPRO_EFFORT, REPRO_FILE, _load_repro
+        )
+    except Exception as e:  # noqa: BLE001 - the verdict stands without a reproducer
+        print(f"WARNING: AI fuzz triage: reproducer unavailable: {e}")
+        return {"repro": "", "repro_status": "not_attempted", "repro_error": str(e)}
 
 
 def triage_and_apply(
@@ -985,18 +1145,44 @@ def triage_and_apply(
             else Occurrences([], [])
         )
         print(f"AI fuzz triage: prior occurrences {occurrences}")
-        prompt = _build_prompt(
-            info,
-            job_kind,
-            failures,
-            evidence_paths,
-            repro_hint,
-            pr_mode,
-            fingerprint,
-            occurrences,
-        )
-        timeout_sec = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
-        verdict = _run_agent(prompt, timeout_sec)
+        verdict = known_issue_verdict(failures, uncovered, occurrences, pr_mode)
+        if verdict:
+            print(f"AI fuzz triage: known issue {verdict['issue_url']}, no agent run")
+        else:
+            budget = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
+            deadline = time.monotonic() + budget
+            verdict_timeout = min(VERDICT_TIMEOUT_SEC, budget)
+            prompt = _build_prompt(
+                info,
+                job_kind,
+                failures,
+                evidence_paths,
+                pr_mode,
+                fingerprint,
+                occurrences,
+                verdict_timeout,
+            )
+            verdict = _run_agent(
+                prompt,
+                deadline,
+                verdict_timeout,
+                VERDICT_EFFORT,
+                VERDICT_FILE,
+                _load_verdict,
+            )
+            if _needs_repro(verdict):
+                verdict.update(
+                    _reproduce(
+                        info,
+                        job_kind,
+                        failures,
+                        evidence_paths,
+                        repro_hint,
+                        pr_mode,
+                        verdict,
+                        deadline,
+                    )
+                )
         _apply_verdict(
             result,
             verdict,
