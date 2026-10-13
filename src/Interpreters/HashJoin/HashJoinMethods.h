@@ -94,8 +94,6 @@ struct Inserter
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
-    static constexpr bool needs_offset = JoinFeatures<KIND, STRICTNESS, MapsTemplate>::need_flags;
-
 public:
     /// Inserts the keys of clause `map_idx` of a block into `maps`. Each slot inserts its rows of `per_slot` under its
     /// own lock.

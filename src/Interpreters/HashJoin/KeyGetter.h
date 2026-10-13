@@ -13,20 +13,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <HashJoin::Type type, typename Value, typename Mapped, bool use_offset>
+template <HashJoin::Type type, typename Value, typename Mapped>
 struct KeyGetterForTypeImpl;
+
+constexpr bool use_offset = true;
 
 /// Key getter for a single LowCardinality column, tailored to HashJoin. Unlike the aggregation
 /// method `HashMethodSingleLowCardinalityColumn`, this one is const-correct on the probe side
 /// (probe maps expose `const RowRef`/`const RowRefList` and `ConstLookupResult`), produces an
-/// offset-carrying `FindResult` when `use_offset` is set (HashJoin indexes `JoinUsedFlags` by it), and has no null-key
+/// offset-carrying `FindResult` (HashJoin indexes `JoinUsedFlags` by it), and has no null-key
 /// path (chooseMethod only routes here for non-nullable dictionaries). It wraps a base method that
 /// operates on the dictionary's nested column to produce key holders, and deduplicates the
 /// hash-table work per dictionary index within a block — that dedup is the whole point. The
 /// probe/left key may be a plain (non-LowCardinality) column even when this map is chosen (joins
 /// allow plain T vs LowCardinality(T)); such a column is handled by running the base method on it
 /// directly, with no dictionary indirection or deduplication.
-template <typename BaseMethod, typename Mapped, bool use_offset>
+template <typename BaseMethod, typename Mapped>
 struct LowCardinalityKeyGetterForJoin
 {
     using MappedNonConst = std::remove_const_t<Mapped>;
@@ -83,8 +85,7 @@ struct LowCardinalityKeyGetterForJoin
         const size_t dictionary_size = dictionary.getNestedNotNullableColumn()->size();
         visit_cache.assign(dictionary_size, static_cast<UInt8>(0));
         mapped_cache.assign(dictionary_size, static_cast<Mapped *>(nullptr));
-        if constexpr (use_offset)
-            offset_cache.assign(dictionary_size, static_cast<size_t>(0));
+        offset_cache.assign(dictionary_size, static_cast<size_t>(0));
     }
 
     /// True when the current column is LowCardinality (dictionary path); false for a plain column.
@@ -152,13 +153,10 @@ struct LowCardinalityKeyGetterForJoin
 
         if (visit_cache[row] != 0)
         {
-            size_t cached_offset = 0;
-            if constexpr (use_offset)
-                cached_offset = offset_cache[row];
             if constexpr (has_mapped)
-                return FindResult(mapped_cache[row], visit_cache[row] == 1, cached_offset);
+                return FindResult(mapped_cache[row], visit_cache[row] == 1, offset_cache[row]);
             else
-                return FindResult(visit_cache[row] == 1, cached_offset);
+                return FindResult(visit_cache[row] == 1, offset_cache[row]);
         }
 
         auto key_holder = base.getKeyHolder(row, pool);
@@ -167,15 +165,10 @@ struct LowCardinalityKeyGetterForJoin
         auto it = row < saved_hash.size() ? data.find(key, saved_hash[row]) : data.find(key);
 
         const bool found = it;
-        /// Only the used-flag paths ask; `freezeMapsForProbing` computed the prefix sums
-        /// before any probe.
-        size_t offset = 0;
-        if constexpr (use_offset)
-            offset = found ? data.offsetInternal(it) : 0;
+        const size_t offset = found ? data.offsetInternal(it) : 0;
 
         visit_cache[row] = found ? 1 : 2;
-        if constexpr (use_offset)
-            offset_cache[row] = offset;
+        offset_cache[row] = offset;
 
         if constexpr (has_mapped)
         {
@@ -188,76 +181,107 @@ struct LowCardinalityKeyGetterForJoin
     }
 };
 
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::key16, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key16, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::key32, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key32, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::key64, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key64, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::key_string, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_string, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::key_fixed_string, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_fixed_string, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::keys32, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys32, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt32, Mapped, false, false, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::keys64, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys64, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt64, Mapped, false, false, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::keys128, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys128, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt128, Mapped, false, false, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::keys256, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::keys256, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt256, Mapped, false, false, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::hashed, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::hashed, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false, use_offset>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key_string, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key_string, Value, Mapped>
 {
-    using Type
-        = LowCardinalityKeyGetterForJoin<ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>, Mapped, use_offset>;
+    using Type = LowCardinalityKeyGetterForJoin<
+        ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>, Mapped>;
 };
-template <typename Value, typename Mapped, bool use_offset>
-struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key_fixed_string, Value, Mapped, use_offset>
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key_fixed_string, Value, Mapped>
 {
-    using Type
-        = LowCardinalityKeyGetterForJoin<ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>, Mapped, use_offset>;
+    using Type = LowCardinalityKeyGetterForJoin<
+        ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>, Mapped>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key32, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key64, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_string, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_fixed_string, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys32, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt32, Mapped, false, false, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys64, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt64, Mapped, false, false, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys128, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt128, Mapped, false, false, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys256, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt256, Mapped, false, false, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_hashed, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key8, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key16, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false, use_offset>;
 };
 #define KEYGETTER_RANGE_IMPL(TYPE, FIELD_TYPE) \
-    template <typename Value, typename Mapped, bool use_offset> \
-    struct KeyGetterForTypeImpl<HashJoin::Type::TYPE, Value, Mapped, use_offset> \
+    template <typename Value, typename Mapped> \
+    struct KeyGetterForTypeImpl<HashJoin::Type::TYPE, Value, Mapped> \
     { \
         using Type = ColumnsHashing::HashMethodOneNumberInRange<Value, Mapped, FIELD_TYPE, false, use_offset>; \
     };
@@ -271,17 +295,6 @@ KEYGETTER_RANGE_IMPL(range17_key64, UInt64)
 KEYGETTER_RANGE_IMPL(range18_key64, UInt64)
 #undef KEYGETTER_RANGE_IMPL
 
-#define KEYGETTER_TWO_LEVEL_IMPL(NAME) \
-    template <typename Value, typename Mapped, bool use_offset> \
-    struct KeyGetterForTypeImpl<HashJoin::Type::two_level_##NAME, Value, Mapped, use_offset> \
-        : KeyGetterForTypeImpl<HashJoin::Type::NAME, Value, Mapped, use_offset> \
-    { \
-    };
-APPLY_FOR_SINGLE_LEVEL_JOIN_VARIANTS(KEYGETTER_TWO_LEVEL_IMPL)
-KEYGETTER_TWO_LEVEL_IMPL(key8)
-KEYGETTER_TWO_LEVEL_IMPL(key16)
-#undef KEYGETTER_TWO_LEVEL_IMPL
-
 /// Set tables, which joins that never read a right-side row run on, have no mapped value in their
 /// cells: they report the `VoidMapped` placeholder, while the column hashing methods spell the absence
 /// of a mapped value as `void`.
@@ -292,13 +305,13 @@ struct JoinMappedType
     using Type = std::conditional_t<std::is_same_v<Raw, VoidMapped>, void, Raw>;
 };
 
-template <HashJoin::Type type, typename Data, bool use_offset>
+template <HashJoin::Type type, typename Data>
 struct KeyGetterForType
 {
     using Value = typename Data::value_type;
     using Mapped_t = typename JoinMappedType<Data>::Type;
     using Mapped = std::conditional_t<std::is_const_v<Data> && !std::is_void_v<Mapped_t>, const Mapped_t, Mapped_t>;
-    using Type = typename KeyGetterForTypeImpl<type, Value, Mapped, use_offset>::Type;
+    using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
 };
 
 /// Builds one clause's key getter. For ASOF the last key column is the inequality one, which the

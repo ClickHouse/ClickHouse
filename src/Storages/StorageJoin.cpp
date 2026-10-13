@@ -1071,7 +1071,7 @@ private:
 
         /// Note key32 and keys32 (likewise key64/keys64) share one map type, so the variant has to come
         /// from the enum: only the keysN ones pack several key columns into the map key.
-        using KeyGetter = typename KeyGetterForType<TYPE, std::remove_cvref_t<Map>, /*use_offset=*/false>::Type;
+        using KeyGetter = typename KeyGetterForType<TYPE, std::remove_cvref_t<Map>>::Type;
         if constexpr (PacksKeysIntoBlob<KeyGetter>)
         {
             Sizes clause_sizes;

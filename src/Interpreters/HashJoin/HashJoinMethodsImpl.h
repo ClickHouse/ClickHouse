@@ -173,7 +173,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         return insertFromBlockImplTypeCase< \
-            typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>, needs_offset>::Type>( \
+            typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
             join, *maps.TYPE, map_idx, per_slot, key_columns, key_sizes, stored_block_no, null_map, join_mask);
 
         APPLY_FOR_JOIN_VARIANTS(M)
@@ -460,7 +460,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using MapTypeVal = const typename std::remove_reference_t<decltype(MapsTemplate::TYPE)>::element_type; \
-        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, MapTypeVal, needs_offset>::Type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, MapTypeVal>::Type; \
         std::vector<const MapTypeVal *> a_map_type_vector(mapv.size()); \
         std::vector<KeyGetter> key_getter_vector; \
         for (size_t d = 0; d < added_columns.join_on_keys.size(); ++d) \

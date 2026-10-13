@@ -123,13 +123,13 @@ public:
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
-    void setUsed(const FindResult & f [[maybe_unused]])
+    void setUsed(const FindResult & f)
     {
-        /// Keep the `else`: the no-flags `FindResult` has no `getOffset`, and code after a plain early return is still instantiated.
         if constexpr (!use_flags)
             return;
+
         /// Could be set simultaneously from different threads.
-        else if constexpr (flag_per_row)
+        if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
             if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
@@ -206,11 +206,12 @@ public:
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
-    bool setUsedOnce(const FindResult & f [[maybe_unused]])
+    bool setUsedOnce(const FindResult & f)
     {
         if constexpr (!use_flags)
             return true;
-        else if constexpr (flag_per_row)
+
+        if constexpr (flag_per_row)
         {
             auto & flag = headRowFlag(f.getMapped());
 

@@ -32,7 +32,7 @@ std::vector<ScatteredBlock::Selector> scatterImpl(
     size_t num_slots,
     bool is_asof)
 {
-    using KeyGetter = KeyGetterForType<type, Map, false>::Type;
+    using KeyGetter = KeyGetterForType<type, Map>::Type;
 
     if constexpr (requires { KeyGetter::has_pre_computed_hashes; })
         static_assert(!KeyGetter::has_pre_computed_hashes, "Bucket routing assumes the map computes the hash it places by");
