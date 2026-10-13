@@ -313,10 +313,6 @@ public:
         return isEnabledAlgorithm(join_algorithms, val);
     }
 
-    /// Several disjuncts (`OR`s of keys in `JOIN ON`) need `hash` or `auto`; the check throws `NOT_IMPLEMENTED` otherwise.
-    static bool supportsMultipleDisjuncts(const std::vector<JoinAlgorithm> & join_algorithms);
-    void checkMultipleDisjunctsSupported() const;
-
     void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }

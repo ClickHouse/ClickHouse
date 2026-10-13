@@ -682,8 +682,9 @@ static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     const FunctionNode & function_node)
 {
     const auto & join_algorithms = planner_context->getQueryContext()->getSettingsRef()[Setting::join_algorithm];
-    if (TableJoin::supportsMultipleDisjuncts(join_algorithms)
-        && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_planning])
+    const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
+    if (is_hash_join_enabled && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_planning])
     {
         auto join_clauses = buildJoinClauses(
             left_join_actions,
@@ -1423,7 +1424,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (isCrossOrComma(table_join->kind()) || table_join->isJoinWithConstant())
         return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
-    table_join->checkMultipleDisjunctsSupported();
+    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {

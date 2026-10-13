@@ -770,7 +770,8 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
             data.asofToJoinKeys();
         }
 
-        analyzed_join.checkMultipleDisjunctsSupported();
+        if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
     }
 }
 

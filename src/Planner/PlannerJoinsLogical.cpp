@@ -552,8 +552,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
                 "JOIN {} join expression expected function",
                 join_node.formatASTForErrorMessage());
 
-        bool use_general_join_planning
-            = TableJoin::supportsMultipleDisjuncts(join_algorithms) && query_settings[Setting::allow_general_join_planning];
+        bool use_general_join_planning = (TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+            || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO)) && query_settings[Setting::allow_general_join_planning];
 
         if (use_general_join_planning)
             buildDisjunctiveJoinConditionsGeneral(join_expression_node, build_context);
