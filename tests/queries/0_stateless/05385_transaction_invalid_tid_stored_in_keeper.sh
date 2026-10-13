@@ -10,48 +10,62 @@
 #   tests that run alone out (ci/jobs/check_style.py, check_failpoint_tests_are_isolated).
 
 # Test: TransactionSession::storePendingInvalidTids writes the TID invalidations that a failed
-# rollback cleanup queued, and keeps going when one record of the batch already exists.
-# Expected behaviour source: the comments of invalidateTID and storePendingInvalidTids in
-# src/Interpreters/TransactionSession.cpp ("Keep the entries queued until Keeper confirms the
-# write", "The Multi is all-or-nothing, so one already-existing record fails the whole batch and
-# nothing is created. Retry each on its own so it doesn't block the rest.").
-#
-# TransactionManager::rollbackTransaction offers the failpoint smt_force_txn_rollback_invalidation
-# "so tests can drive the TID-invalidation path deterministically without a real Keeper fault". For
-# a whole-transaction record the znode name is exactly the tid_hash, so it is addressable from SQL.
-# The records are written by the background updating thread, so the checks below are bounded polls;
-# a committed transaction appends a log entry that wakes that thread right away.
+# rollback cleanup queued, and keeps going when one record of the batch already exists. Source of
+# the expected behaviour: the comment of storePendingInvalidTids in
+# src/Interpreters/TransactionSession.cpp ("The Multi is all-or-nothing, so one already-existing
+# record fails the whole batch and nothing is created. Retry each on its own so it doesn't block
+# the rest."). rollbackTransaction offers smt_force_txn_rollback_invalidation "so tests can drive
+# the TID-invalidation path deterministically without a real Keeper fault"; for a whole-transaction
+# record the znode name is exactly the tid_hash, so it is addressable from SQL. The records are
+# written by the background updating thread, so the checks below are bounded polls; a committed
+# transaction appends a log entry that wakes that thread right away. Case 2 needs both
+# invalidations queued before that thread snapshots the queue, so both rollbacks are held at the
+# pauseable failpoint transaction_rollback_pause_after_mark, which stops a rollback after it marked
+# the transaction and before it queues the invalidation; they are released together, and the queue
+# is poked only once both ROLLBACK queries have returned.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=./transactions.lib
+. "$CUR_DIR"/transactions.lib
 
 INVALID_TIDS="/test/clickhouse/txn/invalid_tids"
 POLL_INTERVAL=0.1
 POLL_TRIES=100
-
-# The failpoint is enabled only around the rollbacks: it turns the rollback of every background
-# transaction into a record too, so a wider window would leave unrelated znodes behind.
-ON="SYSTEM ENABLE FAILPOINT smt_force_txn_rollback_invalidation;"
-OFF="SYSTEM DISABLE FAILPOINT smt_force_txn_rollback_invalidation;"
+# FP_FORCE is enabled only around the rollbacks: it would turn the rollback of every unrelated
+# background transaction into a record too.
+FP_FORCE=smt_force_txn_rollback_invalidation
+FP_PAUSE=transaction_rollback_pause_after_mark
 POKE="BEGIN TRANSACTION; INSERT INTO txn_invalid_tid SELECT -1; COMMIT;"
-# system.transactions is not transactional, and reading our own row is the only way to learn the
-# record name before the transaction ends.
+# system.transactions is not transactional, and our own row names the record before the txn ends.
 NO_THROW="SET throw_on_unsupported_query_inside_transaction = 0;"
-# A fail point lives in the server process, so clear it on every path out of the test, not only
-# on the one that reaches the last line.
-trap '$CLICKHOUSE_CLIENT -q "$OFF" > /dev/null 2>&1' EXIT
+
+# A fail point lives in the server process, so clear it on every path out of the test.
+cleanup() {
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP_PAUSE; SYSTEM DISABLE FAILPOINT $FP_FORCE" > /dev/null 2>&1
+}
+trap cleanup EXIT
+
+# Bounded poll: wait until the counting query $1 returns $2.
+function wait_for_count()
+{
+    local i
+    for ((i = 0; i < POLL_TRIES; i++)); do
+        [ "$($CLICKHOUSE_CLIENT -q "$1")" = "$2" ] && return
+        sleep "$POLL_INTERVAL"
+    done
+}
 
 function wait_for_record()
 {
-    local name=$1
-    local i
-    for ((i = 0; i < POLL_TRIES; i++)); do
-        if [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$INVALID_TIDS' AND name = '$name'")" = "1" ]; then
-            return
-        fi
-        sleep "$POLL_INTERVAL"
-    done
+    wait_for_count "SELECT count() FROM system.zookeeper WHERE path = '$INVALID_TIDS' AND name = '$1'" 1
+}
+
+function tid_hash_of()
+{
+    tx "$1" "SELECT tid_hash FROM system.transactions WHERE tid = transactionID()
+        SETTINGS throw_on_unsupported_query_inside_transaction = 0" | awk '{print $2}'
 }
 
 # Case 1: no record of the batch exists yet, so the batched Multi creates it.
@@ -59,36 +73,37 @@ read -r tid_a csn_a local_a < <($CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS txn_invalid_tid;
 CREATE TABLE txn_invalid_tid (n Int64) ENGINE = MergeTree ORDER BY n;
 $NO_THROW
-$ON
+SYSTEM ENABLE FAILPOINT $FP_FORCE;
 BEGIN TRANSACTION;
 INSERT INTO txn_invalid_tid SELECT 1;
 SELECT tid_hash, tid.1, tid.2 FROM system.transactions WHERE tid = transactionID();
 ROLLBACK;
-$OFF
+SYSTEM DISABLE FAILPOINT $FP_FORCE;
 $POKE")
 wait_for_record "$tid_a"
 
-# Case 2: two rollbacks in one batch, and the record of the first one is already in Keeper. The
-# Multi is all-or-nothing, so it fails with ZNODEEXISTS and creates nothing; the per-record retry
-# must still store the second one. A copy of the record of case 1 keeps the pre-created znode
-# parsable, so the normal eviction path can still reclaim it.
-{ read -r tid_b1; read -r tid_b2; } < <($CLICKHOUSE_CLIENT -q "
-$NO_THROW
-$ON
-BEGIN TRANSACTION;
-INSERT INTO txn_invalid_tid SELECT 2;
-INSERT INTO system.zookeeper (path, name, value) SELECT '$INVALID_TIDS', toString(tid_hash),
-    (SELECT value FROM system.zookeeper WHERE path = '$INVALID_TIDS' AND name = '$tid_a')
-FROM system.transactions WHERE tid = transactionID();
-SELECT tid_hash FROM system.transactions WHERE tid = transactionID();
-ROLLBACK;
-BEGIN TRANSACTION;
-INSERT INTO txn_invalid_tid SELECT 3;
-SELECT tid_hash FROM system.transactions WHERE tid = transactionID();
-ROLLBACK;
-$OFF
-$POKE")
-# The second record can only appear once the batch that also holds the first one was processed.
+# Case 2: two rollbacks in one batch, and the record of the first one is already in Keeper, so the
+# Multi fails with ZNODEEXISTS and creates nothing; the per-record retry must still store the
+# second one. A copy of the record of case 1 keeps the pre-created znode parsable.
+tx 1 "BEGIN TRANSACTION" > /dev/null
+tid_b1=$(tid_hash_of 1)
+tx 1 "INSERT INTO txn_invalid_tid SELECT 2" > /dev/null
+tx 2 "BEGIN TRANSACTION" > /dev/null
+tid_b2=$(tid_hash_of 2)
+tx 2 "INSERT INTO txn_invalid_tid SELECT 3" > /dev/null
+$CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) SELECT '$INVALID_TIDS',
+    '$tid_b1', (SELECT value FROM system.zookeeper WHERE path = '$INVALID_TIDS' AND name = '$tid_a')"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP_FORCE; SYSTEM ENABLE FAILPOINT $FP_PAUSE;"
+tx_async 1 "ROLLBACK" > /dev/null
+$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP_PAUSE PAUSE"
+tx_async 2 "ROLLBACK" > /dev/null
+# Both rollbacks now sit in the fail point, so both are still running queries.
+wait_for_count "SELECT count() FROM system.processes
+    WHERE query_id LIKE '${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx%' AND query ILIKE '%rollback%'" 2
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP_PAUSE"
+wait
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP_FORCE; $POKE"
 wait_for_record "$tid_b2"
 
 $CLICKHOUSE_CLIENT -q "
