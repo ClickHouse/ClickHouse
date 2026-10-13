@@ -147,7 +147,7 @@ static void warnAboutDiskNotAllowedByRemoteHostFilter(const std::string & disk_n
     LOG_WARNING(
         getLogger("ObjectStorageFactory"),
         "Custom disk `{}` uses endpoint `{}` that is not allowed by `remote_url_allow_hosts`. The disk was created before "
-        "this check and is kept while loading existing metadata (server start, UNDROP or short ATTACH). Add `<s3_bucket>{}</s3_bucket>` "
+        "this check and is kept while loading existing metadata (server start or UNDROP). Add `<s3_bucket>{}</s3_bucket>` "
         "to the list or recreate the tables that use it.",
         disk_name, s3_bucket_entry, s3_bucket_entry);
 
@@ -159,7 +159,7 @@ static void warnAboutDiskNotAllowedByRemoteHostFilter(const std::string & disk_n
         Context::WarningType::CUSTOM_DISK_NOT_ALLOWED_BY_REMOTE_URL_ALLOW_HOSTS,
         PreformattedMessage::create(
             "Custom disks with endpoints that are not allowed by `remote_url_allow_hosts` were kept while loading existing "
-            "metadata (server start, UNDROP or short ATTACH): {}. Add `<s3_bucket>host/bucket</s3_bucket>` entries for them or recreate "
+            "metadata (server start or UNDROP): {}. Add `<s3_bucket>host/bucket</s3_bucket>` entries for them or recreate "
             "the tables that use them.",
             fmt::join(disks, ", ")));
 }

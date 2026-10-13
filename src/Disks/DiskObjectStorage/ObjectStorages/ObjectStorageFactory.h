@@ -10,8 +10,7 @@ enum class RemoteHostFilterCheck : uint8_t
 {
     /// Endpoint from the server config: not checked.
     None,
-    /// Custom disk loaded from existing metadata (server start, UNDROP, short ATTACH): a rejection is reported,
-    /// the load continues.
+    /// Custom disk loaded from existing metadata (server start, UNDROP): a rejection is reported, the load continues.
     Warn,
     /// Custom disk defined by a query: a rejection throws.
     Enforce,

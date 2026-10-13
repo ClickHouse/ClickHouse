@@ -33,7 +33,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         const bool run_access_check = !global_skip_access_check && !config.getBool(config_prefix + ".skip_access_check", false);
         const bool run_local_paths_check = custom_disk && !attach;
         /// Custom disk from a query: a rejection throws. Custom disk loaded from existing metadata (attach:
-        /// server start, UNDROP, short ATTACH): a rejection is reported. A user ATTACH with a definition is not attach here.
+        /// server start, UNDROP): a rejection is reported. A user ATTACH, short or with a definition, is not attach here.
         const auto remote_host_filter_check = !custom_disk ? RemoteHostFilterCheck::None
             : attach ? RemoteHostFilterCheck::Warn : RemoteHostFilterCheck::Enforce;
 

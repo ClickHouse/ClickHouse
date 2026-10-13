@@ -74,7 +74,7 @@ static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const Stri
 
 bool DatabaseFactory::Arguments::isLoadingFromExistingMetadata() const
 {
-    return DB::isLoadingFromExistingMetadata(mode) || is_metadata_replay || create_query.attach_short_syntax;
+    return DB::isLoadingFromExistingMetadata(mode) || is_metadata_replay;
 }
 
 void DatabaseFactory::validate(const ASTCreateQuery & create_query) const

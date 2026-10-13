@@ -949,12 +949,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
         /// intentionally skipped because the disk configuration was already validated when the
         /// table was originally created.
-        /// A short `ATTACH TABLE t` replays the definition stored on this server (`attach_short_syntax`)
-        /// and counts as existing metadata. A user `ATTACH TABLE` with a definition uses
+        /// User-initiated `ATTACH TABLE` queries, with a definition or in the short form, use
         /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
-            *args.storage_def, args.getLocalContext(),
-            isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax,
+            *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
         /// What this query changes from the settings the server has in effect, which already include the
