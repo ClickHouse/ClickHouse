@@ -15,6 +15,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/saturatedDuration.h>
@@ -114,7 +115,11 @@ private:
     using Objects = std::vector<std::shared_ptr<PooledObject>>;
 
 public:
-    virtual ~PoolBase() = default;
+    virtual ~PoolBase()
+    {
+        MemoryTrackerBlockerInThread pooled_objects_not_charged_to_the_query;
+        items.clear();
+    }
 
     /** Allocates the object. Wait for free object in pool for 'timeout'. With 'timeout' < 0, the timeout is infinite. */
     Entry get(Poco::Timespan::TimeDiff timeout)
@@ -140,16 +145,23 @@ public:
                         return makeEntry(*item);
                     }
 
-                    expireObject(item->object);
-                    item->object = allocObject();
+                    {
+                        MemoryTrackerBlockerInThread pooled_object_not_charged_to_the_query;
+                        expireObject(item->object);
+                        item->object = allocObject();
+                    }
                     item->is_expired = false;
                     return makeEntry(*item);
                 }
             }
             if (items.size() < max_items)
             {
-                ObjectPtr object = allocObject();
-                auto & item = items.emplace_back(std::make_shared<PooledObject>(object));
+                PooledObject * item;
+                {
+                    /// It lives as long as the pool, which outlives the query that happens to need one more object.
+                    MemoryTrackerBlockerInThread pooled_object_not_charged_to_the_query;
+                    item = items.emplace_back(std::make_shared<PooledObject>(allocObject())).get();
+                }
                 item->in_use = true;
                 return makeEntry(*item);
             }
@@ -198,6 +210,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
+        MemoryTrackerBlockerInThread pooled_objects_not_charged_to_the_query;
         while (items.size() < count)
             items.emplace_back(std::make_shared<PooledObject>(allocObject()));
     }
