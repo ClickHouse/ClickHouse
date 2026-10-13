@@ -21,4 +21,11 @@ INSERT INTO t_auto_lc_formats VALUES (2, 'plain');
 
 SELECT value FROM t_auto_lc_formats ORDER BY id SETTINGS max_block_size = 1, output_format_json_pretty_print = 0 FORMAT JSONColumns;
 
+-- With `allow_special_serialization_kinds_in_output_formats` the formats skip the materializing transform
+-- and serialize the column representation directly.
+SELECT value FROM t_auto_lc_formats ORDER BY id SETTINGS max_block_size = 1, output_format_json_pretty_print = 0, allow_special_serialization_kinds_in_output_formats = 1 FORMAT JSONColumns;
+SELECT id, value FROM t_auto_lc_formats ORDER BY id SETTINGS max_block_size = 1, allow_special_serialization_kinds_in_output_formats = 0 FORMAT TSV;
+SELECT id, value FROM t_auto_lc_formats ORDER BY id SETTINGS max_block_size = 1, allow_special_serialization_kinds_in_output_formats = 1 FORMAT TSV;
+SELECT id, value FROM t_auto_lc_formats ORDER BY id SETTINGS max_block_size = 1, allow_special_serialization_kinds_in_output_formats = 1 FORMAT JSONEachRow;
+
 DROP TABLE t_auto_lc_formats;
