@@ -51,6 +51,7 @@ def clean():
             drop table if exists t2 sync;
             drop table if exists t3 sync;
             drop view if exists v sync;
+            drop view if exists v2 sync;
             drop workload if exists regular;
             drop workload if exists mdwl;
             drop workload if exists all;
@@ -138,6 +139,7 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         # Statements that may move a lot of data stay under `workload`.
         run_times_out(node_off, "create table t2 engine=MergeTree order by x as select 1 as x", workload="regular")
         run_times_out(node_off, "create table t2 as numbers(10)", workload="regular")
+        run_times_out(node_off, "create view v2 as select * from numbers(10)", workload="regular")
         run_times_out(node_off, "optimize table t final", workload="regular")
         run_times_out(node_off, "alter table t freeze", workload="regular")
         run_times_out(node_off, "system prewarm mark cache t", workload="regular")

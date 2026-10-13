@@ -7,6 +7,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
@@ -111,6 +112,16 @@ static bool isUnlimitedQuery(const IAST * ast)
         return false;
     }
 
+    return false;
+}
+
+static bool hasTableFunction(const IAST & ast)
+{
+    if (const auto * table_expression = ast.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+        return true;
+    for (const auto & child : ast.children)
+        if (child && hasTableFunction(*child))
+            return true;
     return false;
 }
 
@@ -360,11 +371,12 @@ bool isMetadataQuery(const IAST * ast)
             const auto * create = ast->as<ASTCreateQuery>();
             if (!create)
                 return false;
-            /// The `SELECT` of a view or a dictionary is its definition, not data to insert. A table
-            /// function may be read to infer the structure.
+            /// The `SELECT` of a view or a dictionary is its definition, not data to insert, but the
+            /// structure is inferred by analyzing it, which reads the sources of its table functions.
             bool inserts_select = create->select && !create->isView() && !create->is_dictionary && !create->is_create_empty;
-            return !inserts_select && !create->is_populate && !create->is_clone_as && !create->has_attach_from_path
-                && !create->as_table_function;
+            bool reads_table_function = create->as_table_function || (create->select && hasTableFunction(*create->select));
+            return !inserts_select && !reads_table_function && !create->is_populate && !create->is_clone_as
+                && !create->has_attach_from_path;
         }
         case IAST::QueryKind::Alter:
         {
