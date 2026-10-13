@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,6 +20,7 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -70,6 +72,12 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool adaptive_aggregator_disable_thaw;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_aggregation_memory_tracker;
 }
 
 namespace ErrorCodes
@@ -226,6 +234,16 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     /// AggregatingInOrderTransform assumes every run of the sorted key columns yields at least one group,
     /// which the GROUP BY top-K heap breaks by skipping rows.
     params.top_k.reset();
+}
+
+bool AggregatingStep::supportsDataflowStatisticsCollection() const
+{
+    /// `recordAggregationStateSizes` refuses to measure the single state of an aggregation without keys that owns
+    /// memory (`uniqExact`), so such a query never gets statistics. Refuse it before the plan with parallel replicas is built.
+    if (params.keys.empty()
+        && std::ranges::any_of(params.aggregates, [](const auto & aggregate) { return !aggregate.function->hasTrivialDestructor(); }))
+        return false;
+    return grouping_sets_params.empty();
 }
 
 void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
@@ -716,6 +734,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.resize(new_merge_threads);
 
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
+            /// When this merge does not sort but the replicas' does, the sample it feeds to the updater is
+            /// priced in the replicas' row order all the same - see `setReplicasSendOutputInKeyOrder`,
+            /// which `considerEnablingParallelReplicas` sets from the plan the replicas will run.
             pipeline.addSimpleTransform(
                 [&](const SharedHeader &)
                 { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description, dataflow_cache_updater); });
@@ -1146,6 +1167,12 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW)
         settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw] = params.adaptive_aggregator_disable_thaw;
 
+    /// A peer predating the name keeps its own two-level decision: writing an unknown name would make it throw
+    /// while reading the strict named schema, which would break every distributed `GROUP BY` of a query that
+    /// sets `use_aggregation_memory_tracker` or a `compatibility` below the release that fixes the regression.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER)
+        settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker] = params.use_aggregation_memory_tracker;
+
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
     /// omitting either one would silently leave it on the other layout.
     settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
@@ -1445,7 +1472,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw],
+        ctx.version >=DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER
+            ? bool(ctx.settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker])
+            : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};
 
     params.top_k = std::move(top_k);
 
