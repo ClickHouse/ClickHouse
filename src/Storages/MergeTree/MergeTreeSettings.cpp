@@ -2450,6 +2450,7 @@ not during inserts.
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
+The `assumed_all_distinct` materialization is not allowed here: declare it per column with `STATISTICS(uniq_v2(assumed_all_distinct))`, or use [auto_statistics_assume_floats_distinct](#auto_statistics_assume_floats_distinct) and [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct).
 )", 0, \
         {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
         {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \

@@ -26,6 +26,8 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 
+#include <Poco/String.h>
+
 #include <algorithm>
 
 #include "config.h" /// USE_DATASKETCHES
@@ -871,6 +873,10 @@ void MergeTreeStatisticsFactory::validate(
 
         if (desc.materialization == StatisticsMaterialization::AssumedAllDistinct)
         {
+            /// Implicit statistics come from `auto_statistics_types`, which rejects non-default materializations.
+            if (desc.is_implicit)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Implicit statistics of type '{}' cannot use assumed_all_distinct materialization", type);
             if (!isUniqLikeStatisticsType(type))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistics type '{}' cannot use assumed_all_distinct materialization", type);
             if (!supportsAssumedAllDistinctStatistics(desc, data_type))
@@ -994,8 +1000,34 @@ static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsF
     if (!stats_ast->as<ASTFunction &>().arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a statistics type list, got: {}", stats_ast->formatForLogging());
 
-    return ColumnStatisticsDescription::fromStatisticsDescriptionAST(stats_ast, "auto_statistics_types", nullptr, /*is_implicit_=*/true)
-        .types_to_desc;
+    auto stats_desc
+        = ColumnStatisticsDescription::fromStatisticsDescriptionAST(stats_ast, "auto_statistics_types", nullptr, /*is_implicit_=*/true);
+
+    /// `auto_statistics_types` applies to every suitable column of the table, so it only accepts the
+    /// default materialization. `assumed_all_distinct` replaces the sketch with the non-NULL row count,
+    /// which is wrong for most columns (e.g. UInt64 or LowCardinality ones). It can be requested per
+    /// column with `STATISTICS(uniq_v2(assumed_all_distinct))`, or for implicit statistics of Float and
+    /// long String columns with the `auto_statistics_assume_*` settings, which also check the data.
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
+    {
+        if (desc.materialization == StatisticsMaterialization::Default)
+            continue;
+
+        /// `statisticsTypeToString` capitalizes some names (e.g. `Uniq`), use the lowercase form accepted in queries.
+        const String type_name = Poco::toLower(statisticsTypeToString(type));
+        const String materialization_name = statisticsMaterializationToString(desc.materialization);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'auto_statistics_types' does not support the '{}' materialization of statistics type '{}'. "
+            "Declare it for a single column with STATISTICS({}({})), or use the auto_statistics_assume_floats_distinct "
+            "and auto_statistics_assume_long_strings_distinct settings",
+            materialization_name,
+            type_name,
+            type_name,
+            materialization_name);
+    }
+
+    return std::move(stats_desc.types_to_desc);
 }
 
 void removeImplicitStatistics(ColumnsDescription & columns)

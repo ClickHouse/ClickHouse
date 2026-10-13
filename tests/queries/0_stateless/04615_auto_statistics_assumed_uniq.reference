@@ -34,3 +34,7 @@ threshold change after merge
 s	1	2000
 threshold change after materialize
 s	1	1
+auto_statistics_types rejects assumed_all_distinct
+f	['UniqV2']	0
+lc	['UniqV2']	1
+u	['UniqV2']	1

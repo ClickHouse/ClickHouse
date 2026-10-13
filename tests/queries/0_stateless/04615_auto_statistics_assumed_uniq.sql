@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS t_auto_stats_merge_assume;
 DROP TABLE IF EXISTS t_auto_stats_disable_rebuild;
 DROP TABLE IF EXISTS t_auto_stats_mixed_real_and_assumed;
 DROP TABLE IF EXISTS t_auto_stats_threshold_change;
+DROP TABLE IF EXISTS t_auto_stats_reject_assumed_setting;
 
 SET allow_statistics = 1;
 SET allow_suspicious_low_cardinality_types = 1;
@@ -370,5 +371,38 @@ DROP TABLE t_auto_stats_default_heavy_float_normal;
 DROP TABLE t_auto_stats_materialize_assume;
 DROP TABLE t_auto_stats_merge_assume;
 DROP TABLE t_auto_stats_disable_rebuild;
+-- auto_statistics_types applies to every column, so it rejects the assumed_all_distinct materialization:
+-- the row-count heuristic would otherwise be applied to columns like UInt64 or LowCardinality(String).
+-- The assumption stays available per column via STATISTICS(uniq_v2(assumed_all_distinct)).
+CREATE TABLE t_auto_stats_reject_assumed_setting (u UInt64, lc LowCardinality(String), f Float64)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq_v2(assumed_all_distinct)'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_auto_stats_reject_assumed_setting (u UInt64, lc LowCardinality(String), f Float64)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq(ASSUMED_ALL_DISTINCT)'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_auto_stats_reject_assumed_setting (u UInt64, lc LowCardinality(String), f Float64)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq_v2(materialization = \'assumed_all_distinct\')'; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE t_auto_stats_reject_assumed_setting
+(
+    u UInt64,
+    lc LowCardinality(String),
+    f Float64 STATISTICS(uniq_v2(assumed_all_distinct))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'uniq_v2',
+    ratio_of_defaults_for_sparse_serialization = 1.0;
+
+ALTER TABLE t_auto_stats_reject_assumed_setting MODIFY SETTING auto_statistics_types = 'uniq_v2(assumed_all_distinct)'; -- { serverError BAD_ARGUMENTS }
+
+INSERT INTO t_auto_stats_reject_assumed_setting SELECT number % 3, toString(number % 3), number % 3 FROM numbers(1000);
+
+SELECT 'auto_statistics_types rejects assumed_all_distinct';
+SELECT column, statistics, estimates.cardinality < 100 AS normal_cardinality
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_reject_assumed_setting' AND active
+ORDER BY column;
+
 DROP TABLE t_auto_stats_mixed_real_and_assumed;
 DROP TABLE t_auto_stats_threshold_change;
+DROP TABLE t_auto_stats_reject_assumed_setting;
