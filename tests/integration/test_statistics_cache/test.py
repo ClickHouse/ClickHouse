@@ -78,31 +78,33 @@ def _last_loaded_stats_us(node, tag):
     """).strip()
     return int(v or "0")
 
-def _wait_unchanged_part_set_tick(node, table, since):
+def _wait_text_log(node, table, since, message_like, what):
     for _ in range(50):
         _query(node, "SYSTEM FLUSH LOGS text_log")
-        skipped = int(_query(node, f"""
+        found = int(_query(node, f"""
             SELECT count() FROM system.text_log
             WHERE logger_name LIKE '{TEST_DB}.{table}%'
-              AND message LIKE 'The parts in this storage did not change%'
+              AND message LIKE '{message_like}'
               AND event_time_microseconds >= toDateTime64('{since}', 6)
             FORMAT TabSeparated
         """).strip())
-        if skipped:
+        if found:
             return
         time.sleep(0.2)
-    assert False, f"the statistics prewarm of `{table}` never reported an unchanged part set"
+    assert False, f"{what} of `{table}`"
+
+def _wait_unchanged_part_set_tick(node, table, since):
+    _wait_text_log(node, table, since, "The parts in this storage did not change%",
+        "the statistics prewarm never reported an unchanged part set")
 
 def _wait_hit(node, tag, query_sql, retry_count=20, sleep_time=0.2):
-    # Only the latest attempt counts: an earlier attempt that loaded the statistics must not hide a
-    # later hit, and `query_with_retry` returns without an error when every check fails.
-    node.query_with_retry(
-        SET_PREFIX + "\n" + query_sql,
-        retry_count=retry_count,
-        sleep_time=sleep_time,
-        check_callback=lambda _: _last_loaded_stats_us(node, tag) == 0,
-    )
-    assert _last_loaded_stats_us(node, tag) == 0, f"`{tag}` loaded statistics on every attempt"
+    # Only the latest attempt counts: an earlier attempt that loaded the statistics must not hide a later hit.
+    for _ in range(retry_count):
+        _query(node, query_sql)
+        if _last_loaded_stats_us(node, tag) == 0:
+            return
+        time.sleep(sleep_time)
+    assert False, f"`{tag}` loaded statistics on every attempt"
 
 def _create_tbl(node, name, interval):
     _query_retry(node, f"DROP TABLE IF EXISTS {name} SYNC")
@@ -346,19 +348,8 @@ def test_reenabled_interval_prewarms_unchanged_table():
     _query(ch1, "SYSTEM DROP STATISTICS CACHE")
     since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
     _query_retry(ch1, "ALTER TABLE reenable_tbl MODIFY SETTING refresh_statistics_interval = 1")
-    for _ in range(50):
-        _query(ch1, "SYSTEM FLUSH LOGS text_log")
-        refreshed = int(_query(ch1, f"""
-            SELECT count() FROM system.text_log
-            WHERE logger_name LIKE '{TEST_DB}.reenable_tbl%'
-              AND message = 'Refreshing statistics'
-              AND event_time_microseconds >= toDateTime64('{since}', 6)
-            FORMAT TabSeparated
-        """).strip())
-        if refreshed:
-            break
-        time.sleep(0.2)
-    assert refreshed, "the statistics prewarm did not run after the refresh interval was re-enabled"
+    _wait_text_log(ch1, "reenable_tbl", since, "Refreshing statistics",
+        "the statistics prewarm did not run after the refresh interval was re-enabled")
     _query(ch1, "SELECT count() FROM reenable_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='reenable-post' FORMAT Null")
     assert _profile_event(ch1, "reenable-post", "PartStatisticsCacheMisses") == 0
     assert _profile_event(ch1, "reenable-post", "PartStatisticsCacheHits") > 0
