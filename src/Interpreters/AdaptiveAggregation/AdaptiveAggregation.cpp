@@ -7,13 +7,13 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/HashTablesStatistics.h>
 
 namespace ProfileEvents
 {
-    extern const Event AdaptiveAggregationBucketsRetired;
+    extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationSpills;
     extern const Event AdaptiveAggregationSpilledRecords;
     extern const Event AdaptiveAggregationSpilledBytes;
@@ -74,6 +74,29 @@ void Aggregator::initAdaptiveSession(AdaptiveAggregationSession & shared) const
         shared.spill_scope = tmp_data->childScope(tmp_data->getSettings().metrics, buffer_bytes);
     }
     shared.initialized.store(true, std::memory_order_release);
+}
+
+void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
+{
+    std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(*adaptive.session); });
+    /// A table that was written to disk freezes again with the records and the bins it already has.
+    if (!adaptive.partitions)
+    {
+        /// Share allocation blocks across 16 consecutive buckets, so their memory is released as merge tasks
+        /// advance through the bucket order, while retaining the same grouping when pruning reorders buckets.
+        const auto & layout = adaptive.session->layout;
+        adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(layout.numPartitions(), 16 * layout.partitionsPerBucket());
+        adaptive.session->frozen_producers.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (adaptive.session->top_k_pruning && !adaptive.count_bins)
+        adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
+    const size_t keys = result.sizeWithoutOverflowRow();
+    /// A zero key-count threshold or byte pressure can freeze a table before its first group is inserted.
+    /// Without a measured per-key allocation cost, the aggregate state size supplies a lower bound
+    /// that excludes hash-table and arena overhead.
+    adaptive.freeze(keys ? result.allocatedBytes() / keys : total_size_of_aggregate_states);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
+    LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", keys);
 }
 
 void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const
@@ -244,103 +267,6 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpilledRecords, spilled_records);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpilledBytes, spilled_bytes);
     LOG_TRACE(log, "Adaptive aggregation: spilled {} staged records ({} bytes)", spilled_records, spilled_bytes);
-}
-
-void Aggregator::retireAdaptiveMergedBucket(AggregatedDataVariants & dest, size_t bucket) const
-{
-    dest.adaptive_merge_bucket_arenas[bucket].reset();
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
-}
-
-AggregatedDataVariantsPtr Aggregator::createAdaptiveExternalMergeDestination() const
-{
-    auto destination = std::make_shared<AggregatedDataVariants>();
-    destination->aggregator = this;
-    destination->keys_size = params.keys_size;
-    destination->key_sizes = key_sizes;
-    destination->init(convertToTwoLevelTypeIfPossible(method_chosen));
-    destination->adaptive_merge_bucket_arenas.resize(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
-    for (auto & slot : destination->adaptive_merge_bucket_arenas)
-        slot = std::make_shared<Arena>();
-    return destination;
-}
-
-void Aggregator::mergeAdaptiveSourceStates(
-    AdaptiveMergeScratch & scratch, const AdaptiveAggregationSession & session, Arena * arena, std::atomic<bool> & is_cancelled) const
-{
-    auto & places = scratch.places;
-    auto & source_places = scratch.source_places;
-    const size_t merges = places.size();
-    chassert(merges == source_places.size());
-    chassert(params.max_threads > 0 && session.finished_producers > 0);
-
-    /// A group larger than a worker's share can hold up the merge. Very large states amortize the pool even
-    /// when other groups are busy, while small states do not justify its setup even with idle workers.
-    const size_t min_parallel_work = std::clamp(
-        session.estimated_merge_work / std::min(params.max_threads, session.finished_producers),
-        adaptive_parallel_merge_min_work,
-        adaptive_parallel_merge_max_work);
-
-    auto & order = scratch.merge_order;
-    auto & group = scratch.merge_group;
-    bool ordered = false;
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-    {
-        const IAggregateFunction & function = *aggregate_functions[i];
-        const size_t offset = offsets_of_aggregate_states[i];
-        if (!function.isAbleToParallelizeMerge() || !function.isParallelizeMergePrepareNeeded())
-        {
-            group.resize(merges);
-            for (size_t j = 0; j < merges; ++j)
-                group[j] = source_places[j] + offset;
-            function.mergeBatch(0, merges, places.data(), offset, group.data(), *thread_pool, is_cancelled, arena);
-            continue;
-        }
-
-        /// The merges of one destination are contiguous in this order. A giant set of the merge is the state of a group
-        /// most producers hold, merged pairwise in one task: the tail of the whole merge. Merged together, the sets are
-        /// converted to two-level in parallel where they are large (`parallelizeMergePrepare`), and each of their
-        /// buckets is merged on the pool (`parallelizeMergeMulti`).
-        if (!ordered)
-        {
-            order.resize(merges);
-            std::iota(order.begin(), order.end(), 0);
-            std::ranges::stable_sort(order, [&](UInt32 lhs, UInt32 rhs) { return std::less<AggregateDataPtr>{}(places[lhs], places[rhs]); });
-            ordered = true;
-        }
-        for (size_t begin = 0; begin < merges;)
-        {
-            size_t end = begin + 1;
-            while (end < merges && places[order[end]] == places[order[begin]])
-                ++end;
-            size_t group_work = function.getEstimatedMergeWork(places[order[begin]] + offset);
-            for (size_t k = begin; k < end; ++k)
-                group_work += function.getEstimatedMergeWork(source_places[order[k]] + offset);
-
-            if (group_work <= min_parallel_work)
-            {
-                for (size_t k = begin; k < end; ++k)
-                    function.merge(places[order[k]] + offset, source_places[order[k]] + offset, arena);
-            }
-            else
-            {
-                group.clear();
-                group.push_back(places[order[begin]] + offset);
-                for (size_t k = begin; k < end; ++k)
-                    group.push_back(source_places[order[k]] + offset);
-                function.parallelizeMergePrepare(group, *thread_pool, is_cancelled);
-                function.parallelizeMergeMulti(group, *thread_pool, is_cancelled, arena);
-            }
-            begin = end;
-        }
-    }
-
-    /// Source tables retain ownership until every aggregate has merged successfully, so an exception
-    /// leaves complete states for their ordinary cleanup. Destruction is non-throwing; the caller clears
-    /// the source slots immediately after this call returns.
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-        if (!aggregate_functions[i]->hasTrivialDestructor())
-            aggregate_functions[i]->destroyBatch(0, merges, source_places.data(), offsets_of_aggregate_states[i]);
 }
 
 bool Aggregator::adaptiveMayThaw(const AdaptiveAggregationSession & shared) const

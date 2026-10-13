@@ -1,4 +1,4 @@
-#include <Interpreters/AdaptivePartitionLayout.h>
+#include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
 
 #include <algorithm>
 #include <bit>

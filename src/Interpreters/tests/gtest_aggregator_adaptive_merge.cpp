@@ -6,7 +6,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_register.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

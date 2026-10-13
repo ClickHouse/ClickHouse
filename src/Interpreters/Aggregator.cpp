@@ -29,7 +29,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -78,7 +78,6 @@ namespace ProfileEvents
     extern const Event AggregationOptimizedEqualRangesOfKeys;
     extern const Event AggregationBucketTopKConversions;
     extern const Event AggregationHavingPrefilterGroupsSkipped;
-    extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationThaws;
 }
 
@@ -280,49 +279,6 @@ DB::ColumnNumbersList calculateAggregatesPositions(const DB::Block & header, con
             pos.push_back(header.getPositionByName(name));
     }
     return positions;
-}
-
-/// See `AdaptiveArgumentLayout`. The producers stage the normalized argument columns (`LowCardinality` removed,
-/// constant, sparse and replicated columns materialized), so the layout follows the types without `LowCardinality`.
-std::unique_ptr<const DB::AdaptiveArgumentLayout>
-buildAdaptiveArgumentLayout(
-    const DB::Block & header, const DB::ColumnNumbers & keys_positions, const DB::ColumnNumbersList & aggregates_positions)
-{
-    auto layout = std::make_unique<DB::AdaptiveArgumentLayout>();
-    std::vector<UInt8> staged;
-    for (const auto & positions : aggregates_positions)
-        for (const auto position : positions)
-        {
-            if (position >= staged.size())
-                staged.resize(position + 1);
-            if (staged[position])
-                continue;
-            staged[position] = 1;
-            layout->num_positions = std::max(layout->num_positions, position + 1);
-
-            auto type = DB::recursiveRemoveLowCardinality(header.getByPosition(position).type);
-            const auto column = type->createColumn();
-            const DB::IColumn * values = column.get();
-            if (const auto * nullable = typeid_cast<const DB::ColumnNullable *>(values))
-                values = &nullable->getNestedColumn();
-
-            if (values->isFixedAndContiguous())
-            {
-                /// A single numeric key stores the argument's exact bytes. Other key layouts may pack
-                /// several fields or null markers, so their arguments need separate storage.
-                if (keys_positions.size() == 1 && position == keys_positions.front() && type->isValueRepresentedByNumber())
-                {
-                    layout->key_field = DB::AdaptiveArgumentLayout::Field{.position = position, .type = std::move(type)};
-                    continue;
-                }
-                const size_t size = column->sizeOfValueIfFixed();
-                layout->fixed_fields.push_back({.position = position, .type = std::move(type), .offset = layout->fixed_bytes, .size = size});
-                layout->fixed_bytes += size;
-            }
-            else
-                layout->variable_fields.push_back({.position = position, .type = std::move(type)});
-        }
-    return layout;
 }
 
 template <typename HashTable, typename KeyHolder>
@@ -1471,29 +1427,6 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
     #undef M
 
     throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
-}
-
-void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
-{
-    std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(*adaptive.session); });
-    /// A table that was written to disk freezes again with the records and the bins it already has.
-    if (!adaptive.partitions)
-    {
-        /// Share allocation blocks across 16 consecutive buckets, so their memory is released as merge tasks
-        /// advance through the bucket order, while retaining the same grouping when pruning reorders buckets.
-        const auto & layout = adaptive.session->layout;
-        adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(layout.numPartitions(), 16 * layout.partitionsPerBucket());
-        adaptive.session->frozen_producers.fetch_add(1, std::memory_order_relaxed);
-    }
-    if (adaptive.session->top_k_pruning && !adaptive.count_bins)
-        adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
-    const size_t keys = result.sizeWithoutOverflowRow();
-    /// A zero key-count threshold or byte pressure can freeze a table before its first group is inserted.
-    /// Without a measured per-key allocation cost, the aggregate state size supplies a lower bound
-    /// that excludes hash-table and arena overhead.
-    adaptive.freeze(keys ? result.allocatedBytes() / keys : total_size_of_aggregate_states);
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
-    LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", keys);
 }
 
 /// Register each key's presence, without building any aggregate state. This is the whole of the work for a

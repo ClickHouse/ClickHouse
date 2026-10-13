@@ -5,7 +5,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Common/Arena.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>

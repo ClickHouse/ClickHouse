@@ -15,8 +15,10 @@
 #include <Common/PODArray.h>
 #include <Common/PartitionedRecordBuffer.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/AdaptiveAggregation.h>
-#include <Interpreters/AdaptivePartitionLayout.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
+#include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
+#include <Interpreters/AdaptiveAggregation/StagedRecords.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
@@ -65,12 +67,6 @@ constexpr size_t adaptive_merge_unit_records = 16'384;
 /// Between the bounds, the threshold follows the estimated work per worker for this query.
 constexpr size_t adaptive_parallel_merge_min_work = 16'384;
 constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
-/// The count bins of the top-K pruning (see `AdaptiveTopKPruning`) sit on the hash bits 14..31, the bucket's and the
-/// ten right below them, so every bucket owns 1024 consecutive bins and every partition or merge unit a run of them. A
-/// bin then holds a few hundred rows of a hundred-million-row aggregation, which keeps the bounds of most bins below
-/// the counts of a top 10 even when its groups have only a few hundred rows each.
-constexpr size_t adaptive_count_bins_per_bucket = 1024;
-constexpr size_t adaptive_count_bins = ADAPTIVE_AGGREGATION_NUM_BUCKETS * adaptive_count_bins_per_bucket;
 /// A frozen table whose aggregate states own heap memory is written to disk over the external-aggregation threshold
 /// only once it has absorbed this many rows since it froze (see `Aggregator::spillFrozenAdaptiveTable`): the write
 /// empties the table, which then learns its keys anew, so a table that was just written must not be written again on
@@ -124,79 +120,6 @@ constexpr size_t adaptive_thaw_staged_share_inverse = 4;
 /// and key-only streams at repeat ~ 2.5-3 still lose up to ~ 15% below the bound: the ordinary path of an
 /// aggregation without states wins at less waste than the bytes tell.
 constexpr size_t adaptive_staging_min_state_bytes_per_key = 75;
-
-/// The record layout of the aggregate arguments that general payloads stage, fixed for the query by the header.
-/// Fixed-size arguments have offsets within their argument area and use the `RowDataStore` representation:
-/// a `Nullable` field is a null byte followed by the value. The drain rebuilds each of these arguments with
-/// one `IColumn::fillFromRowStorePtrs` over the records. Variable-size arguments follow the key, serialized
-/// one after another in their layout order. A column read by several aggregates is staged once. A single
-/// numeric key used as an argument shares its key bytes instead of occupying another field.
-struct AdaptiveArgumentLayout
-{
-    struct FixedField
-    {
-        size_t position;
-        DataTypePtr type;
-        size_t offset;
-        size_t size;
-    };
-
-    struct Field
-    {
-        size_t position;
-        DataTypePtr type;
-    };
-
-    std::vector<FixedField> fixed_fields;
-    std::vector<Field> variable_fields;
-    /// A single numeric grouping key used as an argument is read from the key's bytes in the record.
-    std::optional<Field> key_field;
-    size_t fixed_bytes = 0;
-    /// One past the highest argument position, the size of the column vectors the positions index.
-    size_t num_positions = 0;
-};
-
-inline size_t adaptiveCountBin(UInt64 hash)
-{
-    return (hash >> 14) & (adaptive_count_bins - 1);
-}
-
-/// The bin-bound top-K pruning of an aggregation that feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact`
-/// or `uniqExactIf` (`Aggregator::Params::bucket_top_k`). Every producer counts the rows of its
-/// staged records, and at its finish the counts of the groups of its own table, into its bins. Summed over the
-/// producers, a bin bounds the count of every group in it from above: a row adds one to a group's count at most, and
-/// merging adds the counts of the merged groups for `count`, or at most adds them for the distinct count of
-/// `uniqExact`, as a union has no more elements than its parts together. The merge keeps the `limit` best exact counts
-/// of the groups it has converted; once there are `limit` of them, a group whose bin is bounded below the smallest
-/// one has `limit` groups ahead of it, so the merge skips the units, staged records and source cells of such bins
-/// without draining them. The merge takes the buckets with the largest bounds first, so the threshold rises early.
-struct AdaptiveTopKPruning
-{
-    explicit AdaptiveTopKPruning(size_t limit_) : limit(limit_) { }
-
-    const size_t limit;
-
-    /// A producer's bins and the largest bin of each bucket. The counters are narrow, to keep the bins of a producer in
-    /// its cache, and saturate: a saturated bin bounds nothing, but it holds that many rows of one producer, so it is
-    /// among the heaviest anyway.
-    struct ProducerBins
-    {
-        std::unique_ptr<UInt16[]> bins;
-        std::array<UInt16, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_maxima{};
-    };
-
-    /// Handed over by every producer at its finish, under the session's `producer_buffers_mutex`.
-    std::vector<ProducerBins> producer_bins;
-
-    /// The order the merge tasks claim the buckets in, set before the merge starts (see
-    /// `Aggregator::prepareAdaptiveTopKPruning`).
-    std::array<UInt8, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_order{};
-
-    /// The `limit` best exact counts converted so far, and the smallest of them once there are `limit`.
-    std::mutex best_mutex;
-    std::priority_queue<UInt64, std::vector<UInt64>, std::greater<>> best;
-    std::atomic<UInt64> threshold{0};
-};
 
 struct AdaptiveAggregationSession
 {
