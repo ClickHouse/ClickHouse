@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # no-fasttest: Parquet support is not built in fast-test images
+# no-parallel: the columns cache is system-wide, and the test drops it to reset its admission control
 
 # The entries of a `Parquet` file in `system.columns_cache` are visible only to a user who may read
 # from the source of the file, besides holding `SHOW COLUMNS` globally.
@@ -23,8 +24,7 @@ QUERY="SELECT count() > 0 FROM system.columns_cache WHERE database = '' AND ends
 
 function populate()
 {
-    # The cache is shared by all tests, so its admission control can skip a write and another test
-    # can evict the entries: read the file until the entries are there.
+    # The admission control of the cache can skip a write: read the file until the entries are there.
     for _ in {1..20}; do
         $CLICKHOUSE_CLIENT -q "SELECT sum(id) FROM file('${FILE}') FORMAT Null
             SETTINGS use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,
@@ -33,6 +33,9 @@ function populate()
     done
     echo "the entries of the file are not in the cache"
 }
+
+# Other tests may have lowered the admission probability of the cache; dropping the cache resets it.
+$CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 
 $CLICKHOUSE_CLIENT -q "
     DROP USER IF EXISTS ${USER};

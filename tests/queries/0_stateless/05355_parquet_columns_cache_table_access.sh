@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # no-fasttest: Parquet support is not built in fast-test images
+# no-parallel: the columns cache is system-wide, and the test drops it to reset its admission control
 
 # The entries of a `Parquet` file read by a table (here `ENGINE = File`) belong to the table in
 # `system.columns_cache`: they are visible only to a user who may see the table, not to a user who
@@ -23,6 +24,7 @@ touch -d "1 minute ago" "${FILE_PATH}"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_parquet_file;
     CREATE TABLE t_parquet_file (id UInt64) ENGINE = File(Parquet, '${FILE}');"
+TABLE_UUID=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_parquet_file'")
 
 QUERY="SELECT count() > 0 FROM system.columns_cache WHERE endsWith(part, '/${FILE}')"
 QUERY_TABLE="SELECT DISTINCT database = currentDatabase(), table FROM system.columns_cache WHERE endsWith(part, '/${FILE}') AND table != ''"
@@ -40,8 +42,7 @@ function populate_table_function()
 
 function populate()
 {
-    # The cache is shared by all tests, so its admission control can skip a write and another test
-    # can evict the entries: read the file until the entries are there.
+    # The admission control of the cache can skip a write: read the file until the entries are there.
     for _ in {1..20}; do
         $CLICKHOUSE_CLIENT -q "SELECT sum(id) FROM t_parquet_file FORMAT Null
             SETTINGS use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,
@@ -50,6 +51,9 @@ function populate()
     done
     echo "the entries of the table are not in the cache"
 }
+
+# Other tests may have lowered the admission probability of the cache; dropping the cache resets it.
+$CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 
 $CLICKHOUSE_CLIENT -q "
     DROP USER IF EXISTS ${USER};
@@ -72,5 +76,15 @@ $CLICKHOUSE_CLIENT -q "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_parquet_fi
 populate
 $CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY} AND table != ''"
 
-$CLICKHOUSE_CLIENT -q "DROP USER ${USER}; DROP TABLE t_parquet_file;"
+QUERY_DROPPED="SELECT count() > 0 FROM system.columns_cache WHERE endsWith(part, '/${FILE}') AND table_uuid = toUUID('${TABLE_UUID}')"
+echo "--- the entries of a dropped table: global SHOW COLUMNS without READ ON FILE"
+$CLICKHOUSE_CLIENT -q "GRANT SHOW COLUMNS ON *.* TO ${USER}; REVOKE READ ON FILE FROM ${USER}"
+populate
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_parquet_file SYNC"
+$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY_DROPPED}"
+echo "--- the entries of a dropped table: global SHOW COLUMNS and READ ON FILE"
+$CLICKHOUSE_CLIENT -q "GRANT READ ON FILE TO ${USER}"
+$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY_DROPPED}"
+
+$CLICKHOUSE_CLIENT -q "DROP USER ${USER}"
 rm -f "${FILE_PATH}"
