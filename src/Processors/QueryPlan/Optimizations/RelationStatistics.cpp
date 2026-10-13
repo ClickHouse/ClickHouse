@@ -265,6 +265,18 @@ UInt64 distinctValuesAfterFilter(UInt64 distinct_values, UInt64 rows_before, UIn
     return std::min<UInt64>(bound, std::max<UInt64>(1, roundToRowCount(surviving)));
 }
 
+void limitColumnStats(std::unordered_map<String, ColumnStats> & column_stats, std::optional<UInt64> rows)
+{
+    for (auto & [_, stats] : column_stats)
+    {
+        if (rows && stats.num_distinct_values > *rows)
+            stats.num_distinct_values = *rows;
+        stats.min_value.reset();
+        stats.max_value.reset();
+        stats.null_fraction.reset();
+    }
+}
+
 std::optional<double> keyContainment(UInt64 side_distinct_values, UInt64 other_distinct_values, UInt64 domain_distinct_values)
 {
     if (side_distinct_values == 0 || other_distinct_values == 0)

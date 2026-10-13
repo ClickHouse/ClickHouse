@@ -745,9 +745,7 @@ static void trimStatisticsByLimit(ExpressionStatistics & statistics, UInt64 limi
 {
     statistics.estimated_row_count = std::min(statistics.estimated_row_count, Float64(limit));
     statistics.max_row_count = std::min(statistics.max_row_count, Float64(limit));
-    for (auto & column_statistics : statistics.column_statistics)
-        if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
-            column_statistics.second.num_distinct_values = roundToRowCount(statistics.estimated_row_count);
+    QueryPlanOptimizations::limitColumnStats(statistics.column_statistics, roundToRowCount(statistics.estimated_row_count));
 }
 
 ExpressionStatistics StatisticsDerivation::deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics)
@@ -767,9 +765,9 @@ ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep
     /// Without a `LIMIT` value the step does not change statistics; `WITH TIES` can keep every row
     /// equal to the last one, so the limit bounds nothing then.
     if (limit_step.getLimit() && !limit_step.withTies())
-    {
         trimStatisticsByLimit(result_statistics, limit_step.getLimit());
-    }
+    else if (limit_step.withTies())
+        QueryPlanOptimizations::limitColumnStats(result_statistics.column_statistics, std::nullopt);
     return result_statistics;
 }
 

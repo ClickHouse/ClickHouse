@@ -231,20 +231,6 @@ std::optional<UInt64> multiplyRows(std::optional<UInt64> rows, UInt64 factor)
     return saturatingMul(*rows, factor);
 }
 
-/// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
-/// sorted range), so the child's value ranges and NULL fraction do not describe the output.
-/// Applied whenever a limit is present: the row estimate cannot prove the limit does not
-/// truncate (e.g. a TopN read is already scaled down by its `__topKFilter` prewhere).
-void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
-{
-    for (auto & [_, stats] : column_stats)
-    {
-        stats.min_value.reset();
-        stats.max_value.reset();
-        stats.null_fraction.reset();
-    }
-}
-
 }
 
 RelationProfile estimateReadProfile(
@@ -578,6 +564,7 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
         auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         /// `WITH TIES` can keep every row equal to the last one, so the limit bounds nothing then. A
         /// missing estimate stays missing: the limit is a bound, not an estimate of the rows below it.
+        std::optional<UInt64> kept_rows;
         if (!limit_step->withTies())
         {
             const auto limit = limit_step->getLimit();
@@ -585,8 +572,9 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
                 estimated.estimated_rows = limit;
             if (!estimated.max_rows || *estimated.max_rows > limit)
                 estimated.max_rows = limit;
+            kept_rows = estimated.max_rows;
         }
-        clearColumnValueRanges(estimated.column_stats);
+        limitColumnStats(estimated.column_stats, kept_rows);
         return estimated;
     }
 
@@ -625,7 +613,7 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
                 stats.estimated_rows = sorting_step->getLimit();
             if (!stats.max_rows || *stats.max_rows > sorting_step->getLimit())
                 stats.max_rows = sorting_step->getLimit();
-            clearColumnValueRanges(stats.column_stats);
+            limitColumnStats(stats.column_stats, stats.max_rows);
         }
         return stats;
     }

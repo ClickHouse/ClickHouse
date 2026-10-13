@@ -107,6 +107,11 @@ UInt64 keyDomain(const RelationStats & relation, const String & column);
 /// rows does. Zero when the NDV is unknown; never above `rows_after`.
 UInt64 distinctValuesAfterFilter(UInt64 distinct_values, UInt64 rows_before, UInt64 rows_after);
 
+/// Column statistics of the rows a limit keeps, at most `rows` of them when the limit bounds the rows: a
+/// column has at most as many values as rows. The kept rows are not a value-uniform sample (a TopN keeps
+/// one end of the sorted range), so the value ranges and NULL fractions of the input do not describe them.
+void limitColumnStats(std::unordered_map<String, ColumnStats> & column_stats, std::optional<UInt64> rows);
+
 /// Sets `max_distinct_values` of the columns `predicate` limits to constants, for each conjunct: one
 /// value for `x = c` without a lossy conversion, the size of the set for `x IN (c1, ...)` with a set of
 /// literals. `x` is an input of the step, which passes through, or one of `outputs` (the step's outputs,
