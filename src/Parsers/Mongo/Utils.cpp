@@ -196,12 +196,31 @@ findField(const rapidjson::Value & value, const std::string & key, rapidjson::Do
 namespace
 {
 
-/** Converts Mongo shell style single quoted string literals into JSON double quoted ones,
-  * respecting string boundaries: apostrophes inside double quoted strings are preserved
-  * (`{"name": "O'Reilly"}` stays intact), double quotes inside single quoted strings are
-  * escaped, and backslash escape sequences are honored in both kinds of strings.
+/// Whether the text written so far ends - ignoring whitespace - where a member of an object starts.
+bool opensMember(const std::string & written)
+{
+    for (auto it = written.rbegin(); it != written.rend(); ++it)
+    {
+        if (isWhitespaceASCII(*it))
+            continue;
+        return *it == '{' || *it == ',';
+    }
+    return false;
+}
+
+/** Converts the object literals of the Mongo shell into JSON.
+  *
+  * Single quoted string literals become double quoted ones, respecting string boundaries:
+  * apostrophes inside double quoted strings are preserved (`{"name": "O'Reilly"}` stays intact),
+  * double quotes inside single quoted strings are escaped, and backslash escape sequences are
+  * honored in both kinds of strings.
+  *
+  * A bare key - an identifier right after the `{` or `,` that opens a member and right before
+  * its `:`, as in `{_id: 1, $set: {a: 2}}` - is quoted, the way the shell reads it. A bare word in
+  * any other place (a value, an element of an array) is left as-is, so `true`, `false` and `null`
+  * keep their meaning and anything else is reported by the JSON parser.
   */
-std::string normalizeQuotes(const std::string & input)
+std::string normalizeShellLiterals(const std::string & input)
 {
     enum class State
     {
@@ -230,6 +249,22 @@ std::string normalizeQuotes(const std::string & input)
                 {
                     state = State::InsideSingleQuoted;
                     result.push_back('"');
+                }
+                else if ((isAlphaASCII(c) || c == '_' || c == '$') && opensMember(result))
+                {
+                    size_t word_end = i + 1;
+                    while (word_end < input.size() && (isWordCharASCII(input[word_end]) || input[word_end] == '$'))
+                        ++word_end;
+                    size_t next = word_end;
+                    while (next < input.size() && isWhitespaceASCII(input[next]))
+                        ++next;
+                    const bool is_key = next < input.size() && input[next] == ':';
+                    if (is_key)
+                        result.push_back('"');
+                    result.append(input, i, word_end - i);
+                    if (is_key)
+                        result.push_back('"');
+                    i = word_end - 1;
                 }
                 else
                     result.push_back(c);
@@ -289,7 +324,7 @@ rapidjson::Value parseData(const char * begin, const char * end, rapidjson::Docu
     std::string input(begin, end);
     if (wrap_into_array)
         input = "[" + input + "]";
-    input = normalizeQuotes(input);
+    input = normalizeShellLiterals(input);
 
     rapidjson::Document document;
 
