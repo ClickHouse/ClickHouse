@@ -751,6 +751,17 @@ void considerEnablingParallelReplicas(
         }
     }
 
+    /// The replicas plan is built separately and keeps the original offset, so a trimmed analysis would make
+    /// it skip the same rows a second time. `transplantAnalysisToAllReads` hands every read its analysis, so
+    /// this holds for any read of the plan, not only the one matched here.
+    if (std::ranges::any_of(collectReadingSteps(root), &ReadFromMergeTree::hasTrimmedRangesForOffset))
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Index analysis has leading granules trimmed for OFFSET and cannot be reused. Skipping optimization");
+        return;
+    }
+
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
     ///
@@ -801,16 +812,6 @@ void considerEnablingParallelReplicas(
             getLogger("optimizeTree"),
             "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
             "Skipping optimization");
-        return;
-    }
-
-    /// The replicas plan is built separately and keeps the original offset, so a trimmed analysis would make
-    /// it skip the same rows a second time.
-    if (source_reading_step->hasTrimmedRangesForOffset())
-    {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "Index analysis has leading granules trimmed for OFFSET and cannot be reused. Skipping optimization");
         return;
     }
 

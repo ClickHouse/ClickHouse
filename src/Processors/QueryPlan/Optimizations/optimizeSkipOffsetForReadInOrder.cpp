@@ -56,19 +56,21 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
     /// in its stream (`rowNumberInAllBlocks`, `neighbor`, `runningDifference`) or from the block the row arrives
     /// in (`blockSize`, `nowInBlock`), and skipping granules changes both those rows and the block boundaries
     /// they are batched into. That is visible even above the offset, where the trimmed read shifts what the
-    /// offset step passes on, so bail out on such a function anywhere on the path to the root.
+    /// offset step passes on, so bail out on such a function anywhere on the path to the root. The same holds
+    /// for a stateful function (`aiEmbed`) or one with observable side effects (`sleepEachRow`): skipping the
+    /// granules changes how many rows it is evaluated on.
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         auto * step = iter->node->step.get();
 
         if (auto * expression_step = typeid_cast<ExpressionStep *>(step))
         {
-            if (dagContainsNonDeterministicFunction(expression_step->getExpression()))
+            if (isSensitiveToEvaluationCount(expression_step->getExpression()))
                 return;
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(step))
         {
-            if (dagContainsNonDeterministicFunction(filter_step->getExpression()))
+            if (isSensitiveToEvaluationCount(filter_step->getExpression()))
                 return;
         }
     }
