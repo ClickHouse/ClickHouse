@@ -406,7 +406,7 @@ y: 993
 
 ### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is currently supported for local and object-storage Iceberg tables, but not for catalog-backed tables.
+`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is supported for local and object-storage Iceberg tables, and for tables in a `DataLakeCatalog` database with the `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables`, or `unity` (with `use_unity_catalog_v2 = 1`) catalog type.
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
@@ -686,7 +686,7 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `older_than` | `String` (timestamp) | 3 days ago (configurable via `iceberg_orphan_files_older_than_seconds`) | Only consider files with a last-modified time older than this timestamp as orphan candidates. Safety guard against deleting files from in-progress writes. |
+| `older_than` | `String` (timestamp) | 3 days ago (configurable via `iceberg_orphan_files_older_than_seconds`) | Only consider files with a last-modified time older than this timestamp as orphan candidates. Safety guard against deleting files from in-progress writes. Must be at least `iceberg_orphan_files_min_retention_seconds` (1 day) before now. |
 | `location` | `String` | Table location | Restrict the scan to a specific subdirectory under the table location (e.g., `'data/'` or `'metadata/'`). |
 | `dry_run` | `UInt64` | `0` | When `1`, identify orphan files and return the result summary without actually deleting anything. |
 
@@ -734,13 +734,14 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 |---|---|---|---|
 | `allow_iceberg_remove_orphan_files` | `Bool` | `false` | Gate setting to enable the feature (experimental). |
 | `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | Default `older_than` threshold in seconds when the argument is omitted. |
+| `iceberg_orphan_files_min_retention_seconds` | `UInt64` | `86400` (1 day) | Minimum distance in seconds between `older_than` and now; a more recent `older_than` is rejected. `0` disables the check. |
 
 <Note>
 - **Requires Iceberg format version 2 (or higher).** Version 1 tables are rejected because they lack `manifest-list` pointers in snapshots, which are needed to safely determine the reachable file set. Running the command on a v1 table returns a `BAD_ARGUMENTS` error.
 - Requires both `allow_insert_into_iceberg` and `allow_iceberg_remove_orphan_files` settings to be enabled
 - It is recommended to run `expire_snapshots` before `remove_orphan_files` so that files uniquely referenced by expired snapshots are cleaned up first
 - Use `dry_run = 1` to preview orphan files before deletion
-- The `older_than` threshold protects against deleting files from in-progress writes — the default 3-day threshold provides a generous safety margin
+- An `older_than` closer to now than `iceberg_orphan_files_min_retention_seconds` is rejected, because the files of a write that has not committed yet are not referenced by the table metadata and look like orphans; keep the setting above the longest time a write to the table can take to commit
 </Note>
 
 ## See Also {#see-also}
