@@ -21,6 +21,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -177,6 +179,29 @@ DataTypePtr DataTypeMap::doCloneWithChildren(const DataTypes & new_children) con
     return std::make_shared<DataTypeMap>(new_children[0], new_children[1]);
 }
 
+namespace
+{
+
+/// Whether the key holds a float zero, possibly inside a `Tuple`, an `Array` or a `Map`.
+bool hasFloatZero(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Float64:
+            return field.safeGet<Float64>() == 0;
+        case Field::Types::Tuple:
+            return std::ranges::any_of(field.safeGet<Tuple>(), hasFloatZero);
+        case Field::Types::Array:
+            return std::ranges::any_of(field.safeGet<Array>(), hasFloatZero);
+        case Field::Types::Map:
+            return std::ranges::any_of(field.safeGet<Map>(), hasFloatZero);
+        default:
+            return false;
+    }
+}
+
+}
+
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
 /// creating a `SerializationMapKeyValue` that knows how to read only the relevant bucket,
 /// and optionally pre-extracting the values from an existing column.
@@ -208,13 +233,21 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
     }
 
     /// Create a serialization that reads only the bucket containing the requested key.
-    const auto & map_serialization = assert_cast<const SerializationMap &>(*removeNamedSerialization(data.serialization));
+    auto map_serialization_ptr = removeNamedSerialization(data.serialization);
+    const auto & map_serialization = assert_cast<const SerializationMap &>(*map_serialization_ptr);
+
+    /// The bucket of a key is the hash of its bits, but `-0.0 = 0.0` and the bits of the two zeros differ,
+    /// so the other zero may be in another bucket. Such a key reads the whole Map.
+    bool read_whole_map = map_serialization.getMapSerializationVersion() == MergeTreeMapSerializationVersion::WITH_BUCKETS
+        && hasFloatZero((*key_column)[0]);
+
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
-        map_serialization.getNestedSerialization(),
+        read_whole_map ? map_serialization_ptr : map_serialization.getNestedSerialization(),
         map_serialization.getMapSerializationVersion(),
         key_column->getPtr(),
-        nested);
+        read_whole_map ? getPtr() : nested,
+        read_whole_map);
     auto res = std::make_unique<SubcolumnInfo>();
     res->data = SubstreamData(key_value_serialization).withType(value_type);
 

@@ -11,6 +11,8 @@ namespace DB
 /// the requested key belongs to (via `getBucketForKey`), reads only that single bucket,
 /// and extracts the value for the matching key from the deserialized data.
 /// This avoids reading all buckets when only one key is needed.
+/// With `read_whole_map`, `map_nested_serialization` is the serialization of the whole Map and
+/// `nested_type` is the Map type: all buckets are read, as for the BASIC format.
 /// Serialization (writing) is not supported because subcolumns are read-only.
 class SerializationMapKeyValue final : public SerializationWrapper
 {
@@ -20,7 +22,8 @@ private:
         const SerializationPtr & map_nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_,
         ColumnPtr key_,
-        const DataTypePtr & nested_type_);
+        const DataTypePtr & nested_type_,
+        bool read_whole_map_);
 
 public:
     static SerializationPtr create(
@@ -28,7 +31,8 @@ public:
         const SerializationPtr & map_nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_,
         ColumnPtr key_,
-        const DataTypePtr & nested_type_);
+        const DataTypePtr & nested_type_,
+        bool read_whole_map_ = false);
 
     /// Does not support pooling because it stores runtime data (ColumnPtr key).
     bool supportsPooling() const override { return false; }
@@ -75,6 +79,8 @@ private:
     ColumnPtr key;
     /// The full nested type of the Map: Array(Tuple(key_type, value_type)).
     DataTypePtr nested_type;
+    /// Read the whole Map instead of the bucket of the key.
+    bool read_whole_map;
 };
 
 }
