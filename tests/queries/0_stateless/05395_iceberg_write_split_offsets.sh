@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (id UInt64, s String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS output_format_parquet_row_group_size = 1000"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (id Int64, s String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS output_format_parquet_row_group_size = 1000"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --max_insert_threads=1 --query "INSERT INTO ${TABLE} SELECT number, toString(number) FROM numbers(10000)"
 
 DATA_FILE=$(find "${TABLE_PATH}data" -name '*.parquet')

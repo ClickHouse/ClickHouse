@@ -56,7 +56,7 @@ def test_writes_split_offsets_read_by_spark(started_cluster_iceberg_with_spark):
     assert len(data_files) == 1, data_files
 
     split_offsets = _spark_split_offsets(
-        spark.read.format("iceberg").load(f"{local_path}#files").select("file_path", "split_offsets").collect()
+        spark.read.format("iceberg").load(f"{local_path}#files").select("file_path", "file_size_in_bytes", "split_offsets").collect()
     )
     expected = _row_group_starts(data_files[0])
     assert len(expected) == 10, expected
@@ -73,10 +73,10 @@ def test_spark_split_offsets_match_clickhouse_row_groups(started_cluster_iceberg
         f"""
         CREATE TABLE {TABLE_NAME} (id BIGINT, s STRING)
         USING iceberg
-        TBLPROPERTIES ('format-version'='2', 'write.parquet.row-group-size-bytes'='16384')
+        TBLPROPERTIES ('format-version'='2', 'write.parquet.row-group-size-bytes'='2048')
         """
     )
-    spark.range(100000).selectExpr("id", "cast(id AS STRING) AS s").coalesce(1).writeTo(TABLE_NAME).append()
+    spark.range(5000).selectExpr("id", "cast(id AS STRING) AS s").coalesce(1).writeTo(TABLE_NAME).append()
 
     default_upload_directory(
         started_cluster_iceberg_with_spark,
@@ -85,7 +85,7 @@ def test_spark_split_offsets_match_clickhouse_row_groups(started_cluster_iceberg
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    split_offsets = _spark_split_offsets(spark.sql(f"SELECT file_path, split_offsets FROM {TABLE_NAME}.files").collect())
+    split_offsets = _spark_split_offsets(spark.sql(f"SELECT file_path, file_size_in_bytes, split_offsets FROM {TABLE_NAME}.files").collect())
     assert len(split_offsets) == 1, split_offsets
     assert len(next(iter(split_offsets.values()))) > 1, split_offsets
 
