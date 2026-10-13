@@ -56,7 +56,7 @@ import pyarrow.parquet as pq
 
 geo = json.loads(pq.ParquetFile(sys.argv[1]).metadata.metadata[b"geo"])
 for name, column in sorted(geo["columns"].items()):
-    print(name, column["encoding"], column["geometry_types"])
+    print(name, column["encoding"], column["geometry_types"], column.get("crs"))
 PY
 
 echo "--- pyarrow: logical types, statistics and column index"
@@ -89,6 +89,16 @@ $CLICKHOUSE_LOCAL -q "
 $CLICKHOUSE_LOCAL -q "
     SELECT c.name, c.logical_type
     FROM file('${DATA_DIR}/old.parquet', ParquetMetadata) ARRAY JOIN columns AS c"
+python3 - "${DATA_DIR}/old.parquet" <<'PY'
+import json
+import sys
+
+import pyarrow.parquet as pq
+
+geo = json.loads(pq.ParquetFile(sys.argv[1]).metadata.metadata[b"geo"])
+for name, column in sorted(geo["columns"].items()):
+    print(name, column.get("crs"))
+PY
 echo "--- output_format_parquet_geometadata = 0"
 $CLICKHOUSE_LOCAL -q "SELECT (1, 2)::Point AS pt INTO OUTFILE '${DATA_DIR}/tuples.parquet' FORMAT Parquet SETTINGS output_format_parquet_geometadata = 0, output_format_parquet_geometry_logical_type = 1"
 $CLICKHOUSE_LOCAL -q "

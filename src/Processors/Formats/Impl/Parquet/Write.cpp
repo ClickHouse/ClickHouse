@@ -2049,7 +2049,11 @@ void writeFileFooter(FileWriteState & file,
                 Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
                 geom_types->add(type->getCustomName()->getName());
                 geom_meta->set("geometry_types", geom_types);
-                geom_meta->set("crs", "EPSG:4326");
+                /// With the `GEOMETRY` logical type, the column has the default CRS of the logical
+                /// type (`OGC:CRS84`). Omit `crs` here, which means the same default in GeoParquet,
+                /// so that both kinds of metadata describe the same CRS.
+                if (!options.write_geometry_logical_type)
+                    geom_meta->set("crs", "EPSG:4326");
 
                 if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
                     type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
@@ -2069,7 +2073,6 @@ void writeFileFooter(FileWriteState & file,
                 Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
                 geom_meta->set("encoding", "WKB");
                 geom_meta->set("geometry_types", Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-                geom_meta->set("crs", "EPSG:4326");
                 geo_columns_metadata.push_back({column_name, geom_meta});
             }
         }

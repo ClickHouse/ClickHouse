@@ -31,13 +31,13 @@ mpg	true	\N	\N	\N	true	(0,1,0,4,NULL,NULL,NULL,NULL,[6])
 mpt	true	\N	\N	\N	true	(-1,3,-1,3,NULL,NULL,NULL,NULL,[4])
 geom	true	1	\N	\N	true	(0,5,0,5,NULL,NULL,NULL,NULL,[1,2,3])
 --- GeoParquet metadata
-geom WKB []
-ls WKB ['LineString']
-mls WKB ['MultiLineString']
-mpg WKB ['MultiPolygon']
-mpt WKB ['MultiPoint']
-pg WKB ['Polygon']
-pt WKB ['Point']
+geom WKB [] None
+ls WKB ['LineString'] None
+mls WKB ['MultiLineString'] None
+mpg WKB ['MultiPolygon'] None
+mpt WKB ['MultiPoint'] None
+pg WKB ['Polygon'] None
+pt WKB ['Point'] None
 --- pyarrow: logical types, statistics and column index
 id Int(bitWidth=64, isSigned=false) min_max column_index None
 pt Geometry(crs=) no_min_max no_column_index ([1], 0.0, 3.0, -1.5, 0.0, None, None)
@@ -72,6 +72,12 @@ mls	String
 mpg	String
 mpt	String
 geom	String
+ls EPSG:4326
+mls EPSG:4326
+mpg EPSG:4326
+mpt EPSG:4326
+pg EPSG:4326
+pt EPSG:4326
 --- output_format_parquet_geometadata = 0
 1	DOUBLE	None
 2	DOUBLE	None
