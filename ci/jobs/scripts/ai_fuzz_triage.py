@@ -369,15 +369,18 @@ similar two titles look - decides whether an issue already exists.
   Query (b) is not optional: around 20 fuzz-style jobs triage in parallel on one
   commit, so assume a sibling job filed this issue moments ago and that search
   has not indexed it yet. Never decide "no duplicate" from (a) alone.
-- An OPEN match -> reference that issue and stop; never open a second one.
-  Comment on it only if no existing comment already mentions this job name
-  (`{job_kind}`); the point is one comment per failure, not one per job.
-  Link: {found_in}
+- An OPEN match with the `fuzz` label -> reference that issue and stop; never
+  open a second one. Comment on it only if no existing comment already mentions
+  this job name (`{job_kind}`); the point is one comment per failure, not one
+  per job. Link: {found_in}
+- An OPEN match without the `fuzz` label is not tracking the failure: the
+  lookup of later jobs cannot reach it, and you cannot add the label (that is an
+  edit). Handle it like a CLOSED match below.
 - A CLOSED match means the bug was fixed and has regressed. Do not silently
   point at it - that would leave the regression untracked, and you cannot reopen
   it (reopening is an edit, and edits are forbidden here). Comment on the closed
   issue with this CI link, then create a new issue as below carrying the same
-  fingerprint line and `Related: <closed issue URL>`.
+  fingerprint line and `Related: <URL of the matched issue>`.
 - No match -> create exactly one issue with
   `gh issue create --repo {repo_name} --label fuzz`. For the new issue:
   - Title: short signature, e.g. `Fuzzer: Logical error: '<assertion>' in <function>`.
@@ -748,6 +751,10 @@ def fixed_occurrences(issues, fingerprint):
     )
 
 
+def _has_fuzz_label(issue):
+    return "fuzz" in [label.get("name", "") for label in (issue.get("labels") or [])]
+
+
 def independent_occurrences(issues, fingerprint, cutoff):
     """URLs of the open issues that prove the failure predates the tested change.
 
@@ -755,6 +762,9 @@ def independent_occurrences(issues, fingerprint, cutoff):
     change existed and not filed by triage of a PR run, which holds that run's
     verdict rather than an observation on a branch. Otherwise an earlier run, or
     a sibling job on the same commit, would confirm its own verdict.
+
+    It must also be a tracking issue `_verify_issue_marker` accepts, `fuzz` label
+    included: linking one that is not would skip the agent that files a real one.
     """
     marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
     urls = []
@@ -763,6 +773,7 @@ def independent_occurrences(issues, fingerprint, cutoff):
         if (
             (issue.get("state") or "").upper() == "OPEN"
             and marker in body
+            and _has_fuzz_label(issue)
             and not FOUND_WHILE_TESTING_RE.search(body)
             and _parse_github_time(issue["createdAt"]) < cutoff
         ):
@@ -796,7 +807,7 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint):
             "--limit",
             "30",
             "--json",
-            "url,state,createdAt,body",
+            "url,state,createdAt,body,labels",
         )
         issues = json.loads(output or "[]")
         return Occurrences(
@@ -857,8 +868,7 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
             f"`{FINGERPRINT_FIELD}: {fingerprint}` - the next job hitting this "
             f"bug will file a duplicate; add the line by hand"
         )
-    labels = [label.get("name", "") for label in (issue.get("labels") or [])]
-    if "fuzz" not in labels:
+    if not _has_fuzz_label(issue):
         problems.append(
             f"AI triage WARNING: {issue_url} has no `fuzz` label, so the "
             f"fingerprint lookup cannot reach it - label it by hand"
