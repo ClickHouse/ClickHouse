@@ -30,9 +30,6 @@ public:
 
     size_t size() const { return slots.size(); }
 
-    /// The slot count is a power of two and never exceeds the bucket count, so masking is enough.
-    static size_t slotForBucket(size_t bucket, size_t num_slots) { return bucket & (num_slots - 1); }
-
     Arena & arena(size_t slot) { return *slots[slot].arena; }
 
     /// The bytes of the arena of `slot` and of its buckets of `map`. Only this slot's buffers: the others are
@@ -41,7 +38,11 @@ public:
     size_t slotBytes(const Map & map, size_t slot) const
     {
         size_t res = slots[slot].arena->allocatedBytes();
-        forEachBucketOfSlot(slot, Map::NUM_BUCKETS, [&](size_t bucket) { res += getBucketBufferSizeInBytes(map, bucket); });
+        /// A `PartitionedFixedHashTable` has one buffer, allocated when the table is created. Slot 0 counts it.
+        if constexpr (is_partitioned_fixed_table<Map>)
+            res += slot == 0 ? map.getBufferSizeInBytes() : 0;
+        else
+            forEachBucketOfSlot(slot, Map::NUM_BUCKETS, [&](size_t bucket) { res += map.impls[bucket].getBufferSizeInBytes(); });
         return res;
     }
 
@@ -80,14 +81,18 @@ public:
     template <typename Map>
     size_t reserveOnFirstInsert(Map & map, size_t map_idx, size_t slot)
     {
-        if (!size_hint || reserved[map_idx][slot])
+        /// A `PartitionedFixedHashTable` has all its cells from the start.
+        if constexpr (is_partitioned_fixed_table<Map>)
             return 0;
-        const size_t keys = clampReserve<Map>(size_hint, max_reserve_bytes);
-        bool any_reserved = false;
-        forEachBucketOfSlot(
-            slot, Map::NUM_BUCKETS, [&](size_t bucket) { any_reserved |= reserveBucket(map, bucket, keys / Map::NUM_BUCKETS); });
-        reserved[map_idx][slot] = 1;
-        return any_reserved ? keys / slots.size() : 0;
+        else
+        {
+            if (!size_hint || reserved[map_idx][slot])
+                return 0;
+            const size_t keys = clampReserve<Map>(size_hint, max_reserve_bytes);
+            forEachBucketOfSlot(slot, Map::NUM_BUCKETS, [&](size_t bucket) { map.impls[bucket].reserve(keys / Map::NUM_BUCKETS); });
+            reserved[map_idx][slot] = 1;
+            return keys / slots.size();
+        }
     }
 
     /// Calls `insert_slot(slot)` under the lock of every slot that `per_slot` gives rows to. Slots are taken in

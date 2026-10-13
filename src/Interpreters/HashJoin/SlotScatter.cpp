@@ -54,7 +54,8 @@ std::vector<ScatteredBlock::Selector> scatterImpl(
         const auto & key = keyHolderGetKey(key_holder);
 
         const size_t bucket = getBucketOfKey<Map>(key, map.hash(key));
-        const auto slot = static_cast<UInt32>(BuildSlots::slotForBucket(bucket, num_slots));
+        /// The slot count is a power of two, so this is `bucket % num_slots`.
+        const auto slot = static_cast<UInt32>(bucket & (num_slots - 1));
         row_to_slot[i] = slot;
         ++counts[slot];
     }

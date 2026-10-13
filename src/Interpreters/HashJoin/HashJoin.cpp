@@ -1645,13 +1645,14 @@ HashJoin::RightTableData::~RightTableData()
     try
     {
         /// An `ASOF` cell owns a heap lookup, so clearing the buckets of a large `ASOF` map is work worth spreading.
+        /// A `PartitionedFixedHashTable` has one buffer for all its buckets, and a map with one bucket has nothing to split.
         auto for_each_asof_map_with_bucket_buffers = [this](auto && f)
         {
             for (auto & maps_variant : maps)
                 if (auto * asof_maps = std::get_if<MapsAsof>(&maps_variant))
                     asof_maps->visit(type, [&]<typename Table>(std::shared_ptr<Table> & map)
                     {
-                        if constexpr (has_buffer_per_bucket<Table>)
+                        if constexpr (!is_partitioned_fixed_table<Table> && Table::NUM_BUCKETS > 1)
                             if (map)
                                 f(*map);
                     });
@@ -2650,10 +2651,13 @@ bool HashJoin::canConvertToFixedHashMap() const
 void HashJoin::freezeMapsForProbing()
 {
     const auto maps_kind = getMapsKind();
-    auto finish_fill = [](auto & table)
+    auto finish_fill = []<typename Table>(std::shared_ptr<Table> & table)
     {
-        if (table)
-            finishConcurrentFill(*table);
+        if (!table)
+            return;
+        table->computeBucketPrefix();
+        if constexpr (is_partitioned_fixed_table<Table>)
+            table->restoreMinMaxOptimization();
     };
     for (auto & map : data->maps)
     {
