@@ -10404,6 +10404,10 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_keyed_recursive_cte, false, R"(
+Allows the `USING KEY` modifier of a recursive common table expression (`WITH RECURSIVE name USING KEY (columns) AS (...)`), which switches the recursion to keyed (semi-naive) evaluation.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting gating the experimental `USING KEY` modifier of a recursive CTE."}) \
     DECLARE(Bool, enable_xgboost, false, R"(
 Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 )", EXPERIMENTAL, \
