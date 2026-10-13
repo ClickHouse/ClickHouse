@@ -86,7 +86,6 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
-    extern const SettingsUInt64 parallel_hash_join_threshold;
 }
 
 namespace ErrorCodes
@@ -236,7 +235,6 @@ TableJoin::TableJoin(
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
-    , parallel_hash_join_threshold(settings[Setting::parallel_hash_join_threshold])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -272,7 +270,6 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
-    , parallel_hash_join_threshold(settings.parallel_hash_join_threshold)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -1306,18 +1303,6 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .spilled_to_disk_operator = "join"}, temporary_files_buffer_size, temporary_files_codec);
 }
 
-namespace
-{
-
-/// The kinds whose non-joined-rows handling can cope with keys spread over several buckets.
-/// Strictness is not a separate gate: SEMI / ANTI / ASOF use the same kind (LEFT / INNER / RIGHT / FULL).
-bool parallelLayoutKindSupported(JoinKind kind)
-{
-    return kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full;
-}
-
-}
-
 bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
@@ -1326,16 +1311,17 @@ bool allowHashJoinCacheKeys(
 {
     if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
         return false;
-    if (!parallelLayoutKindSupported(kind))
+    if (kind != JoinKind::Left && kind != JoinKind::Inner
+        && kind != JoinKind::Right && kind != JoinKind::Full)
         return false;
     if (is_special_storage || !one_disjunct)
         return false;
     return true;
 }
 
-bool TableJoin::preferParallelHashLayout(std::optional<UInt64> rhs_size_estimation) const
+bool TableJoin::preferParallelHashLayout(std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const
 {
-    return parallelLayoutKindSupported(kind()) && !isSpecialStorage()
+    return (isInnerOrLeft(kind()) || isRightOrFull(kind())) && !isSpecialStorage()
         && (!rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold);
 }
 }

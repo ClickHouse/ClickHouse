@@ -356,8 +356,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    const HashJoinStatsCollectingParams & stats_collecting_params_,
-    HashJoinBuildLayout build_layout_)
+    HashJoinBuildLayout build_layout_,
+    const HashJoinStatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -1338,11 +1338,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     }
     if (!context.joinChecksLimits())
         return true;
-    shrinkStoredBlocksToFit(total_bytes, context.getStream());
+    shrinkStoredBlocksToFit(total_bytes, /*force_optimize=*/false, context.getStream());
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t worker_id, bool force_optimize)
+void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize, size_t worker_id)
 {
     /// The CAS decides once for the whole join; each thread then rewrites only its own list.
     const auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;

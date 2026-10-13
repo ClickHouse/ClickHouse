@@ -250,6 +250,8 @@ struct JoinAlgorithmParams
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;
 
+    UInt64 parallel_hash_join_threshold;
+
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
 
@@ -266,9 +268,7 @@ struct JoinAlgorithmParams
 
     std::optional<UInt64> rhs_size_estimation;
     std::optional<UInt64> result_rows_estimation;
-
-    /// Set by `JoinStepLogical::buildPhysicalJoin` when the right input reads nothing.
-    /// Only the build layout uses it; the row store uses `rhs_size_estimation` alone.
+    /// The right input reads nothing (set by `JoinStepLogical::buildPhysicalJoin`). Only the build layout reads it.
     bool rhs_known_empty = false;
 
     explicit JoinAlgorithmParams(const Context & context);

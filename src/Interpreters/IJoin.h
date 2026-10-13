@@ -245,6 +245,7 @@ public:
     virtual bool preservesLeftBlockOrder() const { return false; }
 
     /// Notify the join that the query plan requires left-side read-in-order preservation.
+    /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
     virtual void keepLeftPipelineInOrder() {}
 
     /// Spilling under memory pressure, driven by `MemorySpillScheduler`. Asked once while the pipeline is

@@ -183,16 +183,16 @@ public:
         bool any_take_last_row_,
         size_t reserve_num_,
         const String & instance_id_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_,
-        HashJoinBuildLayout build_layout_);
+        HashJoinBuildLayout build_layout_,
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     /// A join without a reserve or an instance id.
     static std::shared_ptr<HashJoin> create(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block,
-        bool any_take_last_row_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_,
-        HashJoinBuildLayout build_layout_)
+        HashJoinBuildLayout build_layout_,
+        bool any_take_last_row_ = false,
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {})
     {
         return std::make_shared<HashJoin>(
             std::move(table_join_),
@@ -200,8 +200,8 @@ public:
             any_take_last_row_,
             /*reserve_num_=*/0,
             /*instance_id_=*/"",
-            stats_collecting_params_,
-            build_layout_);
+            build_layout_,
+            stats_collecting_params_);
     }
 
     ~HashJoin() override;
@@ -719,7 +719,7 @@ public:
 
     void debugKeys() const;
 
-    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t worker_id, bool force_optimize = false);
+    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false, size_t worker_id = 0);
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
     void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
@@ -749,8 +749,7 @@ private:
         SharedHeader right_sample_block_,
         HashJoinBuildLayout build_layout_) const
     {
-        return std::make_shared<HashJoin>(
-            table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, HashJoinStatsCollectingParams{}, build_layout_);
+        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, build_layout_);
     }
 
     std::shared_ptr<TableJoin> table_join;

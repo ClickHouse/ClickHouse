@@ -44,9 +44,9 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_,
-        bool any_take_last_row_,
-        HashJoinBuildLayout build_layout_);
+        HashJoinBuildLayout build_layout_,
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        bool any_take_last_row_ = false);
 
     ~SpillingHashJoin() override;
 
@@ -137,7 +137,7 @@ private:
 
     std::atomic<State> state{State::COLLECTING};
 
-    std::shared_ptr<HashJoin> in_memory_hash_join;
+    std::shared_ptr<HashJoin> hash_join;
 
     /// GraceHashJoin created during overflow. Also assigned to chosen_join.
     std::shared_ptr<GraceHashJoin> grace_join;

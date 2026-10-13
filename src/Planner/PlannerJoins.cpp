@@ -69,6 +69,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -1212,7 +1213,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     /// The other kinds still probe every left row, and the parallel layout spreads that probe over more streams.
     const bool rhs_empty = params.rhs_known_empty
         && (isInnerOrRight(table_join->kind()) || (isLeft(table_join->kind()) && table_join->strictness() == JoinStrictness::Semi));
-    const auto build_layout = table_join->preferParallelHashLayout(rhs_empty ? std::optional<UInt64>(0) : params.rhs_size_estimation)
+    const auto rhs_rows = rhs_empty ? std::optional<UInt64>(0) : params.rhs_size_estimation;
+    const auto build_layout = table_join->preferParallelHashLayout(rhs_rows, params.parallel_hash_join_threshold)
         ? HashJoinBuildLayout::twoLevel(params.max_threads)
         : HashJoinBuildLayout::oneBucket(1);
 
@@ -1247,13 +1249,13 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join->getTempDataOnDisk(),
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
+                build_layout,
                 stats_collecting_params,
-                params.join_any_take_last_row,
-                build_layout);
+                params.join_any_take_last_row);
         }
 
         return HashJoin::create(
-            table_join, right_table_expression_header, params.join_any_take_last_row, stats_collecting_params, build_layout);
+            table_join, right_table_expression_header, build_layout, params.join_any_take_last_row, stats_collecting_params);
     }
 
     /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a
@@ -1308,16 +1310,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join->getTempDataOnDisk(),
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
+                build_layout,
                 stats_collecting_params,
-                params.join_any_take_last_row,
-                build_layout);
+                params.join_any_take_last_row);
         }
 
         if (MergeJoin::isSupported(table_join))
             return std::make_shared<JoinSwitcher>(
                 table_join, right_table_expression_header, params.join_any_take_last_row, stats_collecting_params);
         return HashJoin::create(
-            table_join, right_table_expression_header, params.join_any_take_last_row, stats_collecting_params, build_layout);
+            table_join, right_table_expression_header, build_layout, params.join_any_take_last_row, stats_collecting_params);
     }
 
     return nullptr;
@@ -1333,6 +1335,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     max_entries_for_hash_table_stats = context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats];
     hash_table_key_hash = 0;
     join_output_key_hash = 0;
+    parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
     enable_hash_join_row_store = settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
@@ -1365,6 +1368,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
     hash_table_key_hash = hash_table_key_hash_;
     join_output_key_hash = join_output_key_hash_;
+    parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
     enable_hash_join_row_store = join_settings.enable_hash_join_row_store;
     min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
 

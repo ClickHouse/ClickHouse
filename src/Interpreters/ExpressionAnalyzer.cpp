@@ -993,8 +993,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const ColumnsWithTypeAndName & left_sample_columns,
     SharedHeader right_sample_block,
     std::unique_ptr<QueryPlan> & joined_plan,
-    ContextPtr context,
-    HashJoinBuildLayout build_layout)
+    ContextPtr context)
 {
     if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
         && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
@@ -1033,6 +1032,12 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
     }
 
+    /// The old analyzer has no estimate of the right table size.
+    const auto build_layout
+        = analyzed_join->preferParallelHashLayout(/*rhs_size_estimation=*/std::nullopt, /*parallel_hash_join_threshold=*/0)
+        ? HashJoinBuildLayout::twoLevel(context->getSettingsRef()[Setting::max_threads])
+        : HashJoinBuildLayout::oneBucket(1);
+
     if (algorithm == JoinAlgorithm::HASH ||
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
@@ -1053,14 +1058,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     context->getTempDataOnDisk(),
                     settings[Setting::grace_hash_join_initial_buckets],
                     settings[Setting::grace_hash_join_max_buckets],
-                    HashJoinStatsCollectingParams{},
-                    /*any_take_last_row_=*/false,
                     build_layout);
             }
         }
 
-        return HashJoin::create(
-            analyzed_join, right_sample_block, /*any_take_last_row_=*/false, HashJoinStatsCollectingParams{}, build_layout);
+        return HashJoin::create(analyzed_join, right_sample_block, build_layout);
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
@@ -1119,16 +1121,13 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     context->getTempDataOnDisk(),
                     settings[Setting::grace_hash_join_initial_buckets],
                     settings[Setting::grace_hash_join_max_buckets],
-                    HashJoinStatsCollectingParams{},
-                    /*any_take_last_row_=*/false,
                     build_layout);
             }
         }
 
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, /*any_take_last_row_=*/false);
-        return HashJoin::create(
-            analyzed_join, right_sample_block, /*any_take_last_row_=*/false, HashJoinStatsCollectingParams{}, build_layout);
+        return HashJoin::create(analyzed_join, right_sample_block, build_layout);
     }
     return nullptr;
 }
@@ -1137,14 +1136,10 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
     auto right_sample_block = joined_plan->getCurrentHeader();
-    /// The old analyzer has no estimate of the right table size.
-    const auto build_layout = analyzed_join->preferParallelHashLayout(/*rhs_size_estimation=*/std::nullopt)
-        ? HashJoinBuildLayout::twoLevel(context->getSettingsRef()[Setting::max_threads])
-        : HashJoinBuildLayout::oneBucket(1);
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
-        auto join = tryCreateJoin(alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context, build_layout);
+        auto join = tryCreateJoin(alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context);
         if (join)
             return join;
     }

@@ -330,9 +330,8 @@ The `max_joined_block_size_bytes` combined with this setting is helpful to avoid
         {"25.10", false, false, "New setting"}) \
     DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
-This can speed up the non-joined phase of hash joins with large right tables.
-It applies only when the join builds the hash table on several threads (see `parallel_hash_join_threshold`).
-When disabled, or when the join builds the hash table on one thread, a single thread processes the non-joined rows.
+This can speed up the non-joined phase of hash joins with large right tables that build the hash table on several threads (see `parallel_hash_join_threshold`).
+When disabled, or when the hash table is built on one thread, non-joined rows are processed by a single thread.
 In every case the non-joined rows come out in no fixed order. Use `ORDER BY` when the query needs a stable order.
 )", 0, \
         {"26.2", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."}) \
@@ -4333,11 +4332,11 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
- `INNER`, `LEFT`, `RIGHT` and `FULL` joins can build the hash table on up to `max_threads` threads, and `parallel_hash_join_threshold` decides when they do.
-
 - parallel_hash
 
- The same as `hash`, kept for compatibility. To build the hash table on several threads whenever the join kind allows it, set `parallel_hash_join_threshold` to `0`.
+ The same as `hash`, kept for compatibility. `INNER`, `LEFT`, `RIGHT` and `FULL` hash joins can build the hash table on up to `max_threads` threads, and `parallel_hash_join_threshold` decides when they do. To build it on several threads whenever the join kind allows it, set `parallel_hash_join_threshold` to `0`.
+
+ When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
 - partial_merge
 
@@ -4358,7 +4357,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
 - auto
 
- When set to `auto`, `hash` join is tried first. A memory-limit fallback exists only when `MergeJoin` or `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Then ClickHouse spills through `GraceHashJoin` if `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` are enabled, otherwise it drains onto `partial_merge`. Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no switch.
+ When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
 
 - full_sorting_merge
 
@@ -9993,14 +9992,10 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
 If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
-At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time.
-With `max_threads = 1`, one thread fills all the parts.
-
+At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 `ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
-Without an estimate the threshold has no effect, and the join always splits the hash table into parts.
-The exception is a right table known to be empty, such as a `MergeTree` table without data parts.
-`INNER`, `RIGHT` and `LEFT SEMI` joins return no rows with it, so for them it counts as 0 rows.
+A right table known to be empty, such as a `MergeTree` table without data parts, counts as 0 rows for `INNER`, `RIGHT` and `LEFT SEMI` joins, which return no rows with it.
 )", 0, \
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \

@@ -63,22 +63,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
-namespace
-{
-
-/// Filled from one thread, then shared unchanged. A `SELECT` from the table can read only the serial map layout.
-HashJoinPtr makeStorageJoinHashJoin(std::shared_ptr<TableJoin> table_join, Block right_sample_block, bool overwrite)
-{
-    return HashJoin::create(
-        std::move(table_join),
-        std::make_shared<const Block>(std::move(right_sample_block)),
-        overwrite,
-        HashJoinStatsCollectingParams{},
-        HashJoinBuildLayout::oneBucket(1));
-}
-
-}
-
 StorageJoin::StorageJoin(
     DiskPtr disk_,
     const String & relative_path_,
@@ -107,7 +91,8 @@ StorageJoin::StorageJoin(
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
+    /// Filled from one thread, then shared unchanged. A `SELECT` from the table can read only the serial map layout.
+    join = HashJoin::create(table_join, std::make_shared<const Block>(getRightSampleBlock()), HashJoinBuildLayout::oneBucket(1), overwrite);
     restore();
     optimizeUnlocked();
 }
@@ -171,7 +156,7 @@ void StorageJoin::optimizeUnlocked()
     {
         /// Table data belongs to the server, not to the query releasing it.
         MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join->shrinkStoredBlocksToFit(dummy, /* worker_id = */ 0, true);
+        join->shrinkStoredBlocksToFit(dummy, true);
     }
 
     size_t optimized_bytes = join->getTotalByteCount();
@@ -195,7 +180,8 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     increment = 0;
     {
         MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-        join = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
+        join = HashJoin::create(
+            table_join, std::make_shared<const Block>(getRightSampleBlock()), HashJoinBuildLayout::oneBucket(1), overwrite);
     }
 }
 
@@ -220,7 +206,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeWriter(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
 
-    auto new_data = makeStorageJoinHashJoin(table_join, getRightSampleBlock(), overwrite);
+    auto new_data
+        = HashJoin::create(table_join, std::make_shared<const Block>(getRightSampleBlock()), HashJoinBuildLayout::oneBucket(1), overwrite);
 
     // New scope controls lifetime of pipeline.
     {
@@ -343,7 +330,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
     HashJoinPtr join_clone
-        = makeStorageJoinHashJoin(analyzed_join, std::move(right_sample_block), /*overwrite=*/false);
+        = HashJoin::create(analyzed_join, std::make_shared<const Block>(std::move(right_sample_block)), HashJoinBuildLayout::oneBucket(1));
 
     RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     join_clone->setLock(holder);

@@ -2444,7 +2444,6 @@ static bool isKnownEmpty(const QueryPlan::Node & node)
         || typeid_cast<const BuildRuntimeFilterStep *>(step))
         return isKnownEmpty(*node.children.front());
 
-    /// An inner join is empty if either input is, whichever of them it builds.
     if (const auto * join_step = typeid_cast<const JoinStep *>(step))
     {
         const auto kind = join_step->getJoin()->getTableJoin().kind();
@@ -2490,7 +2489,6 @@ void JoinStepLogical::buildPhysicalJoin(
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
 
         join_step->join_algorithm_params->rhs_known_empty = isKnownEmpty(*node.children.back());
-
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
 

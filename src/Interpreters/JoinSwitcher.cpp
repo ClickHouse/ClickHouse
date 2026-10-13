@@ -19,7 +19,7 @@ JoinSwitcher::JoinSwitcher(
     , right_sample_block(right_sample_block_->cloneEmpty())
 {
     join = HashJoin::create(
-        table_join, right_sample_block_, any_take_last_row_, stats_collecting_params_, HashJoinBuildLayout::oneBucket(1));
+        table_join, right_sample_block_, HashJoinBuildLayout::oneBucket(1), any_take_last_row_, stats_collecting_params_);
     /// Until the build phase ends this join may have to hand its right blocks to `MergeJoin`.
     assert_cast<HashJoin *>(join.get())->keepRightBlocksForAnotherAlgorithm();
 
