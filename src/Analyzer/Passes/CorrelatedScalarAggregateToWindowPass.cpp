@@ -568,13 +568,33 @@ private:
         std::unordered_set<const IQueryTreeNode *> joined_on_keys;
         auto reached = [&](const ColumnNode & column, const IQueryTreeNode * source)
         { return (source == target && is_key(column)) || joined_on_keys.contains(source); };
-        /// A runtime filter is not built for a join with a key pair without a common supertype.
+        /// A runtime filter is not built for a join with a key pair without a common supertype, also a computed one.
         std::set<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> joins_without_filter;
+        auto column_sources = [](QueryTreeNodePtr node)
+        {
+            std::unordered_set<const IQueryTreeNode *> sources;
+            visitExpression(
+                node,
+                [&](QueryTreeNodePtr & current)
+                {
+                    if (const auto * column = current->as<ColumnNode>())
+                        sources.insert(column->getColumnSourceOrNull().get());
+                },
+                [](QueryTreeNodePtr &) {});
+            return sources;
+        };
         for (const auto & conjunct : enforced)
         {
-            auto [lhs, rhs] = asColumnEquality(conjunct);
-            if (lhs && rhs && !tryGetLeastSupertype(DataTypes{lhs->getResultType(), rhs->getResultType()}))
-                joins_without_filter.insert(std::minmax(lhs->getColumnSourceOrNull().get(), rhs->getColumnSourceOrNull().get()));
+            const auto * function = conjunct->as<FunctionNode>();
+            if (!function || function->getFunctionName() != "equals" || function->getArguments().getNodes().size() != 2)
+                continue;
+            const auto & arguments = function->getArguments().getNodes();
+            if (tryGetLeastSupertype(DataTypes{arguments[0]->getResultType(), arguments[1]->getResultType()}))
+                continue;
+            const auto rhs_sources = column_sources(arguments[1]);
+            for (const auto * lhs_source : column_sources(arguments[0]))
+                for (const auto * rhs_source : rhs_sources)
+                    joins_without_filter.insert(std::minmax(lhs_source, rhs_source));
         }
 
         auto join = [&](const ColumnNode & from, const IQueryTreeNode * from_source, const IQueryTreeNode * to_source)
