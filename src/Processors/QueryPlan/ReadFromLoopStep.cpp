@@ -69,7 +69,9 @@ namespace
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false);
 
-        InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
+        /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
+        InterpreterSelectQueryAnalyzer interpreter(
+            select_ast, context, options, context->isViewInnerQuery() ? nullptr : context->getViewSource(), column_names);
         if (query_info.storage_limits)
             interpreter.addStorageLimits(*query_info.storage_limits);
         plan = std::move(interpreter).extractQueryPlan();
