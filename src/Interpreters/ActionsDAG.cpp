@@ -4220,14 +4220,14 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         /// A surviving `and` already yields 0 or 1, so only a declared type it does not already
         /// carry needs restoring; by name, because `Bool` equals `UInt8` but prints `true`.
-        const bool restores_declared_type = !rejected_is_surviving_and
+        const bool needs_type_restoration = !rejected_is_surviving_and
             || rejected->result_type->getName() != predicate->result_type->getName();
-        if (!removes_filter && restores_declared_type)
+        if (!removes_filter && needs_type_restoration)
         {
             const Node * converted = nullptr;
             if (rejected_is_surviving_and)
             {
-                /// A carrier is picked by name, because the rejected conjuncts arrive unordered.
+                /// A carrier is picked by name, because that makes the choice stable for unordered rejected conjuncts.
                 NodeRawConstPtrs retyped_children = new_children;
                 const size_t none = retyped_children.size();
                 auto pick = [&](size_t except, bool not_nullable_only)
