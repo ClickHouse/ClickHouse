@@ -85,10 +85,12 @@ namespace DB
 
 using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
 
+class IPostingListWeightsCodec;
+
 /// The scoring kind of the text index.
 /// Determines the extra data for scoring that is stored in the text index:
 /// the meaning and the codec of the per-row weights of the tokens in the posting lists, and the per-part data.
-/// The weights are positive integers stored as `(weight - 1)`. With `BM25` the weight is the term frequency.
+/// The weights are positive integers. With `BM25` the weight is the term frequency.
 enum class TextIndexScoringKind : UInt8
 {
     None = 0,
@@ -98,10 +100,9 @@ enum class TextIndexScoringKind : UInt8
 TextIndexScoringKind parseTextIndexScoringKind(std::string_view name);
 std::string_view toString(TextIndexScoringKind kind);
 
-/// Returns the block codec of the weights stored with the scoring kind in a posting list segment whose row ids
-/// are encoded by the block codec `row_ids_codec_type`. The codec of the weights is not persisted: the scoring kind determines it.
-/// Returns `None` for `TextIndexScoringKind::None`, which stores no weights.
-IPostingListCodec::Type getWeightsCodecType(TextIndexScoringKind scoring, IPostingListCodec::Type row_ids_codec_type);
+/// Creates the codec of the weights stored with the scoring kind in a posting list segment whose row ids are encoded
+/// by the block codec `row_ids_codec_type`. The codec of the weights is not persisted: the scoring kind determines it.
+std::unique_ptr<IPostingListWeightsCodec> createWeightsCodec(TextIndexScoringKind scoring, IPostingListCodec::Type row_ids_codec_type);
 
 struct MergeTreeIndexTextParams
 {

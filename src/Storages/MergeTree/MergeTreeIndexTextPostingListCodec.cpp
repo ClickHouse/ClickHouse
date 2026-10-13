@@ -62,7 +62,7 @@ void SegmentedPostingListCodec::append(
         if (!has_scoring)
         {
             has_scoring = true;
-            weights_block_codec = createPostingListBlockCodec(getWeightsCodecType(context.scoring, block_codec->type()));
+            weights_codec = createWeightsCodec(context.scoring, block_codec->type());
         }
 
         chassert(context.doc_lengths && !context.doc_lengths->empty());
@@ -116,7 +116,7 @@ SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentDat
     /// The segment header is self-describing: create the block codec it was written with.
     /// The codec of the weights is not persisted: it is determined by the scoring kind and the codec of the row ids.
     block_codec = createPostingListBlockCodec(header.codec_type);
-    weights_block_codec = has_weights ? createPostingListBlockCodec(getWeightsCodecType(weights_kind, header.codec_type)) : nullptr;
+    weights_codec = has_weights ? createWeightsCodec(weights_kind, header.codec_type) : nullptr;
     prev_row_id = header.first_row_id;
 
     /// The header comes from disk: bound the sizes it claims before growing any buffer to them.
@@ -129,7 +129,7 @@ SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentDat
 
     /// With weights every block is followed by a block of the weights.
     const UInt64 max_blocks = (header.cardinality + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    const UInt64 max_block_bytes = block_codec->maxBlockBytes() + (has_weights ? weights_block_codec->maxBlockBytes() : 0);
+    const UInt64 max_block_bytes = block_codec->maxBlockBytes() + (has_weights ? weights_codec->maxBlockBytes() : 0);
     const UInt64 max_payload_bytes = max_blocks * max_block_bytes;
 
     if (header.payload_bytes > max_payload_bytes)
@@ -333,28 +333,15 @@ void SegmentedPostingListCodec::encodeBlock(
 
 void SegmentedPostingListCodec::encodeWeights(std::span<const UInt32> weights, size_t count)
 {
-    chassert(weights_block_codec);
+    chassert(weights_codec);
     chassert(count > 0 && count <= BLOCK_SIZE);
     chassert(weights.empty() || weights.size() == count);
 
-    /// An empty `weights` means every weight in the block is 1, i.e. every `(weight - 1)` is 0,
-    /// which the codec encodes in its own all-zero form.
+    /// An empty `weights` means every weight in the block is 1.
     if (weights.empty())
-    {
-        weights_block_codec->encodeZeros(count, compressed_data);
-        return;
-    }
-
-    /// The weights are positive, so `(weight - 1)` is stored to keep the values small.
-    /// The deltas of the row ids of the block are already encoded, so their scratch buffer is reused.
-    block_values.resize(count);
-    for (size_t i = 0; i < count; ++i)
-    {
-        chassert(weights[i] != 0);
-        block_values[i] = weights[i] - 1;
-    }
-
-    weights_block_codec->encodeBlock(block_values, compressed_data);
+        weights_codec->encodeOnes(count, compressed_data);
+    else
+        weights_codec->encodeBlock(weights, compressed_data);
 }
 
 void SegmentedPostingListCodec::decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out)
@@ -374,22 +361,18 @@ void SegmentedPostingListCodec::decodeBlock(std::span<const std::byte> & in, std
 void SegmentedPostingListCodec::skipWeights(std::span<const std::byte> & in, size_t count)
 {
     chassert(count <= BLOCK_SIZE);
-    chassert(weights_block_codec);
-    weights_block_codec->skipBlock(in, count);
+    chassert(weights_codec);
+    weights_codec->skipBlock(in, count);
 }
 
 void SegmentedPostingListCodec::decodeWeights(std::span<const std::byte> & in, size_t count, PaddedPODArray<UInt32> & weights)
 {
     chassert(count <= BLOCK_SIZE);
-    chassert(weights_block_codec);
+    chassert(weights_codec);
 
     const size_t base = weights.size();
     weights.resize(base + count);
-    weights_block_codec->decodeBlock(in, count, std::span<uint32_t>(weights.data() + base, count));
-
-    /// The block stores `(weight - 1)`, so an all-zero block (every `weight == 1`) needs no special case here.
-    for (size_t i = base; i < weights.size(); ++i)
-        weights[i] += 1;
+    weights_codec->decodeBlock(in, count, std::span<uint32_t>(weights.data() + base, count));
 }
 
 void SegmentedPostingListEncoder::finalize(WriteBuffer & out, TokenPostingsInfo & info)

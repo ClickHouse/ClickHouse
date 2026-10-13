@@ -239,20 +239,19 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     /// `decodeBlock`). It owns the codec-specific per-block worst-case size, so the cursor can bound
     /// `payload_bytes` against corrupted metadata without naming a concrete codec.
     if (!block_codec || block_codec->type() != segment.codec_type)
+    {
         block_codec = createPostingListBlockCodec(segment.codec_type);
+        weights_codec.reset();
+    }
 
     /// The codec of the weights is not persisted: it is determined by the scoring kind and the codec of the row ids.
-    if (has_weights)
-    {
-        const auto weights_codec_type = getWeightsCodecType(weights_kind, segment.codec_type);
-        if (!weights_block_codec || weights_block_codec->type() != weights_codec_type)
-            weights_block_codec = createPostingListBlockCodec(weights_codec_type);
-    }
+    if (has_weights && !weights_codec)
+        weights_codec = createWeightsCodec(weights_kind, segment.codec_type);
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
     /// When scoring is on, each block additionally carries a weights sub-payload compressed with the codec of the weights.
     const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + IPostingListBlockCodec::BLOCK_SIZE - 1) / IPostingListBlockCodec::BLOCK_SIZE;
-    const UInt64 per_block_cap = block_codec->maxBlockBytes() + (has_weights ? weights_block_codec->maxBlockBytes() : 0);
+    const UInt64 per_block_cap = block_codec->maxBlockBytes() + (has_weights ? weights_codec->maxBlockBytes() : 0);
     const UInt64 max_payload_bytes = max_blocks_count * per_block_cap;
 
     if (payload_bytes > max_payload_bytes)
@@ -420,7 +419,10 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     /// Lazily create the per-block payload codec for this segment's codec type and reuse it across blocks.
     /// A posting list is written with a single codec, so this is effectively created once per cursor.
     if (!block_codec || block_codec->type() != segment.codec_type)
+    {
         block_codec = createPostingListBlockCodec(segment.codec_type);
+        weights_codec.reset();
+    }
 
     const size_t expected_bytes = block_data.size();
     const size_t consumed_bytes = block_codec->decodeBlock(block_data, count, out_span);

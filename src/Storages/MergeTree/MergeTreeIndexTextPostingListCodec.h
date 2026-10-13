@@ -35,8 +35,8 @@ namespace ErrorCodes
 /// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
-/// With scoring every block is followed by the per-row `(weight - 1)` of its row ids, encoded by the block codec
-/// that the scoring kind determines (see `getWeightsCodecType`), and the segment header and the Index Section
+/// With scoring every block is followed by the per-row weights of its row ids, encoded by the weights codec
+/// that the scoring kind determines (see `createWeightsCodec`), and the segment header and the Index Section
 /// carry the block-max inputs of the scoring (see `PackedBlockMeta`).
 ///
 /// Assumes that input row ids are strictly increasing.
@@ -207,7 +207,7 @@ private:
     ///
     /// - bits: max bit-width among deltas in this block
     /// - row ids payload: Codec::encode(...) bitpacked bytes
-    /// - weights payload: the per-row `(weight - 1)` encoded by the block codec of the weights, only with scoring
+    /// - weights payload: the per-row weights encoded by the weights codec, only with scoring
     ///
     /// Also updates current segment metadata (cardinality, payload size).
     ///
@@ -218,7 +218,7 @@ private:
         std::span<const UInt8> doc_lengths,
         UInt32 doc_lengths_first_row_id);
 
-    /// Encodes one block of `count` weights as `(weight - 1)` and appends it to `compressed_data`, after its deltas.
+    /// Encodes one block of `count` weights with the weights codec and appends it to `compressed_data`, after its deltas.
     /// An empty `weights` means that every weight is 1.
     void encodeWeights(std::span<const UInt32> weights, size_t count);
 
@@ -262,9 +262,9 @@ private:
     /// Per-block payload codec (bitpacking). On encode it is fixed by the constructor; on decode it
     /// is created from the segment header. One instance is reused across all blocks of a single encode/decode call.
     std::unique_ptr<IPostingListBlockCodec> block_codec;
-    /// Per-block codec of the weights, determined by the scoring kind and the codec of the row ids (see `getWeightsCodecType`).
+    /// Per-block codec of the weights, determined by the scoring kind and the codec of the row ids (see `createWeightsCodec`).
     /// Null without weights. On encode it is created by the first `append` with scoring; on decode, per segment.
-    std::unique_ptr<IPostingListBlockCodec> weights_block_codec;
+    std::unique_ptr<IPostingListWeightsCodec> weights_codec;
 };
 
 /// Accumulator for block-compressed codecs (see SegmentedPostingListCodec).

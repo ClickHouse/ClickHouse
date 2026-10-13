@@ -194,8 +194,8 @@ private:
     /// Per-block payload codec for the current segment's codec type; lazily created and reused across all
     /// blocks of this cursor (a posting list is written with a single codec).
     std::unique_ptr<IPostingListBlockCodec> block_codec;
-    /// Per-block codec of the weights. The cursor skips the weights, so it only bounds the payload size of the segment.
-    std::unique_ptr<IPostingListBlockCodec> weights_block_codec;
+    /// Codec of the weights. The cursor skips the weights, so it only bounds the payload size of the segment.
+    std::unique_ptr<IPostingListWeightsCodec> weights_codec;
 
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
     size_t index = 0;            /// Read position within `decoded_values_ptr`.

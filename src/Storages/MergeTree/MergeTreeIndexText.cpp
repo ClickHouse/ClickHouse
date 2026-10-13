@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
+#include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
@@ -2663,16 +2664,15 @@ std::string_view toString(TextIndexScoringKind kind)
     }
 }
 
-IPostingListCodec::Type getWeightsCodecType(TextIndexScoringKind scoring, IPostingListCodec::Type row_ids_codec_type)
+std::unique_ptr<IPostingListWeightsCodec> createWeightsCodec(TextIndexScoringKind scoring, IPostingListCodec::Type row_ids_codec_type)
 {
     switch (scoring)
     {
         case TextIndexScoringKind::None:
-            return IPostingListCodec::Type::None;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index without scoring stores no weights");
         case TextIndexScoringKind::BM25:
             /// Term frequencies are small integers, which the block codec of the row ids encodes well.
-            chassert(row_ids_codec_type != IPostingListCodec::Type::None);
-            return row_ids_codec_type;
+            return createWeightsCodecFromBlockCodec(row_ids_codec_type);
     }
 }
 

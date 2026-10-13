@@ -82,7 +82,7 @@ public:
     /// `max_cardinality` is the max number of row ids the segment may hold according to the token metadata.
     /// The sizes claimed by the segment are checked against it before any buffer grows to them.
     /// `weights_kind` is the scoring kind of the weights stored in the posting list (`None` if it stores no weights),
-    /// which determines their codec (see `getWeightsCodecType`). The weights are skipped.
+    /// which determines their codec (see `createWeightsCodec`). The weights are skipped.
     /// `buffer` is a caller-owned scratch buffer, reused across calls.
     virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind weights_kind, PaddedPODArray<char> & buffer) const = 0;
 
