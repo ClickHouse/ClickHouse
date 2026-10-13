@@ -4,7 +4,7 @@
     "source": "/clickstack/managing/admin"
   },
   {
-    "destination": "/clickstack/self-configured/managing/overview",
+    "destination": "/clickstack/observability/managing/overview",
     "source": "/clickstack/self-configured/managing/admin"
   },
   {
@@ -55674,5 +55674,421 @@
   {
     "destination": "/zh/resources/develop-contribute/native-protocol/format#data-types",
     "source": "/zh/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "source": "/clickstack/self-configured/api-reference",
+    "destination": "/clickstack/observability/api-reference"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-04-03",
+    "destination": "/clickstack/observability/demo-days/2026/2026-04-03"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-04-10",
+    "destination": "/clickstack/observability/demo-days/2026/2026-04-10"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-04-17",
+    "destination": "/clickstack/observability/demo-days/2026/2026-04-17"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-05-08",
+    "destination": "/clickstack/observability/demo-days/2026/2026-05-08"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-05-15",
+    "destination": "/clickstack/observability/demo-days/2026/2026-05-15"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-05-22",
+    "destination": "/clickstack/observability/demo-days/2026/2026-05-22"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-05-29",
+    "destination": "/clickstack/observability/demo-days/2026/2026-05-29"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-06-05",
+    "destination": "/clickstack/observability/demo-days/2026/2026-06-05"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-06-12",
+    "destination": "/clickstack/observability/demo-days/2026/2026-06-12"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-06-18",
+    "destination": "/clickstack/observability/demo-days/2026/2026-06-18"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-06-26",
+    "destination": "/clickstack/observability/demo-days/2026/2026-06-26"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-02",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-02"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-10",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-10"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-17",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-17"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-24",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-24"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-31",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-31"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-08-07",
+    "destination": "/clickstack/observability/demo-days/2026/2026-08-07"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-08-15",
+    "destination": "/clickstack/observability/demo-days/2026/2026-08-15"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-08-21",
+    "destination": "/clickstack/observability/demo-days/2026/2026-08-21"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-08-28",
+    "destination": "/clickstack/observability/demo-days/2026/2026-08-28"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-09-04",
+    "destination": "/clickstack/observability/demo-days/2026/2026-09-04"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-09-10",
+    "destination": "/clickstack/observability/demo-days/2026/2026-09-10"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-09-17",
+    "destination": "/clickstack/observability/demo-days/2026/2026-09-17"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days",
+    "destination": "/clickstack/observability/demo-days"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/chrome-extension",
+    "destination": "/clickstack/observability/example-datasets/chrome-extension"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets",
+    "destination": "/clickstack/observability/example-datasets"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/instrument-application",
+    "destination": "/clickstack/observability/example-datasets/instrument-application"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/kubernetes",
+    "destination": "/clickstack/observability/example-datasets/kubernetes"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/local-data",
+    "destination": "/clickstack/observability/example-datasets/local-data"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/otelgen",
+    "destination": "/clickstack/observability/example-datasets/otelgen"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/sample-data",
+    "destination": "/clickstack/observability/example-datasets/sample-data"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/session-replay",
+    "destination": "/clickstack/observability/example-datasets/session-replay"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/telemetrygen",
+    "destination": "/clickstack/observability/example-datasets/telemetrygen"
+  },
+  {
+    "source": "/clickstack/self-configured/faq",
+    "destination": "/clickstack/observability/faq"
+  },
+  {
+    "source": "/clickstack/self-configured/features/alerts",
+    "destination": "/clickstack/observability/features/alerts"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/dashboard-templates",
+    "destination": "/clickstack/observability/features/dashboards/dashboard-templates"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/overview",
+    "destination": "/clickstack/observability/features/dashboards/overview"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/release-markers",
+    "destination": "/clickstack/observability/features/dashboards/release-markers"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/row-click-drilldowns",
+    "destination": "/clickstack/observability/features/dashboards/row-click-drilldowns"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/sql-visualizations",
+    "destination": "/clickstack/observability/features/dashboards/sql-visualizations"
+  },
+  {
+    "source": "/clickstack/self-configured/features/event-deltas",
+    "destination": "/clickstack/observability/features/event-deltas"
+  },
+  {
+    "source": "/clickstack/self-configured/features/event-patterns",
+    "destination": "/clickstack/observability/features/event-patterns"
+  },
+  {
+    "source": "/clickstack/self-configured/features/search",
+    "destination": "/clickstack/observability/features/search"
+  },
+  {
+    "source": "/clickstack/self-configured/features/session-replay",
+    "destination": "/clickstack/observability/features/session-replay"
+  },
+  {
+    "source": "/clickstack/self-configured/getting-started",
+    "destination": "/clickstack/observability/getting-started"
+  },
+  {
+    "source": "/clickstack/self-configured",
+    "destination": "/clickstack/self-configured/overview"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/collector",
+    "destination": "/clickstack/observability/ingesting-data/collector"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/opentelemetry",
+    "destination": "/clickstack/observability/ingesting-data/opentelemetry"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/overview",
+    "destination": "/clickstack/observability/ingesting-data/overview"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/aws-lambda",
+    "destination": "/clickstack/observability/ingesting-data/sdks/aws-lambda"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/browser",
+    "destination": "/clickstack/observability/ingesting-data/sdks/browser"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/deno",
+    "destination": "/clickstack/observability/ingesting-data/sdks/deno"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/elixir",
+    "destination": "/clickstack/observability/ingesting-data/sdks/elixir"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/golang",
+    "destination": "/clickstack/observability/ingesting-data/sdks/golang"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks",
+    "destination": "/clickstack/observability/ingesting-data/sdks"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/java",
+    "destination": "/clickstack/observability/ingesting-data/sdks/java"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/nestjs",
+    "destination": "/clickstack/observability/ingesting-data/sdks/nestjs"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/nextjs",
+    "destination": "/clickstack/observability/ingesting-data/sdks/nextjs"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/nodejs",
+    "destination": "/clickstack/observability/ingesting-data/sdks/nodejs"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/python",
+    "destination": "/clickstack/observability/ingesting-data/sdks/python"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/react-native",
+    "destination": "/clickstack/observability/ingesting-data/sdks/react-native"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/ruby",
+    "destination": "/clickstack/observability/ingesting-data/sdks/ruby"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/vector",
+    "destination": "/clickstack/observability/ingesting-data/vector"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/aws-lambda",
+    "destination": "/clickstack/observability/integration-examples/aws-lambda"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/cloudflare",
+    "destination": "/clickstack/observability/integration-examples/cloudflare"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/cloudwatch",
+    "destination": "/clickstack/observability/integration-examples/cloudwatch"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/host-logs",
+    "destination": "/clickstack/observability/integration-examples/host-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/host-logs/ec2",
+    "destination": "/clickstack/observability/integration-examples/host-logs/ec2"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples",
+    "destination": "/clickstack/observability/integration-examples"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/jvm-metrics",
+    "destination": "/clickstack/observability/integration-examples/jvm-metrics"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/kafka-logs",
+    "destination": "/clickstack/observability/integration-examples/kafka-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/kafka-metrics",
+    "destination": "/clickstack/observability/integration-examples/kafka-metrics"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/kubernetes",
+    "destination": "/clickstack/observability/integration-examples/kubernetes"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/mongodb-logs",
+    "destination": "/clickstack/observability/integration-examples/mongodb-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/mysql",
+    "destination": "/clickstack/observability/integration-examples/mysql"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/nginx-logs",
+    "destination": "/clickstack/observability/integration-examples/nginx-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/nginx-traces",
+    "destination": "/clickstack/observability/integration-examples/nginx-traces"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/nodejs-traces",
+    "destination": "/clickstack/observability/integration-examples/nodejs-traces"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/postgres-logs",
+    "destination": "/clickstack/observability/integration-examples/postgres-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/postgres-metrics",
+    "destination": "/clickstack/observability/integration-examples/postgres-metrics"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/redis-logs",
+    "destination": "/clickstack/observability/integration-examples/redis-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/redis-metrics",
+    "destination": "/clickstack/observability/integration-examples/redis-metrics"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/systemd",
+    "destination": "/clickstack/observability/integration-examples/systemd"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/temporal",
+    "destination": "/clickstack/observability/integration-examples/temporal"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners/bindplane",
+    "destination": "/clickstack/observability/integration-partners/bindplane"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners/bitdrift",
+    "destination": "/clickstack/observability/integration-partners/bitdrift"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners",
+    "destination": "/clickstack/observability/integration-partners"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners/odigos",
+    "destination": "/clickstack/observability/integration-partners/odigos"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners/telflo",
+    "destination": "/clickstack/observability/integration-partners/telflo"
+  },
+  {
+    "source": "/clickstack/self-configured/managing/rbac",
+    "destination": "/clickstack/observability/managing/rbac"
+  },
+  {
+    "source": "/clickstack/self-configured/mcp",
+    "destination": "/clickstack/observability/mcp"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/datadog",
+    "destination": "/clickstack/observability/migration/datadog"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic",
+    "destination": "/clickstack/observability/migration/elastic"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/intro",
+    "destination": "/clickstack/observability/migration/elastic/intro"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/migrating-agents",
+    "destination": "/clickstack/observability/migration/elastic/migrating-agents"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/migrating-data",
+    "destination": "/clickstack/observability/migration/elastic/migrating-data"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/migrating-sdks",
+    "destination": "/clickstack/observability/migration/elastic/migrating-sdks"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/search",
+    "destination": "/clickstack/observability/migration/elastic/search"
+  },
+  {
+    "source": "/clickstack/self-configured/migration",
+    "destination": "/clickstack/observability/migration"
+  },
+  {
+    "source": "/clickstack/self-configured/notebooks",
+    "destination": "/clickstack/observability/notebooks"
+  },
+  {
+    "source": "/clickstack/self-configured/service-maps",
+    "destination": "/clickstack/observability/service-maps"
+  },
+  {
+    "source": "/clickstack/self-configured/text-to-chart",
+    "destination": "/clickstack/observability/text-to-chart"
+  },
+  {
+    "source": "/clickstack/self-configured/url-parameters",
+    "destination": "/clickstack/observability/url-parameters"
   }
 ]

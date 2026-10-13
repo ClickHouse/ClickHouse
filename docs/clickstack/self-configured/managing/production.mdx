@@ -27,11 +27,11 @@ When using Self Configured ClickHouse Observability in production, consider the 
 
 By default, the ClickStack OpenTelemetry Collector isn't secured when deployed outside of the Open Source distributions and doesn't require authentication on its OTLP ports.
 
-To secure ingestion, specify an authentication token when deploying the collector using the `OTLP_AUTH_TOKEN` environment variable. See ["Securing the collector"](/clickstack/self-configured/ingesting-data/collector#securing-the-collector) for further details.
+To secure ingestion, specify an authentication token when deploying the collector using the `OTLP_AUTH_TOKEN` environment variable. See ["Securing the collector"](/clickstack/observability/ingesting-data/collector#securing-the-collector) for further details.
 
 ### Create an ingestion user {#create-a-database-ingestion-user-managed}
 
-It's recommended to create a dedicated user for the OTel collector for ingestion into ClickHouse Cloud and ensuring ingestion is sent to a specific database e.g. `otel`. See ["Creating an ingestion user"](/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user) for further details.
+It's recommended to create a dedicated user for the OTel collector for ingestion into ClickHouse Cloud and ensuring ingestion is sent to a specific database e.g. `otel`. See ["Creating an ingestion user"](/clickstack/observability/ingesting-data/collector#creating-an-ingestion-user) for further details.
 
 ## Configure Time To Live (TTL) {#configure-ttl-managed}
 

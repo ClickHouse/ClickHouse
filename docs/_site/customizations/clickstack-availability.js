@@ -9,11 +9,11 @@
       "/clickstack/architecture"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/architecture"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/architecture"
     ]
   ],
@@ -23,11 +23,7 @@
       "/clickstack/demo-days"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days"
     ]
   ],
@@ -37,11 +33,7 @@
       "/clickstack/demo-days/2026/2026-04-03"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-03"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-04-03"
     ]
   ],
@@ -51,11 +43,7 @@
       "/clickstack/demo-days/2026/2026-04-10"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-10"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-04-10"
     ]
   ],
@@ -65,11 +53,7 @@
       "/clickstack/demo-days/2026/2026-04-17"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-17"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-04-17"
     ]
   ],
@@ -79,11 +63,7 @@
       "/clickstack/demo-days/2026/2026-05-08"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-08"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-05-08"
     ]
   ],
@@ -93,11 +73,7 @@
       "/clickstack/demo-days/2026/2026-05-15"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-15"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-05-15"
     ]
   ],
@@ -107,11 +83,7 @@
       "/clickstack/demo-days/2026/2026-05-22"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-22"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-05-22"
     ]
   ],
@@ -121,11 +93,7 @@
       "/clickstack/demo-days/2026/2026-05-29"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-29"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-05-29"
     ]
   ],
@@ -135,11 +103,7 @@
       "/clickstack/demo-days/2026/2026-06-05"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-05"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-06-05"
     ]
   ],
@@ -149,11 +113,7 @@
       "/clickstack/demo-days/2026/2026-06-12"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-12"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-06-12"
     ]
   ],
@@ -163,11 +123,7 @@
       "/clickstack/demo-days/2026/2026-06-18"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-18"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-06-18"
     ]
   ],
@@ -177,11 +133,7 @@
       "/clickstack/demo-days/2026/2026-06-26"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-26"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-06-26"
     ]
   ],
@@ -191,11 +143,7 @@
       "/clickstack/demo-days/2026/2026-07-02"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-02"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-02"
     ]
   ],
@@ -205,11 +153,7 @@
       "/clickstack/demo-days/2026/2026-07-10"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-10"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-10"
     ]
   ],
@@ -219,11 +163,7 @@
       "/clickstack/demo-days/2026/2026-07-17"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-17"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-17"
     ]
   ],
@@ -233,11 +173,7 @@
       "/clickstack/demo-days/2026/2026-07-24"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-24"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-24"
     ]
   ],
@@ -247,11 +183,7 @@
       "/clickstack/demo-days/2026/2026-07-31"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-31"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-31"
     ]
   ],
@@ -261,11 +193,7 @@
       "/clickstack/demo-days/2026/2026-08-07"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-07"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-08-07"
     ]
   ],
@@ -275,11 +203,7 @@
       "/clickstack/demo-days/2026/2026-08-15"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-15"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-08-15"
     ]
   ],
@@ -289,11 +213,7 @@
       "/clickstack/demo-days/2026/2026-08-21"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-21"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-08-21"
     ]
   ],
@@ -303,11 +223,7 @@
       "/clickstack/demo-days/2026/2026-08-28"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-28"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-08-28"
     ]
   ],
@@ -317,11 +233,7 @@
       "/clickstack/demo-days/2026/2026-09-04"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-04"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-09-04"
     ]
   ],
@@ -331,11 +243,7 @@
       "/clickstack/demo-days/2026/2026-09-10"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-10"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-09-10"
     ]
   ],
@@ -345,11 +253,7 @@
       "/clickstack/demo-days/2026/2026-09-17"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-17"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-09-17"
     ]
   ],
@@ -455,11 +359,7 @@
       "/clickstack/example-datasets"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets"
     ]
   ],
@@ -469,11 +369,7 @@
       "/clickstack/example-datasets/chrome-extension"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/chrome-extension"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/chrome-extension"
     ]
   ],
@@ -483,11 +379,7 @@
       "/clickstack/example-datasets/instrument-application"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/instrument-application"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/instrument-application"
     ]
   ],
@@ -497,11 +389,7 @@
       "/clickstack/example-datasets/kubernetes"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/kubernetes"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/kubernetes"
     ]
   ],
@@ -511,11 +399,7 @@
       "/clickstack/example-datasets/local-data"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/local-data"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/local-data"
     ]
   ],
@@ -525,11 +409,7 @@
       "/clickstack/example-datasets/otelgen"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/otelgen"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/otelgen"
     ]
   ],
@@ -545,11 +425,7 @@
       "/clickstack/example-datasets/sample-data"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/sample-data"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/sample-data"
     ]
   ],
@@ -559,11 +435,7 @@
       "/clickstack/example-datasets/session-replay"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/session-replay"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/session-replay"
     ]
   ],
@@ -573,11 +445,7 @@
       "/clickstack/example-datasets/telemetrygen"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/telemetrygen"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/telemetrygen"
     ]
   ],
@@ -587,11 +455,7 @@
       "/clickstack/faq"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/faq"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/faq"
     ]
   ],
@@ -601,11 +465,7 @@
       "/clickstack/features/alerts"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/alerts"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/alerts"
     ]
   ],
@@ -615,11 +475,7 @@
       "/clickstack/features/dashboards/dashboard-templates"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/dashboard-templates"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/dashboard-templates"
     ]
   ],
@@ -629,11 +485,7 @@
       "/clickstack/features/dashboards/overview"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/overview"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/overview"
     ]
   ],
@@ -643,11 +495,7 @@
       "/clickstack/features/dashboards/release-markers"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/release-markers"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/release-markers"
     ]
   ],
@@ -657,11 +505,7 @@
       "/clickstack/features/dashboards/row-click-drilldowns"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/row-click-drilldowns"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/row-click-drilldowns"
     ]
   ],
@@ -671,11 +515,7 @@
       "/clickstack/features/dashboards/sql-visualizations"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/sql-visualizations"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/sql-visualizations"
     ]
   ],
@@ -685,11 +525,7 @@
       "/clickstack/features/event-deltas"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/event-deltas"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/event-deltas"
     ]
   ],
@@ -699,11 +535,7 @@
       "/clickstack/features/event-patterns"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/event-patterns"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/event-patterns"
     ]
   ],
@@ -713,11 +545,7 @@
       "/clickstack/features/search"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/search"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/search"
     ]
   ],
@@ -727,11 +555,7 @@
       "/clickstack/features/session-replay"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/session-replay"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/session-replay"
     ]
   ],
@@ -741,7 +565,7 @@
       "/clickstack/getting-started/oss"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/getting-started"
     ]
   ],
@@ -751,11 +575,7 @@
       "/clickstack/ingesting-data/collector"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/collector"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/collector"
     ]
   ],
@@ -765,11 +585,7 @@
       "/clickstack/ingesting-data/opentelemetry"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/opentelemetry"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/opentelemetry"
     ]
   ],
@@ -779,11 +595,7 @@
       "/clickstack/ingesting-data/overview"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/overview"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/overview"
     ]
   ],
@@ -793,7 +605,7 @@
       "/clickstack/ingesting-data/schema/map-vs-json"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/ingesting-data/schema/map-vs-json"
     ]
   ],
@@ -803,7 +615,7 @@
       "/clickstack/ingesting-data/schemas"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/ingesting-data/schemas"
     ]
   ],
@@ -813,11 +625,7 @@
       "/clickstack/ingesting-data/sdks"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks"
     ]
   ],
@@ -827,11 +635,7 @@
       "/clickstack/ingesting-data/sdks/aws-lambda"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/aws-lambda"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/aws-lambda"
     ]
   ],
@@ -841,11 +645,7 @@
       "/clickstack/ingesting-data/sdks/browser"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/browser"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/browser"
     ]
   ],
@@ -855,11 +655,7 @@
       "/clickstack/ingesting-data/sdks/deno"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/deno"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/deno"
     ]
   ],
@@ -869,11 +665,7 @@
       "/clickstack/ingesting-data/sdks/elixir"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/elixir"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/elixir"
     ]
   ],
@@ -883,11 +675,7 @@
       "/clickstack/ingesting-data/sdks/golang"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/golang"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/golang"
     ]
   ],
@@ -897,11 +685,7 @@
       "/clickstack/ingesting-data/sdks/java"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/java"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/java"
     ]
   ],
@@ -911,11 +695,7 @@
       "/clickstack/ingesting-data/sdks/nestjs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nestjs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/nestjs"
     ]
   ],
@@ -925,11 +705,7 @@
       "/clickstack/ingesting-data/sdks/nextjs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nextjs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/nextjs"
     ]
   ],
@@ -939,11 +715,7 @@
       "/clickstack/ingesting-data/sdks/nodejs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nodejs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/nodejs"
     ]
   ],
@@ -953,11 +725,7 @@
       "/clickstack/ingesting-data/sdks/python"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/python"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/python"
     ]
   ],
@@ -967,11 +735,7 @@
       "/clickstack/ingesting-data/sdks/react-native"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/react-native"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/react-native"
     ]
   ],
@@ -981,11 +745,7 @@
       "/clickstack/ingesting-data/sdks/ruby"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/ruby"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/ruby"
     ]
   ],
@@ -995,7 +755,7 @@
       "/clickstack/ingesting-data/trace-sampling"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/ingesting-data/trace-sampling"
     ]
   ],
@@ -1005,11 +765,7 @@
       "/clickstack/ingesting-data/vector"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/vector"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/vector"
     ]
   ],
@@ -1019,11 +775,7 @@
       "/clickstack/integration-examples"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples"
     ]
   ],
@@ -1033,11 +785,7 @@
       "/clickstack/integration-examples/aws-lambda"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/aws-lambda"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/aws-lambda"
     ]
   ],
@@ -1047,11 +795,7 @@
       "/clickstack/integration-examples/cloudflare"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/cloudflare"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/cloudflare"
     ]
   ],
@@ -1061,11 +805,7 @@
       "/clickstack/integration-examples/cloudwatch"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/cloudwatch"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/cloudwatch"
     ]
   ],
@@ -1075,11 +815,7 @@
       "/clickstack/integration-examples/host-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/host-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/host-logs"
     ]
   ],
@@ -1089,11 +825,7 @@
       "/clickstack/integration-examples/host-logs/ec2"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/host-logs/ec2"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/host-logs/ec2"
     ]
   ],
@@ -1103,11 +835,7 @@
       "/clickstack/integration-examples/jvm-metrics"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/jvm-metrics"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/jvm-metrics"
     ]
   ],
@@ -1117,11 +845,7 @@
       "/clickstack/integration-examples/kafka-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kafka-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/kafka-logs"
     ]
   ],
@@ -1131,11 +855,7 @@
       "/clickstack/integration-examples/kafka-metrics"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kafka-metrics"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/kafka-metrics"
     ]
   ],
@@ -1145,11 +865,7 @@
       "/clickstack/integration-examples/kubernetes"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kubernetes"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/kubernetes"
     ]
   ],
@@ -1159,11 +875,7 @@
       "/clickstack/integration-examples/mongodb-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/mongodb-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/mongodb-logs"
     ]
   ],
@@ -1173,11 +885,7 @@
       "/clickstack/integration-examples/mysql"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/mysql"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/mysql"
     ]
   ],
@@ -1187,11 +895,7 @@
       "/clickstack/integration-examples/nginx-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nginx-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/nginx-logs"
     ]
   ],
@@ -1201,11 +905,7 @@
       "/clickstack/integration-examples/nginx-traces"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nginx-traces"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/nginx-traces"
     ]
   ],
@@ -1215,11 +915,7 @@
       "/clickstack/integration-examples/nodejs-traces"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nodejs-traces"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/nodejs-traces"
     ]
   ],
@@ -1229,11 +925,7 @@
       "/clickstack/integration-examples/postgres-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/postgres-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/postgres-logs"
     ]
   ],
@@ -1243,11 +935,7 @@
       "/clickstack/integration-examples/postgres-metrics"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/postgres-metrics"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/postgres-metrics"
     ]
   ],
@@ -1257,11 +945,7 @@
       "/clickstack/integration-examples/redis-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/redis-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/redis-logs"
     ]
   ],
@@ -1271,11 +955,7 @@
       "/clickstack/integration-examples/redis-metrics"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/redis-metrics"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/redis-metrics"
     ]
   ],
@@ -1285,11 +965,7 @@
       "/clickstack/integration-examples/systemd"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/systemd"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/systemd"
     ]
   ],
@@ -1299,11 +975,7 @@
       "/clickstack/integration-examples/temporal"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/temporal"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/temporal"
     ]
   ],
@@ -1313,11 +985,7 @@
       "/clickstack/integration-partners"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners"
     ]
   ],
@@ -1327,11 +995,7 @@
       "/clickstack/integration-partners/bindplane"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/bindplane"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners/bindplane"
     ]
   ],
@@ -1341,11 +1005,7 @@
       "/clickstack/integration-partners/bitdrift"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/bitdrift"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners/bitdrift"
     ]
   ],
@@ -1355,11 +1015,7 @@
       "/clickstack/integration-partners/odigos"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/odigos"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners/odigos"
     ]
   ],
@@ -1369,11 +1025,7 @@
       "/clickstack/integration-partners/telflo"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/telflo"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners/telflo"
     ]
   ],
@@ -1383,11 +1035,11 @@
       "/clickstack/managing/config"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/config"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/managing/config"
     ]
   ],
@@ -1397,7 +1049,7 @@
       "/clickstack/managing/estimating-resources"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/estimating-resources"
     ]
   ],
@@ -1407,7 +1059,7 @@
       "/clickstack/managing/materialized-views"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/materialized-views"
     ]
   ],
@@ -1417,11 +1069,11 @@
       "/clickstack/managing/overview"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/overview"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/managing/overview"
     ]
   ],
@@ -1431,7 +1083,7 @@
       "/clickstack/managing/performance-tuning"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/performance-tuning"
     ]
   ],
@@ -1441,7 +1093,7 @@
       "/clickstack/managing/production"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/production"
     ]
   ],
@@ -1451,7 +1103,7 @@
       "/clickstack/managing/ttl"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/ttl"
     ]
   ],
@@ -1461,11 +1113,7 @@
       "/clickstack/mcp"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/mcp"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/mcp"
     ]
   ],
@@ -1475,11 +1123,7 @@
       "/clickstack/migration"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration"
     ]
   ],
@@ -1489,11 +1133,7 @@
       "/clickstack/migration/datadog"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/datadog"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/datadog"
     ]
   ],
@@ -1503,11 +1143,7 @@
       "/clickstack/migration/elastic"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic"
     ]
   ],
@@ -1517,7 +1153,7 @@
       "/clickstack/migration/elastic/concepts"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/migration/elastic/concepts"
     ]
   ],
@@ -1527,11 +1163,7 @@
       "/clickstack/migration/elastic/intro"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/intro"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/intro"
     ]
   ],
@@ -1541,11 +1173,7 @@
       "/clickstack/migration/elastic/migrating-agents"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-agents"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/migrating-agents"
     ]
   ],
@@ -1555,11 +1183,7 @@
       "/clickstack/migration/elastic/migrating-data"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-data"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/migrating-data"
     ]
   ],
@@ -1569,11 +1193,7 @@
       "/clickstack/migration/elastic/migrating-sdks"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-sdks"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/migrating-sdks"
     ]
   ],
@@ -1583,11 +1203,7 @@
       "/clickstack/migration/elastic/search"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/search"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/search"
     ]
   ],
@@ -1597,27 +1213,19 @@
       "/clickstack/migration/elastic/types"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/migration/elastic/types"
     ]
   ],
   "/clickstack/observability": [
     [
-      "Self Configured",
-      "/clickstack/self-configured"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability"
     ]
   ],
   "/clickstack/observability/api-reference": [
     [
-      "Self Configured",
-      "/clickstack/self-configured/api-reference"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/api-reference"
     ]
   ],
@@ -1627,11 +1235,11 @@
       "/clickstack/architecture"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/architecture"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/architecture"
     ]
   ],
@@ -1641,11 +1249,7 @@
       "/clickstack/demo-days"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days"
     ]
   ],
@@ -1655,11 +1259,7 @@
       "/clickstack/demo-days/2026/2026-04-03"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-03"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-04-03"
     ]
   ],
@@ -1669,11 +1269,7 @@
       "/clickstack/demo-days/2026/2026-04-10"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-10"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-04-10"
     ]
   ],
@@ -1683,11 +1279,7 @@
       "/clickstack/demo-days/2026/2026-04-17"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-17"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-04-17"
     ]
   ],
@@ -1697,11 +1289,7 @@
       "/clickstack/demo-days/2026/2026-05-08"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-08"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-05-08"
     ]
   ],
@@ -1711,11 +1299,7 @@
       "/clickstack/demo-days/2026/2026-05-15"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-15"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-05-15"
     ]
   ],
@@ -1725,11 +1309,7 @@
       "/clickstack/demo-days/2026/2026-05-22"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-22"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-05-22"
     ]
   ],
@@ -1739,11 +1319,7 @@
       "/clickstack/demo-days/2026/2026-05-29"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-29"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-05-29"
     ]
   ],
@@ -1753,11 +1329,7 @@
       "/clickstack/demo-days/2026/2026-06-05"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-05"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-06-05"
     ]
   ],
@@ -1767,11 +1339,7 @@
       "/clickstack/demo-days/2026/2026-06-12"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-12"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-06-12"
     ]
   ],
@@ -1781,11 +1349,7 @@
       "/clickstack/demo-days/2026/2026-06-18"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-18"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-06-18"
     ]
   ],
@@ -1795,11 +1359,7 @@
       "/clickstack/demo-days/2026/2026-06-26"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-26"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-06-26"
     ]
   ],
@@ -1809,11 +1369,7 @@
       "/clickstack/demo-days/2026/2026-07-02"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-02"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-02"
     ]
   ],
@@ -1823,11 +1379,7 @@
       "/clickstack/demo-days/2026/2026-07-10"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-10"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-10"
     ]
   ],
@@ -1837,11 +1389,7 @@
       "/clickstack/demo-days/2026/2026-07-17"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-17"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-17"
     ]
   ],
@@ -1851,11 +1399,7 @@
       "/clickstack/demo-days/2026/2026-07-24"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-24"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-24"
     ]
   ],
@@ -1865,11 +1409,7 @@
       "/clickstack/demo-days/2026/2026-07-31"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-31"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-07-31"
     ]
   ],
@@ -1879,11 +1419,7 @@
       "/clickstack/demo-days/2026/2026-08-07"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-07"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-08-07"
     ]
   ],
@@ -1893,11 +1429,7 @@
       "/clickstack/demo-days/2026/2026-08-15"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-15"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-08-15"
     ]
   ],
@@ -1907,11 +1439,7 @@
       "/clickstack/demo-days/2026/2026-08-21"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-21"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-08-21"
     ]
   ],
@@ -1921,11 +1449,7 @@
       "/clickstack/demo-days/2026/2026-08-28"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-28"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-08-28"
     ]
   ],
@@ -1935,11 +1459,7 @@
       "/clickstack/demo-days/2026/2026-09-04"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-04"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-09-04"
     ]
   ],
@@ -1949,11 +1469,7 @@
       "/clickstack/demo-days/2026/2026-09-10"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-10"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-09-10"
     ]
   ],
@@ -1963,11 +1479,7 @@
       "/clickstack/demo-days/2026/2026-09-17"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-17"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/demo-days/2026/2026-09-17"
     ]
   ],
@@ -1977,11 +1489,7 @@
       "/clickstack/example-datasets"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets"
     ]
   ],
@@ -1991,11 +1499,7 @@
       "/clickstack/example-datasets/chrome-extension"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/chrome-extension"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/chrome-extension"
     ]
   ],
@@ -2005,11 +1509,7 @@
       "/clickstack/example-datasets/instrument-application"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/instrument-application"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/instrument-application"
     ]
   ],
@@ -2019,11 +1519,7 @@
       "/clickstack/example-datasets/kubernetes"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/kubernetes"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/kubernetes"
     ]
   ],
@@ -2033,11 +1529,7 @@
       "/clickstack/example-datasets/local-data"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/local-data"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/local-data"
     ]
   ],
@@ -2047,11 +1539,7 @@
       "/clickstack/example-datasets/otelgen"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/otelgen"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/otelgen"
     ]
   ],
@@ -2061,11 +1549,7 @@
       "/clickstack/example-datasets/sample-data"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/sample-data"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/sample-data"
     ]
   ],
@@ -2075,11 +1559,7 @@
       "/clickstack/example-datasets/session-replay"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/session-replay"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/session-replay"
     ]
   ],
@@ -2089,11 +1569,7 @@
       "/clickstack/example-datasets/telemetrygen"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/telemetrygen"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/example-datasets/telemetrygen"
     ]
   ],
@@ -2103,11 +1579,7 @@
       "/clickstack/faq"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/faq"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/faq"
     ]
   ],
@@ -2117,11 +1589,7 @@
       "/clickstack/features/alerts"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/alerts"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/alerts"
     ]
   ],
@@ -2131,11 +1599,7 @@
       "/clickstack/features/dashboards/dashboard-templates"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/dashboard-templates"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/dashboard-templates"
     ]
   ],
@@ -2145,11 +1609,7 @@
       "/clickstack/features/dashboards/overview"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/overview"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/overview"
     ]
   ],
@@ -2159,11 +1619,7 @@
       "/clickstack/features/dashboards/release-markers"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/release-markers"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/release-markers"
     ]
   ],
@@ -2173,11 +1629,7 @@
       "/clickstack/features/dashboards/row-click-drilldowns"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/row-click-drilldowns"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/row-click-drilldowns"
     ]
   ],
@@ -2187,11 +1639,7 @@
       "/clickstack/features/dashboards/sql-visualizations"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/sql-visualizations"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/dashboards/sql-visualizations"
     ]
   ],
@@ -2201,11 +1649,7 @@
       "/clickstack/features/event-deltas"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/event-deltas"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/event-deltas"
     ]
   ],
@@ -2215,11 +1659,7 @@
       "/clickstack/features/event-patterns"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/event-patterns"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/event-patterns"
     ]
   ],
@@ -2229,11 +1669,7 @@
       "/clickstack/features/search"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/search"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/search"
     ]
   ],
@@ -2243,11 +1679,7 @@
       "/clickstack/features/session-replay"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/features/session-replay"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/features/session-replay"
     ]
   ],
@@ -2257,7 +1689,7 @@
       "/clickstack/getting-started/oss"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/getting-started"
     ]
   ],
@@ -2267,11 +1699,7 @@
       "/clickstack/ingesting-data/collector"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/collector"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/collector"
     ]
   ],
@@ -2281,11 +1709,7 @@
       "/clickstack/ingesting-data/opentelemetry"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/opentelemetry"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/opentelemetry"
     ]
   ],
@@ -2295,11 +1719,7 @@
       "/clickstack/ingesting-data/overview"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/overview"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/overview"
     ]
   ],
@@ -2309,11 +1729,7 @@
       "/clickstack/ingesting-data/sdks"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks"
     ]
   ],
@@ -2323,11 +1739,7 @@
       "/clickstack/ingesting-data/sdks/aws-lambda"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/aws-lambda"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/aws-lambda"
     ]
   ],
@@ -2337,11 +1749,7 @@
       "/clickstack/ingesting-data/sdks/browser"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/browser"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/browser"
     ]
   ],
@@ -2351,11 +1759,7 @@
       "/clickstack/ingesting-data/sdks/deno"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/deno"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/deno"
     ]
   ],
@@ -2365,11 +1769,7 @@
       "/clickstack/ingesting-data/sdks/elixir"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/elixir"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/elixir"
     ]
   ],
@@ -2379,11 +1779,7 @@
       "/clickstack/ingesting-data/sdks/golang"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/golang"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/golang"
     ]
   ],
@@ -2393,11 +1789,7 @@
       "/clickstack/ingesting-data/sdks/java"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/java"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/java"
     ]
   ],
@@ -2407,11 +1799,7 @@
       "/clickstack/ingesting-data/sdks/nestjs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nestjs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/nestjs"
     ]
   ],
@@ -2421,11 +1809,7 @@
       "/clickstack/ingesting-data/sdks/nextjs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nextjs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/nextjs"
     ]
   ],
@@ -2435,11 +1819,7 @@
       "/clickstack/ingesting-data/sdks/nodejs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nodejs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/nodejs"
     ]
   ],
@@ -2449,11 +1829,7 @@
       "/clickstack/ingesting-data/sdks/python"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/python"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/python"
     ]
   ],
@@ -2463,11 +1839,7 @@
       "/clickstack/ingesting-data/sdks/react-native"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/react-native"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/react-native"
     ]
   ],
@@ -2477,11 +1849,7 @@
       "/clickstack/ingesting-data/sdks/ruby"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/ruby"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/ruby"
     ]
   ],
@@ -2491,11 +1859,7 @@
       "/clickstack/ingesting-data/vector"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/vector"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/vector"
     ]
   ],
@@ -2505,11 +1869,7 @@
       "/clickstack/integration-examples"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples"
     ]
   ],
@@ -2519,11 +1879,7 @@
       "/clickstack/integration-examples/aws-lambda"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/aws-lambda"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/aws-lambda"
     ]
   ],
@@ -2533,11 +1889,7 @@
       "/clickstack/integration-examples/cloudflare"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/cloudflare"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/cloudflare"
     ]
   ],
@@ -2547,11 +1899,7 @@
       "/clickstack/integration-examples/cloudwatch"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/cloudwatch"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/cloudwatch"
     ]
   ],
@@ -2561,11 +1909,7 @@
       "/clickstack/integration-examples/host-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/host-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/host-logs"
     ]
   ],
@@ -2575,11 +1919,7 @@
       "/clickstack/integration-examples/host-logs/ec2"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/host-logs/ec2"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/host-logs/ec2"
     ]
   ],
@@ -2589,11 +1929,7 @@
       "/clickstack/integration-examples/jvm-metrics"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/jvm-metrics"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/jvm-metrics"
     ]
   ],
@@ -2603,11 +1939,7 @@
       "/clickstack/integration-examples/kafka-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kafka-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/kafka-logs"
     ]
   ],
@@ -2617,11 +1949,7 @@
       "/clickstack/integration-examples/kafka-metrics"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kafka-metrics"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/kafka-metrics"
     ]
   ],
@@ -2631,11 +1959,7 @@
       "/clickstack/integration-examples/kubernetes"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kubernetes"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/kubernetes"
     ]
   ],
@@ -2645,11 +1969,7 @@
       "/clickstack/integration-examples/mongodb-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/mongodb-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/mongodb-logs"
     ]
   ],
@@ -2659,11 +1979,7 @@
       "/clickstack/integration-examples/mysql"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/mysql"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/mysql"
     ]
   ],
@@ -2673,11 +1989,7 @@
       "/clickstack/integration-examples/nginx-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nginx-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/nginx-logs"
     ]
   ],
@@ -2687,11 +1999,7 @@
       "/clickstack/integration-examples/nginx-traces"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nginx-traces"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/nginx-traces"
     ]
   ],
@@ -2701,11 +2009,7 @@
       "/clickstack/integration-examples/nodejs-traces"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nodejs-traces"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/nodejs-traces"
     ]
   ],
@@ -2715,11 +2019,7 @@
       "/clickstack/integration-examples/postgres-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/postgres-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/postgres-logs"
     ]
   ],
@@ -2729,11 +2029,7 @@
       "/clickstack/integration-examples/postgres-metrics"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/postgres-metrics"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/postgres-metrics"
     ]
   ],
@@ -2743,11 +2039,7 @@
       "/clickstack/integration-examples/redis-logs"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/redis-logs"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/redis-logs"
     ]
   ],
@@ -2757,11 +2049,7 @@
       "/clickstack/integration-examples/redis-metrics"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/redis-metrics"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/redis-metrics"
     ]
   ],
@@ -2771,11 +2059,7 @@
       "/clickstack/integration-examples/systemd"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/systemd"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/systemd"
     ]
   ],
@@ -2785,11 +2069,7 @@
       "/clickstack/integration-examples/temporal"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/temporal"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-examples/temporal"
     ]
   ],
@@ -2799,11 +2079,7 @@
       "/clickstack/integration-partners"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners"
     ]
   ],
@@ -2813,11 +2089,7 @@
       "/clickstack/integration-partners/bindplane"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/bindplane"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners/bindplane"
     ]
   ],
@@ -2827,11 +2099,7 @@
       "/clickstack/integration-partners/bitdrift"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/bitdrift"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners/bitdrift"
     ]
   ],
@@ -2841,11 +2109,7 @@
       "/clickstack/integration-partners/odigos"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/odigos"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners/odigos"
     ]
   ],
@@ -2855,11 +2119,7 @@
       "/clickstack/integration-partners/telflo"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/telflo"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/integration-partners/telflo"
     ]
   ],
@@ -2869,11 +2129,11 @@
       "/clickstack/managing/config"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/config"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/managing/config"
     ]
   ],
@@ -2883,21 +2143,17 @@
       "/clickstack/managing/overview"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/overview"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/managing/overview"
     ]
   ],
   "/clickstack/observability/managing/rbac": [
     [
-      "Self Configured",
-      "/clickstack/self-configured/managing/rbac"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/managing/rbac"
     ]
   ],
@@ -2907,11 +2163,7 @@
       "/clickstack/mcp"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/mcp"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/mcp"
     ]
   ],
@@ -2921,11 +2173,7 @@
       "/clickstack/migration"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration"
     ]
   ],
@@ -2935,11 +2183,7 @@
       "/clickstack/migration/datadog"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/datadog"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/datadog"
     ]
   ],
@@ -2949,11 +2193,7 @@
       "/clickstack/migration/elastic"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic"
     ]
   ],
@@ -2963,11 +2203,7 @@
       "/clickstack/migration/elastic/intro"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/intro"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/intro"
     ]
   ],
@@ -2977,11 +2213,7 @@
       "/clickstack/migration/elastic/migrating-agents"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-agents"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/migrating-agents"
     ]
   ],
@@ -2991,11 +2223,7 @@
       "/clickstack/migration/elastic/migrating-data"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-data"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/migrating-data"
     ]
   ],
@@ -3005,11 +2233,7 @@
       "/clickstack/migration/elastic/migrating-sdks"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-sdks"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/migrating-sdks"
     ]
   ],
@@ -3019,21 +2243,13 @@
       "/clickstack/migration/elastic/search"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/search"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/migration/elastic/search"
     ]
   ],
   "/clickstack/observability/notebooks": [
     [
-      "Self Configured",
-      "/clickstack/self-configured/notebooks"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/notebooks"
     ]
   ],
@@ -3043,11 +2259,11 @@
       "/clickstack/overview"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/overview"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/overview"
     ]
   ],
@@ -3057,11 +2273,7 @@
       "/clickstack/service-maps"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/service-maps"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/service-maps"
     ]
   ],
@@ -3071,11 +2283,7 @@
       "/clickstack/text-to-chart"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/text-to-chart"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/text-to-chart"
     ]
   ],
@@ -3085,11 +2293,7 @@
       "/clickstack/url-parameters"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/url-parameters"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/url-parameters"
     ]
   ],
@@ -3099,32 +2303,12 @@
       "/clickstack/overview"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/overview"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/overview"
-    ]
-  ],
-  "/clickstack/self-configured": [
-    [
-      "Self Configured",
-      "/clickstack/self-configured"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability"
-    ]
-  ],
-  "/clickstack/self-configured/api-reference": [
-    [
-      "Self Configured",
-      "/clickstack/self-configured/api-reference"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/api-reference"
     ]
   ],
   "/clickstack/self-configured/architecture": [
@@ -3133,682 +2317,24 @@
       "/clickstack/architecture"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/architecture"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/architecture"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days": [
-    [
-      "Open Source",
-      "/clickstack/demo-days"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-04-03": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-03"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-03"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-04-03"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-04-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-10"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-10"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-04-10"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-04-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-17"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-04-17"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-04-17"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-05-08": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-08"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-08"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-05-08"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-05-15": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-15"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-15"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-05-15"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-05-22": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-22"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-22"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-05-22"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-05-29": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-29"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-05-29"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-05-29"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-06-05": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-05"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-05"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-06-05"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-06-12": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-12"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-12"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-06-12"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-06-18": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-18"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-18"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-06-18"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-06-26": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-26"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-06-26"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-06-26"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-07-02": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-02"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-02"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-07-02"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-07-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-10"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-10"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-07-10"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-07-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-17"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-17"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-07-17"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-07-24": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-24"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-24"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-07-24"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-07-31": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-31"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-07-31"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-07-31"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-08-07": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-07"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-07"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-08-07"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-08-15": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-15"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-15"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-08-15"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-08-21": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-21"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-21"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-08-21"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-08-28": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-28"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-08-28"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-08-28"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-09-04": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-04"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-04"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-09-04"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-09-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-10"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-10"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-09-10"
-    ]
-  ],
-  "/clickstack/self-configured/demo-days/2026/2026-09-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-17"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/demo-days/2026/2026-09-17"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/demo-days/2026/2026-09-17"
     ]
   ],
   "/clickstack/self-configured/deployment/managed": [
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/deployment/managed"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets/chrome-extension": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets/chrome-extension"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/chrome-extension"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets/chrome-extension"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets/instrument-application": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets/instrument-application"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/instrument-application"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets/instrument-application"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets/kubernetes": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets/kubernetes"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/kubernetes"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets/kubernetes"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets/local-data": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets/local-data"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/local-data"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets/local-data"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets/otelgen": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets/otelgen"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/otelgen"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets/otelgen"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets/sample-data": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets/sample-data"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/sample-data"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets/sample-data"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets/session-replay": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets/session-replay"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/session-replay"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets/session-replay"
-    ]
-  ],
-  "/clickstack/self-configured/example-datasets/telemetrygen": [
-    [
-      "Open Source",
-      "/clickstack/example-datasets/telemetrygen"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/example-datasets/telemetrygen"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/example-datasets/telemetrygen"
-    ]
-  ],
-  "/clickstack/self-configured/faq": [
-    [
-      "Open Source",
-      "/clickstack/faq"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/faq"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/faq"
-    ]
-  ],
-  "/clickstack/self-configured/features/alerts": [
-    [
-      "Open Source",
-      "/clickstack/features/alerts"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/alerts"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/alerts"
-    ]
-  ],
-  "/clickstack/self-configured/features/dashboards/dashboard-templates": [
-    [
-      "Open Source",
-      "/clickstack/features/dashboards/dashboard-templates"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/dashboard-templates"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/dashboards/dashboard-templates"
-    ]
-  ],
-  "/clickstack/self-configured/features/dashboards/overview": [
-    [
-      "Open Source",
-      "/clickstack/features/dashboards/overview"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/overview"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/dashboards/overview"
-    ]
-  ],
-  "/clickstack/self-configured/features/dashboards/release-markers": [
-    [
-      "Open Source",
-      "/clickstack/features/dashboards/release-markers"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/release-markers"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/dashboards/release-markers"
-    ]
-  ],
-  "/clickstack/self-configured/features/dashboards/row-click-drilldowns": [
-    [
-      "Open Source",
-      "/clickstack/features/dashboards/row-click-drilldowns"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/row-click-drilldowns"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/dashboards/row-click-drilldowns"
-    ]
-  ],
-  "/clickstack/self-configured/features/dashboards/sql-visualizations": [
-    [
-      "Open Source",
-      "/clickstack/features/dashboards/sql-visualizations"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/dashboards/sql-visualizations"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/dashboards/sql-visualizations"
-    ]
-  ],
-  "/clickstack/self-configured/features/event-deltas": [
-    [
-      "Open Source",
-      "/clickstack/features/event-deltas"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/event-deltas"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/event-deltas"
-    ]
-  ],
-  "/clickstack/self-configured/features/event-patterns": [
-    [
-      "Open Source",
-      "/clickstack/features/event-patterns"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/event-patterns"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/event-patterns"
-    ]
-  ],
-  "/clickstack/self-configured/features/search": [
-    [
-      "Open Source",
-      "/clickstack/features/search"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/search"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/search"
-    ]
-  ],
-  "/clickstack/self-configured/features/session-replay": [
-    [
-      "Open Source",
-      "/clickstack/features/session-replay"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/features/session-replay"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/features/session-replay"
     ]
   ],
   "/clickstack/self-configured/getting-started/managed": [
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/getting-started/managed"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/collector": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/collector"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/collector"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/collector"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/opentelemetry": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/opentelemetry"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/opentelemetry"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/opentelemetry"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/overview": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/overview"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/overview"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/overview"
     ]
   ],
   "/clickstack/self-configured/ingesting-data/schema/map-vs-json": [
@@ -3817,7 +2343,7 @@
       "/clickstack/ingesting-data/schema/map-vs-json"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/ingesting-data/schema/map-vs-json"
     ]
   ],
@@ -3827,190 +2353,8 @@
       "/clickstack/ingesting-data/schemas"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/ingesting-data/schemas"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/aws-lambda": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/aws-lambda"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/aws-lambda"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/aws-lambda"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/browser": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/browser"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/browser"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/browser"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/deno": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/deno"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/deno"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/deno"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/elixir": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/elixir"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/elixir"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/elixir"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/golang": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/golang"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/golang"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/golang"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/java": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/java"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/java"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/java"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/nestjs": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/nestjs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nestjs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/nestjs"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/nextjs": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/nextjs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nextjs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/nextjs"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/nodejs": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/nodejs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/nodejs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/nodejs"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/python": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/python"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/python"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/python"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/react-native": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/react-native"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/react-native"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/react-native"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/sdks/ruby": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/sdks/ruby"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/sdks/ruby"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/sdks/ruby"
     ]
   ],
   "/clickstack/self-configured/ingesting-data/trace-sampling": [
@@ -4019,386 +2363,8 @@
       "/clickstack/ingesting-data/trace-sampling"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/ingesting-data/trace-sampling"
-    ]
-  ],
-  "/clickstack/self-configured/ingesting-data/vector": [
-    [
-      "Open Source",
-      "/clickstack/ingesting-data/vector"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/ingesting-data/vector"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/ingesting-data/vector"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/aws-lambda": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/aws-lambda"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/aws-lambda"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/aws-lambda"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/cloudflare": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/cloudflare"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/cloudflare"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/cloudflare"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/cloudwatch": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/cloudwatch"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/cloudwatch"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/cloudwatch"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/host-logs": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/host-logs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/host-logs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/host-logs"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/host-logs/ec2": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/host-logs/ec2"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/host-logs/ec2"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/host-logs/ec2"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/jvm-metrics": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/jvm-metrics"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/jvm-metrics"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/jvm-metrics"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/kafka-logs": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/kafka-logs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kafka-logs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/kafka-logs"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/kafka-metrics": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/kafka-metrics"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kafka-metrics"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/kafka-metrics"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/kubernetes": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/kubernetes"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/kubernetes"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/kubernetes"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/mongodb-logs": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/mongodb-logs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/mongodb-logs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/mongodb-logs"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/mysql": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/mysql"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/mysql"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/mysql"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/nginx-logs": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/nginx-logs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nginx-logs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/nginx-logs"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/nginx-traces": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/nginx-traces"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nginx-traces"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/nginx-traces"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/nodejs-traces": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/nodejs-traces"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/nodejs-traces"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/nodejs-traces"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/postgres-logs": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/postgres-logs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/postgres-logs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/postgres-logs"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/postgres-metrics": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/postgres-metrics"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/postgres-metrics"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/postgres-metrics"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/redis-logs": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/redis-logs"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/redis-logs"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/redis-logs"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/redis-metrics": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/redis-metrics"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/redis-metrics"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/redis-metrics"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/systemd": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/systemd"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/systemd"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/systemd"
-    ]
-  ],
-  "/clickstack/self-configured/integration-examples/temporal": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/temporal"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-examples/temporal"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-examples/temporal"
-    ]
-  ],
-  "/clickstack/self-configured/integration-partners": [
-    [
-      "Open Source",
-      "/clickstack/integration-partners"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-partners"
-    ]
-  ],
-  "/clickstack/self-configured/integration-partners/bindplane": [
-    [
-      "Open Source",
-      "/clickstack/integration-partners/bindplane"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/bindplane"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-partners/bindplane"
-    ]
-  ],
-  "/clickstack/self-configured/integration-partners/bitdrift": [
-    [
-      "Open Source",
-      "/clickstack/integration-partners/bitdrift"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/bitdrift"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-partners/bitdrift"
-    ]
-  ],
-  "/clickstack/self-configured/integration-partners/odigos": [
-    [
-      "Open Source",
-      "/clickstack/integration-partners/odigos"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/odigos"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-partners/odigos"
-    ]
-  ],
-  "/clickstack/self-configured/integration-partners/telflo": [
-    [
-      "Open Source",
-      "/clickstack/integration-partners/telflo"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/integration-partners/telflo"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/integration-partners/telflo"
     ]
   ],
   "/clickstack/self-configured/managing/config": [
@@ -4407,11 +2373,11 @@
       "/clickstack/managing/config"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/config"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/managing/config"
     ]
   ],
@@ -4421,13 +2387,13 @@
       "/clickstack/managing/estimating-resources"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/estimating-resources"
     ]
   ],
   "/clickstack/self-configured/managing/isolating-read-write": [
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/isolating-read-write"
     ]
   ],
@@ -4437,7 +2403,7 @@
       "/clickstack/managing/materialized-views"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/materialized-views"
     ]
   ],
@@ -4447,11 +2413,11 @@
       "/clickstack/managing/overview"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/overview"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/managing/overview"
     ]
   ],
@@ -4461,7 +2427,7 @@
       "/clickstack/managing/performance-tuning"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/performance-tuning"
     ]
   ],
@@ -4471,18 +2437,8 @@
       "/clickstack/managing/production"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/production"
-    ]
-  ],
-  "/clickstack/self-configured/managing/rbac": [
-    [
-      "Self Configured",
-      "/clickstack/self-configured/managing/rbac"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/managing/rbac"
     ]
   ],
   "/clickstack/self-configured/managing/ttl": [
@@ -4491,64 +2447,8 @@
       "/clickstack/managing/ttl"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/managing/ttl"
-    ]
-  ],
-  "/clickstack/self-configured/mcp": [
-    [
-      "Open Source",
-      "/clickstack/mcp"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/mcp"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/mcp"
-    ]
-  ],
-  "/clickstack/self-configured/migration": [
-    [
-      "Open Source",
-      "/clickstack/migration"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/migration"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/migration"
-    ]
-  ],
-  "/clickstack/self-configured/migration/datadog": [
-    [
-      "Open Source",
-      "/clickstack/migration/datadog"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/migration/datadog"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/migration/datadog"
-    ]
-  ],
-  "/clickstack/self-configured/migration/elastic": [
-    [
-      "Open Source",
-      "/clickstack/migration/elastic"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/migration/elastic"
     ]
   ],
   "/clickstack/self-configured/migration/elastic/concepts": [
@@ -4557,78 +2457,8 @@
       "/clickstack/migration/elastic/concepts"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/migration/elastic/concepts"
-    ]
-  ],
-  "/clickstack/self-configured/migration/elastic/intro": [
-    [
-      "Open Source",
-      "/clickstack/migration/elastic/intro"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/intro"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/migration/elastic/intro"
-    ]
-  ],
-  "/clickstack/self-configured/migration/elastic/migrating-agents": [
-    [
-      "Open Source",
-      "/clickstack/migration/elastic/migrating-agents"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-agents"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/migration/elastic/migrating-agents"
-    ]
-  ],
-  "/clickstack/self-configured/migration/elastic/migrating-data": [
-    [
-      "Open Source",
-      "/clickstack/migration/elastic/migrating-data"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-data"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/migration/elastic/migrating-data"
-    ]
-  ],
-  "/clickstack/self-configured/migration/elastic/migrating-sdks": [
-    [
-      "Open Source",
-      "/clickstack/migration/elastic/migrating-sdks"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/migrating-sdks"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/migration/elastic/migrating-sdks"
-    ]
-  ],
-  "/clickstack/self-configured/migration/elastic/search": [
-    [
-      "Open Source",
-      "/clickstack/migration/elastic/search"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/migration/elastic/search"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/migration/elastic/search"
     ]
   ],
   "/clickstack/self-configured/migration/elastic/types": [
@@ -4637,18 +2467,8 @@
       "/clickstack/migration/elastic/types"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/migration/elastic/types"
-    ]
-  ],
-  "/clickstack/self-configured/notebooks": [
-    [
-      "Self Configured",
-      "/clickstack/self-configured/notebooks"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/notebooks"
     ]
   ],
   "/clickstack/self-configured/overview": [
@@ -4657,54 +2477,12 @@
       "/clickstack/overview"
     ],
     [
-      "Self Configured",
+      "Self configured",
       "/clickstack/self-configured/overview"
     ],
     [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/overview"
-    ]
-  ],
-  "/clickstack/self-configured/service-maps": [
-    [
-      "Open Source",
-      "/clickstack/service-maps"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/service-maps"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/service-maps"
-    ]
-  ],
-  "/clickstack/self-configured/text-to-chart": [
-    [
-      "Open Source",
-      "/clickstack/text-to-chart"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/text-to-chart"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/text-to-chart"
-    ]
-  ],
-  "/clickstack/self-configured/url-parameters": [
-    [
-      "Open Source",
-      "/clickstack/url-parameters"
-    ],
-    [
-      "Self Configured",
-      "/clickstack/self-configured/url-parameters"
-    ],
-    [
-      "Fully managed",
-      "/clickstack/observability/url-parameters"
     ]
   ],
   "/clickstack/service-maps": [
@@ -4713,11 +2491,7 @@
       "/clickstack/service-maps"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/service-maps"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/service-maps"
     ]
   ],
@@ -4727,11 +2501,7 @@
       "/clickstack/text-to-chart"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/text-to-chart"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/text-to-chart"
     ]
   ],
@@ -4741,40 +2511,17 @@
       "/clickstack/url-parameters"
     ],
     [
-      "Self Configured",
-      "/clickstack/self-configured/url-parameters"
-    ],
-    [
-      "Fully managed",
+      "ClickHouse Observability",
       "/clickstack/observability/url-parameters"
     ]
   ]
 };
   // END PAGE MAP
 
-  function updateProductTabs(base, variants) {
-    var products = {
-      '/clickstack/observability': 'Fully managed',
-      '/clickstack/self-configured': 'Self Configured'
-    };
-    document.querySelectorAll('#navigation-items > ul > li > a').forEach(function (link) {
-      var root = link.dataset.chProductRoot;
-      if (!root) {
-        root = new URL(link.href, location.href).pathname.replace(/^\/docs(?=\/)/, '').replace(/\/+$/, '');
-        if (!products[root] || link.textContent.trim() !== products[root]) return;
-        link.dataset.chProductRoot = root;
-      }
-      var match = (variants || []).find(function (variant) { return variant[0] === products[root]; });
-      var target = base + (match ? match[1] : root);
-      if (link.getAttribute('href') !== target) link.setAttribute('href', target);
-    });
-  }
-
   function render() {
     var base = /^\/docs(?:\/|$)/.test(location.pathname) ? '/docs' : '';
     var path = location.pathname.slice(base.length).replace(/\/+$/, '');
     var variants = pages[path];
-    updateProductTabs(base, variants);
     var existing = document.getElementById('ch-product-availability');
     var title = document.getElementById('page-title');
     if (!variants || !title) {
@@ -4797,11 +2544,6 @@
     title.after(row);
   }
   function start() {
-    // Use the updated anchor destination instead of Mintlify's original landing-page route.
-    document.addEventListener('click', function (event) {
-      var link = event.target.closest && event.target.closest('a[data-ch-product-root]');
-      if (link) event.stopPropagation();
-    }, true);
     render();
     new MutationObserver(render).observe(document.body, { childList: true, subtree: true });
     window.addEventListener('popstate', render);

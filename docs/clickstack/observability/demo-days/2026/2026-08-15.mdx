@@ -29,8 +29,6 @@ Builder charts use the same variable substitution in most editable fields, acros
 
 Alerts have one hard rule: every variable is evaluated using its empty value. If an alert query references variables, the editor warns you before you save it. The preview and generated SQL show the empty expansion, including on the alert detail page, and the alert task applies those empty values when it runs.
 
-
-
 Variable configuration remains behind `NEXT_PUBLIC_ENABLE_DASHBOARD_VARIABLES`. With no variables configured, dashboard behaviour is unchanged.
 
 **Related PRs:** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) add filter variable configuration, [#2873](https://github.com/hyperdxio/hyperdx/pull/2873) substitute variables in raw SQL charts, [#2874](https://github.com/hyperdxio/hyperdx/pull/2874) autocomplete and validations for SQL dashboard variables, [#2901](https://github.com/hyperdxio/hyperdx/pull/2901) support dashboard variables in chart builder tiles, [#2910](https://github.com/hyperdxio/hyperdx/pull/2910) expand variables as empty in alert queries, [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) support dependent variable value queries, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) support nested macros and variable references in macros, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) add dashboard variables to external API

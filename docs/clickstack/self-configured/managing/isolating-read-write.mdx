@@ -63,7 +63,7 @@ CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY '<strong-password>
 GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
 ```
 
-Generate the password with a tool such as `openssl rand -base64 24` and store it in a secret manager rather than in a manifest or shell history. See our guide on [Creating an ingestion user](/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user) for further details.
+Generate the password with a tool such as `openssl rand -base64 24` and store it in a secret manager rather than in a manifest or shell history. See our guide on [Creating an ingestion user](/clickstack/observability/ingesting-data/collector#creating-an-ingestion-user) for further details.
 
 If this service is already part of a warehouse, note that database-level DDL can hang when another service in it is idled - see [Administration and DDL](#administration).
 </Step>
@@ -84,7 +84,7 @@ CLICKHOUSE_PASSWORD=<strong-password>
 HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel
 ```
 
-See the [collector configuration options](/clickstack/self-configured/managing/config#otel-collector) for details, or the equivalent settings for [Vector](/clickstack/self-configured/ingesting-data/vector) and other ingestion paths.
+See the [collector configuration options](/clickstack/self-configured/managing/config#otel-collector) for details, or the equivalent settings for [Vector](/clickstack/observability/ingesting-data/vector) and other ingestion paths.
 
 Writes sent to the read-only endpoint are rejected, so the collector must always target the read-write service.
 </Step>
@@ -110,13 +110,13 @@ Choose the service you want to run the observability UI from before building das
 Run a search or open a dashboard in the observability UI, then check where the queries landed. `system` tables are written on the node that ran the query, so a service with more than one replica needs [`clusterAllReplicas`](/reference/system-tables/overview#querying-across-nodes) with the `default` cluster name to cover all of them. On the **read-only** service, you should see the observability queries:
 
 ```sql
-SELECT 
-    user, 
-    query_kind, 
+SELECT
+    user,
+    query_kind,
     http_user_agent,
     count()
 FROM clusterAllReplicas('default', system.query_log)
-WHERE event_time > now() - toIntervalMinute(10) 
+WHERE event_time > now() - toIntervalMinute(10)
   AND type = 'QueryFinish'
   AND is_initial_query = 1
 GROUP BY ALL
@@ -132,12 +132,12 @@ On the **read-write** service, the same query should show inserts from the inges
 Running the query on each service in turn is the reliable check, because the `default` cluster contains only the replicas of the service you're connected to. For an aggregate view across the warehouse, use the `all_groups.default` cluster name instead:
 
 ```sql
-SELECT 
-    hostName() AS host, 
-    query_kind, 
+SELECT
+    hostName() AS host,
+    query_kind,
     count()
 FROM clusterAllReplicas('all_groups.default', system.query_log)
-WHERE event_time > now() - toIntervalMinute(10) 
+WHERE event_time > now() - toIntervalMinute(10)
   AND type = 'QueryFinish'
   AND is_initial_query = 1
 GROUP BY ALL;
@@ -203,7 +203,7 @@ Materialized views are triggered by the insert, so they're executed by the read-
 
 ## Isolating agentic workloads {#agentic-workloads}
 
-AI assistants connected through the [MCP server](/clickstack/self-configured/mcp) are read traffic like any dashboard, but their load pattern is different: an agent investigating an incident issues many exploratory queries in quick succession, over ranges nobody chose in advance. Sharing one read-only service between agents and the UI puts that burst in front of the dashboards an engineer is looking at during the same incident.
+AI assistants connected through the [MCP server](/clickstack/observability/mcp) are read traffic like any dashboard, but their load pattern is different: an agent investigating an incident issues many exploratory queries in quick succession, over ranges nobody chose in advance. Sharing one read-only service between agents and the UI puts that burst in front of the dashboards an engineer is looking at during the same incident.
 
 The same warehouse pattern applies - give the agents their own read-only compute:
 
@@ -212,7 +212,7 @@ The same warehouse pattern applies - give the agents their own read-only compute
 
 Create another read-only service in the warehouse, exactly as in [the setup above](#add-read-only-service). It reads the same tables as the service serving the UI, with no data to copy.
 
-Then launch the observability UI on it once from the Cloud console, as in [pointing the observability UI at a read-only service](#point-clickstack). Cloud MCP needs a service with the observability UI enabled as well as MCP itself - see the [MCP prerequisites](/clickstack/self-configured/mcp#managed-prerequisites).
+Then launch the observability UI on it once from the Cloud console, as in [pointing the observability UI at a read-only service](#point-clickstack). Cloud MCP needs a service with the observability UI enabled as well as MCP itself - see the [MCP prerequisites](/clickstack/observability/mcp#managed-prerequisites).
 
 Size it for the query load you expect from agents rather than from the sizing model's dashboard QPS, and leave auto-idling enabled: agentic use is typically intermittent, so the service can idle between investigations.
 </Step>
@@ -229,7 +229,7 @@ claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clicksta
   --header "x-service-id: <read-only-agent-service-id>"
 ```
 
-Any MCP client can carry the header - see [targeting a specific service](/clickstack/self-configured/mcp#managed-service-override) for the equivalent configuration in Cursor, VS Code and others.
+Any MCP client can carry the header - see [targeting a specific service](/clickstack/observability/mcp#managed-service-override) for the equivalent configuration in Cursor, VS Code and others.
 </Step>
 </Steps>
 
@@ -271,7 +271,7 @@ Having alerts configured on a service doesn't keep it awake. Alert evaluations t
 
 The remaining trade-offs are the ones that follow from state being per service:
 
-- The common alerts, and any dashboards that go with them, exist only on the alerting service and aren't visible to users working on the query service. Notifications are delivered to the same [destinations](/clickstack/self-configured/features/alerts) either way, so what users lose is sight of the definitions, not the alerting itself.
+- The common alerts, and any dashboards that go with them, exist only on the alerting service and aren't visible to users working on the query service. Notifications are delivered to the same [destinations](/clickstack/observability/features/alerts) either way, so what users lose is sight of the definitions, not the alerting itself.
 - Sources on the alerting service are separate objects. Those using the [default OpenTelemetry schema](/clickstack/self-configured/deployment/managed#adding-data-sources) are auto-detected, but custom sources have to be configured there too before an alert can reference them.
 
 If a single set of alerts is small enough that its evaluation load is a rounding error against dashboard traffic, keep everything on one read-only service - the operational cost of maintaining definitions in two places is the larger of the two costs.

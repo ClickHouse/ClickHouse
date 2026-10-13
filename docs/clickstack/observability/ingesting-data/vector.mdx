@@ -1,6 +1,6 @@
 ---
 slug: /clickstack/observability/ingesting-data/vector
-description: 'Data ingestion with Vector for ClickHouse Observability'
+description: 'Ingesting with Vector setup and configuration for ClickHouse Observability and self-configured deployments.'
 title: 'Ingesting with Vector'
 toc_max_heading_level: 2
 doc_type: 'guide'
@@ -12,24 +12,30 @@ import { Image } from "/snippets/components/Image.jsx";
 import InstallingVector from '/snippets/_installing_vector.mdx';
 import VectorSampleData from '/snippets/_vector_sample_data.mdx';
 
-<Warning>
-This guide is a placeholder for fully managed ClickHouse Observability, based on the existing Self Configured instructions. Direct database access, custom schemas, table creation, ingestion credentials, and data-source configuration have not yet been verified for the fully managed offering and need review before use.
-</Warning>
+<Tabs>
+<Tab title="ClickHouse Observability">
+
+<Note>
+The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
+</Note>
+
+</Tab>
+<Tab title="Self configured">
 
 [Vector](https://vector.dev) is a high-performance, vendor-neutral observability data pipeline. It is commonly used to collect, transform, and route logs and metrics from a wide range of sources, and is especially popular for log ingestion due to its flexibility and low resource footprint.
 
-When using Vector with ClickHouse Observability, users are responsible for defining their own schemas. These schemas may follow OpenTelemetry conventions, but they can also be entirely custom, representing user-defined event structures. In practice, Vector ingestion is most commonly used for **logs**, where users want full control over parsing and enrichment before data is written to ClickHouse.
+When using Vector with Self Configured ClickHouse Observability, users are responsible for defining their own schemas. These schemas may follow OpenTelemetry conventions, but they can also be entirely custom, representing user-defined event structures. In practice, Vector ingestion is most commonly used for **logs**, where users want full control over parsing and enrichment before data is written to ClickHouse.
 
-This guide focuses on onboarding data into ClickHouse Observability using Vector. For simplicity, it doesn't cover Vector sources or pipeline configuration in depth. Instead, it focuses on configuring the **sink** that writes data into ClickHouse and ensuring the resulting schema is compatible with ClickHouse Observability.
+This guide focuses on onboarding data into Self Configured ClickHouse Observability using Vector. For simplicity, it doesn't cover Vector sources or pipeline configuration in depth. Instead, it focuses on configuring the **sink** that writes data into ClickHouse and ensuring the resulting schema is compatible with Self Configured ClickHouse Observability.
 
 The only strict requirement for the service is that the data includes a **timestamp column** (or equivalent time field), which can be declared when configuring the data source in the observability UI.
 
-## Sending data with Vector {#sending-data-with-vector}
+## Sending data with Vector {#sending-data-with-vector-self-configured}
 <br/>
-The following guide assumes you have already created a ClickHouse Observability service and recorded your service credentials. If you haven't, follow the [Getting Started](/clickstack/observability/getting-started/index) guide for ClickHouse Observability until prompted to configure Vector.
+The following guide assumes you have already created a Self Configured ClickHouse Observability service and recorded your service credentials. If you haven't, follow the [Getting Started](/clickstack/self-configured/getting-started/managed) guide for Self Configured ClickHouse Observability until prompted to configure Vector.
 
 <Steps>
-<Step title="Create a database and table" id="create-a-database-table">
+<Step title="Create a database and table" id="create-a-database-table-self-configured">
 
 Vector requires a table and schema to be defined prior to data ingestion.
 
@@ -41,7 +47,7 @@ In the example below, we use `logs`:
 CREATE DATABASE IF NOT EXISTS logs
 ```
 
-Create a table for your data. This should match the output schema of your data. The example below assumes a classic Nginx structure. Adjust accordingly to your data, adhering to [schema best practices](/concepts/best-practices/select-data-type). We **strongly recommend** familiarizing yourself with the [concept of Primary keys](/concepts/core-concepts/primary-indexes), selecting your primary key based on the guidelines outlined in the [Self Configured performance tuning guide](/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key).
+Create a table for your data. This should match the output schema of your data. The example below assumes a classic Nginx structure. Adjust accordingly to your data, adhering to [schema best practices](/concepts/best-practices/select-data-type). We **strongly recommend** familiarizing yourself with the [concept of Primary keys](/concepts/core-concepts/primary-indexes), selecting your primary key based on the guidelines outlined [here](/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key).
 
 ```sql
 CREATE TABLE logs.nginx_logs
@@ -69,13 +75,13 @@ ORDER BY (toStartOfMinute(time_local), status, remote_addr)
 The primary key above assumes typical access patterns in the observability UI for Nginx logs, but may need to be adjusted depending on your workload in production environments.
 </Info>
 </Step>
-<Step title="Add ClickHouse sink to vector configuration" id="add-clickhouse-sink-to-config">
+<Step title="Add ClickHouse sink to vector configuration" id="add-clickhouse-sink-to-config-self-configured">
 
 Modify your Vector configuration to include the ClickHouse sink, updating the `inputs` field to receive events from your existing pipelines.
 
-This configuration assumes that your upstream Vector pipeline has already **prepared the data to match the target ClickHouse schema**, meaning that fields are parsed, named correctly, and typed appropriately for insertion. See the [**Nginx example below**](#example-dataset-with-vector) for a complete illustration of parsing and normalizing raw log lines into a schema suitable for the service.
+This configuration assumes that your upstream Vector pipeline has already **prepared the data to match the target ClickHouse schema**, meaning that fields are parsed, named correctly, and typed appropriately for insertion. See the [**Nginx example below**](#example-dataset-with-vector-self-configured) for a complete illustration of parsing and normalizing raw log lines into a schema suitable for the service.
 
-```yaml    
+```yaml
 sinks:
   clickhouse:
     type: clickhouse
@@ -99,16 +105,16 @@ The ClickHouse sink also supports **Arrow stream encoding** (currently in beta).
 We recommend reviewing the available sink configuration options in the [Vector documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse):
 
 <Note>
-The example above uses the default user for ClickHouse Observability. For production deployments, we recommend [creating a dedicated ingestion user](/clickstack/observability/ingesting-data/collector#creating-an-ingestion-user) with appropriate permissions and limits.
+The example above uses the default user for Self Configured ClickHouse Observability. For production deployments, we recommend [creating a dedicated ingestion user](/clickstack/observability/ingesting-data/collector#creating-an-ingestion-user) with appropriate permissions and limits.
 </Note>
 </Step>
-<Step title="Navigate to the observability UI" id="navigate-to-clickstack-ui">
+<Step title="Navigate to the observability UI" id="navigate-to-clickstack-ui-self-configured">
 
-Navigate to your ClickHouse Observability service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the observability UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
+Navigate to your Self Configured ClickHouse Observability service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the observability UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
 
 <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Launch ClickStack for vector" size="lg"/>
 </Step>
-<Step title="Create a datasource" id="create-a-datasource-managed">
+<Step title="Create a datasource" id="create-a-datasource-managed-self-configured">
 
 Create a logs data source. If no data sources exist, you will be prompted to create one on your first login. Otherwise, navigate to Team Settings and add a new data source.
 
@@ -120,9 +126,9 @@ We also recommend updating the `Default SELECT` to explicitly define which colum
 
 In the example above, a `Body` column doesn't exist in the data. Instead, it is defined using a SQL expression that reconstructs an Nginx log line from the available fields.
 
-For other possible options, see the [configuration reference](/clickstack/observability/managing/config).
+For other possible options, see the [configuration reference](/clickstack/self-configured/managing/config).
 </Step>
-<Step title="Explore the data" id="explore-the-data-managed">
+<Step title="Explore the data" id="explore-the-data-managed-self-configured">
 
 Navigate to the logs view to explore the data and begin using the service.
 
@@ -130,22 +136,22 @@ Navigate to the logs view to explore the data and begin using the service.
 </Step>
 </Steps>
 
-## Example dataset with Vector {#example-dataset-with-vector}
+## Example dataset with Vector {#example-dataset-with-vector-self-configured}
 
 For a more complete example, we use an **Nginx log file** below.
 
-The following guide assumes you have already created a ClickHouse Observability service and recorded your service credentials. If you haven't, follow the [Getting Started](/clickstack/observability/getting-started/index) guide for ClickHouse Observability until prompted to configure Vector.
+The following guide assumes you have already created a Self Configured ClickHouse Observability service and recorded your service credentials. If you haven't, follow the [Getting Started](/clickstack/self-configured/getting-started/managed) guide for Self Configured ClickHouse Observability until prompted to configure Vector.
 
 <Steps>
-<Step title="Installing Vector" id="installing-vector">
+<Step title="Installing Vector" id="installing-vector-self-configured">
 
 <InstallingVector/>
 </Step>
-<Step title="Download the sample data" id="download-the-sample-data">
+<Step title="Download the sample data" id="download-the-sample-data-self-configured">
 
 <VectorSampleData/>
 </Step>
-<Step title="Create a database and table" id="create-database-table-nginx-managed">
+<Step title="Create a database and table" id="create-database-table-nginx-managed-self-configured">
 
 Vector requires a table and schema to be defined prior to data ingestion.
 
@@ -185,7 +191,7 @@ ORDER BY (toStartOfMinute(time_local), status, remote_addr)
 The primary key above assumes typical access patterns in the observability UI for Nginx logs, but may need to be adjusted depending on your workload in production environments.
 </Info>
 </Step>
-<Step title="Copy Vector configuration" id="copy-vector-configuration">
+<Step title="Copy Vector configuration" id="copy-vector-configuration-self-configured">
 
 Copy the vector configuration and create a file `nginx.yaml`, setting the `CLICKHOUSE_ENDPOINT` and `CLICKHOUSE_PASSWORD`.
 
@@ -226,10 +232,10 @@ sinks:
 ```
 
 <Note>
-The example above uses the default user for ClickHouse Observability. For production deployments, we recommend [creating a dedicated ingestion user](/clickstack/observability/ingesting-data/collector#creating-an-ingestion-user) with appropriate permissions and limits.
+The example above uses the default user for Self Configured ClickHouse Observability. For production deployments, we recommend [creating a dedicated ingestion user](/clickstack/observability/ingesting-data/collector#creating-an-ingestion-user) with appropriate permissions and limits.
 </Note>
 </Step>
-<Step title="Start Vector" id="start-vector">
+<Step title="Start Vector" id="start-vector-self-configured">
 
 Start Vector with the following command, creating the data directory first to record file offsets.
 
@@ -238,13 +244,13 @@ mkdir ./.vector-data
 vector --config nginx.yaml
 ```
 </Step>
-<Step title="Navigate to the observability UI" id="navigate-to-clickstack-ui-nginx-managed">
+<Step title="Navigate to the observability UI" id="navigate-to-clickstack-ui-nginx-managed-self-configured">
 
-Navigate to your ClickHouse Observability service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the observability UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
+Navigate to your Self Configured ClickHouse Observability service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the observability UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
 
 <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Launch ClickStack for vector" size="lg"/>
 </Step>
-<Step title="Create a datasource" id="create-a-datasource-nginx-managed">
+<Step title="Create a datasource" id="create-a-datasource-nginx-managed-self-configured">
 
 Create a logs data source. If no data sources exist, you will be prompted to create one on first login. Otherwise, navigate to Team Settings and add a new data source.
 
@@ -275,12 +281,15 @@ concat(
 
 This reconstructs the log line from the structured fields.
 
-For other possible options, see the [configuration reference](/clickstack/observability/managing/config).
+For other possible options, see the [configuration reference](/clickstack/self-configured/managing/config).
 </Step>
-<Step title="Explore the data" id="explore-the-data-nginx-managed">
+<Step title="Explore the data" id="explore-the-data-nginx-managed-self-configured">
 
 Navigate to the search view for `October 20th, 2025` to explore the data and begin using the service.
 
 <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Observability UI" size="lg"/>
 </Step>
 </Steps>
+
+</Tab>
+</Tabs>

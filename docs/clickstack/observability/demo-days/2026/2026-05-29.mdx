@@ -15,7 +15,7 @@ keywords: ['ClickStack', 'Demo days']
 <iframe src="https://www.youtube.com/embed/bAVaBnfJ82Y" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </Frame>
 
-ClickStack now applies the direct_read optimization only on ClickHouse versions 26.2 and above, where the full-text search index properly supports the alias columns added to open-source schemas. Previously the optimization could be attempted on older versions where it wouldn't work correctly. The version check happens at query time by inspecting the schema, and the alias columns themselves are now included in the open-source schemas by default. 
+ClickStack now applies the direct_read optimization only on ClickHouse versions 26.2 and above, where the full-text search index properly supports the alias columns added to open-source schemas. Previously the optimization could be attempted on older versions where it wouldn't work correctly. The version check happens at query time by inspecting the schema, and the alias columns themselves are now included in the open-source schemas by default.
 
 Also shown: work in progress on replacing the autocomplete materialized view with direct queries against the text index. Right now both do overlapping work, adding ingest pressure. If benchmarks confirm the text index queries hold up performance-wise, the materialized view can be simplified or removed. Aaron also fielded questions from the team about how positional encoding in future ClickHouse text index versions might make key-value filter lookups even more accurate.
 

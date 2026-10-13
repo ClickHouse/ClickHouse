@@ -24,7 +24,7 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
     slug = '/' + re.sub(r'/index$', '', page)
     relative = page.removeprefix('clickstack/')
     product = 'Open Source'
-    for prefix, label in [('observability/', 'Fully managed'), ('self-configured/', 'Self Configured')]:
+    for prefix, label in [('observability/', 'ClickHouse Observability'), ('self-configured/', 'Self configured')]:
         if relative.startswith(prefix):
             relative = relative.removeprefix(prefix)
             product = label
@@ -35,7 +35,7 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
     groups.setdefault(key, {})[product] = slug
 
 mapping = {}
-order = ['Open Source', 'Self Configured', 'Fully managed']
+order = ['Open Source', 'Self configured', 'ClickHouse Observability']
 for variants in groups.values():
     badges = [[label, variants[label]] for label in order if label in variants]
     for slug in variants.values():

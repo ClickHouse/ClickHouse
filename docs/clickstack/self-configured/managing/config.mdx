@@ -54,7 +54,7 @@ The following settings are available for each source:
 | `Timestamp Column`            | Datetime column or expression that's part of your primary key.                                                        | Yes       | Yes                         | `TimestampTime`                                       |
 | `Default Select`              | Columns shown in default search results.                                                                               | Yes       | Yes                         | `Timestamp`, `ServiceName`, `SeverityText`, `Body`         |
 | `Service Name Expression`     | Expression or column for the service name.                                                                             | Yes       | Yes                         | `ServiceName`                                         |
-| `Service Version Expression`  | Expression or column identifying the running release of a service, used to draw [release markers](/clickstack/self-configured/features/dashboards/release-markers) on dashboard charts. Defaults to the OpenTelemetry `service.version` resource attribute when left blank. | No        | No                          | `ResourceAttributes['service.version']`               |
+| `Service Version Expression`  | Expression or column identifying the running release of a service, used to draw [release markers](/clickstack/observability/features/dashboards/release-markers) on dashboard charts. Defaults to the OpenTelemetry `service.version` resource attribute when left blank. | No        | No                          | `ResourceAttributes['service.version']`               |
 | `Log Level Expression`        | Expression or column for the log level.                                                                                | Yes       | Yes                         | `SeverityText`                                        |
 | `Body Expression`             | Expression or column for the log message.                                                                              | Yes       | Yes                         | `Body`                                                |
 | `Log Attributes Expression`   | Expression or column for custom log attributes.                                                                        | Yes       | Yes                         | `LogAttributes`                                       |
@@ -99,7 +99,7 @@ The following settings are available for each source:
 | `Status Code Expression`        | Expression for the span status code.                                                                                   | Yes      | Yes                         | `StatusCode`             |
 | `Status Message Expression`     | Expression for the span status message.                                                                                | Yes      | Yes                         | `StatusMessage`          |
 | `Service Name Expression`       | Expression or column for the service name.                                                                             | Yes      | Yes                         | `ServiceName`            |
-| `Service Version Expression`    | Expression or column identifying the running release of a service, used to draw [release markers](/clickstack/self-configured/features/dashboards/release-markers) on dashboard charts. Defaults to the OpenTelemetry `service.version` resource attribute when left blank. | No       | No                          | `ResourceAttributes['service.version']` |
+| `Service Version Expression`    | Expression or column identifying the running release of a service, used to draw [release markers](/clickstack/observability/features/dashboards/release-markers) on dashboard charts. Defaults to the OpenTelemetry `service.version` resource attribute when left blank. | No       | No                          | `ResourceAttributes['service.version']` |
 | `Resource Attributes Expression`| Expression or column for resource-level attributes.                                                                    | Yes      | Yes                         | `ResourceAttributes`     |
 | `Event Attributes Expression`   | Expression or column for event attributes.                                                                             | Yes      | Yes                         | `SpanAttributes`         |
 | `Sample Rate Expression`        | Column or expression holding the upstream sampling weight (`1/N`). When set, aggregations (`count`, `avg`, `sum`, `quantile`) are corrected for sampling. Percentiles then use `quantileTDigestWeighted`, which is an approximation, so exact values may differ slightly. Leave empty if spans aren't sampled. | No       | No                          |  –                       |
@@ -220,7 +220,7 @@ For example, below is the Logs source configured with correlated sources:
 
 ## OpenTelemetry collector {#otel-collector}
 
-See ["ClickStack OpenTelemetry Collector"](/clickstack/self-configured/ingesting-data/collector) for more details.
+See ["ClickStack OpenTelemetry Collector"](/clickstack/observability/ingesting-data/collector) for more details.
 
 - `CLICKHOUSE_ENDPOINT`
   - **Default:** *None (required)* for the standalone collector image.
@@ -251,11 +251,11 @@ See ["ClickStack OpenTelemetry Collector"](/clickstack/self-configured/ingesting
     - Use `debug` during troubleshooting
 
 - `OTLP_AUTH_TOKEN`
-  - **Default:** *None*. Used only for standalone image. 
+  - **Default:** *None*. Used only for standalone image.
   - **Description:** Allows an OTLP authentication token to be specified. If set, all communication requires this bearer token.
   - **Guidance:**
     - Recommended if using the standalone collector image in production.
-    
+
 - `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
   - **Default:** `default`
   - **Description:** ClickHouse database the collector writes telemetry data to.

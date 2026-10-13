@@ -10,6 +10,9 @@ sidebarTitle: 'OpenTelemetry'
 
 import { Image } from "/snippets/components/Image.jsx";
 
+<Tabs>
+<Tab title="ClickHouse Observability">
+
 Send logs, metrics, and traces to ClickHouse Observability using OpenTelemetry SDKs or a collector in your environment. The service includes a managed ingestion collector that receives telemetry over OTLP and writes it to ClickHouse Cloud.
 
 ## Get your connection details {#sending-otel-data}
@@ -71,3 +74,79 @@ Generate telemetry in your application, then open [Search](/clickstack/observabi
 If data does not appear, check your SDK or collector logs for export errors. Verify the endpoint, authentication header, and protocol, and confirm that the application or collector can reach the managed endpoint. Also check for signal-specific exporter settings that override the base endpoint or headers.
 
 You can use **Send a Test Log** in Managed Telemetry to submit a sample log to the service. Verify your application's telemetry separately to confirm its instrumentation and export configuration.
+
+</Tab>
+<Tab title="Self configured">
+
+All data is ingested into Self Configured ClickHouse Observability via an **OpenTelemetry (OTel) collector** instance, which acts as the primary entry point for logs, metrics, traces, and session data. We recommend using the official [ClickStack distribution](#installing-otel-collector-managed-self-configured) of the collector for this instance.
+
+Users send data to this collector from [language SDKs](/clickstack/observability/ingesting-data/sdks) or through data collection agents collecting infrastructure metrics and logs (such OTel collectors in an [agent](/clickstack/observability/ingesting-data/collector#collector-roles) role or other technologies e.g. [Fluentd](https://www.fluentd.org/) or [Vector](https://vector.dev/)). For teams that want a managed OpenTelemetry pipeline, [Bindplane](/clickstack/observability/integration-partners/bindplane) offers an OpenTelemetry-native solution with a native ClickStack destination, simplifying telemetry collection, processing, and routing.
+
+## Sending OpenTelemetry data {#sending-otel-data-self-configured}
+
+### Installing ClickStack OpenTelemetry collector {#installing-otel-collector-managed-self-configured}
+
+To send data to Self Configured ClickHouse Observability, an OTel collector should be deployed in a [gateway role](/clickstack/observability/ingesting-data/collector#collector-roles). OTel compatible instrumentation will send events to this collector via OTLP over HTTP or gRPC.
+
+<Info>
+**We recommend using the ClickStack OpenTelemetry collector**
+
+This allows you to benefit from standardized ingestion, enforced schemas, and out-of-the-box compatibility with the observability UI. Using the default schema enables automatic source detection and preconfigured column mappings.
+</Info>
+
+For further details see ["Deploying the collector"](/clickstack/observability/ingesting-data/collector).
+
+### Sending data to the collector {#sending-data-to-collector-managed-self-configured}
+
+To send data to Self Configured ClickHouse Observability, point your OpenTelemetry instrumentation to the following endpoints made available by the OpenTelemetry collector:
+
+- **HTTP (OTLP):** `http://localhost:4318`
+- **gRPC (OTLP):** `localhost:4317`
+
+For [language SDKs](/clickstack/observability/ingesting-data/sdks) and telemetry libraries that support OpenTelemetry, you can simply set `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable in your application:
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+If deploying a [contrib distribution of the OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib) in the agent role, can use the OTLP exporter to send to the ClickStack collector. An example agent config consuming this [structured log file](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz), is shown below.
+
+```yaml
+# clickhouse-agent-config.yaml
+receivers:
+  filelog:
+    include:
+      - /opt/data/logs/access-structured.log
+    start_at: beginning
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.time_local
+          layout: '%Y-%m-%d %H:%M:%S'
+exporters:
+  # HTTP setup
+  otlphttp/hdx:
+    endpoint: 'http://localhost:4318'
+    compression: gzip
+
+  # gRPC setup (alternative)
+  otlp/hdx:
+    endpoint: 'localhost:4317'
+    compression: gzip
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 10000
+service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+  pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [batch]
+      exporters: [otlphttp/hdx]
+```
+
+</Tab>
+</Tabs>
