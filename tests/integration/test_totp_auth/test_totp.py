@@ -23,12 +23,25 @@ INTERACTIVE_USERS = [f"totuser_interactive_{i}" for i in range(3)]
 NO_PASSWORD_USERS = [f"totuser_no_password_{i}" for i in range(2)]
 EMPTY_PASSWORD_USERS = [f"totuser_empty_password_{i}" for i in range(2)]
 
+# In strict mode the accepted codes are shared through Keeper under this path.
+STRICT_MODE_KEEPER_PATH = "/clickhouse/access/one_time_passwords"
+
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     user_configs=["config/users.xml"],
     stay_alive=True,
 )
+strict_nodes = [
+    cluster.add_instance(
+        f"strict_node{i}",
+        main_configs=["config/totp_strict_mode.xml"],
+        user_configs=["config/users.xml"],
+        with_zookeeper=True,
+        stay_alive=True,
+    )
+    for i in (1, 2)
+]
 
 
 @pytest.fixture(scope="module")
@@ -48,6 +61,21 @@ def fresh_server(started_cluster):
     node.restart_clickhouse()
 
 
+@pytest.fixture
+def fresh_strict_servers(started_cluster):
+    # In strict mode the used codes are kept in Keeper and survive restarts: drop them there,
+    # and restart the servers to drop their local copies too.
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        if zk.exists(STRICT_MODE_KEEPER_PATH):
+            zk.delete(STRICT_MODE_KEEPER_PATH, recursive=True)
+    finally:
+        zk.stop()
+        zk.close()
+    for strict_node in strict_nodes:
+        strict_node.restart_clickhouse()
+
+
 def get_one_time_password(
     secret, interval=30, digits=6, sha_version=hashlib.sha1, timepoint=None
 ):
@@ -61,9 +89,10 @@ def get_one_time_password(
     return f"{otp:0{digits}d}"
 
 
-def get_otp(user, offset_steps=0):
-    """The code of the user for the current time step shifted by `offset_steps`,
-    computed with the TOTP parameters of the user from the users config."""
+def get_otp(user, offset_steps=0, now=None):
+    """The code of the user for the time step of `now` (default: the current time)
+    shifted by `offset_steps`, with the TOTP parameters of the user from the users config.
+    """
     params = ET.parse(USERS_CONFIG).find(f"./users/{user}/time_based_one_time_password")
     period = int(params.findtext("period", default="30"))
     return get_one_time_password(
@@ -73,7 +102,7 @@ def get_otp(user, offset_steps=0):
         sha_version=getattr(
             hashlib, params.findtext("algorithm", default="SHA1").lower()
         ),
-        timepoint=time.time() + offset_steps * period,
+        timepoint=(now or time.time()) + offset_steps * period,
     )
 
 
@@ -293,4 +322,55 @@ def test_code_single_use(started_cluster):
     )
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user=user, password=f"pw+{next_code}"
+    )
+
+
+def test_strict_mode_single_use_across_servers(started_cluster, fresh_strict_servers):
+    """In strict mode the accepted codes are shared through Keeper: a code accepted by one
+    server is rejected by the others and after a restart, and codes for earlier time steps
+    are rejected everywhere."""
+    query_text = "SELECT currentUser() || toString(42)"
+    user = "totuser_strict"
+    node1, node2 = strict_nodes
+
+    # All codes are derived from one timepoint so that they belong to consecutive time steps
+    now = time.time()
+    prev_code, code, next_code = (
+        get_otp(user, offset_steps=i, now=now) for i in (-1, 0, 1)
+    )
+
+    # A failed attempt (wrong password with a valid code) does not consume the code
+    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
+        query_text, user=user, password=f"wrongpwd+{code}"
+    )
+    assert f"{user}42\n" == node1.query(query_text, user=user, password=f"pw+{code}")
+
+    # The code is rejected on every server, and so is any code for an earlier time step
+    for n in (node2, node1):
+        assert "AUTHENTICATION_FAILED" in n.query_and_get_error(
+            query_text, user=user, password=f"pw+{code}"
+        )
+    assert "AUTHENTICATION_FAILED" in node2.query_and_get_error(
+        query_text, user=user, password=f"pw+{prev_code}"
+    )
+
+    # The code for the next time step is accepted once, on another server
+    assert f"{user}42\n" == node2.query(
+        query_text, user=user, password=f"pw+{next_code}"
+    )
+    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
+        query_text, user=user, password=f"pw+{next_code}"
+    )
+
+    # The state lives in Keeper, so it survives a restart
+    node1.restart_clickhouse()
+    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
+        query_text, user=user, password=f"pw+{next_code}"
+    )
+    assert "AUTHENTICATION_FAILED" in node1.query_and_get_error(
+        query_text, user=user, password=f"pw+{code}"
+    )
+    # One node per user, named by the SHA-256 hash of the user name
+    assert "1\n" == node1.query(
+        f"SELECT name = hex(SHA256('{user}')) FROM system.zookeeper WHERE path = '{STRICT_MODE_KEEPER_PATH}'"
     )

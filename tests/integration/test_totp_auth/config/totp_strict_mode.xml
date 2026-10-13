@@ -1,0 +1,3 @@
+<clickhouse>
+    <totp_strict_mode>1</totp_strict_mode>
+</clickhouse>

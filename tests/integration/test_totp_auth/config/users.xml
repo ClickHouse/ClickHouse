@@ -82,5 +82,13 @@
                 <secret>6P3SDQCE</secret>
             </time_based_one_time_password>
         </totuser_single_use>
+
+        <totuser_strict>
+            <password>pw</password>
+            <time_based_one_time_password>
+                <secret>KRUGKIDROVUWG2ZAMJZG653OEBTG66BA</secret>
+                <period>60</period>
+            </time_based_one_time_password>
+        </totuser_strict>
     </users>
 </clickhouse>

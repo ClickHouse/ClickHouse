@@ -1,6 +1,7 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessControl.h>
+#include <Access/Authentication.h>
 #include <Access/ContextAccess.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/EnabledRolesInfo.h>
@@ -9,6 +10,7 @@
 #include <Access/LDAPAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/MultipleAccessStorage.h>
+#include <Access/OneTimePasswordUsageTracker.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/ReplicatedAccessStorage.h>
@@ -23,11 +25,13 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
@@ -38,6 +42,11 @@
 
 namespace DB
 {
+namespace ServerSetting
+{
+    extern const ServerSettingsBool totp_strict_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
@@ -45,6 +54,7 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
+    extern const int WRONG_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
 }
@@ -304,6 +314,7 @@ AccessControl::AccessControl()
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
       external_authenticators(std::make_unique<ExternalAuthenticators>()),
+      one_time_password_usage_tracker(std::make_unique<OneTimePasswordUsageTracker>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>()),
       changes_notifier(std::make_unique<AccessChangesNotifier>()),
       password_rules(std::make_unique<PasswordComplexityRules>())
@@ -368,6 +379,15 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
 
     setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
+
+    ServerSettings server_settings;
+    server_settings.loadSettingsFromConfig(config_);
+    if (server_settings[ServerSetting::totp_strict_mode])
+    {
+        if (!zkutil::hasZooKeeperConfig(config_))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `totp_strict_mode` requires ZooKeeper or ClickHouse Keeper to be configured");
+        one_time_password_usage_tracker = std::make_unique<OneTimePasswordUsageTracker>(get_zookeeper_function_, "/clickhouse/access/one_time_passwords");
+    }
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -889,6 +909,12 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     {
         const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, client_info,
                                                                      allow_no_password, allow_plaintext_password);
+
+        /// The code is marked as used only after the whole authentication succeeded: the credential checks in the storages
+        /// are pure, so a failed attempt (e.g. a wrong password combined with a valid code) cannot consume a valid code.
+        if (!Authentication::consumeOneTimePassword(credentials, auth_result.user_name, auth_result.authentication_data, *one_time_password_usage_tracker))
+            throw Exception(ErrorCodes::WRONG_PASSWORD, "The one-time password has already been used");
+
         if (authentication_quota)
             authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 
