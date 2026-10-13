@@ -1,16 +1,15 @@
 #pragma once
-#include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashJoin/JoinFeatures.h>
-#include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
+#include <Interpreters/HashJoin/JoinFeatures.h>
+#include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/KnownRowsHolder.h>
+#include <Interpreters//HashJoin/JoinUsedFlags.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 #include <base/types.h>
 
-#include <optional>
 #include <span>
 
 namespace DB
@@ -125,9 +124,6 @@ public:
         bool is_join_get = false);
 
 private:
-    /// The `is_inserted` that `insertFromBlockImpl` reports for a block without rows.
-    static bool isInsertedWithoutRows(const HashJoin & join);
-
     template <typename KeyGetter, typename HashMap>
     static BuildResult insertFromBlockImplTypeCase(
         HashJoin & join,
@@ -140,7 +136,7 @@ private:
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask);
 
-    /// Inserts the rows of one slot. The `is_inserted` it returns comes from these rows only, without `isInsertedWithoutRows`.
+    /// Inserts the rows of one slot. The `is_inserted` it returns comes from these rows only.
     template <typename KeyGetter, typename HashMap, typename Selector>
     static BuildResult insertSlotRows(
         HashJoin & join,
@@ -182,7 +178,12 @@ private:
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
     /// `fast_path` compiles out the per-row null-map and join-mask checks for the common case of
     /// non-nullable keys and no ON-section condition (the checks are done at runtime otherwise).
-    template <typename KeyGetter, typename Map, bool need_filter, bool fast_path, typename AddedColumns>
+    template <
+        typename KeyGetter,
+        typename Map,
+        bool need_filter,
+        bool fast_path,
+        typename AddedColumns>
     static size_t joinRightColumns(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
@@ -190,7 +191,12 @@ private:
         JoinStuff::JoinUsedFlags & used_flags,
         const ScatteredBlock::Selector::Range & range);
 
-    template <typename KeyGetter, typename Map, bool need_filter, bool fast_path, typename AddedColumns>
+    template <
+        typename KeyGetter,
+        typename Map,
+        bool need_filter,
+        bool fast_path,
+        typename AddedColumns>
     static size_t joinRightColumns(
         KeyGetter & key_getter,
         const Map * map,
@@ -208,6 +214,28 @@ private:
         const ScatteredBlock::Selector & selector,
         bool need_filter [[maybe_unused]],
         bool flag_per_row [[maybe_unused]]);
+
+    /// Cut first num_rows rows from block in place and returns block with remaining rows
+    static Block sliceBlock(Block & block, size_t num_rows);
+
+    /** Since we do not store right key columns,
+      * this function is used to copy left key columns to right key columns.
+      * If the user requests some right columns, we just copy left key columns to right, since they are equal.
+      * Example: SELECT t1.key, t2.key FROM t1 FULL JOIN t2 ON t1.key = t2.key;
+      * In that case for matched rows in t2.key we will use values from t1.key.
+      * However, in some cases we might need to adjust the type of column, e.g. t1.key :: LowCardinality(String) and t2.key :: String
+      * Also, the nullability of the column might be different.
+      * Returns the right column after with necessary adjustments.
+      */
+    static ColumnWithTypeAndName copyLeftKeyColumnToRight(
+        const DataTypePtr & right_key_type,
+        const String & renamed_right_column,
+        const ColumnWithTypeAndName & left_column,
+        const IColumn::Filter * null_map_filter = nullptr);
+
+    static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable);
+
+    static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable, const IColumn::Filter & negative_null_map);
 };
 
 /// Instantiate template class ahead in different .cpp files to avoid `too large translation unit`.

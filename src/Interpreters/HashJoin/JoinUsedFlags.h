@@ -32,9 +32,6 @@ public:
     /// Call before the build starts: resizing later would race with the appends.
     void setPendingFlagWorkers(size_t num_workers) { pending_per_worker.resize(num_workers); }
 
-    /// `need_flags` is the fallback `getUsedSafe` reads, so publish it before the build starts, not from each worker.
-    void setNeedFlags() { need_flags = true; }
-
     /// Dense flags indexed by block_no, built from `pending_per_worker` when the build finishes.
     /// The probe and non-joined phases read and write only this.
     std::vector<UsedFlagsForColumns> per_row_flags;
@@ -233,6 +230,7 @@ public:
             UInt8 expected = 0;
             return flag.compare_exchange_strong(expected, 1);
         }
+
     }
 
     template <bool use_flags, bool flag_per_row>

@@ -317,8 +317,6 @@ HashJoin::HashJoin(
 
     used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
     used_flags->setPendingFlagWorkers(data->workers.size());
-    if (needUsedFlagsForPerRightTableRow(table_join))
-        used_flags->setNeedFlags();
 
     if (table_join->collectAnalyzeStats())
         matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, table_join->analyzeMode());

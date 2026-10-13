@@ -2,13 +2,13 @@
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
-#include <Common/HashTable/Prefetching.h>
 #include <Common/ProfileEvents.h>
 
 #include <algorithm>
@@ -163,9 +163,6 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask)
 {
-    if (std::ranges::all_of(per_slot, [](const auto & rows) { return rows.size() == 0; }))
-        return {.is_inserted = isInsertedWithoutRows(join)};
-
     switch (join.data->type)
     {
 #define M(TYPE) \
@@ -178,17 +175,6 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
 #undef M
     }
     UNREACHABLE();
-}
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-bool HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::isInsertedWithoutRows(const HashJoin & join)
-{
-    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so
-    /// unless the block has to be kept for another algorithm the caller drops it.
-    if constexpr (SetJoinMaps<MapsTemplate>)
-        return join.mustKeepRightBlocks();
-    else
-        return !std::is_same_v<typename MapsTemplate::MappedType, RowRef> || STRICTNESS == JoinStrictness::Asof;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -321,6 +307,8 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask)
 {
+    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
+    constexpr bool is_set = SetJoinMaps<MapsTemplate>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
     HashJoin::RightTableData & table = *join.data;
@@ -328,7 +316,13 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
 
     KeyGetter key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
-    BuildResult result{.is_inserted = isInsertedWithoutRows(join)};
+    BuildResult result;
+    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
+    /// the block has to be kept for another algorithm the caller drops it.
+    if constexpr (is_set)
+        result.is_inserted = join.mustKeepRightBlocks();
+    else
+        result.is_inserted = !mapped_one || is_asof_join;
     auto insert_slot = [&](size_t slot)
     {
         const ScatteredBlock::Selector & selector = per_slot[slot];
@@ -532,11 +526,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         added_columns.join_on_keys,
         [](const auto & elem) { return !elem.null_map && elem.join_mask_column.getKind() == JoinCommon::JoinMask::Kind::AllTrue; });
 
-    /// The probe always runs on a whole block: `HashJoin::joinBlock` wraps it into one continuous
-    /// range, and a `next_block` is materialized before it is probed again. Only the build side
-    /// scatters rows by index.
-    if (!selector.isContinuousRange())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash join probe expects a continuous range of rows");
+    /// The probe always runs on a whole block as one continuous range; only the build scatters rows by index.
+    chassert(selector.isContinuousRange());
 
     const auto range = selector.getRange();
     if (mapv.size() > 1 || added_columns.join_on_keys.empty())
@@ -833,13 +824,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     }
 
     /// Raw pointers: a hardened `operator[]` computes the vector size on every lookup, which takes registers this memory-bound loop needs.
-    if (mapv.size() != num_clauses || key_getter_vector.size() != num_clauses)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Hash join has {} maps and {} key getters for {} disjuncts",
-            mapv.size(),
-            key_getter_vector.size(),
-            num_clauses);
+    chassert(mapv.size() == num_clauses && key_getter_vector.size() == num_clauses);
     const Map * const * maps = mapv.data();
     KeyGetter * key_getters = key_getter_vector.data();
     const UInt8 * const * skip_data = skip_datas.data();
