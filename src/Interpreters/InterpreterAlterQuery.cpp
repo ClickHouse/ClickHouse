@@ -35,6 +35,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
@@ -44,6 +45,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/TimeSeries/normalizeTimeSeriesDefinitionImpl.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -192,6 +194,15 @@ void materializeUUIDTypeVersion(ASTAlterQuery & alter, UInt64 uuid_type_version)
         return;
 
     applyUUIDTypeVersionInPlace(*alter.command_list, uuid_type_version);
+
+    /// The `id_generator` setting of `TimeSeries` holds an expression as a string, which the AST pass above does not see.
+    /// No other engine has a setting with this name, so the table does not need to be resolved here.
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command = child->as<ASTAlterCommand>();
+        if (command && command->type == ASTAlterCommand::MODIFY_SETTING && command->settings_changes)
+            materializeUUIDTypeVersionInIdGeneratorSetting(command->settings_changes->as<ASTSetQuery &>().changes, uuid_type_version);
+    }
 }
 
 CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)

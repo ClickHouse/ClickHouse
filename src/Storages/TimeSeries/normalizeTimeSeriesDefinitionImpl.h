@@ -12,6 +12,7 @@
 namespace DB
 {
 class ASTCreateQuery;
+class SettingsChanges;
 struct Settings;
 
 /// The parameters of the normalization of a TimeSeries table definition (see `normalizeTimeSeriesDefinitionImpl`).
@@ -54,5 +55,12 @@ struct NormalizeTimeSeriesDefinitionParams
 /// `normalizeTimeSeriesDefinition` (see normalizeTimeSeriesDefinition.h) collects `params` from the database catalog
 /// and the query context, then calls this function.
 void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const NormalizeTimeSeriesDefinitionParams & params);
+
+/// Materializes the `uuid_type_version` setting into the expression of the `id_generator` setting, which is stored as a
+/// string: a type named in it, as in `CAST(..., 'UUID')`, is rewritten the same way as in a `DEFAULT` expression, so the
+/// expression keeps computing the same identifiers when the definition is replayed. Used for the SETTINGS clause of
+/// `CREATE` and for `ALTER TABLE ... MODIFY SETTING`. The setting is rewritten only if the rewrite changed something.
+/// An unparsable expression is left as is: `TimeSeriesSettings::loadFromQuery` reports it properly later.
+void materializeUUIDTypeVersionInIdGeneratorSetting(SettingsChanges & changes, UInt64 uuid_type_version);
 
 }

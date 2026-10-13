@@ -81,6 +81,23 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
 }
 
+void materializeUUIDTypeVersionInIdGeneratorSetting(SettingsChanges & changes, UInt64 uuid_type_version)
+{
+    const Field * id_generator_field = changes.tryGet("id_generator");
+    if (!id_generator_field || (id_generator_field->getType() != Field::Types::String))
+        return;
+
+    const auto & id_generator = id_generator_field->safeGet<String>();
+    Tokens tokens(id_generator.data(), id_generator.data() + id_generator.size());
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    Expected expected;
+    ASTPtr id_generator_ast;
+    if (!ParserFunction{}.parse(pos, id_generator_ast, expected) || !id_generator_ast || (pos->type != TokenType::EndOfStream))
+        return;
+
+    if (applyUUIDTypeVersionInPlace(*id_generator_ast, uuid_type_version))
+        changes.setSetting("id_generator", Field(id_generator_ast->formatWithSecretsOneLine()));
+}
 
 namespace
 {
@@ -195,32 +212,6 @@ namespace
 
         if (rewrite(*type_ast))
             create_query.storage->settings->changes.setSetting("id_type", Field(type_ast->formatWithSecretsOneLine()));
-    }
-
-    /// Materializes the `uuid_type_version` setting into the expression of the `id_generator` setting of the SETTINGS
-    /// clause, which is stored as a string: a type named in it, as in `CAST(..., 'UUID')`, is rewritten the same way as
-    /// in a `DEFAULT` expression, so the expression keeps computing the same identifiers when the definition is replayed.
-    /// The setting is rewritten only if the rewrite changed something. An unparsable expression is left as is:
-    /// `TimeSeriesSettings::loadFromQuery` reports it properly later.
-    void materializeUUIDTypeVersionInIdGeneratorSetting(ASTCreateQuery & create_query, UInt64 uuid_type_version)
-    {
-        if (!create_query.storage || !create_query.storage->settings)
-            return;
-
-        const Field * id_generator_field = create_query.storage->settings->changes.tryGet("id_generator");
-        if (!id_generator_field || (id_generator_field->getType() != Field::Types::String))
-            return;
-
-        const auto & id_generator = id_generator_field->safeGet<String>();
-        Tokens tokens(id_generator.data(), id_generator.data() + id_generator.size());
-        IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        Expected expected;
-        ASTPtr id_generator_ast;
-        if (!ParserFunction{}.parse(pos, id_generator_ast, expected) || !id_generator_ast || (pos->type != TokenType::EndOfStream))
-            return;
-
-        if (applyUUIDTypeVersionInPlace(*id_generator_ast, uuid_type_version))
-            create_query.storage->settings->changes.setSetting("id_generator", Field(id_generator_ast->formatWithSecretsOneLine()));
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -2209,7 +2200,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         for (auto kind : getTargetKinds())
             materializeUUIDTypeVersionInInnerColumns(create_query, kind, params.uuid_type_version);
         rewriteIdTypeSetting(create_query, [&](IAST & type_ast) { return applyUUIDTypeVersionInPlace(type_ast, params.uuid_type_version); });
-        materializeUUIDTypeVersionInIdGeneratorSetting(create_query, params.uuid_type_version);
+        if (create_query.storage && create_query.storage->settings)
+            materializeUUIDTypeVersionInIdGeneratorSetting(create_query.storage->settings->changes, params.uuid_type_version);
     }
 
     /// Resolve types timestamp_type, value_type, id_type.
