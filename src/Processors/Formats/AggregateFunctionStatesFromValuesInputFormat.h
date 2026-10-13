@@ -47,6 +47,7 @@ public:
     std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
     bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
     void setPrefetchedFooter(std::shared_ptr<ParquetPrefetchedFooter> footer) override { underlying->setPrefetchedFooter(std::move(footer)); }
+    bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
 
 protected:
     /// The underlying format already annotates the exceptions with the file name, no need to do it twice.
