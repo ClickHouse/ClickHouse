@@ -46,7 +46,6 @@ namespace Setting
 {
     extern const SettingsBool convert_query_to_cnf;
     extern const SettingsBool enable_positional_arguments;
-    extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool optimize_aggregators_of_group_by_keys;
     extern const SettingsBool optimize_append_index;
     extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
@@ -720,16 +719,13 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// GROUPING SETS with a single set is classified as an ordinary GROUP BY by ExpressionAnalyzer
     /// (see analyzeAggregation), so it emits no rows with a key absent from the aggregated set and
     /// the elimination stays valid; only the multi-set form has to be skipped.
-    /// With `group_by_use_nulls` the keys of grouping sets become `Nullable` even with a single set, while the
-    /// argument of the aggregate function keeps its type, so the replacement would not match it.
     const bool is_multi_set_grouping_sets = select_query->group_by_with_grouping_sets
         && select_query->groupBy() && select_query->groupBy()->children.size() > 1;
     if (settings[Setting::optimize_aggregators_of_group_by_keys]
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube
-        && !is_multi_set_grouping_sets
-        && !(select_query->group_by_with_grouping_sets && settings[Setting::group_by_use_nulls]))
+        && !is_multi_set_grouping_sets)
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY

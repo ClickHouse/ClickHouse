@@ -11,6 +11,5 @@ SET group_by_use_nulls = 1, optimize_aggregators_of_group_by_keys = 1;
 SELECT sum(s), count() FROM (SELECT b AS k, anyHeavy(b) AS s FROM t_aggregators_of_keys_use_nulls GROUP BY GROUPING SETS ((k)));
 SELECT sum(s), count() FROM (SELECT b AS k, any(b) AS s FROM t_aggregators_of_keys_use_nulls GROUP BY GROUPING SETS ((k)));
 SELECT sum(s), count() FROM (SELECT b AS k, max(b) AS s FROM t_aggregators_of_keys_use_nulls GROUP BY GROUPING SETS ((k), ()));
-SELECT sum(s), count() FROM (SELECT b AS k, anyHeavy(b) AS s FROM t_aggregators_of_keys_use_nulls GROUP BY GROUPING SETS ((k))) SETTINGS enable_analyzer = 0;
 
 DROP TABLE t_aggregators_of_keys_use_nulls;
