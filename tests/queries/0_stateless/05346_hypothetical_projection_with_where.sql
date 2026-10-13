@@ -21,21 +21,26 @@ INSERT INTO t_real SELECT number + 30000, number % 100, number * 10 + 1 FROM num
 CREATE HYPOTHETICAL PROJECTION p ON t_est (SELECT a, b, v WHERE v % 10 = 0 ORDER BY b);
 
 SELECT '-- the query filter implies the filter of the projection';
-SELECT trim(explain) FROM (EXPLAIN WHATIF projection_scan_budget_rows = 0 SELECT a, b, v FROM t_est WHERE b = 40 AND v % 10 = 0)
-WHERE match(trim(explain), '^(marks|status|verdict):');
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 0 SELECT a, b, v FROM t_est WHERE b = 40 AND v % 10 = 0)
+WHERE match(line, '^(Baseline|With |marks:|status:|verdict:)');
 SELECT count() FROM t_real WHERE b = 40 AND v % 10 = 0 SETTINGS log_comment = '05346_implies' FORMAT Null;
 
 SELECT '-- the same with a sample, the span contains the read of the optimizer';
-SELECT trim(explain) FROM (EXPLAIN WHATIF projection_scan_budget_rows = 3000 SELECT a, b, v FROM t_est WHERE b = 40 AND v % 10 = 0)
-WHERE match(trim(explain), '^(marks_span|verdict):');
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 3000 SELECT a, b, v FROM t_est WHERE b = 40 AND v % 10 = 0)
+WHERE match(line, '^(marks_span|verdict):');
 
 SELECT '-- the query filter does not imply it';
-SELECT trim(explain) FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE b = 40)
-WHERE match(trim(explain), '^(status|reason):');
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE b = 40)
+WHERE match(line, '^(status|reason):');
 SELECT count() FROM t_real WHERE b = 40 SETTINGS log_comment = '05346_not_implies' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['SelectedMarks'], length(projections) FROM system.query_log
+SELECT 'real, ' || if(log_comment = '05346_implies', 'filter implied', 'filter not implied') || ': '
+    || toString(ProfileEvents['SelectedMarks']) || ' marks, ' || if(empty(projections), 'from the base table', 'from the projection')
+FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05346_implies', '05346_not_implies') AND type = 'QueryFinish'
 ORDER BY log_comment;
 
