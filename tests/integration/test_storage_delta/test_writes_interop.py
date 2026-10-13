@@ -1,6 +1,6 @@
 """
 Delta Lake writes with a foreign reader or a second writer as the oracle: Spark and delta-rs
-read-back of the type and partition matrix, Spark history/time travel/skipping, checkpoints, CDF,
+read-back of the type and partition matrix, Spark history/time travel/skipping, checkpoints,
 VACUUM, concurrent writers, two-node read-after-write, cancel on S3/Azure, credential masking.
 """
 
@@ -567,8 +567,8 @@ def test_conflict_across_checkpoint_boundary(started_cluster):
 
 
 def test_write_to_table_with_unsupported_writer_feature_is_rejected(started_cluster):
-    # A CHECK constraint raises the writer protocol to the legacy version 3, whose `checkConstraints`
-    # feature the kernel does not implement; the write must fail closed and leave the table as Spark left it.
+    # A CHECK constraint is a writer feature the kernel does not implement; the write must fail closed
+    # and leave the table as Spark left it.
     node = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     table_name = randomize_table_name("test_unsupported_feature")
@@ -576,13 +576,14 @@ def test_write_to_table_with_unsupported_writer_feature_is_rejected(started_clus
     table = f"delta.`{path}`"
 
     spark.sql(f"CREATE TABLE {table} (id INT, v STRING) USING delta")
-    spark.sql(f"ALTER TABLE {table} ADD CONSTRAINT id_positive CHECK (id > 0)")
     spark.sql(f"INSERT INTO {table} VALUES (1, 'spark')")
+    spark.sql(f"ALTER TABLE {table} ADD CONSTRAINT positive CHECK (id > 0)")
     push_to_node(node, path)
 
     node.query(f"CREATE TABLE {table_name} (id Int32, v String) ENGINE = DeltaLakeLocal('{path}')")
+    # Both rows satisfy the constraint, so only the unsupported feature itself can refuse them.
     error = node.query_and_get_error(f"INSERT INTO {table_name} VALUES (2, 'clickhouse'), (3, 'clickhouse')")
-    assert "DELTA_KERNEL_ERROR" in error and "is not supported" in error, error
+    assert "DELTA_KERNEL_ERROR" in error and "checkConstraints" in error and "is not supported" in error, error
     assert node.query(f"SELECT count() FROM {table_name}").strip() == "1"
     pull_from_node(node, path)
     assert sorted(f for f in os.listdir(f"{path}/_delta_log") if f.endswith(".json")) == [
