@@ -9,8 +9,6 @@ Prefix sort description: k DESC
 Read type: InReverseOrder
 Virtual row conversions
 Read type: Default
--- the FINAL merges are followed by virtual rows
-1	1
 --- ReplacingMergeTree: results
 0	p4
 3	p1
@@ -31,26 +29,12 @@ Read type: Default
 57	p2
 60	p4
 63	p2
-95	p2
-96	p2
-97	p2
-98	p2
-99	p2
-100	p4
-101	p3
 48	p1
 49	p1
 50	p4
 151	p3
 150	p4
 149	p3
---- ReplacingMergeTree with is_deleted
-6	p3
-12	p3
-18	p3
-24	p3
-30	p3
-33	p1
 --- CollapsingMergeTree
 Prefix sort description: k ASC
 Read type: InOrder
@@ -84,17 +68,11 @@ Read type: Default
 54	111
 57	111
 60	111
-48	11
-49	11
-50	111
-51	111
 --- AggregatingMergeTree
-45	10	2
-48	10	2
-51	10	3
-54	10	3
-57	10	3
-60	10	3
+Prefix sort description: k ASC
+Read type: InOrder
+Virtual row conversions
+Read type: Default
 45	10
 48	10
 51	10
@@ -102,6 +80,10 @@ Read type: Default
 57	10
 60	10
 --- CoalescingMergeTree
+Prefix sort description: k ASC
+Read type: InOrder
+Virtual row conversions
+Read type: Default
 45	1	x
 48	1	x
 51	2	x
@@ -113,8 +95,8 @@ Prefix sort description: k ASC
 Read type: InOrder
 Virtual row conversions
 Read type: Default
--- several layers, with virtual rows
-1	1
+-- several FINAL merges, each followed by a virtual row
+1	1	1
 0	p4
 3	p1
 6	p1
@@ -151,26 +133,6 @@ Read type: Default
 1252	p3
 1251	p3
 1250	p4
--- the limit is reached within the first layer: far fewer rows read than the table has
-1
---- a sorting key longer than the primary key
-Prefix sort description: k DESC
-Read type: InReverseOrder
-Virtual row conversions
-7	1
-7	2
-8	-2
-8	1
-9	-3
-9	5
-9	7
-9	7
-9	5
-9	-3
-8	1
-8	-2
-7	2
-7	1
 --- ORDER BY a prefix of the primary key, which is a prefix of the sorting key
 -- ORDER BY a
 Prefix sort description: a ASC
@@ -179,9 +141,6 @@ Virtual row conversions
 Read type: Default
 0	15	2	3	-1	1
 3	15	2	0	-1	1
--- ORDER BY a DESC
-9	15	2	0	-1	1
-6	15	2	0	-1	1
 -- ORDER BY a, b
 Prefix sort description: a ASC, b ASC
 Read type: InOrder
