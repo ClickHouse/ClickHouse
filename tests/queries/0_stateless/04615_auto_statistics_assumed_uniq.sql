@@ -15,6 +15,8 @@ SET allow_statistics = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 SET materialize_statistics_on_insert = 1;
 
+-- The Float assumption is skipped once the ratio of default rows reaches ratio_of_defaults_for_sparse_serialization,
+-- which the test runner randomizes, so tables expecting the assumption pin it.
 CREATE TABLE t_auto_stats_float_assume
 (
     x Nullable(Float64)
@@ -23,7 +25,8 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS
     auto_statistics_types = 'basic, uniq_v2',
-    auto_statistics_assume_floats_distinct = 1;
+    auto_statistics_assume_floats_distinct = 1,
+    ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_auto_stats_float_assume
 SELECT if(number % 10 = 0, NULL, toFloat64(number % 5)) FROM numbers(1000);
@@ -210,7 +213,8 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS
     auto_statistics_types = 'basic, uniq_v2',
-    auto_statistics_assume_floats_distinct = 1;
+    auto_statistics_assume_floats_distinct = 1,
+    ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_auto_stats_materialize_assume
 SELECT if(number % 10 = 0, NULL, toFloat64(number % 5)) FROM numbers(1000);
@@ -231,6 +235,7 @@ ORDER BY tuple()
 SETTINGS
     auto_statistics_types = 'basic, uniq_v2',
     auto_statistics_assume_floats_distinct = 1,
+    ratio_of_defaults_for_sparse_serialization = 1,
     materialize_statistics_on_merge = 1;
 
 INSERT INTO t_auto_stats_merge_assume
@@ -258,6 +263,7 @@ ORDER BY tuple()
 SETTINGS
     auto_statistics_types = 'basic, uniq_v2',
     auto_statistics_assume_floats_distinct = 1,
+    ratio_of_defaults_for_sparse_serialization = 1,
     materialize_statistics_on_merge = 1;
 
 INSERT INTO t_auto_stats_disable_rebuild
