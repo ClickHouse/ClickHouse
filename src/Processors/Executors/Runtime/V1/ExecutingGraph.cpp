@@ -583,10 +583,13 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                     case IProcessor::Status::PortFull:
                     {
                         node.status = ExecutingGraph::ExecStatus::Idle;
-                        /// A request may have arrived while this node was owned by normal execution.
-                        for (auto * spillable : processor.getSpillables())
-                            if (scheduleSpill(node, spillable, queue))
-                                break;
+                        if (memory_reservation)
+                        {
+                            /// A request may have arrived while this node was owned by normal execution.
+                            for (auto * spillable : processor.getSpillables())
+                                if (scheduleSpill(node, spillable, queue))
+                                    break;
+                        }
                         break;
                     }
                     case IProcessor::Status::Finished:
