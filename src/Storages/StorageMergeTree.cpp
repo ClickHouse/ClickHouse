@@ -6216,8 +6216,9 @@ Pipe StorageMergeTree::alterPartition(
     /// `assertNotReadonly` themselves, but other commands dispatch into shared
     /// `MergeTreeData` methods (`dropDetached`, `movePartitionToDisk`,
     /// `movePartitionToVolume`) that do not, so a follower could otherwise mutate
-    /// shared object storage. `FREEZE`/`UNFREEZE` create or remove local hardlink
-    /// backups only and are allowed on followers.
+    /// shared object storage. `FREEZE`/`UNFREEZE` write to the table's disks, which are
+    /// shared object storage under `leader_election`, so there they are leader-only; only
+    /// for tables without `leader_election` do they stay node-local and unrestricted.
     for (const auto & command : commands)
     {
         switch (command.type)

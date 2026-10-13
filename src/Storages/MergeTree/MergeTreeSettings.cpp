@@ -2874,6 +2874,11 @@ accepted — so that after a failover the new leader sees the parts written by t
 Tables on disks with any other metadata layout, including the default per-replica
 `metadata_type = local`, are rejected at creation.
 (`Azure` object storage is implemented but not yet test-covered, so it is rejected for now.)
+This setting is not supported for `ReplicatedMergeTree`: such a table is rejected at create and attach whenever its
+effective value of the setting is on, including when it is only inherited from a server-wide default. Do not enable it
+in the server-wide `merge_tree` section on a server that also has `ReplicatedMergeTree` tables: they would fail to
+attach on the next restart. Enable it per table in the `SETTINGS` clause instead (or override it back to `0` in the
+`replicated_merge_tree` section).
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"}) \
     DECLARE(Seconds, leader_election_heartbeat_interval, 10, R"(
