@@ -28,7 +28,7 @@ private:
     using ValueType = ExternalResultDescription::ValueType;
 
     Chunk generate() override;
-    void checkTypes(const Cassandra::ResultPage & page) const;
+    void checkColumns(const Cassandra::ResultPage & page) const;
     static void insertValue(IColumn & column, ValueType type, std::string_view value);
 
     Cassandra::ConnectionPoolPtr pool;
@@ -38,7 +38,7 @@ private:
 
     String paging_state;
     bool is_finished = false;
-    bool types_checked = false;
+    bool columns_checked = false;
 };
 
 }

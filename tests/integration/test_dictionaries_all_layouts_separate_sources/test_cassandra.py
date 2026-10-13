@@ -306,3 +306,74 @@ def test_custom_query_selective_load_without_condition(started_cluster, paging_t
         assert "{condition}" in error
     finally:
         node.query("DROP DICTIONARY query_no_condition_dict")
+
+
+def test_custom_query_column_names(started_cluster, paging_table):
+    """
+    The columns returned by a custom query are matched by position, so their names must
+    match the dictionary columns, otherwise values could go into wrong attributes of the same type.
+    """
+    node.query(
+        f"""
+        CREATE DICTIONARY query_alias_dict (key UInt64, value String)
+        PRIMARY KEY key
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            query 'SELECT id AS key, value FROM paging.t'))
+        LAYOUT(HASHED())
+        LIFETIME(0)
+        """
+    )
+    try:
+        assert node.query("SELECT dictGet('query_alias_dict', 'value', 12345::UInt64)") == "value_12345\n"
+    finally:
+        node.query("DROP DICTIONARY query_alias_dict")
+
+    node.query(
+        f"""
+        CREATE DICTIONARY query_wrong_names_dict (id UInt64, a String, b String)
+        PRIMARY KEY id
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            query 'SELECT id, value AS b, value AS a FROM paging.t'))
+        LAYOUT(HASHED())
+        LIFETIME(0)
+        """
+    )
+    try:
+        error = node.query_and_get_error("SELECT * FROM query_wrong_names_dict")
+        assert "NO_SUCH_COLUMN_IN_TABLE" in error
+        assert "returned column `b` at position 2, expected `a`" in error
+    finally:
+        node.query("DROP DICTIONARY query_wrong_names_dict")
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        "query 'SELECT id, value FROM paging.t' where 'id > 0'",
+        "query 'SELECT id, value FROM paging.t' keyspace 'paging' column_family 't'",
+        "keyspace 'paging'",
+        "column_family 't'",
+    ],
+)
+def test_invalid_configuration(started_cluster, settings):
+    node.query(
+        f"""
+        CREATE DICTIONARY invalid_config_dict (id UInt64, value String)
+        PRIMARY KEY id
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            {settings}))
+        LAYOUT(HASHED())
+        LIFETIME(0)
+        """
+    )
+    try:
+        error = node.query_and_get_error("SELECT * FROM invalid_config_dict")
+        assert "INVALID_CONFIG_PARAMETER" in error
+    finally:
+        node.query("DROP DICTIONARY invalid_config_dict")

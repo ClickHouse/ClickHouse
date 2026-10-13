@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/UUID.h>
 #include <base/unaligned.h>
+#include <Common/quoteString.h>
 
 #include <algorithm>
 #include <bit>
@@ -18,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_TYPE;
@@ -159,7 +161,7 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, std::string_
     }
 }
 
-void CassandraSource::checkTypes(const Cassandra::ResultPage & page) const
+void CassandraSource::checkColumns(const Cassandra::ResultPage & page) const
 {
     if (page.columns() != description.sample_block.columns())
         throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
@@ -168,6 +170,16 @@ void CassandraSource::checkTypes(const Cassandra::ResultPage & page) const
     for (size_t i = 0; i < page.columns(); ++i)
     {
         const auto & name = description.sample_block.getByPosition(i).name;
+
+        /// Columns are matched by position, so a custom query that returns them in a different order
+        /// would put the values into wrong attributes, and the types do not always reveal it.
+        const String & got_name = page.columnSpecs()[i].name;
+        if (got_name != name)
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "The query to Cassandra returned column {} at position {}, expected {}. "
+                "Note that Cassandra converts unquoted identifiers to lowercase, use double quotes or aliases to preserve the case",
+                backQuote(got_name), i + 1, backQuote(name));
+
         const auto compatible = compatibleTypes(description.types[i].first);
         if (compatible.empty())
             throw Exception(ErrorCodes::UNKNOWN_TYPE,
@@ -195,10 +207,10 @@ Chunk CassandraSource::generate()
 
     Cassandra::ResultPage page = pool->query(query, static_cast<Int32>(max_block_size), paging_state);
 
-    if (!types_checked)
+    if (!columns_checked)
     {
-        checkTypes(page);
-        types_checked = true;
+        checkColumns(page);
+        columns_checked = true;
     }
 
     if (page.hasMorePages())
