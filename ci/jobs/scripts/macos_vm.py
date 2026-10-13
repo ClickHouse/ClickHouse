@@ -3,7 +3,7 @@
     python3 -m ci.jobs.scripts.macos_vm golden   build the provisioned image unless it exists
     python3 -m ci.jobs.scripts.macos_vm serve    keep SLOTS VMs, each registered for exactly one job
 
-The host needs Homebrew and `/usr/bin/expect`; `tart` is installed on first use. Jobs inside a VM
+The host needs `/usr/bin/expect`; `tart` is installed on first use from its release. Jobs inside a VM
 reach instance metadata through NAT, which needs `--http-put-response-hop-limit 2` on the instance.
 """
 
@@ -76,15 +76,26 @@ def tart_home() -> Path:
     return home
 
 
-def tart(*args, capture=False):
+def tart_bin() -> str:
+    return str(tart_home() / "tart.app/Contents/MacOS/tart")
+
+
+def tart(*args, capture=False, check=True):
     if capture:
-        return subprocess.check_output(["tart", *args], text=True).strip()
-    subprocess.run(["tart", *args], check=True)
+        return subprocess.check_output([tart_bin(), *args], text=True).strip()
+    subprocess.run([tart_bin(), *args], check=check)
 
 
 def ensure_tart():
-    if subprocess.run(["which", "tart"], capture_output=True).returncode != 0:
-        subprocess.run(["brew", "install", "cirruslabs/cli/tart"], check=True)
+    # The release ships a signed `tart.app`; the Homebrew tap formula fails on current Homebrew.
+    if not Path(tart_bin()).exists():
+        log("installing tart")
+        subprocess.run(
+            f"curl -fsSL https://github.com/cirruslabs/tart/releases/latest/download/tart.tar.gz | tar xz -C {shlex.quote(str(tart_home()))}",
+            shell=True,
+            check=True,
+        )
+    log(f"tart {tart('--version', capture=True)}")
 
 
 def vm_names():
@@ -107,7 +118,7 @@ class VM:
 
     def start(self):
         logf = open(self.home / f"{self.name}.log", "w")
-        self.proc = subprocess.Popen(["tart", "run", "--no-graphics", self.name], stdout=logf, stderr=subprocess.STDOUT)
+        self.proc = subprocess.Popen([tart_bin(), "run", "--no-graphics", self.name], stdout=logf, stderr=subprocess.STDOUT)
         self.ip = tart("ip", "--wait", "180", self.name, capture=True)
         log(f"{self.name} is up at {self.ip}")
         return self
@@ -138,7 +149,7 @@ class VM:
 
     def stop(self):
         if self.proc and self.proc.poll() is None:
-            subprocess.run(["tart", "stop", self.name], check=False)
+            tart("stop", self.name, check=False)
             self.proc.wait()
 
     def __enter__(self):
@@ -146,7 +157,7 @@ class VM:
 
     def __exit__(self, *_):
         self.stop()
-        subprocess.run(["tart", "delete", self.name], check=False)
+        tart("delete", self.name, check=False)
         (self.home / f"{self.name}.log").unlink(missing_ok=True)
 
 
