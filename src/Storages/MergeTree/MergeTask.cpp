@@ -1030,8 +1030,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 auto it = part_statistics.find(column_name);
 
                 /// Rebuild instead of merging when the part's statistics have a different structure,
-                /// or when they carry an assumed-all-distinct cardinality that neither the metadata
-                /// nor the current settings would produce anymore (e.g. the assumption setting was
+                /// or when they carry an assumed-all-distinct cardinality that the metadata does not
+                /// declare and the current settings no longer enable (the assumption setting was
                 /// disabled) — otherwise the stale assumption would survive every future merge.
                 if (it == part_statistics.end() || !column_stats->structureEquals(*it->second)
                     || column_stats->hasStaleAssumedStatistics(*it->second, statistics_build_options))

@@ -450,6 +450,12 @@ TEST(Statistics, StaleAssumedStatisticsDetection)
     EXPECT_FALSE(metadata_stats->hasStaleAssumedStatistics(*part_stats, assume_options));
     EXPECT_TRUE(metadata_stats->hasStaleAssumedStatistics(*part_stats, StatisticsBuildOptions{}));
 
+    /// The check is metadata-only: tightening the data-dependent default-ratio guard does not make
+    /// the assumption stale (that would need the part's data); `MATERIALIZE STATISTICS` re-evaluates it.
+    StatisticsBuildOptions tightened_options = assume_options;
+    tightened_options.max_default_ratio_for_assumed_distinct = 0.0;
+    EXPECT_FALSE(metadata_stats->hasStaleAssumedStatistics(*part_stats, tightened_options));
+
     /// An explicitly declared assumed materialization is never stale.
     auto explicit_assumed_metadata
         = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false, StatisticsMaterialization::AssumedAllDistinct);

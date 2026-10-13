@@ -60,10 +60,16 @@ public:
     static std::optional<AssumedAllDistinctMergeDecision> decideMerge(const StatisticsMap & stats, const StatisticsMap & other_stats);
     static bool isStructureCompatible(StatisticsType type, const IStatistics & lhs, const IStatistics & rhs);
 
-    /// True when `part_stats` carries an assumed-all-distinct uniq statistic that neither the
-    /// table metadata (`desired_desc`) nor the current build `options` would produce anymore.
-    /// Merges use this to rebuild such statistics from data instead of propagating a stale
-    /// assumption forever after the user disabled the corresponding setting.
+    /// True when `part_stats` carries an assumed-all-distinct uniq statistic that is no longer
+    /// requested: the table metadata (`desired_desc`) does not declare it explicitly, and the
+    /// current build `options` disable the assumption for the column type altogether (e.g. the user
+    /// turned `auto_statistics_assume_floats_distinct` off). Merges use this to rebuild such
+    /// statistics from data instead of propagating the assumption forever.
+    /// This is a metadata-only check: the data-dependent guards (the probed average string length
+    /// against `auto_statistics_long_string_distinct_min_length`, the ratio of default rows against
+    /// `ratio_of_defaults_for_sparse_serialization`) are not re-evaluated, because that would need
+    /// the part's data and thus a rebuild of every statistic of the column on every merge. After
+    /// changing those thresholds, existing assumptions are kept until `MATERIALIZE STATISTICS`.
     static bool hasStaleAssumedStatistics(
         const ColumnStatisticsDescription & desired_desc, const StatisticsMap & part_stats, const StatisticsBuildOptions & options);
 

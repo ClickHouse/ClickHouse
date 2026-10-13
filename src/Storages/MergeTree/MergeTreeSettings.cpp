@@ -2458,7 +2458,7 @@ The `minmax` statistics type is deprecated: it is a subset of `basic`, which sho
 When enabled, implicit cardinality statistics (added through [auto_statistics_types](#auto_statistics_types)) for Float columns are materialized with an all-distinct assumption instead of scanning values.
 Explicitly declared `STATISTICS(uniq)` / `STATISTICS(uniq_v2)` columns keep building real sketches; use `STATISTICS(uniq_v2(assumed_all_distinct))` to opt a column in explicitly.
 Columns whose ratio of default-valued rows reaches [ratio_of_defaults_for_sparse_serialization](#ratio_of_defaults_for_sparse_serialization) keep real sketches, since repeated defaults contradict the assumption.
-Existing parts keep their statistics until rebuilt: after disabling this setting, statistics are restored on the next merge (with [materialize_statistics_on_merge](#materialize_statistics_on_merge)) or by `ALTER TABLE ... MATERIALIZE STATISTICS`.
+Existing parts keep their statistics until rebuilt: after disabling this setting, statistics are restored on the next merge (with [materialize_statistics_on_merge](#materialize_statistics_on_merge)) or by `ALTER TABLE ... MATERIALIZE STATISTICS`. A change of `ratio_of_defaults_for_sparse_serialization` only affects newly built statistics; use `ALTER TABLE ... MATERIALIZE STATISTICS` to re-evaluate existing parts.
 )", 0, \
         {"26.10", false, false, "New setting to materialize Float cardinality statistics with an all-distinct assumption."}) \
     DECLARE(Bool, auto_statistics_assume_long_strings_distinct, false, R"(
@@ -2469,6 +2469,7 @@ Existing parts keep their statistics until rebuilt: after disabling this setting
         {"26.10", false, false, "New setting to materialize long String cardinality statistics with an all-distinct assumption."}) \
     DECLARE(UInt64, auto_statistics_long_string_distinct_min_length, 64, R"(
 Average string byte length threshold used by [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct).
+A change only affects newly built statistics: merges keep existing assumptions, use `ALTER TABLE ... MATERIALIZE STATISTICS` to re-evaluate existing parts.
 )", 0, \
         {"26.10", 64, 64, "New setting controlling the average string length threshold for all-distinct cardinality statistics."}) \
     DECLARE(UInt64, auto_statistics_long_string_distinct_probe_rows, 1000, R"(

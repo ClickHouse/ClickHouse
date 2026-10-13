@@ -96,8 +96,10 @@ void setAssumedAllDistinctStatistics(
     stats[type] = createAssumedAllDistinctStatistics(desc, cardinality);
 }
 
-/// Whether the build settings could (re-)produce the assumed-all-distinct materialization for a
-/// column of `data_type`. Used to detect assumptions that became stale after a settings change.
+/// Whether the build settings enable the assumed-all-distinct materialization for a column of
+/// `data_type` at all. Used to detect assumptions that became stale because the user disabled the
+/// corresponding setting. Data-dependent guards (string length / default ratio thresholds) are
+/// intentionally not part of this check; see `UniqAssumedAllDistinctPolicy::hasStaleAssumedStatistics`.
 bool buildOptionsMayAssumeAllDistinct(const DataTypePtr & data_type, const StatisticsBuildOptions & options)
 {
     if (!data_type)
@@ -257,10 +259,12 @@ bool UniqAssumedAllDistinctPolicy::hasStaleAssumedStatistics(
             if (it->second.materialization == StatisticsMaterialization::AssumedAllDistinct)
                 continue;
 
-            /// The build settings could re-derive the assumption for this implicit statistic
-            /// anyway, so merging the existing assumption is cheaper than a rebuild. (For string
-            /// columns the rebuilt probe could decide differently, e.g. after a threshold change;
-            /// we accept the existing assumption in that case rather than rebuilding every merge.)
+            /// The assumption is still enabled for this implicit statistic, so merge the existing
+            /// assumption instead of rebuilding. A rebuild could decide differently after a change of
+            /// `auto_statistics_long_string_distinct_min_length` or
+            /// `ratio_of_defaults_for_sparse_serialization`, but detecting that needs the data, and a
+            /// rebuild recomputes every statistic of the column; such assumptions are kept until
+            /// `MATERIALIZE STATISTICS`.
             if (it->second.is_implicit && buildOptionsMayAssumeAllDistinct(desired_desc.data_type, options))
                 continue;
         }

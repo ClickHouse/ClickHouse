@@ -30,3 +30,7 @@ x	['Uniq','UniqV2']	5
 x	['Uniq','UniqV2']	5
 mixed real and assumed after merge
 x	['Uniq','UniqV2']	5
+threshold change after merge
+s	1	2000
+threshold change after materialize
+s	1	1

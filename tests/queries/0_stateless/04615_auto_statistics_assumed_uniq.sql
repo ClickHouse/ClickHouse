@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS t_auto_stats_materialize_assume;
 DROP TABLE IF EXISTS t_auto_stats_merge_assume;
 DROP TABLE IF EXISTS t_auto_stats_disable_rebuild;
 DROP TABLE IF EXISTS t_auto_stats_mixed_real_and_assumed;
+DROP TABLE IF EXISTS t_auto_stats_threshold_change;
 
 SET allow_statistics = 1;
 SET allow_suspicious_low_cardinality_types = 1;
@@ -320,6 +321,43 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_stats_mixed_real_and_assumed' AND active AND column = 'x'
 ORDER BY name;
 
+-- Changing a data-dependent threshold does not invalidate existing assumptions on merge (that would
+-- need the part data); MATERIALIZE STATISTICS re-evaluates them with the current settings.
+CREATE TABLE t_auto_stats_threshold_change
+(
+    s String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'uniq_v2',
+    auto_statistics_assume_long_strings_distinct = 1,
+    auto_statistics_long_string_distinct_min_length = 64,
+    auto_statistics_long_string_distinct_probe_rows = 1000,
+    materialize_statistics_on_merge = 1;
+
+INSERT INTO t_auto_stats_threshold_change
+SELECT repeat('x', 80) FROM numbers(1000);
+INSERT INTO t_auto_stats_threshold_change
+SELECT repeat('x', 80) FROM numbers(1000);
+
+ALTER TABLE t_auto_stats_threshold_change MODIFY SETTING auto_statistics_long_string_distinct_min_length = 100;
+OPTIMIZE TABLE t_auto_stats_threshold_change FINAL;
+
+SELECT 'threshold change after merge';
+SELECT column, has(statistics, 'UniqV2') AS has_uniq_v2, estimates.cardinality
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_threshold_change' AND active AND column = 's'
+ORDER BY name;
+
+ALTER TABLE t_auto_stats_threshold_change MATERIALIZE STATISTICS s SETTINGS mutations_sync = 1;
+
+SELECT 'threshold change after materialize';
+SELECT column, has(statistics, 'UniqV2') AS has_uniq_v2, estimates.cardinality < 100 AS normal_cardinality
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_threshold_change' AND active AND column = 's'
+ORDER BY name;
+
 DROP TABLE t_auto_stats_float_assume;
 DROP TABLE t_auto_stats_float_normal;
 DROP TABLE t_auto_stats_explicit_float_exact;
@@ -333,3 +371,4 @@ DROP TABLE t_auto_stats_materialize_assume;
 DROP TABLE t_auto_stats_merge_assume;
 DROP TABLE t_auto_stats_disable_rebuild;
 DROP TABLE t_auto_stats_mixed_real_and_assumed;
+DROP TABLE t_auto_stats_threshold_change;

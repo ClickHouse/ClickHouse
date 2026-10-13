@@ -185,9 +185,11 @@ public:
 
     const StatsMap & getStats() const { return stats; }
     bool structureEquals(const ColumnStatistics & other) const;
-    /// True when `part_stats` carries assumed-all-distinct uniq statistics that neither this
-    /// (metadata-derived) description nor the current build options would produce anymore, so
-    /// merges should rebuild them from data instead of propagating the stale assumption.
+    /// True when `part_stats` carries assumed-all-distinct uniq statistics that this
+    /// (metadata-derived) description does not declare and the current build options no longer
+    /// enable (the setting was disabled), so merges should rebuild them from data instead of
+    /// propagating the stale assumption. Threshold changes are not detected, see
+    /// `UniqAssumedAllDistinctPolicy::hasStaleAssumedStatistics`.
     bool hasStaleAssumedStatistics(const ColumnStatistics & part_stats, const StatisticsBuildOptions & options) const;
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
