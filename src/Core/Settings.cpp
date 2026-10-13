@@ -3438,7 +3438,7 @@ Require an alias for a subquery or table function used in a JOIN when the alias 
 
 The alias is required only when a name is actually ambiguous: an identifier resolves to different columns of several joined table expressions, or `*` produces several columns with the same name, and one of these columns belongs to a subquery or table function without an alias. Such a column cannot be qualified, so the query fails with `ALIAS_REQUIRED` instead of being resolved silently or failing with `AMBIGUOUS_IDENTIFIER`. Unambiguous queries do not need the alias.
 
-This applies to the analyzer (`enable_analyzer = 1`). The old query interpreter (`enable_analyzer = 0`) keeps the older behavior and requires an alias for every subquery or table function in a JOIN of several table expressions.
+Before v26.10, the old query analysis (`enable_analyzer = 0`) required an alias for every subquery or table function in a JOIN of several table expressions.
 
 Set to `0` to disable the restriction.
 )", 0) \
