@@ -32,11 +32,11 @@ SET async_insert = 0;
 
 DROP TABLE IF EXISTS t_dlf_dim;
 DROP TABLE IF EXISTS t_dlf_fact;
-CREATE TABLE t_dlf_dim (k UInt64, v UInt64)
+CREATE TABLE t_dlf_dim (k Int64, v Int64)
 ENGINE = IcebergLocal('__ICEBERG_PATH__', 'Parquet')
 SETTINGS iceberg_format_version = 2;
 INSERT INTO t_dlf_dim SELECT number, number FROM numbers(5);
-CREATE TABLE t_dlf_fact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+CREATE TABLE t_dlf_fact (k Int64, v Int64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 INSERT INTO t_dlf_fact SELECT number % 5, number FROM numbers(100000);
 
 SELECT '-- without a filter the lake table reports its 5 rows';
