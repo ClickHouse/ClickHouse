@@ -122,6 +122,14 @@ UInt64 getMultipartUploadInitialBufferSize(bool use_adaptive_write_buffer, UInt6
     return DBMS_DEFAULT_BUFFER_SIZE;
 }
 
+MultipartUploadMemory getMultipartUploadMemoryForBufferSize(const MultipartUploadMemory & memory, UInt64 buf_size)
+{
+    MultipartUploadMemory result = memory;
+    if (result.initial_buffer_size_follows_caller)
+        result.initial_buffer_size = std::min(result.initial_buffer_size, buf_size);
+    return result;
+}
+
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file)
 {
     MultipartUploadMemory result;

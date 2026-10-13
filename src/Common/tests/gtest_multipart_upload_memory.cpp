@@ -516,3 +516,44 @@ TEST(MultipartUploadMemory, AdaptiveInitialBufferIsReplayedFromItsRealStart)
             getMultipartUploadMemoryCeilingForWrittenBytes(default_start, first_part + 1));
     }
 }
+
+TEST(MultipartUploadMemory, NonAdaptiveStreamStartsFromCallerBufferSize)
+{
+    /// Without use_adaptive_write_buffer the writer starts from the buf_size its caller passes to writeFile,
+    /// capped at DBMS_DEFAULT_BUFFER_SIZE: a marks file opened at 4 KiB that received 10 KiB of marks holds
+    /// a 16 KiB buffer, not 1 MiB.
+    const UInt64 marks_buffer_size = 4096;
+
+    BufferAllocationPolicy::Settings exponential;
+    exponential.max_single_size = 32 * 1024 * 1024;
+    exponential.min_size = 16 * 1024 * 1024;
+    exponential.max_size = 5ULL * 1024 * 1024 * 1024;
+
+    BufferAllocationPolicy::Settings strict;
+    strict.strict_size = 16 * 1024 * 1024;
+
+    for (const auto & settings : {exponential, strict})
+    {
+        auto memory = getMultipartUploadMemory(settings, 4);
+        memory.initial_buffer_size = getMultipartUploadInitialBufferSize(false, 16 * 1024);
+
+        /// A caller that does not tell whether the writer follows its buffer size keeps the cap.
+        EXPECT_EQ(getMultipartUploadMemoryForBufferSize(memory, marks_buffer_size).initial_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+
+        memory.initial_buffer_size_follows_caller = true;
+        const auto marks_memory = getMultipartUploadMemoryForBufferSize(memory, marks_buffer_size);
+        EXPECT_EQ(marks_memory.initial_buffer_size, marks_buffer_size);
+        /// A caller buffer above the cap is capped, like in the writer's constructor.
+        EXPECT_EQ(getMultipartUploadMemoryForBufferSize(memory, 64ULL * 1024 * 1024).initial_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+
+        for (const UInt64 bytes_written : {1ULL, 4096ULL, 4097ULL, 10ULL * 1024, 1024ULL * 1024, 3ULL * 1024 * 1024})
+        {
+            EXPECT_EQ(
+                getMultipartUploadMemoryCeilingForWrittenBytes(marks_memory, bytes_written),
+                firstBufferMemoryAfterWriting(settings, marks_buffer_size, bytes_written))
+                << "bytes_written " << bytes_written;
+        }
+
+        EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(marks_memory, 10ULL * 1024), 16ULL * 1024);
+    }
+}

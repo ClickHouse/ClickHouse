@@ -1779,14 +1779,18 @@ UInt64 estimateNeededMemoryForMerge(
 
     /// The multipart ceiling of one marks file, from the marks bytes that file receives (the same
     /// written-bytes tiering as remote_write_buffer_size above, which prices the data files). Zero, like
-    /// remote_write_buffer_size, when the output is not written through multipart upload buffers.
+    /// remote_write_buffer_size, when the output is not written through multipart upload buffers. Without
+    /// adaptive write buffers the writer of a marks file starts from MARKS_FILE_BUFFER_SIZE, the buf_size the
+    /// marks file is opened with, not from DBMS_DEFAULT_BUFFER_SIZE.
     UInt64 marks_remote_write_buffer_size = 0;
     if (!remote_write_buffer_memories.empty())
     {
         for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
             marks_remote_write_buffer_size = std::max(
                 marks_remote_write_buffer_size,
-                getMultipartUploadMemoryCeilingForWrittenBytes(remote_write_buffer_memory.memory, output_marks_bytes_per_stream));
+                getMultipartUploadMemoryCeilingForWrittenBytes(
+                    getMultipartUploadMemoryForBufferSize(remote_write_buffer_memory.memory, MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE),
+                    output_marks_bytes_per_stream));
     }
     else if (guessed_s3_write_buffer_memory.has_value())
         marks_remote_write_buffer_size = std::max<UInt64>(

@@ -393,6 +393,8 @@ MultipartUploadMemory S3ObjectStorage::getWriteBufferMemory(const WriteSettings 
     /// writeObject starts the writer from adaptive_write_buffer_initial_size when use_adaptive_write_buffer is set.
     memory.initial_buffer_size = getMultipartUploadInitialBufferSize(
         write_settings.use_adaptive_write_buffer, write_settings.adaptive_write_buffer_initial_size);
+    /// Otherwise it starts from the buf_size passed to writeObject, which only the caller knows.
+    memory.initial_buffer_size_follows_caller = !write_settings.use_adaptive_write_buffer;
     return memory;
 }
 

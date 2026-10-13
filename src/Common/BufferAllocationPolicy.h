@@ -69,6 +69,13 @@ struct MultipartUploadMemory
     /// (see S3ObjectStorage::writeObject and AzureObjectStorage::writeObject); otherwise the caller's buffer
     /// size is not known up front, and the cap is the bound.
     UInt64 initial_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// Whether the writer starts from the buf_size its caller passes to writeFile (capped at
+    /// initial_buffer_size) rather than from initial_buffer_size itself - true for a known disk without
+    /// use_adaptive_write_buffer. A caller that knows the buffer size of a particular stream (a marks file
+    /// is opened at MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE) applies it with
+    /// getMultipartUploadMemoryForBufferSize.
+    bool initial_buffer_size_follows_caller = false;
 };
 
 /// max_inflight_parts_for_one_file == 0 means unlimited (see TaskTracker::waitTilInflightShrink), which
@@ -77,6 +84,12 @@ MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Set
 
 /// The buffer a multipart writer starts with for the given write settings (MultipartUploadMemory::initial_buffer_size).
 UInt64 getMultipartUploadInitialBufferSize(bool use_adaptive_write_buffer, UInt64 adaptive_write_buffer_initial_size);
+
+/// `memory` for a stream whose writer is created with `buf_size`: when the writer starts from the caller's
+/// buffer (MultipartUploadMemory::initial_buffer_size_follows_caller), its first buffer is
+/// min(buf_size, initial_buffer_size), as in the WriteBufferFromS3 / WriteBufferFromAzureBlobStorage
+/// constructors. Otherwise `memory` is returned unchanged.
+MultipartUploadMemory getMultipartUploadMemoryForBufferSize(const MultipartUploadMemory & memory, UInt64 buf_size);
 
 /// Like MultipartUploadMemory::ceiling, but does not charge a buffer tier that cannot be reached after
 /// writing `bytes_written` through one stream. The returned value still includes all simultaneously live
