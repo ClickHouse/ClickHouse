@@ -196,13 +196,15 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
 
     std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);
 
+    /// The inputs are set before the expression enters the memo: the group indexes the expression by a
+    /// fingerprint that includes its inputs, so a later equal expression is found as a duplicate.
     auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
-    auto group_id = memo.addGroup(group_expression);
     for (auto * child_node : node.children)
     {
         auto [input_group_id, pending_props] = addGroup(*child_node);
         group_expression->inputs.push_back({input_group_id, pending_props});
     }
+    auto group_id = memo.addGroup(group_expression);
 
     /// Set statistics on the group (shared by all expressions in the group)
     auto group = memo.getGroup(group_id);
