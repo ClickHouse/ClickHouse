@@ -6958,10 +6958,10 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert str(rows_si[0]["si"]["a.b"]) == "2024-06-01 12:00:00", rows_si
     assert rows_si[0]["si"]["a"]["b"] == 7, rows_si
 
-    # `sc` is read separately because it is still annotated as on master, so Spark refuses it with the
-    # reported error. Reading it is also what proves the ambiguous path was not annotated after all.
-    with pytest.raises(Exception, match="Unable to create Parquet converter"):
-        spark.read.format("delta").load(result_file).select("sc").collect()
+    # `sc` keeps the default annotation on both leaves, which Spark 4 reads into `timestamp_ntz` as is.
+    rows_sc = spark.read.format("delta").load(result_file).select("sc").collect()
+    assert str(rows_sc[0]["sc"]["a.b"]) == "2024-06-01 12:00:00", rows_sc
+    assert str(rows_sc[0]["sc"]["a"]["b"]) == "2024-06-01 12:00:00", rows_sc
 
     instance.query(f"DROP TABLE {table_name}")
 

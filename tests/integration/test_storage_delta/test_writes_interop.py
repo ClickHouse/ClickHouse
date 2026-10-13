@@ -567,15 +567,16 @@ def test_conflict_across_checkpoint_boundary(started_cluster):
 
 
 def test_write_to_table_with_unsupported_writer_feature_is_rejected(started_cluster):
-    # Enabling CDF in Spark raises the writer protocol to a level whose legacy features the
-    # kernel does not implement; the write must fail closed and leave the table as Spark left it.
+    # A CHECK constraint raises the writer protocol to the legacy version 3, whose `checkConstraints`
+    # feature the kernel does not implement; the write must fail closed and leave the table as Spark left it.
     node = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     table_name = randomize_table_name("test_unsupported_feature")
     path = local_table_path(table_name)
     table = f"delta.`{path}`"
 
-    spark.sql(f"CREATE TABLE {table} (id INT, v STRING) USING delta TBLPROPERTIES (delta.enableChangeDataFeed = true)")
+    spark.sql(f"CREATE TABLE {table} (id INT, v STRING) USING delta")
+    spark.sql(f"ALTER TABLE {table} ADD CONSTRAINT id_positive CHECK (id > 0)")
     spark.sql(f"INSERT INTO {table} VALUES (1, 'spark')")
     push_to_node(node, path)
 
@@ -587,6 +588,7 @@ def test_write_to_table_with_unsupported_writer_feature_is_rejected(started_clus
     assert sorted(f for f in os.listdir(f"{path}/_delta_log") if f.endswith(".json")) == [
         "00000000000000000000.json",
         "00000000000000000001.json",
+        "00000000000000000002.json",
     ]
     assert len([f for f in os.listdir(path) if f.endswith(".parquet")]) == 1
     assert spark_rows(spark, path, "id") == [(1, "spark")]
