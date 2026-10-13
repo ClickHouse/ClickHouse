@@ -1127,7 +1127,7 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query);
 
-    auto [ast, io] = executeQuery(sql_query, getContext(), {}, QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query, getContext(), serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
     try
     {
