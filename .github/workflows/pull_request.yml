@@ -260,7 +260,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Docs check (Mintlify)' --workflow "PR" --ci --timestamp
 
   fast_test:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0') }}
     name: "Fast test"
