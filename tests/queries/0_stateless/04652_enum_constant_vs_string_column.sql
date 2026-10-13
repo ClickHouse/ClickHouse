@@ -269,16 +269,14 @@ SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gran
 
 -- The equality above is satisfied by two full scans, and it measures nothing at all if the pinned plan
 -- carries no granule counts, which is what happens with the pin removed, so assert the narrowing
--- separately. Every stage's denominator is the previous stage's numerator, so summing over sections lets
--- one stage's pruning stand in for another's. The two cells below therefore add use_skip_indexes = 0,
--- which leaves Min-Max inert at 5/5 with condition true and makes Partition the stage that prunes, and
--- they read that section by name: measured 1/5 for Partition where the default plan reports 1/1.
+-- separately. Min-Max and Partition both analyze the partition key, and each stage's denominator is the
+-- previous stage's numerator, so the cell below compares the granules left after Partition with the
+-- granules Min-Max started from: 1 of 5, and 5 of 5 if neither stage prunes.
 SELECT 'partition_key_prunes_something', (SELECT
     toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Granules: (\\d+)/'))
-      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Granules: \\d+/(\\d+)'))
+      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Min-Max.*?Granules: \\d+/(\\d+)'))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
-          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0,
-                   use_skip_indexes = 0));
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
 -- The condition text is strictly stronger than a granule count, because it names which value the key
 -- analysis used and so detects the name versus number substitution directly. It is read out of the

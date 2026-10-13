@@ -1,4 +1,11 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -220,6 +227,63 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
+/// Whether `column = constant` holds for several values of the column that sort differently, so it does not fix the column.
+/// `equals` pads a `FixedString` with zero bytes against a `String`, so `s = toFixedString('a', 2)` matches `'a'` with any
+/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map`.
+bool equalsMatchesSeveralValues(
+    const DataTypePtr & column_type_with_wrappers, ColumnPtr constant, const DataTypePtr & constant_type_with_wrappers)
+{
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(constant.get()))
+        constant = column_const->getDataColumnPtr();
+    chassert(constant->size() == 1);
+    /// NULL is not equal to anything.
+    if (constant->isNullAt(0))
+        return false;
+    constant = removeNullable(constant->convertToFullColumnIfLowCardinality());
+
+    auto column_type = removeLowCardinalityAndNullable(column_type_with_wrappers);
+    auto constant_type = removeLowCardinalityAndNullable(constant_type_with_wrappers);
+
+    /// The type of the value that a `Variant` or `Dynamic` constant holds is in the value, not in `constant_type`.
+    if (const auto * column_dynamic = typeid_cast<const ColumnDynamic *>(constant.get()))
+    {
+        /// Inserting into a new column moves the value out of the shared variant.
+        auto copy = ColumnDynamic::create();
+        copy->insertFrom(*column_dynamic, 0);
+        return equalsMatchesSeveralValues(column_type_with_wrappers, copy->getVariantColumnPtr(), copy->getVariantInfo().variant_type);
+    }
+    if (const auto * column_variant = typeid_cast<const ColumnVariant *>(constant.get()))
+    {
+        const auto discriminator = column_variant->globalDiscriminatorAt(0);
+        return equalsMatchesSeveralValues(
+            column_type_with_wrappers,
+            column_variant->getVariantPtrByGlobalDiscriminator(discriminator)->cut(column_variant->offsetAt(0), 1),
+            assert_cast<const DataTypeVariant &>(*constant_type).getVariant(discriminator));
+    }
+
+    if (isString(column_type) && isFixedString(constant_type))
+        return true;
+    /// Values of several types can be equal to the constant (`'a'` as `String` and `FixedString(1)`) and sort differently.
+    if (isVariant(column_type) || isDynamic(column_type))
+        return true;
+
+    const auto * column_tuple = typeid_cast<const DataTypeTuple *>(column_type.get());
+    const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
+    if (!column_tuple || !constant_tuple)
+        return false;
+
+    const auto & column_elements = column_tuple->getElements();
+    const auto & constant_elements = constant_tuple->getElements();
+    if (column_elements.size() != constant_elements.size())
+        return false;
+
+    const auto & constant_columns = assert_cast<const ColumnTuple &>(*constant);
+    for (size_t i = 0; i < column_elements.size(); ++i)
+        if (equalsMatchesSeveralValues(column_elements[i], constant_columns.getColumnPtr(i), constant_elements[i]))
+            return true;
+    return false;
+}
+
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
@@ -244,16 +308,21 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             else if (name == "equals")
             {
                 const ActionsDAG::Node * maybe_fixed_column = nullptr;
+                const ActionsDAG::Node * constant = nullptr;
                 size_t num_constant_columns = 0;
                 for (const auto & child : node->children)
                 {
                     if (child->column)
+                    {
                         ++num_constant_columns;
+                        constant = child;
+                    }
                     else
                         maybe_fixed_column = child;
                 }
 
-                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
+                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
+                    && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
                 {
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fixed_columns.insert(maybe_fixed_column);
@@ -262,7 +331,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
                         && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective({}))
+                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
                     {
                         maybe_injective = maybe_injective->children.front();
                         fixed_columns.insert(maybe_injective);

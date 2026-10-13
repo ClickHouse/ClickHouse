@@ -13,6 +13,7 @@ namespace DB::ErrorCodes
 namespace DB
 {
 class IDataType;
+class StringValueFilter;
 }
 
 namespace DB::Parquet
@@ -42,6 +43,15 @@ struct Dictionary
     PaddedPODArray<UInt32> offsets; // if !fixed_size
     size_t count = 0;
 
+    /// If not empty, `string_value_filter_mask[i]` says whether the i-th dictionary entry matches
+    /// the string filter from PREWHERE; `index` materializes empty strings for non-matching entries.
+    /// Filled by `buildStringValueFilterMask`, only for `StringPlain` mode.
+    PaddedPODArray<UInt8> string_value_filter_mask;
+    /// The filter the mask was built from (shared by all readers of the column within the query).
+    /// `index` reports its statistics to it and stops applying the mask when the filter disables
+    /// itself, same as the non-dictionary decoding paths.
+    const StringValueFilter * string_value_filter = nullptr;
+
     /// Points into `col`, or `decompressed_buf`, or into Prefetcher's memory (kept alive by dictionary_page_prefetch).
     std::span<const char> data;
 
@@ -54,16 +64,26 @@ struct Dictionary
     /// Memory owned by the decoded dictionary (the decompression buffer, string offsets, and the
     /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
     size_t allocatedBytes() const;
-    void index(const ColumnUInt32 & indexes_col, IColumn & out);
+    /// `use_string_value_filter` = false gathers the raw values even when a `string_value_filter_mask`
+    /// was built, and does not report the observed selectivity to the shared `StringValueFilter`.
+    /// It is used by the dictionary materialization done for row-group pruning, which visits every
+    /// distinct value exactly once: letting it feed `updateStats` would make the adaptive disable be
+    /// driven by the dictionary's value mix instead of the row frequencies the scan actually sees.
+    void index(const ColumnUInt32 & indexes_col, IColumn & out, bool use_string_value_filter = true);
     /// Append the values at the given dictionary indexes to `out`. Same as `index`, from a plain
     /// array; `index` delegates here. The indexes must be within bounds.
-    void appendIndexes(const UInt32 * indexes, size_t n, IColumn & out);
+    void appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, bool use_string_value_filter = true);
     /// Append the value at dictionary index `idx` to `out`, `n` times. Used by the fused
     /// decode-and-index path (`PageDecoder::decodeAndIndex`) to turn an RLE run of a repeated
     /// index into a bulk fill, instead of expanding the run into explicit indexes and gathering
     /// them one by one.
+    /// The whole run references a single dictionary entry, so a `string_value_filter_mask` is
+    /// consulted once for the entire run, and the run is accounted in the filter statistics as a
+    /// whole - the adaptive disable covers repeated runs exactly as it covers explicit indexes.
     void appendRepeated(size_t idx, size_t n, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
+    /// Checks every dictionary entry against the filter, see `string_value_filter_mask`.
+    void buildStringValueFilterMask(const StringValueFilter & filter);
 
     /// Upper bound on `allocatedBytes()` after `decode()` with the given arguments, computed from the
     /// page header *before* decoding anything. Lets a memory-bounded caller (the dictionary-filter
@@ -75,10 +95,12 @@ struct Dictionary
     /// in the prefetch buffer and are accounted separately by the caller, so charging them here would
     /// double-count them. `codec` is the column chunk's compression codec, which decides whether the
     /// payload is materialized in `decompressed_buf` at all (see `Reader::decodeDictionaryPageImpl`).
-    /// Must be kept in sync with `decode()`.
+    /// `has_string_value_filter` says whether `buildStringValueFilterMask` will be called after
+    /// `decode()`, allocating a per-entry mask on top (only in `StringPlain` mode).
+    /// Must be kept in sync with `decode()` and `buildStringValueFilterMask()`.
     static size_t decodedFootprintUpperBound(
         parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type);
+        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool has_string_value_filter);
 };
 
 struct PageDecoder
@@ -184,6 +206,9 @@ struct PageDecoderInfo
     /// So we have a small allowlist of type conversions (dispatched in SchemaConverter).
     bool allow_stats = false;
 
+    /// True if we can use the bloom filter and the dictionary page to skip row groups.
+    bool allow_hash_filters = false;
+
     /// If true, we need to call tryConvertFieldToType on the output of
     /// FixedSizeConverter/StringConverter's convertField.
     /// The conversion is from type PrimitiveColumnInfo::decoded_type to the column's type in the
@@ -205,7 +230,10 @@ struct PageDecoderInfo
 
     /// [data, end) must be padded, i.e. have at least PADDING_FOR_SIMD bytes of readable memory
     /// before `data` and after `end`.
-    std::unique_ptr<PageDecoder> makeDecoder(parq::Encoding::type, std::span<const char> data) const;
+    /// If `string_value_filter` is not nullptr, string values that do not match it may be decoded
+    /// as empty strings (used for substring search conditions pushed down from PREWHERE).
+    std::unique_ptr<PageDecoder> makeDecoder(
+        parq::Encoding::type, std::span<const char> data, const StringValueFilter * string_value_filter = nullptr) const;
 
     /// Decode a min/max value from Statistics.
     /// If not supported, allow_stats is false, or the value doesn't survive the conversion to
@@ -227,6 +255,9 @@ struct IntConverter : public FixedSizeConverter
     /// Only allowed if input_size is 4.
     std::optional<size_t> output_size;
 
+    /// The output type is `Bool`: a nonzero value is read as 1, and so is a nonzero statistic.
+    bool output_bool = false;
+
     /// These determine the type of Field produced by convertField (when parsing min/max stats).
     /// No effect on convertColumn - it just copies bytes and doesn't care what they mean.
     std::optional<UInt32> field_decimal_scale; // Decimal{32,64}(scale)
@@ -234,7 +265,6 @@ struct IntConverter : public FixedSizeConverter
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
     bool field_datetime = false; // DateTime; the cast saturates values above UINT32_MAX
     bool field_signed = true; // Int64, otherwise UInt64
-    bool field_bool = false; // Bool; an endpoint above 1 bounds nothing, as a nonzero value may be read as 1
     /// If not Ignore, it's a date column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
     /// Only used when date_overflow_behavior is not Ignore: the requested output type is Date rather
