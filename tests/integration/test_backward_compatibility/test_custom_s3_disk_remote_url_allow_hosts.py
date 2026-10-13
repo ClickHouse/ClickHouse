@@ -54,7 +54,7 @@ def test_table_on_custom_s3_disk_loads_after_upgrade(started_cluster):
     )
     node.query("INSERT INTO t VALUES (1), (2), (3)")
     assert node.query("SELECT id FROM t ORDER BY id") == "1\n2\n3\n"
-    # Detached before the upgrade, so its disk is first created by the short ATTACH on the new binary.
+    # Detached permanently before the upgrade, so its disk is first built by the short ATTACH on the new binary.
     node.query(
         f"CREATE TABLE t_detached (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS disk = {s3_disk('detached_disk')}"
     )
@@ -73,17 +73,10 @@ def test_table_on_custom_s3_disk_loads_after_upgrade(started_cluster):
         == "1\n"
     )
 
-    # A short ATTACH replays the stored definition: accepted and reported, like a server start.
-    node.query("ATTACH TABLE t_detached")
-    assert node.query("SELECT id FROM t_detached ORDER BY id") == "4\n5\n"
-    assert (
-        node.query(
-            "SELECT count() FROM system.warnings WHERE message LIKE '%remote_url_allow_hosts%' AND message LIKE '%minio1:9001/root%'"
-        )
-        == "1\n"
-    )
-
-    # A query that defines a disk to the same endpoint is still rejected.
+    # Only loading existing metadata is exempt. A user ATTACH is checked like a CREATE, in the short form too:
+    # the first build of the parked table's disk is rejected, like every other disk check on a short ATTACH.
+    error = node.query_and_get_error("ATTACH TABLE t_detached")
+    assert "UNACCEPTABLE_URL" in error, error
     error = node.query_and_get_error(
         f"CREATE TABLE t_new (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS disk = {s3_disk('new_disk')}"
     )
@@ -92,6 +85,15 @@ def test_table_on_custom_s3_disk_loads_after_upgrade(started_cluster):
         f"ATTACH TABLE t_attached UUID '{uuid.uuid4()}' (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS disk = {s3_disk('attached_disk')}"
     )
     assert "UNACCEPTABLE_URL" in error, error
+
+    # The operator adds the entry that the warning names; the parked table attaches without a restart.
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/remote_url_allow_hosts_without_minio.xml",
+        "<clickhouse><remote_url_allow_hosts><host>allowed.example.com</host><s3_bucket>minio1:9001/root</s3_bucket></remote_url_allow_hosts></clickhouse>",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+    node.query("ATTACH TABLE t_detached")
+    assert node.query("SELECT id FROM t_detached ORDER BY id") == "4\n5\n"
 
 
 def test_database_on_custom_s3_disk_loads_after_upgrade(started_cluster):
@@ -108,7 +110,7 @@ def test_database_on_custom_s3_disk_loads_after_upgrade(started_cluster):
     assert node_db.query("SELECT id FROM db.t ORDER BY id") == "1\n2\n3\n"
     assert node_db.contains_in_log(WARNING_IN_LOG)
 
-    # A short ATTACH DATABASE replays the stored definition and is accepted.
+    # DETACH and ATTACH reuse the metadata disk built at server start, so no check runs.
     node_db.query("DETACH DATABASE db")
     node_db.query("ATTACH DATABASE db")
     assert node_db.query("SELECT id FROM db.t ORDER BY id") == "1\n2\n3\n"
