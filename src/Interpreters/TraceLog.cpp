@@ -12,20 +12,17 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteBufferFromArena.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/TraceLog.h>
 #include <base/demangle.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/AddressToLineCache.h>
 #include <Common/config_version.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/Dwarf.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
 
-#include <filesystem>
-
+#include <cstring>
 
 namespace DB
 {
@@ -116,7 +113,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
         {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`. Symbolization can be enabled or disabled in the `symbolize` setting under `trace_log` in the server configuration file; the setting applies to profiler-collected trace types, while rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD this column is always empty."},
-        {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`. The `symbolize` setting applies to profiler-collected trace types, while rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD this column is always empty. Source locations are best-effort: they require debug info (a `.dSYM` bundle on macOS) and, on ELF platforms, are resolved only for frames inside the main ClickHouse binary; unresolved frames have empty entries."},
+        {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`. The `symbolize` setting applies to profiler-collected trace types, while rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD this column is always empty. Source locations are best-effort: they require debug info (a `.dSYM` bundle on macOS) and are resolved for whichever loaded object (the main ClickHouse binary or a shared library) contains the frame's address; unresolved frames have empty entries."},
         {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "For trace type Instrumentation, ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, name of the instrumented function."},
         {"handler", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, handler of the instrumented function."},
@@ -136,88 +133,6 @@ NamesAndAliases TraceLogElement::getNamesAndAliases()
         {"build_id", std::make_shared<DataTypeString>(), "\'" + build_id_hex + "\'"},
     };
 }
-
-
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-namespace
-{
-    class AddressToLineCache
-    {
-    private:
-        Arena arena;
-        using Map = HashMap<uintptr_t, std::string_view>;
-        Map map;
-        std::unordered_map<std::string, Dwarf> dwarfs;
-
-        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> &)
-        {
-            const char * arena_begin = nullptr;
-            WriteBufferFromArena out(arena, arena_begin);
-
-            writeString(location.file.toString(), out);
-            writeChar(':', out);
-            writeIntText(location.line, out);
-            writeChar(':', out);
-            writeIntText(location.column, out);
-
-            out.finalize();
-            result = out.complete();
-        }
-
-        std::string_view impl(uintptr_t addr)
-        {
-            const SymbolIndex & symbol_index = SymbolIndex::instance();
-
-#if defined(OS_DARWIN)
-            /// DWARF for source locations lives in a .dSYM bundle on macOS (the Mach-O linker leaves it
-            /// out of the binary). Without a dSYM there is no file:line info, so `lines` stays empty for
-            /// this frame (the `symbols` column is still filled from the symbol table by the caller).
-            const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr));
-            if (!object || !object->dsym)
-                return {};
-            auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
-            /// Convert the runtime address to the linked (pre-ASLR) address the dSYM's DWARF uses.
-            const uintptr_t dwarf_addr = addr - object->slide;
-#else
-            const auto * object = symbol_index.thisObject();
-            if (!object || !std::filesystem::exists(object->name))
-                return {};
-            auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-            const uintptr_t dwarf_addr = addr;
-#endif
-            Dwarf::LocationInfo location;
-            VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-            std::string_view result;
-            if (dwarf_it->second.findAddress(dwarf_addr, location, Dwarf::LocationInfoMode::FAST, frames))
-            {
-                setResult(result, location, frames);
-                return result;
-            }
-            /// `lines` holds source locations only; an unresolved frame stays empty rather than
-            /// borrowing the object path (that would violate the file:line:col column contract).
-            return {};
-        }
-
-        std::string_view implCached(uintptr_t addr)
-        {
-            typename Map::LookupResult it = nullptr;
-            bool inserted = false;
-            map.emplace(addr, it, inserted);
-            if (inserted)
-                it->getMapped() = impl(addr);
-            return it->getMapped();
-        }
-
-    public:
-        static std::string_view get(uintptr_t addr)
-        {
-            static AddressToLineCache cache;
-            return cache.implCached(addr);
-        }
-    };
-}
-#endif
-
 
 void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
@@ -273,6 +188,10 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (symbolize)
     {
+        /// `system.trace_log` is a high-frequency table, so symbolize directly into the
+        /// output columns to avoid per-row temporaries. Note that `trace` stores integer
+        /// addresses, so we cast each element to a pointer individually rather than
+        /// reinterpreting the whole buffer (which would violate strict aliasing).
         auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_symbols_inner = typeid_cast<ColumnLowCardinality &>(column_symbols.getData());
 
@@ -283,6 +202,10 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         size_t num_frames = trace.size();
         for (size_t frame = 0; frame < num_frames; ++frame)
         {
+            /// The symbol name and the source location are looked up independently, exactly as in
+            /// `symbolizeTrace` and `StackTrace::forEachFrame`: DWARF line resolution does not depend
+            /// on the symbol table, so each column defaults to an empty string only when its own
+            /// lookup fails.
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
             {
                 auto demangled = tryDemangle(symbol->name);
@@ -290,14 +213,15 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
                     column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
                 else
                     column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
-
-                column_lines_inner.insert(AddressToLineCache::get(trace[frame]));
             }
             else
             {
                 column_symbols_inner.insertDefault();
-                column_lines_inner.insertDefault();
             }
+
+            /// For non-innermost frames the address is a return address; subtract 1 so DWARF
+            /// resolves the `call` instruction itself (mirrors `StackTrace::forEachFrame`).
+            column_lines_inner.insert(AddressToLineCache::get(trace[frame] - (frame > 0 ? 1 : 0)));
         }
 
         column_symbols.getOffsets().push_back(column_symbols.getOffsets().back() + num_frames);

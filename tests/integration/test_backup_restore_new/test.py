@@ -64,15 +64,21 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        instance.query("DROP DATABASE IF EXISTS test")
-        instance.query("DROP DATABASE IF EXISTS test2")
-        instance.query("DROP DATABASE IF EXISTS test3")
-        instance.query("DROP DATABASE IF EXISTS restored")
+        # Tables left by a failed test can depend on tables in another database.
+        drop_settings = {"check_table_dependencies": 0}
+        instance.query("DROP DATABASE IF EXISTS test", settings=drop_settings)
+        instance.query("DROP DATABASE IF EXISTS test2", settings=drop_settings)
+        instance.query("DROP DATABASE IF EXISTS test3", settings=drop_settings)
+        instance.query("DROP DATABASE IF EXISTS restored", settings=drop_settings)
+        instance.query("DROP TABLE IF EXISTS default.mv_1")
         instance.query("DROP USER IF EXISTS u1, u2")
         instance.query("DROP ROLE IF EXISTS r1, r2")
         instance.query("DROP SETTINGS PROFILE IF EXISTS prof1")
         instance.query("DROP ROW POLICY IF EXISTS rowpol1 ON test.table")
         instance.query("DROP QUOTA IF EXISTS q1")
+        instance.query("DROP FUNCTION IF EXISTS two_and_half")
+        instance.query("DROP FUNCTION IF EXISTS linear_equation")
+        instance.query("DROP FUNCTION IF EXISTS parity_str")
 
 
 backup_id_counter = 0

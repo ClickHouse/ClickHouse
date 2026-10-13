@@ -157,7 +157,6 @@ private:
     std::exception_ptr init_exception;
 
 public:
-    /// True if the format may skip rows of the file.
     bool hasFilter() const;
 
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
