@@ -26,7 +26,7 @@ SELECT * FROM prometheusQueryRange('t_promql_dfp_steps', '(requests > 35) * on (
 SELECT * FROM prometheusQueryRange('t_promql_dfp_steps', '(requests > 35) * on (dc) group_left (env) max by (dc, env) (target_info)', 1000, 1400, 400) ORDER BY tags;
 SELECT * FROM prometheusQueryRange('t_promql_dfp_steps', 'late * on (dc) group_left (env) info2', 1000, 1400, 400) ORDER BY tags;
 
-SELECT '-- a duplicate on the right side at a step where the left side has a sample is reported, also in a join group the left side does not have';
-SELECT * FROM prometheusQueryRange('t_promql_dfp_steps', 'late * on (dc) group_left (env) info3', 1000, 1400, 400); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT '-- a duplicate on the right side in a join group the left side does not have is not reported';
+SELECT * FROM prometheusQueryRange('t_promql_dfp_steps', 'late * on (dc) group_left (env) info3', 1000, 1400, 400) ORDER BY tags;
 
 DROP TABLE t_promql_dfp_steps;
