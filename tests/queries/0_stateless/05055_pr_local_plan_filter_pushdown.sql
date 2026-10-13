@@ -82,7 +82,7 @@ FROM (
     EXPLAIN description = 0, actions = 1
     SELECT tenant, ts FROM (SELECT tenant, arr, ts FROM v_pr_local_pd WHERE arrayCount(x -> x = 1, arr) = 1) WHERE tenant = 5 LIMIT 5
 )
-WHERE explain LIKE '%Read type%';
+WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
 SELECT tenant, ts FROM (SELECT tenant, arr, ts FROM v_pr_local_pd WHERE arrayCount(x -> x = 1, arr) = 1) WHERE tenant = 5 ORDER BY ts LIMIT 3;
 
 SELECT 'the splice answers to the settings the fragment carries, not to the outer query';
