@@ -2861,7 +2861,7 @@ def test_create_table_with_engine_virtual_hosted_location_rejected(started_clust
     assert namespace not in {".".join(ns) for ns in catalog.list_namespaces()}
 
 
-def test_drop_table_purge(started_cluster):
+def test_drop_table_purge_with_query_setting(started_cluster):
     node = started_cluster.instances["node1"]
 
     namespace = "test_drop_purge_ns"
