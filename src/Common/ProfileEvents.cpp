@@ -1775,6 +1775,7 @@ The server successfully detected this situation and will download merged part fr
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
+    M(AIReusedIdenticalInputs, "Number of AI function inputs served from a stored provider outcome in the same query.", ValueType::Number) \
     \
     M(YTsaurusLookupThrottled, "Number of lookup requests to YTsaurus that were throttled", ValueType::Number) \
     \

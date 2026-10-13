@@ -299,6 +299,9 @@ using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 class AIQuotaTracker;
 using AIQuotaTrackerPtr = std::shared_ptr<AIQuotaTracker>;
 
+class AIDuplicateCache;
+using AIDuplicateCachePtr = std::shared_ptr<AIDuplicateCache>;
+
 /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
 /// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
 struct IRuntimeFilterLookup;
@@ -699,6 +702,9 @@ protected:
 
     /// AI-function quota usage for the current query, shared by every AI function call in it.
     mutable AIQuotaTrackerPtr ai_quota_tracker;
+
+    /// Per-query cache of duplicate AI-function inputs. Null until reuse is enabled for the query.
+    mutable AIDuplicateCachePtr ai_duplicate_cache;
 
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
@@ -2134,6 +2140,10 @@ public:
     ReverseLookupCache & getReverseLookupCache() const;
 
     AIQuotaTrackerPtr getAIQuotaTracker() const;
+
+    /// Per-query cache of duplicate AI inputs. Null when `ai_function_reuse_identical` is off.
+    /// Created from the query context, so a subquery `SETTINGS` clause does not apply.
+    AIDuplicateCachePtr getAIDuplicateCache() const;
 
     /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
     /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.

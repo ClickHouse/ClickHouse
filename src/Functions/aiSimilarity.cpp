@@ -4,6 +4,7 @@
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
+#include <Functions/AI/AIDuplicateCache.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
@@ -21,6 +22,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <algorithm>
 #include <cmath>
@@ -193,9 +195,25 @@ public:
         }
 
         FunctionBaseAI::EmbeddingResult embedding_result;
+        const auto input_cache = getContext()->getAIDuplicateCache();
+        UInt128 cache_prefix{};
+        size_t reserved_bytes = 0;
+        if (input_cache)
+        {
+            cache_prefix = hashAIEmbeddingPrefix(
+                params.collection.provider,
+                params.collection.endpoint,
+                params.collection.api_version,
+                params.collection.api_key,
+                model,
+                dimensions);
+            reserved_bytes = aiEmbeddingReservedBytes(dimensions);
+        }
+        QueryStatus * process_list = input_cache ? getContext()->getProcessListElement().get() : nullptr;
+
         FunctionBaseAI::embedTexts(
             *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
-            timeouts, embedding_result);
+            timeouts, embedding_result, input_cache.get(), cache_prefix, reserved_bytes, process_list);
 
         const auto & embeddings = embedding_result.embeddings;
 
