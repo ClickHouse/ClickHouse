@@ -380,6 +380,17 @@ if len(args.replica_values) != len(args.shard_values):
         f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
     )
 
+# Configs are generated once for whichever binary starts first, but restarts can switch to any of them
+private_binaries = {val: detect_private_binary(val) for val in args.server_binaries}
+if len(set(private_binaries.values())) > 1:
+    kinds = [
+        f"{k} ({'private' if v else 'public'})" for k, v in private_binaries.items()
+    ]
+    raise Exception(
+        f"Server binaries mix private and public builds: {', '.join(kinds)}"
+    )
+is_private_binary = next(iter(private_binaries.values()))
+
 logging.basicConfig(
     filename=args.log_path,
     filemode="w",
@@ -523,9 +534,6 @@ sorted_binaries.append(first_server)
 for val in args.server_binaries:
     if val != first_server:
         sorted_binaries.append(val)
-
-# Find if private binary is being used
-is_private_binary = detect_private_binary(first_server)
 
 logger.info(f"Private binary {'' if is_private_binary else 'not '}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
