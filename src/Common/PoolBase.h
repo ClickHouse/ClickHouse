@@ -156,7 +156,7 @@ public:
             }
             if (items.size() < max_items)
             {
-                PooledObject * item;
+                PooledObject * item = nullptr;
                 {
                     /// It lives as long as the pool, which outlives the query that happens to need one more object.
                     MemoryTrackerBlockerInThread pooled_object_not_charged_to_the_query;

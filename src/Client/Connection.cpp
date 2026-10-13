@@ -306,9 +306,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
 
-    /// The socket, its buffers and the handshake state live as long as the connection, which outlives the query that connects it.
-    MemoryTrackerBlockerInThread connection_not_charged_to_the_query;
-
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
 
     /// Remove the possibly stale entries from the DNS cache. The local `bind_host` too: a client
@@ -359,11 +356,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #endif
         }
 
-        in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
-        in->setAsyncCallback(async_callback);
+        {
+            /// The buffers live as long as the connection, which outlives the query that connects it. Only here: the
+            /// I/O around can suspend the coroutine that connects, and a blocker left active would block its thread.
+            MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+            in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
+            in->setAsyncCallback(async_callback);
 
-        out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
-        out->setAsyncCallback(async_callback);
+            out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
+            out->setAsyncCallback(async_callback);
+        }
         connected = true;
         setDescription();
 
@@ -493,10 +495,10 @@ void Connection::reset() noexcept
     maybe_compressed_out.reset();
     {
         /// Allocated by `connect`, not charged to any query.
-        MemoryTrackerBlockerInThread connection_not_charged_to_the_query;
+        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
         out.reset();
-        socket.reset();
     }
+    socket.reset();
     nonce.reset();
 
     connected = false;
@@ -507,7 +509,7 @@ void Connection::disconnect()
 {
     {
         /// Allocated by `connect`, not charged to any query.
-        MemoryTrackerBlockerInThread connection_not_charged_to_the_query;
+        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
         in.reset();
     }
     last_input_packet_type.reset();
