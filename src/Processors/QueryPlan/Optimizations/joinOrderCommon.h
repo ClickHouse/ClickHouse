@@ -189,7 +189,15 @@ inline double joinSearchRows(double selectivity, double left, double right, Join
             return single_side;
         return std::min(selectivity * left * right, single_side);
     }
-    return selectivity * left * right;
+    /// An outer join emits every row of its preserved sides at least once.
+    const double joined = selectivity * left * right;
+    if (join_kind == JoinKind::Left)
+        return std::max(joined, left);
+    if (join_kind == JoinKind::Right)
+        return std::max(joined, right);
+    if (join_kind == JoinKind::Full)
+        return std::max({joined, left, right});
+    return joined;
 }
 
 /// Rows the cost model counts for an entry: its estimate; for a join without one, `joinSearchRows` of
@@ -476,8 +484,7 @@ inline std::optional<UInt64> estimateJoinCardinality(
 }
 
 /// Rows a join emits for the cost model, for every solver: with two estimated inputs, the estimate of
-/// the join (`estimateJoinedRows` for an `ALL` join); otherwise `joinSearchRows` over the inputs'
-/// search values.
+/// the join; otherwise `joinSearchRows` over the inputs' search values.
 inline double joinedRowsSearchValue(
     const JoinKeyEstimate & keys,
     std::optional<UInt64> left_rows,
@@ -488,12 +495,8 @@ inline double joinedRowsSearchValue(
     JoinStrictness strictness)
 {
     if (left_rows && right_rows)
-    {
-        if (strictness == JoinStrictness::All)
-            return estimateJoinedRows(keys, static_cast<double>(*left_rows), static_cast<double>(*right_rows));
         if (const auto rows = estimateJoinCardinality(left_rows, right_rows, keys, join_kind, strictness))
             return static_cast<double>(*rows);
-    }
     return joinSearchRows(keys.selectivity, left_search_rows, right_search_rows, join_kind, strictness);
 }
 
