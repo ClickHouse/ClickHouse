@@ -148,9 +148,12 @@ inline UInt64 keyColumnId(const String & column_name)
 
 /// The input whose rows a join emits at most once each: the preserved side of a semi or anti
 /// join, the side that takes one match per row in an `ANY` or `ASOF` join (the left side, or
-/// the right side of a `RIGHT` join and of a right-any join). None for the other strictnesses.
+/// the right side of a `RIGHT` join and of a right-any join). None for the other strictnesses
+/// and for a `FULL` join, which also emits the unmatched rows of the other side.
 inline std::optional<bool> singleMatchSideIsLeft(JoinKind join_kind, JoinStrictness strictness)
 {
+    if (join_kind == JoinKind::Full)
+        return {};
     switch (strictness)
     {
         case JoinStrictness::Semi:
@@ -397,10 +400,10 @@ inline std::optional<UInt64> estimateJoinCardinality(
     double lhs = static_cast<double>(*left_rows);
     double rhs = static_cast<double>(*right_rows);
 
-    if (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny || strictness == JoinStrictness::Asof)
+    const auto single_side_is_left = singleMatchSideIsLeft(join_kind, strictness);
+    if (single_side_is_left && strictness != JoinStrictness::Semi && strictness != JoinStrictness::Anti)
     {
-        const bool single_side_is_left = *singleMatchSideIsLeft(join_kind, strictness);
-        const double single_side = single_side_is_left ? lhs : rhs;
+        const double single_side = *single_side_is_left ? lhs : rhs;
         /// An outer join emits every row of that side once; an inner join only the matched ones.
         if (join_kind != JoinKind::Inner)
             return roundToRowCount(single_side);
