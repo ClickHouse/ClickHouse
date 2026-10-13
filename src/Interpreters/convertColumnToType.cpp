@@ -267,7 +267,7 @@ void rewriteNestedAlternatives(
         if (!array_to)
             return;
         const auto & array_column = assert_cast<const ColumnArray &>(column);
-        const size_t offset = array_column.getOffsets()[row - 1];
+        const size_t offset = row == 0 ? 0 : array_column.getOffsets()[row - 1];
         auto & elements = field.safeGet<Array>();
         for (size_t i = 0; i < elements.size(); ++i)
             rewriteNestedAlternatives(
@@ -297,7 +297,7 @@ void rewriteNestedAlternatives(
             return;
         const auto & nested_array = assert_cast<const ColumnMap &>(column).getNestedColumn();
         const auto & key_value_columns = assert_cast<const ColumnTuple &>(nested_array.getData());
-        const size_t offset = nested_array.getOffsets()[row - 1];
+        const size_t offset = row == 0 ? 0 : nested_array.getOffsets()[row - 1];
         auto & entries = field.safeGet<Map>();
         for (size_t i = 0; i < entries.size(); ++i)
         {
