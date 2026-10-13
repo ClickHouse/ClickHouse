@@ -1789,16 +1789,21 @@ void IcebergMetadata::checkCanBeDropped(ContextPtr query_context) const
         || persistent_components.table_root_was_derived)
         return;
 
+    std::unordered_set<String> authorized;
     for (const auto & file : collectExternalFilesToDeleteOnDrop(Context::getGlobalContextInstance()))
     {
-        if (!isPathWriteGranted(persistent_components.table_location, file.path.serialize(), object_storage, query_context))
+        auto path = file.path.serialize();
+        if (!isPathWriteGranted(persistent_components.table_location, path, object_storage, query_context))
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "Not enough privileges to drop the Iceberg table: `iceberg_delete_data_on_drop` deletes the file '{}' "
                 "outside the table directory, which requires the `WRITE` grant on it",
                 file.path);
+        authorized.insert(std::move(path));
     }
-    external_files_drop_authorized = true;
+
+    std::lock_guard lock(external_files_drop_authorized_mutex);
+    external_files_drop_authorized = std::move(authorized);
 }
 
 void IcebergMetadata::drop(ContextPtr context)
@@ -1819,17 +1824,22 @@ void IcebergMetadata::drop(ContextPtr context)
     }
 
     /// Enumerate external files before deleting the metadata needed to rediscover them on retry.
+    /// Only the files checked by `checkCanBeDropped` are deleted: the metadata may have changed since then.
     auto external_files = collectExternalFilesToDeleteOnDrop(context);
-    if (!external_files.empty() && !external_files_drop_authorized)
+    std::unordered_set<String> authorized;
     {
+        std::lock_guard lock(external_files_drop_authorized_mutex);
+        authorized = external_files_drop_authorized;
+    }
+    size_t unauthorized_files
+        = std::erase_if(external_files, [&](const auto & file) { return !authorized.contains(file.path.serialize()); });
+    if (unauthorized_files)
         LOG_WARNING(
             log,
             "Keeping {} file(s) of the Iceberg table at '{}' that live outside its directory: deleting them was not "
             "authorized by a `DROP` query in this server process. They have to be removed manually.",
-            external_files.size(),
+            unauthorized_files,
             persistent_components.table_path);
-        external_files.clear();
-    }
 
     /// Delete leaves first, one per request: a partial batch failure could delete the manifest needed for retry.
     std::reverse(external_files.begin(), external_files.end());

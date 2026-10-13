@@ -16,7 +16,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
 #include <atomic>
+#include <mutex>
 #include <optional>
+#include <unordered_set>
 #include <base/defines.h>
 
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -258,8 +260,9 @@ private:
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     mutable std::shared_ptr<ExternalStorageCache> external_storages;
-    /// Set by `checkCanBeDropped` once the dropping user is allowed to delete the external files.
-    mutable std::atomic<bool> external_files_drop_authorized = false;
+    /// Set by `checkCanBeDropped`: the external files the dropping user is allowed to delete.
+    mutable std::mutex external_files_drop_authorized_mutex;
+    mutable std::unordered_set<String> external_files_drop_authorized TSA_GUARDED_BY(external_files_drop_authorized_mutex);
     DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     MultiVersion<String> explicit_metadata_file_path;

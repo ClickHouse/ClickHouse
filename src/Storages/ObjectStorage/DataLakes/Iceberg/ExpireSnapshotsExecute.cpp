@@ -943,11 +943,10 @@ ExpireSnapshotsResult expireSnapshots(
             return expired;
         };
 
-        /// Collected before the commit, so that a failure to read the retained snapshots fails the whole request.
-        /// A transactional catalog returns the snapshots it retains only with the commit.
-        ExpiredFiles expired_files;
-        if (!catalog_commits_metadata || options.dry_run)
-            expired_files = collect_expired_files(partition.retained_snapshots);
+        /// Collected before the commit, so that a failure to read the retained snapshots or an external expired file
+        /// fails the whole request. A transactional catalog returns the snapshots it retains only with the commit, so
+        /// the files are collected again after it.
+        auto expired_files = collect_expired_files(partition.retained_snapshots);
 
         if (options.dry_run)
         {
