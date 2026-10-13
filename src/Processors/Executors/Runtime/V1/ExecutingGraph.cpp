@@ -35,6 +35,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char executing_graph_add_node_fail[];
+    extern const char executing_graph_build_fail[];
 }
 
 namespace Runtime::V1
@@ -58,6 +59,12 @@ ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool pro
     : processors(std::move(processors_))
     , profile_processors(profile_processors_)
 {
+    /// Stands in for an allocation failure while the graph is built.
+    fiu_do_on(FailPoints::executing_graph_build_fail,
+    {
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::executing_graph_build_fail);
+    });
+
     /// Create nodes for every processor.
     for (auto it = processors->begin(); it != processors->end(); ++it)
         addNode(it);
