@@ -139,7 +139,7 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     row_count += other->row_count;
 }
 
-void StatisticsBasic::setSummary(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
 {
     row_count = rows;
     if (tracks_numeric)
