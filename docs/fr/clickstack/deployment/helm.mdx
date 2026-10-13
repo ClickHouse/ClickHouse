@@ -51,17 +51,13 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
 <br />
 
 <Steps>
-  <Step>
-    ### Prérequis
-
+  <Step title="Prérequis" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * cluster Kubernetes (v1.20+ recommandé)
     * `kubectl` configuré pour interagir avec votre cluster
   </Step>
 
-  <Step>
-    ### Ajouter le dépôt Helm de ClickStack
-
+  <Step title="Ajouter le dépôt Helm de ClickStack" id="add-the-clickstack-helm-repository">
     Ajoutez le dépôt Helm de ClickStack :
 
     ```shell
@@ -70,9 +66,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     ```
   </Step>
 
-  <Step>
-    ### Installer les opérateurs
-
+  <Step title="Installer les opérateurs" id="install-the-operators">
     Installez d’abord le chart de l’opérateur. Cela enregistre les CRD requises par le chart principal :
 
     ```shell
@@ -86,9 +80,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     ```
   </Step>
 
-  <Step>
-    ### Installer ClickStack
-
+  <Step title="Installer ClickStack" id="installing-clickstack">
     Une fois les opérateurs démarrés, installez le chart principal :
 
     ```shell
@@ -96,9 +88,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     ```
   </Step>
 
-  <Step>
-    ### Vérifier l&#39;installation
-
+  <Step title="Vérifier l'installation" id="verify-the-installation">
     Vérifiez l&#39;installation :
 
     ```shell
@@ -108,9 +98,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     Lorsque tous les pods sont prêts, continuez.
   </Step>
 
-  <Step>
-    ### Transfert de ports
-
+  <Step title="Transfert de ports" id="forward-ports">
     Le transfert de ports permet d’accéder à HyperDX et de le configurer. Pour un déploiement en production, il est préférable d’exposer le service via une ressource d’entrée ou un équilibreur de charge afin de garantir un accès réseau approprié, la terminaison TLS et la scalabilité. Le transfert de ports convient surtout au développement local ou à des tâches administratives ponctuelles, et non à des environnements pérennes ou à haute disponibilité.
 
     ```shell
@@ -126,9 +114,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     </Tip>
   </Step>
 
-  <Step>
-    ### Accéder à l’UI
-
+  <Step title="Accéder à l’UI" id="navigate-to-the-ui">
     Rendez-vous sur [http://localhost:8080](http://localhost:8080) pour accéder à l’UI HyperDX.
 
     Créez un utilisateur en indiquant un nom d’utilisateur et un mot de passe conformes aux exigences.
@@ -144,9 +130,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     </Info>
   </Step>
 
-  <Step>
-    ### Personnaliser les valeurs (facultatif)
-
+  <Step title="Personnaliser les valeurs (facultatif)" id="customizing-values">
     Vous pouvez personnaliser ces valeurs à l’aide des options `--set`. Par exemple :
 
     ```shell
@@ -188,9 +172,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     ```
   </Step>
 
-  <Step>
-    ### Utilisation des secrets (facultatif)
-
+  <Step title="Utilisation des secrets (facultatif)" id="using-secrets">
     Le chart v2.x utilise un secret unifié (`clickstack-secret`), alimenté à partir de `hyperdx.secrets` dans vos values. Toutes les variables d&#39;environnement sensibles — y compris les mots de passe ClickHouse, les mots de passe MongoDB et la clé API HyperDX — passent par ce secret unique.
 
     Pour remplacer les valeurs du secret :

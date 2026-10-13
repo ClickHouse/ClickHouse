@@ -15,9 +15,9 @@ SELECT '-- plan keeps inner/any with constant key, not cross';
 SELECT extract(explain, 'Type: \\w+ \\| Strictness: \\w+') FROM (
     EXPLAIN SELECT * FROM values('l UInt8', 1, 2) AS l_tbl ANY INNER JOIN values('r UInt8', 10, 20) AS r_tbl ON 1
 ) WHERE explain LIKE '%Strictness%';
-SELECT extract(explain, 'Join conditions:.*') FROM (
+SELECT extract(explain, 'Constant expression value:.*') FROM (
     EXPLAIN SELECT * FROM values('l UInt8', 1, 2) AS l_tbl ANY INNER JOIN values('r UInt8', 10, 20) AS r_tbl ON 1
-) WHERE explain LIKE '%Join conditions%';
+) WHERE explain LIKE '%Constant expression value%';
 
 SELECT '-- ANY INNER JOIN ON constant false: empty result';
 SELECT * FROM values('l UInt8', 1, 2) AS l_tbl ANY INNER JOIN values('r UInt8', 10, 20) AS r_tbl ON 0 ORDER BY ALL;

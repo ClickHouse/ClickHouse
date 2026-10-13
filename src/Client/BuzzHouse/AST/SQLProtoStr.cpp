@@ -544,14 +544,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE32:
-            ret += "'1900-01-01'";
+            ret += "'0000-01-01'";
             if (val.paren())
             {
                 ret += "::Date32";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE32:
-            ret += "'2299-12-31'";
+            ret += "'9999-12-31'";
             if (val.paren())
             {
                 ret += "::Date32";
@@ -600,14 +600,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME64:
-            ret += "'1900-01-01 00:00:00'";
+            ret += "'0001-01-01 00:00:00'";
             if (val.paren())
             {
                 ret += "::DateTime64";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATETIME64:
-            ret += "'2299-12-31 23:59:59.99999999'";
+            ret += "'9999-12-31 23:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::DateTime64";
@@ -790,6 +790,18 @@ CONV_FN(EnumDefValue, edf)
     ret += edf.enumv();
     ret += " = ";
     ret += std::to_string(edf.number());
+}
+
+CONV_FN(EnumDef, edef)
+{
+    ret += "(";
+    EnumDefValueToString(ret, edef.first_value());
+    for (int i = 0; i < edef.other_values_size(); i++)
+    {
+        ret += ", ";
+        EnumDefValueToString(ret, edef.other_values(i));
+    }
+    ret += ")";
 }
 
 static void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
@@ -1001,14 +1013,7 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
                         {
                             ret += edef.bits() ? "16" : "8";
                         }
-                        ret += "(";
-                        EnumDefValueToString(ret, edef.first_value());
-                        for (int i = 0; i < edef.other_values_size(); i++)
-                        {
-                            ret += ", ";
-                            EnumDefValueToString(ret, edef.other_values(i));
-                        }
-                        ret += ")";
+                        EnumDefToString(ret, edef);
                     }
                     break;
                     default: ret += "Int";
@@ -1237,6 +1242,8 @@ CONV_FN(ExprInType, ein)
             ExplainQueryToString(ret, ein.sel());
             ret += ")";
             break;
+        case InType::kEmptyList: ret += ein.empty_list() ? "[]" : "()"; break;
+        case InType::kTbl: ExprSchemaTableToString(ret, ein.tbl()); break;
         default: ret += "1";
     }
 }
@@ -2477,6 +2484,10 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kMtindex: MergeTreeIndexFuncToString(ret, tf.mtindex()); break;
         case TableFunctionType::kMtproj: MergeTreeProjectionFuncToString(ret, tf.mtproj()); break;
         case TableFunctionType::kMttxtidx: MergeTreeTextIndexFuncToString(ret, tf.mttxtidx()); break;
+        case TableFunctionType::kMtcodecblocks:
+            ret += "mergeTreeCodecBlockCounts(";
+            FlatExprSchemaTableToString(ret, tf.mtcodecblocks(), "', '");
+            break;
         case TableFunctionType::kMtanindex: MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex()); break;
         case TableFunctionType::kFunc: SQLTableFuncCallToString(ret, tf.func()); break;
         default: ret += "numbers(10";
@@ -2724,11 +2735,29 @@ CONV_FN(FetchStatement, fet)
 
 static void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
 {
-    ret += "LIMIT ";
-    ExprToString(ret, lim.limit());
+    ret += "LIMIT";
+    if (lim.has_limit())
+    {
+        ret += " ";
+        ExprToString(ret, lim.limit());
+    }
     if (!has_offset && lim.with_ties())
     {
         ret += " WITH TIES";
+    }
+    if (lim.has_limit_after())
+    {
+        ret += " AFTER ";
+        ExprToString(ret, lim.limit_after());
+        if (lim.after_all())
+        {
+            ret += " ALL";
+        }
+    }
+    if (lim.has_limit_until())
+    {
+        ret += " UNTIL ";
+        ExprToString(ret, lim.limit_until());
     }
 }
 
@@ -3194,11 +3223,9 @@ CONV_FN(ProjectionSelectDef, psdef)
     }
 }
 
-CONV_FN(ProjectionDef, proj_def)
+/// Everything after the projection name, shared by table projections and hypothetical projections
+static void ProjectionDefBodyToString(String & ret, const ProjectionDef & proj_def)
 {
-    ret += "PROJECTION ";
-    SQLIdentifierToString(ret, proj_def.proj());
-    ret += " ";
     using ProjectionDefType = ProjectionDef::ProjectionOneofCase;
     switch (proj_def.projection_oneof_case())
     {
@@ -3206,6 +3233,14 @@ CONV_FN(ProjectionDef, proj_def)
         case ProjectionDefType::kIdxDef: IndexDefToString(ret, proj_def.idx_def()); break;
         default: ret += "(SELECT c0 ORDER BY c0)";
     }
+}
+
+CONV_FN(ProjectionDef, proj_def)
+{
+    ret += "PROJECTION ";
+    SQLIdentifierToString(ret, proj_def.proj());
+    ret += " ";
+    ProjectionDefBodyToString(ret, proj_def);
 }
 
 CONV_FN(ConstraintDef, const_def)
@@ -3532,6 +3567,7 @@ CONV_FN(SQLObjectName, son)
         case SQLObjectNameType::kFunction: SQLIdentifierToString(ret, son.function()); break;
         case SQLObjectNameType::kPolicy: SQLIdentifierToString(ret, son.policy()); break;
         case SQLObjectNameType::kIndex: SQLIdentifierToString(ret, son.index()); break;
+        case SQLObjectNameType::kProjection: SQLIdentifierToString(ret, son.projection()); break;
         default: ret += "t0";
     }
 }
@@ -3544,6 +3580,8 @@ static String SQLObjectToString(const SQLObject obj)
         return "MASKING POLICY";
     if (obj == SQLObject::HYPOTHETICAL_INDEX)
         return "HYPOTHETICAL INDEX";
+    if (obj == SQLObject::HYPOTHETICAL_PROJECTION)
+        return "HYPOTHETICAL PROJECTION";
     return SQLObject_Name(obj);
 }
 
@@ -3552,10 +3590,18 @@ CONV_FN(Drop, dt)
     const bool is_table = dt.sobject() == SQLObject::TABLE;
 
     ret += "DROP ";
-    if (dt.sobject() == SQLObject::HYPOTHETICAL_INDEX && dt.all())
+    if (dt.all())
     {
-        ret += "ALL HYPOTHETICAL INDEXES";
-        return;
+        if (dt.sobject() == SQLObject::HYPOTHETICAL_INDEX)
+        {
+            ret += "ALL HYPOTHETICAL INDEXES";
+            return;
+        }
+        if (dt.sobject() == SQLObject::HYPOTHETICAL_PROJECTION)
+        {
+            ret += "ALL HYPOTHETICAL PROJECTIONS";
+            return;
+        }
     }
     if ((is_table || dt.sobject() == SQLObject::VIEW) && dt.is_temp())
     {
@@ -3582,7 +3628,7 @@ CONV_FN(Drop, dt)
         ClusterToString(ret, true, dt.cluster());
     }
     if ((dt.sobject() == SQLObject::ROW_POLICY || dt.sobject() == SQLObject::MASKING_POLICY
-         || dt.sobject() == SQLObject::HYPOTHETICAL_INDEX)
+         || dt.sobject() == SQLObject::HYPOTHETICAL_INDEX || dt.sobject() == SQLObject::HYPOTHETICAL_PROJECTION)
         && dt.has_target())
     {
         ret += " ON ";
@@ -3683,9 +3729,7 @@ CONV_FN(PartitionExpr, pexpr)
     {
         case PartitionType::kPart: appendSQLStringLiteral(ret, pexpr.part()); break;
         case PartitionType::kPartition:
-            ret += "$piddef$";
             ret += pexpr.partition();
-            ret += "$piddef$";
             break;
         case PartitionType::kPartitionId:
             ret += "ID ";
@@ -3811,8 +3855,10 @@ CONV_FN(Truncate, trunc)
 
 CONV_FN(CheckTable, ct)
 {
-    ret += "CHECK TABLE ";
-    ExprSchemaTableToString(ret, ct.est());
+    ret += "CHECK ";
+    ret += SQLObjectToString(ct.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, ct.object());
     if (ct.has_single_partition())
     {
         ret += " ";
@@ -3925,6 +3971,10 @@ CONV_FN(OptimizeTable, ot)
     {
         ret += " CLEANUP";
     }
+    if (ot.manifest())
+    {
+        ret += " MANIFEST";
+    }
     if (ot.has_setting_values())
     {
         ret += " SETTINGS ";
@@ -3953,6 +4003,7 @@ CONV_FN(Exchange, et)
         case SQLObject::ROW_POLICY: ret += "ROW POLICIES"; break;
         case SQLObject::MASKING_POLICY: ret += "MASKING POLICIES"; break;
         case SQLObject::HYPOTHETICAL_INDEX: ret += "HYPOTHETICAL INDEXES"; break;
+        case SQLObject::HYPOTHETICAL_PROJECTION: ret += "HYPOTHETICAL PROJECTIONS"; break;
     }
     ret += " ";
     SQLObjectNameToString(ret, et.object1());
@@ -4010,6 +4061,10 @@ CONV_FN(RefreshableView, rv)
     if (rv.append())
     {
         ret += " APPEND";
+        if (rv.incremental())
+        {
+            ret += " INCREMENTAL";
+        }
     }
 }
 
@@ -4627,6 +4682,12 @@ CONV_FN(AlterItem, alter)
             ret += "MODIFY COLUMN ";
             AddColumnToString(ret, alter.modify_column());
             break;
+        case AlterType::kAddEnumValues:
+            ret += "MODIFY COLUMN ";
+            ColumnPathToString(ret, 0, alter.add_enum_values().col());
+            ret += " ADD ENUM VALUES";
+            EnumDefToString(ret, alter.add_enum_values().new_values());
+            break;
         case AlterType::kCommentColumn:
             ret += "COMMENT COLUMN ";
             ColumnPathToString(ret, 0, alter.comment_column().col());
@@ -4763,10 +4824,6 @@ CONV_FN(AlterItem, alter)
         case AlterType::kDropDetachedPartition:
             ret += "DROP DETACHED ";
             SinglePartitionExprToString(ret, alter.drop_detached_partition());
-            break;
-        case AlterType::kForgetPartition:
-            ret += "FORGET ";
-            SinglePartitionExprToString(ret, alter.forget_partition());
             break;
         case AlterType::kAttachPartition:
             ret += "ATTACH ";
@@ -5031,10 +5088,6 @@ CONV_FN(SystemCommand, cmd)
             ret += "RELOAD DICTIONARIES";
             can_set_cluster = true;
             break;
-        case CmdType::kReloadModels:
-            ret += "RELOAD MODELS";
-            can_set_cluster = true;
-            break;
         case CmdType::kReloadFunctions:
             ret += "RELOAD FUNCTIONS";
             can_set_cluster = true;
@@ -5250,6 +5303,11 @@ CONV_FN(SystemCommand, cmd)
             can_set_cluster = true;
             break;
         case CmdType::kReloadDictionary: SystemCommandOnCluster(ret, "RELOAD DICTIONARY", cmd, cmd.reload_dictionary()); break;
+        case CmdType::kUnloadDictionary: SystemCommandOnCluster(ret, "UNLOAD DICTIONARY", cmd, cmd.unload_dictionary()); break;
+        case CmdType::kUnloadDictionaries:
+            ret += "UNLOAD DICTIONARIES";
+            can_set_cluster = true;
+            break;
         case CmdType::kFlushDistributed: SystemCommandOnCluster(ret, "FLUSH DISTRIBUTED", cmd, cmd.flush_distributed()); break;
         case CmdType::kStopDistributedSends:
             SystemCommandOnCluster(ret, "STOP DISTRIBUTED SENDS", cmd, cmd.stop_distributed_sends());
@@ -5331,7 +5389,13 @@ CONV_FN(SystemCommand, cmd)
             appendSQLStringLiteral(ret, cmd.unfreeze());
             break;
         case CmdType::kDropReplica:
-            ret += "DROP REPLICA ";
+            ret += "DROP REPLICA";
+            /// The parser accepts ON CLUSTER only right after the keyword, before the replica literal.
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
             appendSQLStringLiteral(ret, cmd.drop_replica().replica());
             if (cmd.drop_replica().has_est())
             {
@@ -5345,7 +5409,13 @@ CONV_FN(SystemCommand, cmd)
             }
             break;
         case CmdType::kDropDatabaseReplica:
-            ret += "DROP DATABASE REPLICA ";
+            ret += "DROP DATABASE REPLICA";
+            /// The parser accepts ON CLUSTER only right after the keyword, before the replica literal.
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
             appendSQLStringLiteral(ret, cmd.drop_database_replica().replica());
             if (cmd.drop_database_replica().has_shard())
             {
@@ -5400,7 +5470,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "DROP PARQUET METADATA CACHE";
             can_set_cluster = true;
             break;
-        case CmdType::kDropDistributedCache: ret += "DROP DISTRIBUTED CACHE"; break;
+        case CmdType::kDropDistributedCache:
+            ret += "DROP DISTRIBUTED CACHE";
+            can_set_cluster = true;
+            break;
         case CmdType::kFlushObjectStorageQueue: {
             const auto & foq = cmd.flush_object_storage_queue();
             SystemCommandOnCluster(ret, "FLUSH OBJECT STORAGE QUEUE", cmd, foq.table());
@@ -5447,6 +5520,32 @@ CONV_FN(SystemCommand, cmd)
             ret += " ";
             appendSQLStringLiteral(ret, cmd.restart_disk());
             break;
+        /// Background controls. They reject `ON CLUSTER`, so leave `can_set_cluster` unset
+        case CmdType::kStopBackground:
+            ret += "STOP ";
+            ExprSchemaTableToString(ret, cmd.stop_background());
+            break;
+        case CmdType::kStartBackground:
+            ret += "START ";
+            ExprSchemaTableToString(ret, cmd.start_background());
+            break;
+        case CmdType::kPauseBackground:
+            ret += "PAUSE ";
+            ExprSchemaTableToString(ret, cmd.pause_background());
+            break;
+        case CmdType::kCancelBackground:
+            ret += "CANCEL ";
+            ExprSchemaTableToString(ret, cmd.cancel_background());
+            break;
+        case CmdType::kRefreshBackground:
+            ret += "REFRESH ";
+            ExprSchemaTableToString(ret, cmd.refresh_background());
+            break;
+        case CmdType::kStopAllBackground: ret += "STOP ALL BACKGROUND"; break;
+        case CmdType::kStartAllBackground: ret += "START ALL BACKGROUND"; break;
+        case CmdType::kPauseAllBackground: ret += "PAUSE ALL BACKGROUND"; break;
+        case CmdType::kCancelAllBackground: ret += "CANCEL ALL BACKGROUND"; break;
+        case CmdType::kRefreshAllBackground: ret += "REFRESH ALL BACKGROUND"; break;
         default: ret += "FLUSH LOGS";
     }
     if (can_set_cluster && cmd.has_cluster())
@@ -5811,6 +5910,22 @@ CONV_FN(CreateHypotheticalIndex, hi)
     IndexDefTypeToString(ret, idef);
 }
 
+CONV_FN(CreateHypotheticalProjection, hp)
+{
+    const ProjectionDef & pdef = hp.create_def();
+
+    ret += "CREATE HYPOTHETICAL PROJECTION ";
+    if (hp.if_not_exists())
+    {
+        ret += "IF NOT EXISTS ";
+    }
+    SQLIdentifierToString(ret, pdef.proj());
+    ret += " ON ";
+    ExprSchemaTableToString(ret, hp.est());
+    ret += " ";
+    ProjectionDefBodyToString(ret, pdef);
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -5846,6 +5961,7 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kCreatePolicy: CreatePolicyToString(ret, query.create_policy()); break;
         case QueryType::kSnapshotQuery: SnapshotQueryToString(ret, query.snapshot_query()); break;
         case QueryType::kCreateHypoIndex: CreateHypotheticalIndexToString(ret, query.create_hypo_index()); break;
+        case QueryType::kCreateHypoProjection: CreateHypotheticalProjectionToString(ret, query.create_hypo_projection()); break;
         default: ret += "SELECT 1";
     }
 }

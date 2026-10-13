@@ -34,9 +34,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 在受监控系统上安装了 Docker 或 Docker Compose
 
 <Steps>
-  <Step>
-    #### 获取 ClickStack API key
-
+  <Step title="获取 ClickStack API key" id="get-api-key">
     OpenTelemetry Collector 会将数据发送到 ClickStack 的 OTLP 端点，而该端点需要进行身份验证。
 
     1. 在你的 ClickStack URL 中打开 HyperDX (例如 http://localhost:8080)
@@ -53,9 +51,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 验证 systemd journal 是否正在运行
-
+  <Step title="验证 systemd journal 是否正在运行" id="verify-systemd">
     请确保你的系统使用的是 systemd，并且存在 journal 日志：
 
     ```bash
@@ -78,9 +74,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 创建 OpenTelemetry Collector 配置
-
+  <Step title="创建 OpenTelemetry Collector 配置" id="create-otel-config">
     为 OpenTelemetry Collector 创建配置文件：
 
     ```yaml
@@ -135,9 +129,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 使用 Docker Compose 部署
-
+  <Step title="使用 Docker Compose 部署" id="deploy-docker-compose">
     <Note>
       `journald` receiver 需要 `journalctl` binary 才能读取 journal 文件。官方 `otel/opentelemetry-collector-contrib` image 默认不包含 `journalctl`。
 
@@ -185,9 +177,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
-
+  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
     配置完成后，登录 HyperDX 并确认日志已开始流入：
 
     1. 进入搜索视图
@@ -208,9 +198,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 对于希望在配置生产系统之前先测试 systemd 日志集成的用户，我们提供了一个预先生成的 systemd 日志样本数据集，其中包含逼真的日志模式。
 
 <Steps>
-  <Step>
-    #### 下载样本数据集
-
+  <Step title="下载样本数据集" id="download-sample">
     下载样本日志文件：
 
     ```bash
@@ -218,9 +206,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 创建演示 collector 配置
-
+  <Step title="创建演示 collector 配置" id="demo-config">
     为演示创建配置文件：
 
     ```bash
@@ -256,9 +242,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 使用演示数据运行 ClickStack
-
+  <Step title="使用演示数据运行 ClickStack" id="run-demo">
     使用演示日志启动 ClickStack：
 
     ```bash
@@ -275,9 +259,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
-
+  <Step title="在 HyperDX 中验证日志" id="verify-demo-logs">
     ClickStack 运行后：
 
     1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户
@@ -303,13 +285,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 为帮助你快速开始使用 ClickStack 监控 systemd 日志，我们提供了 systemd journal 数据的核心可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预置仪表盘
-
+  <Step title="导入预置仪表盘" id="import-dashboard">
     1. 打开 HyperDX 并进入仪表盘页面
     2. 点击右上角省略号菜单中的 **导入仪表盘**
 
@@ -320,9 +300,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="完成导入" />
   </Step>
 
-  <Step>
-    #### 查看仪表盘
-
+  <Step title="查看仪表盘" id="created-dashboard">
     该仪表盘包含以下可视化内容：
 
     * 日志量随时间变化趋势
@@ -391,15 +369,15 @@ otelcol-contrib --config=otel-config.yaml
 * 按特定 systemd 单元进行过滤，以减少噪声，并将重点放在重要服务上
 
 <div id="going-to-production">
-  ## 投入生产环境
+  ## 面向生产环境
 </div>
 
-本指南使用独立的 OpenTelemetry Collector 读取 systemd 日志，并将其发送到 ClickStack 的 OTLP 端点，这是推荐的生产环境部署模式。
+本指南使用独立的 OpenTelemetry Collector 读取 systemd 日志，并将其发送到 ClickStack 的 OTLP 端点，这是生产环境中的推荐做法。
 
 对于包含多台主机的生产环境，请考虑：
 
 * 在 Kubernetes 中将 collector 部署为 DaemonSet 守护进程集
 * 在每台主机上将 collector 作为 systemd 服务运行
-* 使用 OpenTelemetry Operator 进行自动化部署
+* 使用 OpenTelemetry Operator 自动部署
 
 有关生产环境的部署模式，请参阅 [使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。

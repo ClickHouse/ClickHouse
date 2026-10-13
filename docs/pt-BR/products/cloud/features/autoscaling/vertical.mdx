@@ -9,20 +9,20 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Autoescalonamento vertical" />
 
-Os serviços dos níveis Scale e Enterprise oferecem suporte ao autoescalonamento com base no uso de CPU e memória. O uso do serviço é monitorado continuamente durante uma janela de análise para orientar as decisões de escalonamento. Se o uso subir acima ou cair abaixo de determinados limites, o serviço será escalado adequadamente para acompanhar a demanda.
+Os serviços dos níveis Scale e Enterprise com perfis padrão `1:4` oferecem suporte ao autoescalonamento com base no uso de CPU e memória. O uso do serviço é monitorado continuamente durante uma janela de análise para orientar as decisões de escalonamento. Se o uso subir acima ou cair abaixo de determinados limites, o serviço será escalado adequadamente para acompanhar a demanda.
 
 <div id="configuring-vertical-auto-scaling">
   ## Configurando o autoescalonamento vertical
 </div>
 
-O escalonamento dos serviços ClickHouse Cloud Scale ou Enterprise pode ser ajustado por membros da organização com a função **Admin**. Para configurar o autoescalonamento vertical, acesse a aba **Settings** do seu serviço e ajuste a memória mínima e máxima, juntamente com as configurações de CPU, como mostrado abaixo.
+Membros da organização com a função **Admin** podem configurar o autoescalonamento vertical para serviços Scale e serviços Enterprise com perfis padrão `1:4`. Acesse a aba **Settings** do seu serviço e ajuste a memória mínima e máxima, juntamente com as configurações de CPU, como mostrado abaixo. Serviços Enterprise com perfis personalizados exigem redimensionamento vertical com assistência do suporte.
 
 <Note>
-  Serviços com uma única réplica não podem ser escalonados em todos os tiers.
+  Serviços Scale com uma única réplica e serviços Enterprise com perfis padrão `1:4` oferecem suporte a autoescalonamento vertical. Serviços Enterprise com perfis personalizados exigem redimensionamento vertical com assistência do suporte. Os serviços do tier Basic permanecem com tamanho fixo e não podem ser escalonados.
 </Note>
 
 <Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Página de configurações de escalonamento" border />
@@ -34,5 +34,5 @@ Você também pode optar por definir esses valores como iguais, basicamente &quo
 É importante observar que isso desativará qualquer autoescalonamento no cluster, e seu serviço não ficará protegido contra aumentos no uso de CPU ou memória além dessas configurações.
 
 <Note>
-  Para serviços do tier Enterprise, perfis padrão 1:4 oferecem suporte a autoescalonamento vertical. Perfis personalizados não oferecem suporte a autoescalonamento vertical nem a escalonamento vertical manual. No entanto, esses serviços podem ser escalonados verticalmente entrando em contato com o suporte.
+  Para serviços do tier Enterprise, perfis padrão `1:4` oferecem suporte a autoescalonamento vertical. Perfis personalizados não oferecem suporte a autoescalonamento vertical nem a escalonamento vertical manual. Entre em contato com o suporte para redimensionamento vertical.
 </Note>

@@ -455,6 +455,8 @@ class ClickHouseTypeMapper:
             ch_type in ("UInt64", "UInt128", "UInt256", "Int128", "Int256")
             and random.randint(1, 3) == 1
         ):
+            # 20 digits so every UInt64 value stays representable; the generator bounds
+            # its values to the source range, since e.g. DECIMAL(20, 0) exceeds it
             nprecision = 20 if ch_type == "UInt64" else 38
             return (
                 f"DECIMAL({nprecision}, 0)",

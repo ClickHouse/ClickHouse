@@ -158,7 +158,7 @@ Agora você pode atribuir aos usuários da sua organização a nova função **B
   ### Notificações para clientes no ClickHouse Cloud
 </div>
 
-O ClickHouse Cloud agora oferece notificações no console e por e-mail para vários eventos de cobrança e escalonamento. Os clientes podem configurar essas notificações na central de notificações do Console da Cloud para que apareçam apenas na UI, sejam enviadas por e-mail ou ambos. Você pode configurar a categoria e a severidade das notificações que recebe no nível do serviço.
+O ClickHouse Cloud agora oferece notificações no console e por e-mail para vários eventos de cobrança e escalonamento. Os clientes podem configurar essas notificações na central de notificações do console do Cloud para que apareçam apenas na UI, sejam enviadas por e-mail ou ambos. Você pode configurar a categoria e a severidade das notificações que recebe no nível do serviço.
 
 No futuro, adicionaremos notificações para outros eventos, bem como outras formas de recebê-las.
 
@@ -271,12 +271,12 @@ ClickPipes é a maneira mais fácil de fazer a ingestão de dados no ClickHouse 
 No nosso último changelog da Cloud, anunciamos a prévia privada da exportação de métricas do [Prometheus](https://prometheus.io/) a partir do ClickHouse Cloud. Esse recurso permite usar a [ClickHouse Cloud API](/pt-BR/products/cloud/features/admin-features/api/api-overview) para enviar suas métricas para ferramentas como [Grafana](https://grafana.com/) e [Datadog](https://www.datadoghq.com/) para visualização. Temos o prazer de anunciar que esse recurso agora está **em disponibilidade geral**. Consulte [nossa documentação](/pt-BR/products/cloud/features/monitoring/prometheus) para saber mais sobre esse recurso.
 
 <div id="table-inspector-in-cloud-console">
-  ### Inspetor de tabelas na console do Cloud
+  ### Inspetor de tabelas no console do Cloud
 </div>
 
 O ClickHouse tem comandos como [`DESCRIBE`](/pt-BR/reference/statements/describe-table) que permitem inspecionar sua tabela para examinar o esquema. Esses comandos exibem a saída no console, mas muitas vezes não são práticos, pois é necessário combinar várias consultas para obter todos os dados relevantes sobre suas tabelas e colunas.
 
-Recentemente, lançamos um **Table Inspector** na console do Cloud que permite obter informações importantes sobre tabelas e colunas na interface, sem precisar escrever SQL. Você pode experimentar o Table Inspector nos seus serviços acessando a console do Cloud. Ele fornece informações sobre seu esquema, armazenamento, compressão e muito mais em uma única interface.
+Recentemente, lançamos um **Table Inspector** no console do Cloud que permite obter informações importantes sobre tabelas e colunas na interface, sem precisar escrever SQL. Você pode experimentar o Table Inspector nos seus serviços acessando o console do Cloud. Ele fornece informações sobre seu esquema, armazenamento, compressão e muito mais em uma única interface.
 
 <Image img="/images/cloud/reference/july-18-table-inspector.webp" size="lg" alt="Interface do Table Inspector do ClickHouse Cloud mostrando informações detalhadas de esquema e armazenamento" border />
 
@@ -342,7 +342,7 @@ Talvez um dos recursos mais solicitados: agora você pode exportar métricas do 
   ### Offsets configuráveis para o conector Kafka do ClickPipes (Beta)
 </div>
 
-Até recentemente, sempre que você configurava um novo [Conector Kafka do ClickPipes](/pt-BR/integrations/clickpipes/kafka/index), ele consumia dados desde o início do tópico do Kafka. Nessa situação, isso pode não ser flexível o suficiente para atender a casos de uso específicos em que você precisa reprocessar dados históricos, monitorar novos dados recebidos ou retomar a partir de um ponto exato.
+Até recentemente, sempre que você configurava um novo [Conector Kafka do ClickPipes](/pt-BR/integrations/clickpipes/kafka/index), ele sempre consumia dados desde o início do tópico do Kafka. Nessa situação, isso pode não ser flexível o suficiente para atender a casos de uso específicos em que você precise reprocessar dados históricos, monitorar novos dados recebidos ou retomar a partir de um ponto exato.
 
 ClickPipes for Kafka adicionou um novo recurso que aumenta a flexibilidade e o controle sobre o consumo de dados de tópicos do Kafka. Agora, você pode configurar o offset a partir do qual os dados serão consumidos.
 
@@ -481,7 +481,7 @@ Esta é uma integração de código aberto criada ao longo de muitos meses de tr
   ### A região de Tóquio da AWS agora está disponível no ClickHouse Cloud
 </div>
 
-Este lançamento apresenta a nova região de Tóquio da AWS (`ap-northeast-1`) no ClickHouse Cloud. Como queremos que o ClickHouse seja o banco de dados mais rápido, estamos adicionando continuamente mais regiões em cada nuvem para reduzir ao máximo a latência. Você pode criar seu novo serviço em Tóquio na console do ClickHouse Cloud atualizada.
+Este lançamento apresenta a nova região de Tóquio da AWS (`ap-northeast-1`) no ClickHouse Cloud. Como queremos que o ClickHouse seja o banco de dados mais rápido, estamos adicionando continuamente mais regiões em cada Cloud para reduzir ao máximo a latência. Agora você pode criar seu novo serviço em Tóquio no Cloud Console atualizado.
 
 <Image img="/images/cloud/reference/create-tokyo-service.webp" size="lg" alt="Interface de criação de serviço do ClickHouse Cloud mostrando a seleção da região de Tóquio" border />
 
@@ -736,7 +736,7 @@ Este lançamento traz uma nova região na AWS (Londres / eu-west-2), adiciona su
 * cliente Python: adicionado suporte ao tipo Nothing para SQLAlchemy
 
 <div id="reliability-changes">
-  ### Alterações de confiabilidade
+  ### Mudanças de confiabilidade
 </div>
 
-* Alteração incompatível com versões anteriores que afeta o usuário: anteriormente, dois recursos ([is&#95;deleted](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) e `OPTIMIZE CLEANUP`), em determinadas condições, podiam levar à corrupção de dados no ClickHouse. Para proteger a integridade dos dados dos nossos usuários, preservando a funcionalidade principal, ajustamos a forma como esse recurso funciona. Especificamente, a configuração do MergeTree `clean_deleted_rows` foi descontinuada e não tem mais efeito. A palavra-chave `CLEANUP` não é permitida por padrão (para usá-la, você precisará habilitar `allow_experimental_replacing_merge_with_cleanup`). Se você decidir usar `CLEANUP`, precisará garantir que ela seja sempre usada junto com `FINAL` e que nenhuma linha de versões mais antigas seja inserida depois de executar `OPTIMIZE FINAL CLEANUP`.
+* Alteração incompatível com versões anteriores que afeta o usuário: anteriormente, dois recursos ([is&#95;deleted](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) e `OPTIMIZE CLEANUP`), em determinadas condições, podiam causar corrupção de dados no ClickHouse. Para proteger a integridade dos dados dos nossos usuários, sem abrir mão da funcionalidade principal, ajustamos a forma como esse recurso funciona. Especificamente, a configuração do MergeTree `clean_deleted_rows` agora está descontinuada e não tem mais efeito. A palavra-chave `CLEANUP` não é permitida por padrão (para usá-la, você precisará habilitar `allow_experimental_replacing_merge_with_cleanup`). Se você decidir usar `CLEANUP`, precisará garantir que ela seja sempre usada em conjunto com `FINAL` e que nenhuma linha com versões mais antigas seja inserida depois de executar `OPTIMIZE FINAL CLEANUP`.

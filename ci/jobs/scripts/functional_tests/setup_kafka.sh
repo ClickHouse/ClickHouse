@@ -25,7 +25,7 @@ preflight() {
         fi
     done
     # TIME_WAIT on the RPC port also prevents bind; report it for diagnosis.
-    ss -tanH "sport = :${RPC_PORT}" state time-wait || true
+    ss -tanH state time-wait "sport = :${RPC_PORT}" || true
     if [ "$busy" -ne 0 ]; then
         echo "ERROR: cannot start Redpanda, required ports are occupied"
         return 1

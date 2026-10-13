@@ -15,7 +15,7 @@ bool SelectQueryInfo::isFinal() const
     if (table_expression_modifiers)
         return table_expression_modifiers->hasFinal();
 
-    if (query_tree)
+    if (query_tree && !apply_query_level_final_if_no_modifiers)
         return false;
 
     const auto & select = query->as<ASTSelectQuery &>();
@@ -54,10 +54,12 @@ PrewhereInfo PrewhereInfo::clone() const
     prewhere_info.prewhere_column_name = prewhere_column_name;
     prewhere_info.remove_prewhere_column = remove_prewhere_column;
     prewhere_info.need_filter = need_filter;
+    prewhere_info.query_condition_cache_attribution = query_condition_cache_attribution;
 
     return prewhere_info;
 }
 
+/// `query_condition_cache_attribution` is not serialized: a deserialized plan does not attribute.
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     prewhere_actions.serialize(ctx.out, ctx.registry);

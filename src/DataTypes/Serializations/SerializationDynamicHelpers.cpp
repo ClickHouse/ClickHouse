@@ -84,9 +84,8 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
         flattened_dynamic_column.columns.push_back(variant_column.getVariantPtrByGlobalDiscriminator(i));
     }
 
-    /// Mapping from the type name from shared variant to an index of this type in flattened list.
-    std::unordered_map<String, size_t> shared_variant_type_to_index;
     /// Collect all types from SharedVariant.
+    std::unordered_map<String, std::pair<MutableColumnPtr, DataTypePtr>> shared_variant_columns;
     const auto & shared_variant_column = dynamic_column.getSharedVariant();
     FormatSettings format_settings;
     for (size_t i = 0; i != shared_variant_column.size(); ++i)
@@ -95,17 +94,25 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
-        auto it = shared_variant_type_to_index.find(type_name);
-        /// If we see this type for the first time, add it to the list and create a column for it.
-        if (it == shared_variant_type_to_index.end())
-        {
-            it = shared_variant_type_to_index.emplace(type_name, flattened_dynamic_column.types.size()).first;
-            flattened_dynamic_column.types.push_back(type);
-            flattened_dynamic_column.columns.push_back(type->createColumn());
-        }
+        auto it = shared_variant_columns.find(type_name);
+        /// If we see this type for the first time, add it to the map and create a column for it.
+        if (it == shared_variant_columns.end())
+            it = shared_variant_columns.emplace(type_name, std::make_pair(type->createColumn(), type)).first;
 
         /// Deserialize value into the corresponding column.
-        type->getDefaultSerialization()->deserializeBinary(*flattened_dynamic_column.columns[it->second]->assumeMutable(), buf, format_settings);
+        type->getDefaultSerialization()->deserializeBinary(*shared_variant_columns[type_name].first, buf, format_settings);
+    }
+
+    /// Append the deserialized shared-variant columns to the flattened list.
+    flattened_dynamic_column.columns.reserve(flattened_dynamic_column.columns.size() + shared_variant_columns.size());
+    flattened_dynamic_column.types.reserve(flattened_dynamic_column.types.size() + shared_variant_columns.size());
+    /// Mapping from the type name from shared variant to an index of this type in flattened list.
+    std::unordered_map<String, size_t> shared_variant_type_to_index;
+    for (const auto & [type_name, column_with_type] : shared_variant_columns)
+    {
+        shared_variant_type_to_index[type_name] = flattened_dynamic_column.columns.size();
+        flattened_dynamic_column.columns.push_back(column_with_type.first->getPtr());
+        flattened_dynamic_column.types.push_back(column_with_type.second);
     }
 
     /// Now choose type for indexes column and create it.

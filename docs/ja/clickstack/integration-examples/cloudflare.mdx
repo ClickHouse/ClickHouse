@@ -60,17 +60,13 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
 * Cloudflare がログを書き込む S3 バケットの名前とリージョン
 
 <Steps>
-  <Step>
-    #### S3 認証を設定する
-
+  <Step title="S3 認証を設定する" id="configure-auth">
     ClickPipes が S3 バケットから読み取るには、権限が必要です。[S3 データへ安全にアクセスする](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) ガイドに従って、IAM ロールベースのアクセスまたは認証情報ベースのアクセスを設定してください。
 
     ClickPipes の S3 認証と権限の詳細については、[S3 ClickPipes リファレンス ドキュメント](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)を参照してください。
   </Step>
 
-  <Step>
-    #### ClickPipes ジョブを作成する
-
+  <Step title="ClickPipes ジョブを作成する" id="create-clickpipes">
     1. ClickHouse Cloud Console → **Data Sources** → **Create ClickPipe**
     2. **Source**: Amazon S3
 
@@ -107,9 +103,7 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
     </Note>
   </Step>
 
-  <Step>
-    #### HyperDX のデータソースを設定する
-
+  <Step title="HyperDX のデータソースを設定する" id="configure-source">
     ClickPipes は、Cloudflare のネイティブなフィールド名を持つフラットなテーブルに Cloudflare ログを取り込みます。これらのログを HyperDX で表示するには、Cloudflare のカラムを HyperDX のログビューにマッピングするカスタムデータソースを設定します。
 
     1. HyperDX → **チーム設定** → **ソース** を開きます
@@ -142,9 +136,7 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
     これにより、データの変換や複製を行うことなく、Cloudflare のネイティブカラムが HyperDX のログビューアに直接マッピングされます。**Body** には `GET /api/v1/users 200` のようなリクエストの要約が表示され、すべての Cloudflare フィールドを検索可能な属性として利用できます。
   </Step>
 
-  <Step>
-    #### HyperDXでデータを確認する
-
+  <Step title="HyperDXでデータを確認する" id="verify-hyperdx">
     **Search** ビューに移動し、**Cloudflare ログ** のログソースを選択します。データが含まれる期間に時間範囲を設定します。次のようなログエントリが表示されます。
 
     * Body カラム内のリクエストの概要 (例: `GET /api/v1/users 200`)
@@ -164,9 +156,7 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
 本番の Cloudflare Logpush を設定する前にインテグレーションをテストしたいユーザー向けに、実際の HTTP リクエストログに近いサンプルデータセットを提供しています。
 
 <Steps>
-  <Step>
-    #### デモデータセットで ClickPipes を開始する
-
+  <Step title="デモデータセットで ClickPipes を開始する" id="start-demo">
     1. ClickHouse Cloud Console → **Data Sources** → **Create ClickPipe**
     2. **Source**: Amazon S3
     3. **Authentication**: Public
@@ -180,15 +170,11 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
     このデータセットには、24 時間分の 5,000 件の HTTP リクエストログが含まれており、複数の国からのトラフィック、キャッシュのヒットとミス、API リクエストや静的アセットへのリクエスト、エラーレスポンス、セキュリティイベントなど、現実的なパターンが再現されています。
   </Step>
 
-  <Step>
-    #### HyperDX データソースを設定する
-
+  <Step title="HyperDX データソースを設定する" id="configure-demo-source">
     [データソースの設定手順](#configure-source) に従って、`cloudflare_http_logs` テーブルを参照する HyperDX のログソースを作成します。本番インテグレーションのセクションですでにログソースを設定している場合は、この手順は不要です。
   </Step>
 
-  <Step>
-    #### デモデータを確認する
-
+  <Step title="デモデータを確認する" id="verify-demo">
     ```sql
     SELECT count() FROM cloudflare_http_logs;
     -- 5000 が返るはずです
@@ -215,13 +201,11 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>してダッシュボード設定を取得
+  <Step title="ダッシュボード設定をダウンロード" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
   </Step>
 
-  <Step>
-    #### ダッシュボードをインポート
-
+  <Step title="ダッシュボードをインポート" id="import-dashboard">
     1. HyperDX → **Dashboards** → **Import Dashboard**
 
     <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="ダッシュボードのインポート" />
@@ -231,9 +215,7 @@ Cloudflare の [Logpush](https://developers.cloudflare.com/logs/about/) は、HT
     <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="ダッシュボードのインポート" />
   </Step>
 
-  <Step>
-    #### ダッシュボードを表示
-
+  <Step title="ダッシュボードを表示" id="view-dashboard">
     <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="ダッシュボードの例" />
 
     <Note>
@@ -281,6 +263,6 @@ SELECT count() FROM cloudflare_http_logs;
   ## 本番環境への移行
 </div>
 
-このガイドでは、公開されているデモデータセットを使用して Cloudflare ログを取り込む方法を説明します。本番環境では、Cloudflare Logpush がご自身の S3 バケットに書き込むように設定し、安全にアクセスできるよう [IAM ロールベースの認証](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を使用して ClickPipes を設定してください。ストレージコストとインジェスト量を抑えるため、必要な [Logpush フィールド](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) のみを選択してください。ファイルを整理しやすくするために Logpush で日次サブフォルダを有効にし、ClickPipes のパスパターンでは `**/*` を使用してサブディレクトリをまたいで一致させます。
+このガイドでは、公開デモデータセットを使用して Cloudflare ログを取り込む方法を紹介します。本番環境にデプロイする場合は、Cloudflare Logpush が独自の S3 バケットに書き込むよう設定し、安全にアクセスするために [IAM ロールベース認証](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を使用して ClickPipes を構成してください。ストレージコストとインジェスト量を抑えるため、必要な [Logpush フィールド](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) のみを選択してください。ファイル整理をしやすくするために Logpush で日次サブフォルダを有効にし、サブディレクトリ配下のファイルにも一致させるため、ClickPipes のパスパターンで `**/*` を使用してください。
 
 バックフィルや順不同のファイルに対応する [SQS ベースの順不同インジェスト](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) を含む高度な設定オプションについては、[S3 ClickPipes ドキュメント](/ja/integrations/clickpipes/object-storage/amazon-s3/overview) を参照してください。

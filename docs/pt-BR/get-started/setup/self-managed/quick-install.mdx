@@ -11,18 +11,18 @@ doc_type: 'guide'
 Se você não precisa instalar o ClickHouse em produção, pode executar um script de instalação com `curl`. O script identificará um binário adequado para o seu sistema operacional.
 
 <Steps>
-  <Step>
-    ## Instale o ClickHouse usando curl
-
+  <Step title="Instale o ClickHouse usando curl" id="install-clickhouse-using-curl">
     Execute o comando abaixo para baixar um único binário para o seu sistema operacional.
 
     ```bash
     curl https://clickhouse.com/ | sh
     ```
 
-    No Linux e no macOS, isso também instala o [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
-    em `~/.local/bin` (com um link simbólico `chctl`) para que você possa gerenciar versões
-    locais e servidores do ClickHouse.
+    No Linux e no macOS, isso também instala o [`clickhousectl`](/pt-BR/get-started/setup/self-managed/clickhousectl),
+    a CLI do ClickHouse, em `~/.local/bin` (com um alias `chctl`). O `clickhousectl`
+    ajuda você a instalar e gerenciar várias versões locais do ClickHouse, executar servidores em
+    segundo plano e gerenciar o ClickHouse Cloud. Consulte a [página de instalação do clickhousectl](/pt-BR/get-started/setup/self-managed/clickhousectl)
+    para conhecer o fluxo de trabalho baseado em CLI.
 
     Para instalar apenas o binário `clickhouse`, sem o `clickhousectl`, defina
     `CLICKHOUSE_ONLY=1`:
@@ -36,9 +36,7 @@ Se você não precisa instalar o ClickHouse em produção, pode executar um scri
     </Note>
   </Step>
 
-  <Step>
-    ## Inicie o clickhouse-local
-
+  <Step title="Inicie o clickhouse-local" id="start-clickhouse-local">
     O `clickhouse-local` permite processar arquivos locais e remotos usando a
     poderosa sintaxe SQL do ClickHouse, sem necessidade de configuração. Os dados da tabela são armazenados
     em um local temporário, o que significa que, após reiniciar o `clickhouse-local`,
@@ -51,9 +49,7 @@ Se você não precisa instalar o ClickHouse em produção, pode executar um scri
     ```
   </Step>
 
-  <Step>
-    ## Inicie o clickhouse-server
-
+  <Step title="Inicie o clickhouse-server" id="start-clickhouse-server">
     Se quiser persistir os dados, execute o `clickhouse-server`. Você pode
     iniciar o servidor ClickHouse com o seguinte comando:
 
@@ -62,9 +58,7 @@ Se você não precisa instalar o ClickHouse em produção, pode executar um scri
     ```
   </Step>
 
-  <Step>
-    ## Inicie o clickhouse-client
-
+  <Step title="Inicie o clickhouse-client" id="start-clickhouse-client">
     Com o servidor em execução, abra uma nova janela do terminal e execute o comando abaixo
     para iniciar o `clickhouse-client`:
 

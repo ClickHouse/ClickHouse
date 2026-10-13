@@ -1,0 +1,146 @@
+<test>
+    <!--
+        Focused insert-time and explicit materialization benchmark for UniqV2
+        statistics over prefilled SQL-generated numeric data. The source rows are
+        prepared once in Memory tables so measured insert queries do not include
+        numbers() generation or per-row casts.
+
+        The insert queries compare materialize_statistics_on_insert=0 and =1
+        for one Int64 column and one Float64 column. Merges are stopped on the
+        tables under test so parts inserted with materialize_statistics_on_insert=0
+        do not get statistics later through background merges.
+
+        The ALTER queries benchmark explicit statistics materialization on
+        tables filled once without materialized statistics. They use
+        CLEAR STATISTICS ALL, MATERIALIZE STATISTICS ALL so every measured run
+        recalculates UniqV2 instead of turning into a no-op after prewarm.
+    -->
+
+    <settings>
+        <allow_statistics>1</allow_statistics>
+        <use_strict_insert_block_limits>1</use_strict_insert_block_limits>
+        <min_insert_block_size_rows>1000000</min_insert_block_size_rows>
+        <max_insert_block_size>1000000</max_insert_block_size>
+        <min_insert_block_size_bytes>0</min_insert_block_size_bytes>
+        <max_insert_block_size_bytes>0</max_insert_block_size_bytes>
+        <max_block_size>1000000</max_block_size>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_insert_uniq_v2_i64_src (c1 Int64)
+        ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE t_insert_uniq_v2_f64_src (c1 Float64)
+        ENGINE = Memory
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_insert_uniq_v2_i64_off (c1 Int64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = 'uniq_v2'
+    </create_query>
+    <create_query>
+        CREATE TABLE t_insert_uniq_v2_i64_on (c1 Int64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = 'uniq_v2'
+    </create_query>
+    <create_query>
+        CREATE TABLE t_insert_uniq_v2_f64_off (c1 Float64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = 'uniq_v2'
+    </create_query>
+    <create_query>
+        CREATE TABLE t_insert_uniq_v2_f64_on (c1 Float64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = 'uniq_v2'
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_materialize_uniq_v2_i64 (c1 Int64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = 'uniq_v2'
+    </create_query>
+    <create_query>
+        CREATE TABLE t_materialize_uniq_v2_f64 (c1 Float64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = 'uniq_v2'
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_insert_uniq_v2_i64_off</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_insert_uniq_v2_i64_on</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_insert_uniq_v2_f64_off</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_insert_uniq_v2_f64_on</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_materialize_uniq_v2_i64</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_materialize_uniq_v2_f64</fill_query>
+
+    <fill_query>
+        INSERT INTO t_insert_uniq_v2_i64_src
+        SELECT toInt64(number) FROM numbers(20000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO t_insert_uniq_v2_f64_src
+        SELECT toFloat64(number) / 10.0 FROM numbers(20000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO t_materialize_uniq_v2_i64
+        SELECT * FROM t_insert_uniq_v2_i64_src
+        SETTINGS materialize_statistics_on_insert = 0
+    </fill_query>
+    <fill_query>
+        INSERT INTO t_materialize_uniq_v2_f64
+        SELECT * FROM t_insert_uniq_v2_f64_src
+        SETTINGS materialize_statistics_on_insert = 0
+    </fill_query>
+
+    <!-- Int64 insert baseline: no insert-time statistics materialization. -->
+    <query>
+        INSERT INTO t_insert_uniq_v2_i64_off
+        SELECT * FROM t_insert_uniq_v2_i64_src
+        SETTINGS materialize_statistics_on_insert = 0
+    </query>
+
+    <!-- Int64 insert with UniqV2 materialized while inserting. -->
+    <query>
+        INSERT INTO t_insert_uniq_v2_i64_on
+        SELECT * FROM t_insert_uniq_v2_i64_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <!-- Float64 insert baseline: no insert-time statistics materialization. -->
+    <query>
+        INSERT INTO t_insert_uniq_v2_f64_off
+        SELECT * FROM t_insert_uniq_v2_f64_src
+        SETTINGS materialize_statistics_on_insert = 0
+    </query>
+
+    <!-- Float64 insert with UniqV2 materialized while inserting. -->
+    <query>
+        INSERT INTO t_insert_uniq_v2_f64_on
+        SELECT * FROM t_insert_uniq_v2_f64_src
+        SETTINGS materialize_statistics_on_insert = 1
+    </query>
+
+    <!-- Recalculate UniqV2 statistics for an existing Int64 table. -->
+    <query>
+        ALTER TABLE t_materialize_uniq_v2_i64
+        CLEAR STATISTICS ALL, MATERIALIZE STATISTICS ALL
+        SETTINGS mutations_sync = 1
+    </query>
+
+    <!-- Recalculate UniqV2 statistics for an existing Float64 table. -->
+    <query>
+        ALTER TABLE t_materialize_uniq_v2_f64
+        CLEAR STATISTICS ALL, MATERIALIZE STATISTICS ALL
+        SETTINGS mutations_sync = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_insert_uniq_v2_i64_off</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_insert_uniq_v2_i64_on</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_insert_uniq_v2_f64_off</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_insert_uniq_v2_f64_on</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_materialize_uniq_v2_i64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_materialize_uniq_v2_f64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_insert_uniq_v2_i64_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_insert_uniq_v2_f64_src</drop_query>
+</test>

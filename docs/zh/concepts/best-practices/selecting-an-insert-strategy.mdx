@@ -132,7 +132,7 @@ ClickHouse 在数据传输过程中支持多种压缩编解码器。常见的两
 
 **将压缩、批处理和高效的输入格式 (如 Native) 结合使用，可获得最佳摄取性能。**
 
-使用原生接口 (例如 [clickhouse-client](/zh/concepts/features/interfaces/cli)) 时，默认启用 LZ4 压缩。你也可以通过设置切换为 ZSTD。
+使用原生接口 (例如 [clickhouse-client](/zh/concepts/features/interfaces/client)) 时，默认启用 LZ4 压缩。你也可以通过设置切换为 ZSTD。
 
 使用 [HTTP 接口](/zh/concepts/features/interfaces/http) 时，可通过 Content-Encoding 请求头启用压缩 (例如 Content-Encoding: lz4) 。整个载荷必须在发送前完成压缩。
 
@@ -162,7 +162,7 @@ ClickHouse 在数据传输过程中支持多种压缩编解码器。常见的两
   ### 原生接口
 </div>
 
-ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTTP 接口**——两者在性能与灵活性之间各有取舍。原生接口由 [clickhouse-client](/zh/concepts/features/interfaces/cli) 以及 Go、C++ 等部分语言的客户端使用，专为高性能而设计。它始终以 ClickHouse 高效的 Native 格式 传输数据，支持使用 LZ4 或 ZSTD 进行按块压缩，并通过将解析、格式转换等工作卸载到客户端，尽量减少服务端处理。
+ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTTP 接口**——两者在性能与灵活性之间各有取舍。原生接口由 [clickhouse-client](/zh/concepts/features/interfaces/client) 以及 Go、C++ 等部分语言的客户端使用，专为高性能而设计。它始终以 ClickHouse 高效的 Native 格式 传输数据，支持使用 LZ4 或 ZSTD 进行按块压缩，并通过将解析、格式转换等工作卸载到客户端，尽量减少服务端处理。
 
 它甚至支持在客户端计算 MATERIALIZED 和 DEFAULT 列值，使服务端能够完全跳过这些步骤。因此，在效率至关重要的高吞吐量摄取场景中，原生接口是理想选择。
 
@@ -170,10 +170,10 @@ ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTT
   ### HTTP
 </div>
 
-与许多传统数据库不同，ClickHouse 也支持 HTTP 接口。**相比之下，它更强调兼容性和灵活性。**它支持以[任何受支持的格式](/zh/guides/clickhouse/data-formats/intro)发送数据——包括 JSON、CSV、Parquet 等——并且已被大多数 ClickHouse 客户端广泛支持，包括 Python、Java、JavaScript 和 Rust。
+与许多传统数据库不同，ClickHouse 也支持 HTTP 接口。**相比之下，它更强调兼容性和灵活性。** 它允许以[任何受支持的格式](/zh/guides/clickhouse/data-formats/intro)发送数据——包括 JSON、CSV、Parquet 等——并且被大多数 ClickHouse 客户端广泛支持，包括 Python、Java、JavaScript 和 Rust。
 
-与 ClickHouse 的原生协议相比，这种方式通常更合适，因为它便于通过负载均衡器轻松切换流量。我们预计原生协议在插入性能上会略有优势，因为它的额外开销更低一些。
+与 ClickHouse 的原生协议相比，这通常是更合适的选择，因为它便于通过负载均衡器灵活切换流量。我们预计原生协议在插入性能上会略有优势，因为它的额外开销更小。
 
-不过，HTTP 接口缺少原生协议那样更深度的集成，也无法执行客户端侧优化，例如物化值的计算或自动转换为 Native 格式。虽然 HTTP 插入仍可通过标准 HTTP 请求头进行压缩 (例如 `Content-Encoding: lz4`) ，但压缩作用于整个载荷，而不是单独的数据块。因此，在更看重协议简单性、负载均衡或广泛格式兼容性，而非极致性能的环境中，通常会优先选择这种接口。
+不过，HTTP 接口缺少原生协议那样更深度的集成，也无法执行 materialized 值计算或自动转换为 Native 格式 之类的客户端侧优化。虽然 HTTP 插入仍可通过标准 HTTP 请求头进行压缩 (例如 `Content-Encoding: lz4`) ，但压缩作用于整个载荷，而不是单独的数据块。在更看重协议简洁性、负载均衡或广泛格式兼容性，而非极致性能的环境中，这种接口通常更受青睐。
 
 有关这些接口的更详细说明，请参见[此处](/zh/concepts/features/interfaces/overview)。

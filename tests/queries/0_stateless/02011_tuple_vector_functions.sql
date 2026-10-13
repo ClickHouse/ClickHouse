@@ -79,7 +79,7 @@ SELECT max2(NULL, 1) - min2(NULL, 1);
 SELECT L1Norm(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT (1, 1) / toString(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT -(1, toString(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError ILLEGAL_COLUMN }
+SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT (1, 2) * toDecimal32(3.1, 8);
 
 SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -128,7 +128,7 @@ SELECT LpNorm((3, 1, 4), 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpNorm((1, 2, 3), 0.5); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpNorm((1, 2, 3), inf); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpNorm((1, 2, 3), -1.); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT LpNorm((1, 2, 3), -1); -- { serverError ILLEGAL_COLUMN }
+SELECT LpNorm((1, 2, 3), -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpNorm((1, 2, 3), 0.); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT cosineDistance(materialize((NULL, -2147483648)), (1048577, 1048575));
 

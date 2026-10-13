@@ -9,20 +9,16 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
 </div>
 
 <Warning>
-  通过 Homebrew Formulae 安装现已弃用，并将于 2026-09-01 停止支持。
+  通过 Homebrew Formulae 安装现已弃用，并将于 2026-09-01 禁用。
   我们建议改用适用于任何平台的[快速安装](/zh/get-started/setup/self-managed/quick-install)方法。
 </Warning>
 
 <Steps>
-  <Step>
-    ## 查看建议
-
+  <Step title="查看建议" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## 使用社区 Homebrew formula 安装
-
+  <Step title="使用社区 Homebrew formula 安装" id="install-using-community-homebrew-formula">
     要在 macOS 上使用 [Homebrew](https://brew.sh/) 安装 ClickHouse，可以使用
     ClickHouse 社区提供的 [homebrew formula](https://formulae.brew.sh/cask/clickhouse)。
 
@@ -31,17 +27,19 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 修复 macOS 中的开发者验证错误
-
-    如果你使用 `brew` 安装 ClickHouse，可能会遇到 macOS 报出的错误。
-    默认情况下，macOS 不会运行由无法验证身份的开发者创建的应用或工具。
+  <Step title="修复 macOS 中的开发者验证错误" id="fix-developer-verification-error-macos">
+    如果你使用 `brew` 安装 ClickHouse，可能会遇到 MacOS 报出的错误。
+    默认情况下，MacOS 不会运行由无法验证身份的开发者创建的应用或工具。
 
     尝试运行任意 `clickhouse` 命令时，你可能会看到以下错误：
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="MacOS 开发者验证错误对话框" border />
+    <div className="ch-image-sm">
+      <Frame>
+        <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" alt="MacOS 开发者验证错误对话框" />
+      </Frame>
+    </div>
 
-    要绕过这个验证错误，你需要将该应用从 macOS 的隔离区中移除。可以在系统设置中找到相应选项，也可以使用终端，或者重新安装 ClickHouse。
+    要绕过这个验证错误，你需要将该应用从 MacOS 的隔离区中移除。可以在系统设置中找到相应选项，也可以使用终端，或者重新安装 ClickHouse。
 
     ### 系统设置流程
 
@@ -51,15 +49,23 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
 
     2. 进入**隐私与安全**：
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS 隐私与安全设置默认视图" border />
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" alt="MacOS 隐私与安全设置默认视图" />
+         </Frame>
+       </div>
 
     3. 滚动到窗口底部，找到提示：&#95;&quot;clickhouse-macos-aarch64&quot; was blocked from use because it isn&#39;t from an identified developer&quot;。
 
     4. 点击**Allow Anyway**。
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="显示 Allow Anyway 按钮的 MacOS 隐私与安全设置" border />
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" alt="显示 Allow Anyway 按钮的 MacOS 隐私与安全设置" />
+         </Frame>
+       </div>
 
-    5. 输入你的 macOS 用户密码。
+    5. 输入你的 MacOS 用户密码。
 
     现在你应该就可以在终端中运行 `clickhouse` 命令了。
 
@@ -102,9 +108,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 通过重新安装 ClickHouse 修复此问题
-
+  <Step title="通过重新安装 ClickHouse 修复此问题" id="fix-issue">
     Brew 提供了一个命令行选项，可从一开始就避免将已安装的二进制文件加入隔离区。
 
     首先，卸载 ClickHouse：

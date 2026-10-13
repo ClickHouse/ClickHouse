@@ -14,21 +14,17 @@ Hay situaciones en las que puede resultar útil volver a sincronizar tablas espe
 
 Aunque la opción de resincronizar tablas individuales con solo hacer clic en un botón aún está en desarrollo, en esta guía se describen los pasos para lograrlo hoy en un ClickPipe de MongoDB.
 
-<div id="removing-table">
-  ### 1. Eliminar la tabla del pipe
-</div>
+<Steps>
+  <Step title="Eliminar la tabla del pipe" id="removing-table">
+    Para ello, sigue la [guía para eliminar tablas](/es/integrations/clickpipes/mongodb/remove-table).
+  </Step>
 
-Para ello, sigue la [guía para eliminar tablas](/es/integrations/clickpipes/mongodb/remove-table).
+  <Step title="Truncar o eliminar la tabla en ClickHouse" id="truncate-drop-table">
+    Este paso es para evitar la duplicación de datos cuando volvamos a agregar esta tabla en el siguiente paso. Puedes hacerlo yendo a la pestaña **SQL Console** de ClickHouse Cloud y ejecutando una consulta.
+    Ten en cuenta que contamos con una validación para bloquear la adición de la tabla si esta ya existe en ClickHouse y no está vacía.
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. TRUNCATE o elimina la tabla en ClickHouse
-</div>
-
-Este paso sirve para evitar la duplicación de datos cuando volvamos a agregar esta tabla en el siguiente paso. Puedes hacerlo desde la pestaña **SQL Console** de ClickHouse Cloud ejecutando una consulta.
-Ten en cuenta que hay una validación que impide agregar la tabla si ya existe en ClickHouse y no está vacía.
-
-<div id="add-table-again">
-  ### 3. Vuelve a agregar la tabla al ClickPipe
-</div>
-
-Para hacerlo, sigue la [guía para agregar tablas](/es/integrations/clickpipes/mongodb/add-table).
+  <Step title="Volver a agregar la tabla al ClickPipe" id="add-table-again">
+    Para ello, sigue la [guía para agregar tablas](/es/integrations/clickpipes/mongodb/add-table).
+  </Step>
+</Steps>

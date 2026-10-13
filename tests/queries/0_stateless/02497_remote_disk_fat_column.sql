@@ -1,10 +1,12 @@
--- Tags: no-random-settings, no-fasttest, no-tsan, no-asan, no-msan
+-- Tags: long, no-random-settings, no-fasttest, no-tsan, no-asan, no-msan
 set allow_suspicious_fixed_string_types=1;
 create table fat_granularity (x UInt32, fat FixedString(160000)) engine = MergeTree order by x settings storage_policy = 's3_cache';
 
 SET max_memory_usage='10G';
 
-insert into fat_granularity select number, toString(number) || '_' from numbers(100000) settings max_block_size = 3000, max_insert_threads = 8, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+-- max_insert_threads=1 bounds the per-copy insert memory peak so concurrent flaky-check copies stay under the per-user limit (issue #68619).
+insert into fat_granularity select number, toString(number) || '_' from numbers(100000) settings max_block_size = 3000, max_insert_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 
--- Too large sizes of FixedString to deserialize
-select x from fat_granularity prewhere fat like '256\_%' settings max_threads=2;
+-- Too large sizes of FixedString to deserialize.
+-- Keep max_threads=1: it bounds the in-flight oversized-FixedString granule buffers (issue #68619).
+select x from fat_granularity prewhere fat like '256\_%' settings max_threads=1;

@@ -1,0 +1,71 @@
+---
+date: 2026-02-04
+title: 'Cómo desactivar la recopilación de informes de fallos'
+description: 'En este artículo se muestra cómo desactivar la recopilación de informes de fallos en ClickHouse Cloud'
+tags: ['Gestión de Cloud']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+A partir del **27 de febrero de 2026**, ClickHouse Cloud comenzará a recopilar informes de fallos cuando se produzcan cierres inesperados del servidor. Esto forma parte de nuestro compromiso de mejorar la fiabilidad del servicio para todos nuestros usuarios.
+
+La recopilación de informes de fallos nos ayuda a:
+
+* Identificar y comprender qué causó un fallo
+* Resolver los problemas con mayor rapidez
+* Mejorar continuamente su experiencia con el servicio
+
+<div id="whats-collected">
+  ## Qué se recopila
+</div>
+
+Cuando se produce un fallo, los informes de fallos capturan una instantánea del estado del servidor en ese momento. Queremos ser transparentes: esto puede incluir información confidencial que estaba en memoria, como:
+
+* Credenciales de conexión
+* Claves de cifrado
+* Cadenas de consulta
+* Otros datos en memoria en el momento del fallo
+
+<div id="how-we-protect-your-data">
+  ### Cómo protegemos sus datos
+</div>
+
+Nos tomamos muy en serio la seguridad de estos datos:
+
+* **Almacenamiento regional**: Todos los datos permanecen en la misma región que su servicio
+* **Seguridad mejorada**: Aplicamos medidas de protección adicionales a todos los datos recopilados
+* **Retención limitada**: Los datos se conservan solo el tiempo necesario para la depuración y después se eliminan de forma segura
+
+<div id="services-automatically-excluded">
+  ## Servicios excluidos automáticamente
+</div>
+
+Algunos servicios se excluyen automáticamente de la recopilación de informes de fallos:
+
+* Servicios con requisitos de cumplimiento normativo de **HIPAA**
+* Servicios con requisitos de cumplimiento normativo de **PCI**
+* Servicios **BYOC** (Bring Your Own Cloud)
+
+<div id="how-to-opt-out">
+  ## Cómo excluirse
+</div>
+
+Si prefieres no participar en la recopilación de informes de fallos, puedes excluirte fácilmente:
+
+1. Ve a la [ClickHouse Cloud Console](https://clickhouse.cloud)
+2. Selecciona tu servicio
+3. Haz clic en la pestaña **Settings**
+4. Desplázate hasta encontrar &quot;Share crash reports with ClickHouse&quot;
+5. Desactiva la opción para excluirte
+
+<Image img="/images/crash-reports.png" size="md" alt="Dónde encontrar la opción para excluirse en la UI de Cloud" />
+
+<Note>
+  Además de la configuración del servicio, también admitimos la configuración de preferencias para la organización. Si esta opción está deshabilitada, es decir, si se excluye la recopilación de informes de fallos, todos los servicios existentes y nuevos quedarán excluidos automáticamente. Si configuras la preferencia como habilitada, es decir, si decides participar, puedes desactivarla de forma selectiva a nivel de servicio para aplicar una sobrescritura y excluirte.
+</Note>
+
+<Image img="/images/cloud/crash-reports-collection.png" size="md" alt="Recopilación de informes de fallos" />

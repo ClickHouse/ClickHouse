@@ -33,9 +33,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * إمكانية الوصول إلى ملفات سجلات Kafka (`server.log`, `controller.log`، إلخ.)
 
 <Steps>
-  <Step>
-    #### تحقّق من إعدادات تسجيل السجلات في Kafka
-
+  <Step title="تحقّق من إعدادات تسجيل السجلات في Kafka" id="verify-kafka">
     يستخدم Kafka ‏Log4j ويكتب السجلات في الدليل المحدد عبر خاصية النظام `kafka.logs.dir` أو متغير البيئة `LOG_DIR`. تحقّق من موقع ملف السجل:
 
     ```bash
@@ -61,9 +59,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### أنشئ تهيئة مخصصة لـ OTel collector لـ Kafka
-
+  <Step title="أنشئ تهيئة مخصصة لـ OTel collector لـ Kafka" id="custom-otel">
     يتيح لك ClickStack توسيع التهيئة الأساسية لـ OpenTelemetry Collector من خلال ربط ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمَج التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
 
     أنشئ ملفًا باسم `kafka-logs-monitoring.yaml` يتضمن التهيئة التالية:
@@ -120,9 +116,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### تهيئة ClickStack لتحميل إعدادات مخصصة
-
+  <Step title="تهيئة ClickStack لتحميل إعدادات مخصصة" id="load-custom">
     لتمكين تهيئة المُجمّع المخصصة في عملية نشر ClickStack الحالية، يجب عليك ما يلي:
 
     1. ربط ملف الإعدادات المخصص على المسار `/etc/otelcol-contrib/custom.config.yaml`
@@ -166,9 +160,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### التحقق من السجلات في HyperDX
-
+  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
     بعد إكمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفق:
 
     <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="واجهة البحث" />
@@ -184,9 +176,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 اختبر تكامل سجلات Kafka باستخدام مجموعة بيانات نموذجية مُعدّة مسبقًا قبل تهيئة أنظمة production لديك.
 
 <Steps>
-  <Step>
-    #### تنزيل مجموعة البيانات النموذجية
-
+  <Step title="تنزيل مجموعة البيانات النموذجية" id="download-sample">
     نزّل ملف السجل النموذجي:
 
     ```bash
@@ -194,9 +184,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### إنشاء تهيئة مجمّع للاختبار
-
+  <Step title="إنشاء تهيئة collector للاختبار" id="test-config">
     أنشئ ملفًا باسم `kafka-logs-demo.yaml` بالمحتوى التالي:
 
     ```yaml
@@ -245,9 +233,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تشغيل ClickStack باستخدام التهيئة التجريبية
-
+  <Step title="تشغيل ClickStack باستخدام التهيئة التجريبية" id="run-demo">
     شغّل ClickStack باستخدام السجلات التجريبية وهذه التهيئة:
 
     ```bash
@@ -278,13 +264,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">نزّل</TrackedLink> إعدادات لوحة المعلومات
+  <Step title="نزّل إعدادات لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">نزّل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استيراد لوحة معلومات مُعدّة مسبقًا
-
+  <Step title="استيراد لوحة معلومات مُعدّة مسبقًا" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات.
     2. انقر على &quot;Import Dashboard&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
 
@@ -292,15 +276,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     3. حمّل ملف kafka-logs-dashboard.json وانقر على إنهاء الاستيراد.
 
-    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="إنهاء استيراد لوحة معلومات Kafka logs" />
+    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="إنهاء استيراد لوحة معلومات سجلات Kafka" />
   </Step>
 
-  <Step>
-    #### سيتم إنشاء لوحة المعلومات مع ضبط جميع التصورات مسبقًا
-
+  <Step title="سيتم إنشاء لوحة المعلومات مع ضبط جميع التصورات مسبقًا" id="created-dashboard">
     بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني ليشمل **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
-    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="لوحة معلومات Kafka logs التجريبية" />
+    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="لوحة معلومات سجلات Kafka التجريبية" />
   </Step>
 </Steps>
 
@@ -337,7 +319,7 @@ tail -1 /var/log/kafka/server.log
 * أنشئ [لوحات معلومات](/ar/clickstack/features/dashboards/overview) إضافية لحالات استخدام محددة (أحداث وحدة التحكم، إعادة إسناد الأقسام)
 
 <div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
+  ## الانتقال إلى الإنتاج
 </div>
 
-يستفيد هذا الدليل من OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

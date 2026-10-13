@@ -14,7 +14,9 @@ Unordered mode is **not** supported for public buckets. It requires **Service Ac
 
 ## How it works {#how-it-works}
 
-In this mode, the GCS ClickPipe does an initial load of **all files** in the selected path, and then listens for object notifications via the Pub/Sub subscription that match the specified path. Any message for a previously seen file, file not matching the path, or event of a different type will be **ignored**. It is **not possible** to start ingestion from a specific file or point in time — ClickPipes will always load all files in the selected path.
+In this mode, the GCS ClickPipe does an initial load of **all files** in the selected path, and then listens for object notifications via the Pub/Sub subscription that match the specified path. Any message for a previously seen file, file not matching the path, or event of a different type will be **ignored**.
+
+To ingest only files delivered through the subscription, enable **Skip initial load**. When enabled, ClickPipes skips the initial scan of existing files in the selected path and processes only files delivered through the Pub/Sub subscription.
 
 Various types of failures can occur when ingesting data, which can result in partial inserts or duplicate data. Object Storage ClickPipes are resilient to insert failures and provide exactly-once semantics using temporary staging tables. Data is first inserted into a staging table; if something goes wrong, the staging table is truncated and the insert is retried from a clean state. Only once an insert completes successfully are the partitions moved to the target table.
 
@@ -71,7 +73,7 @@ Each ClickPipe needs its own dedicated Pub/Sub subscription. Within a single sub
 
 **1.** In the ClickHouse Cloud console, navigate to **Data Sources > Create ClickPipe** and select **Google Cloud Storage**. Enter the details to connect to your GCS bucket. Under **Authentication method**, choose **Service Account** and provide the `.json` service account key.
 
-**2.** Toggle on **Continuous ingestion**, then select **Any order** as the ingestion mode and provide the **Pub/Sub subscription** name for the subscription connected to your bucket. The subscription must be used exclusively by this ClickPipe — see [Create a Google Cloud Pub/Sub topic](#create-pubsub-topic). The subscription name must follow the following format:
+**2.** Toggle on **Continuous ingestion**, then select **Any order** as the ingestion mode and provide the **Pub/Sub subscription** name for the subscription connected to your bucket. To process only files from the subscription and skip the initial scan of existing files in the selected path, enable **Skip initial load**. The subscription must be used exclusively by this ClickPipe — see [Create a Google Cloud Pub/Sub topic](#create-pubsub-topic). The subscription name must use the following format:
 
 ```text
 projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
@@ -79,6 +81,6 @@ projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
 
 **3.** Click **Incoming data**. Define a **Sorting key** for the target table. Make any necessary adjustments to the mapped schema, then configure a role for the ClickPipes database user.
 
-**4.** Review the configuration and click **Create ClickPipe**. ClickPipes will perform an initial scan of your bucket to load all existing files that match the specified path, and will then begin processing files as new `OBJECT_FINALIZE` events arrive in the topic.
+**4.** Review the configuration and click **Create ClickPipe**. Unless **Skip initial load** is enabled, ClickPipes will perform an initial scan of your bucket to load all existing files that match the specified path, and will then begin processing files as matching `OBJECT_FINALIZE` events are delivered from the subscription.
 </Step>
 </Steps>

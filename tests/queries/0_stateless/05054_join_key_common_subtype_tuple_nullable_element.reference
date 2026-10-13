@@ -1,0 +1,23 @@
+hash
+(1)	(1)
+(1)	(1)
+(NULL)	(NULL)
+parallel_hash
+(1)	(1)
+(1)	(1)
+(NULL)	(NULL)
+grace_hash
+(1)	(1)
+(1)	(1)
+(NULL)	(NULL)
+partial_merge
+(1)	(1)
+(1)	(1)
+(NULL)	(NULL)
+full_sorting_merge
+(1)	(1)
+(1)	(1)
+(NULL)	(NULL)
+(1)
+(1)	(1)
+1

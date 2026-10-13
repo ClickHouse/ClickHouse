@@ -6,6 +6,8 @@
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/Stopwatch.h>
 
+#include <optional>
+
 
 namespace Poco
 {
@@ -24,7 +26,8 @@ public:
         const Names & columns,
         LoggerPtr log_,
         size_t max_block_size_,
-        bool commit_in_suffix = false);
+        bool commit_in_suffix = false,
+        std::optional<UInt64> cancel_epoch_ = {});
     ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }
@@ -52,6 +55,7 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
     const StreamingHandleErrorMode handle_error_mode;
+    const UInt64 cancel_epoch;
 
     Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};

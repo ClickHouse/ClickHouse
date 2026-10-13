@@ -251,8 +251,8 @@ def test_marker_driven_rebuild_forces_list_fsync():
     second power loss could leave stale `.list` files with no marker while the fsync'd `.sql`
     survives - reopening the window across a restart.
 
-    `SYSTEM RELOAD USERS` runs `reloadAllAndRebuildLists()` on the query thread, the same code path
-    as the startup recovery, so its FileSync ProfileEvent covers it.
+    `SYSTEM RELOAD USERS` applies the same rule as the startup recovery, on the query thread, so its
+    FileSync ProfileEvent covers it.
     """
     user = "u_marker_rebuild"
     instance.query(f"DROP USER IF EXISTS {user}")

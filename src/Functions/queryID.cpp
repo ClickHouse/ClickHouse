@@ -32,6 +32,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -44,7 +47,7 @@ REGISTER_FUNCTION(QueryID)
 {
     FunctionDocumentation::Description description = R"(
 Returns the ID of the current query.
-Other parameters of a query can be extracted from field `query_id` in the [`system.query_log`](../../operations/system-tables/query_log.md) table.
+Other parameters of a query can be extracted from field `query_id` in the [`system.query_log`](/reference/system-tables/query_log) table.
 
 In contrast to [`initialQueryID`](#initialQueryID) function, `queryID` can return different results on different shards.
 )";
@@ -60,9 +63,9 @@ INSERT INTO tmp (*) VALUES ('a');
 SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
         )",
         R"(
-┌─count(DISTINCT t)─┐
-│                 3 │
-└───────────────────┘
+┌─countDistinct(t)─┐
+│                3 │
+└──────────────────┘
         )"
     }
     };

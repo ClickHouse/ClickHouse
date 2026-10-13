@@ -14,6 +14,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
@@ -27,6 +28,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/CancellationChecker.h>
@@ -276,13 +278,16 @@ const std::unordered_set<int> late_typecheck_errors = {
 const std::unordered_set<std::string_view> excluded_functions = {
     /// Avoid depending on environment (e.g. current query, configuration, settings).
     "synonyms",
-    "catboostEvaluate",
     "aiGenerate",
     "aiClassify",
+    "aiFilter",
     "aiExtract",
     "aiTranslate",
+    "aiRedact",
     "aiEmbed",
+    "aiSimilarity",
     "naiveBayesClassifier",
+    "predictXGBoost",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
     "showCertificate",
@@ -1091,9 +1096,8 @@ bool isStringEnumComparisonQuirk(const String & function_name, const ColumnsWith
             has_string |= isStringOrFixedString(type);
             found_enum |= isEnum(type);
         };
-        apply(*arg.type);
         /// The string and enum may be inside a tuple, nullable, low-cardinality, maybe other things.
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
         found_const_string |= has_string && arg.column->isConst();
     }
     return found_const_string && found_enum;
@@ -1108,8 +1112,7 @@ bool isAnyArgumentNullable(const ColumnsWithTypeAndName & args)
         {
             found_nullable |= type.isNullable();
         };
-        apply(*arg.type);
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
     }
     return found_nullable;
 }
@@ -1130,8 +1133,7 @@ bool typeCanHaveNanOrIncomparableFields(const DataTypePtr & type)
         found |= isFloat(t) || isVariant(t) || isDynamic(t) || isObject(t) || isIPv4(t) || isIPv6(t)
             || isDecimal(t) || isDateTime64(t);
     };
-    check(*type);
-    type->forEachChild(check);
+    forEachInTypeTree(*type, check);
     return found;
 }
 
@@ -1144,10 +1146,19 @@ bool isAnyArgumentDynamicallyTyped(const ColumnsWithTypeAndName & args)
         {
             found |= isVariant(type) || isDynamic(type) || isObject(type);
         };
-        apply(*arg.type);
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
     }
     return found;
+}
+
+/// `IColumnDummy::isDefaultAt` throws. A dummy (`Nothing`) column holds no values, so its rows count as default.
+bool isDefaultOrDummyAt(const IColumn & column, size_t n)
+{
+    if (column.isDummy())
+        return true;
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+        return std::ranges::all_of(tuple->getColumns(), [n](const auto & element) { return isDefaultOrDummyAt(*element, n); });
+    return column.isDefaultAt(n);
 }
 
 }
@@ -1308,7 +1319,7 @@ struct FunctionsStressTestThread
 
             thread_status->memory_tracker.resetCounters(); // reset the peak
             thread_status->memory_tracker.setHardLimit(MEMORY_LIMIT_BYTES_PER_THREAD);
-            thread_status->untracked_memory = 0;
+            thread_status->untracked_memory.store(0);
 
             randomizeSettings();
 
@@ -1383,7 +1394,7 @@ struct FunctionsStressTestThread
                     /// guards we set up ourselves.
                     stats.add(S_QUERY_CANCELLED, 1);
                 }
-                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("incorrect data types") != String::npos)
+                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().contains("incorrect data types"))
                 {
                     /// Known issue: some arithmetic functions (plus, minus, etc.) accept types in
                     /// getReturnTypeImpl but fail in executeImpl with LowCardinality arguments.
@@ -1437,7 +1448,7 @@ struct FunctionsStressTestThread
             }
             stats.max(S_TIME_MAX_NS, ns);
 
-            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory;
+            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory.load();
             Int64 memory_peak = thread_status->memory_tracker.getPeak();
 
             stats.add(S_MEMORY_BALANCE, memory_balance);
@@ -1715,7 +1726,7 @@ struct FunctionsStressTestThread
                         /// Note: this is incorrect (?) for nullable enums, where the IColumn's
                         /// "default" value (0) is different from the IDataType's "default" value
                         /// (first enumerand) and may not be a valid enum value.
-                        if (null_map[i] && !nested.isDefaultAt(i))
+                        if (null_map[i] && !isDefaultOrDummyAt(nested, i))
                         {
                             if (stats)
                                 stats->add(S_NONDEFAULT_NULL, 1);
@@ -2304,7 +2315,7 @@ TEST(FunctionsStress, stress)
     int num_threads = options.num_threads;
     if (num_threads <= 0)
     {
-        if (hasPHDRCache())
+        if (hasAsyncSignalSafeUnwind())
             num_threads = std::thread::hardware_concurrency();
         else
             /// In TSAN build, with too many threads, this test gets >30s stalls on lock

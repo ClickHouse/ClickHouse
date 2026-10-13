@@ -16,9 +16,7 @@ Quatre optimisations couvrent l’essentiel de ce qui apporte des gains en prati
 Les résumés ci-dessous sont volontairement brefs. Pour comprendre le raisonnement derrière chaque modification, consulter les benchmarks et obtenir les procédures de déploiement sur des données existantes, voir [optimisation des performances](/fr/clickstack/managing/performance-tuning).
 
 <Steps>
-  <Step>
-    ## Matérialiser les attributs fréquemment interrogés
-
+  <Step title="Matérialiser les attributs fréquemment interrogés" id="materialize-attributes">
     Filtrer sur `LogAttributes['service.version']` oblige ClickHouse à charger et décoder l’intégralité de la Map `LogAttributes` pour chaque ligne examinée. Promouvez cet attribut en colonne `MATERIALIZED` et le même filtre devient une simple lecture de colonne, généralement dix fois plus rapide. ClickStack réécrit automatiquement le filtre une fois la colonne créée, de sorte que les recherches enregistrées et les tableaux de bord continuent de fonctionner sans modification.
 
     Ne retenez que les attributs que vous interrogez réellement souvent. Chaque colonne matérialisée a un coût en stockage et à l’insertion : il s’agit donc de « promouvoir ce que vous utilisez », pas de tout promouvoir.
@@ -34,9 +32,7 @@ Les résumés ci-dessous sont volontairement brefs. Pour comprendre le raisonnem
     Pour en savoir plus : [Materialize frequently queried attributes](/fr/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
   </Step>
 
-  <Step>
-    ## Ajouter des skip indexes
-
+  <Step title="Ajouter des skip indexes" id="add-skip-indexes">
     Les skip indexes permettent à ClickHouse d’exclure les granules de données qui ne peuvent pas correspondre à un filtre, transformant un balayage complet en une lecture ciblée de faible ampleur. Trois types méritent d’être connus :
 
     * **Text indexes** (`text(tokenizer = ...)`) sur les colonnes de type chaîne et sur les tableaux `mapKeys`/`*AttributeItems`. Le schéma de logs par défaut les inclut déjà.
@@ -53,9 +49,7 @@ Les résumés ci-dessous sont volontairement brefs. Pour comprendre le raisonnem
     Pour en savoir plus : [Adding skip indexes](/fr/clickstack/managing/performance-tuning#adding-skip-indexes).
   </Step>
 
-  <Step>
-    ## Pré-calculer les agrégations répétées
-
+  <Step title="Pré-calculer les agrégations répétées" id="materialized-views">
     Lorsqu’une même agrégation s’exécute encore et encore sur un tableau de bord (services principaux par taux d’erreur, latence p99 par endpoint, nombre de requêtes par minute), une vue matérialisée calcule le résultat à l’insertion et l’écrit dans une petite table d’agrégation. Les tableaux de bord interrogent alors cette agrégation plutôt que les logs ou traces bruts, ce qui coûte bien moins cher.
 
     C’est particulièrement utile lorsque le tableau de bord est très consulté et que la table sous-jacente est volumineuse. En contrepartie, cela consomme un peu de CPU à l’insertion et ajoute une deuxième table à maintenir.
@@ -63,9 +57,7 @@ Les résumés ci-dessous sont volontairement brefs. Pour comprendre le raisonnem
     Pour en savoir plus : [Exploiting materialized views](/fr/clickstack/managing/performance-tuning#exploiting-materialized-views).
   </Step>
 
-  <Step>
-    ## Choisir une clé primaire adaptée à votre modèle d’accès
-
+  <Step title="Choisir une clé primaire adaptée à votre modèle d’accès" id="choose-primary-key">
     La clé primaire détermine l’ordre de tri des lignes sur disque. Les filtres sur les premières colonnes de cette clé permettent à ClickHouse d’accéder directement à la région pertinente ; les filtres qui ne commencent pas par l’une de ces colonnes parcourent l’intégralité de la partition.
 
     La clé des logs par défaut `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` privilégie le cas d’usage « que s’est-il passé au cours des N dernières minutes pour le service X ? ». Si la plupart de vos requêtes commencent par une autre colonne (un ID de tenant, un ID client, une région), faire en sorte que la clé primaire commence par cette colonne est le changement le plus impactant que vous puissiez apporter.
@@ -79,7 +71,7 @@ Les résumés ci-dessous sont volontairement brefs. Pour comprendre le raisonnem
     ORDER BY (TenantId, ServiceName, Timestamp);
     ```
 
-    ClickHouse ne permet pas de modifier la clé primaire sur place : il s’agit donc d’une migration de table, et non d’un simple `ALTER`. Le guide de performance tuning explique pas à pas comment créer la nouvelle table, rediriger l’ingestion et utiliser une table `Merge` pour que les tableaux de bord existants continuent de fonctionner sur les anciennes comme sur les nouvelles données.
+    ClickHouse ne permet pas de modifier la clé primaire sur place : il s’agit donc d’une migration de table, et non d’un simple `ALTER`. Le guide d’optimisation des performances explique pas à pas comment créer la nouvelle table, rediriger l’ingestion et utiliser une table `Merge` pour que les tableaux de bord existants continuent de fonctionner sur les anciennes comme sur les nouvelles données.
 
     Pour en savoir plus : [Modifying the primary key](/fr/clickstack/managing/performance-tuning#modifying-the-primary-key).
   </Step>

@@ -12,28 +12,36 @@ hide_advert: true
 import GatherCredentials from '/snippets/ar/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.mdx';
 import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
+import { AgentPrompt } from '/snippets/ar/components/AgentPrompt/AgentPrompt.jsx';
 
 يرشدك هذا الدليل إلى كيفية نشر OpenTelemetry Collector على خدمة Managed ClickStack حالية، أو تكييف الـ مجمّع الحالي لديك، ثم التحقق من تدفق البيانات عبره.
 
+ثبّت ClickHouse agent skills الرسمية قبل استخدام مساعد الإعداد:
+
+```bash
+npx skills add clickhouse/agent-skills
+```
+
 <AgentPrompt
-  prompt="استخدم curl لتنزيل هذا الملف وقراءته واتباع تعليماته: https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
-  description="سيتولى وكيل لديك إعداد ClickStack OpenTelemetry مجمّع نيابةً عنك. يعمل مع Claude Code وCursor وCodex وغير ذلك من الوكلاء البرمجية."
+  prompt="استخدم مهارة clickstack-otel-collector لربط OpenTelemetry Collector بخدمة Managed ClickStack الخاصة بي."
+  description="سيتولى وكيل لديك إعداد ClickStack OpenTelemetry Collector نيابةً عنك. يعمل مع Claude Code وCursor وCodex وغير ذلك من الوكلاء البرمجية."
+  repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
 "ثبّت clickhousectl إذا لم يكن مثبتًا، ثم قم بمصادقته (سيطلب منك مفتاح ClickHouse Cloud API — الصقه في الدردشة أو نفّذ أمر تسجيل الدخول بنفسك).",
 "سيطلب منك معرّف خدمة ClickHouse Cloud المستهدفة أو اسمها، ثم يجلب endpoint ‏HTTPS الخاص بها.",
 "أنشئ مستخدم SQL باسم hyperdx_ingest على الخدمة (مع إنشاء password قوية، أو استخدام واحدة توفّرها أنت).",
-"شغّل ClickStack OpenTelemetry مجمّع محليًا في Docker، مع توجيهه إلى خدمتك.",
+"شغّل ClickStack OpenTelemetry Collector محليًا في Docker، مع توجيهه إلى خدمتك.",
 "أرسل دفعة قصيرة من logs وtraces وmetrics الاصطناعية عبر الـ مجمّع لإثبات أن مسار المعالجة يعمل.",
 "تحقّق من وصول البيانات إلى قاعدة بيانات otel، ثم يزوّدك بعنوان URL الخاص بـ ClickStack UI حيث يمكنك عرضها."
 ]}
 />
 
-يعمل الـ مجمّع هنا بدور **بوابة**: OTLP endpoint واحد ترسل إليه تطبيقاتك وSDKs ووكلاء المجمعات. تتولى الـ بوابة تجميع الأحداث في batches، وتطبيق أي processing أعددته، ثم كتابتها إلى ClickHouse عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). يتيح لك هذا النمط إبقاء منطق collection خارج application code، كما يسمح لك بتوسيع نطاق ingestion بشكل مستقل عن workloads التي تُنتج البيانات. وللاطلاع على خلفية حول أدوار البوابة والوكيل، راجع [Collector roles](/ar/clickstack/ingesting-data/collector#collector-roles).
+يعمل الـ مجمّع هنا بدور **بوابة**: OTLP endpoint واحد ترسل إليه تطبيقاتك وSDKs ووكلاء المجمّعات. تتولى الـ بوابة تجميع الأحداث في batches، وتطبيق أي processing أعددته، ثم كتابتها إلى ClickHouse عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). يتيح لك هذا النمط إبقاء منطق collection خارج application code، كما يسمح لك بتوسيع نطاق ingestion بشكل مستقل عن workloads التي تُنتج البيانات. وللاطلاع على خلفية حول أدوار البوابة والوكيل، راجع [Collector roles](/ar/clickstack/ingesting-data/collector#collector-roles).
 
 <Info>
   **مجمّع حالي**
 
-  إذا كنت تستخدم OpenTelemetry مجمّع حاليًا، فنفترض أنه مُهيأ بالفعل بدور **بوابة**. ولا نوصي باستخدام هذه العملية لإعادة تهيئة المجمّعات التي تعمل بدور **وكيل**.
+  إذا كنت تستخدم OpenTelemetry Collector حاليًا، فنفترض أنه مُهيأ بالفعل بدور **بوابة**. ولا نوصي باستخدام هذه العملية لإعادة تهيئة المجمّعات التي تعمل بدور **وكيل**.
 </Info>
 
 اختر علامة التبويب التي تناسب حالتك:
@@ -41,21 +49,15 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
 <Tabs>
   <Tab title="ليس لديّ Collector">
     <Steps>
-      <Step>
-        ## جهّز بيانات الاعتماد الخاصة بك
-
+      <Step title="جهّز بيانات الاعتماد الخاصة بك" id="gather-credentials">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## إنشاء مستخدم لعملية الاستيعاب
-
+      <Step title="إنشاء مستخدم لعملية الاستيعاب" id="create-ingestion-user">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## انشر المجمّع
-
+      <Step title="انشر المجمّع" id="deploy-the-collector">
         انشر **توزيعة ClickStack من OpenTelemetry Collector**، وهي مُعدّة مسبقًا لـ Managed ClickStack. في المثال أدناه، نشغّل المجمّع محليًا ونولّد بيانات قياس عن بُعد اصطناعية من الجهاز نفسه للتبسيط.
 
         <Note>
@@ -94,9 +96,7 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
         </Info>
       </Step>
 
-      <Step>
-        ## التحقق من نقطة النهاية
-
+      <Step title="التحقق من نقطة النهاية" id="verify-the-endpoint">
         أنشئ بعض حركة المرور الاصطناعية تجاه الـ collector للتحقق من أن خط الأنابيب بأكمله يعمل بشكل صحيح. نستخدم [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)، وهو مولّد OpenTelemetry Collector Contrib، الذي يُصدر سجلات OTLP والتتبعات والمقاييس، ويوفر خيارات لتشكيل البيانات عبر الخدمات ومستويات الخطورة وحالات الـ span وأنواع المقاييس.
 
         شغّله من Docker image الخاص به (دون الحاجة إلى تثبيت). عرّف wrapper صغيرًا لتبقى الأوامر أدناه مقروءة؛ يتيح `--add-host` للحاوية الوصول إلى collector يستمع على host:
@@ -148,7 +148,7 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
         تؤكد السجلات وحدها أن نقطة النهاية تعمل بشكل صحيح. للحصول على مجموعة بيانات تجريبية أكثر ثراءً، وخريطة خدمات متعددة، ومخططات تغطي أنواع المقاييس المختلفة، وسّع الأوامر أدناه وشغّلها أيضاً. تُعيد هذه الأوامر استخدام المساعد `tg`، لذا شغّلها في نفس الجلسة الطرفية.
 
         <Accordion title="إنشاء بيانات قياس عن بُعد أكثر ثراءً (اختياري)">
-          أرسل تتبعات متعددة المقاطع من عدة خدمات سليمة، إلى جانب اعتمادية واحدة متعطلة. يمنح هذا خريطة الخدمة شكلاً واقعياً، بحيث تكون سليمة في معظمها مع خدمة واحدة تُصدر أخطاء، كما يملأ أيضًا عروض الأخطاء:
+          أرسل تتبعات متعددة الـ span من عدة خدمات سليمة، بالإضافة إلى اعتمادية واحدة متعثّرة. يمنح ذلك خريطة الخدمات شكلاً واقعيًا، فتبدو سليمة في معظمها مع خدمة واحدة تُظهر أخطاء، كما يملأ أيضًا واجهات عرض الأخطاء:
 
           ```shell
           # Healthy services: the bulk of the traffic, all spans Ok
@@ -164,7 +164,7 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
             --telemetry-attributes 'http.route="/charge"'
           ```
 
-          أرسل مقاييس من الأنواع الثلاثة الشائعة، بحيث تتضمن المخططات Counter وGauge وdistribution:
+          أرسل المقاييس من الأنواع الثلاثة الشائعة، بحيث تتضمن المخططات عدّادًا ومقياسًا وتوزيعًا:
 
           ```shell
           tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
@@ -186,9 +186,7 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
         للاطلاع على القائمة الكاملة من الخيارات (flags) والمزيد من الأمثلة، راجع [البيانات الاصطناعية مع telemetrygen](/ar/clickstack/example-datasets/telemetrygen).
       </Step>
 
-      <Step>
-        ## تحقّق في ClickStack UI
-
+      <Step title="تأكّد في واجهة ClickStack" id="confirm-in-ui">
         <ConfirmInUI />
       </Step>
     </Steps>
@@ -196,21 +194,15 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
 
   <Tab title="لديّ مُجمِّع">
     <Steps>
-      <Step>
-        ## اجمع بيانات الاعتماد الخاصة بك
-
+      <Step title="جهّز بيانات الاعتماد الخاصة بك" id="gather-credentials-existing">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## أنشئ مستخدمًا للإدخال
-
+      <Step title="إنشاء مستخدم لعملية الاستيعاب" id="create-ingestion-user-existing">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## عدّل إعدادات collector لديك
-
+      <Step title="عدّل إعدادات collector لديك" id="adapt-collector">
         وسّع إعدادات collector الحالية لكتابة البيانات إلى Managed ClickStack عبر [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
         <Info>
@@ -314,9 +306,7 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
         لمزيد من التفاصيل حول تهيئة OpenTelemetry Collectors للعمل مع Managed ClickStack، راجع [الإدخال باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry).
       </Step>
 
-      <Step>
-        ## التحقق من نقطة النهاية
-
+      <Step title="التحقق من نقطة النهاية" id="verify-the-endpoint-existing">
         أنشئ بعض حركة المرور الاصطناعية تجاه المُجمِّع الخاص بك للتحقق من أن المسار الكامل يعمل بشكل صحيح. نستخدم [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)، وهو مولّد OpenTelemetry Collector Contrib، الذي يُصدر سجلات OTLP والتتبعات والمقاييس، ويُتيح أعلامًا لتشكيل البيانات عبر الخدمات ومستويات الخطورة وحالات الـ span وأنواع المقاييس.
 
         شغّله من Docker image الخاص به (دون الحاجة إلى تثبيت). استبدل `<your-collector-host>` بالـ host الذي يستمع عليه الـ collector، واضبط الـ `authorization` header (أو طريقة المصادقة البديلة) وفقاً لما يتوقعه الـ collector:
@@ -337,9 +327,9 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
         ```
 
         <Info>
-          **ما المتوقع**
+          **ما الذي يمكن توقّعه**
 
-          يستغرق كل تشغيل لـ `tg` نحو 20 ثانية (كما يحدده `--duration 20s`) ويُخرج سجلات مفصلة طوال هذه المدة، وهذا أمر متوقع؛ كما ينتهي كل تشغيل تلقائيًا بمجرد انقضاء 20 ثانية. تكفي السجلات أدناه لتأكيد خط الأنابيب؛ أما المجموعة الاختيارية الأكثر شمولًا فتضيف عدة عمليات تشغيل أخرى وتستغرق بضع دقائق.
+          تستمر كل عملية تشغيل لـ `tg` نحو 20 ثانية (يحدّدها `--duration 20s`)، وتُخرج سجلات تفصيلية بشكل متواصل طوال هذه المدة، وهذا أمر متوقّع؛ كما تنتهي كل عملية تشغيل تلقائيًا بمجرد انقضاء هذه الـ20 ثانية. تكفي السجلات أدناه لتأكيد مسار المعالجة؛ أما المجموعة الاختيارية الأكثر تفصيلًا فتضيف عدة عمليات تشغيل أخرى وتستغرق بضع دقائق.
         </Info>
 
         عرِّف دالة مساعدة صغيرة `tg` بحيث يحدد كل أمر فقط ما يتغير (الخدمة، ومستوى الخطورة، والحالة، والسمات):
@@ -351,7 +341,7 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
           --rate 5 --duration 20s "$@"; }
         ```
 
-        أرسل السجلات بمزيج واقعي من مستويات الخطورة عبر الخدمات، بحيث تكون معظمها معلوماتية مع تحذير وخطأ، بدلاً من تدفق خطأ موحّد:
+        أرسل السجلات بمزيج واقعي من مستويات الخطورة عبر الخدمات، بحيث تكون معظمها معلوماتية مع تحذير وخطأ واحد، بدلاً من تدفق خطأ موحّد:
 
         ```shell
         tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
@@ -367,8 +357,8 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
 
         تؤكد السجلات وحدها أن نقطة النهاية تعمل بشكل صحيح. للحصول على مجموعة بيانات تجريبية أكثر ثراءً، وخريطة خدمات متعددة، ومخططات تغطي أنواع المقاييس المختلفة، وسّع الأوامر أدناه وشغّلها أيضاً. تُعيد هذه الأوامر استخدام المساعد `tg`، لذا شغّلها في نفس الجلسة الطرفية.
 
-        <Accordion title="أنشئ بيانات قياس عن بُعد أكثر تفصيلاً (اختياري)">
-          أرسل تتبعات متعددة الـ span من عدة خدمات سليمة، بالإضافة إلى اعتمادية واحدة متعثّرة. يمنح ذلك خريطة الخدمات شكلاً واقعيًا، فتبدو سليمة في معظمها مع خدمة واحدة تُظهر أخطاء، كما يملأ أيضًا واجهات عرض الأخطاء:
+        <Accordion title="إنشاء بيانات قياس عن بُعد أكثر ثراءً (اختياري)">
+          أرسل تتبعات متعددة المقاطع من عدة خدمات سليمة، إلى جانب اعتمادية واحدة متعطلة. يمنح هذا خريطة الخدمة شكلاً واقعياً، بحيث تكون سليمة في معظمها مع خدمة واحدة تُصدر أخطاء، كما يملأ أيضًا عروض الأخطاء:
 
           ```shell
           # Healthy services: the bulk of the traffic, all spans Ok
@@ -406,9 +396,7 @@ import ConfirmInUI from '/snippets/ar/clickstack/_confirm_in_ui.mdx';
         للاطلاع على القائمة الكاملة من الخيارات (flags) والمزيد من الأمثلة، راجع [البيانات الاصطناعية مع telemetrygen](/ar/clickstack/example-datasets/telemetrygen).
       </Step>
 
-      <Step>
-        ## تأكّد في واجهة ClickStack
-
+      <Step title="تحقّق في ClickStack UI" id="confirm-in-ui-existing">
         <ConfirmInUI />
       </Step>
     </Steps>

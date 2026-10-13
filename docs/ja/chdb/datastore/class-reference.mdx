@@ -1,0 +1,524 @@
+---
+title: 'DataStore クラスリファレンス'
+sidebarTitle: 'クラスリファレンス'
+slug: /chdb/datastore/class-reference
+description: 'DataStore、ColumnExpr、LazyGroupBy、LazySeries クラスの完全な API リファレンス'
+keywords: ['chdb', 'datastore', 'class', 'reference', 'api', 'columnexpr', 'lazygroupby']
+doc_type: 'reference'
+---
+
+このリファレンスでは、DataStore API の主要なクラスについて説明します。
+
+<div id="datastore">
+  ## DataStore
+</div>
+
+データ操作のための主要な DataFrame ライクなクラスです。
+
+```python
+from chdb.datastore import DataStore
+```
+
+<div id="datastore-constructor">
+  ### コンストラクタ
+</div>
+
+```python
+DataStore(data=None, columns=None, index=None, dtype=None, copy=None)
+```
+
+**パラメーター:**
+
+| パラメーター    | 型                             | 説明       |
+| --------- | ----------------------------- | -------- |
+| `data`    | dict/list/DataFrame/DataStore | 入力データ    |
+| `columns` | list                          | カラム名     |
+| `index`   | Index                         | 行インデックス  |
+| `dtype`   | dict                          | カラムのデータ型 |
+| `copy`    | bool                          | データのコピー  |
+
+**例:**
+
+```python
+# From dictionary
+ds = DataStore({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+
+# From pandas DataFrame
+import pandas as pd
+ds = DataStore(pd.DataFrame({'a': [1, 2, 3]}))
+
+# Empty DataStore
+ds = DataStore()
+```
+
+<div id="datastore-properties">
+  ### プロパティ
+</div>
+
+| プロパティ     | 型         | 説明                        |
+| --------- | --------- | ------------------------- |
+| `columns` | Index     | カラム名                      |
+| `dtypes`  | Series    | カラムのデータ型                  |
+| `shape`   | tuple     |  (行数、カラム数)                |
+| `size`    | int       | 要素の総数                     |
+| `ndim`    | int       | 次元数 (2)                   |
+| `empty`   | bool      | DataFrame が空かどうか          |
+| `values`  | ndarray   | 基になるデータを NumPy 配列として表したもの |
+| `index`   | Index     | 行インデックス                   |
+| `T`       | DataStore | 転置                        |
+| `axes`    | list      | 軸のリスト                     |
+
+<div id="datastore-factory">
+  ### ファクトリメソッド
+</div>
+
+| メソッド                      | 説明                     |
+| ------------------------- | ---------------------- |
+| `uri(uri)`                | URI から作成する汎用ファクトリ      |
+| `from_file(path, ...)`    | ファイルから作成               |
+| `from_df(df)`             | pandas DataFrame から作成  |
+| `from_s3(url, ...)`       | S3 から作成                |
+| `from_gcs(url, ...)`      | Google Cloud ストレージから作成 |
+| `from_azure(url, ...)`    | Azure Blob から作成        |
+| `from_mysql(...)`         | MySQL から作成             |
+| `from_postgresql(...)`    | PostgreSQL から作成        |
+| `from_clickhouse(...)`    | ClickHouse から作成        |
+| `from_mongodb(...)`       | MongoDB から作成           |
+| `from_sqlite(...)`        | SQLite から作成            |
+| `from_iceberg(path)`      | Iceberg テーブルから作成       |
+| `from_delta(path)`        | Delta Lake から作成        |
+| `from_numbers(n)`         | 連番で作成                  |
+| `from_random(rows, cols)` | ランダムデータで作成             |
+| `run_sql(query)`          | SQLクエリから作成             |
+
+詳細は [ファクトリメソッド](/ja/chdb/datastore/factory-methods) を参照してください。
+
+<div id="datastore-query">
+  ### クエリメソッド
+</div>
+
+| メソッド                          | 戻り値         | 説明            |
+| ----------------------------- | ----------- | ------------- |
+| `select(*cols)`               | DataStore   | カラムを選択        |
+| `filter(condition)`           | DataStore   | 行を絞り込む        |
+| `where(condition)`            | DataStore   | `filter` の別名  |
+| `sort(*cols, ascending=True)` | DataStore   | 行をソート         |
+| `orderby(*cols)`              | DataStore   | `sort` の別名    |
+| `limit(n)`                    | DataStore   | 行数を制限         |
+| `offset(n)`                   | DataStore   | 行をスキップ        |
+| `distinct(subset=None)`       | DataStore   | 重複を削除         |
+| `groupby(*cols)`              | LazyGroupBy | 行をグループ化       |
+| `having(condition)`           | DataStore   | グループを絞り込む     |
+| `join(right, ...)`            | DataStore   | DataStore を結合 |
+| `union(other, all=False)`     | DataStore   | DataStore を連結 |
+| `when(cond, val)`             | CaseWhen    | CASE WHEN     |
+
+詳しくは [クエリの構築](/ja/chdb/datastore/query-building) を参照してください。
+
+<div id="datastore-pandas">
+  ### Pandas 互換メソッド
+</div>
+
+209 個のメソッドの完全な一覧については、[Pandas 互換性](/ja/chdb/datastore/pandas-compat)を参照してください。
+
+**インデックス操作:**
+`head()`, `tail()`, `sample()`, `loc`, `iloc`, `at`, `iat`, `query()`, `isin()`, `where()`, `mask()`, `get()`, `xs()`, `pop()`
+
+**集約:**
+`sum()`, `mean()`, `std()`, `var()`, `min()`, `max()`, `median()`, `count()`, `nunique()`, `quantile()`, `describe()`, `corr()`, `cov()`, `skew()`, `kurt()`
+
+**操作:**
+`drop()`, `drop_duplicates()`, `dropna()`, `fillna()`, `replace()`, `rename()`, `assign()`, `astype()`, `copy()`
+
+**ソート:**
+`sort_values()`, `sort_index()`, `nlargest()`, `nsmallest()`, `rank()`
+
+**形状変更:**
+`pivot()`, `pivot_table()`, `melt()`, `stack()`, `unstack()`, `transpose()`, `explode()`, `squeeze()`
+
+**結合:**
+`merge()`, `join()`, `concat()`, `append()`, `combine()`, `update()`, `compare()`
+
+**適用/変換:**
+`apply()`, `applymap()`, `map()`, `agg()`, `transform()`, `pipe()`, `groupby()`
+
+**時系列:**
+`rolling()`, `expanding()`, `ewm()`, `shift()`, `diff()`, `pct_change()`, `resample()`
+
+<div id="datastore-io">
+  ### I/O メソッド
+</div>
+
+| Method                  | Description          |
+| ----------------------- | -------------------- |
+| `to_csv(path, ...)`     | CSV 形式でエクスポート        |
+| `to_parquet(path, ...)` | Parquet 形式でエクスポート    |
+| `to_json(path, ...)`    | JSON 形式でエクスポート       |
+| `to_excel(path, ...)`   | Excel 形式でエクスポート      |
+| `to_df()`               | pandas DataFrame に変換 |
+| `to_pandas()`           | to&#95;df の別名     |
+| `to_arrow()`            | Arrow Table に変換      |
+| `to_dict(orient)`       | 辞書に変換                |
+| `to_records()`          | レコードに変換              |
+| `to_numpy()`            | NumPy 配列に変換          |
+| `to_sql()`              | SQL 文字列を生成           |
+| `to_string()`           | 文字列表現                |
+| `to_markdown()`         | Markdown テーブル        |
+| `to_html()`             | HTML テーブル            |
+
+詳細は [I/O 操作](/ja/chdb/datastore/io) を参照してください。
+
+<div id="datastore-debug">
+  ### デバッグメソッド
+</div>
+
+| メソッド                     | 説明             |
+| ------------------------ | -------------- |
+| `explain(verbose=False)` | 実行計画を表示        |
+| `clear_cache()`          | キャッシュ済みの結果をクリア |
+
+詳細は[デバッグ](/ja/chdb/debugging/index)を参照してください。
+
+<div id="datastore-magic">
+  ### マジックメソッド
+</div>
+
+| メソッド                      | 説明                                             |            |
+| ------------------------- | ---------------------------------------------- | ---------- |
+| `__getitem__(key)`        | `ds['col']`, `ds[['a', 'b']]`, `ds[condition]` |            |
+| `__setitem__(key, value)` | `ds['col'] = value`                            |            |
+| `__delitem__(key)`        | `del ds['col']`                                |            |
+| `__len__()`               | `len(ds)`                                      |            |
+| `__iter__()`              | `for col in ds`                                |            |
+| `__contains__(key)`       | `'col' in ds`                                  |            |
+| `__repr__()`              | `repr(ds)`                                     |            |
+| `__str__()`               | `str(ds)`                                      |            |
+| `__eq__(other)`           | `ds == other`                                  |            |
+| `__ne__(other)`           | `ds != other`                                  |            |
+| `__lt__(other)`           | `ds < other`                                   |            |
+| `__le__(other)`           | `ds <= other`                                  |            |
+| `__gt__(other)`           | `ds > other`                                   |            |
+| `__ge__(other)`           | `ds >= other`                                  |            |
+| `__add__(other)`          | `ds + other`                                   |            |
+| `__sub__(other)`          | `ds - other`                                   |            |
+| `__mul__(other)`          | `ds * other`                                   |            |
+| `__truediv__(other)`      | `ds / other`                                   |            |
+| `__floordiv__(other)`     | `ds // other`                                  |            |
+| `__mod__(other)`          | `ds % other`                                   |            |
+| `__pow__(other)`          | `ds ** other`                                  |            |
+| `__and__(other)`          | `ds & other`                                   |            |
+| `__or__(other)`           | &#96;ds                                        | other&#96; |
+| `__invert__()`            | `~ds`                                          |            |
+| `__neg__()`               | `-ds`                                          |            |
+| `__pos__()`               | `+ds`                                          |            |
+| `__abs__()`               | `abs(ds)`                                      |            |
+
+***
+
+<div id="columnexpr">
+  ## ColumnExpr
+</div>
+
+遅延評価のためのカラム式を表します。カラムにアクセスすると返されます。
+
+```python
+# ColumnExpr is returned automatically
+col = ds['name']  # Returns ColumnExpr
+```
+
+<div id="datastore-properties">
+  ### プロパティ
+</div>
+
+| プロパティ   | 型     | 説明   |
+| ------- | ----- | ---- |
+| `name`  | str   | カラム名 |
+| `dtype` | dtype | データ型 |
+
+<div id="columnexpr-accessors">
+  ### アクセサ
+</div>
+
+| アクセサ    | 説明          | メソッド       |
+| ------- | ----------- | ---------- |
+| `.str`  | Stringの操作   | 56 メソッド    |
+| `.dt`   | DateTimeの操作 | 42 以上のメソッド |
+| `.arr`  | Arrayの操作    | 37 メソッド    |
+| `.json` | JSONのパース    | 13 メソッド    |
+| `.url`  | URLのパース     | 15 メソッド    |
+| `.ip`   | IP アドレスの操作  | 9 メソッド     |
+| `.geo`  | Geo/距離の操作   | 14 メソッド    |
+
+詳しくは [アクセサ](/ja/chdb/datastore/accessors) を参照してください。
+
+<div id="columnexpr-arithmetic">
+  ### 算術演算
+</div>
+
+```python
+ds['total'] = ds['price'] * ds['quantity']
+ds['profit'] = ds['revenue'] - ds['cost']
+ds['ratio'] = ds['a'] / ds['b']
+ds['squared'] = ds['value'] ** 2
+ds['remainder'] = ds['value'] % 10
+```
+
+<div id="columnexpr-comparison">
+  ### 比較演算
+</div>
+
+```python
+ds[ds['age'] > 25]           # Greater than
+ds[ds['age'] >= 25]          # Greater or equal
+ds[ds['age'] < 25]           # Less than
+ds[ds['age'] <= 25]          # Less or equal
+ds[ds['name'] == 'Alice']    # Equal
+ds[ds['name'] != 'Bob']      # Not equal
+```
+
+<div id="columnexpr-logical">
+  ### 論理演算
+</div>
+
+```python
+ds[(ds['age'] > 25) & (ds['city'] == 'NYC')]    # AND
+ds[(ds['age'] > 25) | (ds['city'] == 'NYC')]    # OR
+ds[~(ds['status'] == 'inactive')]               # NOT
+```
+
+<div id="columnexpr-methods">
+  ### メソッド
+</div>
+
+| メソッド                         | 説明          |
+| ---------------------------- | ----------- |
+| `as_(alias)`                 | エイリアス名を設定   |
+| `cast(dtype)`                | 型に CAST     |
+| `astype(dtype)`              | cast の別名    |
+| `isnull()`                   | NULL である    |
+| `notnull()`                  | NULL ではない   |
+| `isna()`                     | isnull の別名  |
+| `notna()`                    | notnull の別名 |
+| `isin(values)`               | 値のリストに含まれる  |
+| `between(low, high)`         | 2 つの値の間     |
+| `fillna(value)`              | NULL を補完    |
+| `replace(to_replace, value)` | 値を置換        |
+| `clip(lower, upper)`         | 値をクリップ      |
+| `abs()`                      | 絶対値         |
+| `round(decimals)`            | 値を丸める       |
+| `floor()`                    | 切り捨て        |
+| `ceil()`                     | 切り上げ        |
+| `apply(func)`                | 関数を適用       |
+| `map(mapper)`                | 値をマッピング     |
+
+<div id="columnexpr-aggregation">
+  ### 集計メソッド
+</div>
+
+| メソッド          | 説明           |
+| ------------- | ------------ |
+| `sum()`       | 合計           |
+| `mean()`      | 平均           |
+| `avg()`       | `mean()` の別名 |
+| `min()`       | 最小値          |
+| `max()`       | 最大値          |
+| `count()`     | 非 NULL の件数   |
+| `nunique()`   | 一意な値の件数      |
+| `std()`       | 標準偏差         |
+| `var()`       | 分散           |
+| `median()`    | 中央値          |
+| `quantile(q)` | 分位点          |
+| `first()`     | 最初の値         |
+| `last()`      | 最後の値         |
+| `any()`       | いずれかが true   |
+| `all()`       | すべてが true    |
+
+***
+
+<div id="lazygroupby">
+  ## LazyGroupBy
+</div>
+
+集計操作用のグループ化された DataStore を表します。
+
+```python
+# LazyGroupBy is returned automatically
+grouped = ds.groupby('category')  # Returns LazyGroupBy
+```
+
+<div id="columnexpr-methods">
+  ### メソッド
+</div>
+
+| メソッド              | 戻り値       | 説明             |
+| ----------------- | --------- | -------------- |
+| `agg(spec)`       | DataStore | 集約             |
+| `aggregate(spec)` | DataStore | `agg` の別名   |
+| `sum()`           | DataStore | グループごとの合計      |
+| `mean()`          | DataStore | グループごとの平均      |
+| `count()`         | DataStore | グループごとの件数      |
+| `min()`           | DataStore | グループごとの最小値     |
+| `max()`           | DataStore | グループごとの最大値     |
+| `std()`           | DataStore | グループごとの標準偏差    |
+| `var()`           | DataStore | グループごとの分散      |
+| `median()`        | DataStore | グループごとの中央値     |
+| `nunique()`       | DataStore | グループごとの一意の値の数  |
+| `first()`         | DataStore | グループごとの最初の値    |
+| `last()`          | DataStore | グループごとの最後の値    |
+| `nth(n)`          | DataStore | グループごとの n 番目の値 |
+| `head(n)`         | DataStore | グループごとの先頭 n 件  |
+| `tail(n)`         | DataStore | グループごとの末尾 n 件  |
+| `apply(func)`     | DataStore | グループごとに関数を適用   |
+| `transform(func)` | DataStore | グループごとに変換      |
+| `filter(func)`    | DataStore | グループをフィルタリング   |
+
+<div id="lazygroupby-columns">
+  ### カラム選択
+</div>
+
+```python
+# Select column after groupby
+grouped['amount'].sum()     # Returns DataStore
+grouped[['a', 'b']].sum()   # Returns DataStore
+```
+
+<div id="lazygroupby-agg">
+  ### 集計仕様
+</div>
+
+```python
+# Single aggregation
+grouped.agg({'amount': 'sum'})
+
+# Multiple aggregations per column
+grouped.agg({'amount': ['sum', 'mean', 'count']})
+
+# Named aggregations
+grouped.agg(
+    total=('amount', 'sum'),
+    average=('amount', 'mean'),
+    count=('id', 'count')
+)
+```
+
+***
+
+<div id="lazyseries">
+  ## LazySeries
+</div>
+
+遅延実行される Series (単一のカラム) を表します。
+
+<div id="datastore-properties">
+  ### プロパティ
+</div>
+
+| プロパティ   | 型     | 説明    |
+| ------- | ----- | ----- |
+| `name`  | str   | シリーズ名 |
+| `dtype` | dtype | データ型  |
+
+<div id="columnexpr-methods">
+  ### メソッド
+</div>
+
+`ColumnExpr` からほとんどのメソッドを継承します。主なメソッドは次のとおりです。
+
+| メソッド             | 説明            |
+| ---------------- | ------------- |
+| `value_counts()` | 値の出現頻度        |
+| `unique()`       | 一意の値          |
+| `nunique()`      | 一意の値の数        |
+| `mode()`         | 最頻値           |
+| `to_list()`      | リストに変換        |
+| `to_numpy()`     | 配列に変換         |
+| `to_frame()`     | DataStore に変換 |
+
+***
+
+<div id="related">
+  ## 関連クラス
+</div>
+
+<div id="f-class">
+  ### F (関数)
+</div>
+
+ClickHouse 関数用のネームスペース。
+
+```python
+from chdb.datastore import F, Field
+
+# Aggregations
+F.sum(Field('amount'))
+F.avg(Field('price'))
+F.count(Field('id'))
+F.quantile(Field('value'), 0.95)
+
+# Conditional
+F.sum_if(Field('amount'), Field('status') == 'completed')
+F.count_if(Field('active'))
+
+# Window
+F.row_number().over(order_by='date')
+F.lag('price', 1).over(partition_by='product', order_by='date')
+```
+
+詳細は、[集計](/ja/chdb/datastore/aggregation#f-namespace)を参照してください。
+
+<div id="field-class">
+  ### フィールド
+</div>
+
+カラム名による参照。
+
+```python
+from chdb.datastore import Field
+
+# Create field reference
+amount = Field('amount')
+price = Field('price')
+
+# Use in expressions
+F.sum(Field('amount'))
+F.avg(Field('price'))
+```
+
+<div id="casewhen-class">
+  ### CaseWhen
+</div>
+
+CASE WHEN 式を構築するためのビルダー。
+
+```python
+# Create case-when expression
+result = (ds
+    .when(ds['score'] >= 90, 'A')
+    .when(ds['score'] >= 80, 'B')
+    .when(ds['score'] >= 70, 'C')
+    .otherwise('F')
+)
+
+# Assign to column
+ds['grade'] = result
+```
+
+<div id="window-class">
+  ### ウィンドウ
+</div>
+
+window function のウィンドウ指定。
+
+```python
+from chdb.datastore import F
+
+# Create window
+window = F.window(
+    partition_by='category',
+    order_by='date',
+    rows_between=(-7, 0)
+)
+
+# Use with aggregation
+ds['rolling_avg'] = F.avg('price').over(window)
+```

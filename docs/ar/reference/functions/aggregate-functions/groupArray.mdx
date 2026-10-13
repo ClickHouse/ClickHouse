@@ -49,7 +49,10 @@ groupArray(max_size)(x)
 **الاستخدام الأساسي**
 
 ```sql title=Query
-SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
+INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
+
+SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
 ```
 
 ```response title=Response

@@ -36,6 +36,9 @@ These roles are assumed by applications running within the customer's EKS cluste
   - Provisions TLS certificates for BYOC service domains.
 - **Cluster Autoscaler**
   - Adjusts the node group size as needed.
+- **Monitoring storage (Thanos)**
+  - Assumed by the Prometheus and Thanos workloads in your cluster.
+  - Writes and reads long-term metric retention, scoped to the monitoring bucket in your own account.
 
 **K8s-control-plane** and **k8s-worker** roles are meant to be assumed by AWS EKS services.
 
@@ -66,3 +69,36 @@ In addition to the `clickhouse-management` service account created via Terraform
   - Target identity for the monitoring stack running in your cluster. Used to read/write long-term metric storage in a GCS bucket dedicated to this deployment.
 - **ClickHouse runtime management identity**
   - Used by ClickHouse's runtime data-plane management controller which handles day-2 operations such as Private Service Connect endpoint management, bucket lifecycle adjustments, and service-account rotations.
+
+The state exporter, which publishes service and backup status events to ClickHouse Cloud, is deliberately not in this list: on GCP its publishing identity is a ClickHouse-owned service account in a ClickHouse-owned project, not one created in yours. What is created in your project is a workload identity binding that lets the in-cluster `state-exporter` service account impersonate it. No key material is involved, and the identity that publishes to Pub/Sub holds no permissions in your project.
+
+## Azure roles and identities {#azure-roles-and-identities}
+
+### Onboarding service principal {#onboarding-service-principal}
+
+Onboarding with the [Terraform module for Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) provisions a multi-tenant application as an Enterprise Application (service principal) in your tenant, following Azure guidance for cross-tenant authentication. The service principal is assigned a least-privilege custom role scoped to the target subscription, with permissions covering:
+
+- **Networking**: Manage the VNet, subnets, public IPs, NAT gateways, network security groups, and DNS zones that host your BYOC infrastructure.
+- **Cluster**: Manage AKS clusters and node pools.
+- **Storage**: Manage the storage accounts and blob containers used for ClickHouse data, backups, and monitoring data.
+- **Identity**: Manage user-assigned managed identities and their federated identity credentials inside the subscription.
+- **Authorization**: Manage custom role definitions and role assignments. All permissions are scoped to the target subscription — the role cannot touch resources in other subscriptions or tenants.
+
+### Additional managed identities created by the controller {#additional-managed-identities-created-by-the-controller}
+
+When you provision BYOC services, ClickHouse's control plane creates user-assigned managed identities in your subscription. Each is federated to a specific Kubernetes service account (workload identity) with a narrow, single-purpose permission set:
+
+- **Per-service identity**
+  - Used by each ClickHouse service to access its own storage account for table data and backups, via a custom blob-storage role scoped to that storage account.
+  - When a service is restored from a backup, it additionally receives read-only access to the source service's backup container.
+- **Shared infrastructure identity**
+  - Used by ClickHouse's runtime data-plane management controller for day-2 operations such as Private Link service management.
+- **Monitoring identity**
+  - Federated to the Thanos workload in your cluster, via a custom role scoped to monitoring storage access.
+  - Writes and reads long-term metric retention in your own subscription.
+
+As on GCP, the state exporter is deliberately absent from this list: its publishing identity is a ClickHouse-owned user-assigned managed identity in a ClickHouse-owned subscription. What is created on your side is a federated identity credential allowing the in-cluster `state-exporter` service account to obtain tokens for it, with no secrets exchanged. The identity that publishes to Service Bus holds no permissions in your subscription.
+
+<Note>
+This differs from AWS, where the publishing role is created in your own account and assumes a ClickHouse-side role to reach the queue. On GCP and Azure the publishing identity sits entirely on the ClickHouse side and your cluster only federates into it, so there is no additional in-account permission for you to audit for this flow. The egress itself is inventoried in [network boundaries](/products/bring-your-own-cloud/reference/network-security#outbound-connections).
+</Note>

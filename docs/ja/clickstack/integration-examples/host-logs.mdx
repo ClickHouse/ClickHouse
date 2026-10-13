@@ -34,19 +34,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 * ClickStack の設定ファイルを変更できるアクセス権
 
 <Steps>
-  <Step>
-    #### syslogファイルが存在することを確認する
-
+  <Step title="syslogファイルが存在することを確認する" id="verify-syslog">
     まず、システムがsyslogファイルを出力していることを確認します。
 
     ```bash
-    # syslogファイルが存在するか確認する（Linux）
+    # Check if syslog files exist (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # macOSの場合
+    # Or on macOS
     ls -la /var/log/system.log
 
-    # 最近のエントリを表示する
+    # View recent entries
     tail -20 /var/log/syslog
     ```
 
@@ -57,9 +55,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     * **macOS**: `/var/log/system.log`
   </Step>
 
-  <Step>
-    #### カスタムOTel collector configurationの作成
-
+  <Step title="カスタムOTel collector configurationの作成" id="custom-otel">
     ClickStackでは、カスタム設定ファイルをマウントして環境変数を設定することで、OpenTelemetry Collectorのベース設定を拡張できます。
 
     システムの設定を記述した `host-logs-monitoring.yaml` というファイルを作成します：
@@ -203,9 +199,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### ClickStack がカスタム設定を読み込むように構成する
-
+  <Step title="ClickStack がカスタム設定を読み込むように構成する" id="load-custom">
     既存の ClickStack デプロイメントでカスタム collector 設定を有効にするには、次の対応が必要です。
 
     1. カスタム設定ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントする
@@ -219,14 +213,14 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 既存の設定 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... その他の環境変数 ...
+          # ... other environment variables ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... その他のボリューム ...
+          # ... other volumes ...
     ```
 
     ##### オプション 2: Docker Run (オールインワンイメージ)
@@ -247,9 +241,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### HyperDX でログを確認する
-
+  <Step title="HyperDX でログを確認する" id="verifying-logs">
     設定が完了したら、HyperDX にログインし、ログが取り込まれていることを確認します。
 
     1. Search view に移動します
@@ -270,9 +262,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 本番システムを構成する前に ホストログ インテグレーションを試したいユーザー向けに、実際のパターンに近い、事前生成済みのシステムログを含むサンプルデータセットを用意しています。
 
 <Steps>
-  <Step>
-    #### サンプルデータセットをダウンロードする
-
+  <Step title="サンプルデータセットをダウンロードする" id="download-sample">
     サンプルのログファイルをダウンロードします。
 
     ```bash
@@ -290,9 +280,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     * 通常運用時のイベントと注目すべきイベントの混在
   </Step>
 
-  <Step>
-    #### テスト用の collector 設定を作成する
-
+  <Step title="テスト用の collector 設定を作成する" id="test-config">
     以下の内容で、`host-logs-demo.yaml` という名前のファイルを作成します。
 
     ```yaml
@@ -334,9 +322,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### デモ設定で ClickStack を実行する
-
+  <Step title="デモ設定で ClickStack を実行する" id="run-demo">
     デモログと設定を使用して ClickStack を実行します。
 
     ```bash
@@ -350,13 +336,10 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 
     <Note>
       **これにより、ログファイルがコンテナーに直接マウントされます。これは、静的なデモデータを使ったテストを目的としたものです。**
-
     </Note>
   </Step>
 
-  <Step>
-    #### HyperDX でログを確認する
-
+  <Step title="HyperDX でログを確認する" id="verify-demo-logs">
     ClickStack が起動したら、以下を実行します。
 
     1. [HyperDX](http://localhost:8080/) を開いてアカウントにログインします (先にアカウント作成が必要な場合があります)
@@ -382,13 +365,11 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 ClickStack でホストログの監視を始めるのに役立つよう、システムログ向けの基本的な可視化を用意しています。
 
 <Steps>
-  <Step>
-    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>する
+  <Step title="ダッシュボード設定をダウンロードする" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
   </Step>
 
-  <Step>
-    #### あらかじめ用意されたダッシュボードをインポートする
-
+  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
@@ -399,9 +380,7 @@ ClickStack でホストログの監視を始めるのに役立つよう、シス
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="インポート完了" />
   </Step>
 
-  <Step>
-    #### ダッシュボードを表示する
-
+  <Step title="ダッシュボードを表示する" id="created-dashboard">
     ダッシュボードは、すべての可視化があらかじめ設定された状態で作成されます。
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="ログダッシュボード" />
@@ -516,4 +495,4 @@ tail -5 /var/log/system.log
   ## 本番環境への移行
 </div>
 
-このガイドでは、すばやくセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector をベースに説明しています。本番環境でのデプロイでは、独自の OTel collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+このガイドでは、手早くセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を拡張して使用します。本番環境へのデプロイでは、独自の OTel Collector を実行し、ClickStack の OTLPエンドポイントにデータを送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

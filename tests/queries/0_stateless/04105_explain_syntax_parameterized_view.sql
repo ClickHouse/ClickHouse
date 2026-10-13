@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/103249
 -- EXPLAIN SYNTAX should inline parameterized view calls with their parameter-substituted
 -- inner queries, so users can see what the view expands to.
@@ -51,10 +53,7 @@ DROP VIEW numbers;
 -- FINAL / SAMPLE modifiers are valid on a parameterized view at execution time.
 -- The analyzer rewrite in `ExpandParameterizedViewsMatcher` must skip expansion
 -- in this case, otherwise the modifiers would be attached to the synthesized
--- subquery and rejected with UNSUPPORTED_METHOD. The legacy `EXPLAIN SYNTAX` path
--- (`ExplainAnalyzedSyntaxMatcher` + `StorageView::replaceWithSubquery`) still
--- inlines the view body and re-attaches the modifier to the outer expression;
--- that is pre-existing behavior, captured in the `.oldanalyzer.reference`.
+-- subquery and rejected with UNSUPPORTED_METHOD.
 DROP TABLE IF EXISTS 04105_modifiers_t;
 DROP VIEW IF EXISTS 04105_modifiers_pv;
 CREATE TABLE 04105_modifiers_t (x UInt64) ENGINE = MergeTree ORDER BY x SAMPLE BY x;
@@ -71,9 +70,7 @@ DROP TABLE 04105_modifiers_t;
 -- analyzer path would re-analyze it under the invoker's context and fail with
 -- ACCESS_DENIED for users who can query the view but not its inner tables. The
 -- guard in `ExpandParameterizedViewsMatcher` leaves the original pv(...) call in
--- place in that case. The legacy path is unaffected (see `.oldanalyzer.reference`):
--- it goes through `ExplainAnalyzedSyntaxMatcher`, which uses `InterpreterSelectQuery`
--- and resolves the view via the SQL security aware storage path.
+-- place in that case.
 DROP TABLE IF EXISTS 04105_security_t;
 DROP VIEW IF EXISTS 04105_pv_security_none;
 DROP VIEW IF EXISTS 04105_pv_security_definer;

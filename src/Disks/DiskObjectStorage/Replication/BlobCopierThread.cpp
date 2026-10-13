@@ -198,7 +198,7 @@ BlobCopierThread::BlobCopierThread(
     , replication_tasks_pool(CurrentMetrics::BlobCopierThreads, CurrentMetrics::BlobCopierThreadsActive, CurrentMetrics::BlobCopierThreadsScheduled, 0, 0, 0)
     , replication_tasks_runner(replication_tasks_pool, ThreadName::BLOB_COPIER_TASK)
 {
-    task = context->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
+    task = context->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
     task->deactivate();
 }
 

@@ -1,14 +1,10 @@
 ---
 title: ClickHouse Cloud でアトミックな挿入と複数テーブル間の整合性を実現する
-description: ステージングテーブルとパーティションレベルの操作を使用して、マルチステートメントトランザクションを使わずに ClickHouse Cloud にデータをアトミックにロードし、複数テーブル間の整合性を保つ方法。
+description: ステージングテーブルとパーティション単位の操作を使用して、複数ステートメントトランザクションを使わずに ClickHouse Cloud にデータをアトミックにロードし、複数テーブル間の整合性を保つ方法。
 date: 2026-06-01
 tags: ['データインジェスト', 'ベストプラクティス']
 keywords: ['アトミックな挿入', 'ステージングテーブル', 'MOVE PARTITION', 'ATTACH PARTITION', 'REPLACE PARTITION', '複数テーブル間の整合性']
 ---
-
-{frontMatter.description}
-
-{/* truncate */}
 
 <div id="problem">
   ## 問題
@@ -41,9 +37,7 @@ ClickHouse は、単一の insert・単一のパーティションという粒�
 </div>
 
 <Steps>
-  <Step>
-    ### ステージングテーブルを作成する
-
+  <Step title="ステージングテーブルを作成する" id="create-staging-table">
     本番テーブルと同じスキーマ、パーティションキー、`ORDER BY`、ストレージポリシーを使用します。
 
     ```sql
@@ -51,9 +45,7 @@ ClickHouse は、単一の insert・単一のパーティションという粒�
     ```
   </Step>
 
-  <Step>
-    ### ステージングテーブルにデータを挿入する
-
+  <Step title="ステージングテーブルにデータを挿入する" id="insert-into-staging">
     本番テーブルではなく、ステージングテーブルに対して insert を実行します。
 
     ```sql
@@ -61,9 +53,7 @@ ClickHouse は、単一の insert・単一のパーティションという粒�
     ```
   </Step>
 
-  <Step>
-    ### insert が失敗した場合は、TRUNCATE して再試行する
-
+  <Step title="insert が失敗した場合は、TRUNCATE して再試行する" id="on-failure">
     ステージングテーブルを TRUNCATE し、再度ロードを実行します。本番データには影響ありません。
 
     ```sql
@@ -71,9 +61,7 @@ ClickHouse は、単一の insert・単一のパーティションという粒�
     ```
   </Step>
 
-  <Step>
-    ### insert が成功した場合は、パーティションを本番環境に移動する
-
+  <Step title="insert が成功した場合は、パーティションを本番環境に移動する" id="on-success">
     データを本番環境に移動し、ステージングテーブルから取り除くには、`MOVE PARTITION` を使用します。
 
     ```sql
@@ -89,9 +77,7 @@ ClickHouse は、単一の insert・単一のパーティションという粒�
     どちらの操作も同じストレージポリシー上でのメタデータレベルの変更であり、ほぼ瞬時に完了します。
   </Step>
 
-  <Step>
-    ### ステージングテーブルをクリーンアップする
-
+  <Step title="ステージングテーブルをクリーンアップする" id="clean-up">
     すべてのパーティションの移動が完了したら、次のロードに備えて空の状態にしておくため、ステージングテーブルを TRUNCATE します。
 
     ```sql

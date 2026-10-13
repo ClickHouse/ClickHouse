@@ -16,6 +16,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
@@ -438,6 +439,10 @@ public:
         if (configs == new_configs)
             return;
 
+        /// The reader has not collected any configuration yet, so there is nothing to apply.
+        if (!new_configs)
+            return;
+
         /// The following check prevents a race when two threads are trying to update configuration
         /// at almost the same time:
         /// 1) first thread reads a configuration (for example as a part of periodic updates)
@@ -667,6 +672,22 @@ public:
         return infos.contains(name);
     }
 
+    bool unload(const String & name)
+    {
+        std::lock_guard lock{mutex};
+        Info * info = getInfo(name);
+        return unload(info);
+    }
+
+    void unloadAll()
+    {
+        std::lock_guard lock{mutex};
+        for (auto & [_, info] : infos)
+        {
+            unload(&info);
+        }
+    }
+
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
@@ -721,7 +742,7 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, to_string(info.next_update_time));
+                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, describeUpdateTime(info.next_update_time));
                             continue;
                         }
 
@@ -742,12 +763,12 @@ public:
         }
     }
 
-private:
-
     bool isObjectLazy(const ObjectConfig & config) const
     {
-        return external_loader.isObjectLazy(*config.config, config.key_in_config).value_or(!always_load_everything);
+        return external_loader.getObjectLazyLoadOverride(*config.config, config.key_in_config).value_or(!always_load_everything);
     }
+
+private:
 
     struct Info
     {
@@ -812,6 +833,38 @@ private:
         std::exception_ptr exception; /// Last error occurred.
         TimePoint next_update_time = TimePoint::max(); /// Time of the next update, `TimePoint::max()` means "never".
     };
+
+    void resetInfoToUnloaded(const String & name, Info & info)
+    {
+        /// Reset state so that the next access triggers lazy reload.
+        LOG_TRACE(log, "Unloading {} '{}'", type_name, name);
+        info.object = nullptr;
+        info.exception = nullptr;
+        info.state_id = 0;
+        info.loading_id = 0;
+    }
+
+    bool unload(Info * info)
+    {
+        if (!info)
+            return false;
+
+        if (info->isLoading())
+        {
+            LOG_TRACE(log, "{} '{}' is being loaded, skipping the operation", type_name, info->name);
+            return false;
+        }
+
+        if (!info->loaded())
+        {
+            LOG_TRACE(log, "{} '{}' is not loaded, nothing to unload", type_name, info->name);
+            return false;
+        }
+
+        resetInfoToUnloaded(info->name, *info);
+
+        return true;
+    }
 
     Info * getInfo(const String & name)
     {
@@ -1020,6 +1073,10 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
+        /// The blocker below covers this thread only, not the pipeline threads of the loading query.
+        if (thread_group)
+            thread_group = ThreadGroup::createWithoutQueryMemoryTracker(std::move(thread_group));
+
         ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
@@ -1185,7 +1242,7 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
-        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, to_string(next_update_time));
+        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, describeUpdateTime(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.
@@ -1203,6 +1260,16 @@ private:
         /// (We can't put the loading thread back to the thread pool immediately here because at this point
         /// the loading thread is about to finish but it's not finished yet right now.)
         recently_finished_loadings.push_back(loading_id);
+    }
+
+    /// `TimePoint::max()` is the "no automatic update is scheduled" sentinel; rendering it as a
+    /// timestamp prints a date in the year 294247, which reads like a scheduling bug rather than
+    /// like "never". Spell it out instead.
+    static String describeUpdateTime(TimePoint time)
+    {
+        if (time == TimePoint::max())
+            return "never";
+        return to_string(time);
     }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,
@@ -1255,7 +1322,7 @@ private:
     std::condition_variable event;
     ObjectConfigsPtr configs;
     std::unordered_map<String, Info> infos;
-    bool always_load_everything = false;
+    std::atomic<bool> always_load_everything = false;
     std::atomic<bool> enable_async_loading = false;
     std::unordered_map<size_t, ThreadFromGlobalPool> loading_threads;
     std::vector<size_t> recently_finished_loadings;
@@ -1436,6 +1503,11 @@ ReturnType ExternalLoader::getLoadResults(const FilterByNameFunction & filter) c
     return loading_dispatcher->getLoadResults<ReturnType>(filter);
 }
 
+bool ExternalLoader::isObjectLazy(const ObjectConfig & config) const
+{
+    return loading_dispatcher->isObjectLazy(config);
+}
+
 ExternalLoader::Loadables ExternalLoader::getLoadedObjects() const
 {
     return getLoadResults<Loadables>();
@@ -1519,6 +1591,16 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
 bool ExternalLoader::has(const String & name) const
 {
     return loading_dispatcher->has(name);
+}
+
+bool ExternalLoader::unload(const String & name) const
+{
+    return loading_dispatcher->unload(name);
+}
+
+void ExternalLoader::unloadAll() const
+{
+    loading_dispatcher->unloadAll();
 }
 
 Strings ExternalLoader::getAllTriedToLoadNames() const

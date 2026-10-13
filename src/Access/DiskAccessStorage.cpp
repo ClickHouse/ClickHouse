@@ -1,3 +1,4 @@
+#include <Common/StringUtils.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/AccessEntityIO.h>
 #include <Access/AccessChangesNotifier.h>
@@ -17,13 +18,11 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <base/range.h>
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <sstream>
 
 
 namespace DB
@@ -43,10 +42,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Whether access-entity files should be fsync'd, honoring the `fsync_metadata` setting.
-    /// Foreground writes (CREATE/ALTER/DROP USER etc.) run on the query thread, so honor its
-    /// session setting; background `.list` writes have no query context and fall back to the
-    /// global one. Absent any context we default to syncing (matches the setting's default).
     bool shouldFsyncMetadata()
     {
         if (auto query_context = CurrentThread::tryGetQueryContext())
@@ -103,9 +98,7 @@ namespace
             out.sync();
         out.close();
 
-        /// Rename. Sync the parent directory so the rename itself survives a power loss:
-        /// fsync of the file alone does not persist the directory entry (open the dir fd
-        /// before the rename; the guard's destructor fsyncs it afterwards).
+        /// Rename. The guard syncs the directory after the rename, so that the rename itself is durable.
         {
             std::optional<LocalDirectorySyncGuard> dir_sync_guard;
             if (fsync)
@@ -166,8 +159,6 @@ namespace
             writeStringBinary(name, out);
             writeUUIDText(id, out);
         }
-        /// The `.list` file is overwritten in place (no rename), so only the file content needs
-        /// to be synced; it is anyway rebuildable from the `.sql` files via need_rebuild_lists.mark.
         if (fsync)
             out.sync();
         out.close();
@@ -178,7 +169,7 @@ namespace
     String getListFilePath(const String & directory_path, AccessEntityType type)
     {
         String file_name = AccessEntityTypeInfo::get(type).plural_raw_name;
-        boost::to_lower(file_name);
+        toLowerASCII(file_name);
         return directory_path + file_name + ".list";
     }
 
@@ -188,6 +179,18 @@ namespace
     String getNeedRebuildListsMarkFilePath(const String & directory_path)
     {
         return directory_path + "need_rebuild_lists.mark";
+    }
+
+
+    void createNeedRebuildListsMark(const String & directory_path, bool fsync)
+    {
+        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+        if (fsync)
+            dir_sync_guard.emplace(directory_path);
+        WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
+        if (fsync)
+            out.sync();
+        out.close();
     }
 
 
@@ -214,6 +217,9 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
 
     bool should_rebuild_lists = std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path));
     LOG_DEBUG(getLogger(), "File need_rebuild_lists.mark {} in {}", should_rebuild_lists ? "found" : "not found", directory_path);
+
+    /// The lists guarded by a mark which survived a restart still have to be written durably.
+    pending_lists_fsync = should_rebuild_lists;
 
     if (!should_rebuild_lists)
     {
@@ -317,10 +323,6 @@ void DiskAccessStorage::writeLists()
     if (types_of_lists_to_write.empty())
         return;
 
-    /// Honor the strongest fsync requirement pending for this batch (a session `fsync_metadata=1`
-    /// carried over from `scheduleWriteLists`) on top of whatever the current context resolves to.
-    /// This matters most in the deferred background thread, which has no query context and would
-    /// otherwise silently downgrade to the global `fsync_metadata` and leave the `.list` unsynced.
     const bool fsync = pending_lists_fsync || shouldFsyncMetadata();
 
     for (const auto & type : types_of_lists_to_write)
@@ -340,9 +342,7 @@ void DiskAccessStorage::writeLists()
             tryLogCurrentException(getLogger(), "Could not write " + file_path);
             failed_to_write_lists = true;
             types_of_lists_to_write.clear();
-            /// Keep pending_lists_fsync: the batch was not durably written, so the fsync
-            /// obligation must survive to the eventual rebuild (reloadAllAndRebuildLists),
-            /// even if that rebuild's own context has fsync_metadata=0.
+            /// Keep `pending_lists_fsync`, these lists still have to be written durably.
             return;
         }
     }
@@ -363,44 +363,24 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 {
     LOG_TRACE(getLogger(), "Scheduling writing .list file for type {}, failed_to_write_lists={}, lists_writing_thread_is_waiting={}",
         AccessEntityTypeInfo::get(type).plural_raw_name, failed_to_write_lists, lists_writing_thread_is_waiting);
+
+    const bool fsync = shouldFsyncMetadata();
+    pending_lists_fsync = pending_lists_fsync || fsync;
+
+    /// Create the 'need_rebuild_lists.mark' file.
+    /// This file will be used later to find out if writing lists is successful or not.
+    /// Created on every call, because `reloadAllAndRebuildLists` can remove it while the lists-writing thread is waiting.
+    createNeedRebuildListsMark(directory_path, fsync);
+
     if (failed_to_write_lists)
         return; /// We don't try to write list files after the first fail.
                 /// The next restart of the server will invoke rebuilding of the list files.
 
     types_of_lists_to_write.insert(type);
 
-    /// Remember the strongest fsync requirement of the DDLs that scheduled this pending `.list`
-    /// rewrite. The rewrite itself runs later in the background thread (or at shutdown) with no
-    /// query context, so `writeLists()` cannot see this DDL's session `fsync_metadata`; carry it
-    /// here so a session `fsync_metadata=1` is not dropped to the global value there.
-    const bool fsync = shouldFsyncMetadata();
-    pending_lists_fsync = pending_lists_fsync || fsync;
-
-    /// Create the 'need_rebuild_lists.mark' file.
-    /// This file will be used later to find out if writing lists is successful or not.
-    /// It must be durable: the marker is what tells the next startup to rescan the (already
-    /// fsync'd) <id>.sql files instead of trusting the stale .list indexes. If the marker is
-    /// missing on power loss while the background .list rewrite has not run yet, the
-    /// acknowledged CREATE/ALTER/DROP USER would become unreachable after restart even though
-    /// its <id>.sql survived. We must (re)create it even when the writing thread is already
-    /// waiting: `reloadAllAndRebuildLists()` removes the marker without stopping that thread,
-    /// so a following DDL that took the early return below would otherwise commit its entity
-    /// file with no marker on disk. Fsync the marker file and its parent directory (the
-    /// marker's existence is a new directory entry, like a rename), gated on fsync_metadata.
-    const auto mark_file_path = getNeedRebuildListsMarkFilePath(directory_path);
-    {
-        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
-        if (fsync)
-            dir_sync_guard.emplace(std::filesystem::path{mark_file_path}.parent_path().string());
-        WriteBufferFromFile out{mark_file_path};
-        if (fsync)
-            out.sync();
-        out.close();
-    }
-
     if (lists_writing_thread_is_waiting)
         return; /// If the lists' writing thread is still waiting we can update `types_of_lists_to_write` easily,
-                /// without restarting that thread. The marker is already (re)created above.
+                /// without restarting that thread.
 
     if (lists_writing_thread && lists_writing_thread->joinable())
         lists_writing_thread->join();
@@ -527,11 +507,6 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);
 
-    /// The marker is a restart-surviving proxy for "a durable `.list` is still owed", so a
-    /// marker-driven rebuild must fsync even when the current (context-free) fsync check is false.
-    if (std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path)))
-        pending_lists_fsync = true;
-
     /// Write the lists and keep the rebuild marker for now.
     failed_to_write_lists = false;
     has_stale_files_on_disk = true;
@@ -571,6 +546,22 @@ void DiskAccessStorage::reload(ReloadMode reload_mode)
         return;
 
     std::lock_guard lock{mutex};
+
+    /// The lists guarded by a mark left by earlier changes still have to be written durably.
+    if (std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path)))
+        pending_lists_fsync = true;
+
+    /// Stays on disk if `reloadAllAndRebuildLists` fails to write the lists.
+    /// Best effort, so that a directory which refuses new files is still reloadable.
+    try
+    {
+        createNeedRebuildListsMark(directory_path, shouldFsyncMetadata());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger(), "Could not create need_rebuild_lists.mark");
+    }
+
     reloadAllAndRebuildLists();
 }
 
@@ -853,10 +844,7 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
     auto file_path = getEntityFilePath(directory_path, id);
     LOG_TRACE(getLogger(), "Deleting file {} for entity with id {}", file_path, id);
 
-    /// Sync the parent directory after the unlink so DROP USER / REVOKE (and the old-file
-    /// removal on rename-replace) survive a power loss: like a rename, an unlink is a
-    /// directory-entry change that is not durable until the directory is fsync'd. Open the
-    /// dir fd before removing; the guard's destructor fsyncs it afterwards.
+    /// Like a rename, the removal is durable only after the guard syncs the directory.
     std::optional<LocalDirectorySyncGuard> dir_sync_guard;
     if (shouldFsyncMetadata())
         dir_sync_guard.emplace(std::filesystem::path{file_path}.parent_path().string());

@@ -12,6 +12,8 @@ class MergeTreeIndexGranularity
 {
 public:
     MergeTreeIndexGranularity() = default;
+    MergeTreeIndexGranularity(const MergeTreeIndexGranularity &) = default;
+    MergeTreeIndexGranularity & operator=(const MergeTreeIndexGranularity &) = default;
     virtual ~MergeTreeIndexGranularity() = default;
 
     /// Returns granularity if it is constant for whole part (except last granule).
@@ -75,6 +77,9 @@ public:
     /// Returns new optimized index granularity structure or nullptr if no optimization is not applicable.
     virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() = 0;
     virtual std::string describe() const = 0;
+
+    /// Deep-copy, so a written part's granularity can be re-homed into the dedicated MergeTree arena.
+    virtual std::shared_ptr<MergeTreeIndexGranularity> clone() const = 0;
 };
 
 using MergeTreeIndexGranularityPtr = std::shared_ptr<MergeTreeIndexGranularity>;
@@ -86,6 +91,13 @@ size_t computeIndexGranularity(
     size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
     bool can_use_adaptive_index_granularity);
+
+/// the marks a writer appends for a block, the first `index_offset` rows go into the mark left open
+/// a wide part keeps its last mark open, a compact part closes it
+void fillIndexGranularityForWidePart(
+    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block);
+void fillIndexGranularityForCompactPart(
+    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block);
 
 /// Uncompressed size of the block as it will be written into a data part, used to choose the index
 /// granularity against index_granularity_bytes. Equal to Block::bytes() except for AggregateFunction

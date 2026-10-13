@@ -136,7 +136,5 @@ DB::CommandPtr makeCommandTouch();
 DB::CommandPtr makeCommandDiskUsage();
 DB::CommandPtr makeCommandWordCount();
 DB::CommandPtr makeCommandReadChecksums();
-#if CLICKHOUSE_CLOUD
 DB::CommandPtr makeCommandPackedIO();
-#endif
 }

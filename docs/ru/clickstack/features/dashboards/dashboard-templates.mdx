@@ -15,13 +15,13 @@ ClickStack включает библиотеку преднастроенных 
   ## Просмотр доступных шаблонов
 </div>
 
-Чтобы просмотреть встроенную библиотеку шаблонов, перейдите в раздел **Дашборды** и нажмите **Просмотреть шаблоны дашбордов**.
+Чтобы просмотреть встроенную библиотеку шаблонов, перейдите в раздел **Панели мониторинга** и нажмите **Просмотреть Template панелей мониторинга**.
 
-<Image img="/images/use-cases/observability/browse-dashboard-template.webp" alt="Кнопка «Просмотреть шаблоны дашбордов»" size="lg" />
+<Image img="/images/use-cases/observability/browse-dashboard-template.webp" alt="Кнопка «Просмотреть Template панелей мониторинга»" size="lg" />
 
 Откроется галерея шаблонов, где они сгруппированы по категориям. Нажмите **Импортировать**, чтобы начать импорт этого шаблона.
 
-<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="Галерея шаблонов дашбордов" size="lg" />
+<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="Галерея Template панелей мониторинга" size="lg" />
 
 <div id="importing-a-template">
   ## Импорт шаблона
@@ -29,7 +29,7 @@ ClickStack включает библиотеку преднастроенных 
 
 Чтобы импортировать шаблон, для каждой визуализации на панели мониторинга нужно указать источник данных. Выберите источник данных из раскрывающегося списка для каждой визуализации, затем нажмите `Finish Import`.
 
-<Image img="/images/use-cases/observability/import-dashboard-template.webp" alt="Импорт шаблона панели мониторинга" size="lg" />
+<Image img="/images/use-cases/observability/import-dashboard-template.webp" alt="Импорт Template панели мониторинга" size="lg" />
 
 <div id="pre-built-templates">
   ## Готовые шаблоны
@@ -39,18 +39,18 @@ ClickStack включает библиотеку преднастроенных 
   ### Метрики среды выполнения OTel
 </div>
 
-Встроенные шаблоны метрик среды выполнения OTel предназначены для приложений, в которых настроены [метрики среды выполнения OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+Встроенные шаблоны OTel Runtime Metrics предназначены для приложений, в которых настроен сбор [метрик среды выполнения OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
 
-| Шаблон                      | Описание                                                                                             |
+| Template                    | Description                                                                                          |
 | --------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **.NET Runtime Metrics**    | Циклы сборки мусора, размер кучи, использование пула потоков и количество сборок для приложений .NET |
-| **Go Runtime Metrics**      | Количество goroutine, время пауз GC, использование кучи и статистика памяти для приложений Go        |
+| **.NET Runtime Metrics**    | Циклы GC, размер кучи, использование пула потоков и количество сборок для приложений .NET            |
+| **Go Runtime Metrics**      | Количество горутин, время пауз GC, использование кучи и статистика памяти для приложений Go          |
 | **JVM Runtime Metrics**     | Память кучи и вне кучи, длительность GC, количество потоков и загрузка классов для приложений на JVM |
-| **Node.js Runtime Metrics** | Задержка цикла событий, использование кучи, использование CPU и память V8 для приложений Node.js     |
+| **Node.js Runtime Metrics** | Задержка цикла событий, использование кучи, загрузка CPU и память V8 для приложений Node.js          |
 
 Примечания:
 
-* Каждый шаблон настроен с [пользовательским фильтром](/ru/clickstack/features/dashboards/overview#custom-filters) для сервисов, у которых атрибут ресурса [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) соответствует среде выполнения, для которой предназначена панель мониторинга.
-  * В средах с пользовательскими схемами таблиц метрик ClickHouse может потребоваться скорректировать этот фильтр, чтобы обращаться к правильным столбцам Service Name и Resource Attributes.
-  * В средах с большим объемом данных время загрузки фильтра можно сократить за счет [материализации](/ru/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) столбца `ResourceAttributes['telemetry.sdk.language']`.
-* На момент публикации шаблоны используют актуальные OTel Semantic Conventions и периодически обновляются по мере обновления спецификации OTel. Для сервисов, инструментированных более старыми OTel SDK, может потребоваться [изменить](/ru/clickstack/features/dashboards/overview#dashboards-editing-visualizations) визуализации, чтобы они ссылались на более старые имена метрик.
+* Для каждого шаблона настроен [пользовательский фильтр](/ru/clickstack/features/dashboards/overview#custom-filters) для сервисов, у которых атрибут ресурса [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) соответствует среде выполнения панели мониторинга.
+  * В средах с пользовательскими схемами таблиц метрик ClickHouse может потребоваться скорректировать этот фильтр, чтобы он обращался к нужным столбцам Service Name и Resource Attributes.
+  * В средах с большим объёмом данных время загрузки фильтра можно сократить, [материализовав](/ru/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) столбец `ResourceAttributes['telemetry.sdk.language']`.
+* На момент публикации шаблоны ссылаются на актуальные семантические соглашения OTel и периодически обновляются вместе с обновлениями спецификации OTel. Для сервисов, инструментированных более старыми OTel SDK, может потребоваться [отредактировать](/ru/clickstack/features/dashboards/overview#dashboards-editing-visualizations) визуализации, чтобы они ссылались на более старые имена метрик.

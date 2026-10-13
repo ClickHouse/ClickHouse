@@ -16,7 +16,7 @@ cid="$(
     --name "$(cname)" \
     "$image"
 )"
-trap 'docker rm -vf $cid > /dev/null' EXIT
+trap '[ $? -eq 0 ] || dumpServerLogs "$cid"; docker rm -vf "$cid" > /dev/null' EXIT
 
 chCli() {
   docker run --rm -i \
