@@ -69,6 +69,11 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
 /// when only the closure of `seed_names` is needed.
 std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context, const NameSet * seed_names = nullptr);
 
+/// Returns the names an `additional_table_filters` key can match for the table `storage_id` read under
+/// `context`: the qualified name, and the bare table name only when the table is in the current database
+/// (the same rule as the planner and the interpreter).
+NameSet getNamesMatchableByAdditionalTableFilters(const StorageID & storage_id, const ContextPtr & context);
+
 /// Hashes the dependencies of the `additional_table_filters` entries of `context` that apply when a storage
 /// is read under one of `seed_names` (and of the entries reachable through their subqueries), and of
 /// `additional_result_filter`, and stores the closure of matchable names in `matchable_names`. Used by

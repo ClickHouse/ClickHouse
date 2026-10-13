@@ -519,6 +519,14 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
     return true;
 }
 
+NameSet getNamesMatchableByAdditionalTableFilters(const StorageID & storage_id, const ContextPtr & context)
+{
+    NameSet names{storage_id.getFullNameNotQuoted()};
+    if (storage_id.getDatabaseName() == context->getCurrentDatabase())
+        names.insert(storage_id.getTableName());
+    return names;
+}
+
 static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const ContextPtr & context, NameSet & names, size_t depth);
 
 /// Adds the names an `additional_table_filters` key can match for `table_id` - the table name, but only
@@ -542,10 +550,7 @@ static bool collectTableNamesMatchableByAdditionalTableFilters(const StorageID &
     if (!storage)
         return false;
 
-    const auto storage_id = storage->getStorageID();
-    if (storage_id.getDatabaseName() == context->getCurrentDatabase())
-        names.insert(storage_id.getTableName());
-    names.insert(storage_id.getFullNameNotQuoted());
+    names.merge(getNamesMatchableByAdditionalTableFilters(storage->getStorageID(), context));
 
     /// The filters propagate only into the query behind a view whose body runs with the caller's settings:
     /// an `INVOKER` or legacy view. `getSQLSecurityOverriddenContext` removes the caller's

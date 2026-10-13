@@ -869,8 +869,8 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         /// / `NONE` such an entry can come from the effective reader's profile rather than from the
         /// caller's settings, so it is not covered by the caller's own cache key. Treat the view's own
         /// names as matchable, so that both the entry and the tables its filter reads are hashed.
-        const auto & storage_id = getStorageID();
-        const NameSet own_names{storage_id.getTableName(), storage_id.getFullNameNotQuoted()};
+        /// The bare name matches only when this view is in the current database of the reading query.
+        const NameSet own_names = getNamesMatchableByAdditionalTableFilters(getStorageID(), query_context);
 
         auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context, &own_names);
         if (!referenced_tables_hash)

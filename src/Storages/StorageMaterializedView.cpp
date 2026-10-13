@@ -1242,8 +1242,8 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// the names of the materialized view itself can apply (see `collectNamesMatchableByAdditionalTableFilters`).
         /// Such an entry can read other tables in its subqueries, which in turn can have entries of their
         /// own, so the dependencies of that whole closure are hashed as well.
-        const auto & storage_id = getStorageID();
-        const NameSet own_names{storage_id.getTableName(), storage_id.getFullNameNotQuoted()};
+        /// The bare name matches only when this view is in the current database of the reading query.
+        const NameSet own_names = getNamesMatchableByAdditionalTableFilters(getStorageID(), query_context);
         NameSet additional_table_filters_matchable_names;
         auto filters_hash = computeAdditionalFiltersModificationHash(effective_context, own_names, additional_table_filters_matchable_names);
         if (!filters_hash)
