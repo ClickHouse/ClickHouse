@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS t_uint8_monotonic;
 DROP TABLE IF EXISTS t_named_tuple;
 DROP TABLE IF EXISTS t_tuple_parts;
 DROP TABLE IF EXISTS t_partitioned;
+DROP TABLE IF EXISTS t_named_partitioned;
 
 CREATE TABLE t_monotonic (s Nullable(String))
 ENGINE = MergeTree ORDER BY assumeNotNull(s) SETTINGS index_granularity = 1, allow_nullable_key = 1;
@@ -67,6 +68,10 @@ CREATE TABLE t_partitioned (k Tuple(String, UInt8))
 ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
 INSERT INTO t_partitioned VALUES (('abc', 1)), (('abc\0', 1)), (('abc\0\0', 1)), (('b', 1));
 
+CREATE TABLE t_named_partitioned (k Tuple(a FixedString(4), b String))
+ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
+INSERT INTO t_named_partitioned VALUES (('abc', 'def')), (('abc', 'def\0')), (('abc', 'def\0\0')), (('def', 'abc'));
+
 -- { echo }
 
 SELECT count() FROM t_monotonic WHERE s <= toFixedString('abc', 4);
@@ -88,6 +93,8 @@ SELECT count() FROM t_tuple_parts WHERE k = tuple(toFixedString('abc', 4), CAST(
 SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple(toFixedString('abc', 4), toFixedString('abc', 4)) AS Tuple(b FixedString(4), a FixedString(4))));
 SELECT count() FROM t_partitioned WHERE k = (CAST(toFixedString('abc', 4) AS Dynamic), toUInt8(1)) SETTINGS optimize_trivial_count_query = 0;
 SELECT count() FROM t_partitioned WHERE k = CAST((toFixedString('abc', 4), toUInt8(1)) AS Dynamic) SETTINGS optimize_trivial_count_query = 0;
+-- A comparison pairs the elements of named tuples by position, not by name as `CAST` does.
+SELECT count() FROM t_named_partitioned WHERE k = CAST(('abc', CAST(toFixedString('def', 4) AS Dynamic)) AS Tuple(b String, a Dynamic)) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 
 -- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
@@ -120,3 +127,4 @@ DROP TABLE t_uint8_monotonic;
 DROP TABLE t_named_tuple;
 DROP TABLE t_tuple_parts;
 DROP TABLE t_partitioned;
+DROP TABLE t_named_partitioned;

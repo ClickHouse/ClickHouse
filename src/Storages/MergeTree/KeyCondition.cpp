@@ -1953,13 +1953,24 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
     return FieldRef(field.columns, field.row_idx, result_idx);
 }
 
+/// How `castMayDropFixedStringPadding` pairs the elements of two tuples: as `CAST` does, or by position, as a
+/// comparison and `convertFieldToType` do.
+enum class TuplePairing : uint8_t
+{
+    AsCast,
+    ByPosition,
+};
+
 /// A cast of a `FixedString` to `String` drops its trailing zero bytes, which changes how it compares. This also
 /// holds for a `FixedString` nested in an `Array`, a `Map`, a `Tuple` or a `Variant`, or held by a `Dynamic` value.
-/// The types are matched the way `CAST` converts them, so a `FixedString` that stays a `FixedString` does not count.
+/// The types are matched the way `CAST` converts them, with the tuple elements paired by `tuple_pairing`, so a
+/// `FixedString` that stays a `FixedString` does not count.
 /// Where the mapping is unknown, any `FixedString` or `Dynamic` in `from` and any `String` in `to` count.
 /// `from_column`, if given, holds the values to cast, and a `Variant` or `Dynamic` at any depth then only counts the
 /// members it actually holds. A constant column must be built with `createConstantColumn` for that.
-static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr)
+static bool castMayDropFixedStringPadding(
+    const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr,
+    TuplePairing tuple_pairing = TuplePairing::AsCast)
 {
     const auto from = removeLowCardinalityAndNullable(from_type);
     const auto to = removeLowCardinalityAndNullable(to_type);
@@ -1991,7 +2002,7 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
             const IColumn * alternative_column = variant_column ? &variant_column->getVariantByGlobalDiscriminator(i) : nullptr;
             if (shared_variant_discriminator == i || (alternative_column && alternative_column->empty()))
                 continue;
-            if (castMayDropFixedStringPadding(alternatives[i], to, alternative_column))
+            if (castMayDropFixedStringPadding(alternatives[i], to, alternative_column, tuple_pairing))
                 return true;
         }
         return false;
@@ -2003,7 +2014,7 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
     {
         const auto * array_column = typeid_cast<const ColumnArray *>(from_column);
         return castMayDropFixedStringPadding(
-            from_array->getNestedType(), to_array->getNestedType(), array_column ? &array_column->getData() : nullptr);
+            from_array->getNestedType(), to_array->getNestedType(), array_column ? &array_column->getData() : nullptr, tuple_pairing);
     }
 
     const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
@@ -2012,11 +2023,13 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
     {
         const auto * map_column = typeid_cast<const ColumnMap *>(from_column);
         const ColumnTuple * entries = map_column ? &map_column->getNestedData() : nullptr;
-        return castMayDropFixedStringPadding(from_map->getKeyType(), to_map->getKeyType(), entries ? &entries->getColumn(0) : nullptr)
-            || castMayDropFixedStringPadding(from_map->getValueType(), to_map->getValueType(), entries ? &entries->getColumn(1) : nullptr);
+        return castMayDropFixedStringPadding(
+                   from_map->getKeyType(), to_map->getKeyType(), entries ? &entries->getColumn(0) : nullptr, tuple_pairing)
+            || castMayDropFixedStringPadding(
+                   from_map->getValueType(), to_map->getValueType(), entries ? &entries->getColumn(1) : nullptr, tuple_pairing);
     }
 
-    /// The elements of two tuples are paired as in `FunctionCast::createTupleWrapper`: by name if both tuples are named
+    /// `CAST` pairs the elements of two tuples as in `FunctionCast::createTupleWrapper`: by name if both tuples are named
     /// and share a name, where the unpaired elements are dropped or filled with defaults, otherwise by position.
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
     const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
@@ -2028,11 +2041,11 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
         auto pair_may_drop_padding = [&](size_t from_i, size_t to_i)
         {
             return castMayDropFixedStringPadding(
-                from_elements[from_i], to_elements[to_i], tuple_column ? &tuple_column->getColumn(from_i) : nullptr);
+                from_elements[from_i], to_elements[to_i], tuple_column ? &tuple_column->getColumn(from_i) : nullptr, tuple_pairing);
         };
 
         bool paired_by_name = false;
-        if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+        if (tuple_pairing == TuplePairing::AsCast && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
         {
             const auto & to_names = to_tuple->getElementNames();
             for (size_t to_i = 0; to_i < to_names.size(); ++to_i)
@@ -2048,7 +2061,7 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
         if (paired_by_name)
             return false;
 
-        /// For tuples of different sizes `CAST` refuses the conversion, and `from` is judged as a whole below.
+        /// Tuples of different sizes cannot be converted or compared, and `from` is judged as a whole below.
         if (from_elements.size() == to_elements.size())
         {
             for (size_t i = 0; i < from_elements.size(); ++i)
@@ -5722,12 +5735,13 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         /// A `FixedString` nested in a composite constant, such as a `Tuple` element, is compared
                         /// zero-padded with a `String` of the key, but as a single point in the range, see the `String`
                         /// case above. This holds whether the constant is converted to the common type or already has
-                        /// it, as for a `Dynamic` element. The column is built only when the types allow it, as it can
-                        /// only narrow the check.
+                        /// it, as for a `Dynamic` element. Both the comparison and `convertFieldToType` pair tuple
+                        /// elements by position. The column is built only when the types allow it, as it can only
+                        /// narrow the check.
                         auto const_may_drop_padding = [&](const IColumn * const_column)
                         {
-                            return castMayDropFixedStringPadding(const_type, common_type, const_column)
-                                || castMayDropFixedStringPadding(const_type, key_expr_type_not_null, const_column);
+                            return castMayDropFixedStringPadding(const_type, common_type, const_column, TuplePairing::ByPosition)
+                                || castMayDropFixedStringPadding(const_type, key_expr_type_not_null, const_column, TuplePairing::ByPosition);
                         };
                         if (const_may_drop_padding(nullptr))
                         {

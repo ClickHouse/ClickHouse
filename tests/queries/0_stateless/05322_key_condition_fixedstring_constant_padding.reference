@@ -38,6 +38,9 @@ SELECT count() FROM t_partitioned WHERE k = (CAST(toFixedString('abc', 4) AS Dyn
 3
 SELECT count() FROM t_partitioned WHERE k = CAST((toFixedString('abc', 4), toUInt8(1)) AS Dynamic) SETTINGS optimize_trivial_count_query = 0;
 3
+-- A comparison pairs the elements of named tuples by position, not by name as `CAST` does.
+SELECT count() FROM t_named_partitioned WHERE k = CAST(('abc', CAST(toFixedString('def', 4) AS Dynamic)) AS Tuple(b String, a Dynamic)) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+3
 -- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
 1
@@ -79,3 +82,4 @@ DROP TABLE t_uint8_monotonic;
 DROP TABLE t_named_tuple;
 DROP TABLE t_tuple_parts;
 DROP TABLE t_partitioned;
+DROP TABLE t_named_partitioned;
