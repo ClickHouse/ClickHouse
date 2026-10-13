@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Core/ProtocolDefines.h>
-#include <Interpreters/ActionsDAG.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/numbersLikeUtils.h>
@@ -475,39 +474,26 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
 {
     const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
 
+    /// Only the table's parameters are written. The pushed-down LIMIT and the source filter are not:
+    /// the replica optimizes the plan it receives, and `optimizePrimaryKeyConditionAndLimit` sets both
+    /// again from the `LimitStep` and `FilterStep`s shipped above this read.
     UInt8 flags = 0;
     if (numbers_storage.multithreaded)
         flags |= 1;
     if (numbers_storage.descending)
         flags |= 2;
-    if (limit.has_value())
-        flags |= 4;
-    if (filter_actions_dag)
-        flags |= 8;
     if (numbers_storage.limit.has_value())
-        flags |= 16;
+        flags |= 4;
     writeIntBinary(flags, ctx.out);
 
-    /// An unbounded read (`system.numbers`, `numbers()`) has no domain size; it is ended by the plan's own
+    /// An unbounded read (`system.numbers`, `numbers()`) has no range length; it is ended by the plan's own
     /// limiting and filtering steps, or by cancelling the query, the same as when it runs locally.
     if (numbers_storage.limit.has_value())
         writeBinaryLittleEndian(*numbers_storage.limit, ctx.out);
     writeBinaryLittleEndian(numbers_storage.offset, ctx.out);
     writeBinaryLittleEndian(numbers_storage.step, ctx.out);
 
-    /// A LIMIT pushed into the read is only a hint - the plan keeps its own limiting steps - but
-    /// carrying it keeps the replica from generating rows that are thrown away.
-    if (limit.has_value())
-        writeBinaryLittleEndian(static_cast<UInt64>(*limit), ctx.out);
-
     writeBinaryLittleEndian(static_cast<UInt64>(max_block_size), ctx.out);
-
-    /// The filter is what prunes the generated domain: `numbers(1e12) WHERE number = 5` generates a
-    /// single value with it and the whole domain without it. The plan keeps its own filtering step,
-    /// so dropping it here would still answer correctly - it would just make the replica generate
-    /// arbitrarily more rows than the initiator does.
-    if (filter_actions_dag)
-        filter_actions_dag->serialize(ctx.out, ctx.registry);
 }
 
 
@@ -526,7 +512,7 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
     const bool descending = flags & 2;
 
     std::optional<UInt128> storage_limit;
-    if (flags & 16)
+    if (flags & 4)
     {
         UInt128 value = 0;
         readBinaryLittleEndian(value, ctx.in);
@@ -539,21 +525,8 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
     UInt64 step = 0;
     readBinaryLittleEndian(step, ctx.in);
 
-    std::optional<size_t> pushed_down_limit;
-    if (flags & 4)
-    {
-        UInt64 value = 0;
-        readBinaryLittleEndian(value, ctx.in);
-        pushed_down_limit = value;
-    }
-
     UInt64 max_block_size = 0;
     readBinaryLittleEndian(max_block_size, ctx.in);
-
-    std::shared_ptr<const ActionsDAG> filter;
-    if (flags & 8)
-        filter = std::make_shared<const ActionsDAG>(
-            ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity));
 
     auto storage = std::make_shared<StorageSystemNumbers>(
         StorageID{"system", "numbers"}, multithreaded, column_name, storage_limit, offset, step, descending);
@@ -567,11 +540,6 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
 
     auto step_ptr = std::make_unique<ReadFromSystemNumbersStep>(
         Names{column_name}, query_info, storage_snapshot, ctx.context, storage, max_block_size, /*num_streams_=*/1);
-
-    if (pushed_down_limit.has_value())
-        step_ptr->setLimit(*pushed_down_limit);
-
-    step_ptr->filter_actions_dag = std::move(filter);
 
     ctx.storage_holders.push_back(std::move(storage));
     return step_ptr;

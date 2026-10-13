@@ -1,12 +1,12 @@
 -- A plan fragment is serialized before it is sent to a replica, so a join can only be shipped when
 -- every step of its broadcast side is serializable. `ReadFromSystemNumbers` rebuilds itself on the
--- replica from the table's parameters plus its source filter, so a read ships whether or not it is
--- filtered or bounded. An unbounded read is ended by the plan's own limiting steps, as it is locally.
+-- replica from the table's parameters, so a read ships whether or not it is filtered or bounded. An
+-- unbounded read is ended by the plan's own limiting steps, as it is locally.
 --
--- Shipping the filter matters beyond correctness - the plan keeps its own filtering step either way.
--- The filter is what prunes the generated domain, so a read that yields one value out of a huge
--- domain must not turn into generating that whole domain on every replica; the `read_rows` check
--- below pins that.
+-- The source filter is not shipped with the read: the replica pushes the shipped `Filter` step into
+-- the read again when it optimizes the plan. That filter is what prunes the generated domain, so a
+-- read that yields one value out of a huge domain must not turn into generating that whole domain on
+-- every replica; the `read_rows` check below pins that.
 
 DROP TABLE IF EXISTS t_numbers_join SYNC;
 
@@ -60,12 +60,15 @@ SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
 SELECT count(), sum(r.key), sum(l.generate_series) FROM generate_series(0, 18, 2) AS l
 RIGHT JOIN t_numbers_join AS r ON l.generate_series = r.key;
 
--- The domain is large and the filter selects one value out of it: with the filter shipped the
--- replicas generate a handful of rows, without it they would generate the whole domain.
-SELECT 'the shipped filter still prunes the domain';
+-- The domain is large and the filter selects one value out of it: with the filter pushed into the
+-- read the replicas generate a handful of rows, without it they would generate the whole domain.
+-- Without the local plan the fragment runs only on remote replicas, so the check below sees a
+-- deserialized read; with it, the initiator's local replica takes the single mark and the remote
+-- ones are cancelled before they read anything.
+SELECT 'the filter still prunes the domain on the replicas';
 SELECT count() FROM (SELECT number FROM numbers(10000000) WHERE number = 5) AS l
 RIGHT JOIN t_numbers_join AS r ON l.number = r.key
-SETTINGS log_comment = 'pr_plan_based_numbers_pruning_05215';
+SETTINGS parallel_replicas_local_plan = 0, log_comment = 'pr_plan_based_numbers_pruning_05215';
 
 SYSTEM FLUSH LOGS query_log;
 

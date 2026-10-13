@@ -30,8 +30,8 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    /// A replica rebuilds the read from the table's parameters, the source filter and the pushed-down
-    /// LIMIT. The filter is what prunes the generated domain, so it is shipped with the read.
+    /// A replica rebuilds the read from the table's parameters. The source filter and the pushed-down
+    /// LIMIT are not serialized: the replica sets them again when it optimizes the received plan.
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
