@@ -83,7 +83,7 @@ ISource::Status RemoteSource::prepare()
     }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    if (async_query_sending && !was_query_sent && fd < 0)
+    if (async_query_sending && !was_query_sent && fd < 0 && !getPort().isFinished())
     {
         startup_event_fd.write();
         return Status::Async;

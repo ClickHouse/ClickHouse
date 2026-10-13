@@ -54,7 +54,8 @@ MergeSortingTransform::MergeSortingTransform(
 
 IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
 {
-    if (processors.size() > 2)
+    const bool merging_sorted_is_new = processors.size() > 2;
+    if (merging_sorted_is_new)
     {
         /// Add external_merging_sorted.
         inputs.emplace_back(header_without_constants, this);
@@ -78,7 +79,11 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
         /// Generate
         external_merging_sorted->setHaveAllInputs();
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    PipelineUpdate update{.to_add = std::move(processors), .to_remove = {}, .to_reconnect = {}};
+    if (!merging_sorted_is_new)
+        update.to_reconnect.push_back(external_merging_sorted);
+
+    return update;
 }
 
 void MergeSortingTransform::consume(Chunk chunk)

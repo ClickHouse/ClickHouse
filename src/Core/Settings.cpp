@@ -424,6 +424,10 @@ Set to `0` to disable this limit.
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
 )", 0, \
         {"24.12", false, true, "Enable concurrency control by default"}) \
+    DECLARE(PipelineExecutorKind, pipeline_executor, PipelineExecutorKind::V2, R"(
+Which executor runs the query pipeline.
+)", EXPERIMENTAL, \
+        {"26.10", "v1", "v1", "New setting to choose the pipeline executor."}) \
     DECLARE(MaxThreads, max_download_threads, 4, R"(
 The maximum number of threads to download data (e.g. for URL engine).
 )", 0) \

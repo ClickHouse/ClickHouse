@@ -13,7 +13,6 @@
 #include <Processors/IProcessor_fwd.h>
 #include <fmt/format.h>
 
-class EventCounter;
 
 namespace DB
 {
@@ -36,6 +35,11 @@ namespace Runtime::V1
 {
 class ExecutionThreadContext;
 class ExecutingGraph;
+}
+
+namespace Runtime::V2
+{
+class ProcessorRunner;
 }
 
 
@@ -249,7 +253,7 @@ public:
       * This method cannot access any port, but it can create new ports for current processor.
       *
       * Method should return set of new already connected processors or disconnected finished processors.
-      * All returned processors must be connected only to each other or current processor.
+      * All returned processors must be connected only to each other, current processor or processors listed in to_reconnect.
       *
       * Method can't move data from/to port or perform calculations.
       * 'prepare' should be called again after this operation.
@@ -258,6 +262,7 @@ public:
     {
         Processors to_add;
         Processors to_remove;
+        Processors to_reconnect;
     };
     virtual PipelineUpdate updatePipeline();
 
@@ -426,6 +431,8 @@ private:
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
     friend class Runtime::V1::ExecutingGraph;
+    /// For the same profiling fields
+    friend class Runtime::V2::ProcessorRunner;
 
     std::string processor_description;
 

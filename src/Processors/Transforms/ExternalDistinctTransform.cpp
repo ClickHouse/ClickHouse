@@ -1018,7 +1018,7 @@ IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "External DISTINCT has no pipeline update in state {}", state.index());
     }, state);
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}, .to_reconnect = {}};
 }
 
 }

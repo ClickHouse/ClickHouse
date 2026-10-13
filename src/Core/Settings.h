@@ -101,6 +101,7 @@ class WriteBuffer;
     M(CLASS_NAME, OverflowMode) \
     M(CLASS_NAME, OverflowModeGroupBy) \
     M(CLASS_NAME, ParallelReplicasMode) \
+    M(CLASS_NAME, PipelineExecutorKind) \
     M(CLASS_NAME, ParallelReplicasCustomKeyFilterType) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
