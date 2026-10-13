@@ -4,3 +4,5 @@ rows-where bounds survive the blocked patch merge	1	1	1
 rows kept while blocked	2
 indexed expired column merge completed	1	2
 recompression bound built from the default	1
+rows-where bound from the patched chain	1	1	1
+rows left after the expiring patch merge	[2]

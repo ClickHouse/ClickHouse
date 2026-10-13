@@ -99,3 +99,50 @@ FROM system.parts
 WHERE database = currentDatabase() AND table = 't_ttl_patch_indexed' AND active AND partition_id NOT LIKE 'patch-%';
 
 DROP TABLE t_ttl_patch_indexed;
+
+-- A patch written before a MATERIALIZED chain was grown stores only src and m1. The patch merge
+-- must build the rows-WHERE bound from the patched m3, not from its pre-patch value.
+DROP TABLE IF EXISTS t_ttl_patch_materialized_chain SYNC;
+
+CREATE TABLE t_ttl_patch_materialized_chain (d DateTime, src UInt8, m1 UInt8 MATERIALIZED src, id UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_ttl_patch_materialized_chain (d, src, id) VALUES ('2001-01-01 00:00:00', 0, 1), ('2002-01-01 00:00:00', 0, 2);
+UPDATE t_ttl_patch_materialized_chain SET src = 1 WHERE id = 1;
+
+ALTER TABLE t_ttl_patch_materialized_chain ADD COLUMN m2 UInt8 MATERIALIZED m1, ADD COLUMN m3 UInt8 MATERIALIZED m2;
+ALTER TABLE t_ttl_patch_materialized_chain MODIFY TTL d + INTERVAL 50 YEAR DELETE WHERE m3 = 1
+SETTINGS materialize_ttl_after_modify = 0;
+
+OPTIMIZE TABLE t_ttl_patch_materialized_chain FINAL;
+
+-- Only id 1 matches after the patch, so both ends of the bound are its d + 50 years.
+SELECT 'rows-where bound from the patched chain',
+       length(rows_where_ttl_info.expression),
+       rows_where_ttl_info.min[1] = toDateTime('2051-01-01 00:00:00'),
+       rows_where_ttl_info.max[1] = toDateTime('2051-01-01 00:00:00')
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_patch_materialized_chain' AND active AND partition_id NOT LIKE 'patch-%';
+
+DROP TABLE t_ttl_patch_materialized_chain;
+
+-- Same chain with an expired rule: the patch merge must delete the row that matches only after the patch.
+DROP TABLE IF EXISTS t_ttl_patch_materialized_chain_expired SYNC;
+
+CREATE TABLE t_ttl_patch_materialized_chain_expired (d DateTime, src UInt8, m1 UInt8 MATERIALIZED src, id UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_ttl_patch_materialized_chain_expired (d, src, id) VALUES ('2001-01-01 00:00:00', 0, 1), ('2002-01-01 00:00:00', 0, 2);
+UPDATE t_ttl_patch_materialized_chain_expired SET src = 1 WHERE id = 1;
+
+ALTER TABLE t_ttl_patch_materialized_chain_expired ADD COLUMN m2 UInt8 MATERIALIZED m1, ADD COLUMN m3 UInt8 MATERIALIZED m2;
+ALTER TABLE t_ttl_patch_materialized_chain_expired MODIFY TTL d + INTERVAL 1 SECOND DELETE WHERE m3 = 1
+SETTINGS materialize_ttl_after_modify = 0;
+
+OPTIMIZE TABLE t_ttl_patch_materialized_chain_expired FINAL;
+
+SELECT 'rows left after the expiring patch merge', groupArray(id) FROM t_ttl_patch_materialized_chain_expired;
+
+DROP TABLE t_ttl_patch_materialized_chain_expired;
