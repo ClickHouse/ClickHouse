@@ -3532,9 +3532,13 @@ void MergeTreeData::startStatisticsCache()
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
     std::lock_guard lock(refresh_stats_task_mutex);
     if (refresh_stats_task)
+    {
+        refresh_stats_cancelled = true;
         refresh_stats_task->deactivate();
+    }
     if (refresh_statistics_seconds && !refresh_stats_stopped)
     {
+        refresh_stats_cancelled = false;
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool()->createTask(
             getStorageID(), "MergeTreeData::refreshStatistics",
@@ -3549,6 +3553,7 @@ void MergeTreeData::stopStatisticsCache()
     /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
     std::lock_guard lock(refresh_stats_task_mutex);
     refresh_stats_stopped = true;
+    refresh_stats_cancelled = true;
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
 }
@@ -3736,6 +3741,8 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
+        if (refresh_stats_cancelled)
+            return;
         ProfileEvents::increment(ProfileEvents::LoadedStatistics);
         auto stats = data_part->loadStatistics();
         estimator_builder.markDataPart(data_part);
