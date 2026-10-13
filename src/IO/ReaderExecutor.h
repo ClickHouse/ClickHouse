@@ -81,9 +81,10 @@ public:
 
     void seek(size_t new_position);
 
-    /// Bound reads to logical offsets below `bound`; `nullopt` reads to the file end.
+    /// Serve no byte at or past logical offset `bound`; `nullopt` serves to the file end. It does not limit a fetch.
     void setReadUntil(std::optional<size_t> bound) { read_until = bound; }
 
+    /// The logical ranges the caller will read. A fetch stops at the end of the run that holds the position.
     void setRequestMap(ByteRangeSet ranges);
 
     size_t getPosition() const { return position; }
@@ -111,6 +112,7 @@ private:
         {
             SourceRequests,         /// chunks opened and read from the source
             BytesFromSource,        /// physical bytes read from the source
+            BytesOutsideRequestMap, /// the part of `BytesFromSource` outside the request map
             DeliveredBytes,         /// useful bytes delivered to the caller (KPI denominator)
             IncompleteConnections,
             CacheGetRequests,
@@ -159,6 +161,7 @@ private:
     {
         std::unique_ptr<ReadBufferFromFileBase> buffer;
         String object_path;
+        size_t object_start = 0;   /// file offset of the object's first byte
         size_t opened_at = 0;
         size_t current_position = 0;
         size_t read_until = 0;
@@ -198,21 +201,29 @@ private:
     }
 
     size_t clampReach(size_t predicted_end, size_t phys_pos) const;
+    /// Physical end of the request-map run that holds the position; the file end without a map.
+    size_t demandEnd(size_t block_bytes) const;
+    /// How far a held GET may reach: `demandEnd` with a map, else the predicted run end.
+    size_t longConnectionReach(size_t block_bytes) const;
     /// `window_bytes` is the window this read serves, so the admission rule ("the run outlives the
     /// current window") holds at every pressure level, not only where the window equals `window_size`.
-    bool shouldOpenLongConnection(size_t window_bytes) const;
-    bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
+    bool shouldOpenLongConnection(size_t reach, size_t window_bytes) const;
+    /// `file_base` is the file offset of `object_offset`.
+    bool tryOpenLongConnection(const StoredObject & object, size_t object_offset, size_t file_base, size_t want, size_t reach);
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
     ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, BlockAndWindowSizes sizes);
     /// The single source-read entry point; spans object boundaries via `OffsetMap::map`. A
     /// known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want, BlockAndWindowSizes sizes);
+    void countBytesFromSource(size_t file_offset, size_t size);
+    /// Serves from `fetched_ahead`, else from one fetch whose unserved rest goes to `fetched_ahead`.
+    ChainedBuffers readWithoutCaches(size_t pos, size_t max_serve, size_t max_fetch, BlockAndWindowSizes sizes);
     /// Serve one block at `pos` through the held `ReadPlan` (the plan reports memory hold / hit /
     /// committed writer / fetch). Precondition: `!cache_chain.empty()`.
-    ChainedBuffers readThroughCaches(size_t pos, size_t max_serve, BlockAndWindowSizes sizes);
-    /// Grow `read_plan` to cover `[pos, pos + look_ahead)` (clamped to the file end) and drop whatever
-    /// lies past it; rebuilds from `pos` on a seek or gap. `look_ahead` is the sampled `plan_bytes`.
-    void ensureResolved(size_t pos, size_t look_ahead);
+    ChainedBuffers readThroughCaches(size_t pos, size_t max_serve, size_t max_fetch, size_t demand_end, BlockAndWindowSizes sizes);
+    /// Grow `read_plan` to cover `[pos, min(pos + look_ahead, demand_end))` (clamped to the file end) and drop
+    /// whatever lies past it; rebuilds from `pos` on a seek or gap. `look_ahead` is the sampled `plan_bytes`.
+    void ensureResolved(size_t pos, size_t look_ahead, size_t demand_end);
     /// Serve one block from `pos` out of a FETCH run: read `fetch_range` from source once, fill the
     /// tiers it spans, hold what no tier accepted, and serve. (Details in the definition.)
     ChainedBuffers fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve, BlockAndWindowSizes sizes);
@@ -242,10 +253,12 @@ private:
     size_t block_size;
     size_t position = 0;
     bool reached_eof = false;
-    /// Hard upper bound on the logical read position; `nullopt` = read to end.
+    /// Hard upper bound on the served logical position; `nullopt` = serve to end.
     std::optional<size_t> read_until;
     /// `nullopt` = no map was announced, the caller may read the whole file.
     std::optional<ByteRangeSet> request_map;
+    /// Without caches: what the last fetch read past what it served.
+    ChainedBuffers fetched_ahead;
 
     std::optional<LongConnection> long_conn;
     ReadContinuityTracker fetch_tracker;

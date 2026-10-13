@@ -133,3 +133,28 @@ TEST(ByteRangeSet, RemoveTrimsSplitsAndClears)
     s.remove({0, 100});   /// remove everything
     EXPECT_EQ(s.totalBytes(), 0u);
 }
+
+TEST(ByteRangeSet, ContiguousEndBridgesNarrowGaps)
+{
+    ByteRangeSet s;
+    s.add({10, 10});   /// [10, 20)
+    s.add({25, 5});    /// [25, 30), 5 bytes after
+    s.add({50, 10});   /// [50, 60), 20 bytes after
+
+    /// A gap of at most 5 bytes joins [10, 20) and [25, 30); the gap of 20 bytes ends the run.
+    EXPECT_EQ(s.contiguousEnd(10, 5), 30u);
+    EXPECT_EQ(s.contiguousEnd(19, 5), 30u);
+    EXPECT_EQ(s.contiguousEnd(22, 5), 30u);   /// in the narrow gap: the run that follows
+    EXPECT_EQ(s.contiguousEnd(50, 5), 60u);
+    EXPECT_EQ(s.contiguousEnd(10, 0), 20u);   /// no gap is narrow enough
+    EXPECT_EQ(s.contiguousEnd(10, 20), 60u);  /// every gap is
+
+    /// An offset in a wide gap, or past the last interval, is in no run.
+    EXPECT_EQ(s.contiguousEnd(35, 5), std::nullopt);
+    EXPECT_EQ(s.contiguousEnd(45, 5), 60u);   /// 5 bytes before [50, 60)
+    EXPECT_EQ(s.contiguousEnd(60, 100), std::nullopt);
+    EXPECT_EQ(s.contiguousEnd(0, 5), std::nullopt);
+    EXPECT_EQ(s.contiguousEnd(5, 5), 30u);
+
+    EXPECT_EQ(ByteRangeSet{}.contiguousEnd(0, 100), std::nullopt);
+}
