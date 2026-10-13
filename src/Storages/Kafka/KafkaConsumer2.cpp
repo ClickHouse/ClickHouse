@@ -36,6 +36,7 @@ using namespace std::chrono_literals;
 static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
 static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
+static constexpr size_t DRAIN_REMOVED_PARTITION_BATCH_SIZE = 1024;
 
 bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
 {
@@ -148,6 +149,44 @@ void KafkaConsumer2::cleanQueuesAndMessages()
 
 void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
 {
+    std::unordered_set<TopicPartition, TopicPartitionHash, TopicPartitionEquality> new_partitions;
+    for (const auto & topic_partition : topic_partitions)
+        new_partitions.emplace(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
+
+    /// `queues` holds exactly the current assignment, so these are the partitions that leave this consumer.
+    cppkafka::TopicPartitionList removed_partitions;
+    for (const auto & [topic_partition, _] : queues)
+        if (!new_partitions.contains(topic_partition))
+            removed_partitions.emplace_back(topic_partition.topic, topic_partition.partition_id);
+
+    if (!removed_partitions.empty())
+    {
+        /// Removing a partition from the assignment only stops its fetcher: the messages librdkafka has already
+        /// prefetched stay in the partition queue, which is owned by librdkafka and is not freed when we drop our handle.
+        /// Pausing makes these messages outdated, and reading the queue drops outdated messages and frees them.
+        /// Pausing alone is not enough: librdkafka purges the queue on pause, but the purge stops at the version barrier
+        /// that the pause itself puts at the head of the queue.
+        consumer->pause_partitions(removed_partitions);
+        for (const auto & topic_partition : removed_partitions)
+        {
+            TopicPartition key{topic_partition.get_topic(), topic_partition.get_partition()};
+            const auto & queue = queues.at(key);
+            LOG_DEBUG(
+                log,
+                "Draining {} queued entries of partition {}:{} that is removed from the assignment",
+                queue.get_length(),
+                key.topic,
+                key.partition_id);
+            /// After the pause every queued message is outdated, so `consume_batch` frees them without returning them,
+            /// and normally the first call empties the queue. A paused partition gets no new messages, so the queue only
+            /// shrinks and its current length bounds the number of batches.
+            for (size_t batches_left = queue.get_length() / DRAIN_REMOVED_PARTITION_BATCH_SIZE + 1; batches_left > 0; --batches_left)
+                if (queue.consume_batch(DRAIN_REMOVED_PARTITION_BATCH_SIZE, 0ms).empty())
+                    break;
+            paused_partitions.emplace(std::move(key));
+        }
+    }
+
     cleanQueuesAndMessages();
 
     queues.reserve(topic_partitions.size());
@@ -161,6 +200,19 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
                 consumer->get_partition_queue(topic_partition));
 
         consumer->assign(topic_partitions);
+
+        /// Unassigning clears only librdkafka's own pause flag, so a partition we paused stays paused when it comes back.
+        cppkafka::TopicPartitionList partitions_to_resume;
+        for (const auto & topic_partition : new_partitions)
+            if (paused_partitions.contains(topic_partition))
+                partitions_to_resume.emplace_back(topic_partition.topic, topic_partition.partition_id);
+        if (!partitions_to_resume.empty())
+        {
+            consumer->resume_partitions(partitions_to_resume);
+            /// Forget the partitions only after the resume succeeded, so that if it throws, the next call retries it.
+            for (const auto & topic_partition : partitions_to_resume)
+                paused_partitions.erase(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
+        }
     }
     catch (...)
     {
