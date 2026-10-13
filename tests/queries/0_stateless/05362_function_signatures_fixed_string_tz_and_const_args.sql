@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: `ULIDStringToDateTime` and `lemmatize` are not available in the fast test build.
+
 -- Timezone arguments accept a constant `FixedString` as well as a constant `String`.
 SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R', toFixedString('UTC', 3));
 SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), toFixedString('UTC', 3));
