@@ -93,6 +93,11 @@ public:
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
+    /// Rejects a kind stack that is not legal for @type, e.g. the automatic `LowCardinality` kind for a column
+    /// that is not `String` or `FixedString`. Must be called after reading a kind stack from untrusted data
+    /// (the `Native` format, `serialization.json`), because the binary and JSON readers check only its shape.
+    virtual void checkKindStackForType(const IDataType & type) const;
+
     void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
     /// Forgets that any aggregated info contributed a `LowCardinality` kind (see `add`) and re-derives
     /// the kind stack from the accumulated data alone, so that the kind of an aggregated info can be
