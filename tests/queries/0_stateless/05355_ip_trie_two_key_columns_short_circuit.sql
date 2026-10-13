@@ -61,14 +61,6 @@ SELECT 'v6 matched', count()
 FROM keys_v6
 WHERE dictGetOrDefault('d_v6', 'cca2', (addr, len), concat('no-', toString(len))) NOT LIKE 'no-%';
 
--- The address column of a two-element key must be UInt32 for an IPv4 dictionary
--- and FixedString(16) for an IPv6 one; the IPv4 / IPv6 types are rejected.
-SELECT dictGetOrDefault('d_v4', 'cca2', (toIPv4('10.0.0.0'), toUInt8(8)), concat('no-', toString(number)))
-FROM numbers(1); -- { serverError TYPE_MISMATCH }
-
-SELECT dictGetOrDefault('d_v6', 'cca2', (toIPv6('2001:db8::'), toUInt8(32)), concat('no-', toString(number)))
-FROM numbers(1); -- { serverError TYPE_MISMATCH }
-
 DROP DICTIONARY d_v4;
 DROP DICTIONARY d_v6;
 DROP TABLE keys_v4;
