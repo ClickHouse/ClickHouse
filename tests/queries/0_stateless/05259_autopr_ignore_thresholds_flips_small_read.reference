@@ -1,0 +1,4 @@
+query	switched_to_replicas
+05259_query_0_collect	0
+05259_query_1_cap_applies	0
+05259_query_2_cap_ignored	1

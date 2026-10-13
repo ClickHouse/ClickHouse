@@ -78,7 +78,6 @@
 00443_preferred_block_size_bytes
 02149_read_in_order_fixed_prefix
 02151_hash_table_sizes_stats
-02151_hash_table_sizes_stats_joins_reordered
 02354_vector_search_subquery
 02451_order_by_monotonic
 02864_statistics_usage
