@@ -1435,7 +1435,8 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
             cond_column_name.second);
     }
 
-    return runJoinDispatch(std::move(block));
+    auto result = runJoinDispatch(std::move(block));
+    return std::make_unique<ContinuationResult>(*this, std::move(result));
 }
 
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)

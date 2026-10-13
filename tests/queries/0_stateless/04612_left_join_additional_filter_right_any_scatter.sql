@@ -70,10 +70,42 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
       LIMIT 1
   );
 
--- Multi-disjunct joins use several hash maps and can stop probing a left block at the candidate
--- limit as well. Continuation must retain the scattered suffix instead of materializing and
--- submitting it as a new probe block.
-SELECT l.n
+-- Exercise scattered continuations through ConcurrentHashJoin too.
+SELECT count(), sum(coalesce(r.a, 0)), sum(coalesce(r.b, 0))
+FROM (SELECT number % 2 AS k FROM numbers(1000)) AS l
+LEFT JOIN (SELECT toNullable(number) AS a, number AS b FROM numbers(2)) AS r
+  ON (l.k = r.a) AND (l.k > r.b)
+SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 256, join_use_nulls = 1,
+         log_comment = '04612_nullable_parallel';
+
+SELECT count(), sum(coalesce(r.a, 0)), sum(coalesce(r.b, 0))
+FROM (SELECT number % 2 AS k FROM numbers(1000)) AS l
+LEFT JOIN (SELECT number AS a, number AS b FROM numbers(2)) AS r
+  ON (l.k = r.a) AND (l.k > r.b)
+SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 256, join_use_nulls = 0;
+
+SELECT count(), sum(coalesce(r.a, 0)), sum(coalesce(r.b, 0))
+FROM (SELECT number % 2 AS k FROM numbers(1000)) AS l
+LEFT JOIN (SELECT toNullable(number) AS a, number - 1 AS b FROM numbers(2)) AS r
+  ON (l.k = r.a) AND (l.k > r.b)
+SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 256, join_use_nulls = 1;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['JoinBuildTableRowCount'] = 2
+   AND ProfileEvents['JoinProbeTableRowCount'] = 1000 AS probe_once
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment = '04612_nullable_parallel'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+-- Compare both cardinality and a checksum with the default block limit.
+-- The small limit forces continuation through the multi-disjunct candidate loop.
+DROP TABLE IF EXISTS continuation_baseline;
+CREATE TABLE continuation_baseline ENGINE = Memory AS
+SELECT count() AS rows, sum(cityHash64(l.n, r.n)) AS checksum
 FROM
 (
     SELECT number AS n, number % 4 AS k1, number % 8 AS k2
@@ -85,24 +117,68 @@ ALL INNER JOIN
     FROM numbers(64)
 ) AS r
 ON l.k1 = r.k1 OR l.k2 = r.k2
-FORMAT Null
+SETTINGS join_algorithm = 'hash', max_threads = 1, max_block_size = 1000;
+
+SELECT
+    (count(), sum(cityHash64(l.n, r.n)))
+    = (SELECT rows, checksum FROM continuation_baseline) AS same_result
+FROM
+(
+    SELECT number AS n, number % 4 AS k1, number % 8 AS k2
+    FROM numbers(1000)
+) AS l
+ALL INNER JOIN
+(
+    SELECT number AS n, number % 4 AS k1, number % 8 AS k2
+    FROM numbers(64)
+) AS r
+ON l.k1 = r.k1 OR l.k2 = r.k2
 SETTINGS join_algorithm = 'hash',
-         max_threads = 1,
+         max_threads = 2,
          max_block_size = 1000,
          max_joined_block_size_rows = 64,
          query_plan_join_swap_table = 'false',
-         log_comment = '04612_multi_disjunct';
+         log_comment = '04612_multi_disjunct_hash';
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT probe_rows = 1000 AS probe_once
+SELECT ProfileEvents['JoinProbeTableRowCount'] = 1000 AS probe_once
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment = '04612_multi_disjunct_hash'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+SELECT
+    (count(), sum(cityHash64(l.n, r.n)))
+    = (SELECT rows, checksum FROM continuation_baseline) AS same_result
 FROM
 (
-    SELECT ProfileEvents['JoinProbeTableRowCount'] AS probe_rows
-    FROM system.query_log
-    WHERE type = 'QueryFinish'
-      AND current_database = currentDatabase()
-      AND log_comment = '04612_multi_disjunct'
-    ORDER BY event_time_microseconds DESC
-    LIMIT 1
-);
+    SELECT number AS n, number % 4 AS k1, number % 8 AS k2
+    FROM numbers(1000)
+) AS l
+ALL INNER JOIN
+(
+    SELECT number AS n, number % 4 AS k1, number % 8 AS k2
+    FROM numbers(64)
+) AS r
+ON l.k1 = r.k1 OR l.k2 = r.k2
+SETTINGS join_algorithm = 'parallel_hash',
+         max_threads = 2,
+         max_block_size = 1000,
+         max_joined_block_size_rows = 64,
+         query_plan_join_swap_table = 'false',
+         log_comment = '04612_multi_disjunct_parallel_hash';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['JoinProbeTableRowCount'] = 1000 AS probe_once
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment = '04612_multi_disjunct_parallel_hash'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+DROP TABLE continuation_baseline;

@@ -264,12 +264,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
 
     auto data = join_result->next();
-    if (data.is_last && data.next_block)
-    {
-        data.next_block->filterBySelector();
-        auto next_block = std::move(*data.next_block).getSourceBlock();
-        chunk.setColumns(next_block.getColumns(), next_block.rows());
-    }
+    chassert(!data.next_block);
 
     if (data.is_last)
     {
