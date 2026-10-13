@@ -61,10 +61,12 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
 {
     if (retriable)
     {
+        /// Read the live limit: `s3queue_loading_retries` can be lowered while the file is in flight.
+        const UInt64 max_tries = loading_retries_ref.load();
         auto tries = file_status->retries.fetch_add(1, std::memory_order_relaxed);
-        LOG_TRACE(log, "File {} failed at try {}/{}", path, tries + 1, max_loading_retries);
+        LOG_TRACE(log, "File {} failed at try {}/{}", path, tries + 1, max_tries);
 
-        if (tries + 1 < max_loading_retries)
+        if (tries + 1 < max_tries)
         {
             releaseProcessingGuard();
             return;
@@ -77,7 +79,7 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueExclusiveFileMetadata::setProcessingImpl()
 {
     if (file_status->state.load() == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed &&
-        (!file_status->retries || file_status->retries >= max_loading_retries))
+        (!file_status->retries || file_status->retries >= loading_retries_ref.load()))
     {
         return std::pair{false, ObjectStorageQueueIFileMetadata::FileStatus::State::Failed};
     }
@@ -135,7 +137,7 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
                 /// Exclusive mode has no `.retriable` marker, but a failure is still retryable
                 /// until the retry budget is exhausted. Mirror the claim check in setProcessingImpl().
                 if (is_terminal_out)
-                    *is_terminal_out = (retries == 0 || retries >= max_loading_retries);
+                    *is_terminal_out = (retries == 0 || retries >= loading_retries_ref.load());
             }
             return PathState::Failed;
         default:
