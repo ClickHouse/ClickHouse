@@ -95,12 +95,14 @@ UDP	4	1
 2	66	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	IPv6-Route	\N
 3	74	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	TCP	\N
 4	38	76	['ETHERNET_II','IP']	4	TCP	\N
---- headers cut by the snapshot length before the end of the IP header: the rest is raw ---
-1	18	76	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	\N	18
-2	34	112	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	\N	34
-3	16	80	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	\N	16
-1	10	62	RAW	['RAW']	\N	\N	10
-2	20	48	RAW	['RAW']	\N	\N	20
+--- headers cut by the snapshot length before the end of the IP header: the rest is raw, the outer protocols are kept ---
+1	18	76	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	IP	\N	\N	18
+2	34	112	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	IPv6	\N	\N	34
+3	16	80	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	RAW	\N	\N	16
+4	28	80	ETHERNET_II	['ETHERNET_II','DOT1Q','RAW']	66:77:88:99:aa:bb	IP	7	\N	28
+5	14	76	ETHERNET_II	['ETHERNET_II']	66:77:88:99:aa:bb	IP	\N	\N	14
+1	10	62	IP	['RAW']	\N		\N	\N	10
+2	20	48	IPv6	['RAW']	\N		\N	\N	20
 --- length invariants hold across all fixtures ---
 packets.pcap	0	0	0
 packets.pcapng	0	0	0

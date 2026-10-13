@@ -150,13 +150,20 @@ truncated_headers.append((packets[0][:14 + 20 + 4], len(packets[0])))
 write_pcap(out_dir / "truncated_headers.pcap", truncated_headers, snaplen=chain_start + 16 + 4)
 
 # Packets cut by the snapshot length before the end of the IP header: Ethernet
-# frames cut inside the IPv4 header, inside the IPv6 header, and inside a VLAN
-# tag, and raw IP packets cut inside the IPv4 and the IPv6 header. They are
-# dissected up to the Ethernet header, if there is one, and the rest is raw.
+# frames cut inside the IPv4 header, inside the IPv6 header, inside a VLAN tag,
+# and inside the IPv4 header after a complete VLAN tag, an Ethernet frame with
+# only its header captured, and raw IP packets cut inside the IPv4 and the IPv6
+# header. Ethernet frames are dissected up to their last complete header (the
+# Ethernet header or the VLAN tag) and the rest is raw, but `eth_type` still
+# names the protocol from the type field, and `link_type` of a raw IP packet
+# is still `IP` or `IPv6`.
+vlan_frame = ethernet(ipv4(6, tcp), vlan_id=7)
 truncated_ip = [
     (packets[0][:18], len(packets[0])),
     (chain[:14 + 20], len(chain)),
-    (ethernet(ipv4(6, tcp), vlan_id=7)[:16], len(ethernet(ipv4(6, tcp), vlan_id=7))),
+    (vlan_frame[:16], len(vlan_frame)),
+    (vlan_frame[:18 + 10], len(vlan_frame)),
+    (packets[0][:14], len(packets[0])),
 ]
 write_pcap(out_dir / "truncated_ip.pcap", truncated_ip, snaplen=34)
 truncated_raw_ip = [(ipv4(6, tcp)[:10], len(ipv4(6, tcp))), (ipv6(17, udp)[:20], len(ipv6(17, udp)))]

@@ -137,10 +137,10 @@ SELECT number, capture_length, original_length, protocols, ip_version, ip_protoc
 FROM file('$DATA_DIR/truncated_headers.pcap', PCAP)
 ORDER BY number FORMAT TSV"
 
-echo "--- headers cut by the snapshot length before the end of the IP header: the rest is raw ---"
+echo "--- headers cut by the snapshot length before the end of the IP header: the rest is raw, the outer protocols are kept ---"
 for f in truncated_ip.pcap truncated_raw_ip.pcap; do
     $CLICKHOUSE_LOCAL -q "
-    SELECT number, capture_length, original_length, link_type, protocols, eth_src, ip_version, length(raw)
+    SELECT number, capture_length, original_length, link_type, protocols, eth_src, eth_type, vlan_id, ip_version, length(raw)
     FROM file('$DATA_DIR/$f', PCAP)
     ORDER BY number FORMAT TSV"
 done

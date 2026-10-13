@@ -40,6 +40,7 @@
 #include <pcap/pcap.h>
 
 #include <array>
+#include <optional>
 
 namespace DB
 {
@@ -329,11 +330,65 @@ Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen)
     return Tins::Internals::pdu_from_dlt_flag(dlt, data, caplen, /*rawpdu_on_no_match=*/ true);
 }
 
+/// Rebuilds the PDU chain of an Ethernet frame from its outer headers that were captured
+/// completely - the Ethernet II header and its 802.1Q tags, or the IEEE 802.3 header and its
+/// `SNAP` header - and keeps the rest of the frame as a raw PDU. Used when the snapshot length cut
+/// the frame inside a header that `libtins` requires to be complete.
+Tins::PDU * dissectCompleteEthernetHeaders(const uint8_t * data, UInt32 caplen)
+{
+    const UInt16 type_or_length = static_cast<UInt16>((data[12] << 8) | data[13]);
+
+    std::unique_ptr<Tins::PDU> root;
+    Tins::PDU * last = nullptr;
+    UInt32 offset = ethernet_header_size;
+    UInt32 end = caplen;
+    if (type_or_length <= 1500)
+    {
+        root = std::make_unique<Tins::Dot3>(data, ethernet_header_size);
+        last = root.get();
+
+        /// The bytes past the length are the padding of a short frame or a trailer, not LLC data.
+        end = ethernet_header_size + std::min<UInt32>(caplen - ethernet_header_size, type_or_length);
+        static constexpr UInt32 snap_header_size = 8;
+        const uint8_t * llc_data = data + offset;
+        if (end - offset >= snap_header_size && llc_data[0] == 0xAA && llc_data[1] == 0xAA && llc_data[2] == 0x03)
+        {
+            auto * snap = new Tins::SNAP(llc_data, snap_header_size);
+            last->inner_pdu(snap);
+            last = snap;
+            offset += snap_header_size;
+        }
+    }
+    else
+    {
+        root = std::make_unique<Tins::EthernetII>(data, ethernet_header_size);
+        last = root.get();
+
+        static constexpr UInt32 vlan_tag_size = 4;
+        UInt16 ether_type = type_or_length;
+        while ((ether_type == Tins::Constants::Ethernet::VLAN || ether_type == Tins::Constants::Ethernet::QINQ
+                || ether_type == Tins::Constants::Ethernet::OLD_QINQ)
+            && offset + vlan_tag_size <= caplen)
+        {
+            auto * tag = new Tins::Dot1Q(data + offset, vlan_tag_size);
+            last->inner_pdu(tag);
+            last = tag;
+            offset += vlan_tag_size;
+            ether_type = tag->payload_type();
+        }
+    }
+
+    if (offset < end)
+        last->inner_pdu(new Tins::RawPDU(data + offset, end - offset));
+    return root.release();
+}
+
 /// Dissects a captured frame like `dissectFrameLayers`, but also when the snapshot length of the
 /// capture cut it before the end of a header that `libtins` requires to be complete, such as the
 /// `IPv4` or `IPv6` header or a VLAN tag (`IP` itself handles a cut transport header). `libtins`
-/// reports such a frame with `malformed_packet`; it is a valid record of the capture, so it is
-/// dissected up to the complete Ethernet header, if there is one, and the rest is kept raw.
+/// reports such a frame with `malformed_packet`; it is a valid record of the capture, so an
+/// Ethernet frame is dissected up to its last complete header and the rest is kept raw. A raw IP
+/// frame whose IP header was cut is kept raw as a whole; `outerLayerType` still names its layer.
 Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
 {
     try
@@ -344,17 +399,41 @@ Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
     {
         if (dlt != DLT_EN10MB || caplen < ethernet_header_size)
             return new Tins::RawPDU(data, caplen);
-
-        const UInt16 type_or_length = static_cast<UInt16>((data[12] << 8) | data[13]);
-        std::unique_ptr<Tins::PDU> link_layer;
-        if (type_or_length <= 1500)
-            link_layer = std::make_unique<Tins::Dot3>(data, ethernet_header_size);
-        else
-            link_layer = std::make_unique<Tins::EthernetII>(data, ethernet_header_size);
-        if (caplen > ethernet_header_size)
-            link_layer->inner_pdu(new Tins::RawPDU(data + ethernet_header_size, caplen - ethernet_header_size));
-        return link_layer.release();
+        return dissectCompleteEthernetHeaders(data, caplen);
     }
+}
+
+/// Type of the outermost layer of a dissected frame. The link type of a raw IP capture names
+/// the outermost layer even when the IP header was cut by the snapshot length and the frame was
+/// kept raw: `DLT_IPV4` and `DLT_IPV6` carry a single IP version, and `DLT_RAW` tells them apart
+/// by the version nibble, which is the first captured byte.
+Tins::PDU::PDUType outerLayerType(int dlt, const uint8_t * data, UInt32 caplen, const Tins::PDU & root)
+{
+    if (root.pdu_type() != Tins::PDU::RAW || caplen == 0)
+        return root.pdu_type();
+
+    const int version = data[0] >> 4;
+    if ((dlt == DLT_RAW || dlt == DLT_IPV4) && version == 4)
+        return Tins::PDU::IP;
+    if ((dlt == DLT_RAW || dlt == DLT_IPV6) && version == 6)
+        return Tins::PDU::IPv6;
+    return root.pdu_type();
+}
+
+/// The protocol named by the type field of an Ethernet II header, an 802.1Q tag or a `SNAP`
+/// header, or `UNKNOWN` for other layers and for type values that `libtins` does not know.
+Tins::PDU::PDUType carriedProtocol(const Tins::PDU & layer)
+{
+    UInt16 type = 0;
+    if (const auto * eth = dynamic_cast<const Tins::EthernetII *>(&layer))
+        type = eth->payload_type();
+    else if (const auto * tag = dynamic_cast<const Tins::Dot1Q *>(&layer))
+        type = tag->payload_type();
+    else if (const auto * snap = dynamic_cast<const Tins::SNAP *>(&layer))
+        type = snap->eth_type();
+    else
+        return Tins::PDU::UNKNOWN;
+    return Tins::Internals::ether_type_to_pdu_flag(static_cast<Tins::Constants::Ethernet::e>(type));
 }
 
 /// Byte offset of `target` inside the frame that starts with `root`: the sum of the header
@@ -629,7 +708,7 @@ Chunk PCAPBlockInputFormat::read()
         if (need[COL_LINK_TYPE])
         {
             /// The outermost PDU type is the link layer.
-            String name = Tins::Utils::to_string(pdu->pdu_type());
+            String name = Tins::Utils::to_string(outerLayerType(dlt, data, caplen, *pdu));
             col_link_type->insertData(name.data(), name.size());
         }
 
@@ -695,13 +774,36 @@ Chunk PCAPBlockInputFormat::read()
             String name;
             if (eth || dot3)
             {
+                /// The header whose type field names `inner`.
+                const Tins::PDU * carrier = pdu;
                 const Tins::PDU * inner = pdu->inner_pdu();
                 while (inner != nullptr && inner->pdu_type() == Tins::PDU::DOT1Q)
+                {
+                    carrier = inner;
                     inner = inner->inner_pdu();
+                }
                 if (inner != nullptr && inner->pdu_type() == Tins::PDU::SNAP && inner->inner_pdu() != nullptr)
+                {
+                    carrier = inner;
                     inner = inner->inner_pdu();
+                }
+
+                std::optional<Tins::PDU::PDUType> type;
                 if (inner != nullptr)
-                    name = Tins::Utils::to_string(inner->pdu_type());
+                    type = inner->pdu_type();
+
+                /// When the snapshot length cut the header of the carried protocol, or left none of
+                /// it, the type field of the carrier still names it. A cut 802.1Q tag is not named:
+                /// the protocol encapsulated by it is not known.
+                if (!type || *type == Tins::PDU::RAW)
+                {
+                    const auto carried = carriedProtocol(*carrier);
+                    if (carried != Tins::PDU::UNKNOWN && carried != Tins::PDU::DOT1Q && carried != Tins::PDU::DOT1AD)
+                        type = carried;
+                }
+
+                if (type)
+                    name = Tins::Utils::to_string(*type);
             }
             col_eth_type->insertData(name.data(), name.size());
         }
@@ -990,11 +1092,11 @@ The `PCAP` format produces the following columns:
 | `timestamp` | `DateTime64(9)` | Capture time of the packet. The column type has nanosecond scale, but capture files are read with microsecond precision, so the value is currently truncated to microseconds even for nanosecond captures |
 | `capture_length` | `UInt32` | Number of bytes saved in the file for this packet; equals `length(raw)` |
 | `original_length` | `UInt32` | Size of the packet on the wire; `>= capture_length` |
-| `link_type` | `LowCardinality(String)` | Type of the outermost layer, for example `ETHERNET_II`, `IEEE802_3`, or `IP` / `IPv6` for raw IP captures |
+| `link_type` | `LowCardinality(String)` | Type of the outermost layer, for example `ETHERNET_II`, `IEEE802_3`, or `IP` / `IPv6` for raw IP captures, also when the IP header was cut by the snapshot length |
 | `protocols` | `Array(LowCardinality(String))` | Ordered list of the protocol headers dissected from the captured bytes, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']`. IPv6 extension headers are listed right after `IPv6` by their IANA keywords: `HOPOPT`, `IPv6-Route`, `IPv6-Frag`, `AH`, `IPv6-Opts`, `Mobility Header`, `HIP` and `Shim6`. The list stops at the last header that could be decoded: when the transport header was cut off by the snapshot length, even partially, or is not decodable, it ends with `IP` / `IPv6` (or `RAW`) even though `ip_protocol` names the transport. Use `ip_protocol` rather than `has(protocols, 'TCP')` to select packets by transport protocol |
 | `eth_src` | `Nullable(String)` | Source MAC address of the outermost Ethernet header, or `NULL` when the link layer is not Ethernet |
 | `eth_dst` | `Nullable(String)` | Destination MAC address of the outermost Ethernet header |
-| `eth_type` | `LowCardinality(String)` | Protocol carried by the outermost Ethernet frame, for example `IP`; empty when the link layer is not Ethernet. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id`. For an IEEE 802.3 frame it is `LLC`, or the protocol named in the `SNAP` header |
+| `eth_type` | `LowCardinality(String)` | Protocol carried by the outermost Ethernet frame, for example `IP`; empty when the link layer is not Ethernet. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id`. For an IEEE 802.3 frame it is `LLC`, or the protocol named in the `SNAP` header. When the snapshot length cuts the header of that protocol, or leaves none of it, it is still named from the type field, for example `IP`, while `protocols` ends with `RAW` or with the last complete header |
 | `vlan_id` | `Nullable(UInt16)` | 802.1Q VLAN identifier of the tag right after the outermost Ethernet header, if present |
 | `ip_version` | `Nullable(UInt8)` | Version of the outermost IP header, `4` or `6`, or `NULL` for non-IP packets |
 | `src_addr` | `Nullable(IPv6)` | Source address of the outermost IP header; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
