@@ -156,6 +156,8 @@ private:
     bool supports_parallel_non_joined_blocks_processing{false};
 
     std::atomic<State> state{State::COLLECTING};
+    /// The build of a set operation is abandoned when its left side turns out empty, see `JoiningTransform::prepare`.
+    std::atomic<bool> build_finished{false};
 
     /// HashJoin that stores right-side blocks during COLLECTING phase (single-thread mode).
     std::shared_ptr<HashJoin> hash_join;

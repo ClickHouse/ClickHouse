@@ -313,6 +313,8 @@ void SpillingHashJoin::onBuildPhaseFinish()
         else
             hash_join->dropRightBlocksKeptForAnotherAlgorithm();
     }
+
+    build_finished.store(true, std::memory_order_release);
 }
 
 size_t SpillingHashJoin::getSpillableBytes() const
@@ -490,8 +492,8 @@ IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
 
 IBlocksStreamPtr SpillingHashJoin::getDelayedBlocks()
 {
-    /// The build of a set operation is abandoned when its left side turns out empty, see `JoiningTransform::prepare`.
-    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    /// An abandoned build may still be adding blocks, or spilling them to buckets.
+    if (!build_finished.load(std::memory_order_acquire))
         return nullptr;
     chassert(chosen_join);
     return chosen_join->getDelayedBlocks();
