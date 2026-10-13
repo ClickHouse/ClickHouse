@@ -6584,7 +6584,8 @@ class ClickHouseInstance:
             self.wait_start(time_left)
 
         if enable_ci_logs_export:
-            ci_logs_export.setup_for_instance(self.cluster, self)
+            # The log tables still hold the rows of the old release
+            ci_logs_export.setup_for_instance(self.cluster, self, only_since_start=True)
         elif self.ci_logs_export_enabled:
             # The binary under test may have log tables of another structure
             ci_logs_export.refresh_after_start(self.cluster, self)

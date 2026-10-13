@@ -588,11 +588,17 @@ def _test_name(cluster):
     return f"{suite}/{module}"
 
 
-def setup_for_instance(cluster, instance):
+def setup_for_instance(cluster, instance, only_since_start=False):
     """Create the sender tables and the watcher materialized views on a started
-    instance. Best effort: never raises."""
+    instance. Best effort: never raises.
+
+    `only_since_start` limits the rows sent for what the log tables already
+    hold to those written since the server started. It is for the first enable
+    in `restart_with_latest_version`: the tables also hold the rows of the old
+    release that ran before the swap, which must stay out of the export, see
+    `supports_export`."""
     try:
-        _setup_for_instance(cluster, instance)
+        _setup_for_instance(cluster, instance, only_since_start)
     except Exception:
         logging.warning(
             "CI logs export: failed to set up the export for instance %s",
@@ -601,7 +607,7 @@ def setup_for_instance(cluster, instance):
         )
 
 
-def _setup_for_instance(cluster, instance):
+def _setup_for_instance(cluster, instance, only_since_start):
     reason = _disabled_reason(_cache_dir())
     if reason is not None:
         logging.info("CI logs export: disabled earlier in this job: %s", reason)
@@ -622,7 +628,15 @@ def _setup_for_instance(cluster, instance):
     if not exportable:
         return
 
-    active = _create_senders_and_watchers(instance, tables, exportable, expression)
+    backfill_filters = None
+    if only_since_start:
+        backfill_filters = _backfill_filters_since_start(
+            instance, [table for table, _, _ in tables if table in exportable]
+        )
+
+    active = _create_senders_and_watchers(
+        instance, tables, exportable, expression, backfill_filters
+    )
 
     instance.ci_logs_export_tables = active
     instance.ci_logs_export_hashes = {
@@ -772,12 +786,48 @@ def _active_tables_query(tables):
     return f"SELECT name FROM system.tables WHERE database = 'system' AND name IN ({names})"
 
 
-def _create_senders_and_watchers(instance, tables, exportable, expression):
+def _backfill_filters_since_start(instance, tables):
+    """The conditions that keep, of the rows a log table already holds, only
+    those written since the server started: `{table: condition}` for the tables
+    with an `event_time` column. A table without it is left out, and its rows
+    from before the `_watcher` existed are not sent at all, since nothing tells
+    the rows of the server apart from those of the binary that ran before it."""
+    if not tables:
+        return {}
+    names = ", ".join(f"'{_escape_sql_string(table)}'" for table in tables)
+    output = instance.query(
+        "SELECT table, toUnixTimestamp(now()) - uptime() FROM system.columns "
+        f"WHERE database = 'system' AND name = 'event_time' AND table IN ({names})",
+        timeout=60,
+    )
+    filters = {}
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        table, start_time = line.split("\t")
+        filters[table] = f"event_time >= toDateTime({int(start_time)})"
+    return filters
+
+
+def _create_senders_and_watchers(instance, tables, exportable, expression, backfill_filters=None):
+    """`backfill_filters` restricts the rows already in the log tables that are
+    sent: `None` sends all of them, otherwise only the rows matching the
+    condition of the table, and nothing for a table without one, see
+    `_backfill_filters_since_start`."""
     cluster_name = _cluster_name()
     statements = []
     for table, hash_value, _ in tables:
         if table not in exportable:
             continue
+        if backfill_filters is None:
+            backfill = f"INSERT INTO system.{table}_sender SELECT {expression}, * FROM system.{table};"
+        elif table in backfill_filters:
+            backfill = (
+                f"INSERT INTO system.{table}_sender SELECT {expression}, * FROM system.{table} "
+                f"WHERE {backfill_filters[table]};"
+            )
+        else:
+            backfill = ""
         # The callers pass only the tables without export state, so whatever
         # exists for them is left over from an earlier attempt that failed
         # (e.g. a `_sender` whose cleanup below failed too). Dropping it in the
@@ -803,7 +853,7 @@ def _create_senders_and_watchers(instance, tables, exportable, expression):
             SETTINGS flush_on_detach = 0
             EMPTY AS SELECT {expression}, * FROM system.{table};
 
-            INSERT INTO system.{table}_sender SELECT {expression}, * FROM system.{table};
+            {backfill}
 
             CREATE MATERIALIZED VIEW IF NOT EXISTS system.{table}_watcher
             TO system.{table}_sender

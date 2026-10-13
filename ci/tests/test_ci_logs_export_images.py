@@ -753,6 +753,42 @@ def test_a_sender_whose_drop_failed_is_not_reused():
     assert batch.index("DROP VIEW IF EXISTS system.text_log_watcher SYNC;") < drop
 
 
+def test_the_first_enable_after_an_upgrade_skips_the_old_release_rows():
+    """On the first `restart_with_latest_version` of a `with_installed_binary`
+    instance the log tables still hold the rows of the old release. The rows
+    sent before the `_watcher` exists must be only those written since the
+    binary under test started, and none for a table that cannot tell them apart."""
+
+    class Instance:
+        name = "node"
+        queries = []
+
+        def query(self, sql, timeout=None):
+            self.queries.append(sql)
+            if sql.startswith("SELECT table, toUnixTimestamp(now()) - uptime()"):
+                return "query_log\t1700000000\n"
+            return "query_log_watcher\nquery_log_sender\ntext_log_watcher\ntext_log_sender\n"
+
+    instance = Instance()
+    tables = [("query_log", "h1", ""), ("text_log", "h2", "")]
+    filters = HELPER._backfill_filters_since_start(instance, ["query_log", "text_log"])
+    assert filters == {"query_log": "event_time >= toDateTime(1700000000)"}
+    active = HELPER._create_senders_and_watchers(
+        instance, tables, {"query_log", "text_log"}, "1 AS c", filters
+    )
+    assert active == ["query_log", "text_log"]
+    batch = instance.queries[-1]
+    assert (
+        "INSERT INTO system.query_log_sender SELECT 1 AS c, * FROM system.query_log "
+        "WHERE event_time >= toDateTime(1700000000);"
+    ) in batch
+    assert "INSERT INTO system.text_log_sender" not in batch
+    assert "CREATE MATERIALIZED VIEW IF NOT EXISTS system.text_log_watcher" in batch
+
+    source = CLUSTER_HELPER.read_text()
+    assert "setup_for_instance(self.cluster, self, only_since_start=True)" in source
+
+
 def test_test_name_of_a_single_file_suite_is_the_suite(tmp_path):
     """A suite with a single test module is labelled with the suite name
     whatever the module is called, a multi-file suite with the module too."""
