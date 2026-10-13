@@ -16,12 +16,16 @@ SET allow_simdjson = 0;
 SELECT CAST(concat(repeat('{"x":', 300000), '0', repeat('}', 300000)) AS JSON) FORMAT Null SETTINGS input_format_json_max_depth = 100000000; -- { serverError TOO_DEEP_RECURSION }
 SELECT CAST(concat('{"a":', repeat('[', 300000), repeat(']', 300000), '}') AS JSON) FORMAT Null SETTINGS input_format_json_max_depth = 100000000; -- { serverError TOO_DEEP_RECURSION }
 
--- Rendering a document back as raw text is not bounded by the limit, only by the backstop.
-SELECT JSONExtractRaw(concat(repeat('[', 300000), repeat(']', 300000))) FORMAT Null; -- { serverError TOO_DEEP_RECURSION }
-
--- Extracting it as a String is bounded by the limit, and a value that exceeds it is a failure to
--- extract, which yields the default like any other.
+-- Extraction is bounded by the limit, and a value that exceeds it is a failure to extract, which
+-- yields the default like any other. All the extractors of a value as text agree on that.
 SELECT length(JSONExtract(concat(repeat('[', 300000), repeat(']', 300000)), 'String'));
+SELECT length(JSONExtractRaw(concat(repeat('[', 300000), repeat(']', 300000))));
+SELECT length(JSONExtractString(concat(repeat('[', 300000), repeat(']', 300000))));
+SELECT JSONExtractArrayRaw(concat('[1,', repeat('[', 300000), repeat(']', 300000), ',2]'));
+SELECT JSONExtractKeysAndValuesRaw(concat('{"a":1,"b":', repeat('[', 300000), repeat(']', 300000), '}'));
+
+-- Raising the limit above any reachable depth leaves the backstop as the only rejector here too.
+SELECT JSONExtractRaw(concat(repeat('[', 300000), repeat(']', 300000))) FORMAT Null SETTINGS input_format_json_max_depth = 100000000; -- { serverError TOO_DEEP_RECURSION }
 
 -- The limit governs in both directions. These depths stay shallow: a document that survives parsing
 -- is walked again by consumers whose recursion this setting does not bound.
