@@ -33,6 +33,9 @@ ALTER TABLE tab DETACH PART '$(part_name 1)';
 
 detached=$(find "${workdir}/store" -type d -name detached | head -1)
 for n in 2 3 4; do cp -r "${detached:?}/$(part_name 1)" "${detached}/$(part_name "${n}")"; done
+# The files of a data part are created read-only, and `cp` copies those permission bits, so the
+# detached parts have to be made writable before their TTL file can be rewritten.
+chmod -R u+w "${detached:?}"
 
 header='ttl format version: 1'
 ttl_size=$(wc -c < "${detached}/$(part_name 1)/ttl.txt")
