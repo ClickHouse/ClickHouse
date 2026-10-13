@@ -116,6 +116,7 @@ SELECT * FROM url_engine_table
 ## Details of Implementation {#details-of-implementation}
 
 - Reads and writes can be parallel
+- Patterns in `{ }` in the URL generate a set of addresses, as described for the [url](/reference/functions/table-functions/url#globs-in-url) table function. The addresses are generated one by one as the query reads them, so [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) limits how many of them a single query may read rather than how large the pattern is.
 - Not supported:
   - `ALTER` and `SELECT...SAMPLE` operations.
   - Indexes.

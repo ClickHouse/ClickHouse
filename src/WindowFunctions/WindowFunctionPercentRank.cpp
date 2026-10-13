@@ -56,7 +56,7 @@ struct WindowFunctionPercentRank final : public StatefulWindowFunction<PercentRa
         if (WindowRowAccess::isPartitionFirstRow(transform))
         {
             state.current_partition_rows = 0;
-            state.start_row = transform->current_row;
+            state.start_row = transform->current.location;
         }
 
         insertRankIntoColumn(transform, function_index);
@@ -111,8 +111,8 @@ struct WindowFunctionPercentRank final : public StatefulWindowFunction<PercentRa
 
     inline void insertRankIntoColumn(const WindowTransform * transform, size_t function_index) const
     {
-        auto & to_column = *transform->blocks.blockAt(transform->current_row.block).result_columns[function_index];
-        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(transform->peer_group_start_row_number));
+        auto & to_column = *transform->blocks.blockAt(transform->current.location.block).result_columns[function_index];
+        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(transform->peer_group_start.row_index_in_partition + 1));
     }
 };
 

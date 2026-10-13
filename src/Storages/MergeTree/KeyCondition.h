@@ -215,6 +215,13 @@ public:
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
+    /// Checks if the condition has unknown atoms.
+    bool hasUnknownAtoms() const;
+
+    /// A copy where every atom that cannot be evaluated is replaced with the constant that maximizes the condition.
+    /// It has the same `can_be_true` on every range, but `can_be_false` is not exact, so it must not be used for exact ranges.
+    KeyCondition createWithUnknownAtomsAssumedTrue() const;
+
     String toString() const;
 
     size_t getNumKeyColumns() const { return num_key_columns; }
@@ -260,12 +267,15 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
-    bool matchesExactContinuousRange() const;
+    /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
+    /// could not be evaluated on a range (rather than because it is not monotonic there). Such an answer is an
+    /// over-approximation, so it supports no exactness claim derived from `matchesExactContinuousRange`, and it
+    /// contradicts none either. The caller takes a snapshot before a check and compares after it: the analysis of a
+    /// part runs on one thread, and the counter is the only channel that reaches through every path applying a chain,
+    /// including `MergeTreeSetIndex`.
+    static size_t getNumUnevaluableChainApplications();
 
-    /// Whether a comparison reads a `Tuple` or `Nullable(Tuple)` key column with a `Nullable` element. The
-    /// comparison is NULL for a row holding a NULL element, and the key stores such a row inside a range whose
-    /// bounds hold no NULL, so `checkInHyperrectangle` never claims that a range matches the condition wholly.
-    bool comparesTupleKeyWithNullableElement(const DataTypes & key_types) const;
+    bool matchesExactContinuousRange() const;
 
     /// Extract plain ranges of the condition.
     /// Note that only support one column key condition.
@@ -378,6 +388,10 @@ public:
         /// construction, such RPNElements get converted to FUNCTION_ARGS_IN_HYPERRECTANGLE operating
         /// on the key column directly (see findHyperrectanglesForArgumentsOfSpaceFillingCurves).
         std::optional<size_t> argument_num_of_space_filling_curve;
+
+        /// Position of this element in the RPN built from the filter. An element that
+        /// `findHyperrectanglesForArgumentsOfSpaceFillingCurves` collapses takes the position of its first atom.
+        std::optional<size_t> position_in_filter_rpn;
 
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
@@ -518,8 +532,7 @@ public:
         bool date_time_overflow_behavior_ignore_);
 
 private:
-    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value, or
-    /// compares a `Tuple` key column whose `Nullable` element may make the comparison NULL.
+    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
     /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
     /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.
     bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
@@ -602,6 +615,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
+        bool nested_null_is_ordinary_value,
         bool & out_atom_is_exact);
 
     /// Checks if node is a subexpression of any of key columns expressions,
