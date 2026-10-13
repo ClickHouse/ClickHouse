@@ -75,6 +75,8 @@ ColumnTypeSpec convertArrayTypeToPostgresColumnTypeSpec(const DataTypePtr & arra
             return {ColumnType::NUMERIC_ARRAY, -1, encodeNumericTypeModifier(getDecimalPrecision(*element), getDecimalScale(*element))};
 
         case TypeIndex::UUID:
+        /// `UUID2` elements are advertised as `uuid` as well, see the scalar mapping below.
+        case TypeIndex::UUID2:
             return {ColumnType::UUID_ARRAY, -1};
 
         /// `String`, `FixedString`, `DateTime`, `DateTime64` and everything else: `text[]`.
