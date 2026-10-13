@@ -167,6 +167,10 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
         /// Pausing alone is not enough: librdkafka purges the queue on pause, but the purge stops at the version barrier
         /// that the pause itself puts at the head of the queue.
         consumer->pause_partitions(removed_partitions);
+        /// Remember the partitions right after the pause, so that if draining throws, they are still resumed when they come back.
+        for (const auto & topic_partition : removed_partitions)
+            paused_partitions.emplace(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
+
         for (const auto & topic_partition : removed_partitions)
         {
             TopicPartition key{topic_partition.get_topic(), topic_partition.get_partition()};
@@ -183,7 +187,6 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
             for (size_t batches_left = queue.get_length() / DRAIN_REMOVED_PARTITION_BATCH_SIZE + 1; batches_left > 0; --batches_left)
                 if (queue.consume_batch(DRAIN_REMOVED_PARTITION_BATCH_SIZE, 0ms).empty())
                     break;
-            paused_partitions.emplace(std::move(key));
         }
     }
 
