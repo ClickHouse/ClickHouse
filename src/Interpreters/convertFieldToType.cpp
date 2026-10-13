@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -338,7 +339,7 @@ IntegerLiteralRange classifyAgainstIntegerType(bool negative, const UInt256 & ma
     if (negative)
     {
         if constexpr (is_unsigned_v<T>)
-            return IntegerLiteralRange::NotApplicable;
+            return magnitude_overflowed || magnitude != 0 ? IntegerLiteralRange::BelowMin : IntegerLiteralRange::NotApplicable;
         else
         {
             /// The minimum of an integer type fits no unsigned type, but its magnitude `max + 1` fits `UInt256`.
@@ -352,6 +353,69 @@ IntegerLiteralRange classifyAgainstIntegerType(bool negative, const UInt256 & ma
     if (magnitude_overflowed || accurate::greaterOp(magnitude, std::numeric_limits<T>::max()))
         return IntegerLiteralRange::AboveMax;
     return IntegerLiteralRange::InRange;
+}
+
+/// The 256-bit integer an integer element is read as: the one of its own signedness, or always the signed or the unsigned one.
+enum class WideIntegerCarrier : uint8_t
+{
+    SameSignedness,
+    Signed,
+    Unsigned,
+};
+
+/// `nullptr` when no integer element of `type` changes.
+DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier carrier)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested = widenIntegerElements(nullable->getNestedType(), carrier);
+        return nested ? makeNullable(nested) : nullptr;
+    }
+
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return widenIntegerElements(low_cardinality->getDictionaryType(), carrier);
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto nested = widenIntegerElements(array->getNestedType(), carrier);
+        return nested ? std::make_shared<DataTypeArray>(nested) : nullptr;
+    }
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements = tuple->getElements();
+        bool widened = false;
+        for (auto & element : elements)
+        {
+            if (auto wider = widenIntegerElements(element, carrier))
+            {
+                element = wider;
+                widened = true;
+            }
+        }
+        if (!widened)
+            return nullptr;
+        return tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, tuple->getElementNames())
+                                         : std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto key = widenIntegerElements(map->getKeyType(), carrier);
+        auto value = widenIntegerElements(map->getValueType(), carrier);
+        if (!key && !value)
+            return nullptr;
+        return std::make_shared<DataTypeMap>(key ? key : map->getKeyType(), value ? value : map->getValueType());
+    }
+
+    const WhichDataType which(type);
+    if (type->getCustomSerialization() || (!which.isInt() && !which.isUInt()))
+        return nullptr;
+
+    const bool to_signed = carrier == WideIntegerCarrier::Signed || (carrier == WideIntegerCarrier::SameSignedness && which.isInt());
+    if (to_signed)
+        return which.isInt256() ? nullptr : std::make_shared<DataTypeInt256>();
+    return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
@@ -1183,29 +1247,44 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
         const FormatSettings & parse_settings = composite_settings ? *composite_settings : format_settings;
 
-        const auto col = type_to_parse->createColumn();
-        ReadBufferFromString in_buffer(src.safeGet<String>());
-        try
+        /// Returns false when an integer does not fit a composite type.
+        Field parsed;
+        auto parse = [&](const IDataType & parse_type, const FormatSettings & settings)
         {
-            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, parse_settings);
-        }
-        catch (Exception & e)
+            const auto column = parse_type.createColumn();
+            ReadBufferFromString in_buffer(src.safeGet<String>());
+            try
+            {
+                parse_type.getDefaultSerialization()->deserializeWholeText(*column, in_buffer, settings);
+            }
+            catch (Exception & e)
+            {
+                if (parse_composite && e.code() == ErrorCodes::INTEGER_TEXT_OVERFLOW)
+                    return false;
+
+                /// A value that ends before the deserializer expected is reported as an attempt to read after eof,
+                /// which says nothing about the query - it reads like a problem with the data. Comparing a numeric
+                /// column with an empty string, `WHERE n <> ''`, is a common mistake and deserves the same message
+                /// as `WHERE n <> 'abc'` already gets.
+                if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.safeGet<String>(), type.getName());
+
+                e.addMessage(fmt::format("while converting '{}' to {}", src.safeGet<String>(), type.getName()));
+                throw;
+            }
+            parsed = (*column)[0];
+            return true;
+        };
+
+        if (!parse(*type_to_parse, parse_settings))
         {
-            if (parse_composite && e.code() == ErrorCodes::INTEGER_TEXT_OVERFLOW)
-                return {};
-
-            /// A value that ends before the deserializer expected is reported as an attempt to read after eof,
-            /// which says nothing about the query - it reads like a problem with the data. Comparing a numeric
-            /// column with an empty string, `WHERE n <> ''`, is a common mistake and deserves the same message
-            /// as `WHERE n <> 'abc'` already gets.
-            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.safeGet<String>(), type.getName());
-
-            e.addMessage(fmt::format("while converting '{}' to {}", src.safeGet<String>(), type.getName()));
-            throw;
+            /// The checked read stops at the integer that does not fit, so the rest of the literal is validated by an
+            /// unchecked read with signed 256-bit integers, which accepts any sign and any number of digits.
+            const auto signed_type = widenIntegerElements(type.getPtr(), WideIntegerCarrier::Signed);
+            parse(signed_type ? *signed_type : type, format_settings);
+            return {};
         }
 
-        Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint, format_settings);
     }
 
@@ -1247,6 +1326,32 @@ IntegerLiteralRange classifyIntegerLiteralRange(std::string_view literal, const 
         case TypeIndex::Int256:  return classifyAgainstIntegerType<Int256>(negative, magnitude, magnitude_overflowed);
         default:                 return IntegerLiteralRange::NotApplicable;
     }
+}
+
+Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type, const IDataType * from_type_hint, const FormatSettings & format_settings)
+{
+    if (src.getType() != Field::Types::String)
+        return {};
+
+    const WhichDataType which(removeNullable(type));
+    if (!which.isArray() && !which.isTuple() && !which.isMap())
+        return {};
+
+    for (auto carrier : {WideIntegerCarrier::SameSignedness, WideIntegerCarrier::Signed, WideIntegerCarrier::Unsigned})
+    {
+        auto wider = widenIntegerElements(type, carrier);
+        if (!wider)
+            continue;
+
+        Field converted = convertFieldToType(src, *wider, from_type_hint, format_settings);
+        if (!converted.isNull())
+        {
+            type = wider;
+            return converted;
+        }
+    }
+
+    return {};
 }
 
 Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)

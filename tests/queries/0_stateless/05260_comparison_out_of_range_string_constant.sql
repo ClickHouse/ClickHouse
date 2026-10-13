@@ -41,12 +41,11 @@ SELECT 'wrappers', toNullable(toInt32(0)) < '2147483648', toLowCardinality(toInt
 -- constant takes a common supertype instead of being narrowed.
 SELECT 'other target families', toFloat32(1) < '1e300', toDate('2020-01-01') < '2400-01-01', toInt32(0) <= 1908606676453317954;
 
--- A negative constant against an unsigned type is mathematically below the minimum, but it is rejected and
--- must stay rejected. So must an unparseable constant, a decimal overflow, and `Bool`, which reads its own
--- text syntax rather than digits.
-SELECT toUInt8(1) > '-1'; -- { serverError TYPE_MISMATCH }
-SELECT toUInt64(1) < '-1'; -- { serverError TYPE_MISMATCH }
-SELECT toUInt8(0) IN ('-1'); -- { serverError TYPE_MISMATCH }
+-- A negative constant against an unsigned type is below the minimum like any other out-of-range constant.
+SELECT 'negative against unsigned', toUInt8(1) > '-1', toUInt64(1) < '-1', toUInt8(0) = '-1', toUInt8(0) IN ('-1');
+
+-- An unparseable constant, a decimal overflow, and `Bool`, which reads its own text syntax rather than digits,
+-- are rejected.
 SELECT toInt32(0) < 'abc'; -- { serverError TYPE_MISMATCH }
 SELECT toDecimal32(1, 2) < '1e30'; -- { serverError DECIMAL_OVERFLOW }
 SELECT true < '256'; -- { serverError CANNOT_PARSE_BOOL }

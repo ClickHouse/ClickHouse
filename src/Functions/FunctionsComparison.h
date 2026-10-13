@@ -1215,8 +1215,11 @@ private:
 
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
-        /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range,
-        /// or throws for an Array, Tuple or Map.
+        DataTypePtr type_of_converted = type_to_compare;
+        if (converted.isNull())
+            converted = convertFieldToTypeWithWiderIntegers(string_value, type_of_converted, type_string, params.format_settings);
+
+        /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range.
         if (converted.isNull())
         {
             if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
@@ -1235,24 +1238,25 @@ private:
                     const bool result = left_is_less
                         ? IsOperation<Op>::less || IsOperation<Op>::less_or_equals
                         : IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals;
-                    return DataTypeUInt8().createColumnConst(input_rows_count, static_cast<UInt8>(result));
+                    return result_type->createColumnConst(input_rows_count, static_cast<UInt8>(result));
                 }
 
-                /// A composite constant is rejected as a whole, so the side of it every value lies on is unknown.
-                const WhichDataType which_to_compare(type_to_compare);
+                /// A composite constant that could not be read with wider integer elements has no single side to answer for.
+                const WhichDataType which_to_compare(removeNullable(type_to_compare));
                 if (which_to_compare.isArray() || which_to_compare.isTuple() || which_to_compare.isMap())
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot compare with '{}': it cannot be represented as {}",
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Cannot compare with '{}': an integer in it does not fit {}, and the constant cannot be compared by value",
                         string_value.safeGet<String>(), type_to_compare->getName());
             }
 
             return result_type->createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        ColumnPtr column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
+        ColumnPtr column_converted = type_of_converted->createColumnConst(input_rows_count, converted);
 
         ColumnsWithTypeAndName tmp_columns{
-            {left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, ""},
-            {!left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, ""},
+            {left_const ? column_converted : col_left_untyped->getPtr(), left_const ? type_of_converted : type_to_compare, ""},
+            {!left_const ? column_converted : col_right_untyped->getPtr(), !left_const ? type_of_converted : type_to_compare, ""},
         };
 
         return executeImpl(tmp_columns, result_type, input_rows_count);

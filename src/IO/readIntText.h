@@ -378,7 +378,8 @@ bool tryParseInt(T & x, std::string_view str)
 
 /** More efficient variant (about 1.5 times on real dataset). Differs from `readIntText` in following:
   * - overflow is not checked by default; unlike `readIntText`, the check holds at every width when asked for;
-  * - a '-' on an unsigned type is not a sign: it is left in the buffer for the caller to reject;
+  * - a '-' on an unsigned type is not a sign: it is left in the buffer for the caller to reject,
+  *   unless overflow is checked, which reports a negative value as an overflow;
   * - a repeated sign is not diagnosed: '+-' reports a field without digits, '-+' stops at the second one.
   */
 template <typename T, typename ReturnType = void,
@@ -402,7 +403,7 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
         return on_error();
 
     bool has_plus = false;
-    if (is_signed_v<T> && *buf.position() == '-')
+    if ((is_signed_v<T> || check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW) && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
@@ -416,7 +417,7 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// Without this a lone '+' would fall through to the digit loop, which reads nothing and returns zero.
-    if (has_plus && !is_digit()) [[unlikely]]
+    if ((has_plus || (!is_signed_v<T> && negative)) && !is_digit()) [[unlikely]]
     {
         if constexpr (throw_exception)
             throwNumberWithoutDigits();
@@ -429,6 +430,8 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
     [[maybe_unused]] make_unsigned_t<T> bound_mod_10 = 0;
     if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
     {
+        /// A negative value does not fit an unsigned type, `-0` included.
+        overflow = !is_signed_v<T> && negative;
         const make_unsigned_t<T> bound = static_cast<make_unsigned_t<T>>(std::numeric_limits<T>::max())
             + static_cast<make_unsigned_t<T>>(is_signed_v<T> && negative ? 1 : 0);
         bound_div_10 = bound / 10;

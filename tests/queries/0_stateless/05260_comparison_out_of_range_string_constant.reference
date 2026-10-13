@@ -20,6 +20,7 @@ beyond every width	1	1
 in range at the boundary	1	1	1	1	1
 wrappers	1	1	1	1	1
 other target families	1	1	1
+negative against unsigned	1	0	0	0
 in sets	0	0	0	0	0	1
 every row is below the constant	5
 and none is above it	0
