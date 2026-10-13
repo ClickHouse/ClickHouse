@@ -490,6 +490,9 @@ IBlocksStreamPtr SpillingHashJoin::getNonJoinedBlocks(
 
 IBlocksStreamPtr SpillingHashJoin::getDelayedBlocks()
 {
+    /// The build of a set operation is abandoned when its left side turns out empty, see `JoiningTransform::prepare`.
+    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+        return nullptr;
     chassert(chosen_join);
     return chosen_join->getDelayedBlocks();
 }

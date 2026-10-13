@@ -1146,6 +1146,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 && !skip_flip_any_join;
             if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join)
                 flip_join = false;
+            /// A set operation stops reading its right side once the left one turns out empty, which only a left join
+            /// can do, since a swapped one returns rows of its right side.
+            if (is_set_operation && graph_is_single_join)
+                flip_join = false;
 
             if (flip_join)
             {

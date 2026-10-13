@@ -53,7 +53,7 @@ SELECT * FROM (SELECT number AS x FROM numbers(3) INTERSECT DISTINCT SELECT 1 IN
 SELECT * FROM ((SELECT 1 AS x INTERSECT DISTINCT SELECT 1.0) INTERSECT DISTINCT (SELECT 1 AS x INTERSECT DISTINCT SELECT 1.0));
 SELECT * FROM (SELECT * FROM (SELECT 1 AS x INTERSECT DISTINCT SELECT 1.0) UNION ALL SELECT * FROM (SELECT 1 AS x INTERSECT DISTINCT SELECT 1.0));
 
-SELECT 'join algorithms without semi joins keep the set-operation step';
+SELECT 'join algorithms other than the hash ones keep the set-operation step';
 SELECT * FROM (SELECT number AS x FROM numbers(5) INTERSECT DISTINCT SELECT number FROM numbers(3)) ORDER BY x SETTINGS join_algorithm = 'full_sorting_merge';
 SELECT * FROM (SELECT number AS x FROM numbers(5) EXCEPT DISTINCT SELECT number FROM numbers(3)) ORDER BY x SETTINGS join_algorithm = 'partial_merge';
 

@@ -29,7 +29,7 @@ a
 1
 1
 1
-join algorithms without semi joins keep the set-operation step
+join algorithms other than the hash ones keep the set-operation step
 0
 1
 2

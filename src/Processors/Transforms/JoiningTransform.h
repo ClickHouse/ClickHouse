@@ -25,7 +25,6 @@ public:
     explicit FinishCounter(size_t total_) : total(total_) { }
 
     bool isLast() { return finished.fetch_add(1) + 1 >= total; }
-    bool isFinished() const { return finished.load() >= total; }
 
 private:
     const size_t total;
@@ -93,9 +92,6 @@ public:
     Status prepare() override;
     void work() override;
 
-    /// Shared with the transforms filling the right side of a set operation, see `FillingRightJoinSideTransform`.
-    void setEmptyLeftStreams(FinishCounterPtr empty_left_streams_) { empty_left_streams = std::move(empty_left_streams_); }
-
 protected:
     void transform(Chunk & chunk);
 
@@ -106,6 +102,8 @@ private:
     bool has_virtual_row = false;
     bool stop_reading = false;
     bool process_non_joined = true;
+    /// The port to the right side was closed before the right side was filled, see `prepare`.
+    bool right_abandoned = false;
     bool is_drained = false;
     bool is_last_drained = false;
 
@@ -128,9 +126,6 @@ private:
 
     RightRowsMatchCounterPtr match_counter;
     std::optional<size_t> matched_right_rows = 0;
-
-    FinishCounterPtr empty_left_streams;
-    bool counted_as_empty_left_stream = false;
 
     Block readExecute(Chunk & chunk);
 };
@@ -174,9 +169,6 @@ public:
     Status prepare() override;
     void work() override;
 
-    /// Counts the left streams of a set operation that are exhausted before the right side is filled.
-    void setEmptyLeftStreams(FinishCounterPtr empty_left_streams_) { empty_left_streams = std::move(empty_left_streams_); }
-
     ProcessorMemoryStats getMemoryStats() override;
     bool spillOnSize(size_t bytes) override;
 
@@ -187,7 +179,6 @@ private:
 
     JoinPtr join;
     FinishCounterPtr finish_counter;
-    FinishCounterPtr empty_left_streams;
     const JoinBuildContext build_context;
     Chunk chunk;
     bool stop_reading = false;

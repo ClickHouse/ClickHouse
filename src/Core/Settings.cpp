@@ -7190,7 +7190,7 @@ Rewrite arrayExists() functions to has() when logically equivalent. For example,
 )", 0, \
         {"26.4", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."}) \
     DECLARE(Bool, optimize_rewrite_intersect_except_to_join, true, R"(
-Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a `SEMI LEFT JOIN` or `ANTI LEFT JOIN` on all columns followed by `DISTINCT`, so that they use the join algorithms and their optimizations. `NULL` values match each other like in the set operations. The `ALL` modes are not affected. The `DISTINCT` modes are not affected either when `join_algorithm` enables no algorithm that can execute the join the operation needs: a `SEMI` join for `INTERSECT DISTINCT` and an `ANTI` join for `EXCEPT DISTINCT` (`full_sorting_merge` executes neither, and `partial_merge` executes only the `SEMI` join).
+Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a `SEMI LEFT JOIN` or `ANTI LEFT JOIN` on all columns followed by `DISTINCT`, so that they use the join algorithms and their optimizations. `NULL` values match each other like in the set operations. The `ALL` modes are not affected. The `DISTINCT` modes are not affected either unless the join is a hash join that reads all of both sides: `join_algorithm` enables only `default`, `hash` and `parallel_hash` (besides `direct` and `ie_join`, which never take such a join), and neither `max_rows_in_join` nor `max_bytes_in_join` is set.
 )", 0, \
         {"26.10", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a semi or anti join on all columns followed by `DISTINCT`."}) \
     DECLARE(Bool, optimize_rewrite_array_filter_length_to_array_count, true, R"(

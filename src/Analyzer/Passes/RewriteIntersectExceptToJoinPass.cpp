@@ -196,11 +196,6 @@ bool joinExecutesSetOperation(const Settings & settings)
     return has_hash;
 }
 
-}
-
-namespace
-{
-
 /// Keyed by the replaced node, which the key itself keeps alive so that the columns of the outer queries
 /// still sourced by it can be re-pointed.
 using Replacements = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;

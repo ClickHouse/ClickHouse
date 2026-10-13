@@ -2,6 +2,9 @@ a merge join compares floats differently, so it keeps the set-operation step
 0
 0
 0
+0
+0
+0
 the join limits would cut the right side short, so they keep the set-operation step
 0
 1
@@ -15,5 +18,8 @@ the limits of DISTINCT bound the result, not the inputs of the join
 5
 executed as a join
 1
+0
+0
+an empty left side stops the right one, even when the right one produces nothing until it is read to the end
 0
 0
