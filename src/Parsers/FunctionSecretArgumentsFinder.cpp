@@ -132,6 +132,39 @@ void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argume
         it->second &= argument_is_named;
 }
 
+std::vector<size_t> FunctionSecretArgumentsFinder::classifyPositionalArguments()
+{
+    std::vector<size_t> positional;
+    bool seen_named = false;
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (equals_func && equals_func->name() == "equals" && equals_func->hasArguments()
+            && equals_func->arguments->size() == 2)
+        {
+            seen_named = true;
+            continue;
+        }
+
+        /// A positional argument after a named one has an unknowable slot: hide it.
+        if (seen_named)
+        {
+            markSecretArgument(i);
+            continue;
+        }
+
+        positional.push_back(i);
+    }
+    return positional;
+}
+
+void FunctionSecretArgumentsFinder::markPositionalSecretArgument(size_t slot)
+{
+    const auto positional = classifyPositionalArguments();
+    if (slot < positional.size())
+        markSecretArgument(positional[slot]);
+}
+
 void FunctionSecretArgumentsFinder::maskNestedSecretMaps()
 {
     for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
@@ -393,7 +426,7 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     else
     {
         /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
-        markSecretArgument(4);
+        markPositionalSecretArgument(4);
     }
 }
 
@@ -423,7 +456,7 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
     else
     {
         // MongoDB('127.0.0.1:27017', 'database', 'collection', 'user, 'password'...)
-        markSecretArgument(4, false);
+        markPositionalSecretArgument(4);
         return;
     }
 
@@ -446,7 +479,7 @@ void FunctionSecretArgumentsFinder::findRedisTableEngineSecretArguments()
     else
     {
         // Redis('host:port', 'db_index', 'password', 'pool_size')
-        markSecretArgument(2, false);
+        markPositionalSecretArgument(2);
         return;
     }
 }
@@ -461,7 +494,7 @@ void FunctionSecretArgumentsFinder::findArrowFlightSecretArguments()
     else
     {
         /// ArrowFlight('host:port', 'dataset', 'username', 'password')
-        markSecretArgument(3);
+        markPositionalSecretArgument(3);
     }
 }
 
@@ -783,6 +816,9 @@ bool FunctionSecretArgumentsFinder::tryGetStringFromArgument(const AbstractFunct
 
 void FunctionSecretArgumentsFinder::findRemoteFunctionSecretArguments()
 {
+    /// Hide the positional arguments after a named one, whose slots are unknowable.
+    classifyPositionalArguments();
+
     if (isNamedCollectionName(0))
     {
         /// remote(named_collection, ..., password = 'password', ...)
@@ -982,7 +1018,7 @@ void FunctionSecretArgumentsFinder::findExternalDistributedTableEngineSecretArgu
     else
     {
         /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
-        markSecretArgument(5);
+        markPositionalSecretArgument(5);
     }
 }
 
@@ -1061,13 +1097,13 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
 void FunctionSecretArgumentsFinder::findRedisFunctionSecretArguments()
 {
     // redis(host:port, key, structure, db_index, password, pool_size)
-    markSecretArgument(4);
+    markPositionalSecretArgument(4);
 }
 
 void FunctionSecretArgumentsFinder::findYTsaurusStorageTableEngineSecretArguments()
 {
     // YTsaurus('base_uri', 'yt_path', 'auth_token')
-    markSecretArgument(2);
+    markPositionalSecretArgument(2);
 }
 
 void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
@@ -1106,7 +1142,7 @@ void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
     else
     {
         /// MySQL('host:port', 'database', 'user', 'password')
-        markSecretArgument(3);
+        markPositionalSecretArgument(3);
     }
 }
 
