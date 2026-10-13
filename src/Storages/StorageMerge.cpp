@@ -1248,9 +1248,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             if (storage->getMaxReadStreams(current_streams, context) < current_streams)
                 modified_context->setSetting("parallelize_output_from_storages", Field(0));
 
-            bool sampling_requested = query_info.query->as<ASTSelectQuery>()->sampleSize() != nullptr;
-            if (query_info.table_expression_modifiers)
-                sampling_requested = query_info.table_expression_modifiers->hasSampleSizeRatio();
+            bool sampling_requested = query_info.getSampleSizeRatio().has_value();
 
             /// If sampling requested, then check that table supports it.
             if (sampling_requested && !storage->supportsSampling())
