@@ -152,8 +152,20 @@ public:
         return getNested()->updateLightweight(commands, context);
     }
 
+    /// Asked by `ALTER`, `DELETE`, lightweight `UPDATE` and `TRUNCATE` before they write to the table,
+    /// so loading it costs nothing. Answered by the proxy, the `IStorage` default would see no storage
+    /// policy and let a table on read-only or write-once disks through the `TABLE_IS_PERMANENTLY_READ_ONLY` check.
+    bool isStaticStorage() const override { return getNested()->isStaticStorage(); }
+
     bool storesDataOnDisk() const override { return true; }
-    StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
+
+    /// Not worth loading the table for, e.g. for `system.tables`.
+    StoragePolicyPtr getStoragePolicy() const override
+    {
+        if (auto loaded = getLoadedLazyTable())
+            return loaded->getStoragePolicy();
+        return nullptr;
+    }
     bool isView() const override { return false; }
 
     /// Startup is deferred until first access via `getNested`.
