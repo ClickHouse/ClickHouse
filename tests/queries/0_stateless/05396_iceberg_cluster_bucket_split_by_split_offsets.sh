@@ -22,7 +22,7 @@ done
 
 MANIFEST=$(find "${TABLE_PATH}metadata" -name '*.avro' ! -name 'snap-*' | head -1)
 echo "--- split_offsets in the manifest"
-${CLICKHOUSE_CLIENT} --query "SELECT length(data_file.split_offsets) FROM file('${MANIFEST}', 'Avro')"
+${CLICKHOUSE_CLIENT} --query "SELECT length(data_file.split_offsets) > 1 FROM file('${MANIFEST}', 'Avro')"
 
 echo "--- local"
 ${CLICKHOUSE_CLIENT} --query "${CHECK_QUERY} FROM ${TABLE}"
@@ -36,7 +36,7 @@ run_cluster()
     ${CLICKHOUSE_CLIENT} --query_id="${query_id}" --max_threads=4 --query "${CHECK_QUERY} FROM ${CLUSTER_FN} SETTINGS ${settings}"
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} --query "
-        SELECT sum(ProfileEvents['EngineFileLikeReadFiles'])
+        SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) > 3 AS more_tasks_than_files
         FROM system.query_log
         WHERE initial_query_id = '${query_id}' AND type = 'QueryFinish' AND is_initial_query = 0"
 }
