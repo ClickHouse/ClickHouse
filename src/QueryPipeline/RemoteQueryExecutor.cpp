@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 namespace FailPoints
@@ -418,32 +419,55 @@ static Block adaptBlockStructure(Block block, const Block & header)
     /// Columns may be moved out of `block` below, so compute the number of rows up front.
     const size_t num_rows = block.rows();
 
-    /// Several elements of `header` may have the same name and thus refer to the same column of `block`,
-    /// so a column may be moved out of `block` only on its last use.
-    UnorderedMapWithMemoryTracking<std::string_view, size_t> remaining_uses;
-    for (const auto & elem : header)
-        ++remaining_uses[elem.name];
+    /// Both `block` and `header` may contain several columns with the same name. Match the same-named elements
+    /// of `header` to the same-named columns of `block` in order, so that each of them reads its own column.
+    /// If `block` has fewer columns with this name, the remaining elements of `header` read the last of them.
+    UnorderedMapWithMemoryTracking<std::string_view, std::vector<size_t>> block_positions_by_name;
+    for (size_t i = 0; i < block.columns(); ++i)
+        block_positions_by_name[block.getByPosition(i).name].push_back(i);
+
+    std::vector<std::optional<size_t>> source_positions;
+    source_positions.reserve(header.columns());
+    /// A column may be moved out of `block` only on its last use.
+    std::vector<size_t> remaining_uses(block.columns());
+    {
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
+        for (const auto & elem : header)
+        {
+            const size_t occurrence = occurrences[elem.name]++;
+            auto it = block_positions_by_name.find(elem.name);
+            if (it == block_positions_by_name.end())
+            {
+                source_positions.emplace_back();
+                continue;
+            }
+            const size_t position = it->second[std::min(occurrence, it->second.size() - 1)];
+            source_positions.emplace_back(position);
+            ++remaining_uses[position];
+        }
+    }
 
     Block res;
     res.info = block.info;
 
-    for (const auto & elem : header)
+    for (size_t header_position = 0; header_position < header.columns(); ++header_position)
     {
+        const auto & elem = header.getByPosition(header_position);
+        const auto source_position = source_positions[header_position];
         ColumnPtr column;
-        const bool is_last_use = --remaining_uses[elem.name] == 0;
 
         if (elem.column && isColumnConst(*elem.column))
         {
             /// We expect constant column in block.
             /// If block is not empty, then get value for constant from it,
             /// because it may be different for remote server for functions like version(), uptime(), ...
-            if (num_rows > 0 && block.has(elem.name))
+            if (num_rows > 0 && source_position)
             {
                 /// Const column is passed as materialized. Get first value from it.
                 ///
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
-                auto col = block.getByName(elem.name);
+                auto col = block.getByPosition(*source_position);
                 if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
                     col.column = blob->convertFrom();
                 col.column = col.column->cut(0, 1);
@@ -461,7 +485,11 @@ static Block adaptBlockStructure(Block block, const Block & header)
         }
         else
         {
-            auto & col = block.getByName(elem.name);
+            if (!source_position)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", elem.name, block.dumpNames());
+
+            auto & col = block.getByPosition(*source_position);
+            const bool is_last_use = --remaining_uses[*source_position] == 0;
             if (typeid_cast<const ColumnBLOB *>(col.column.get()))
             {
                 /// The block is owned here, so move the column out on its last use to let `IColumn::mutate`
