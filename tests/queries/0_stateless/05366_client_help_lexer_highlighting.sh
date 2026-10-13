@@ -30,9 +30,10 @@ LEXER = {
     '\x1b[0;22;31m': 'error',                # RED
 }
 
-# Colors that only the parser-based highlighter produces: round brackets, string metacharacters and
-# substitutions.  A code block containing one of them was highlighted by the parser, not by the lexer.
-PARSER = ('\x1b[0;38;5;218m', '\x1b[0;38;5;175m', '\x1b[0;95;1m', '\x1b[0;22;35m')
+# The parser-based highlighter has no color for a comment and none for an invalid token, so a block
+# containing one of these was provably highlighted by the lexer.  The absence of the parser's own
+# colors would be no proof: a parsed block may contain none of the constructs that they mark.
+PROOF = ('\x1b[0;90m', '\x1b[0;22;31m')
 
 ESCAPE = re.compile(r'\x1b\[[0-9;]*m')
 
@@ -102,13 +103,13 @@ for syntax in code_blocks(notlike):
         for line in syntax:
             print(marked(line))
 
-# Every token class of the lexer-based highlighter, as seen in the blocks that it highlighted.
+# Every token class of the lexer-based highlighter, as seen in the blocks that it provably highlighted.
 # Asserted as presence, so that editing the documentation of these entities cannot change the result.
 seen = set()
-for text in (notlike, helped('Float64'), helped('Variant')):
+for text in (notlike, helped('ReplacingMergeTree')):
     for block in code_blocks(text):
         joined = '\n'.join(block)
-        if any(parser in joined for parser in PARSER):
+        if not any(proof in joined for proof in PROOF):
             continue
         for escape in ESCAPE.findall(joined):
             if escape in LEXER:
