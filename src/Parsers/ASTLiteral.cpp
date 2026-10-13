@@ -170,7 +170,12 @@ template<>
 String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 {
     WriteBufferFromOwnString wb;
-    writeQuotedStringPostgreSQL(x, wb);
+    /// Lossless: emits the `E'...'` form when needed, so the value survives on every
+    /// `standard_conforming_strings` setting. A plain `'...'` literal only doubles the quote and
+    /// leaves backslashes alone, which breaks out when the server has the setting off -- there a
+    /// `\` directly before the doubled quote consumes the first one and the second terminates the
+    /// literal.
+    writeQuotedStringPostgreSQLLossless(x, wb);
     return wb.str();
 }
 

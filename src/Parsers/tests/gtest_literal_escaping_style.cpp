@@ -43,12 +43,34 @@ std::string format(const Field & value, LiteralEscapingStyle style)
 
 TEST(LiteralEscapingStyle, TopLevelString)
 {
-    /// A backslash and a single quote: ClickHouse escapes both with a backslash, PostgreSQL keeps
-    /// the backslash literal and doubles the quote.
+    /// A backslash and a single quote. ClickHouse escapes both with a backslash. PostgreSQL uses the
+    /// `E'...'` form because the value contains a backslash, so the backslash is doubled and the
+    /// quote is doubled -- the result is read back identically whether or not the server has
+    /// `standard_conforming_strings` on.
     Field value = std::string("a\\b'c");
 
     EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "'a\\\\b\\'c'");
-    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "'a\\b''c'");
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "E'a\\\\b''c'");
+}
+
+TEST(LiteralEscapingStyle, BackslashDirectlyBeforeQuote)
+{
+    /// The breakout vector for a server with `standard_conforming_strings = off`: emitted as a plain
+    /// literal this is `'a\''b'`, where the backslash escapes the first of the doubled quotes and
+    /// the second one terminates the literal, leaving `b` outside it. The `E'...'` form doubles the
+    /// backslash as well, so nothing escapes the quote doubling.
+    Field value = std::string("a\\'b");
+
+    EXPECT_EQ(format(value, LiteralEscapingStyle::PostgreSQL), "E'a\\\\''b'");
+}
+
+TEST(LiteralEscapingStyle, BackslashBeforeQuoteInsideTuple)
+{
+    /// Same vector, reached through a container -- the shape of a pushed-down `IN` list.
+    Field value = Tuple{std::string("a\\'b"), std::string("y")};
+
+    const auto formatted = format(value, LiteralEscapingStyle::PostgreSQL);
+    EXPECT_EQ(formatted, "(E'a\\\\''b', 'y')");
 }
 
 TEST(LiteralEscapingStyle, StringInsideTuple)
