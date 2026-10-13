@@ -288,6 +288,11 @@ if (NOT SYMBOL_SECTIONS STREQUAL "symtab" AND NOT SYMBOL_SECTIONS STREQUAL "gnu_
 endif()
 
 if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+    # `.gnu_debugdata` is an ELF section, and `SymbolIndex` reads it only on ELF targets.
+    if (NOT (OS_LINUX OR OS_FREEBSD))
+        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata is supported only for ELF targets (Linux, FreeBSD)")
+    endif()
+
     if (NOT SPLIT_DEBUG_SYMBOLS)
         message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata requires SPLIT_DEBUG_SYMBOLS=ON")
     endif()
