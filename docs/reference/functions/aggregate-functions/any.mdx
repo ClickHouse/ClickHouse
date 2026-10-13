@@ -12,9 +12,9 @@ Introduced in: v1.1.0
 
 Selects the first encountered value of a column.
 
-:::warning
+<Warning>
 As a query can be executed in arbitrary order, the result of this function is non-deterministic. If you need an arbitrary but deterministic result, use functions min or max.
-:::
+</Warning>
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
 However, if the function is used with the `RESPECT NULLS` modifier, it returns the first value reads no matter if NULL or not.
@@ -28,11 +28,11 @@ When a `SELECT` query has the `GROUP BY` clause or at least one aggregate functi
 In other words, each column selected from the table must be used either in keys or inside aggregate functions.
 To get behavior like in MySQL, you can put the other columns in the `any` aggregate function.
 
-:::note
+<Note>
 The return type of the function is the same as the input, except for LowCardinality which is discarded.
 This means that given no rows as input it will return the default value of that type (0 for integers, or Null for a Nullable() column).
 You might use the -OrNull combinator to modify this behaviour.
-:::
+</Note>
     
 
 **Syntax**

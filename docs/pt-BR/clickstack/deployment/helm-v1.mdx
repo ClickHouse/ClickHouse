@@ -48,17 +48,13 @@ O chart oferece suporte às práticas recomendadas do Kubernetes, incluindo:
 <br />
 
 <Steps>
-  <Step>
-    ### Pré-requisitos
-
+  <Step title="Pré-requisitos" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * Cluster do Kubernetes (v1.20+ recomendado)
     * `kubectl` configurado para interagir com o cluster
   </Step>
 
-  <Step>
-    ### Adicione o repositório Helm do ClickStack
-
+  <Step title="Adicione o repositório Helm do ClickStack" id="add-the-clickstack-helm-repository">
     Adicione o repositório Helm do ClickStack:
 
     ```shell
@@ -67,9 +63,7 @@ O chart oferece suporte às práticas recomendadas do Kubernetes, incluindo:
     ```
   </Step>
 
-  <Step>
-    ### Instalando o ClickStack
-
+  <Step title="Instalando o ClickStack" id="installing-clickstack">
     Para instalar o chart do ClickStack com os valores padrão:
 
     ```shell
@@ -77,9 +71,7 @@ O chart oferece suporte às práticas recomendadas do Kubernetes, incluindo:
     ```
   </Step>
 
-  <Step>
-    ### Verifique a instalação
-
+  <Step title="Verifique a instalação" id="verify-the-installation">
     Verifique a instalação:
 
     ```shell
@@ -89,9 +81,7 @@ O chart oferece suporte às práticas recomendadas do Kubernetes, incluindo:
     Quando todos os pods estiverem prontos, prossiga.
   </Step>
 
-  <Step>
-    ### Encaminhamento de portas
-
+  <Step title="Encaminhamento de portas" id="forward-ports">
     O encaminhamento de portas permite acessar e configurar o HyperDX. Usuários que implantam em produção devem, em vez disso, expor o serviço por meio de uma Entrada ou de um balanceador de carga para garantir acesso adequado à rede, terminação TLS e escalabilidade. O encaminhamento de portas é mais indicado para desenvolvimento local ou tarefas administrativas pontuais, e não para ambientes de longo prazo ou de alta disponibilidade.
 
     ```shell
@@ -107,9 +97,7 @@ O chart oferece suporte às práticas recomendadas do Kubernetes, incluindo:
     </Tip>
   </Step>
 
-  <Step>
-    ### Acesse a UI
-
+  <Step title="Acesse a UI" id="navigate-to-the-ui">
     Acesse [http://localhost:8080](http://localhost:8080) para abrir a UI do HyperDX.
 
     Crie um usuário, informando um nome de usuário e uma senha que atendam aos requisitos.
@@ -125,9 +113,7 @@ O chart oferece suporte às práticas recomendadas do Kubernetes, incluindo:
     </Info>
   </Step>
 
-  <Step>
-    ### Personalizando valores (opcional)
-
+  <Step title="Personalizando valores (opcional)" id="customizing-values">
     Você pode personalizar as configurações usando as flags `--set`. Por exemplo:
 
     ```shell
@@ -167,9 +153,7 @@ O chart oferece suporte às práticas recomendadas do Kubernetes, incluindo:
     ```
   </Step>
 
-  <Step>
-    ### Usando secrets (opcional)
-
+  <Step title="Usando secrets (opcional)" id="using-secrets">
     Para lidar com dados sensíveis, como chaves de API ou credenciais de banco de dados, use secrets do Kubernetes. Os charts do Helm do HyperDX fornecem arquivos de secret padrão que você pode modificar e aplicar ao cluster.
 
     #### Usando secrets pré-configurados

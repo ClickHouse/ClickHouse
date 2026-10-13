@@ -24,7 +24,7 @@ WITH
         SELECT sum(cityHash64(*))
         FROM
         (
-            -- 在此处填写您的查询 1
+            -- your query 1 here
             -- SELECT ...
         )
     ) AS q1_resultset_hash,
@@ -32,14 +32,14 @@ WITH
         SELECT sum(cityHash64(*))
         FROM
         (
-            -- 在此处填写您的查询 2
+            -- your query 2 here
             -- SELECT ...
         )
     ) AS q2_resultset_hash
 SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
 ```
 
-该示例使用 [CTE](/zh/reference/statements/select/with) 计算这两个查询中每一行的 [cityHash](/zh/reference/functions/regular-functions/hash-functions#cityhash64) 值之和；如果两个结果集完全一致，则返回 `1`。
+该示例使用 [CTE](/zh/reference/statements/select/with) 计算这两个查询中每一行的 [cityHash](/zh/reference/functions/regular-functions/hash-functions#cityHash64) 值之和；如果两个结果集完全一致，则返回 `1`。
 
 使用一些整数序列数据，并采用较为美观的格式：
 

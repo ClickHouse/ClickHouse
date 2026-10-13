@@ -27,7 +27,7 @@ struct ExtractImpl
         const ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
         OptimizedRegularExpression::MatchVec matches;
         size_t prev_offset = 0;
@@ -124,7 +124,7 @@ struct ExtractImpl
             }
         }
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
 
         unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
         OptimizedRegularExpression::MatchVec matches;
@@ -187,8 +187,8 @@ If the regular expression has capturing groups (sub-patterns), the function matc
         "SELECT extract('test@clickhouse.com', '.*@(.*)$')",
         R"(
 ┌─extract('test@clickhouse.com', '.*@(.*)$')─┐
-│ clickhouse.com                            │
-└───────────────────────────────────────────┘
+│ clickhouse.com                             │
+└────────────────────────────────────────────┘
         )"
     },
     {

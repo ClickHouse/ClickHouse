@@ -7,7 +7,6 @@ SET explain_query_plan_default = 'legacy';
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 SET optimize_trivial_count_query = 1;
-SET query_plan_optimize_prewhere = 1;
 
 -- { echo }
 

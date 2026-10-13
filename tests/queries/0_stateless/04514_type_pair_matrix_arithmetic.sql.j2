@@ -1,0 +1,124 @@
+-- Arithmetic over every mixed type pair involving a 128/256-bit integer, in both directions,
+-- with every operator family and every combination of constant and non-constant arguments,
+-- including the result types and the OrZero/OrNull behavior for zero divisors.
+-- Each row pins down one type pair. Values are chosen so that nothing in this file throws;
+-- the throwing cases are covered by 04523_type_pair_matrix_errors and
+-- 04520_type_pair_matrix_division_overflow_errors.
+--
+-- This is part 1 of 2: it drives the unsigned wide integers (UInt128, UInt256), so it covers
+-- every mixed pair in which at least one operand is a UInt128 or UInt256. Part 2
+-- (04519_type_pair_matrix_arithmetic_signed_wide) drives the signed wide integers against the
+-- operands that part 1 does not already reach. The suite was split so that each file's single
+-- run stays within the flaky-check runtime budget while the union keeps the whole matrix and
+-- the same per-file shape coverage.
+
+{% set wide = ['UInt128','UInt256'] %}
+{% set all_int = ['UInt8','UInt16','UInt32','UInt64','Int8','Int16','Int32','Int64','UInt128','UInt256','Int128','Int256'] %}
+{% set arith_ops = ['+','-','*','/'] %}
+{% set named_ops = ['intDiv','intDivOrZero','intDivOrNull','modulo','moduloOrNull','moduloOrZero','positiveModulo','positiveModuloOrNull','moduloLegacy'] %}
+
+{% set dividend = {
+    'UInt8':   "toUInt8(200)",
+    'UInt16':  "toUInt16(1000)",
+    'UInt32':  "toUInt32(1000)",
+    'UInt64':  "toUInt64(1000)",
+    'UInt128': "toUInt128(1000)",
+    'UInt256': "toUInt256(1000)",
+    'Int8':    "toInt8(-100)",
+    'Int16':   "toInt16(-1000)",
+    'Int32':   "toInt32(-1000)",
+    'Int64':   "toInt64(-1000)",
+    'Int128':  "toInt128(-1000)",
+    'Int256':  "toInt256(-1000)"
+} %}
+
+{% set divisor = {
+    'UInt8':   "toUInt8(7)",
+    'UInt16':  "toUInt16(7)",
+    'UInt32':  "toUInt32(7)",
+    'UInt64':  "toUInt64(7)",
+    'UInt128': "toUInt128(7)",
+    'UInt256': "toUInt256(7)",
+    'Int8':    "toInt8(-7)",
+    'Int16':   "toInt16(-7)",
+    'Int32':   "toInt32(-7)",
+    'Int64':   "toInt64(-7)",
+    'Int128':  "toInt128(-7)",
+    'Int256':  "toInt256(-7)"
+} %}
+
+{% set zero = {
+    'UInt8':   "toUInt8(0)",
+    'UInt16':  "toUInt16(0)",
+    'UInt32':  "toUInt32(0)",
+    'UInt64':  "toUInt64(0)",
+    'UInt128': "toUInt128(0)",
+    'UInt256': "toUInt256(0)",
+    'Int8':    "toInt8(0)",
+    'Int16':   "toInt16(0)",
+    'Int32':   "toInt32(0)",
+    'Int64':   "toInt64(0)",
+    'Int128':  "toInt128(0)",
+    'Int256':  "toInt256(0)"
+} %}
+
+{% macro arithrow(L, R) -%}
+SELECT '{{ L }} vs {{ R }}'
+{%- for op in arith_ops -%}
+, materialize({{ dividend[L] }}) {{ op }} materialize({{ divisor[R] }}), {{ dividend[L] }} {{ op }} materialize({{ divisor[R] }}), materialize({{ dividend[L] }}) {{ op }} {{ divisor[R] }}, identity({{ dividend[L] }}) {{ op }} identity({{ divisor[R] }})
+{%- endfor -%}
+{%- for fn in named_ops -%}
+, {{ fn }}(materialize({{ dividend[L] }}), materialize({{ divisor[R] }})), {{ fn }}(materialize({{ dividend[L] }}), {{ divisor[R] }}), {{ fn }}({{ dividend[L] }}, materialize({{ divisor[R] }})), {{ fn }}(identity({{ dividend[L] }}), identity({{ divisor[R] }}))
+{%- endfor -%}
+{%- for fn in ['intDivOrZero','intDivOrNull','moduloOrZero','moduloOrNull','positiveModuloOrNull'] -%}
+, {{ fn }}(materialize({{ dividend[L] }}), materialize({{ zero[R] }})), {{ fn }}(materialize({{ dividend[L] }}), {{ zero[R] }}), {{ fn }}({{ dividend[L] }}, materialize({{ zero[R] }})), {{ fn }}(identity({{ dividend[L] }}), identity({{ zero[R] }}))
+{%- endfor -%};
+SELECT '{{ L }} vs {{ R }} types', toTypeName({{ dividend[L] }} + {{ divisor[R] }}), toTypeName({{ dividend[L] }} - {{ divisor[R] }}), toTypeName({{ dividend[L] }} * {{ divisor[R] }}), toTypeName({{ dividend[L] }} / {{ divisor[R] }}), toTypeName(intDiv({{ dividend[L] }}, {{ divisor[R] }})), toTypeName(modulo({{ dividend[L] }}, {{ divisor[R] }})), toTypeName(positiveModulo({{ dividend[L] }}, {{ divisor[R] }})), toTypeName(moduloLegacy({{ dividend[L] }}, {{ divisor[R] }})), toTypeName(intDivOrNull({{ dividend[L] }}, {{ divisor[R] }})), toTypeName(moduloOrNull({{ dividend[L] }}, {{ divisor[R] }})), toTypeName(positiveModuloOrNull({{ dividend[L] }}, {{ divisor[R] }}));
+{%- endmacro %}
+
+-- A floating-point/wide-integer pair "a op b". Unlike the integer matrix, +, -, * are rejected
+-- for these pairs (see 04520_type_pair_matrix_division_overflow_errors), so only the
+-- division family is valid: the true division "/", intDiv, modulo, positiveModulo, moduloLegacy
+-- and their OrZero/OrNull variants. Every one of them is pinned in all four constness shapes,
+-- with the zero-divisor OrZero/OrNull cases and the result types, so a regression in the
+-- wide-int/float conversion path of any of them is caught. The identity(...) shape keeps the
+-- both-const path executing instead of being folded away by the analyzer.
+{% macro floatpair(label, a, b, bzero) -%}
+SELECT '{{ label }}', materialize({{ a }}) / materialize({{ b }}), {{ a }} / materialize({{ b }}), materialize({{ a }}) / {{ b }}, identity({{ a }}) / identity({{ b }})
+{%- for fn in named_ops -%}
+, {{ fn }}(materialize({{ a }}), materialize({{ b }})), {{ fn }}(materialize({{ a }}), {{ b }}), {{ fn }}({{ a }}, materialize({{ b }})), {{ fn }}(identity({{ a }}), identity({{ b }}))
+{%- endfor -%}
+{%- for fn in ['intDivOrZero','intDivOrNull','moduloOrZero','moduloOrNull','positiveModuloOrNull'] -%}
+, {{ fn }}(materialize({{ a }}), materialize({{ bzero }})), {{ fn }}(materialize({{ a }}), {{ bzero }}), {{ fn }}({{ a }}, materialize({{ bzero }})), {{ fn }}(identity({{ a }}), identity({{ bzero }}))
+{%- endfor -%};
+SELECT '{{ label }} types', toTypeName({{ a }} / {{ b }}), toTypeName(intDiv({{ a }}, {{ b }})), toTypeName(modulo({{ a }}, {{ b }})), toTypeName(positiveModulo({{ a }}, {{ b }})), toTypeName(moduloLegacy({{ a }}, {{ b }})), toTypeName(intDivOrNull({{ a }}, {{ b }})), toTypeName(moduloOrNull({{ a }}, {{ b }})), toTypeName(positiveModuloOrNull({{ a }}, {{ b }}));
+{%- endmacro %}
+
+{% set ns = namespace(seen=[]) %}
+{% for W in wide %}
+{% for O in all_int %}
+{% if O != W %}
+{% if (W ~ '|' ~ O) not in ns.seen %}
+{% set ns.seen = ns.seen + [W ~ '|' ~ O] %}
+{{ arithrow(W, O) }}
+{% endif %}
+{% if (O ~ '|' ~ W) not in ns.seen %}
+{% set ns.seen = ns.seen + [O ~ '|' ~ W] %}
+{{ arithrow(O, W) }}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+-- Same-type wide pairs as a control for the kernels that stay fused.
+{% for W in wide %}
+{{ arithrow(W, W) }}
+{% endfor %}
+
+-- Floating point with wide integers: the whole division family in both directions.
+{% for W in wide %}
+{% for F in ['Float32','Float64'] %}
+{{ floatpair(W ~ ' vs ' ~ F, dividend[W], 'to' ~ F ~ '(4)', 'to' ~ F ~ '(0)') }}
+{{ floatpair(F ~ ' vs ' ~ W, 'to' ~ F ~ '(10)', divisor[W], zero[W]) }}
+{% endfor %}
+{% endfor %}

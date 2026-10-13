@@ -143,8 +143,8 @@ $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS text_log" --server_logs_file=/dev/
 echo 9
 $CLICKHOUSE_CLIENT \
    --server_logs_file=/dev/null \
-   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 and message like '%find_me%';
-   select * from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 and message like '%TOPSECRET=TOPSECRET%' SETTINGS max_rows_to_read = 0"  --ignore-error
+   --query="SELECT '%find_me%', if( count() > 0, 'found', 'not found') FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 and message like '%find_me%';
+  select '%TOPSECRET=TOPSECRET%', count() from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 and message like '%TOPSECRET=TOPSECRET%' SETTINGS max_rows_to_read = 0"  --ignore-error
 echo 'finish'
 rm -f "$tmp_file" >/dev/null 2>&1
 rm -f "$tmp_file2" >/dev/null 2>&1

@@ -39,11 +39,11 @@ quantileGK(accuracy, level)(expr)
 
 **引数**
 
-* `expr` — カラム値に対する式で、数値データ型、Date、または DateTime になります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラム値に対する式で、数値データ型、`Date`、`DateTime`、または `DateTime64` になります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint) または [`UInt256`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **戻り値**
 
-指定したレベルと精度の分位点を返します。[`Float64`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+指定したレベルと精度の分位点を返します。数値データ型の場合、出力フォーマットは入力フォーマットと一致します。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint) または [`UInt256`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **例**
 

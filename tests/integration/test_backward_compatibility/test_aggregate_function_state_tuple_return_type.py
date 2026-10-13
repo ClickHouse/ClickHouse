@@ -39,8 +39,8 @@ pre_nullable_tuple_node_4 = cluster.add_instance(
     with_installed_binary=True,
 )
 
-node3 = cluster.add_instance("node3", with_zookeeper=False, use_old_analyzer=True)
-node4 = cluster.add_instance("node4", with_zookeeper=False, use_old_analyzer=True)
+node3 = cluster.add_instance("node3", with_zookeeper=False)
+node4 = cluster.add_instance("node4", with_zookeeper=False)
 
 
 @pytest.fixture(scope="module")

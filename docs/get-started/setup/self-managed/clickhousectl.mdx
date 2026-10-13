@@ -19,8 +19,7 @@ The ClickHouse CLI (`clickhousectl`) helps you install and manage local ClickHou
 versions, launch servers, and run queries.
 
 <Steps>
-<Step>
-## Install the ClickHouse CLI {#install-the-cli}
+<Step title="Install the ClickHouse CLI" id="install-the-cli">
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -28,8 +27,7 @@ curl https://clickhouse.com/cli | sh
 
 A `chctl` alias is also created automatically for convenience.
 </Step>
-<Step>
-## Install ClickHouse {#cli-install-clickhouse}
+<Step title="Install ClickHouse" id="cli-install-clickhouse">
 
 Install the latest version of ClickHouse and make it your default:
 
@@ -58,8 +56,7 @@ without changing your default or updating the symlink, use
 `clickhousectl local install <version>` instead.
 </Info>
 </Step>
-<Step>
-## Start clickhouse-server {#cli-start-clickhouse-server}
+<Step title="Start clickhouse-server" id="cli-start-clickhouse-server">
 
 ```bash
 clickhousectl local server start
@@ -71,8 +68,7 @@ The server runs in the background. To verify it's running:
 clickhousectl local server list
 ```
 </Step>
-<Step>
-## Start clickhouse-client {#cli-start-clickhouse-client}
+<Step title="Start clickhouse-client" id="cli-start-clickhouse-client">
 
 ```bash
 clickhousectl local client

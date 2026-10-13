@@ -14,9 +14,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 > وربطه بمجموعات البيانات النموذجية في ClickHouse.
 
 <Steps>
-  <Step>
-    ## تثبيت Docker
-
+  <Step title="تثبيت Docker" id="install-docker">
     ستحتاج إلى Docker لتشغيل LibreChat وخادم MCP. للحصول على Docker:
 
     1. انتقل إلى [docker.com](https://www.docker.com/products/docker-desktop)
@@ -29,9 +27,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     لمزيد من المعلومات، راجع [وثائق Docker](https://docs.docker.com/get-docker/).
   </Step>
 
-  <Step>
-    ## استنسخ مستودع LibreChat
-
+  <Step title="استنسخ مستودع LibreChat" id="clone-librechat-repo">
     افتح الطرفية (موجّه الأوامر أو Terminal أو PowerShell) واستنسخ
     مستودع LibreChat باستخدام الأمر التالي:
 
@@ -41,9 +37,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## أنشئ وعدّل ملف .env
-
+  <Step title="أنشئ وعدّل ملف .env" id="create-and-edit-env-file">
     انسخ ملف التهيئة النموذجي من `.env.example` إلى `.env`:
 
     ```bash
@@ -74,9 +68,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## أنشئ ملف librechat.yaml
-
+  <Step title="أنشئ ملف librechat.yaml" id="create-librechat-yaml-file">
     نفّذ الأمر التالي لإنشاء ملف `librechat.yaml` جديد:
 
     ```bash
@@ -86,9 +78,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يؤدي هذا إلى إنشاء [ملف التهيئة](https://www.librechat.ai/docs/configuration/librechat_yaml) الرئيسي لـ LibreChat.
   </Step>
 
-  <Step>
-    ## أضِف ClickHouse MCP server إلى Docker Compose
-
+  <Step title="أضِف ClickHouse MCP server إلى Docker Compose" id="add-clickhouse-mcp-server-to-docker-compose">
     بعد ذلك، سنضيف ClickHouse MCP server إلى ملف Docker Compose الخاص بـ LibreChat
     حتى يتمكن نموذج اللغة الكبير من التفاعل مع
     [ClickHouse SQL playground](https://sql.clickhouse.com/).
@@ -124,9 +114,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Card>
   </Step>
 
-  <Step>
-    ## تهيئة خادم MCP في librechat.yaml
-
+  <Step title="تهيئة خادم MCP في librechat.yaml" id="configure-mcp-server-in-librechat-yaml">
     افتح `librechat.yaml` وأضف التكوين التالي في نهاية الملف:
 
     ```yml
@@ -151,9 +139,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## أضِف نموذج LLM محليًا باستخدام Ollama (اختياري)
-
+  <Step title="أضِف نموذج LLM محليًا باستخدام Ollama (اختياري)" id="add-local-llm-using-ollama">
     ### ثبّت Ollama
 
     انتقل إلى [موقع Ollama](https://ollama.com/download) وثبّت Ollama على نظامك.
@@ -192,9 +178,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## ابدأ جميع الخدمات
-
+  <Step title="ابدأ جميع الخدمات" id="start-all-services">
     من المجلد الجذر لمشروع LibreChat، شغّل الأمر التالي لبدء الخدمات:
 
     ```bash
@@ -204,9 +188,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     انتظر حتى تعمل جميع الخدمات بالكامل.
   </Step>
 
-  <Step>
-    ## افتح LibreChat في متصفحك
-
+  <Step title="افتح LibreChat في متصفحك" id="open-librechat-in-browser">
     بمجرد تشغيل جميع الخدمات، افتح متصفحك وانتقل إلى `http://localhost:3080/`
 
     أنشئ حسابًا مجانيًا على LibreChat إذا لم يكن لديك حساب بعد، ثم سجّل الدخول. ينبغي أن

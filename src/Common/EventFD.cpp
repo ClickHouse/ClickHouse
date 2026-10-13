@@ -26,7 +26,8 @@ namespace ErrorCodes
 EventFD::EventFD()
 {
 #if defined(OS_LINUX)
-    fd = eventfd(0 /* initval */, 0 /* flags */);
+    /// CLOEXEC so the wakeup fd is not inherited by forked/exec'd children.
+    fd = eventfd(0 /* initval */, EFD_CLOEXEC /* flags */);
     if (fd == -1)
         throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot create eventfd");
 #else
@@ -37,12 +38,19 @@ EventFD::EventFD()
     if (-1 == pipe(pipe_fd))
         throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot create pipe for eventfd emulation");
 
-    int flags = fcntl(pipe_fd[1], F_GETFL, 0);
-    if (-1 == flags || -1 == fcntl(pipe_fd[1], F_SETFL, flags | O_NONBLOCK))
+    /// CLOEXEC on both ends so the wakeup fds are not inherited by forked/exec'd children,
+    /// and O_NONBLOCK on the write end so write() reports a full pipe via EAGAIN.
+    bool ok = -1 != fcntl(pipe_fd[0], F_SETFD, FD_CLOEXEC) && -1 != fcntl(pipe_fd[1], F_SETFD, FD_CLOEXEC);
+    if (ok)
+    {
+        int flags = fcntl(pipe_fd[1], F_GETFL, 0);
+        ok = -1 != flags && -1 != fcntl(pipe_fd[1], F_SETFL, flags | O_NONBLOCK);
+    }
+    if (!ok)
     {
         [[maybe_unused]] int e0 = close(pipe_fd[0]);
         [[maybe_unused]] int e1 = close(pipe_fd[1]);
-        throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot make eventfd emulation pipe non-blocking");
+        throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot configure eventfd emulation pipe");
     }
 
     fd = pipe_fd[0];

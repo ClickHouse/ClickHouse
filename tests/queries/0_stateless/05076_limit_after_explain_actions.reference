@@ -1,0 +1,12 @@
+LimitRange (LIMIT range (AFTER/UNTIL))
+Limit 2
+After column: greaterOrEquals(__table1.number, 1_UInt8)
+Until column: greaterOrEquals(__table1.number, 4_UInt8)
+FUNCTION greaterOrEquals(__table1.number : 0, 1_UInt8 :: 1) -> greaterOrEquals(__table1.number, 1_UInt8) UInt8 : 3
+FUNCTION greaterOrEquals(__table1.number :: 0, 4_UInt8 :: 2) -> greaterOrEquals(__table1.number, 4_UInt8) UInt8 : 1
+LimitRange (LIMIT range (AFTER/UNTIL))
+Limit 2
+After column: equals(__table1.number, 3_UInt8) (all)
+FUNCTION equals(__table1.number :: 0, 3_UInt8 :: 1) -> equals(__table1.number, 3_UInt8) UInt8 : 2
+Reads all data: 1
+1

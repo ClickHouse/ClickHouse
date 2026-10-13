@@ -27,8 +27,7 @@ If you would like to test the integration before configuring your own existing s
 - Access to modify Nginx configuration files
 
 <Steps>
-<Step>
-#### Configure Nginx log format {#configure-nginx}
+<Step title="Configure Nginx log format" id="configure-nginx">
 First, configure Nginx to output logs in JSON format for easier parsing. Add this log format definition to your nginx.conf:
 
 The `nginx.conf` file is typically located at:
@@ -61,8 +60,7 @@ http {
 
 After making this change, reload Nginx.
 </Step>
-<Step>
-#### Create custom OTel collector configuration {#custom-otel}
+<Step title="Create custom OTel collector configuration" id="custom-otel">
 
 ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
 
@@ -112,8 +110,7 @@ This configuration:
 - The pipelines route data from your receivers to the ClickHouse exporter via the existing processors
 </Note>
 </Step>
-<Step>
-#### Configure ClickStack to load custom configuration {#load-custom}
+<Step title="Configure ClickStack to load custom configuration" id="load-custom">
 
 To enable custom collector configuration in your existing ClickStack deployment, you must:
 
@@ -153,8 +150,7 @@ docker run --name clickstack \
 Ensure the ClickStack collector has appropriate permissions to read the nginx log files. In production, use read-only mounts (:ro) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step>
-#### Verifying Logs in HyperDX {#verifying-logs}
+<Step title="Verifying Logs in HyperDX" id="verifying-logs">
 
 Once configured, log into HyperDX and verify logs are flowing:
 
@@ -174,8 +170,7 @@ This is an example of what you should see:
 For users who want to test the nginx integration before configuring their production systems, we provide a sample dataset of pre-generated nginx access logs with realistic traffic patterns.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 ```bash
 # Download the logs
@@ -188,8 +183,7 @@ The dataset includes:
 - Mix of successful requests and errors
 - Realistic response times and byte counts
 </Step>
-<Step>
-#### Create test collector configuration {#test-config}
+<Step title="Create test collector configuration" id="test-config">
 
 Create a file named `nginx-demo.yaml` with the following configuration:
 
@@ -224,8 +218,7 @@ service:
 EOF
 ```
 </Step>
-<Step>
-#### Run ClickStack with demo configuration {#run-demo}
+<Step title="Run ClickStack with demo configuration" id="run-demo">
 
 Run ClickStack with the demo logs and configuration:
 
@@ -238,8 +231,7 @@ docker run --name clickstack-demo \
   clickhouse/clickstack-all-in-one:latest
 ```
 </Step>
-<Step>
-#### Verify logs in HyperDX {#verify-demo-logs}
+<Step title="Verify logs in HyperDX" id="verify-demo-logs">
 
 Once ClickStack is running:
 
@@ -266,11 +258,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring nginx with ClickStack, we provide essential visualizations for Nginx Logs.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 1. Open HyperDX and navigate to the Dashboards section.
 2. Click "Import Dashboard" in the upper right corner under the ellipses.
 
@@ -280,8 +272,7 @@ To help you get started monitoring nginx with ClickStack, we provide essential v
 
 <Image img="/images/clickstack/finish-nginx-logs-import.webp" alt="Finish Import"/>
 </Step>
-<Step>
-#### The dashboard will be created with all visualizations pre-configured {#created-dashboard}
+<Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
 
 <Note>
 For the demo dataset, set the time range to **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

@@ -1,0 +1,8 @@
+5000	5000
+Array(UInt64)	500
+Decimal(18, 2)	2000
+Float64	500
+Int64	500
+Map(UInt64, UInt64)	1000
+String	500
+1

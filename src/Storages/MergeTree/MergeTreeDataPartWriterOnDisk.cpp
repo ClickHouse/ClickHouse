@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -11,15 +12,18 @@
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
+#include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
-#include <Poco/String.h>
 #include <base/find_symbols.h>
 
 namespace ProfileEvents
@@ -80,6 +84,17 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
+}
+
+UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
+{
+    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
+    /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
+    /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
+    if (column_desc)
+        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
+            return value->safeGet<UInt64>();
+    return settings.min_compress_block_size;
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept
@@ -152,12 +167,15 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     if (skip_indices.empty())
         return;
 
-    ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
+    CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 
     PackedFilesWriter * packed_writer_for_streams
         = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+
+    /// Compact columns all live in one `data.bin`, so `MergeTreeDataPartWriterCompact::addStreams`
+    /// registers no column base and the index side has nothing to be checked against here.
+    const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact;
+    const StreamBaseManifestPtr manifest = is_compact_part ? nullptr : settings.stream_base_manifest;
 
     for (const auto & skip_index : skip_indices)
     {
@@ -189,11 +207,25 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
             SizeAdaptivePacking packing;
             if (packs_this_index)
+            {
+                /// Size decides at write time which of the two names this substream takes, so the
+                /// stream claims each one in the branch that creates it: the archive key at the
+                /// packed commit, the on-disk name at the spill.
                 packing = {
                     packed_writer_for_streams,
                     logical_stream_name + index_substream.extension,
                     logical_stream_name + marks_file_extension,
-                    packed_spill_threshold};
+                    packed_spill_threshold,
+                    manifest,
+                    logical_stream_name,
+                    on_disk_stream_name,
+                    skip_index->index.name};
+            }
+            else if (manifest)
+            {
+                manifest->registerStreamBase(
+                    on_disk_stream_name, {StreamBaseManifest::Kind::SkipIndex, skip_index->index.name});
+            }
 
             auto stream = std::make_unique<MergeTreeIndexWriterStream>(
                 on_disk_stream_name,
@@ -249,6 +281,10 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          *  (observed in long INSERT SELECTs)
          */
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        /// The in-memory primary index lives on the part for its whole lifetime (freed only when the
+        /// part is merged away), so build it in the dedicated MergeTree arena — same rationale as the
+        /// memory-tracker blocker above.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
         if (settings.save_primary_index_in_memory && index_columns.empty())
         {
@@ -347,6 +383,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         if (write_final_mark && !last_index_block.empty())
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
         }
 
@@ -390,6 +427,13 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
         }
 
         index_file_hashing_stream = nullptr;
+
+        /// Release the primary index (`primary.cidx` / `primary.idx`) file descriptor now that the data
+        /// has been flushed and synced, so it is not held open across the part-directory rename. See the
+        /// detailed rationale in MergeTreeDataPartWriterCompact::finishDataSerialization and
+        /// https://github.com/ClickHouse/ClickHouse/issues/56288. The wrapper streams above were reset
+        /// first, so no live buffer references index_file_stream.
+        index_file_stream = nullptr;
     }
 }
 
@@ -678,7 +722,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
     for (const auto & column : columns_list)
     {
-        auto compression = getCodecDescOrDefault(column.name, default_codec);
+        auto compression = getCodecDescriptionOrDefault(column.name, default_codec);
         addStreams(column, compression);
     }
 
@@ -717,6 +761,43 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+    }
+}
+
+CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
+    const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const
+{
+    const auto & substream_type = substream_path.back().data.type;
+    /// The column's codec is meant for its values. Structural substreams keep only its generic codecs (`only_generic`).
+    /// The type is omitted so the codecs about to be dropped are not validated against it.
+    const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
+    auto codec = CompressionCodecFactory::instance().get(
+        effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
+
+    /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
+    if (settings.apply_adaptive_codec && column_uses_default_codec && !codec->isEncryption())
+        return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+
+    return codec;
+}
+
+void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)
+{
+    if (codec->needsVectorDimensionUpfront())
+    {
+        Field sample_field;
+        column->get(0, sample_field);
+        /// Only arrays carry a vector dimension here. A `Tuple` is serialized as one stream per element,
+        /// so each element stream is scalar; using the tuple arity as the dimension would make the codec
+        /// read several values from a single-value stream.
+        if (sample_field.getType() == Field::Types::Array)
+        {
+            for (size_t j = 0; j < column->size(); ++j)
+            {
+                column->get(j, sample_field);
+                codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
+            }
+        }
     }
 }
 

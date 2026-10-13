@@ -23,7 +23,7 @@ struct AggregatedZooKeeperLogElement
 
     /// Group statistics.
     UInt32 count;
-    std::unique_ptr<Coordination::ErrorCounter> errors;
+    Coordination::ErrorCounter errors;
     UInt64 total_latency_microseconds;
 
     static std::string name() { return "AggregatedZooKeeperLog"; }
@@ -49,6 +49,8 @@ public:
         StaticString component,
         bool is_subrequest = false);
 
+    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
+
 private:
     struct EntryKey
     {
@@ -68,7 +70,7 @@ private:
     {
         UInt32 count = 0;
         UInt64 total_latency_microseconds = 0;
-        std::unique_ptr<Coordination::ErrorCounter> errors = std::make_unique<Coordination::ErrorCounter>();
+        Coordination::ErrorCounter errors;
 
         void observe(UInt64 latency_microseconds, Coordination::Error error);
     };

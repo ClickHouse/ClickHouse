@@ -20,15 +20,11 @@ IdP(Identity Provider)를 변경하는 등의 이유로 조직에서 SAML 통합
 SAML이 제거된 후 사용자를 조직에 다시 초대할 수 있도록, 조직에는 대체 인증 메서드를 사용하는 관리자 사용자 1명이 있어야 합니다. 이 단계를 수행하려면 관리자 권한이 있는 ClickHouse Cloud 사용자가 필요합니다.
 
 <Steps>
-  <Step>
-    ### 초대 활성화
-
+  <Step title="초대 활성화" id="enable-invitations">
     [ClickHouse Cloud](https://console.clickhouse.cloud)에 로그인한 후 제목을 `Enable invitations for SAML organization`으로 하여 지원 티켓을 제출하십시오. 이는 SAML 이외의 방법으로 사용자를 추가할 수 있도록 요청하기 위한 것입니다.
   </Step>
 
-  <Step>
-    ### 다시 초대할 사용자 확인
-
+  <Step title="다시 초대할 사용자 확인" id="note-users-to-be-reinvited">
     왼쪽 하단에서 조직 이름을 클릭한 다음 `Users and Roles`를 선택하십시오. 각 사용자의 `Provider` 컬럼을 확인하십시오. `Signed in with SSO`로 표시된 사용자는 SAML이 제거된 후 조직에 다시 초대해야 합니다.
 
     SAML이 제거되면 계정에 다시 접근하기 전에 새 초대를 수락해야 한다는 점을 사용자에게 미리 안내하십시오.
@@ -40,15 +36,11 @@ SAML이 제거된 후 사용자를 조직에 다시 초대할 수 있도록, 조
 </div>
 
 <Steps>
-  <Step>
-    ### 사용자 초대
-
+  <Step title="사용자 초대" id="invite-users">
     왼쪽 하단의 조직 이름을 클릭한 다음 `Users and Roles`를 선택합니다. [사용자 초대](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users)의 안내를 따르십시오.
   </Step>
 
-  <Step>
-    ### 사용자가 초대 수락
-
+  <Step title="사용자가 초대 수락" id="accept-invitation">
     사용자는 초대를 수락하기 전에 모든 SAML 연결에서 완전히 로그아웃해야 합니다. Google 또는 Microsoft 소셜 로그인을 사용해 초대를 수락하는 경우 `Continue with Google` 또는 `Continue with Microsoft` 버튼을 클릭해야 합니다. 이메일과 비밀번호를 사용하는 경우 https://console.clickhouse.cloud/?with=email 에서 로그인한 후 초대를 수락해야 합니다.
 
     <Note>
@@ -56,9 +48,7 @@ SAML이 제거된 후 사용자를 조직에 다시 초대할 수 있도록, 조
     </Note>
   </Step>
 
-  <Step>
-    ### 쿼리 및 대시보드 저장
-
+  <Step title="쿼리 및 대시보드 저장" id="save-queries-and-dashboards">
     새 아이덴티티로 로그인한 후에는 로그아웃한 다음 SAML 계정으로 다시 로그인하여 저장된 쿼리 또는 대시보드를 새 아이덴티티와 공유해야 합니다. 절차를 완료하려면 새 아이덴티티로 사본을 저장해야 합니다.
   </Step>
 </Steps>

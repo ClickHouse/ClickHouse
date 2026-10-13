@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge/>
 
@@ -43,7 +43,7 @@ For local development and testing, you can use a containerized Nessie setup. Thi
 
 ### Setting up Local Nessie Catalog {#setting-up-local-nessie-catalog}
 
-You can use the official [Nessie docker-compose setup](https://projectnessie.org/guides/setting-up/) which provides a complete environment with Nessie, in-memory version store, and MinIO for object storage.
+You can use the official [Nessie docker-compose setup](https://projectnessie.org/guides/) which provides a complete environment with Nessie, in-memory version store, and MinIO for object storage.
 
 **Step 1:** Create a new folder in which to run the example, then create a file `docker-compose.yml` with the following configuration:
 

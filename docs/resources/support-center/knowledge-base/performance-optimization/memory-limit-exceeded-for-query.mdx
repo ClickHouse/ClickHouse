@@ -6,9 +6,6 @@ tags: ['Errors and Exceptions']
 keywords: ['OOM', 'memory limit exceeded']
 ---
 
-{frontMatter.description}
-{/* truncate */}
-
 import { Image } from "/snippets/components/Image.jsx";
 
 ## Memory limit exceeded for query {#troubleshooting-out-of-memory-issues}
@@ -25,8 +22,8 @@ Users, in this case, have a few options.
 
 ### Aggregations {#aggregations}
 For memory-intensive aggregations or sorting scenarios, users can use the settings
-[`max_bytes_before_external_group_by`](/reference/settings/session-settings#max_bytes_before_external_group_by)
-and [`max_bytes_before_external_sort`](/reference/settings/session-settings#max_bytes_ratio_before_external_sort) respectively.
+[`max_bytes_before_external_group_by`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)
+and [`max_bytes_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort) respectively.
 The former of which is discussed extensively [here](/reference/statements/select/group-by#group-by-in-external-memory).
 
 In summary, this ensures any aggregations can “spill” out to disk if a memory
@@ -35,7 +32,7 @@ help ensure queries do not OOM. The latter sorting setting helps address similar
 issues with memory-intensive sorts. This can be particularly important in
 distributed environments where a coordinating node receives sorted responses
 from child shards. In this case, the coordinating server can be asked to sort a
-dataset larger than its available memory. With [`max_bytes_before_external_sort`](/reference/settings/session-settings#max_bytes_ratio_before_external_sort),
+dataset larger than its available memory. With [`max_bytes_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort),
 sorting can be allowed to spill over to disk. This setting is also helpful for
 cases where the user has an `ORDER BY` after a `GROUP BY` with a `LIMIT`,
 especially in cases where the query is distributed.
@@ -48,7 +45,7 @@ This algorithm loads the right-hand table of the `JOIN` into an in-memory hash
 table, against which the left-hand table is then evaluated. To minimize memory,
 users should thus place the smaller table on the right side. This approach still
 has limitations in memory-bound cases, however. In these cases, `partial_merge`
-join can be enabled via the [`join_algorithm`](/reference/settings/session-settings#join_algorithm)
+join can be enabled via the [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm)
 setting. This derivative of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join),
 first sorts the right table into blocks and creates a min-max index for them.
 It then sorts parts of the left table by the join key and joins them over the
@@ -68,4 +65,3 @@ algorithm is preferred until memory limits are violated, at which point the
 partial_merge algorithm is attempted. Finally, concerning joins, we encourage
 readers to be aware of the behavior of distributed joins and how to minimize
 their memory consumption. More information can be found [here](/reference/statements/in#distributed-subqueries).
-

@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <IO/S3Common.h>
 #include <IO/S3Defines.h>
+#include <IO/S3/ChecksumAlgorithm.h>
 #include <IO/S3RequestSettings.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
@@ -42,6 +43,10 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
 }
 
+/// Settings marked with `AFFECTS_CLIENT` are baked into the S3 client when it is created (see `getClient` in
+/// `diskSettings.cpp`), so a change of such a setting requires rebuilding the client, which
+/// `S3ObjectStorage::applyNewSettings` does via `S3Settings::hasChangesAffectingClient`. Every request setting read
+/// by `getClient`, directly or through a derived object like `request_throttler`, must carry the flag.
 #define REQUEST_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, max_single_read_retries, 4, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
@@ -52,22 +57,23 @@ namespace ErrorCodes
     DECLARE(Bool, allow_multipart_copy, true, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     DECLARE(String, storage_class_name, "", "", 0) \
+    DECLARE(String, upload_checksum_algorithm, "", "", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
     DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
     DECLARE(UInt64, min_bytes_for_seek, S3::DEFAULT_MIN_BYTES_FOR_SEEK, "", 0) \
     DECLARE(UInt64, objects_chunk_size_to_delete, S3::DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE, "", 0) \
     DECLARE(Bool, read_only, false, "", 0) \
-    DECLARE(UInt64, max_get_rps, 0, "", 0) \
-    DECLARE(UInt64, max_get_burst, 0, "", 0) \
-    DECLARE(UInt64, max_put_rps, 0, "", 0) \
-    DECLARE(UInt64, max_put_burst, 0, "", 0) \
-    DECLARE(UInt64, max_redirects, S3::DEFAULT_MAX_REDIRECTS, "", 0) \
-    DECLARE(UInt64, retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "", 0) \
-    DECLARE(UInt64, retry_initial_delay_ms, S3::DEFAULT_RETRY_INITIAL_DELAY_MS, "", 0) \
-    DECLARE(UInt64, retry_max_delay_ms, S3::DEFAULT_RETRY_MAX_DELAY_MS, "", 0) \
-    DECLARE(Bool, slow_all_threads_after_network_error, true, "", 0) \
-    DECLARE(Bool, enable_request_logging, false, "", 0)
+    DECLARE(UInt64, max_get_rps, 0, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, max_get_burst, 0, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, max_put_rps, 0, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, max_put_burst, 0, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, max_redirects, S3::DEFAULT_MAX_REDIRECTS, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, retry_initial_delay_ms, S3::DEFAULT_RETRY_INITIAL_DELAY_MS, "", AFFECTS_CLIENT) \
+    DECLARE(UInt64, retry_max_delay_ms, S3::DEFAULT_RETRY_MAX_DELAY_MS, "", AFFECTS_CLIENT) \
+    DECLARE(Bool, slow_all_threads_after_network_error, true, "", AFFECTS_CLIENT) \
+    DECLARE(Bool, enable_request_logging, false, "", AFFECTS_CLIENT)
 
 #define PART_UPLOAD_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, strict_upload_part_size, 0, "", 0) \
@@ -196,6 +202,11 @@ void S3RequestSettings::updateIfChanged(const S3RequestSettings & settings)
     }
 }
 
+bool S3RequestSettings::hasChangesAffectingClient(const S3RequestSettings & settings) const
+{
+    return impl->hasChangesAffectingClient(*settings.impl);
+}
+
 void S3RequestSettings::validateUploadSettings()
 {
     if (!(*this)[S3RequestSetting::max_part_number])
@@ -236,12 +247,23 @@ void S3RequestSettings::validateUploadSettings()
                             (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
     }
 
-    NameSet storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    NameSet storage_class_names {"STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER_IR", "EXPRESS_ONEZONE"};
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && !storage_class_names.contains((*this)[S3RequestSetting::storage_class_name]))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
+            "Setting storage_class has invalid value {}: this storage class is not supported for ClickHouse S3 disks",
             (*this)[S3RequestSetting::storage_class_name].value);
+
+    const auto & upload_checksum_algorithm = (*this)[S3RequestSetting::upload_checksum_algorithm].value;
+    /// An empty value means "use the environment default"; any other value must name an `Algorithm`.
+    if (!upload_checksum_algorithm.empty() && !S3::RequestChecksum::tryParse(upload_checksum_algorithm))
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
+            upload_checksum_algorithm, S3::RequestChecksum::supportedAlgorithms());
+
+    /// Only the name is validated: usability depends on the client (`GCS` sends no flexible checksum at all),
+    /// so the FIPS `MD5` rejection lives in `RequestChecksum::getUploadChecksumAlgorithm`.
 
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.
@@ -302,6 +324,9 @@ void S3RequestSettings::normalizeSettings()
 {
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && (*this)[S3RequestSetting::storage_class_name].changed)
         (*this)[S3RequestSetting::storage_class_name] = Poco::toUpperInPlace((*this)[S3RequestSetting::storage_class_name].value);
+
+    if (!(*this)[S3RequestSetting::upload_checksum_algorithm].value.empty() && (*this)[S3RequestSetting::upload_checksum_algorithm].changed)
+        (*this)[S3RequestSetting::upload_checksum_algorithm] = Poco::toUpperInPlace((*this)[S3RequestSetting::upload_checksum_algorithm].value);
 }
 
 void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const
@@ -323,7 +348,7 @@ std::map<String, String> S3RequestSettings::getSettingsRepresentation() const //
 {
     std::map<String, String> res; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     for (const auto & field : impl->all())
-        res[String{field.getName()}] = field.getValueString();
+        res[String{field.getName()}] = field.getValueString(/* show_secrets */ true);
     return res;
 }
 

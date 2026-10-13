@@ -20,9 +20,7 @@ Ce guide suppose que vous avez terminé [Configuration de votre OpenTelemetry Co
 Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle doit lui-même être déployé **dans le même cluster à l’aide du chart Helm OpenTelemetry upstream avec l’image du collecteur ClickStack**. Suivez la procédure Helm dans [Déploiement du collecteur](/fr/clickstack/ingesting-data/collector#configuring-the-collector) pour l’installer. **Veillez à avoir consigné cet endpoint OTLP**.
 
 <Steps>
-  <Step>
-    ## Rassemblez les prérequis
-
+  <Step title="Rassemblez les prérequis" id="gather-prerequisites">
     Vous aurez besoin de :
 
     * D’un **cluster Kubernetes** (v1.20+ recommandé) avec `kubectl` configuré pour y accéder.
@@ -37,9 +35,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
     </Info>
   </Step>
 
-  <Step>
-    ## Créez le secret d’authentification et la ConfigMap
-
+  <Step title="Créez le secret d’authentification et la ConfigMap" id="create-secret-and-configmap">
     Choisissez l’espace de noms dans lequel vous souhaitez déployer les collecteurs, puis créez un secret contenant `OTLP_AUTH_TOKEN` ainsi qu’une ConfigMap pointant vers votre gateway :
 
     ```shell
@@ -61,18 +57,14 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
     Les deux collecteurs ci-dessous récupèrent ces valeurs via `extraEnvs`, de sorte que le même secret et la même ConfigMap sont réutilisés par les deux.
   </Step>
 
-  <Step>
-    ## Ajouter le dépôt Helm OpenTelemetry
-
+  <Step title="Ajouter le dépôt Helm OpenTelemetry" id="add-otel-helm-repo">
     ```shell
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
     helm repo update
     ```
   </Step>
 
-  <Step>
-    ## Déployer le collecteur du cluster
-
+  <Step title="Déployer le collecteur du cluster" id="deploy-cluster-collector">
     Il s’agit d’un déploiement à une seule réplique qui collecte les **événements Kubernetes** et les **métriques à l’échelle du cluster** (nombre de nœuds, phases des pods, état des déploiements, etc.). Exécuter plus d’une réplique produirait des doublons.
 
     Enregistrez ce qui suit dans `k8s_deployment.yaml` :
@@ -141,9 +133,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
     ```
   </Step>
 
-  <Step>
-    ## Déployer le collecteur de nœud
-
+  <Step title="Déployer le collecteur de nœud" id="deploy-node-collector">
     Il s’agit d’un DaemonSet qui s’exécute sur chaque nœud afin de collecter les **logs des conteneurs**, les **métriques de l’hôte** et les **métriques du kubelet** (utilisation du CPU et de la mémoire pour chaque pod et chaque conteneur, par rapport aux requêtes et aux limites).
 
     Enregistrez le contenu suivant dans `k8s_daemonset.yaml` :
@@ -260,9 +250,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
     Vous devriez voir un pod de déploiement et un pod de DaemonSet par nœud, tous dans l’état `Running`.
   </Step>
 
-  <Step>
-    ## Transmettre les attributs Kubernetes à vos applications (recommandé)
-
+  <Step title="Transmettre les attributs Kubernetes à vos applications (recommandé)" id="forward-k8s-attributes">
     Pour corréler les logs, les métriques et les traces de votre application avec les métadonnées Kubernetes (nom du pod, espace de noms, nœud, déploiement), transmettez ces métadonnées à votre application via `OTEL_RESOURCE_ATTRIBUTES`. Le processeur `k8sattributes` du DaemonSet enrichira ensuite la télémétrie reçue avec les attributs correspondants du pod et du nœud.
 
     ```yaml
@@ -311,9 +299,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
     ```
   </Step>
 
-  <Step>
-    ## Vérifier dans l’interface ClickStack
-
+  <Step title="Vérifier dans l’interface ClickStack" id="confirm-in-ui">
     Ouvrez votre service dans la [console ClickHouse Cloud](https://console.clickhouse.cloud) et sélectionnez **ClickStack** dans le menu de gauche.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Lancer ClickStack" border />
@@ -333,9 +319,7 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
     * Vérifiez que `OTLP_AUTH_TOKEN` dans le secret correspond à la valeur définie sur le collector de passerelle.
   </Step>
 
-  <Step>
-    ## Pour aller plus loin
-
+  <Step title="Pour aller plus loin" id="further-reading">
     * [Référence de l’intégration Kubernetes](/fr/clickstack/integration-examples/kubernetes) pour la liste complète des récepteurs, processeurs et options de réglage.
     * [Transfert des tags de ressource vers les pods](/fr/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) pour plus de détails sur l’enrichissement côté application.
     * [Sécuriser le collecteur](/fr/clickstack/ingesting-data/collector#securing-the-collector) avec TLS sur l’endpoint OTLP et des utilisateurs d’ingestion dotés du strict minimum de privilèges.

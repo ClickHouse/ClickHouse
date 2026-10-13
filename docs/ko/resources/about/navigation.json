@@ -1,0 +1,14 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouse 소개",
+      "pages": [
+        "ko/resources/about/index",
+        "ko/resources/about/adopters",
+        "ko/resources/about/support"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-about.svg",
+  "item": "소개"
+}

@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-Neste guia, você aprenderá a explorar, em um notebook do Marimo, um conjunto de dados do ClickHouse Cloud com a ajuda do [chDB](/pt-BR/products/chdb/index) — um mecanismo SQL OLAP rápido executado no próprio processo, baseado em ClickHouse.
+Neste guia, você aprenderá a explorar, em um notebook do Marimo, um conjunto de dados do ClickHouse Cloud com a ajuda do [chDB](/pt-BR/chdb/index) — um mecanismo SQL OLAP rápido executado no próprio processo, baseado em ClickHouse.
 
 **Pré-requisitos:**
 
@@ -313,16 +313,16 @@ WHERE town = 'LONDON'
 
 df_distribution = chdb.query(query_distribution, "DataFrame")
 
-# cria um gráfico de caixa interativo.
+# create an interactive box plot.
 fig_box = go.Figure()
 
 fig_box.add_trace(
     go.Box(
         y=df_distribution['price'],
         name=f'London {year_slider.value}',
-        boxmean='sd',  # Exibe média e desvio padrão
+        boxmean='sd',  # Show mean and standard deviation
         marker_color='lightblue',
-        boxpoints='outliers'  # Exibe pontos discrepantes
+        boxpoints='outliers'  # Show outlier points
     )
 )
 

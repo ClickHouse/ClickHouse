@@ -117,7 +117,7 @@ PreprocessedPolygonsCache<PolygonImpl, MultiPolygonImpl> & preprocessedPolygonsC
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 /// Feed a string into an in-progress XXH3 state, length-prefixed so concatenations are unambiguous.
-void updateHashWithString(XXH3_state_t & state, std::string_view s)
+void updateHashWithString(XXH_INLINE_XXH3_state_t & state, std::string_view s)
 {
     UInt64 size = s.size();
     XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
@@ -128,7 +128,7 @@ void updateHashWithString(XXH3_state_t & state, std::string_view s)
 /// feeding contiguous leaf buffers in bulk (the same structural walk as updateHashFast, but XXH3).
 /// The structure is mixed in (array offsets, tuple arity) so distinct shapes that share leaf bytes
 /// cannot collide.
-void updateHashWithColumn(XXH3_state_t & state, const IColumn & column)
+void updateHashWithColumn(XXH_INLINE_XXH3_state_t & state, const IColumn & column)
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
     {
@@ -184,7 +184,7 @@ void updateHashWithColumn(XXH3_state_t & state, const IColumn & column)
 ///    lookup and skip the validation that would otherwise raise an exception.
 UInt128 hashConstPolygonArguments(const ColumnsWithTypeAndName & arguments, bool validate, UInt8 discriminator)
 {
-    XXH3_state_t state;
+    XXH_INLINE_XXH3_state_t state;
     XXH_INLINE_XXH3_128bits_reset(&state);
 
     XXH_INLINE_XXH3_128bits_update(&state, &discriminator, sizeof(discriminator));
@@ -236,6 +236,7 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSpatialPredicate() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -612,12 +613,18 @@ private:
             /// First condition checks that the point is inside horizontal row between edge top and bottom y-coordinate.
             /// Second condition checks for intersection with the edge.
 
-            if (((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
-                && (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
-                    * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
-                    + ring_x_data[vertex1_idx]))
+            if ((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
             {
-                res = !res;
+                if (std::abs(ring_x_data[vertex1_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_y_data[vertex1_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_x_data[vertex2_idx]) > max_abs_polygon_coordinate
+                    || std::abs(ring_y_data[vertex2_idx]) > max_abs_polygon_coordinate)
+                    throwPolygonCoordinateIsTooLarge();
+
+                if (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
+                        * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
+                        + ring_x_data[vertex1_idx])
+                    res = !res;
             }
 
             vertex2_idx = vertex1_idx;
@@ -931,16 +938,18 @@ REGISTER_FUNCTION(PointInPolygon)
     FunctionDocumentation::Description description = R"(
 Checks whether the point belongs to the polygon on the plane.
 
-:::note
+<Note>
 - You can set `validate_polygons = 0` to bypass geometry validation.
 - `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.
-:::
+- Polygon coordinates must not exceed `1e150` in absolute value; the function throws an exception when it would compute with a larger one.
+- The polygon-shaped types (`Ring`, `Polygon`, `MultiPolygon`, and `Geometry`) may be passed either as constants or as regular (non-constant) table columns. When the polygon is provided across several separate arguments (an outer ring followed by holes, or several polygons of a multipolygon), all of those arguments must be constant.
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "pointInPolygon((x, y), [(a, b), (c, d) ...], ...)";
     FunctionDocumentation::Arguments arguments = {
-        {"(x, y)", "Coordinates of a point on the plane.", {"Tuple(Float64, Float64)"}},
-        {"[(a, b), (c, d) ...]", "Polygon vertices as an array of coordinate pairs. Vertices should be in clockwise or counterclockwise order. Minimum 3 vertices required.", {"Array(Tuple(Float64, Float64))"}},
-        {"...", "Optional. Additional arguments for polygons with holes (as separate arrays) or multipolygons (as separate polygons).", {"Array(Tuple(Float64, Float64))", "Polygon", "MultiPolygon"}}
+        {"(x, y)", "Coordinates of a point on the plane.", {"Tuple(Float64, Float64)", "Point"}},
+        {"[(a, b), (c, d) ...]", "The polygon, either as an array of coordinate pairs or as a named polygon-shaped value. Vertices should be in clockwise or counterclockwise order. Minimum 3 vertices required.", {"Array(Tuple(Float64, Float64))", "Ring", "Polygon", "MultiPolygon", "Geometry"}},
+        {"...", "Optional. Additional arguments for polygons with holes (each hole as a separate ring) or multipolygons (each component polygon as a separate argument). A whole `MultiPolygon` can only be passed as the sole polygon argument, not as one of several arguments. These additional arguments must be constant.", {"Array(Tuple(Float64, Float64))", "Ring", "Polygon"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns `1` if the point is inside the polygon, `0` if it is not. If the point is on the polygon boundary, the function may return either `0` or `1`.",
@@ -954,6 +963,17 @@ Checks whether the point belongs to the polygon on the plane.
 ┌─res─┐
 │   1 │
 └─────┘
+            )"
+        },
+        {
+            "Passing the polygon as a named geometric type from a table column",
+            "CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;\n"
+            "INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);\n"
+            "SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;",
+            R"(
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
             )"
         }
     };

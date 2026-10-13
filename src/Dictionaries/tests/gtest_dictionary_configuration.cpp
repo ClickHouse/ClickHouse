@@ -223,3 +223,125 @@ TEST(ConvertDictionaryAST, ComplexSource)
     EXPECT_EQ(config->getString("dictionary.source.mysql.replica.host"), "127.0.0.1");
     EXPECT_EQ(config->getInt("dictionary.source.mysql.replica.priority"), 1);
 }
+
+
+TEST(ConvertDictionaryAST, LayoutKeyValueCollectionParameter)
+{
+    if (!registered)
+    {
+        registerDictionaries();
+        registered = true;
+    }
+
+    /// A layout parameter given as a collection literal becomes repeated structured elements with the
+    /// names the layout declares for it.
+    String input = " CREATE DICTIONARY dict5"
+                   " ("
+                   "    ngram String,"
+                   "    class_id UInt32 DEFAULT 0,"
+                   "    count UInt64 DEFAULT 0"
+                   " )"
+                   " PRIMARY KEY ngram"
+                   " SOURCE(CLICKHOUSE(TABLE 'training_data'))"
+                   " LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.6), (1, 0.4)]))"
+                   " LIFETIME(0)";
+
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
+    ASTCreateQuery * create = ast->as<ASTCreateQuery>();
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
+
+    Poco::Util::AbstractConfiguration::Keys prior_keys;
+    config->keys("dictionary.layout.naive_bayes.priors", prior_keys);
+
+    EXPECT_EQ(prior_keys.size(), 2);
+    EXPECT_EQ(prior_keys[0], "prior");
+    EXPECT_EQ(prior_keys[1], "prior[1]");
+    EXPECT_EQ(config->getUInt("dictionary.layout.naive_bayes.priors.prior.class"), 0);
+    EXPECT_EQ(config->getDouble("dictionary.layout.naive_bayes.priors.prior.probability"), 0.6);
+    EXPECT_EQ(config->getUInt("dictionary.layout.naive_bayes.priors.prior[1].class"), 1);
+    EXPECT_EQ(config->getDouble("dictionary.layout.naive_bayes.priors.prior[1].probability"), 0.4);
+}
+
+
+TEST(ConvertDictionaryAST, LayoutCollectionParameterWithoutDeclaredNames)
+{
+    if (!registered)
+    {
+        registerDictionaries();
+        registered = true;
+    }
+
+    /// A collection value is rejected for a layout parameter that does not declare element names for it.
+    String input = " CREATE DICTIONARY dict6"
+                   " ("
+                   "    key_column UInt64,"
+                   "    second_column UInt8"
+                   " )"
+                   " PRIMARY KEY key_column"
+                   " SOURCE(CLICKHOUSE(TABLE 'table_for_dict'))"
+                   " LAYOUT(CACHE(size_in_cells [(0, 0.6)]))"
+                   " LIFETIME(MIN 1 MAX 10)";
+
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
+    ASTCreateQuery * create = ast->as<ASTCreateQuery>();
+    EXPECT_THROW(getDictionaryConfigurationFromAST(*create, getContext().context), DB::Exception);
+}
+
+
+TEST(ConvertDictionaryAST, SourceCollectionParameterRejected)
+{
+    if (!registered)
+    {
+        registerDictionaries();
+        registered = true;
+    }
+
+    /// A collection value is rejected for a source parameter: sources have no structured
+    /// representation for it, and silently stringifying the literal would hide the mistake.
+    String input = " CREATE DICTIONARY dict7"
+                   " ("
+                   "    key_column UInt64,"
+                   "    second_column UInt8"
+                   " )"
+                   " PRIMARY KEY key_column"
+                   " SOURCE(CLICKHOUSE(HOST ['localhost', 'localhost2'] TABLE 'table_for_dict'))"
+                   " LAYOUT(CACHE(size_in_cells 50))"
+                   " LIFETIME(MIN 1 MAX 10)";
+
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
+    ASTCreateQuery * create = ast->as<ASTCreateQuery>();
+    EXPECT_THROW(getDictionaryConfigurationFromAST(*create, getContext().context), DB::Exception);
+}
+
+
+TEST(ConvertDictionaryAST, EmptyNestedKeyValueList)
+{
+    if (!registered)
+    {
+        registerDictionaries();
+        registered = true;
+    }
+
+    /// An empty parenthesized source parameter value is a nested key-value list, not a tuple literal:
+    /// it becomes an empty configuration element, not the text "()".
+    String input = " CREATE DICTIONARY dict8"
+                   " ("
+                   "    key_column UInt64,"
+                   "    second_column UInt8"
+                   " )"
+                   " PRIMARY KEY key_column"
+                   " SOURCE(HTTP(URL 'http://localhost' FORMAT 'TSV' HEADERS()))"
+                   " LAYOUT(CACHE(size_in_cells 50))"
+                   " LIFETIME(MIN 1 MAX 10)";
+
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
+    ASTCreateQuery * create = ast->as<ASTCreateQuery>();
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
+
+    EXPECT_TRUE(config->has("dictionary.source.http.headers"));
+    EXPECT_EQ(config->getString("dictionary.source.http.headers"), "");
+}

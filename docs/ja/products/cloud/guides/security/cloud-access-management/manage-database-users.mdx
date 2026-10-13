@@ -17,18 +17,18 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 SQL コンソールのユーザーはセッションごとに作成され、自動的に更新される X.509 証明書を使用して認証されます。セッションが終了すると、そのユーザーは削除されます。監査用のアクセスリストを作成する際は、コンソールで該当サービスの Settings タブに移動し、データベース内に存在するデータベースユーザーに加えて、SQL コンソールのアクセス権も確認してください。カスタムロールが設定されている場合、ユーザーのアクセス権は、そのユーザーのユーザー名で終わるロールに表示されます。
 
-<div id="sql-console-users-and-roles">
-  ## SQL コンソールのユーザーとロール
-</div>
+## SQL コンソールのユーザーとロール {#sql-console-users-and-roles}
 
-基本的な SQL コンソールのロールは、Service Read Only および Service Admin の権限を持つユーザーに割り当てることができます。詳細については、[SQL Console ロール割り当ての管理](/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)を参照してください。このガイドでは、SQL コンソールユーザー用のカスタムロールを作成する方法を説明します。
+基本的な SQL コンソールのロールは、Service Read Only および Service Admin の権限を持つユーザーに割り当てることができます。詳細については、[クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments)を参照してください。このガイドでは、SQL コンソールのユーザー用のカスタムロールを作成する方法を説明します。
 
-SQL コンソールユーザー用のカスタムロールを作成し、それに汎用ロールを付与するには、次のコマンドを実行します。メールアドレスは、コンソール上のユーザーのメールアドレスと一致している必要があります。
+<Tip>
+  コンソールからデータベースアクセスを管理するには、[Cloud 管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)の使用をお勧めします。`sql-console-role:<email>` ロールは、SQL コンソール内の JWT セッションと互換性がありません。
+</Tip>
+
+SQL コンソールのユーザー用のカスタムロールを作成し、それに汎用ロールを付与するには、次のコマンドを実行します。メールアドレスは、コンソール上のユーザーのメールアドレスと一致している必要があります。
 
 <Steps>
-  <Step>
-    #### `database_developer` を作成して権限を付与する
-
+  <Step title={<>`database_developer` を作成して権限を付与する</>} id="create-role-grant-permissions">
     `database_developer` ロールを作成し、`SHOW`、`CREATE`、`ALTER`、`DELETE` 権限を付与します。
 
     ```sql
@@ -40,10 +40,8 @@ SQL コンソールユーザー用のカスタムロールを作成し、それ�
     ```
   </Step>
 
-  <Step>
-    #### SQL コンソールユーザー用ロールを作成する
-
-    SQL コンソールユーザー my.user@domain.com 用のロールを作成し、`database_developer` ロールを割り当てます。
+  <Step title="SQL コンソールのユーザー用ロールを作成する" id="create-sql-console-user-role">
+    SQL コンソールのユーザー my.user@domain.com 用のロールを作成し、`database_developer` ロールを割り当てます。
 
     ```sql
     CREATE ROLE OR REPLACE `sql-console-role:my.user@domain.com`;
@@ -51,9 +49,7 @@ SQL コンソールユーザー用のカスタムロールを作成し、それ�
     ```
   </Step>
 
-  <Step>
-    #### ユーザーが SQL コンソールを使用すると新しいロールが割り当てられる
-
+  <Step title="ユーザーが SQL コンソールを使用すると新しいロールが割り当てられる" id="use-assigned-new-role">
     ユーザーが SQL コンソールを使用するたびに、そのメールアドレスに関連付けられたロールが割り当てられます。
   </Step>
 </Steps>
@@ -97,9 +93,9 @@ ClickHouse Cloud のデータベースユーザーに SSH 認証を設定する�
 
 SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用して、サービスおよびデータベースで以下を設定します。
 
-| Role  | Description                                              |
-| :---- | :------------------------------------------------------- |
-| デフォルト | サービスに対する完全な管理アクセス                                        |
+| Role  | Description                                                 |
+| :---- | :---------------------------------------------------------- |
+| デフォルト | サービスに対する完全な管理アクセス                                           |
 | カスタム  | SQLの[`GRANT`](/ja/reference/statements/grant)ステートメントを使用して設定 |
 
 * データベースロールは加算的です。つまり、ユーザーが2つのロールのメンバーである場合、そのユーザーにはその2つのロールのうち、より広いアクセス権が適用されます。ロールを追加してもアクセス権が失われることはありません。
@@ -129,16 +125,12 @@ SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用し�
 
 適切な複雑さを備えた12文字以上のパスワードは、SHA256ハッシュジェネレーターや Python の `hashlib` などの関数を使って SHA256 文字列に変換し、その文字列をパスワードとしてシステム管理者に渡すことができます。これにより、管理者が平文のパスワードを見たり取り扱ったりせずに済みます。
 
-<div id="database-access-listings-with-sql-console-users">
-  ### SQL コンソール ユーザーのデータベースアクセス一覧
-</div>
+### SQL コンソールのユーザーのデータベースアクセス一覧 {#database-access-listings-with-sql-console-users}
 
 以下の手順で、組織内の SQL コンソール とデータベース全体にわたる完全なアクセス一覧を生成できます。
 
 <Steps>
-  <Step>
-    #### すべてのデータベース権限の一覧を取得する
-
+  <Step title="すべてのデータベース権限の一覧を取得する" id="get-a-list-of-all-database-grants">
     以下のクエリを実行して、データベース内のすべての権限の一覧を取得します。
 
     ```sql
@@ -164,9 +156,7 @@ SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用し�
     ```
   </Step>
 
-  <Step>
-    #### 権限一覧を SQL コンソール にアクセスできる Console ユーザーに関連付ける
-
+  <Step title="権限一覧を SQL コンソール にアクセスできる Console ユーザーに関連付ける" id="associate-grant-list-to-console-users-with-access-to-sql-console">
     この一覧を、SQL コンソール にアクセスできる Console ユーザーに関連付けます。
 
     a. Console に移動します。
@@ -175,14 +165,12 @@ SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用し�
 
     c. 左側で Settings を選択します。
 
-    d. SQL コンソール access セクションまでスクロールします。
+    d. SQL コンソールのアクセス権 セクションまでスクロールします。
 
     e. データベースにアクセスできるユーザー数を示すリンク `There are # users with access to this service.` をクリックして、ユーザー一覧を表示します。
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## ウェアハウスユーザー
-</div>
+## Warehouse ユーザー {#warehouse-users}
 
-ウェアハウスユーザーは、同じウェアハウス内の各サービス間で共有されます。詳細については、[ウェアハウスのアクセス制御](/ja/products/cloud/features/infrastructure/warehouses#access-controls)を参照してください。
+Warehouse ユーザーは、同じ Warehouse 内のサービス間で共有されます。詳しくは、[Warehouse のアクセス制御](/ja/products/cloud/features/infrastructure/warehouses#access-controls)を参照してください。

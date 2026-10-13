@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.append("./")
 from typing import List
 
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.jobs.scripts.stack_trace_reader import StackTraceReader
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -117,6 +118,11 @@ class ClickHouseSetup:
         self.start_command = f"{self.binary_path} server -- --path {self.work_dir} --user_files_path {self.work_dir}/user_files --logger.log {self.server_log} --logger.errorlog {self.server_err_log} > /dev/null 2>&1"
 
     def start_server(self):
+        if self.proc is None:
+            # Right before the very first start, clear any clickhouse-server
+            # leaked by a previous CI job on this reused runner; otherwise its
+            # held ports make this start fail (see kill_leftover_server_processes).
+            kill_leftover_server_processes()
         if not self.proc or self.proc.poll() is not None:
             self.proc = subprocess.Popen(
                 self.start_command,

@@ -8,6 +8,7 @@ workflow = Workflow.Config(
     name="BackportPR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *[
             job
@@ -45,6 +46,7 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,

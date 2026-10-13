@@ -5,10 +5,43 @@ title: 'Best practices in ClickHouse'
 hide_title: true
 description: 'Landing page for Best Practices section in ClickHouse'
 doc_type: 'landing-page'
+mode: wide
 ---
-
-import TableOfContents from '/snippets/_table_of_contents.mdx';
 
 This section provides the best practices you will want to follow to get the most out of ClickHouse.
 
-<TableOfContents/>
+<CardGroup cols={2}>
+  <Card title="Choosing a primary key" icon="key" href="/concepts/best-practices/choosing-a-primary-key">
+    How to choose a primary key in ClickHouse.
+  </Card>
+  <Card title="Selecting data types" icon="shapes" href="/concepts/best-practices/select-data-type">
+    How to choose the right data types for your columns.
+  </Card>
+  <Card title="Use materialized views" icon="layer-group" href="/concepts/best-practices/use-materialized-views">
+    Shift computation from query time to insert time with materialized views.
+  </Card>
+  <Card title="Minimize and optimize JOINs" icon="link" href="/concepts/best-practices/minimize-optimize-joins">
+    Best practices for using JOINs in ClickHouse.
+  </Card>
+  <Card title="Choosing a partitioning key" icon="folder-tree" href="/concepts/best-practices/partitioning-keys">
+    How to choose a partitioning key.
+  </Card>
+  <Card title="Selecting an insert strategy" icon="file-import" href="/concepts/best-practices/selecting-an-insert-strategy">
+    How to choose an insert strategy, including bulk and asynchronous inserts.
+  </Card>
+  <Card title="Use data skipping indices where appropriate" icon="filter" href="/concepts/best-practices/using-data-skipping-indices">
+    How and when to use data skipping indices.
+  </Card>
+  <Card title="Avoid mutations" icon="ban" href="/concepts/best-practices/avoid-mutations">
+    Why you should avoid mutations in ClickHouse.
+  </Card>
+  <Card title="Avoid OPTIMIZE FINAL" icon="triangle-exclamation" href="/concepts/best-practices/avoid-optimize-final">
+    Why you should avoid `OPTIMIZE TABLE ... FINAL`.
+  </Card>
+  <Card title="Avoid nullable columns" icon="circle-minus" href="/concepts/best-practices/avoidnullablecolumns">
+    Why nullable columns should be avoided in ClickHouse.
+  </Card>
+  <Card title="Use JSON where appropriate" icon="code" href="/concepts/best-practices/json-type">
+    When to use the `JSON` data type.
+  </Card>
+</CardGroup>

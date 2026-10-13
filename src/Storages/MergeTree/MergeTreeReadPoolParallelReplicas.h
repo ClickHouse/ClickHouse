@@ -35,6 +35,18 @@ public:
     size_t getMarkSegmentSize() const { return mark_segment_size; }
 
 private:
+    /// Cuts the next portion of marks assigned by the coordinator (requesting a new assignment
+    /// when the buffer is empty). Returns false if there is no more work.
+    /// Outputs the part's assignment as the map of the task.
+    bool cutRangesToRead(size_t & part_idx, size_t & need_marks, MarkRanges & ranges_to_read, MarkRangesPtr & read_request_map);
+
+    /// Cuts up to need_marks more marks, or returns false if the assignment buffer
+    /// does not continue with the same part. Never requests more from the coordinator.
+    bool cutMoreRangesToRead(size_t part_idx, size_t need_marks, MarkRanges & ranges_to_read);
+
+    /// Must be called under the mutex.
+    void cutFromCurrentTask(size_t need_marks, MarkRanges & ranges_to_read);
+
     mutable std::mutex mutex;
 
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
@@ -48,6 +60,8 @@ private:
     size_t mark_segment_size{0};
 
     RangesInDataPartsDescription buffered_ranges;
+    /// `buffered_ranges.front()` as assigned, before any cut.
+    MarkRangesPtr front_read_request_map;
     bool no_more_tasks_available{false};
 
     /// See the comment in getTask method.

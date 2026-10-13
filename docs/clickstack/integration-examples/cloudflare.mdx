@@ -54,15 +54,13 @@ This section assumes you have Cloudflare Logpush configured to export logs to S3
 - S3 bucket name and region where Cloudflare writes logs
 
 <Steps>
-<Step>
-#### Configure S3 authentication {#configure-auth}
+<Step title="Configure S3 authentication" id="configure-auth">
 
 ClickPipes needs permission to read from your S3 bucket. Follow the [Accessing S3 data securely](/products/cloud/guides/data-sources/accessing-s3-data-securely) guide to configure either IAM role-based access or credentials-based access.
 
 For full details on ClickPipes S3 authentication and permissions, see the [S3 ClickPipes reference documentation](/integrations/clickpipes/object-storage/amazon-s3/overview#access-control).
 </Step>
-<Step>
-#### Create ClickPipes job {#create-clickpipes}
+<Step title="Create ClickPipes job" id="create-clickpipes">
 
 1. ClickHouse Cloud Console → **Data Sources** → **Create ClickPipe**
 2. **Source**: Amazon S3
@@ -97,8 +95,7 @@ Click **Complete Setup**.
 When first created, ClickPipes performs an initial load of **all existing files** in the specified path before switching to continuous polling. If your bucket contains a large backlog of Cloudflare logs, this initial load may take some time.
 </Note>
 </Step>
-<Step>
-#### Configure HyperDX data source {#configure-source}
+<Step title="Configure HyperDX data source" id="configure-source">
 
 ClickPipes ingests Cloudflare logs into a flat table with Cloudflare's native field names. To view these logs in HyperDX, configure a custom data source that maps Cloudflare columns to HyperDX's log view.
 
@@ -131,8 +128,7 @@ ClickPipes ingests Cloudflare logs into a flat table with Cloudflare's native fi
 
 This maps Cloudflare's native columns directly to HyperDX's log viewer without any data transformation or duplication. The **Body** displays a request summary like `GET /api/v1/users 200`, and all Cloudflare fields are available as searchable attributes.
 </Step>
-<Step>
-#### Verify data in HyperDX {#verify-hyperdx}
+<Step title="Verify data in HyperDX" id="verify-hyperdx">
 
 Navigate to the **Search** view and select the **Cloudflare Logs** source. Set the time range to cover your data. You should see log entries with:
 
@@ -151,8 +147,7 @@ Navigate to the **Search** view and select the **Cloudflare Logs** source. Set t
 For users who want to test the integration before configuring their production Cloudflare Logpush, we provide a sample dataset with realistic HTTP request logs.
 
 <Steps>
-<Step>
-#### Start ClickPipes with the demo dataset {#start-demo}
+<Step title="Start ClickPipes with the demo dataset" id="start-demo">
 
 1. ClickHouse Cloud Console → **Data Sources** → **Create ClickPipe**
 2. **Source**: Amazon S3
@@ -166,13 +161,11 @@ For users who want to test the integration before configuring their production C
 
 The dataset includes 5,000 HTTP request log entries spanning 24 hours with realistic patterns including traffic from multiple countries, cache hits and misses, API and static asset requests, error responses, and security events.
 </Step>
-<Step>
-#### Configure HyperDX data source {#configure-demo-source}
+<Step title="Configure HyperDX data source" id="configure-demo-source">
 
 Follow the [data source configuration steps](#configure-source) to create a HyperDX source pointing to the `cloudflare_http_logs` table. If you already configured the source in the production integration section, this step is not needed.
 </Step>
-<Step>
-#### Verify demo data {#verify-demo}
+<Step title="Verify demo data" id="verify-demo">
 
 ```sql
 SELECT count() FROM cloudflare_http_logs;
@@ -198,11 +191,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 ## Dashboards and visualization {#dashboards}
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import dashboard {#import-dashboard}
+<Step title="Import dashboard" id="import-dashboard">
 
 1. HyperDX → **Dashboards** → **Import Dashboard**
 
@@ -212,8 +205,7 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 
 <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="Import dashboard"/>
 </Step>
-<Step>
-#### View dashboard {#view-dashboard}
+<Step title="View dashboard" id="view-dashboard">
 
 <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="Example dashboard"/>
 

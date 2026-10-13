@@ -104,7 +104,7 @@ Switch between **Highlighted** and **All Events** modes to adjust the level of d
 ### From session to trace {#session-to-trace}
 When you select a network request or error in the session timeline, you can click through to the **Trace** tab to follow the request through your backend services — seeing the associated logs, spans, and database queries that were triggered by that user interaction.
 
-This works because the `tracePropagationTargets` configuration links browser spans to server spans via the `traceparent` header, creating a connected distributed trace from the user's click all the way to the database. For a detailed walkthrough of this in practice, including instrumenting both frontend and backend, see [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack).
+This works because the `tracePropagationTargets` configuration links browser spans to server spans via the `traceparent` header, creating a connected distributed trace from the user's click all the way to the database. For a detailed walkthrough of this in practice, including instrumenting both frontend and backend, see [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
 
 <Frame>
   <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="Drilling from a session replay into backend traces in ClickStack" />

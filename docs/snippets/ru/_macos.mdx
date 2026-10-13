@@ -14,15 +14,11 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
 </Warning>
 
 <Steps>
-  <Step>
-    ## Ознакомьтесь с рекомендациями
-
+  <Step title="Ознакомьтесь с рекомендациями" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## Установка с помощью формулы сообщества Homebrew
-
+  <Step title="Установка с помощью формулы сообщества Homebrew" id="install-using-community-homebrew-formula">
     Чтобы установить ClickHouse на macOS с помощью [Homebrew](https://brew.sh/), можно использовать
     [формулу сообщества Homebrew](https://formulae.brew.sh/cask/clickhouse) для ClickHouse.
 
@@ -31,15 +27,17 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Устранение ошибки developer verification error в macOS
-
+  <Step title="Устранение ошибки developer verification error в macOS" id="fix-developer-verification-error-macos">
     Если вы устанавливаете ClickHouse с помощью `brew`, вы можете столкнуться с ошибкой macOS.
     По умолчанию macOS не запускает приложения или инструменты, созданные разработчиком, которого не удаётся проверить.
 
     При попытке выполнить любую команду `clickhouse` вы можете увидеть такую ошибку:
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="Диалог ошибки проверки разработчика в macOS" border />
+    <div className="ch-image-sm">
+      <Frame>
+        <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" alt="Диалог ошибки проверки разработчика в macOS" />
+      </Frame>
+    </div>
 
     Чтобы обойти эту ошибку проверки, нужно удалить приложение из quarantine bin macOS: либо найти соответствующий параметр в окне System Settings, либо воспользоваться терминалом, либо переустановить ClickHouse.
 
@@ -47,17 +45,25 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
 
     Самый простой способ удалить исполняемый файл `clickhouse` из quarantine bin:
 
-    1. Откройте **System Settings**.
+    1. Откройте **System settings**.
 
     2. Перейдите в раздел **Privacy &amp; Security**:
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="Стандартный вид настроек Privacy & Security в macOS" border />
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" alt="Стандартный вид настроек Privacy & Security в macOS" />
+         </Frame>
+       </div>
 
     3. Прокрутите окно вниз, чтобы найти сообщение &#95;&quot;clickhouse-macos-aarch64&quot; was blocked from use because it isn&#39;t from an identified developer&quot;.
 
     4. Нажмите **Allow Anyway**.
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Настройки Privacy & Security в macOS с кнопкой Allow Anyway" border />
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" alt="Настройки Privacy & Security в macOS с кнопкой Allow Anyway" />
+         </Frame>
+       </div>
 
     5. Введите пароль пользователя macOS.
 
@@ -102,9 +108,7 @@ import Recommendations from '/snippets/ru/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Устранение проблемы переустановкой ClickHouse
-
+  <Step title="Устранение проблемы переустановкой ClickHouse" id="fix-issue">
     У Brew есть параметр командной строки, который позволяет не помещать установленные бинарные файлы в quarantine.
 
     Сначала удалите ClickHouse:

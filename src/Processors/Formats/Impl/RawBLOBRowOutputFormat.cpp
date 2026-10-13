@@ -37,6 +37,9 @@ void registerOutputFormatRawBLOB(FormatFactory & factory)
     {
         return std::make_shared<RawBLOBRowOutputFormat>(buf, std::make_shared<const Block>(sample));
     });
+
+    /// The output is a verbatim copy of the column bytes, which are not guaranteed to be valid UTF-8 text.
+    factory.markOutputFormatMayProduceRawBytes("RawBLOB");
 }
 
 }

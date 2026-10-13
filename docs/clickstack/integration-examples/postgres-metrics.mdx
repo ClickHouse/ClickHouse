@@ -30,8 +30,7 @@ If you would like to test the PostgreSQL metrics integration before configuring 
 - PostgreSQL monitoring user with appropriate permissions
 
 <Steps>
-<Step>
-#### Ensure monitoring user has required permissions {#monitoring-permissions}
+<Step title="Ensure monitoring user has required permissions" id="monitoring-permissions">
 
 The PostgreSQL receiver requires a user with read access to statistics views. Grant the `pg_monitor` role to your monitoring user:
 
@@ -39,8 +38,7 @@ The PostgreSQL receiver requires a user with read access to statistics views. Gr
 GRANT pg_monitor TO your_monitoring_user;
 ```
 </Step>
-<Step>
-#### Create custom OTel collector configuration {#create-custom-config}
+<Step title="Create custom OTel collector configuration" id="create-custom-config">
 
 ClickStack allows you to extend the base OpenTelemetry collector configuration by mounting a custom configuration file and setting an environment variable.
 
@@ -86,8 +84,7 @@ service:
 The `tls: insecure: true` setting disables SSL verification for development/testing. For production PostgreSQL with SSL enabled, remove this line or configure proper certificates.
 </Note>
 </Step>
-<Step>
-#### Deploy ClickStack with custom configuration {#deploy-clickstack}
+<Step title="Deploy ClickStack with custom configuration" id="deploy-clickstack">
 
 Mount your custom configuration:
 
@@ -103,8 +100,7 @@ docker run -d \
   clickhouse/clickstack:latest
 ```
 </Step>
-<Step>
-#### Verify metrics collection {#verify-metrics}
+<Step title="Verify metrics collection" id="verify-metrics">
 
 Once configured, log into HyperDX and verify metrics are flowing:
 
@@ -127,8 +123,7 @@ This demo dataset includes database-level metrics only to keep the sample data l
 </Info>
 
 <Steps>
-<Step>
-#### Download the sample metrics dataset {#download-sample}
+<Step title="Download the sample metrics dataset" id="download-sample">
 
 Download the pre-generated metrics files (24 hours of PostgreSQL metrics with realistic patterns):
 
@@ -146,8 +141,7 @@ The dataset includes realistic patterns:
 - **Application bug (14:00-14:30)** - Rollback rate spikes to 15%
 - **Deadlock incidents (14:15, 16:30)** - Rare deadlocks
 </Step>
-<Step>
-#### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 Start a ClickStack instance:
 
@@ -159,8 +153,7 @@ docker run -d --name clickstack-postgres-demo \
 
 Wait approximately 30 seconds for ClickStack to fully start.
 </Step>
-<Step>
-#### Load metrics into ClickStack {#load-metrics}
+<Step title="Load metrics into ClickStack" id="load-metrics">
 
 Load the metrics directly into ClickHouse:
 
@@ -174,8 +167,7 @@ cat postgres-metrics-sum.csv | docker exec -i clickstack-postgres-demo \
   clickhouse-client --query "INSERT INTO otel_metrics_sum FORMAT CSVWithNames"
 ```
 </Step>
-<Step>
-#### Verify metrics in HyperDX {#verify-metrics-demo}
+<Step title="Verify metrics in HyperDX" id="verify-metrics-demo">
 
 Once loaded, the quickest way to see your metrics is through the pre-built dashboard.
 
@@ -194,11 +186,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring PostgreSQL with ClickStack, we provide essential visualizations for PostgreSQL metrics.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
@@ -209,8 +201,7 @@ To help you get started monitoring PostgreSQL with ClickStack, we provide essent
 
 <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="Finish import dialog"/>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 

@@ -48,18 +48,39 @@ ${CLICKHOUSE_CLIENT} -q "
 
 #
 # $1 - OpenTelemetry Trace Id
-# $2 - value of distributed_foreground_insert
+# $2 - span kind to count
+# $3 - expected number of spans of that kind
+#
+# For a distributed INSERT the counted spans come from several scopes and are all
+# enqueued into the async opentelemetry_span_log. The racy ones are the remote-shard
+# SERVER spans: each is written from that shard's TCPHandler TracingContextHolder on
+# its own thread, which can still be finishing after the initiator's client call
+# returned. So counting once can read the log before the last span lands and return a
+# short count (e.g. 2 instead of 3) under slow builds. Poll until the expected count
+# is reached instead.
 function check_span_kind()
 {
-${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS opentelemetry_span_log;
+    local count=0
+    for _ in {1..30}; do
+        count=$(${CLICKHOUSE_CLIENT} -q "
+            SYSTEM FLUSH LOGS opentelemetry_span_log;
 
-    SELECT count()
-    FROM system.opentelemetry_span_log
-    WHERE finish_date >= yesterday()
-    AND   lower(hex(trace_id))           = '${1}'
-    AND   kind                           = '${2}'
-    ;"
+            SELECT count()
+            FROM system.opentelemetry_span_log
+            WHERE finish_date >= yesterday()
+            AND   lower(hex(trace_id))           = '${1}'
+            AND   kind                           = '${2}'
+            ;")
+        # Retry only while we got a numeric count below the expected value; a
+        # non-numeric result (client/flush error) breaks out and is reported as-is
+        # so the failure surfaces immediately instead of looping for 30s.
+        [[ "$count" =~ ^[0-9]+$ ]] || break
+        [[ "$count" -ge "$3" ]] && break
+        sleep 1
+    done
+    # Print the final count. If a span is genuinely missing the loop times out
+    # and this still reports the short count, so the test keeps catching it.
+    echo "$count"
 }
 
 
@@ -84,7 +105,7 @@ trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
 insert $trace_id 0 1 "async-insert-writeToLocal"
 check_span $trace_id
 # 1 HTTP SERVER spans
-check_span_kind $trace_id 'SERVER'
+check_span_kind $trace_id 'SERVER' 1
 
 #
 # test2
@@ -94,9 +115,9 @@ trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
 insert $trace_id 0 0 "async-insert-writeToRemote"
 check_span $trace_id
 # 3 SERVER spans, 1 for HTTP, 2 for TCP
-check_span_kind $trace_id 'SERVER'
+check_span_kind $trace_id 'SERVER' 3
 # 2 CLIENT spans
-check_span_kind $trace_id 'CLIENT'
+check_span_kind $trace_id 'CLIENT' 2
 
 #
 # test3
@@ -106,7 +127,7 @@ insert $trace_id 1 1  "sync-insert-writeToLocal"
 echo "===3==="
 check_span $trace_id
 # 1 HTTP SERVER spans
-check_span_kind $trace_id 'SERVER'
+check_span_kind $trace_id 'SERVER' 1
 
 #
 # test4
@@ -116,9 +137,9 @@ trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
 insert $trace_id 1 0  "sync-insert-writeToRemote"
 check_span $trace_id
 # 3 SERVER spans, 1 for HTTP, 2 for TCP
-check_span_kind $trace_id 'SERVER'
+check_span_kind $trace_id 'SERVER' 3
 # 2 CLIENT spans
-check_span_kind $trace_id 'CLIENT'
+check_span_kind $trace_id 'CLIENT' 2
 
 #
 # Cleanup

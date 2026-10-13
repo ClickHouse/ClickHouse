@@ -27,8 +27,7 @@ The only strict requirement for ClickStack, whether using the open-source or man
 The following guide assumes you have already created a Managed ClickStack service and recorded your service credentials. If you haven't, follow the [Getting Started](/clickstack/getting-started/managed) guide for Managed ClickStack until promoted to configure Vector.
 
 <Steps>
-<Step>
-### Create a database and table {#create-a-database-table}
+<Step title="Create a database and table" id="create-a-database-table">
 
 Vector requires a table and schema to be defined prior to data ingestion. 
 
@@ -68,8 +67,7 @@ ORDER BY (toStartOfMinute(time_local), status, remote_addr)
 The primary key above assumes typical access patterns in the ClickStack UI for Nginx logs, but may need to be adjusted depending on your workload in production environments.
 </Info>
 </Step>
-<Step>
-### Add ClickHouse sink to vector configuration {#add-clickhouse-sink-to-config}
+<Step title="Add ClickHouse sink to vector configuration" id="add-clickhouse-sink-to-config">
 
 Modify your Vector configuration to include the ClickHouse sink, updating the `inputs` field to receive events from your existing pipelines.
 
@@ -102,15 +100,13 @@ We recommend reviewing the available sink configuration options in the [Vector d
 The example above uses the default user for Managed ClickStack. For production deployments, we recommend [creating a dedicated ingestion user](/clickstack/ingesting-data/collector#creating-an-ingestion-user) with appropriate permissions and limits.
 </Note>
 </Step>
-<Step>
-### Navigate to the ClickStack UI {#navigate-to-clickstack-ui}
+<Step title="Navigate to the ClickStack UI" id="navigate-to-clickstack-ui">
 
 Navigate to your Managed ClickStack service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the ClickStack UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
 
 <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Launch ClickStack for vector" size="lg"/>
 </Step>
-<Step>
-### Create a datasource {#create-a-datasource-managed}
+<Step title="Create a datasource" id="create-a-datasource-managed">
 
 Create a logs data source. If no data sources exist, you will be prompted to create one on your first login. Otherwise, navigate to Team Settings and add a new data source.
 
@@ -124,8 +120,7 @@ In the example above, a `Body` column doesn't exist in the data. Instead, it is 
 
 For other possible options, see the [configuration reference](/clickstack/managing/config).
 </Step>
-<Step>
-### Explore the data {#explore-the-data-managed}
+<Step title="Explore the data" id="explore-the-data-managed">
 
 Navigate to the logs view to explore the data and begin using ClickStack.
 
@@ -137,8 +132,7 @@ Navigate to the logs view to explore the data and begin using ClickStack.
 <Tab title="OpenSource ClickStack">
 
 <Steps>
-<Step>
-### Create a database and table {#create-a-database-table-oss}
+<Step title="Create a database and table" id="create-a-database-table-oss">
 
 Vector requires a table and schema to be defined prior to data ingestion. 
 
@@ -180,8 +174,7 @@ ORDER BY (toStartOfMinute(time_local), status, remote_addr)
 The primary key above assumes typical access patterns in the ClickStack UI for Nginx logs, but may need to be adjusted depending on your workload in production environments.
 </Info>
 </Step>
-<Step>
-### Add ClickHouse sink to vector configuration {#add-clickhouse-config-to-sink-oss}
+<Step title="Add ClickHouse sink to vector configuration" id="add-clickhouse-config-to-sink-oss">
 
 Ingestion to ClickStack for Vector should occur directly to ClickHouse, bypassing the OTLP endpoint exposed by the collector.
 
@@ -216,15 +209,13 @@ We recommend reviewing the available sink configuration options in the [Vector d
 The example above uses the `api` user for ClickStack Open Source. For production deployments, we recommend [creating a dedicated ingestion user](/clickstack/ingesting-data/collector#creating-an-ingestion-user) with appropriate permissions and limits. The above configuration also assumes that Vector is running on the same host as ClickStack. In production deployments, this is likely to be different. We would recommend sending data over the secure HTTPS port 8443.
 </Note>
 </Step>
-<Step>
-### Navigate to the ClickStack UI {#navigate-to-clickstack-ui-oss}
+<Step title="Navigate to the ClickStack UI" id="navigate-to-clickstack-ui-oss">
 
 Navigate to the ClickStack UI at [http://localhost:8080](http://localhost:8080). Create a user if you haven't completed the onboarding.
 
 <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack login" size="lg"/>
 </Step>
-<Step>
-### Create a datasource {#create-a-datasource-oss}
+<Step title="Create a datasource" id="create-a-datasource-oss">
 
 Navigate to Team Settings and add a new data source.
 
@@ -238,8 +229,7 @@ In the example above, a `Body` column doesn't exist in the data. Instead, it is 
 
 For other possible options, see the [configuration reference](/clickstack/managing/config).
 </Step>
-<Step>
-### Explore the data {#explore-the-data-oss}
+<Step title="Explore the data" id="explore-the-data-oss">
 
 Navigate to the logs view to explore the data and begin using ClickStack.
 
@@ -260,18 +250,15 @@ For a more complete example, we use an **Nginx log file** below.
 The following guide assumes you have already created a Managed ClickStack service and recorded your service credentials. If you haven't, follow the [Getting Started](/clickstack/getting-started/managed) guide for Managed ClickStack until promoted to configure Vector.
 
 <Steps>
-<Step>
-### Installing Vector {#installing-vector}
+<Step title="Installing Vector" id="installing-vector">
 
 <InstallingVector/>
 </Step>
-<Step>
-### Download the sample data {#download-the-sample-data}
+<Step title="Download the sample data" id="download-the-sample-data">
 
 <VectorSampleData/>
 </Step>
-<Step>
-### Create a database and table {#create-database-table-nginx-managed}
+<Step title="Create a database and table" id="create-database-table-nginx-managed">
 
 Vector requires a table and schema to be defined prior to data ingestion. 
 
@@ -311,8 +298,7 @@ ORDER BY (toStartOfMinute(time_local), status, remote_addr)
 The primary key above assumes typical access patterns in the ClickStack UI for Nginx logs, but may need to be adjusted depending on your workload in production environments.
 </Info>
 </Step>
-<Step>
-### Copy Vector configuration {#copy-vector-configuration}
+<Step title="Copy Vector configuration" id="copy-vector-configuration">
 
 Copy the vector configuration and create a file `nginx.yaml`, setting the `CLICKHOUSE_ENDPOINT` and `CLICKHOUSE_PASSWORD`.
 
@@ -356,8 +342,7 @@ sinks:
 The example above uses the default user for Managed ClickStack. For production deployments, we recommend [creating a dedicated ingestion user](/clickstack/ingesting-data/collector#creating-an-ingestion-user) with appropriate permissions and limits.
 </Note>
 </Step>
-<Step>
-### Start Vector {#start-vector}
+<Step title="Start Vector" id="start-vector">
 
 Start Vector with the following command, creating the data directory first to record file offsets.
 
@@ -366,15 +351,13 @@ mkdir ./.vector-data
 vector --config nginx.yaml
 ```
 </Step>
-<Step>
-### Navigate to the ClickStack UI {#navigate-to-clickstack-ui-nginx-managed}
+<Step title="Navigate to the ClickStack UI" id="navigate-to-clickstack-ui-nginx-managed">
 
 Navigate to your Managed ClickStack service and select "ClickStack" from the left-hand menu. If you’ve already completed the onboarding, this will launch the ClickStack UI in a new tab, and you will be automatically authenticated. If not, you can proceed through the onboarding and select “Launch ClickStack” once you’ve selected Vector as your input source.
 
 <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Launch ClickStack for vector" size="lg"/>
 </Step>
-<Step>
-### Create a datasource {#create-a-datasource-nginx-managed}
+<Step title="Create a datasource" id="create-a-datasource-nginx-managed">
 
 Create a logs data source. If no data sources exist, you will be prompted to create one on first login. Otherwise, navigate to Team Settings and add a new data source.
 
@@ -407,8 +390,7 @@ This reconstructs the log line from the structured fields.
 
 For other possible options, see the [configuration reference](/clickstack/managing/config).
 </Step>
-<Step>
-### Explore the data {#explore-the-data-nginx-managed}
+<Step title="Explore the data" id="explore-the-data-nginx-managed">
 
 Navigate to the search view for `October 20th, 2025` to explore the data and begin using ClickStack.
 
@@ -423,18 +405,15 @@ Navigate to the search view for `October 20th, 2025` to explore the data and beg
 The following guide assumes you have set up ClickStack Open Source with the [Getting Started guide](/clickstack/getting-started/oss).
 
 <Steps>
-<Step>
-### Installing vector {#installing-vector-oss}
+<Step title="Installing vector" id="installing-vector-oss">
 
 <InstallingVector/>
 </Step>
-<Step>
-### Download the sample data {#download-the-sample-data-oss}
+<Step title="Download the sample data" id="download-the-sample-data-oss">
 
 <VectorSampleData/>
 </Step>
-<Step>
-### Create a database and table {#create-a-database-table-nginx-oss}
+<Step title="Create a database and table" id="create-a-database-table-nginx-oss">
 
 Vector requires a table and schema to be defined prior to data ingestion. 
 
@@ -476,8 +455,7 @@ ORDER BY (toStartOfMinute(time_local), status, remote_addr)
 The primary key above assumes typical access patterns in the ClickStack UI for Nginx logs, but may need to be adjusted depending on your workload in production environments.
 </Info>
 </Step>
-<Step>
-### Copy Vector configuration {#copy-vector-configuration-nginx-oss}
+<Step title="Copy Vector configuration" id="copy-vector-configuration-nginx-oss">
 
 Ingestion to ClickStack for Vector should occur directly to ClickHouse, bypassing the OTLP endpoint exposed by the collector.
 
@@ -523,8 +501,7 @@ sinks:
 The example above uses the `api` user for ClickStack Open Source. For production deployments, we recommend [creating a dedicated ingestion user](/clickstack/ingesting-data/collector#creating-an-ingestion-user) with appropriate permissions and limits. The above configuration also assumes that Vector is running on the same host as ClickStack. In production deployments, this is likely to be different. We would recommend sending data over the secure HTTPS port 8443.
 </Note>
 </Step>
-<Step>
-### Start Vector {#start-vector-oss-nginx}
+<Step title="Start Vector" id="start-vector-oss-nginx">
 
 Start Vector with the following command.
 
@@ -533,8 +510,7 @@ mkdir ./.vector-data
 vector --config nginx-local.yaml
 ```
 </Step>
-<Step>
-### Create a datasource {#create-a-datasource-nginx-oss}
+<Step title="Create a datasource" id="create-a-datasource-nginx-oss">
 
 Create a logs data source via `Team -> Sources` 
 
@@ -567,15 +543,13 @@ This reconstructs the log line from the structured fields.
 
 For other possible options, see the [configuration reference](/clickstack/managing/config).
 </Step>
-<Step>
-### Navigate to the ClickStack UI {#navigate-to-clickstack-ui-nginx-oss}
+<Step title="Navigate to the ClickStack UI" id="navigate-to-clickstack-ui-nginx-oss">
 
 Navigate to the ClickStack UI at [http://localhost:8080](http://localhost:8080). Create a user if you haven't completed the onboarding.
 
 <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack login" size="lg"/>
 </Step>
-<Step>
-### Explore the data {#explore-the-data-nginx-oss}
+<Step title="Explore the data" id="explore-the-data-nginx-oss">
 
 Navigate to the search view for `October 20th, 2025` to explore the data and begin using ClickStack.
 

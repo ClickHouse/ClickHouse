@@ -1,3 +1,4 @@
+#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
@@ -11,7 +12,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/readFloatText.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/readDecimalText.h>
+#include <Common/LockMemoryExceptionInThread.h>
+
+#include <absl/container/inlined_vector.h>
 
 
 using namespace std::literals;
@@ -24,11 +30,172 @@ namespace ErrorCodes
 extern const int BAD_TYPE_OF_FIELD;
 extern const int BAD_GET;
 extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
+extern const int CANNOT_PARSE_NUMBER;
 extern const int DECIMAL_OVERFLOW;
 extern const int INCORRECT_DATA;
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+void Field::initEmptyContainer(Types::Which w)
+{
+    switch (w)
+    {
+        case Types::Array:  new (&storage) Array();  break;
+        case Types::Tuple:  new (&storage) Tuple();  break;
+        case Types::Map:    new (&storage) Map();    break;
+        case Types::Object: new (&storage) Object(); break;
+        default: break;
+    }
+    which = w;
+}
+
+void Field::createContainerIteratively(const Field & src)
+{
+    /// Build *this as a deep copy of `src`. Each pending entry is a (source, destination)
+    /// pair of same-typed container Fields whose destination is empty and still needs its
+    /// elements copied in. Container children are created empty and enqueued instead of
+    /// being copied recursively, so the copy runs with a bounded native stack.
+    initEmptyContainer(src.which);
+
+    absl::InlinedVector<std::pair<const Field *, Field *>, 16> pending;
+
+    /// On a mid-copy allocation failure, tear down what was built so we neither leak the
+    /// partial container nor leave the storage in a half-constructed state (matches the
+    /// strong guarantee the recursive std::vector copy used to provide).
+    auto copy_level = [&pending](const Field & s, Field & d)
+    {
+        auto copy_vector = [&pending](const auto & sv, auto & dv)
+        {
+            dv.reserve(sv.size());  /// keep &dv.back() stable while we hand out pointers below
+            for (const Field & se : sv)
+            {
+                if (isContainer(se.which))
+                {
+                    dv.emplace_back();
+                    Field & de = dv.back();
+                    de.initEmptyContainer(se.which);
+                    pending.emplace_back(&se, &de);
+                }
+                else
+                    dv.push_back(se);  /// leaf: a shallow copy, no recursion
+            }
+        };
+
+        switch (d.which)
+        {
+            case Types::Array: copy_vector(s.get<Array>(), d.get<Array>()); break;
+            case Types::Tuple: copy_vector(s.get<Tuple>(), d.get<Tuple>()); break;
+            case Types::Map:   copy_vector(s.get<Map>(),   d.get<Map>());   break;
+            case Types::Object:
+            {
+                /// std::map insertion never invalidates references to existing elements,
+                /// so the &de pointers we enqueue stay valid.
+                for (const auto & [key, se] : s.get<Object>())
+                {
+                    if (isContainer(se.which))
+                    {
+                        Field & de = d.get<Object>().emplace(key, Field()).first->second;
+                        de.initEmptyContainer(se.which);
+                        pending.emplace_back(&se, &de);
+                    }
+                    else
+                        d.get<Object>().emplace(key, se);
+                }
+                break;
+            }
+            default: break;
+        }
+    };
+
+    try
+    {
+        copy_level(src, *this);
+        while (!pending.empty())
+        {
+            auto [s, d] = pending.back();
+            pending.pop_back();
+            copy_level(*s, *d);
+        }
+    }
+    catch (...)
+    {
+        destroy();
+        throw;
+    }
+}
+
+static bool containerIsEmpty(const Field & f)
+{
+    switch (f.getType())
+    {
+        case Field::Types::Array:  return f.safeGet<Array>().empty();
+        case Field::Types::Tuple:  return f.safeGet<Tuple>().empty();
+        case Field::Types::Map:    return f.safeGet<Map>().empty();
+        case Field::Types::Object: return f.safeGet<Object>().empty();
+        default: return true;
+    }
+}
+
+void Field::destroyContainerIteratively(Types::Which old_which) noexcept
+{
+    /// Tear down a (possibly deeply nested) container without native recursion: move every
+    /// non-empty nested-container child into an explicit worklist so each vector/map
+    /// destructor only ever destroys leaf elements (and already-emptied containers, which are
+    /// trivial), keeping the native stack depth bounded regardless of the nesting depth.
+    ///
+    /// This runs from ~Field, so it must not throw. The worklist can allocate, and allocation
+    /// goes through the throwing operator new, so suppress the memory-limit exception for its
+    /// lifetime (memory is still tracked, so freeing the value being destroyed is still credited).
+    /// The worklist only holds the current frontier of nested containers, which for a deeply
+    /// nested value is narrow (a deep literal is query-size bounded, so it cannot also be wide);
+    /// the inline buffer keeps that common case allocation-free.
+    LockMemoryExceptionInThread block_memory_limit_exception;
+    absl::InlinedVector<Field, 16> to_destroy;
+
+    auto steal_children = [&to_destroy](Field & container, Types::Which w)
+    {
+        auto steal_from_vector = [&to_destroy](auto & vec)
+        {
+            for (Field & elem : vec)
+                if (isContainer(elem.which) && !containerIsEmpty(elem))
+                    to_destroy.push_back(std::move(elem));
+        };
+
+        switch (w)
+        {
+            case Types::Array: steal_from_vector(container.get<Array>()); break;
+            case Types::Tuple: steal_from_vector(container.get<Tuple>()); break;
+            case Types::Map:   steal_from_vector(container.get<Map>());   break;
+            case Types::Object:
+                for (auto & [key, elem] : container.get<Object>())
+                    if (isContainer(elem.which) && !containerIsEmpty(elem))
+                        to_destroy.push_back(std::move(elem));
+                break;
+            default: break;
+        }
+    };
+
+    /// `which` is already Null here (set by destroy()), so drive off the saved `old_which`.
+    steal_children(*this, old_which);
+    switch (old_which)
+    {
+        case Types::Array:  destroy<Array>();  break;
+        case Types::Tuple:  destroy<Tuple>();  break;
+        case Types::Map:    destroy<Map>();    break;
+        case Types::Object: destroy<Object>(); break;
+        default: break;
+    }
+
+    while (!to_destroy.empty())
+    {
+        Field cur = std::move(to_destroy.back());
+        to_destroy.pop_back();
+        /// Empty `cur`'s nested containers into the worklist first, so destroying `cur` at the
+        /// end of this scope stays shallow (its remaining children are leaves or emptied).
+        steal_children(cur, cur.which);
+    }
 }
 
 bool AggregateFunctionStateData::operator < (const AggregateFunctionStateData &) const
@@ -49,6 +216,43 @@ bool AggregateFunctionStateData::operator > (const AggregateFunctionStateData &)
 bool AggregateFunctionStateData::operator >= (const AggregateFunctionStateData &) const
 {
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for AggregateFunctionStateData.");
+}
+
+bool NumberLiteral::operator < (const NumberLiteral &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator < is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+bool NumberLiteral::operator <= (const NumberLiteral &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator <= is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+bool NumberLiteral::operator > (const NumberLiteral &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator > is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+bool NumberLiteral::operator >= (const NumberLiteral &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+Float64 NumberLiteral::toFloat64() const
+{
+    /// Hex floats (0x1p4) and hex integers can't be parsed by readFloatText, so use strtod for them.
+    std::string_view digits = value;
+    if (digits.starts_with('-'))
+        digits.remove_prefix(1);
+    if (digits.starts_with("0x") || digits.starts_with("0X"))
+        return std::strtod(value.c_str(), nullptr);
+
+    /// Decimal/exponent literals: use ClickHouse's own precise reader so the resolved value is
+    /// deterministic and identical to how the same text is parsed elsewhere as Float64.
+    ReadBufferFromString buf(value);
+    Float64 result = 0;
+    readFloatTextPrecise(result, buf);
+    return result;
 }
 
 bool AggregateFunctionStateData::operator == (const AggregateFunctionStateData & rhs) const
@@ -84,6 +288,78 @@ const DecimalField<T> & DecimalField<T>::operator -= (const DecimalField<T> & r)
     return *this;
 }
 
+static int compareContainersThreeWay(const Field & l, const Field & r);
+
+/// -1 / 0 / +1 for a pair of container elements, ordered by type tag first and by value
+/// second, which is how the container's own lexicographical comparison orders them.
+static int compareFieldsThreeWay(const Field & l, const Field & r)
+{
+    if (l.getType() != r.getType())
+        return l.getType() < r.getType() ? -1 : 1;
+
+    switch (l.getType())
+    {
+        case Field::Types::Array:
+        case Field::Types::Tuple:
+        case Field::Types::Map:
+        case Field::Types::Object:
+            return compareContainersThreeWay(l, r);
+        default:
+            /// Probing both directions is O(1) for a scalar or opaque element, and it leaves
+            /// `operator<` the single source of truth for every per-type rule (NaN placement,
+            /// decimal rescaling, the types whose ordering throws).
+            if (l < r)
+                return -1;
+            if (r < l)
+                return 1;
+            return 0;
+    }
+}
+
+/// Each element must be visited once: `std::vector`'s own ordering compares an element type that
+/// has no `operator<=>` by asking it both `a < b` and `b < a`, which costs 2^depth on a value
+/// whose children compare equal.
+static int compareContainersThreeWay(const Field & l, const Field & r)
+{
+    auto compare_vectors = [](const auto & lv, const auto & rv)
+    {
+        const size_t common_size = std::min(lv.size(), rv.size());
+        for (size_t i = 0; i < common_size; ++i)
+            if (int cmp = compareFieldsThreeWay(lv[i], rv[i]); cmp != 0)
+                return cmp;
+        if (lv.size() == rv.size())
+            return 0;
+        return lv.size() < rv.size() ? -1 : 1;
+    };
+
+    switch (l.getType())
+    {
+        case Field::Types::Array: return compare_vectors(l.safeGet<Array>(), r.safeGet<Array>());
+        case Field::Types::Tuple: return compare_vectors(l.safeGet<Tuple>(), r.safeGet<Tuple>());
+        case Field::Types::Map:   return compare_vectors(l.safeGet<Map>(),   r.safeGet<Map>());
+        case Field::Types::Object:
+        {
+            /// A `std::map` is ordered lexicographically over its (key, value) pairs.
+            const auto & lm = l.safeGet<Object>();
+            const auto & rm = r.safeGet<Object>();
+            auto lit = lm.begin();
+            auto rit = rm.begin();
+            for (; lit != lm.end() && rit != rm.end(); ++lit, ++rit)
+            {
+                if (lit->first != rit->first)
+                    return lit->first < rit->first ? -1 : 1;
+                if (int cmp = compareFieldsThreeWay(lit->second, rit->second); cmp != 0)
+                    return cmp;
+            }
+            if (lit == lm.end() && rit == rm.end())
+                return 0;
+            return lit == lm.end() ? -1 : 1;
+        }
+        default:
+            throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
+    }
+}
+
 bool Field::operator< (const Field & rhs) const
 {
     if (which < rhs.which)
@@ -108,16 +384,17 @@ bool Field::operator< (const Field & rhs) const
             static constexpr int nan_direction_hint = 1; /// Put NaN at the end
             return FloatCompareHelper<Float64>::less(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
         case Types::String:  return get<String>()  < rhs.get<String>();
-        case Types::Array:   return get<Array>()   < rhs.get<Array>();
-        case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
-        case Types::Map:     return get<Map>()     < rhs.get<Map>();
-        case Types::Object:  return get<Object>()  < rhs.get<Object>();
+        case Types::Array:   [[fallthrough]];
+        case Types::Tuple:   [[fallthrough]];
+        case Types::Map:     [[fallthrough]];
+        case Types::Object:  return compareContainersThreeWay(*this, rhs) < 0;
         case Types::Decimal32:  return get<DecimalField<Decimal32>>()  < rhs.get<DecimalField<Decimal32>>();
         case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
         case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
         case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() < rhs.get<CustomType>();
+        case Types::Number:  return get<NumberLiteral>() < rhs.get<NumberLiteral>();
     }
 
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -147,21 +424,22 @@ bool Field::operator<= (const Field & rhs) const
         {
             static constexpr int nan_direction_hint = 1; /// Put NaN at the end
             Float64 f1 = get<Float64>();
-            Float64 f2 = get<Float64>();
+            Float64 f2 = rhs.get<Float64>();
             return FloatCompareHelper<Float64>::less(f1, f2, nan_direction_hint)
                 || FloatCompareHelper<Float64>::equals(f1, f2, nan_direction_hint);
         }
         case Types::String:  return get<String>()  <= rhs.get<String>();
-        case Types::Array:   return get<Array>()   <= rhs.get<Array>();
-        case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
-        case Types::Map:     return get<Map>()     <= rhs.get<Map>();
-        case Types::Object:  return get<Object>()  <= rhs.get<Object>();
+        case Types::Array:   [[fallthrough]];
+        case Types::Tuple:   [[fallthrough]];
+        case Types::Map:     [[fallthrough]];
+        case Types::Object:  return compareContainersThreeWay(*this, rhs) <= 0;
         case Types::Decimal32:  return get<DecimalField<Decimal32>>()  <= rhs.get<DecimalField<Decimal32>>();
         case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
         case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
         case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() <= rhs.get<CustomType>();
+        case Types::Number:  return get<NumberLiteral>() <= rhs.get<NumberLiteral>();
     }
 
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -199,6 +477,7 @@ bool Field::operator== (const Field & rhs) const
         case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() == rhs.get<CustomType>();
+        case Types::Number:  return get<NumberLiteral>() == rhs.get<NumberLiteral>();
     }
 
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -275,7 +554,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::String:
         {
             std::string value;
-            readStringBinary(value, buf);
+            readStringBinaryGrowing(value, buf);
             return value;
         }
         case Field::Types::Array:
@@ -305,8 +584,8 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::AggregateFunctionState:
         {
             AggregateFunctionStateData value;
-            readStringBinary(value.name, buf);
-            readStringBinary(value.data, buf);
+            readStringBinaryGrowing(value.name, buf);
+            readStringBinaryGrowing(value.data, buf);
             return value;
         }
         case Field::Types::Bool:
@@ -349,6 +628,12 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::CustomType:
             return Field();
+        case Field::Types::Number:
+        {
+            std::string value;
+            readStringBinary(value, buf);
+            return NumberLiteral(std::move(value));
+        }
     }
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field type {}", std::to_string(type));
 }
@@ -433,7 +718,7 @@ void readBinary(Object & x, ReadBuffer & buf)
         UInt8 type = 0;
         String key;
         readBinary(type, buf);
-        readBinary(key, buf);
+        readStringBinaryGrowing(key, buf);
         x[key] = getBinaryValue(type, buf);
     }
 }
@@ -532,6 +817,102 @@ Field readFieldBinary(ReadBuffer & buf)
     UInt8 type = 0;
     readBinary(type, buf);
     return getBinaryValue(type, buf);
+}
+
+Field Field::resolveNumberLiteral() const
+{
+    /// Recurse into containers so nested literals (e.g. `[6.7]` used as an aggregate function
+    /// parameter, parsed as an Array of NumberLiteral) are resolved element-wise.
+    auto resolve_vector = [](const auto & container)
+    {
+        std::decay_t<decltype(container)> result;
+        result.reserve(container.size());
+        for (const auto & elem : container)
+            result.push_back(elem.resolveNumberLiteral());
+        return result;
+    };
+
+    if (which == Types::Array)
+        return resolve_vector(get<Array>());
+    if (which == Types::Tuple)
+        return resolve_vector(get<Tuple>());
+    if (which == Types::Map)
+        return resolve_vector(get<Map>());
+
+    if (which != Types::Number)
+        return *this;
+
+    const auto & num = get<NumberLiteral>();
+    const String & s = num.value;
+
+    if (s.empty())
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Empty numeric literal");
+
+    /// Check if this looks like a pure integer (no decimal point or exponent).
+    bool is_integer = true;
+    for (size_t i = (s[0] == '-' ? 1 : 0); i < s.size(); ++i)
+    {
+        if (s[i] == '.' || s[i] == 'e' || s[i] == 'E')
+        {
+            is_integer = false;
+            break;
+        }
+    }
+
+    if (!is_integer)
+    {
+        /// Decimal/exponent literal → resolve to Float64 (backward compat).
+        return num.toFloat64();
+    }
+
+    /// Integer literal → resolve to the smallest fitting integer type.
+    /// tryReadIntText doesn't detect overflow for wide integers, so we verify
+    /// by converting back to string and comparing with the original.
+    bool negative = !s.empty() && s[0] == '-';
+    std::string_view digits = s;
+    if (negative)
+        digits.remove_prefix(1);
+
+    auto verifyRoundtrip = [](const auto & value, std::string_view expected) -> bool
+    {
+        WriteBufferFromOwnString wb;
+        writeText(value, wb);
+        return wb.str() == expected;
+    };
+
+    if (negative)
+    {
+        {
+            ReadBufferFromString buf(s);
+            Int128 value;
+            if (tryReadIntText(value, buf) && buf.eof() && value < 0 && verifyRoundtrip(value, s))
+                return value;
+        }
+        {
+            ReadBufferFromString buf(s);
+            Int256 value;
+            if (tryReadIntText(value, buf) && buf.eof() && value < 0 && verifyRoundtrip(value, s))
+                return value;
+        }
+    }
+    else
+    {
+        {
+            ReadBufferFromString buf(s);
+            UInt128 value;
+            if (tryReadIntText(value, buf) && buf.eof() && verifyRoundtrip(value, s))
+                return value;
+        }
+        {
+            ReadBufferFromString buf(s);
+            UInt256 value;
+            if (tryReadIntText(value, buf) && buf.eof() && verifyRoundtrip(value, s))
+                return value;
+        }
+    }
+
+    /// Value doesn't fit in any integer type. Fall back to Float64 (approximate).
+    return num.toFloat64();
 }
 
 String Field::dump() const
@@ -744,6 +1125,12 @@ Field Field::restoreFromDump(std::string_view dump_)
         return res;
     }
 
+    prefix = std::string_view{"Number_"};
+    if (dump.starts_with(prefix))
+    {
+        return NumberLiteral(String{dump.substr(prefix.length())});
+    }
+
     show_error();
     UNREACHABLE();
 }
@@ -806,6 +1193,11 @@ static void writeText(const Null & x, WriteBuffer & buf)
         writeText("NULL", buf);
 }
 
+inline void writeText(const NumberLiteral & x, WriteBuffer & buf)
+{
+    writeString(x.value, buf);
+}
+
 String fieldToString(const Field & x)
 {
     return Field::dispatch(
@@ -814,6 +1206,72 @@ String fieldToString(const Field & x)
             return toString(value);
         },
         x);
+}
+
+void normalizeBoolFields(Field & field)
+{
+    if (field.getType() == Field::Types::Bool)
+    {
+        field = field.safeGet<UInt64>();
+    }
+    else if (field.getType() == Field::Types::Tuple)
+    {
+        auto & tuple = field.safeGet<Tuple>();
+        for (auto & elem : tuple)
+            normalizeBoolFields(elem);
+    }
+    else if (field.getType() == Field::Types::Array)
+    {
+        auto & array = field.safeGet<Array>();
+        for (auto & elem : array)
+            normalizeBoolFields(elem);
+    }
+    else if (field.getType() == Field::Types::Map)
+    {
+        auto & map = field.safeGet<Map>();
+        for (auto & elem : map)
+            normalizeBoolFields(elem);
+    }
+}
+
+bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &))
+{
+    /// Walked with an explicit worklist, like the copy and destroy paths above, so the native stack
+    /// depth does not follow the nesting depth of a value that arrives from data rather than a literal.
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
+    {
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        if (predicate(*current))
+            return true;
+
+        switch (current->getType())
+        {
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & element : current->safeGet<Map>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Object:
+                for (const auto & [_, element] : current->safeGet<Object>())
+                    pending.push_back(&element);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return false;
 }
 
 std::string_view fieldTypeToString(Field::Types::Which type)
@@ -843,6 +1301,7 @@ std::string_view fieldTypeToString(Field::Types::Which type)
         case Field::Types::Which::IPv4: return "IPv4"sv;
         case Field::Types::Which::IPv6: return "IPv6"sv;
         case Field::Types::Which::CustomType: return "CustomType"sv;
+        case Field::Types::Which::Number: return "Number"sv;
     }
 }
 
@@ -912,8 +1371,9 @@ template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
 template NearestFieldType<std::decay_t<Object>> & Field::safeGet<Object>() &;
 template NearestFieldType<std::decay_t<Tuple>> & Field::safeGet<Tuple>() &;
 template NearestFieldType<std::decay_t<CustomType>> & Field::safeGet<CustomType>() &;
-/// In Darwin unsigned long does not match any of the UInt* types
-#ifdef OS_DARWIN
+template NearestFieldType<std::decay_t<NumberLiteral>> & Field::safeGet<NumberLiteral>() &;
+/// `unsigned long` is not covered by the list above where it is a type of its own.
+#if defined(LONG_IS_A_DISTINCT_TYPE)
 template NearestFieldType<std::decay_t<unsigned long>> & Field::safeGet<unsigned long>() &;
 #endif
 }

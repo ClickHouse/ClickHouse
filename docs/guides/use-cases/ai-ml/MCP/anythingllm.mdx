@@ -14,8 +14,7 @@ import { Image } from "/snippets/components/Image.jsx";
 > and connect it to the ClickHouse example datasets.
 
 <Steps>
-<Step>
-## Install Docker {#install-docker}
+<Step title="Install Docker" id="install-docker">
 
 You will need Docker to run LibreChat and the MCP server. To get Docker:
 1. Visit [docker.com](https://www.docker.com/products/docker-desktop)
@@ -25,8 +24,7 @@ You will need Docker to run LibreChat and the MCP server. To get Docker:
 <br/>
 For more information, see the [Docker documentation](https://docs.docker.com/get-docker/).
 </Step>
-<Step>
-## Pull AnythingLLM Docker image {#pull-anythingllm-docker-image}
+<Step title="Pull AnythingLLM Docker image" id="pull-anythingllm-docker-image">
 
 Run the following command to pull the AnythingLLM Docker image to your machine:
 
@@ -34,8 +32,7 @@ Run the following command to pull the AnythingLLM Docker image to your machine:
 docker pull anythingllm/anythingllm
 ```
 </Step>
-<Step>
-## Setup storage location {#setup-storage-location}
+<Step title="Setup storage location" id="setup-storage-location">
 
 Create a directory for storage and initialize the environment file:
 
@@ -45,8 +42,7 @@ mkdir -p $STORAGE_LOCATION && \
 touch "$STORAGE_LOCATION/.env" 
 ```
 </Step>
-<Step>
-## Configure MCP server config file {#configure-mcp-server-config-file}
+<Step title="Configure MCP server config file" id="configure-mcp-server-config-file">
 
 Create the `plugins` directory:
 
@@ -83,8 +79,7 @@ If you want to explore your own data, you can do so by
 using the [host, username and password](/get-started/setup/cloud#connect-with-your-app) 
 of your own ClickHouse Cloud service.
 </Step>
-<Step>
-## Start the AnythingLLM Docker container {#start-anythingllm-docker-container}
+<Step title="Start the AnythingLLM Docker container" id="start-anythingllm-docker-container">
 
 Run the following command to start the AnythingLLM Docker container:
 
@@ -100,8 +95,7 @@ mintplexlabs/anythingllm
 Once that's started, navigate to `http://localhost:3001` in your browser.
 Select the model that you want to use and provide your API key.
 </Step>
-<Step>
-## Wait for MCP servers to start up {#wait-for-mcp-servers-to-start-up}
+<Step title="Wait for MCP servers to start up" id="wait-for-mcp-servers-to-start-up">
 
 Click on the tool icon in the bottom left-hand side of the UI:
 
@@ -112,8 +106,7 @@ Wait until you see `Mcp ClickHouse` set to `On`
 
 <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCP servers ready" size="md"/>
 </Step>
-<Step>
-## Chat with ClickHouse MCP server with AnythingLLM {#chat-with-clickhouse-mcp-server-with-anythingllm}
+<Step title="Chat with ClickHouse MCP server with AnythingLLM" id="chat-with-clickhouse-mcp-server-with-anythingllm">
 
 We're now ready to start a chat. 
 To make MCP servers available to a chat, you'll need to prefix the first message in the conversation with `@agent`.

@@ -1,14 +1,57 @@
 ---
 slug: /best-practices
-keywords: ['Cloud', '主键', '排序键', 'materialized views', '最佳实践', '批量插入', '异步插入', '避免变更', '避免 Nullable 列', '避免 Optimize Final', '分区键']
-title: ClickHouse 最佳实践
+keywords: ['Cloud', '主键', '排序键', 'Materialized Views', '最佳实践', '批量插入', '异步插入', '避免变更', '避免 Nullable 列', '避免 Optimize Final', '分区键']
+title: 'ClickHouse 最佳实践'
 hide_title: true
-description: 'ClickHouse“最佳实践”部分的入口页'
+description: 'ClickHouse 最佳实践部分的落地页'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/zh/_table_of_contents.mdx';
+本节汇总了可帮助你充分发挥 ClickHouse 优势的最佳实践。
 
-本节介绍了为充分发挥 ClickHouse 的优势而应遵循的最佳实践。
+<CardGroup cols={2}>
+  <Card title="选择主键" icon="key" href="/zh/concepts/best-practices/choosing-a-primary-key">
+    如何在 ClickHouse 中选择主键。
+  </Card>
 
-<TableOfContents />
+  <Card title="选择数据类型" icon="shapes" href="/zh/concepts/best-practices/select-data-type">
+    如何为列选择合适的数据类型。
+  </Card>
+
+  <Card title="使用 materialized view" icon="layer-group" href="/zh/concepts/best-practices/use-materialized-views">
+    使用 materialized view 将计算从查询时转移到写入时。
+  </Card>
+
+  <Card title="尽量减少并优化 JOIN" icon="link" href="/zh/concepts/best-practices/minimize-optimize-joins">
+    在 ClickHouse 中使用 JOIN 的最佳实践。
+  </Card>
+
+  <Card title="选择分区键" icon="folder-tree" href="/zh/concepts/best-practices/partitioning-keys">
+    如何选择分区键。
+  </Card>
+
+  <Card title="选择插入策略" icon="file-import" href="/zh/concepts/best-practices/selecting-an-insert-strategy">
+    如何选择插入策略，包括批量插入和异步插入。
+  </Card>
+
+  <Card title="在适当情况下使用数据跳过索引" icon="filter" href="/zh/concepts/best-practices/using-data-skipping-indices">
+    如何以及何时使用数据跳过索引。
+  </Card>
+
+  <Card title="避免变更" icon="ban" href="/zh/concepts/best-practices/avoid-mutations">
+    为什么应避免在 ClickHouse 中使用变更。
+  </Card>
+
+  <Card title="避免 OPTIMIZE FINAL" icon="triangle-exclamation" href="/zh/concepts/best-practices/avoid-optimize-final">
+    为什么应避免使用 `OPTIMIZE TABLE ... FINAL`。
+  </Card>
+
+  <Card title="避免 Nullable 列" icon="circle-minus" href="/zh/concepts/best-practices/avoidnullablecolumns">
+    为什么在 ClickHouse 中应避免使用 Nullable 列。
+  </Card>
+
+  <Card title="在适当情况下使用 JSON" icon="code" href="/zh/concepts/best-practices/json-type">
+    何时使用 `JSON` 数据类型。
+  </Card>
+</CardGroup>

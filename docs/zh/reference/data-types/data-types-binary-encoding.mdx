@@ -66,8 +66,11 @@ doc_type: 'reference'
 | `Time`                                                                                                    | `0x32`                                                                                                                                                                                                                                                                                                                                                                     |
 | `Time64(P)`                                                                                               | `0x34<uint8_precision>`                                                                                                                                                                                                                                                                                                                                                    |
 | `QBit(T, N)`                                                                                              | `0x36<element_type_encoding><var_uint_dimension>`                                                                                                                                                                                                                                                                                                                          |
+| `QBit(T, N, stride)`                                                                                      | `0x37<element_type_encoding><var_uint_dimension><var_uint_stride>`                                                                                                                                                                                                                                                                                                         |
 
 对于 `JSON` 类型，字节 `uint8_serialization_version` 表示序列化版本。目前该版本始终为 0，但如果将来为 `JSON` 类型引入新的参数，这个值可能会发生变化。
+
+对于 `QBit` 类型，仅当 `stride` 与维度 `N` 不同时，才会使用 `0x37` 编码。当 `stride == N` 时 (包括显式写出第三个参数的情况，例如 `QBit(Float32, 4, 4)`) ，该类型会被规范化为双参数形式 `QBit(T, N)`，并按上文所述编码为 `0x36`，因此其二进制编码在字节级别上与不带 `stride` 的 `QBit` 完全一致。
 
 <div id="interval-kind-binary-encoding">
   ### 时间间隔类型的二进制编码

@@ -31,11 +31,11 @@ Like [multiSearchAny](#multiSearchAny) but assumes `haystack` and the `needle` s
     FunctionDocumentation::Examples examples = {
     {
         "Given '你好，世界' ('Hello, world') as a UTF-8 string, check if there are any 你 or 界 characters in the string",
-        "SELECT multiSearchAnyUTF8('你好，世界', ['你', '界'])",
+        "SELECT multiSearchAnyUTF8('你好，世界', ['你', '界']) AS result",
         R"(
-┌─multiSearchA⋯你', '界'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─result─┐
+│      1 │
+└────────┘
         )"
     }
     };

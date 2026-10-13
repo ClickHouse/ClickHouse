@@ -59,8 +59,7 @@ We illustrate both of these architectures below.
 In the following example, we provide the initial steps to configure Vector to receive log events from Filebeat via the Lumberjack protocol. We provide VRL for mapping the inbound ECS events to OTel specification, before sending these to the ClickStack OpenTelemetry collector via OTLP. Users consuming events from Kafka can replace the Vector Logstash source with the [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/) - all other steps remain the same.
 
 <Steps>
-<Step>
-### Install vector {#install-vector}
+<Step title="Install vector" id="install-vector">
 
 Install Vector using the [official installation guide](https://vector.dev/docs/setup/installation/).
 
@@ -68,8 +67,7 @@ This can be installed on the same instance as your Elastic Stack OTel collector.
 
 You can follow best practices with regards to architecture and security when [moving Vector to production](https://vector.dev/docs/setup/going-to-prod/).
 </Step>
-<Step>
-### Configure vector {#configure-vector}
+<Step title="Configure vector" id="configure-vector">
 
 Vector should be configured to receive events over the Lumberjack protocol, imitating a Logstash instance. This can be achieved by configuring a [`logstash` source](https://vector.dev/docs/reference/configuration/sources/logstash/) for Vector:
 
@@ -284,8 +282,7 @@ sinks:
         content-type: application/json
 ```
 </Step>
-<Step>
-### Configure Filebeat {#configure-filebeat}
+<Step title="Configure Filebeat" id="configure-filebeat">
 
 Existing Filebeat installations simply need to be modified to send their events to Vector. This requires the configuration of a Logstash output - again, TLS can be optionally configured:
 
@@ -322,13 +319,11 @@ We demonstrate both of these options below.
 ### Sending data via Vector {#sending-data-via-vector}
 
 <Steps>
-<Step>
-#### Install and configure Vector {#install-configure-vector}
+<Step title="Install and configure Vector" id="install-configure-vector">
 
 Install and configure Vector using the [same steps](#install-vector) as those documented for migrating from Filebeat.
 </Step>
-<Step>
-#### Configure Elastic Agent {#configure-elastic-agent}
+<Step title="Configure Elastic Agent" id="configure-elastic-agent">
 
 Elastic Agent needs to be configured to send data via the Logstash protocol Lumberjack. This is a [supported deployment pattern](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge) and can either be configured centrally or [via the agent configuration file `elastic-agent.yaml`](https://www.elastic.co/docs/reference/fleet/logstash-output) if deploying without Fleet.
 

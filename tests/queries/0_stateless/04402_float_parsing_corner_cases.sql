@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: the imprecise float parser (precise_float_parsing = 0) rounds to different least-significant digits on Darwin.
 -- Boundary and corner-case coverage for string -> Float32/Float64 parsing, exercising both the
 -- fast (precise_float_parsing = 0) and precise (precise_float_parsing = 1) code paths.
 -- toFloat*OrNull is used so that invalid inputs yield NULL instead of aborting the query.

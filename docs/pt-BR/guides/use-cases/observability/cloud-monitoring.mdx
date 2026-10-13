@@ -18,9 +18,9 @@ Este guia fornece às equipes corporativas que estão avaliando o ClickHouse Clo
   ## Painel avançado de observabilidade
 </div>
 
-O ClickHouse Cloud oferece monitoramento abrangente por meio de interfaces de painel integradas, acessíveis pela seção Monitoring. Esses painéis exibem métricas de sistema e desempenho em tempo real sem exigir configuração adicional e servem como as principais ferramentas de monitoramento de produção em tempo real no ClickHouse Cloud.
+O ClickHouse Cloud oferece monitoramento abrangente por meio de interfaces de dashboard integradas, acessíveis pela seção monitoramento. Esses dashboards exibem métricas de sistema e desempenho em tempo real sem exigir configuração adicional e servem como as principais ferramentas de monitoramento de produção em tempo real no ClickHouse Cloud.
 
-* **Advanced dashboard**: A principal interface de painel, acessível em Monitoring → Advanced dashboard, oferece visibilidade em tempo real das taxas de consulta, do uso de recursos, da integridade do sistema e do desempenho de armazenamento. Esse painel não exige autenticação separada, não impede que instâncias fiquem ociosas e não adiciona carga de consultas ao seu sistema de produção. Cada visualização é baseada em consultas SQL personalizáveis, com gráficos prontos para uso agrupados em métricas específicas do ClickHouse, de integridade do sistema e específicas do Cloud. Você pode expandir o monitoramento criando consultas personalizadas diretamente no SQL Console.
+* **Advanced Dashboard**: A principal interface de dashboard, acessível em monitoramento → Advanced dashboard, oferece visibilidade em tempo real das taxas de consulta, do uso de recursos, da integridade do sistema e do desempenho de armazenamento. Esse dashboard não exige autenticação separada, não impede que instâncias fiquem ociosas e não adiciona carga de consultas ao seu sistema de produção. Cada visualização é baseada em consultas SQL personalizáveis, com gráficos prontos para uso agrupados em métricas específicas do ClickHouse, de integridade do sistema e específicas do Cloud. Você pode expandir o monitoramento criando consultas personalizadas diretamente no SQL Console.
 
 <Note>
   O acesso a essas métricas não emite uma consulta para o serviço subjacente e não reativa serviços ociosos.
@@ -30,13 +30,13 @@ O ClickHouse Cloud oferece monitoramento abrangente por meio de interfaces de pa
 
 Os usuários que quiserem expandir essas visualizações podem usar o recurso de dashboards no ClickHouse Cloud, consultando tabelas de sistema diretamente.
 
-* **Painel avançado nativo**: Uma interface de painel alternativa acessível por meio de &quot;You can still access the native advanced dashboard&quot; na seção Monitoring. Ela é aberta em uma guia separada, com autenticação, e oferece uma UI alternativa para monitorar a integridade do sistema e do serviço. Esse painel permite análises avançadas, nas quais você pode modificar as consultas SQL subjacentes.
+* **Native advanced dashboard**: Uma interface de dashboard alternativa acessível por meio de &quot;You can still access the native advanced dashboard&quot; na seção monitoramento. Ela é aberta em uma guia separada, com autenticação, e oferece uma UI alternativa para monitorar a integridade do sistema e do serviço. Esse dashboard permite analytics avançados, nos quais você pode modificar as consultas SQL subjacentes.
 
 <Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
 
-Ambos os painéis oferecem visibilidade imediata da integridade e do desempenho do serviço sem dependências externas, diferenciando-se de ferramentas externas voltadas para depuração, como o ClickStack.
+Ambos os dashboards oferecem visibilidade imediata da integridade e do desempenho do serviço sem dependências externas, diferenciando-se de ferramentas externas voltadas para depuração, como o ClickStack.
 
-Para ver os recursos detalhados do painel e as métricas disponíveis, consulte a [documentação do Advanced dashboard](/pt-BR/products/cloud/features/monitoring/advanced-dashboard).
+Para ver os recursos detalhados do dashboard e as métricas disponíveis, consulte a [documentação do advanced dashboard](/pt-BR/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="query-insights">
   ## Query Insights e monitoramento de recursos

@@ -47,7 +47,7 @@ greatest(toUInt64OrZero(toString(expr)), 1)
   ## Настройка выражения коэффициента выборки
 </div>
 
-Откройте источник трассировки в **Source Settings** и в поле **Sample Rate Expression** введите выражение ClickHouse, которое вычисляет коэффициент выборки для каждого span.
+Откройте источник трассировки в **Source Settings** и в поле **Sample Rate Expression** введите выражение ClickHouse, которое вычисляет коэффициент выборки для каждого спана.
 
 Например, если ваш процессор tail-sampling OpenTelemetry записывает это значение в `SpanAttributes['SampleRate']`:
 

@@ -72,7 +72,7 @@ ClickHouse Cloud 提供多个层级。
       <td />
 
       <td>✓ 自动扩缩容</td>
-      <td>✓ 标准 profile 自动，自定义 profile 手动</td>
+      <td>✓ 标准配置自动，自定义配置由支持团队协助</td>
     </tr>
 
     <tr>
@@ -87,15 +87,6 @@ ClickHouse Cloud 提供多个层级。
     <tr>
       <td>ClickPipes</td>
       <td>✓</td>
-      <td>✓</td>
-      <td>✓</td>
-    </tr>
-
-    <tr>
-      <td>提前升级</td>
-
-      <td />
-
       <td>✓</td>
       <td>✓</td>
     </tr>
@@ -127,7 +118,7 @@ ClickHouse Cloud 提供多个层级。
     </tr>
 
     <tr>
-      <td>自定义硬件 profile</td>
+      <td>自定义硬件配置</td>
 
       <td />
 
@@ -249,11 +240,11 @@ ClickHouse Cloud 提供多个层级。
 * 支持企业级安全：
   * 单点登录 (SSO)
   * 增强加密：适用于 AWS 和 GCP 服务。服务默认使用我们的密钥进行加密，也可以切换为客户自己的密钥，以启用客户管理的加密密钥 (CMEK) 。
-* 支持计划升级：你可以选择一周中的某一天/时间窗口进行升级，包括数据库和云平台发行版。
+* 支持定时升级：你可以选择一周中的某一天/时间窗口进行升级，包括数据库和云平台发行版。
 * 提供 [HIPAA](/zh/products/cloud/reference/security/compliance-overview#hipaa-since-2024) 和 PCI 合规支持。
 
 <Note>
-  三个层级中的单副本服务均为固定大小 (`8 GiB`、`12 GiB`)
+  Scale 和 Enterprise 层级支持[大型单副本服务](/zh/products/cloud/features/large-single-replica-services)。采用标准 `1:4` 配置的 Scale 服务和 Enterprise 服务支持自助式垂直自动扩缩容，而采用自定义配置的 Enterprise 服务需要在支持协助下进行垂直调整。基础版单副本服务仍为固定大小 (`8 GiB` 或 `12 GiB`)。
 </Note>
 
 <div id="upgrading-to-a-different-tier">

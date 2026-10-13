@@ -115,7 +115,7 @@ https://clickhouse.com/docs/get-started/quick-start,2,/core/get-started/setup/in
 /integrations/data-visualization/metabase-and-clickhouse.md,10,/integrations/connectors/data-visualization/metabase-and-clickhouse,basename-unique,
 /integrations/language-clients/java/client/client.mdx,9,/core/concepts/features/interfaces/client,basename-ambiguous,/integrations/language-clients/java/client | /resources/contribute/native-protocol/client
 /engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3,8,/core/reference/engines/table-engines/mergetree-family/mergetree,basename-unique,
-/getting-started/install/install.mdx,8,/core/get-started/install/install,basename+parent-unique,/products/chdb/install
+/getting-started/install/install.mdx,8,/core/get-started/install/install,basename+parent-unique,/chdb/install
 /knowledgebase/aws-privatelink-setup-for-clickpipes,8,,no-match,
 /integrations/data-ingestion/data-formats/json/intro.md,8,/core/guides/clickhouse/data-formats/json/intro,basename+parent-unique,/core/get-started/about/intro | /core/guides/clickhouse/data-formats/intro | /products/clickstack/migration/elastic/intro | /products/cloud/getting-started/intro
 /core/get-started/quick-start,7,/core/get-started/setup/install,manual,
@@ -190,9 +190,9 @@ https://clickhouse.com/docs/introduction/distinctive-features/#data-compression,
 /language-clients/javascript/usage#streaming-files-nodejs-only,3,/products/cloud/guides/best-practices/usagelimits,contains-unique,
 https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes,3,,no-match,
 /sql-reference/functions/files.md/#file,3,/core/reference/functions/regular-functions/files,basename-unique,
-/managed-postgres/quickstart,3,/products/managed-postgres/quickstart,basename+parent-unique,/integrations/clickpipes/mongodb/quickstart | /products/chdb/datastore/quickstart
+/managed-postgres/quickstart,3,/products/managed-postgres/quickstart,basename+parent-unique,/integrations/clickpipes/mongodb/quickstart | /chdb/datastore/quickstart
 /use-cases/observability/clickstack/production#configure-ttl,3,/use-cases/observability/clickstack/managing/production,redirect-direct,
-/chdb/datastore/guides/pandas-performance,3,/products/chdb/guides/pandas-performance,basename-unique,
+/chdb/datastore/guides/pandas-performance,3,/chdb/guides/pandas-performance,basename-unique,
 /core/get-started/quickstarts/create-your-first-materialized-view,2,,no-match,
 /core/get-started/quickstarts/insert-data-using-clickhouse-client,2,,no-match,
 https://clickhouse.com/docs/en/interfaces/formats,2,/core/reference/formats,manual,/core/concepts/features/interfaces/formats | /core/reference/formats | /core/reference/settings/formats | /core/reference/system-tables/formats
@@ -262,20 +262,20 @@ https://clickhouse.com/docs/cloud/manage/api/usageCost-api-reference,2,/api-refe
 /knowledgebase/certificate_verify_failed_error,2,/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error,manual,
 /faq/general/why-clickhouse-is-so-fast,2,/core/get-started/about/why-clickhouse-is-so-fast,basename-unique,
 https://clickhouse.com/docs/integrations/data-formats/json,2,/core/guides/clickhouse/data-formats/json/intro,manual,/core/guides/clickhouse/data-formats/json/exporting | /core/guides/clickhouse/data-formats/json/formats | /core/guides/clickhouse/data-formats/json/inference | /core/guides/clickhouse/data-formats/json/intro | /core/guides/clickhouse/data-formats/json/loading
-/chdb/guides/querying-pandas,2,/products/chdb/guides/querying-pandas,basename-unique,
+/chdb/guides/querying-pandas,2,/chdb/guides/querying-pandas,basename-unique,
 /managed-postgres/overview,2,/products/managed-postgres/overview,basename+parent-unique,/core/concepts/features/backup-restore/overview | /core/concepts/features/configuration/settings/overview | /core/concepts/features/operations/delete/overview | /core/concepts/features/operations/update/overview | /core/get-started/migration-guides/bigquery/overview | /core/get-started/migration-guides/elastic/overview | /core/get-started/migration-guides/overview | /core/get-started/migration-guides/postgres/overview | /core/get-started/migration-guides/redshift/overview | /core/get-started/migration-guides/snowflake/overview | /core/get-started/use-cases/overview | /core/guides/use-cases/data-warehousing/getting-started/overview | /integrations/clickpipes/bigquery/overview | /integrations/clickpipes/kinesis/overview | /integrations/clickpipes/object-storage/amazon-s3/overview | /integrations/clickpipes/object-storage/azure-blob-storage/overview | /integrations/clickpipes/object-storage/google-cloud-storage/overview | /integrations/connectors/data-ingestion/azure/azure-data-factory/overview | /core/concepts/features/interfaces/overview | /integrations/language-clients/csharp/overview | /products/clickstack/features/dashboards/overview | /products/clickstack/ingesting-data/overview | /products/clickstack/overview | /products/cloud/features/autoscaling/overview | /products/cloud/features/backups/overview | /products/cloud/features/monitoring/overview | /products/cloud/guides/infrastructure/deployment-options/byoc/overview | /products/cloud/reference/billing/marketplace/overview | /products/kubernetes-operator/overview | /core/reference/functions/regular-functions/overview | /core/reference/statements/create/dictionary/layouts/overview | /core/reference/statements/create/dictionary/sources/overview | /core/reference/system-tables/overview
 /managed-postgres/backup-and-restore,2,/products/managed-postgres/backup-and-restore,basename-unique,
 /managed-postgres/settings,2,/products/managed-postgres/settings,basename+parent-unique,/products/cloud/reference/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
 /cloud/reference/byoc/architecture,2,/cloud/guides/infrastructure/deployment_options/byoc/architecture,redirect-direct,
 https://clickhouse.com/docs/cloud/manage/api/swagger#/paths/~1v1~1organizations~1:organizationId~1services~1:serviceId~1scaling/patch,2,,no-match,
-/managed-postgres/quickstart#create-postgres-database,2,/products/managed-postgres/quickstart,basename+parent-unique,/integrations/clickpipes/mongodb/quickstart | /products/chdb/datastore/quickstart
+/managed-postgres/quickstart#create-postgres-database,2,/products/managed-postgres/quickstart,basename+parent-unique,/integrations/clickpipes/mongodb/quickstart | /chdb/datastore/quickstart
 /use-cases/observability/clickstack/ingesting-data/kubernetes#forwarding-resouce-tags-to-pods,2,/products/clickstack/example-datasets/kubernetes,basename-ambiguous,/products/clickstack/integration-examples/kubernetes
 /examples/host-logs-dashboard.json,2,,no-match,
 https://clickhouse.com/docs/en/sql-reference/data-types/aggregatefunction,2,/core/reference/data-types/aggregatefunction,basename-unique,
-/chdb/datastore/debugging,2,/products/chdb/debugging,basename-unique,
-/chdb/datastore/guides/pandas-differences,2,/products/chdb/guides/pandas-differences,basename-unique,
-/chdb/datastore/guides/migration-from-pandas,2,/products/chdb/guides/migration-from-pandas,basename-unique,
-/getting-started/index.md,1,/products/chdb/getting-started,basename-ambiguous,/products/clickstack/getting-started
+/chdb/datastore/debugging,2,/chdb/debugging,basename-unique,
+/chdb/datastore/guides/pandas-differences,2,/chdb/guides/pandas-differences,basename-unique,
+/chdb/datastore/guides/migration-from-pandas,2,/chdb/guides/migration-from-pandas,basename-unique,
+/getting-started/index.md,1,/chdb/getting-started,basename-ambiguous,/products/clickstack/getting-started
 https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos,1,,no-match,
 https://clickhouse.com/docs/knowledgebase/why_default_logging_verbose,1,,no-match,
 /integrations/data-ingestion/s3/index.md,1,/core/reference/engines/table-engines/integrations/s3,basename-ambiguous,/core/reference/functions/table-functions/s3
@@ -293,7 +293,7 @@ https://clickhouse.com/docs/en/interfaces/cli,1,/core/concepts/features/interfac
 https://clickhouse.com/docs/en/cloud/bestpractices/cloud-connection,1,,no-match,
 https://clickhouse.com/docs/en/interfaces/tcp,1,/core/concepts/features/interfaces/tcp,basename-unique,
 https://clickhouse.com/docs/en/interfaces/http,1,/core/concepts/features/security/external-authenticators/http,basename-ambiguous,/core/concepts/features/interfaces/http | /core/reference/statements/create/dictionary/sources/http
-/en/operations/utilities/clickhouse-local,1,/core/concepts/features/tools-and-utilities/clickhouse-local,manual,/products/chdb/guides/clickhouse-local
+/en/operations/utilities/clickhouse-local,1,/core/concepts/features/tools-and-utilities/clickhouse-local,manual,/chdb/guides/clickhouse-local
 /core/get-started/quickstarts/common-getting-started-issues,1,/core/get-started/quickstarts/home,manual,
 /en/sql-reference/data-types/map,1,/core/reference/data-types/map,basename-unique,
 /en/sql-reference/aggregate-functions/combinators,1,/core/reference/functions/aggregate-functions/combinators,basename-unique,
@@ -545,7 +545,7 @@ https://clickhouse.com/docs/interfaces/formats/JSON/JSONAsObject,1,,no-match,
 https://clickhouse.com/docs/interfaces/,1,/core/concepts/features/interfaces/overview,manual,
 /knowledgebase/async_vs_optimize_read_in_order#what-about-optimize_read_in_order,1,,no-match,
 https://clickhouse.com/docs/knowledgebase/find-expensive-queries#initial_query_id-vs-query_id,1,/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries,basename-unique,
-/chdb/guides/querying-apache-arrow,1,/products/chdb/guides/querying-apache-arrow,basename-unique,
+/chdb/guides/querying-apache-arrow,1,/chdb/guides/querying-apache-arrow,basename-unique,
 https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickStack,1,,no-match,
 /images/clickstack/faq/metrics-explorer.png,1,,no-match,
 /core/guides/sre/configuring-ssl,1,/core/concepts/features/security/tls/configuring-tls,manual,
@@ -616,7 +616,7 @@ https://clickhouse.com/docs/cloud/manage/api/swagger#tag/Billing,1,,no-match,
 /use-cases/observability/clickstack/production#create-a-database-ingestion-user-managed,1,/use-cases/observability/clickstack/managing/production,redirect-direct,
 https://clickhouse.com/docs/clickhouse-operator/managing-clusters/cleanup,1,,no-match,
 https://clickhouse.com/docs/en/sql-reference/statements/select/group-by#group-by-in-external-memory,1,/core/reference/statements/select/group-by,basename-unique,
-https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference,1,/core/reference/functions/aggregate-functions/reference,basename+parent-unique,/core/guides/use-cases/data-warehousing/reference | /integrations/clickpipes/kafka/reference | /integrations/connectors/data-ingestion/etl-tools/fivetran/reference | /integrations/connectors/tools/pg_clickhouse/reference | /products/chdb/reference | /products/cloud/reference
+https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference,1,/core/reference/functions/aggregate-functions/reference,basename+parent-unique,/core/guides/use-cases/data-warehousing/reference | /integrations/clickpipes/kafka/reference | /integrations/connectors/data-ingestion/etl-tools/fivetran/reference | /integrations/connectors/tools/pg_clickhouse/reference | /chdb/reference | /products/cloud/reference
 /use-cases/observability/clickstack/features/dashboards#custom-filters,1,/products/cloud/features/sql-console-features/dashboards,basename-ambiguous,/core/reference/system-tables/dashboards
 /use-cases/observability/clickstack/managing/performance_tuning#materialize-frequently-queried-attributes,1,/products/clickstack/managing/performance-tuning,basename-unique,
 /use-cases/observability/clickstack/features/dashboards#dashboards-editing-visualizations,1,/products/cloud/features/sql-console-features/dashboards,basename-ambiguous,/core/reference/system-tables/dashboards
@@ -625,12 +625,12 @@ https://clickhouse.com/docs/operations/backup#take-an-incremental-backup,1,/core
 /docs/products/clickhouse-private/aws#install-volumesnapshot-crds,1,/integrations/clickpipes/aws-privatelink,contains-ambiguous,/products/clickstack/ingesting-data/sdks/aws-lambda | /products/clickstack/integration-examples/aws-lambda | /products/cloud/guides/security/connectivity/private-networking/aws-privatelink | /products/cloud/reference/billing/marketplace/aws-marketplace-committed | /products/cloud/reference/billing/marketplace/aws-marketplace-payg
 /docs/products/clickhouse-private/aws#install-storageclass-via-helm,1,/integrations/clickpipes/aws-privatelink,contains-ambiguous,/products/clickstack/ingesting-data/sdks/aws-lambda | /products/clickstack/integration-examples/aws-lambda | /products/cloud/guides/security/connectivity/private-networking/aws-privatelink | /products/cloud/reference/billing/marketplace/aws-marketplace-committed | /products/cloud/reference/billing/marketplace/aws-marketplace-payg
 /docs/products/clickhouse-private/aws#naming-your-clickhouse-cluster,1,/integrations/clickpipes/aws-privatelink,contains-ambiguous,/products/clickstack/ingesting-data/sdks/aws-lambda | /products/clickstack/integration-examples/aws-lambda | /products/cloud/guides/security/connectivity/private-networking/aws-privatelink | /products/cloud/reference/billing/marketplace/aws-marketplace-committed | /products/cloud/reference/billing/marketplace/aws-marketplace-payg
-/chdb/datastore/configuration,1,/integrations/language-clients/go/configuration,basename-ambiguous,/products/chdb/configuration | /products/kubernetes-operator/guides/configuration
-/chdb/datastore/configuration/performance-mode,1,/products/chdb/configuration/performance-mode,basename-unique,
-/chdb/datastore/guides/pandas-cookbook,1,/products/chdb/guides/pandas-cookbook,basename-unique,
-/chdb/datastore/guides/pandas-to-sql,1,/products/chdb/guides/pandas-to-sql,basename-unique,
-/chdb/datastore/debugging/explain,1,/products/chdb/debugging/explain,basename+parent-unique,/core/reference/statements/explain
-/chdb/datastore/configuration/execution-engine,1,/products/chdb/configuration/execution-engine,basename-unique,
+/chdb/datastore/configuration,1,/integrations/language-clients/go/configuration,basename-ambiguous,/chdb/configuration | /products/kubernetes-operator/guides/configuration
+/chdb/datastore/configuration/performance-mode,1,/chdb/configuration/performance-mode,basename-unique,
+/chdb/datastore/guides/pandas-cookbook,1,/chdb/guides/pandas-cookbook,basename-unique,
+/chdb/datastore/guides/pandas-to-sql,1,/chdb/guides/pandas-to-sql,basename-unique,
+/chdb/datastore/debugging/explain,1,/chdb/debugging/explain,basename+parent-unique,/core/reference/statements/explain
+/chdb/datastore/configuration/execution-engine,1,/chdb/configuration/execution-engine,basename-unique,
 /faq/general/why-clickhouse-is-so-fast,2,/core/get-started/about/why-clickhouse-is-so-fast,manual,
 /cloud/manage/api/swagger,1,/api-reference/organization/get-list-of-available-organizations,manual,
 /integrations/data-ingestion/gcs,1,/integrations/connectors/data-ingestion/GCP,manual,

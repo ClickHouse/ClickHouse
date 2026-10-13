@@ -2,102 +2,82 @@
 title: إنشاء ClickPipe
 ---
 
-import S3DataSource from '/snippets/es/clickpipes/object-storage/amazon-s3/_1-data-source.mdx';
-import GCSSDataSource from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_1-data-source.mdx';
+<Step title="اختر تنسيق البيانات" id="3-select-data-format">
+  ستعرض واجهة المستخدم قائمة بالملفات في الـ bucket المحدد.
+  اختر تنسيق البيانات (ندعم حاليًا مجموعة فرعية من تنسيقات ClickHouse)، وحدد ما إذا كنت تريد تمكين الاستيعاب المستمر.
+  راجع قسم &quot;الاستيعاب المستمر&quot; في صفحة النظرة العامة لمزيد من التفاصيل.
 
-import S3Connection from '/snippets/es/clickpipes/object-storage/amazon-s3/_2-connection.mdx';
-import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="تعيين تنسيق البيانات والموضوع" />
+  </Frame>
+</Step>
 
-<Steps>
-  <Step>
-    ## اختر مصدر البيانات
+<Step title="كوّن الجدول والمخطط والإعدادات" id="5-configure-table-schema-settings">
+  في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد استيعاب البيانات في ClickHouse table جديد أو إعادة استخدام جدول موجود.
+  اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات.
+  يمكنك رؤية معاينة فورية لتغييراتك في جدول العينة في الأعلى.
 
-    **1.** في ClickHouse Cloud، اختر **مصادر البيانات** من قائمة التنقل الرئيسية، ثم انقر على **Create ClickPipe**.
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="تعيين الجدول والمخطط والإعدادات" />
+  </Frame>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختر الواردات" size="lg" border />
+  يمكنك أيضًا تخصيص الإعدادات المتقدمة باستخدام عناصر التحكم المتاحة.
 
-    {props.provider === 's3' && <S3DataSource />}
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="تعيين عناصر التحكم المتقدمة" />
+  </Frame>
 
-    {props.provider === 'gcs' && <GCSSDataSource />}
-  </Step>
+  بدلًا من ذلك، يمكنك اختيار استيعاب بياناتك في ClickHouse table موجود.
+  في هذه الحالة، ستتيح لك واجهة المستخدم تعيين الحقول من المصدر إلى حقول ClickHouse في جدول الوجهة المحدد.
 
-  <Step>
-    ## أعدّ اتصال ClickPipe الخاص بك
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="استخدام جدول موجود" />
+  </Frame>
 
-    **1.** لإعداد ClickPipe جديد، يجب إدخال تفاصيل الاتصال بخدمة تخزين الكائنات والمصادقة عليها.
+  <Info>
+    يمكنك أيضًا تعيين [الأعمدة الافتراضية](/ar/reference/functions/table-functions/s3#virtual-columns)، مثل `_path` أو `_size`، إلى الحقول.
+  </Info>
+</Step>
 
-    {props.provider === 's3' && <S3Connection />}
+<Step title="كوّن الأذونات" id="6-configure-permissions">
+  أخيرًا، يمكنك تكوين الأذونات للمستخدم الداخلي الخاص بـ ClickPipes.
 
-    {props.provider === 'gcs' && <GCSConnection />}
+  **الأذونات:** سينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى جدول الوجهة. يمكنك اختيار دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المعرفة مسبقًا:
 
-    **2.** انقر على **Incoming data**. سيجلب ClickPipes البيانات الوصفية من الـ bucket للخطوة التالية.
-  </Step>
+  * `Full access`: وصول كامل إلى العنقود. وهو مطلوب إذا كنت تستخدم `materialized view` أو Dictionary مع جدول الوجهة.
+  * `Only destination table`: أذونات `INSERT` على جدول الوجهة فقط.
 
-  <Step>
-    ## اختر تنسيق البيانات
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" />
+  </Frame>
+</Step>
 
-    ستعرض واجهة المستخدم قائمة بالملفات الموجودة في الـ bucket المحدد.
-    اختر تنسيق بياناتك (ندعم حاليًا مجموعة فرعية من تنسيقات ClickHouse)، وحدد ما إذا كنت تريد تمكين الاستيعاب المستمر.
-    راجع قسم &quot;الاستيعاب المستمر&quot; في صفحة النظرة العامة لمزيد من التفاصيل.
+<Step title="أكمل الإعداد" id="7-complete-setup">
+  بالنقر على &quot;Complete Setup&quot;، سيسجل النظام ClickPipe الخاص بك، وستتمكن من رؤيته مدرجًا في جدول الملخص.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="عيّن تنسيق البيانات والموضوع" size="lg" border />
-  </Step>
+  <div className="ch-image-sm">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="إشعار النجاح" />
+    </Frame>
+  </div>
 
-  <Step>
-    ## اضبط الجدول والمخطط والإعدادات
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="إشعار الإزالة" />
+  </Frame>
 
-    في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد استيعاب البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول موجود.
-    اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات.
-    يمكنك رؤية معاينة فورية لتغييراتك في جدول العينة بالأعلى.
+  يوفر جدول الملخص عناصر تحكم لعرض بيانات عينة من المصدر أو من جدول الوجهة في ClickHouse.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="عيّن الجدول والمخطط والإعدادات" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="عرض الوجهة" />
+  </Frame>
 
-    يمكنك أيضًا تخصيص الإعدادات المتقدمة باستخدام عناصر التحكم المتاحة
+  كما يوفر عناصر تحكم لإزالة ClickPipe وعرض ملخص لمهمة الاستيعاب.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="عيّن عناصر التحكم المتقدمة" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="عرض النظرة العامة" />
+  </Frame>
 
-    بدلاً من ذلك، يمكنك اختيار استيعاب بياناتك في جدول ClickHouse موجود.
-    في هذه الحالة، ستتيح لك واجهة المستخدم تعيين حقول المصدر إلى حقول ClickHouse في جدول الوجهة المحدد.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="استخدم جدولًا موجودًا" size="lg" border />
-
-    <Info>
-      يمكنك أيضًا تعيين [الأعمدة الافتراضية](/ar/reference/functions/table-functions/s3#virtual-columns)، مثل `_path` أو `_size`، إلى الحقول.
-    </Info>
-  </Step>
-
-  <Step>
-    ## اضبط الأذونات
-
-    أخيرًا، يمكنك ضبط أذونات مستخدم ClickPipes الداخلي.
-
-    **الأذونات:** سينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى جدول الوجهة. يمكنك اختيار دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المحددة مسبقًا:
-
-    * `Full access`: وصول كامل إلى الـ cluster. وهو مطلوب إذا كنت تستخدم materialized view أو Dictionary مع جدول الوجهة.
-    * `Only destination table`: أذونات `INSERT` على جدول الوجهة فقط.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" size="lg" border />
-  </Step>
-
-  <Step>
-    ## أكمل الإعداد
-
-    عند النقر على &quot;Complete Setup&quot;، سيسجل النظام ClickPipe الخاص بك، وستتمكن من رؤيته مدرجًا في جدول الملخص.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="إشعار النجاح" size="sm" border />
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="إشعار الإزالة" size="lg" border />
-
-    يوفر جدول الملخص عناصر تحكم لعرض بيانات نموذجية من المصدر أو من جدول الوجهة في ClickHouse
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="عرض الوجهة" size="lg" border />
-
-    وكذلك عناصر تحكم لإزالة ClickPipe وعرض ملخص مهمة الاستيعاب.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="عرض النظرة العامة" size="lg" border />
-
-    **تهانينا!** لقد أعددت أول ClickPipe بنجاح.
-    إذا كان ClickPipe هذا مُعدًّا للاستيعاب المستمر، فسيظل قيد التشغيل باستمرار، ويستوعب البيانات آنيًا من مصدر البيانات البعيد.
-    أما بخلاف ذلك، فسيستوعب الدفعة ثم يكتمل.
-  </Step>
-</Steps>
+  **تهانينا!** لقد أعددت أول ClickPipe بنجاح.
+  إذا كان ClickPipe هذا مُكوّنًا للاستيعاب المستمر، فسيظل قيد التشغيل باستمرار، مع استيعاب البيانات في الوقت الفعلي من مصدر البيانات البعيد.
+  وإلا فسيستوعب الدفعة ثم يكتمل.
+</Step>

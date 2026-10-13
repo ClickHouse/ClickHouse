@@ -1,0 +1,33 @@
+-- normal path
+0	19
+1	20
+2	20
+3	20
+4	20
+-- issue #110795 reproducer
+0	19
+1	20
+2	20
+3	20
+4	20
+-- projection path (projection actually used)
+1	20
+2	20
+3	20
+4	20
+-- parallel replicas, local plan
+1	1
+2	1
+3	1
+4	1
+5	1
+-- parallel replicas, remote plan
+1	1
+2	1
+3	1
+4	1
+5	1
+-- local plan reads initiator locally
+1
+-- remote plan reads all replicas remotely
+1

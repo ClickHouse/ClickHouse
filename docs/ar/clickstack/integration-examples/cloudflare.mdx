@@ -60,17 +60,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * اسم حاوية S3 والمنطقة التي يكتب فيها Cloudflare السجلات
 
 <Steps>
-  <Step>
-    #### تهيئة المصادقة على S3
-
+  <Step title="تهيئة المصادقة على S3" id="configure-auth">
     تحتاج ClickPipes إلى إذن قراءة من حاوية S3 الخاصة بك. اتبع دليل [الوصول إلى بيانات S3 بأمان](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لتهيئة الوصول المستند إلى أدوار IAM أو الوصول المستند إلى بيانات الاعتماد.
 
     للاطلاع على التفاصيل الكاملة حول مصادقة S3 والأذونات في ClickPipes، راجع [الوثائق المرجعية لـ S3 ClickPipes](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#access-control).
   </Step>
 
-  <Step>
-    #### إنشاء مهمة ClickPipes
-
+  <Step title="إنشاء مهمة ClickPipes" id="create-clickpipes">
     1. ClickHouse Cloud Console → **مصادر البيانات** → **Create ClickPipe**
     2. **المصدر**: Amazon S3
 
@@ -107,9 +103,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### تهيئة مصدر بيانات HyperDX
-
+  <Step title="تهيئة مصدر بيانات HyperDX" id="configure-source">
     يقوم ClickPipes بإدخال سجلات Cloudflare إلى جدول مسطّح بأسماء الحقول الأصلية الخاصة بـ Cloudflare. لعرض هذه السجلات في HyperDX، قم بتهيئة مصدر بيانات مخصص يربط أعمدة Cloudflare بعرض السجلات في HyperDX.
 
     1. افتح HyperDX → **Team Settings** → **Sources**
@@ -142,9 +136,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     يؤدي ذلك إلى ربط أعمدة Cloudflare الأصلية مباشرةً بعارض السجلات في HyperDX من دون أي تحويل للبيانات أو تكرار لها. ويعرض **Body** ملخصًا للطلب مثل `GET /api/v1/users 200`، كما تبقى جميع حقول Cloudflare متاحة كسمات قابلة للبحث.
   </Step>
 
-  <Step>
-    #### تحقّق من البيانات في HyperDX
-
+  <Step title="تحقّق من البيانات في HyperDX" id="verify-hyperdx">
     انتقل إلى عرض **Search** وحدّد المصدر **Cloudflare Logs**. اضبط النطاق الزمني بحيث يغطي بياناتك. يُفترض أن ترى إدخالات سجل تتضمن:
 
     * ملخصات الطلبات في عمود Body (على سبيل المثال، `GET /api/v1/users 200`)
@@ -164,9 +156,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار التكامل قبل إعداد Cloudflare Logpush في بيئة الإنتاج، نوفر مجموعة بيانات نموذجية تتضمن سجلات واقعية لطلبات HTTP.
 
 <Steps>
-  <Step>
-    #### ابدأ ClickPipes باستخدام مجموعة البيانات التجريبية
-
+  <Step title="ابدأ ClickPipes باستخدام مجموعة البيانات التجريبية" id="start-demo">
     1. ClickHouse Cloud Console → **Data Sources** → **Create ClickPipe**
     2. **Source**: Amazon S3
     3. **Authentication**: Public
@@ -180,15 +170,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     تتضمن مجموعة البيانات 5,000 سجل لطلبات HTTP على مدى 24 ساعة، مع أنماط واقعية تشمل حركة مرور من عدة بلدان، وحالات cache hit وcache miss، وطلبات API والموارد الثابتة، واستجابات الأخطاء، وأحداثًا أمنية.
   </Step>
 
-  <Step>
-    #### هيّئ data source في HyperDX
-
+  <Step title="هيّئ data source في HyperDX" id="configure-demo-source">
     اتبع [خطوات تهيئة data source](#configure-source) لإنشاء source في HyperDX يشير إلى table ‏`cloudflare_http_logs`. إذا كنت قد أعددت source بالفعل في قسم تكامل الإنتاج، فلا حاجة إلى هذه الخطوة.
   </Step>
 
-  <Step>
-    #### تحقّق من البيانات التجريبية
-
+  <Step title="تحقّق من البيانات التجريبية" id="verify-demo">
     ```sql
     SELECT count() FROM cloudflare_http_logs;
     -- يجب أن تُرجع 5000
@@ -205,7 +191,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **عرض timezone**
 
-      يعرض HyperDX timestamps وفق timezone المحلية في متصفحك. تمتد البيانات التجريبية عبر **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية مهما كان موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على visualizations أوضح.
+      يعرض HyperDX طوابع زمنية وفق timezone المحلية في متصفحك. تمتد البيانات التجريبية عبر **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية مهما كان موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
     </Info>
   </Step>
 </Steps>
@@ -215,13 +201,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">تنزيل</TrackedLink> إعدادات لوحة المعلومات
+  <Step title="تنزيل إعدادات لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">تنزيل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استيراد لوحة معلومات
-
+  <Step title="استيراد لوحة معلومات" id="import-dashboard">
     1. HyperDX → **Dashboards** → **Import Dashboard**
 
     <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="استيراد لوحة معلومات" />
@@ -231,9 +215,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="استيراد لوحة معلومات" />
   </Step>
 
-  <Step>
-    #### عرض لوحة المعلومات
-
+  <Step title="عرض لوحة المعلومات" id="view-dashboard">
     <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="مثال على لوحة معلومات" />
 
     <Note>
@@ -281,6 +263,6 @@ SELECT count() FROM cloudflare_http_logs;
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يوضح هذا الدليل كيفية إدخال سجلات Cloudflare باستخدام مجموعة بيانات تجريبية عامة. بالنسبة إلى عمليات النشر في بيئة الإنتاج، اضبط Cloudflare Logpush بحيث يكتب إلى حاوية S3 الخاصة بك، وأعِد ClickPipes باستخدام [المصادقة المستندة إلى دور IAM](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للوصول الآمن. حدِّد فقط [حقول Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) التي تحتاج إليها لتقليل تكاليف التخزين وحجم الإدخال. فعِّل المجلدات الفرعية اليومية في Logpush لتحسين تنظيم الملفات، واستخدم `**/*` في نمط مسار ClickPipes للمطابقة عبر الأدلة الفرعية.
+يوضح هذا الدليل كيفية إدخال سجلات Cloudflare باستخدام مجموعة بيانات تجريبية عامة. أما في عمليات النشر الإنتاجية، فقم بتهيئة Cloudflare Logpush للكتابة إلى حاوية S3 الخاصة بك، وأعِدّ ClickPipes باستخدام [المصادقة المستندة إلى دور IAM](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للوصول الآمن. حدِّد فقط [حقول Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) التي تحتاج إليها لتقليل تكاليف التخزين وحجم الإدخال. فعِّل المجلدات الفرعية اليومية في Logpush لتحسين تنظيم الملفات، واستخدم `**/*` في نمط المسار في ClickPipes للمطابقة عبر المجلدات الفرعية.
 
-راجع [توثيق S3 ClickPipes](/ar/integrations/clickpipes/object-storage/amazon-s3/overview) للاطلاع على خيارات الإعداد المتقدمة، بما في ذلك [الإدخال غير المرتب المستند إلى SQS](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) للتعامل مع التحميل اللاحق للبيانات التاريخية والملفات الخارجة عن الترتيب.
+راجع [وثائق S3 ClickPipes](/ar/integrations/clickpipes/object-storage/amazon-s3/overview) للاطلاع على خيارات التهيئة المتقدمة، بما في ذلك [الإدخال غير المرتب المستند إلى SQS](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) للتعامل مع عمليات التحميل الاستدراكي والملفات غير المرتبة.

@@ -55,19 +55,24 @@ SELECT '-- the reproducer from the issue: CREATE TABLE AS keeps the column type 
 DROP TABLE IF EXISTS t_map_lc_src;
 DROP TABLE IF EXISTS t_map_lc_dst;
 
+-- Pin Map serialization to 'basic' so randomized 'with_buckets' serialization does not
+-- reorder Map keys by hash bucket. This test checks the column type and CHECK TABLE, not
+-- the Map key order, so the stored order must stay the insertion order.
 CREATE TABLE t_map_lc_src
 (
     key String,
     attributes_map Map(LowCardinality(String), String)
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 INSERT INTO t_map_lc_src VALUES ('key_1', {'attr_1': 'value_1', 'attr_2': 'value_2', 'attr_3': 'value_3'});
 
 CREATE TABLE t_map_lc_dst
 ENGINE = MergeTree
 ORDER BY tuple()
+SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic'
 AS SELECT key, mapFilter((k, v) -> k != 'attr_1', attributes_map) AS attributes_map FROM t_map_lc_src;
 
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_map_lc_dst' ORDER BY name;

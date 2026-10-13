@@ -44,13 +44,21 @@ void StatisticsUniq::build(const ColumnPtr & column)
         raw_column_ptr = column.get();
     }
 
-    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
+    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
 }
 
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
+}
+
+bool StatisticsUniq::isCompatibleWith(const IStatistics & other) const
+{
+    const auto * other_uniq = typeid_cast<const StatisticsUniq *>(&other);
+    if (!other_uniq)
+        return false;
+    return StatisticsUtils::isSame(*collector, *other_uniq->collector);
 }
 
 void StatisticsUniq::serialize(WriteBuffer & buf)
@@ -88,7 +96,7 @@ void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*versi
 
 UInt64 StatisticsUniq::estimateCardinality() const
 {
-    auto column = DataTypeUInt64().createColumn();
+    auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
     return column->getUInt(0);
 }

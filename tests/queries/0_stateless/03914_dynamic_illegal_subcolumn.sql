@@ -1,7 +1,7 @@
 SELECT
     toTypeName(getSubcolumn(d, 'Tuple(UInt64, String).null')),
     getSubcolumn(d, 'Tuple(UInt64, String).null')
-FROM (SELECT 42::Dynamic AS d); -- { serverError ILLEGAL_COLUMN }
+FROM (SELECT 42::Dynamic AS d);
 
 SELECT
     toTypeName(getSubcolumn(d, 'Array(UInt64).null')),

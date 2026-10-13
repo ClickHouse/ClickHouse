@@ -1,14 +1,34 @@
 ---
-description: 'Documentation sur Index'
+description: 'Documentation de l’index'
 sidebar: 'sqlreference'
 slug: /sql-reference/functions
-title: 'Aperçu des fonctions'
+title: 'Vue d’ensemble des fonctions'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Page                                                                                   | Description                                                                                                |
-| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| [Fonctions régulières](/fr/reference/functions/regular-functions/regular-functions-index) | Fonctions dont le résultat, pour chaque ligne, est indépendant de celui de toutes les autres lignes.       |
-| [Fonctions d’agrégation](/fr/reference/functions/aggregate-functions/index)               | Fonctions qui agrègent un ensemble de valeurs sur plusieurs lignes.                                        |
-| [Fonctions de table](/fr/reference/functions/table-functions/index)                       | Méthodes permettant de construire des tables.                                                              |
-| [Fonctions de fenêtre](/fr/reference/functions/window-functions/index)                    | Fonctions qui vous permettent d’effectuer des calculs sur un ensemble de lignes liées à la ligne actuelle. |
+<CardGroup cols={2}>
+  <Card title="Fonctions régulières" icon="function" href="/fr/reference/functions/regular-functions/overview">
+    Fonctions dont le résultat, pour chaque ligne, est indépendant de toutes les autres lignes.
+  </Card>
+
+  <Card title="Fonctions d’agrégation" icon="calculator" href="/fr/reference/functions/aggregate-functions/index">
+    Fonctions qui accumulent un ensemble de valeurs sur plusieurs lignes.
+  </Card>
+
+  <Card title="Fonctions de table" icon="table" href="/fr/reference/functions/table-functions/index">
+    Méthodes permettant de construire des tables.
+  </Card>
+
+  <Card title="Fonctions de fenêtre" icon="chart-column" href="/fr/reference/functions/window-functions/index">
+    Fonctions qui permettent d’effectuer des calculs sur un ensemble de lignes liées à la ligne en cours.
+  </Card>
+
+  <Card title="Fonctions définies par l’utilisateur" icon="code" href="/fr/reference/functions/regular-functions/udf">
+    Fonctions exécutables personnalisées définies par l’utilisateur.
+  </Card>
+
+  <Card title="WebAssembly UDF" icon="cube" href="/fr/reference/functions/regular-functions/wasm_udf">
+    Fonctions définies par l’utilisateur implémentées en WebAssembly.
+  </Card>
+</CardGroup>

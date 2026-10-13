@@ -9,18 +9,18 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/components/Image.jsx";
 
-import ScalePlanFeatureBadge from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Automatic vertical scaling"/>
 
-Scale and Enterprise tier services support autoscaling based on CPU and memory usage. Service usage is constantly monitored over a lookback window to make scaling decisions. If the usage rises above or falls below certain thresholds, the service is scaled appropriately to match the demand.
+Scale tier services and Enterprise tier services with standard `1:4` profiles support autoscaling based on CPU and memory usage. Service usage is constantly monitored over a lookback window to make scaling decisions. If the usage rises above or falls below certain thresholds, the service is scaled appropriately to match the demand.
 
 ## Configuring vertical auto scaling {#configuring-vertical-auto-scaling}
 
-The scaling of ClickHouse Cloud Scale or Enterprise services can be adjusted by organization members with the **Admin** role.  To configure vertical autoscaling, go to the **Settings** tab for your service and adjust the minimum and maximum memory, along with CPU settings as shown below.
+Organization members with the **Admin** role can configure vertical autoscaling for Scale services and Enterprise services with standard `1:4` profiles. Go to the **Settings** tab for your service and adjust the minimum and maximum memory, along with CPU settings as shown below. Enterprise services with custom profiles require support-assisted vertical resizing.
 
 <Note>
-Single replica services can't be scaled for all tiers.
+Single-replica Scale services and Enterprise services with standard `1:4` profiles support vertical autoscaling. Enterprise services with custom profiles require support-assisted vertical resizing. Basic tier services remain fixed in size and can't be scaled.
 </Note>
 
 <Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Scaling settings page" border/>
@@ -32,5 +32,5 @@ You can also choose to set these values the same, essentially "pinning" the serv
 It's important to note that this will disable any auto scaling on the cluster, and your service won't be protected against increases in CPU or memory usage beyond these settings.
 
 <Note>
-For Enterprise tier services, standard 1:4 profiles will support vertical autoscaling. Custom profiles don’t support vertical autoscaling or manual vertical scaling. However, these services can be scaled vertically by contacting support.
+For Enterprise tier services, standard `1:4` profiles support vertical autoscaling. Custom profiles don’t support vertical autoscaling or manual vertical scaling. Contact support for vertical resizing.
 </Note>

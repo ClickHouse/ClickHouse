@@ -22,7 +22,7 @@ For example, the subset covers a single day - `2024-12-17` and is available publ
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -39,7 +39,7 @@ The full dataset for this bucket contains over 320 GB of parquet files. In the e
 We assume the user is consuming a stream of this data e.g. from Kafka or object storage, for data after this date. The schema for this data is shown below:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -121,7 +121,7 @@ We populate the main table and associated view with a subset of the data:
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -178,7 +178,7 @@ We populate this with our 2nd subset of approximately the same size and confirm 
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -282,11 +282,11 @@ Larger inserts i.e. more rows, will mean fewer `MOVE PARTITION` operations are r
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
 --continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
@@ -335,7 +335,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
@@ -511,10 +511,10 @@ Notice our memory usage here is `639.47 MiB`.
 
 Several factors will determine the performance and resources used in the above scenario. Before attempting to tune, we recommend readers understand the insert mechanics documented in detail in the [Using Threads for Reads](/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) section of the [Optimizing for S3 Insert and Read Performance guide](/integrations/connectors/data-ingestion/AWS/performance). In summary:
 
-- **Read Parallelism** - The number of threads used to read. Controlled through [`max_threads`](/reference/settings/session-settings#max_threads). In ClickHouse Cloud this is determined by the instance size with it defaulting to the number of vCPUs. Increasing this value may improve read performance at the expense of greater memory usage.
-- **Insert Parallelism** - The number of insert threads used to insert. Controlled through [`max_insert_threads`](/reference/settings/session-settings#max_insert_threads). **Note**: This value is capped by `max_threads`, so the effective insert parallelism is `min(max_insert_threads, max_threads)`. In ClickHouse Cloud this is determined by the instance size (between 2 and 4) and is set to 1 in OSS. Increasing this value may improve performance at the expense of greater memory usage.
-- **Insert Block Size** -  data is processed in a loop where it is pulled, parsed, and formed into in-memory insert blocks based on the [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). These blocks are sorted, optimized, compressed, and written to storage as new [data parts](/concepts/core-concepts/parts). The size of the insert block, controlled by settings [`min_insert_block_size_rows`](/reference/settings/session-settings#min_insert_block_size_rows) and [`min_insert_block_size_bytes`](/reference/settings/session-settings#min_insert_block_size_bytes) (uncompressed), impacts memory usage and disk I/O. Larger blocks use more memory but create fewer parts, reducing I/O and background merges. These settings represent minimum thresholds (whichever is reached first triggers a flush).
-- **Materialized view block size** - As well as the above mechanics for the main insert, prior to insertion into materialized views, blocks are also squashed for more efficient processing. The size of these blocks is determined by the settings [`min_insert_block_size_bytes_for_materialized_views`](/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) and [`min_insert_block_size_rows_for_materialized_views`](/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views). Larger blocks allow more efficient processing at the expense of greater memory usage. By default, these settings revert to the values of the source table settings [`min_insert_block_size_rows`](/reference/settings/session-settings#min_insert_block_size_rows) and [`min_insert_block_size_bytes`](/reference/settings/session-settings#min_insert_block_size_bytes), respectively.
+- **Read Parallelism** - The number of threads used to read. Controlled through [`max_threads`](/reference/settings/session-settings/max-threads#max_threads). In ClickHouse Cloud this is determined by the instance size with it defaulting to the number of vCPUs. Increasing this value may improve read performance at the expense of greater memory usage.
+- **Insert Parallelism** - The number of insert threads used to insert. Controlled through [`max_insert_threads`](/reference/settings/session-settings/max-insert#max_insert_threads). For positive values, the effective insert parallelism is `min(max_insert_threads, max_threads)`. A value of `0` resolves automatically to the number of CPU cores and can be reduced under memory pressure by [`max_insert_threads_min_free_memory_per_thread`](/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread). In ClickHouse Cloud, the default is determined by the instance size: `1` for nodes with 8 GiB of memory, `2` for nodes with 16 GiB, and `4` for larger nodes. In OSS since 26.8, the default is `0`. Increasing this value may improve performance at the expense of greater memory usage.
+- **Insert Block Size** -  data is processed in a loop where it is pulled, parsed, and formed into in-memory insert blocks based on the [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). These blocks are sorted, optimized, compressed, and written to storage as new [data parts](/concepts/core-concepts/parts). The size of the insert block, controlled by settings [`min_insert_block_size_rows`](/reference/settings/session-settings/min-insert#min_insert_block_size_rows) and [`min_insert_block_size_bytes`](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (uncompressed), impacts memory usage and disk I/O. Larger blocks use more memory but create fewer parts, reducing I/O and background merges. These settings represent minimum thresholds (whichever is reached first triggers a flush).
+- **Materialized view block size** - As well as the above mechanics for the main insert, prior to insertion into materialized views, blocks are also squashed for more efficient processing. The size of these blocks is determined by the settings [`min_insert_block_size_bytes_for_materialized_views`](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) and [`min_insert_block_size_rows_for_materialized_views`](/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views). Larger blocks allow more efficient processing at the expense of greater memory usage. By default, these settings revert to the values of the source table settings [`min_insert_block_size_rows`](/reference/settings/session-settings/min-insert#min_insert_block_size_rows) and [`min_insert_block_size_bytes`](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes), respectively.
 
 <Note>
 **Tip for trivial INSERT SELECT queries**: For simple `INSERT INTO t1 SELECT * FROM t2` queries without complex transformations, consider enabling `optimize_trivial_insert_select=1`. This setting (disabled by default since version 24.7) automatically adjusts the SELECT parallelism to match `max_insert_threads`, reducing resource usage and the number of parts created. This is particularly useful for bulk data migrations between tables.

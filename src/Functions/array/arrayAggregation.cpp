@@ -15,6 +15,9 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
+#include <Common/NaNUtils.h>
+#include <Common/findExtreme.h>
+
 namespace DB
 {
 
@@ -148,6 +151,74 @@ struct ArrayAggregateImpl
         return result;
     }
 
+    /// Reduce each supported fixed-width array slice directly with findExtreme* instead of per-element compareAt.
+    /// Decimal and DateTime64 columns use their native representation and preserve the source scale in the result.
+    template <typename Element>
+    requires(has_find_extreme_implementation<Element> || underlying_has_find_extreme_implementation<Element>)
+    static bool executeMinOrMaxFindExtreme(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    {
+        using ColVecType = ColumnVectorOrDecimal<Element>;
+
+        const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
+        if (!column)
+            return false;
+
+        const Element * data = column->getData().data();
+
+        typename ColVecType::MutablePtr res_column;
+        if constexpr (is_decimal<Element>)
+            res_column = ColVecType::create(offsets.size(), column->getScale());
+        else
+            res_column = ColVecType::create(offsets.size());
+
+        typename ColVecType::Container & res = res_column->getData();
+
+        size_t pos = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            const size_t end_of_array = offsets[i];
+
+            /// Array is empty
+            if (pos == end_of_array)
+            {
+                res[i] = Element{};
+                continue;
+            }
+
+            std::optional<Element> result;
+            if constexpr (aggregate_operation == AggregateOperation::min)
+                result = findExtremeMin(data, pos, end_of_array);
+            else
+                result = findExtremeMax(data, pos, end_of_array);
+            chassert(result.has_value());
+
+            if constexpr (is_floating_point<Element>)
+            {
+                /// findExtreme* returns NaN only if all elements are NaN; the generic path returns the first of them.
+                if (isNaN(*result))
+                    result = data[pos];
+                /// A zero result may be either 0.0 or -0.0 depending on reduction order; take the first zero in the array.
+                else if (*result == Element{})
+                {
+                    for (size_t j = pos; j < end_of_array; ++j)
+                    {
+                        if (data[j] == Element{})
+                        {
+                            result = data[j];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            res[i] = *result;
+            pos = end_of_array;
+        }
+
+        res_ptr = std::move(res_column);
+        return true;
+    }
+
     template <AggregateOperation op = aggregate_operation>
     requires(op == AggregateOperation::min || op == AggregateOperation::max)
     static void executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
@@ -156,10 +227,51 @@ struct ArrayAggregateImpl
         if (const_column)
         {
             MutableColumnPtr res_column = const_column->getDataColumn().cloneEmpty();
-            res_column->insertMany(const_column->getField(), offsets.size());
+            const Field field = const_column->getField();
+            UInt64 pos = 0;
+            size_t first_non_empty = 0;
+            for (size_t i = 0; i < offsets.size(); ++i)
+            {
+                const auto end_of_array = offsets[i];
+                if (pos == end_of_array)
+                {
+                    if (first_non_empty < i)
+                        res_column->insertMany(field, i - first_non_empty);
+                    res_column->insertDefault();
+
+                    first_non_empty = i + 1;
+                }
+
+                pos = end_of_array;
+            }
+
+            if (first_non_empty < offsets.size())
+                res_column->insertMany(field, offsets.size() - first_non_empty);
+
             res_ptr = std::move(res_column);
             return;
         }
+
+        if (executeMinOrMaxFindExtreme<UInt8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Float32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Float64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<DateTime64>(mapped, offsets, res_ptr))
+            return;
 
         MutableColumnPtr res_column = mapped->cloneEmpty();
         static constexpr int nan_null_direction_hint = aggregate_operation == AggregateOperation::min ? 1 : -1;
@@ -240,9 +352,16 @@ struct ArrayAggregateImpl
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
+                const size_t array_size = offsets[i] - pos;
+
+                if (array_size == 0)
+                {
+                    res[i] = {};
+                    continue;
+                }
+
                 if constexpr (aggregate_operation == AggregateOperation::sum)
                 {
-                    size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
                     res[i] = x * static_cast<ResultType>(array_size);
                 }
@@ -259,7 +378,6 @@ struct ArrayAggregateImpl
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
-                    size_t array_size = offsets[i] - pos;
                     AggregationType product = x;
 
                     if constexpr (is_decimal<Element>)
@@ -412,6 +530,7 @@ struct ArrayAggregateImpl
                 executeType<Int64>(mapped, offsets, res) ||
                 executeType<Int128>(mapped, offsets, res) ||
                 executeType<Int256>(mapped, offsets, res) ||
+                executeType<BFloat16>(mapped, offsets, res) ||
                 executeType<Float32>(mapped, offsets, res) ||
                 executeType<Float64>(mapped, offsets, res) ||
                 executeType<Decimal32>(mapped, offsets, res) ||

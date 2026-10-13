@@ -30,9 +30,7 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
     La siguiente guía asume que ya ha creado un servicio de Managed ClickStack y ha anotado las credenciales del servicio. Si no lo ha hecho, siga la guía de [Getting Started](/es/clickstack/getting-started/managed) para Managed ClickStack hasta que se le indique configurar Vector.
 
     <Steps>
-      <Step>
-        ### Crear una base de datos y una tabla
-
+      <Step title="Crear una base de datos y una tabla" id="create-a-database-table">
         Vector requiere que la tabla y el esquema estén definidos antes de la ingestión de datos.
 
         Primero, cree una base de datos. Puede hacerlo desde la [consola de ClickHouse Cloud](/es/products/cloud/features/sql-console-features/sql-console).
@@ -72,9 +70,7 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         </Info>
       </Step>
 
-      <Step>
-        ### Añade el sink de ClickHouse a la configuración de Vector
-
+      <Step title="Añade el sink de ClickHouse a la configuración de Vector" id="add-clickhouse-sink-to-config">
         Modifica la configuración de Vector para incluir el sink de ClickHouse y actualiza el campo `inputs` para que reciba eventos de tus canalizaciones existentes.
 
         Esta configuración asume que tu pipeline previo de Vector ya **ha preparado los datos para ajustarse al schema objetivo de ClickHouse**, es decir, que los campos ya se han parseado, tienen los nombres correctos y los tipos adecuados para la inserción. Consulta el [**ejemplo de Nginx a continuación**](#example-dataset-with-vector) para ver una ilustración completa de cómo parsear y normalizar líneas de log sin procesar en un schema adecuado para ClickStack.
@@ -107,17 +103,13 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         </Note>
       </Step>
 
-      <Step>
-        ### Accede a la UI de ClickStack
-
+      <Step title="Accede a la UI de ClickStack" id="navigate-to-clickstack-ui">
         Accede a tu servicio Managed ClickStack y selecciona &quot;ClickStack&quot; en el menú de la izquierda. Si ya has completado el onboarding, se abrirá la UI de ClickStack en una pestaña nueva y se te autenticará automáticamente. Si no, puedes completar el onboarding y seleccionar “Launch ClickStack” una vez que hayas elegido Vector como fuente de entrada.
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Iniciar ClickStack para Vector" size="lg" />
       </Step>
 
-      <Step>
-        ### Crear un origen de datos
-
+      <Step title="Crear un origen de datos" id="create-a-datasource-managed">
         Crea un origen de datos para logs. Si no existe ningún origen de datos, se te pedirá que crees uno al iniciar sesión por primera vez. De lo contrario, ve a configuración del equipo y añade un nuevo origen de datos.
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="Crear origen de datos - vector" size="lg" />
@@ -131,9 +123,7 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         Para ver otras opciones posibles, consulta la [referencia de configuración](/es/clickstack/managing/config).
       </Step>
 
-      <Step>
-        ### Explora los datos
-
+      <Step title="Explora los datos" id="explore-the-data-managed">
         Ve a la vista de logs para explorar los datos y empezar a usar ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Logs de Nginx en ClickStack" size="lg" />
@@ -143,9 +133,7 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
 
   <Tab title="ClickStack de código abierto">
     <Steps>
-      <Step>
-        ### Crear una base de datos y una tabla
-
+      <Step title="Crear una base de datos y una tabla" id="create-a-database-table-oss">
         Vector requiere que se definan una table y un schema antes de la ingestión de datos.
 
         Primero, cree una base de datos. Esto puede hacerse desde la [interfaz web de ClickHouse](/es/concepts/features/interfaces/http#web-ui) en [http://localhost:8123/play](http://localhost:8123/play). Use el nombre de usuario y la contraseña predeterminados `api:api`.
@@ -158,7 +146,7 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        Cree una tabla para sus datos. Debe coincidir con el esquema de salida de sus datos. El ejemplo siguiente asume una estructura clásica de Nginx. Ajústela según sus datos, siguiendo las [buenas prácticas del esquema](/es/concepts/best-practices/select-data-type). **Recomendamos encarecidamente** que se familiarice con el [concepto de las claves primarias](/es/concepts/core-concepts/primary-indexes) y que seleccione su clave primaria en función de las directrices descritas [aquí](/es/clickstack/managing/performance-tuning#choosing-a-primary-key).
+        Cree una tabla para sus datos. Debe coincidir con el esquema de salida de estos. El ejemplo siguiente parte de una estructura clásica de Nginx. Ajústela según sus datos, siguiendo las [buenas prácticas de esquema](/es/concepts/best-practices/select-data-type). **Le recomendamos encarecidamente** que se familiarice con el [concepto de claves primarias](/es/concepts/core-concepts/primary-indexes) y que seleccione su clave primaria según las directrices descritas [aquí](/es/clickstack/managing/performance-tuning#choosing-a-primary-key).
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -183,13 +171,11 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         <Info>
           **Clave primaria de Nginx**
 
-          La clave primaria anterior presupone patrones de acceso típicos en la UI de ClickStack para los logs de Nginx, pero puede ser necesario ajustarla según su carga de trabajo en entornos de producción.
+          La clave primaria anterior asume patrones de acceso típicos en la UI de ClickStack para los logs de Nginx, pero puede ser necesario ajustarla según su carga de trabajo en entornos de producción.
         </Info>
       </Step>
 
-      <Step>
-        ### Añade el sink de ClickHouse a la configuración de Vector
-
+      <Step title="Añade el sink de ClickHouse a la configuración de Vector" id="add-clickhouse-config-to-sink-oss">
         La ingestión en ClickStack para Vector debe realizarse directamente en ClickHouse, omitiendo el endpoint OTLP expuesto por el collector.
 
         Modifica tu configuración de Vector para incluir el sink de ClickHouse y actualiza el campo `inputs` para recibir eventos de tus pipelines existentes.
@@ -224,17 +210,13 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         </Note>
       </Step>
 
-      <Step>
-        ### Accede a la UI de ClickStack
-
+      <Step title="Accede a la UI de ClickStack" id="navigate-to-clickstack-ui-oss">
         Accede a la UI de ClickStack en [http://localhost:8080](http://localhost:8080). Crea un usuario si aún no has completado el onboarding.
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="inicio de sesión en ClickStack" size="lg" />
       </Step>
 
-      <Step>
-        ### Crear un origen de datos
-
+      <Step title="Crear un origen de datos" id="create-a-datasource-oss">
         Ve a configuración del equipo y añade un nuevo origen de datos.
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="Crear origen de datos - vector" size="lg" />
@@ -248,9 +230,7 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         Para conocer otras opciones posibles, consulta la [referencia de configuración](/es/clickstack/managing/config).
       </Step>
 
-      <Step>
-        ### Explora los datos
-
+      <Step title="Explora los datos" id="explore-the-data-oss">
         Ve a la vista de logs para explorar los datos y empezar a usar ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Logs de Nginx en ClickStack" size="lg" />
@@ -270,21 +250,15 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
     La siguiente guía asume que ya ha creado un servicio de Managed ClickStack y ha guardado las credenciales del servicio. Si aún no lo ha hecho, siga la guía de [Getting Started](/es/clickstack/getting-started/managed) para Managed ClickStack hasta que se le indique configurar Vector.
 
     <Steps>
-      <Step>
-        ### Instalación de Vector
-
+      <Step title="Instalación de Vector" id="installing-vector">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### Descargar los datos de ejemplo
-
+      <Step title="Descargar los datos de ejemplo" id="download-the-sample-data">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### Crear una base de datos y una tabla
-
+      <Step title="Crear una base de datos y una tabla" id="create-database-table-nginx-managed">
         Vector requiere que se definan una tabla y un esquema antes de la ingestión de datos.
 
         Primero, cree una base de datos. Esto puede hacerse desde la [consola de ClickHouse Cloud](/es/products/cloud/features/sql-console-features/sql-console).
@@ -324,9 +298,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         </Info>
       </Step>
 
-      <Step>
-        ### Copiar la configuración de Vector
-
+      <Step title="Copiar la configuración de Vector" id="copy-vector-configuration">
         Copia la configuración de Vector y crea un archivo `nginx.yaml`, donde debes establecer `CLICKHOUSE_ENDPOINT` y `CLICKHOUSE_PASSWORD`.
 
         ```yaml
@@ -346,7 +318,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # Formato DateTime compatible con ClickHouse
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -370,9 +342,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         </Note>
       </Step>
 
-      <Step>
-        ### Iniciar Vector
-
+      <Step title="Iniciar Vector" id="start-vector">
         Inicie Vector con el siguiente comando y cree primero el directorio de datos para registrar los offsets de archivo.
 
         ```bash
@@ -381,17 +351,13 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         ```
       </Step>
 
-      <Step>
-        ### Ve a la UI de ClickStack
-
+      <Step title="Accede a la UI de ClickStack" id="navigate-to-clickstack-ui-nginx-managed">
         Ve a tu servicio de Managed ClickStack y selecciona &quot;ClickStack&quot; en el menú de la izquierda. Si ya has completado el onboarding, se abrirá la UI de ClickStack en una pestaña nueva y se te autenticará automáticamente. Si no, puedes completar el onboarding y seleccionar “Launch ClickStack” una vez que hayas elegido Vector como fuente de entrada.
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Iniciar ClickStack para Vector" size="lg" />
       </Step>
 
-      <Step>
-        ### Crear un origen de datos
-
+      <Step title="Crear un origen de datos" id="create-a-datasource-nginx-managed">
         Crea un origen de datos de logs. Si no existe ningún origen de datos, se te pedirá que crees uno al iniciar sesión por primera vez. De lo contrario, ve a configuración del equipo y añade un nuevo origen de datos.
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="Crear origen de datos - vector" size="lg" />
@@ -424,9 +390,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         Para ver otras opciones posibles, consulta la [referencia de configuración](/es/clickstack/managing/config).
       </Step>
 
-      <Step>
-        ### Explora los datos
-
+      <Step title="Explora los datos" id="explore-the-data-nginx-managed">
         Ve a la vista de búsqueda de `20 de octubre de 2025` para explorar los datos y empezar a usar ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Interfaz de HyperDX" size="lg" />
@@ -438,21 +402,15 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
     La siguiente guía asume que ha configurado ClickStack Open Source con la [guía de inicio](/es/clickstack/getting-started/oss).
 
     <Steps>
-      <Step>
-        ### Instalación de Vector
-
+      <Step title="Instalación de Vector" id="installing-vector-oss">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### Descargar los datos de ejemplo
-
+      <Step title="Descargar los datos de ejemplo" id="download-the-sample-data-oss">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### Crear una base de datos y una tabla
-
+      <Step title="Crear una base de datos y una tabla" id="create-a-database-table-nginx-oss">
         Vector requiere que se definan una tabla y un esquema antes de la ingestión de datos.
 
         Primero, cree una base de datos. Puede hacerlo desde la [interfaz web de ClickHouse](/es/concepts/features/interfaces/http#web-ui) en [http://localhost:8123/play](http://localhost:8123/play). Use las credenciales predeterminadas `api:api`.
@@ -490,13 +448,11 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         <Info>
           **Clave primaria de Nginx**
 
-          La clave primaria anterior asume patrones de acceso típicos en la UI de ClickStack para los logs de Nginx, pero puede ser necesario ajustarla en función de tu carga de trabajo en entornos de producción.
+          La clave primaria anterior se basa en patrones de acceso típicos en la UI de ClickStack para los logs de Nginx, pero puede ser necesario ajustarla en función de la carga de trabajo en entornos de producción.
         </Info>
       </Step>
 
-      <Step>
-        ### Copiar la configuración de Vector
-
+      <Step title="Copiar la configuración de Vector" id="copy-vector-configuration-nginx-oss">
         En el caso de Vector, la ingestión en ClickStack debe hacerse directamente en ClickHouse, sin pasar por el endpoint OTLP expuesto por el collector.
 
         Copia la configuración de Vector y crea un archivo `nginx.yaml`.
@@ -518,7 +474,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # Formato DateTime compatible con ClickHouse
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -542,9 +498,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         </Note>
       </Step>
 
-      <Step>
-        ### Inicie Vector
-
+      <Step title="Iniciar Vector" id="start-vector-oss-nginx">
         Inicie Vector con el siguiente comando.
 
         ```bash
@@ -553,9 +507,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         ```
       </Step>
 
-      <Step>
-        ### Crear un origen de datos
-
+      <Step title="Crear un origen de datos" id="create-a-datasource-nginx-oss">
         Cree un origen de datos de logs desde `Team -> Sources`
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="Crear origen de datos - vector" size="lg" />
@@ -583,25 +535,21 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         )
         ```
 
-        Esto reconstruye la línea del log a partir de los campos estructurados.
+        Esto reconstruye la línea de registro a partir de los campos estructurados.
 
-        Para ver otras opciones, consulta la [referencia de configuración](/es/clickstack/managing/config).
+        Para ver otras opciones posibles, consulta la [referencia de configuración](/es/clickstack/managing/config).
       </Step>
 
-      <Step>
-        ### Accede a la UI de ClickStack
-
+      <Step title="Ve a la UI de ClickStack" id="navigate-to-clickstack-ui-nginx-oss">
         Accede a la UI de ClickStack en [http://localhost:8080](http://localhost:8080). Crea un usuario si aún no has completado el onboarding.
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Inicio de sesión de ClickStack" size="lg" />
       </Step>
 
-      <Step>
-        ### Explorar los datos
-
+      <Step title="Explora los datos" id="explore-the-data-nginx-oss">
         Ve a la vista de búsqueda de `20 de octubre de 2025` para explorar los datos y empezar a usar ClickStack.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="UI de HyperDX" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Interfaz de HyperDX" size="lg" />
       </Step>
     </Steps>
   </Tab>

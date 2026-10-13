@@ -4,19 +4,40 @@ title: 'Data modelling overview'
 description: 'Overview of Data Modelling'
 keywords: ['data modelling', 'schema design', 'dictionary', 'materialized view', 'data compression', 'denormalizing data']
 doc_type: 'landing-page'
+mode: wide
 ---
 
 This section is about data modeling in ClickHouse and contains the following topics:
 
-| Page                                                            | Description                                                                                                                                                                                   |
-|-----------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [Schema Design](/guides/clickhouse/data-modelling/schema-design)                   | Discusses ClickHouse schema design for optimal performance, considering factors like queries, data updates, latency, and volume.                                                              |
-| [Sparse primary indexes](/guides/clickhouse/data-modelling/sparse-primary-indexes) | A practical introduction to primary indexes in ClickHouse.                                                                                                                                    |
-| [Denormalizing Data](/guides/clickhouse/data-modelling/denormalization)            | Discusses the denormalization approach used in ClickHouse which aims to improve query performance by storing related data in a single table.                                                  |
-| [Backfilling Data](/guides/clickhouse/data-modelling/backfilling)                  | Techniques for efficiently backfilling data into ClickHouse tables.                                                                                                                            |
-| [Merge table function](/guides/clickhouse/data-modelling/merge-table-function)     | Using the Merge table function to query multiple tables as one.                                                                                                                               |
-| [Stored procedures and prepared statements](/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements) | Stored procedures and query parameters in ClickHouse.                                                                                                |
-| [Generating test data](/guides/clickhouse/data-modelling/generating-test-data)     | How to generate random test data in ClickHouse.                                                                                                                                               |
-| [Data Compression](/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | Discusses various compression modes in ClickHouse and how to optimize data storage and query performance by choosing the right compression method for your specific data types and workloads. |
-| [Working with arrays](/guides/clickhouse/working-with-arrays)                      | Working with arrays in ClickHouse.                                                                                                                                                            |
-| [Working with JOINs](/guides/clickhouse/working-with-joins)                        | Working with JOINs in ClickHouse.                                                                                                                                                             |
+<CardGroup cols={2}>
+  <Card title="Schema Design" icon="pen-ruler" href="/guides/clickhouse/data-modelling/schema-design">
+    ClickHouse schema design for optimal performance, considering factors like queries, data updates, latency, and volume.
+  </Card>
+  <Card title="Sparse primary indexes" icon="key" href="/guides/clickhouse/data-modelling/sparse-primary-indexes">
+    A practical introduction to primary indexes in ClickHouse.
+  </Card>
+  <Card title="Denormalizing Data" icon="table-list" href="/guides/clickhouse/data-modelling/denormalization">
+    The denormalization approach, which aims to improve query performance by storing related data in a single table.
+  </Card>
+  <Card title="Backfilling Data" icon="clock-rotate-left" href="/guides/clickhouse/data-modelling/backfilling">
+    Techniques for efficiently backfilling data into ClickHouse tables.
+  </Card>
+  <Card title="Merge table function" icon="code-merge" href="/guides/clickhouse/data-modelling/merge-table-function">
+    Using the `merge` table function to query multiple tables as one.
+  </Card>
+  <Card title="Stored procedures and prepared statements" icon="database" href="/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements">
+    Stored procedures and query parameters in ClickHouse.
+  </Card>
+  <Card title="Generating test data" icon="flask" href="/guides/clickhouse/data-modelling/generating-test-data">
+    How to generate random test data in ClickHouse.
+  </Card>
+  <Card title="Data Compression" icon="file-zipper" href="/guides/clickhouse/data-modelling/compression/compression-in-clickhouse">
+    Compression in ClickHouse and the available compression modes, and how to choose the right one for your data types and workloads.
+  </Card>
+  <Card title="Working with arrays" icon="list-ol" href="/guides/clickhouse/working-with-arrays">
+    Working with arrays in ClickHouse.
+  </Card>
+  <Card title="Working with JOINs" icon="link" href="/guides/clickhouse/working-with-joins">
+    Working with JOINs in ClickHouse.
+  </Card>
+</CardGroup>

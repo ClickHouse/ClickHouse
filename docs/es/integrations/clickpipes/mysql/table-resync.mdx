@@ -14,21 +14,17 @@ Hay casos en los que resulta útil volver a sincronizar tablas específicas de u
 
 Aunque la resincronización de tablas individuales con solo hacer clic en un botón aún está en desarrollo, esta guía explica cómo puede hacerlo hoy en un ClickPipe para MySQL.
 
-<div id="removing-table">
-  ### 1. Eliminar la tabla del pipe
-</div>
+<Steps>
+  <Step title="Quitar la tabla del pipe" id="removing-table">
+    Puede hacerlo siguiendo la [guía para quitar tablas](/es/integrations/clickpipes/mysql/remove-table).
+  </Step>
 
-Esto se puede hacer siguiendo la [guía para eliminar una tabla](/es/integrations/clickpipes/mysql/remove-table).
+  <Step title="Truncar o eliminar la tabla en ClickHouse" id="truncate-drop-table">
+    Este paso sirve para evitar la duplicación de datos cuando vuelva a añadir esta tabla en el siguiente paso. Puede hacerlo yendo a la pestaña **SQL Console** de ClickHouse Cloud y ejecutando una consulta.
+    Tenga en cuenta que contamos con una validación que bloquea la adición de la tabla si esta ya existe en ClickHouse y no está vacía.
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. Haz TRUNCATE o elimina la tabla en ClickHouse
-</div>
-
-Este paso sirve para evitar la duplicación de datos cuando volvamos a añadir esta tabla en el siguiente paso. Puedes hacerlo yendo a la pestaña **SQL Console** de ClickHouse Cloud y ejecutando una consulta.
-Ten en cuenta que hay una validación que bloquea la adición de la tabla si esta ya existe en ClickHouse y no está vacía.
-
-<div id="add-table-again">
-  ### 3. Vuelve a agregar la tabla al ClickPipe
-</div>
-
-Puedes hacerlo siguiendo la [guía para agregar tablas](/es/integrations/clickpipes/mysql/add-table).
+  <Step title="Añadir la tabla al ClickPipe de nuevo" id="add-table-again">
+    Puede hacerlo siguiendo la [guía para añadir tablas](/es/integrations/clickpipes/mysql/add-table).
+  </Step>
+</Steps>

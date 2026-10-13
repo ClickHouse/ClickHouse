@@ -1,8 +1,8 @@
 ---
-description: 'Clickhouse-disks のドキュメント'
+description: 'clickhouse-disks のドキュメント'
 sidebarTitle: 'clickhouse-disks'
 slug: /operations/utilities/clickhouse-disks
-title: 'Clickhouse-disks'
+title: 'clickhouse-disks'
 doc_type: 'reference'
 ---
 
@@ -14,7 +14,7 @@ ClickHouse のディスクに対して、ファイルシステムのような操
 
 * `--config-file, -C` -- ClickHouse の config ファイルのパス。デフォルトは `/etc/clickhouse-server/config.xml` です。
 * `--save-logs` -- 実行したコマンドの進行状況を `/var/log/clickhouse-server/clickhouse-disks.log` に記録します。
-* `--log-level` -- 記録するイベントの[種類](/ja/reference/settings/server-settings/settings#logger)。デフォルトは `none` です。
+* `--log-level` -- 記録するイベントの[種類](/ja/reference/settings/server-settings/settings/other#logger)。デフォルトは `none` です。
 * `--disk` -- `mkdir, move, read, write, remove` コマンドで使用するディスク。デフォルトは `default` です。
 * `--query, -q` -- 対話型モードを起動せずに実行できる単一のクエリ
 * `--help, -h` -- すべてのオプションとコマンドを説明付きで表示します
@@ -36,7 +36,7 @@ config で利用可能なすべてのディスクは、遅延初期化されま�
 2. **`default` ディスク**: このディスクは、設定の `clickhouse/path` パラメータで指定されたディレクトリ (デフォルト値は `/var/lib/clickhouse`) でローカルファイルシステムにマウントされます。初期パスは `/` に設定されます。
 
 <div id="clickhouse-disks-state">
-  ## Clickhouse-disks の状態
+  ## clickhouse-disks の状態
 </div>
 
 追加された各ディスクごとに、このユーティリティは現在のディレクトリ (通常のファイルシステムと同様のもの) を保持します。ユーザーは現在のディレクトリを変更したり、ディスクを切り替えたりできます。
@@ -57,6 +57,8 @@ config で利用可能なすべてのディスクは、遅延初期化されま�
 * `current_disk_with_path (current, current_disk, current_path)`
   現在の状態を次のフォーマットで表示します:
   `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  現在のディスク上の `path` にあるファイルまたはディレクトリの合計サイズをバイト単位で表示します。ディレクトリの場合は、それに含まれるすべてのファイルのサイズを再帰的に合計します。`path` が指定されていない場合は、現在のディレクトリを使用します。`--human-readable` (`-h`) を指定すると、サイズは human-readable なフォーマット (例: `1.23 GiB`) で表示されます。
 * `help [<command>]`
   コマンド `command` のヘルプメッセージを表示します。`command` が指定されていない場合は、すべてのコマンドに関する情報を表示します。
 * `move (mv) <path-from> <path-to>`.
@@ -75,9 +77,13 @@ config で利用可能なすべてのディスクは、遅延初期化されま�
   `path-from` からファイルを読み取り、`path` に出力します (指定されていない場合は `stdout`) 。
 * `read-bitmap <path-from> [--values]`
   `path-from` にある delete-bitmap (`.rbm`) サイドカーを調べます。マジックとバージョン、CRC の有効性、カーディナリティ (削除された行数)、および行範囲を表示します。`--values` を指定すると、すべての set bits (削除された行のオフセット) も昇順でダンプします。
-* `read-checksums <path>`
-  現在のディスク上にある `MergeTree` data part の `checksums.txt` ファイルを読み取り、`name`、`file_size`、`file_hash`、`uncompressed_size`、`uncompressed_hash` の各カラムを持つ、タブ区切りで human-readable なテーブルとして `stdout` に出力します。最後の 2 つのカラムは compressed ファイルにのみ含まれます。
 * `switch-disk [--path path] <disk>`
   パス `path` でディスク `disk` に切り替えます (`path` が指定されていない場合、デフォルト値はディスク `disk` 上の直前のパスです) 。
 * `write (w) [--path-from path] <path-to>`.
   `path` から `path-to` にファイルを書き込みます (`path` が指定されていない場合は `stdin`、入力は Ctrl+D で終了する必要があります) 。
+* `wc <path> [--bytes] [--lines] [--words]`
+  現在のディスク上の `path` にあるファイルのバイト数、行数、単語数を数えます (Unix の `wc` と同様) 。フラグを指定しない場合は、行数、単語数、バイト数の順ですべてのカウントを表示します。特定のカウントを選択するには `--bytes` (`-c`)、`--lines` (`-l`)、`--words` (`-w`) を使用します。
+* `sed <expression> <path>`
+  現在のディスク上の `path` にあるファイルに `sed` の `expression` をその場で適用します。ホストに `sed` がインストールされている必要があります。サポートされるのは、オプションなしの単一の `sed` expression のみです (例: `'s/foo/bar/g'`、`'/foo/d'`)。複数の expression (`-e ... -e ...`) や、アドレスと組み合わせたオプション (例: `4,10p` と併用する `-n`) はサポートされません。
+* `read-checksums <path>`
+  現在のディスク上にある `MergeTree` data part の `checksums.txt` ファイルを読み取り、`name`、`file_size`、`file_hash`、`uncompressed_size`、`uncompressed_hash` の各カラムを持つ、タブ区切りで human-readable なテーブルとして `stdout` に出力します。最後の 2 つのカラムは compressed ファイルにのみ含まれます。

@@ -613,7 +613,7 @@ Note, however, that this result is incorrect.
 
 - **Evaluate insert-time performance.** JOINs increase the cost of inserts, especially with large right-side tables. Benchmark insert rates using representative production data.
 
-- **Prefer dictionaries for simple lookups**. Use [Dictionaries](/concepts/features/dictionaries/index) for key-value lookups (e.g., user ID to name) to avoid expensive JOIN operations.
+- **Prefer dictionaries for simple lookups**. Use [Dictionaries](/concepts/features/dictionaries/index) for key-value lookups (e.g., user ID to name) to avoid expensive JOIN operations. Use a fully loaded dictionary layout for reliable insert-time lookups; [cache-based layouts](/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) can make ingestion depend on a local warmed cache.
 
 - **Align `GROUP BY` and `ORDER BY` for merge efficiency.** When using `SummingMergeTree` or `AggregatingMergeTree`, ensure `GROUP BY` matches the `ORDER BY` clause in the target table to allow efficient row merging.
 
@@ -1017,7 +1017,7 @@ GROUP BY UserId
 
 ## Parallel vs sequential processing {#materialized-views-parallel-vs-sequential}
 
-As shown in the previous example, a table can act as the source for multiple Materialized Views. The order in which these are executed depends on the setting [`parallel_view_processing`](/reference/settings/session-settings#parallel_view_processing).
+As shown in the previous example, a table can act as the source for multiple Materialized Views. The order in which these are executed depends on the setting [`parallel_view_processing`](/reference/settings/session-settings/parallel#parallel_view_processing).
 
 By default, this setting is equal to `0` (`false`), meaning Materialized Views are executed sequentially in `uuid` order.
 
