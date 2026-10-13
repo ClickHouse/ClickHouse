@@ -25,7 +25,7 @@ public:
     /// region, as `{child_fd, parent_fd}` - which is why the region has to exist before the
     /// process does: a `memfd` has no name a process could open later, so the only way for the
     /// command to reach it is to have been started with it.
-    using ShellCommandBuilderFunc = std::function<std::unique_ptr<ShellCommand>(const std::vector<std::pair<int, int>> & inherited_fds)>;
+    using ShellCommandBuilderFunc = std::function<std::unique_ptr<ShellCommand>(const std::vector<std::pair<int, int>> & inherited_fds)>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the type of `ShellCommand::Config::inherited_fds`
 
     explicit ShellCommandHolder(ShellCommandBuilderFunc && func_)
         : func(std::move(func_))
@@ -45,7 +45,7 @@ public:
 
     /// The descriptors a process started now has to inherit: the region under child descriptor
     /// `SHARED_MEMORY_CHILD_FD`, which is also the number its request names it by.
-    std::vector<std::pair<int, int>> inheritedRegionFds() const;
+    std::vector<std::pair<int, int>> inheritedRegionFds() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the type of `ShellCommand::Config::inherited_fds`
 
     void returnCommand(std::unique_ptr<ShellCommand> command) { returned_command = std::move(command); }
 
@@ -71,7 +71,7 @@ public:
     struct BorrowerIdentity
     {
         std::optional<UUID> user_id;
-        std::vector<UUID> current_roles;
+        std::vector<UUID> current_roles; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- as `Context::getCurrentRoles` returns it
 
         bool operator==(const BorrowerIdentity &) const = default;
     };

@@ -53,9 +53,9 @@ std::unique_ptr<ShellCommand> ShellCommandHolder::buildCommand()
     return func(inheritedRegionFds());
 }
 
-std::vector<std::pair<int, int>> ShellCommandHolder::inheritedRegionFds() const
+std::vector<std::pair<int, int>> ShellCommandHolder::inheritedRegionFds() const // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the type of `ShellCommand::Config::inherited_fds`
 {
-    std::vector<std::pair<int, int>> fds;
+    std::vector<std::pair<int, int>> fds; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the type of `ShellCommand::Config::inherited_fds`
     if (shared_memory)
         fds.emplace_back(SHARED_MEMORY_CHILD_FD, shared_memory->fd());
     return fds;

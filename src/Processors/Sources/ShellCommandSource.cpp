@@ -69,7 +69,7 @@ namespace
             const ShellCommandSourceCoordinator::Configuration & coordinator_configuration,
             SharedHeader sample_block_,
             std::unique_ptr<ShellCommand> && command_,
-            std::vector<SendDataTask> && send_data_tasks,
+            VectorWithMemoryTracking<SendDataTask> && send_data_tasks,
             const ShellCommandSourceConfiguration & configuration_,
             BorrowedShellCommandHolder && command_holder_,
             bool worker_is_reused_)
@@ -778,7 +778,7 @@ namespace
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
 
-        std::vector<ThreadFromGlobalPool> send_data_threads;
+        VectorWithMemoryTracking<ThreadFromGlobalPool> send_data_threads;
 
         std::mutex send_data_lock;
         std::exception_ptr exception_during_send_data;
@@ -904,7 +904,7 @@ ShellCommandHolder::ShellCommandBuilderFunc makeCommandBuilder(
     command_config.collect_resource_usage = collect_resource_usage;
 
     const bool execute_direct = configuration.execute_direct;
-    return [command_config, execute_direct](const std::vector<std::pair<int, int>> & inherited_fds) mutable
+    return [command_config, execute_direct](const std::vector<std::pair<int, int>> & inherited_fds) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the type of `ShellCommand::Config::inherited_fds`
     {
         command_config.inherited_fds = inherited_fds;
         if (execute_direct)
@@ -1017,15 +1017,15 @@ std::unique_ptr<ShellCommand> takePooledWorker(
 /// One task per input pipe, each of which writes its pipe to the command in the input format: the
 /// first to its stdin, the rest to descriptors 3, 4, ... The inputs of a pooled worker are left open
 /// for the next borrow.
-std::vector<ShellCommandSource::SendDataTask> makeSendDataTasks(
+VectorWithMemoryTracking<ShellCommandSource::SendDataTask> makeSendDataTasks(
     ShellCommand & process,
-    std::vector<Pipe> & input_pipes,
+    Pipes & input_pipes,
     const ShellCommandSourceCoordinator::Configuration & configuration,
     const ContextPtr & context,
     UDFProcessSubtreeSampler * sampler,
     bool is_executable_pool)
 {
-    std::vector<ShellCommandSource::SendDataTask> tasks;
+    VectorWithMemoryTracking<ShellCommandSource::SendDataTask> tasks;
     tasks.reserve(input_pipes.size());
 
     for (size_t i = 0; i < input_pipes.size(); ++i)
@@ -1096,7 +1096,7 @@ std::vector<ShellCommandSource::SendDataTask> makeSendDataTasks(
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const VectorWithMemoryTracking<std::string> & arguments,
-    std::vector<Pipe> && input_pipes,
+    Pipes && input_pipes,
     Block sample_block,
     ContextPtr context,
     const ShellCommandSourceConfiguration & source_configuration)
