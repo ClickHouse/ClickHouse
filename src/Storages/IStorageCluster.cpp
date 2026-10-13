@@ -22,7 +22,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
-#include <Functions/FunctionFactory.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -73,63 +72,37 @@ IStorageCluster::IStorageCluster(
 namespace
 {
 
-bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordered_map<String, String> & read_columns)
+bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
 {
     if (!node.isDeterministic() || node.is_runtime_filter_id)
         return false;
     if (node.type == ActionsDAG::ActionType::INPUT)
-        return read_columns.contains(node.result_name);
+        return replica_columns.contains(node.result_name);
     if (node.type == ActionsDAG::ActionType::COLUMN)
     {
         const auto * column_set = node.column ? checkAndGetColumn<ColumnSet>(&node.column->getDataColumn()) : nullptr;
         return !column_set || typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
     }
     for (const auto * child : node.children)
-        if (!isSerializableFilterNode(*child, read_columns))
+        if (!isSerializableFilterNode(*child, replica_columns))
             return false;
     return node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS;
 }
 
-String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const std::unordered_map<String, String> & read_columns, const ContextPtr & context)
+String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
 {
-    const auto * root = &predicate;
-    while (root->type == ActionsDAG::ActionType::ALIAS)
-        root = root->children.at(0);
-
-    ActionsDAG::NodeRawConstPtrs conjuncts;
-    if (root->type == ActionsDAG::ActionType::FUNCTION && root->function_base && root->function_base->getName() == "and")
-        conjuncts.assign(root->children.begin(), root->children.end());
-    else
-        conjuncts.push_back(root);
-
     ActionsDAG::NodeRawConstPtrs serializable;
-    for (const auto * conjunct : conjuncts)
-        if (isSerializableFilterNode(*conjunct, read_columns))
-            serializable.push_back(conjunct);
-    if (serializable.empty())
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(&predicate))
+        if (isSerializableFilterNode(*atom, replica_columns))
+            serializable.push_back(atom);
+
+    auto filter = ActionsDAG::buildFilterActionsDAG(serializable, replica_columns);
+    if (!filter)
         return {};
-
-    auto filter = ActionsDAG::cloneSubDAG(serializable, /*remove_aliases=*/ false);
-    if (filter.getOutputs().size() > 1)
-    {
-        const auto & conjunction = filter.addFunction(FunctionFactory::instance().get("and", context), filter.getOutputs(), {});
-        filter.getOutputs() = {&conjunction};
-    }
-
-    ActionsDAG replica_filter;
-    for (const auto * input : filter.getInputs())
-    {
-        const auto & replica_input = replica_filter.addInput(read_columns.at(input->result_name), input->result_type);
-        replica_filter.getOutputs().push_back(&replica_filter.addAlias(replica_input, input->result_name));
-    }
-    ActionsDAG::NodeMapping inputs_map;
-    replica_filter.mergeInplace(std::move(filter), inputs_map, /*remove_dangling_inputs=*/ true);
-    replica_filter.getOutputs().resize(1);
-    replica_filter.removeUnusedActions(/*allow_remove_inputs=*/ true, /*allow_constant_folding=*/ false);
 
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
-    replica_filter.serialize(out, registry);
+    filter->serialize(out, registry);
     QueryPlan::serializeReadySets(registry, out);
     return base64Encode(out.str());
 }
@@ -151,18 +124,19 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     {
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
         const auto & select_expressions = select->select()->children;
-        std::unordered_map<String, String> read_columns;
+        std::unordered_map<String, ColumnWithTypeAndName> replica_columns;
         for (size_t i = 0; i < select_expressions.size() && select_expressions.size() == header_columns.size(); ++i)
         {
             if (const auto * identifier = select_expressions[i]->as<ASTIdentifier>())
             {
-                read_columns.emplace(header_columns[i].name, identifier->shortName());
-                read_columns.emplace(select_expressions[i]->getAliasOrColumnName(), identifier->shortName());
+                ColumnWithTypeAndName replica_column(nullptr, header_columns[i].type, identifier->shortName());
+                replica_columns.emplace(header_columns[i].name, replica_column);
+                replica_columns.emplace(select_expressions[i]->getAliasOrColumnName(), replica_column);
             }
         }
 
-        if (!read_columns.empty())
-            pushed_down_filter = serializeFilterForReplicas(*filter_actions_dag->getOutputs().at(0), read_columns, context);
+        if (!replica_columns.empty())
+            pushed_down_filter = serializeFilterForReplicas(*filter_actions_dag->getOutputs().at(0), replica_columns);
     }
 
     createExtension(predicate);
