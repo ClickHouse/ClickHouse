@@ -91,7 +91,7 @@ private:
     VectorWithMemoryTracking<State> states;
     VectorWithMemoryTracking<size_t> inputs_to_update;
 
-    VectorWithMemoryTracking<Chunk> chunks;
+    Chunks chunks;
     UInt64 chunk_num = 0;
     size_t accumulated_rows = 0;
     size_t accumulated_bytes = 0;

@@ -284,7 +284,7 @@ void ParquetBlockOutputFormat::onCancel() noexcept
     is_stopped = true;
 }
 
-void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
+void ParquetBlockOutputFormat::writeRowGroup(Chunks chunks)
 {
     if (pool)
     {
@@ -336,7 +336,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     finalizeRowGroup(file_state, chunk.getNumRows(), options, out);
 }
 
-void ParquetBlockOutputFormat::writeRowGroupInParallel(std::vector<Chunk> chunks)
+void ParquetBlockOutputFormat::writeRowGroupInParallel(Chunks chunks)
 {
     std::unique_lock lock(mutex);
 

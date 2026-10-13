@@ -41,7 +41,7 @@ public:
 private:
     const size_t num_inputs;
     VectorWithMemoryTracking<Int64> chunk_snums;
-    VectorWithMemoryTracking<Chunk> chunks;
+    Chunks chunks;
     VectorWithMemoryTracking<bool> is_input_finished;
 };
 
