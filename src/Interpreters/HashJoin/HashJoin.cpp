@@ -1035,12 +1035,12 @@ BuildResult HashJoin::insertClause(
     using Methods = HashJoinMethods<KIND, STRICTNESS, Maps>;
 
     const size_t slots = data->slots.size();
-    SlotScatter scattered;
+    std::vector<ScatteredBlock::Selector> scattered;
     std::span<const ScatteredBlock::Selector> per_slot(&stored_block.selector, 1);
     if (slots > 1)
     {
         scattered = scatterBlockBySlot(data->type, map, key_columns, key_sizes[clause_idx], stored_block.selector, slots);
-        per_slot = scattered.selectors;
+        per_slot = scattered;
     }
 
     const BuildResult result = Methods::insertFromBlockImpl(
@@ -1048,7 +1048,6 @@ BuildResult HashJoin::insertClause(
         map,
         clause_idx,
         per_slot,
-        scattered.dense_keys,
         key_columns,
         key_sizes[clause_idx],
         stored_block.block_no,

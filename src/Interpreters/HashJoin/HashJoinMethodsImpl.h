@@ -159,7 +159,6 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     MapsTemplate & maps,
     size_t map_idx,
     std::span<const ScatteredBlock::Selector> per_slot,
-    const std::vector<Columns> & slot_dense_keys,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     UInt32 stored_block_no,
@@ -175,7 +174,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     case HashJoin::Type::TYPE: \
         return insertFromBlockImplTypeCase< \
             typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>, needs_offset>::Type>( \
-            join, *maps.TYPE, map_idx, per_slot, slot_dense_keys, key_columns, key_sizes, stored_block_no, null_map, join_mask);
+            join, *maps.TYPE, map_idx, per_slot, key_columns, key_sizes, stored_block_no, null_map, join_mask);
 
         APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -320,7 +319,6 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     HashMap & map,
     size_t map_idx,
     std::span<const ScatteredBlock::Selector> per_slot,
-    const std::vector<Columns> & slot_dense_keys,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     UInt32 stored_block_no,
@@ -332,11 +330,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     HashJoin::RightTableData & table = *join.data;
     BuildSlots & slots = table.slots;
 
-    /// The scatter gathers the keys of every slot or of none.
-    const bool keys_are_dense = !slot_dense_keys.empty();
-    std::optional<KeyGetter> block_key_getter;
-    if (!keys_are_dense)
-        block_key_getter.emplace(createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes));
+    KeyGetter key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
     BuildResult result{.is_inserted = isInsertedWithoutRows(join)};
     auto insert_slot = [&](size_t slot)
@@ -347,23 +341,8 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
         if (const size_t reserved = slots.reserveOnFirstInsert(map, map_idx, slot))
             ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
 
-        std::optional<KeyGetter> slot_key_getter;
-        if (keys_are_dense)
-        {
-            const Columns & dense_keys = slot_dense_keys[slot];
-            chassert(!dense_keys.empty() && dense_keys.front()->size() == selector.size());
-            slot_key_getter.emplace(createKeyGetter<KeyGetter, is_asof_join>(JoinCommon::getRawPointers(dense_keys), key_sizes));
-        }
-
-        /// `keys_are_dense` is passed as a template argument, so the loop in `insertSlotRows` does not test it on every row.
         auto insert_rows = [&](const auto & rows)
-        {
-            if (keys_are_dense)
-                return insertSlotRows<true>(
-                    join, map, *slot_key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot));
-            return insertSlotRows<false>(
-                join, map, *block_key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot));
-        };
+        { return insertSlotRows(join, map, key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot)); };
         const BuildResult slot_result
             = selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
 
@@ -380,7 +359,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <bool keys_are_dense, typename KeyGetter, typename HashMap, typename Selector>
+template <typename KeyGetter, typename HashMap, typename Selector>
 BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
     HashJoin & join,
     HashMap & map,
@@ -426,7 +405,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                map.prefetch(key_getter.getKeyHolder(keys_are_dense ? k : selectorIndexAt(selector, k), pool));
+                map.prefetch(key_getter.getKeyHolder(selectorIndexAt(selector, k), pool));
         });
 
     for (size_t i = 0; i < rows; ++i)
@@ -435,7 +414,6 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
             prefetcher.prefetchAt(i);
 
         const size_t ind = selectorIndexAt(selector, i);
-        const size_t key_row = keys_are_dense ? i : ind;
 
         chassert(!null_map || ind < null_map->size());
         if (null_map && (*null_map)[ind])
@@ -453,15 +431,15 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
 
         if constexpr (is_asof_join)
             Inserter<HashMap, KeyGetter>::insertAsof(
-                asof_type, asof_inequality, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys, *asof_column);
+                asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, result.new_keys, *asof_column);
         else if constexpr (is_set)
-            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, key_row, pool, result.new_keys);
+            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool, result.new_keys);
         else if constexpr (mapped_one)
             result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
-                any_take_last_row, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys);
+                any_take_last_row, map, key_getter, stored_block_no, ind, pool, result.new_keys);
         else
             result.all_values_unique
-                &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys);
+                &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool, result.new_keys);
     }
     return result;
 }

@@ -29,56 +29,40 @@ struct Inserter
     /// costs a load per row: the map this writes to lives inside the join object, so the compiler cannot
     /// prove that the write leaves the flag alone and has to reload it.
     static ALWAYS_INLINE bool insertOne(
-        bool any_take_last_row,
-        HashMap & map,
-        KeyGetter & key_getter,
-        UInt32 stored_block_no,
-        size_t key_row,
-        size_t row_no,
-        Arena & pool,
-        size_t & new_keys)
+        bool any_take_last_row, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
     {
-        auto emplace_result = key_getter.emplaceKey(map, key_row, pool);
+        auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        new_keys += emplace_result.isInserted();
 
-        const bool inserted = emplace_result.isInserted();
-        new_keys += inserted;
-        const bool store_row = inserted || any_take_last_row;
+        const bool store_row = emplace_result.isInserted() || any_take_last_row;
         if (store_row)
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, row_no);
+            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
         return store_row;
     }
 
-    /// A set map holds no reference to a right row, so there is nothing to store beyond the key.
+    /// A set map holds no reference to a right row, so there is nothing to do beyond adding the key.
     /// The key is still counted. `~HashJoin` records the size statistics from `keys_to_join`, and
     /// the runtime filter reads it to see whether the build has more than one distinct key.
-    static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t key_row, Arena & pool, size_t & new_keys)
+    static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool, size_t & new_keys)
     {
-        new_keys += key_getter.emplaceKey(map, key_row, pool).isInserted();
+        new_keys += key_getter.emplaceKey(map, i, pool).isInserted();
     }
 
     static ALWAYS_INLINE bool insertAll(
-        const HashJoin &,
-        HashMap & map,
-        KeyGetter & key_getter,
-        UInt32 stored_block_no,
-        size_t key_row,
-        size_t row_no,
-        Arena & pool,
-        size_t & new_keys)
+        const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
     {
-        auto emplace_result = key_getter.emplaceKey(map, key_row, pool);
+        auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        new_keys += emplace_result.isInserted();
 
-        const bool inserted = emplace_result.isInserted();
-        new_keys += inserted;
-        if (inserted)
-            new (&emplace_result.getMapped()) HashMap::mapped_type(stored_block_no, row_no);
+        if (emplace_result.isInserted())
+            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
         else
         {
             /// A single ref is stored inline in the value of the hash table; the first duplicate
             /// switches the value to a pointer to an arena-allocated list of refs.
-            emplace_result.getMapped().insert(RowRef(stored_block_no, row_no).encode(), pool);
+            emplace_result.getMapped().insert(RowRef(stored_block_no, i).encode(), pool);
         }
-        return inserted;
+        return emplace_result.isInserted();
     }
 
     /// `asof_type` and `asof_inequality` are read from the join once, before the loop, for the reason
@@ -90,21 +74,19 @@ struct Inserter
         HashMap & map,
         KeyGetter & key_getter,
         UInt32 stored_block_no,
-        size_t key_row,
-        size_t row_no,
+        size_t i,
         Arena & pool,
         size_t & new_keys,
         const IColumn & asof_column)
     {
-        auto emplace_result = key_getter.emplaceKey(map, key_row, pool);
-        auto * time_series_map = &emplace_result.getMapped();
+        auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        new_keys += emplace_result.isInserted();
+        typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
 
-        const bool inserted = emplace_result.isInserted();
-        new_keys += inserted;
-        if (inserted)
+        if (emplace_result.isInserted())
             time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, asof_inequality));
-        (*time_series_map)->insert(asof_column, stored_block_no, row_no);
-        return inserted;
+        (*time_series_map)->insert(asof_column, stored_block_no, i);
+        return emplace_result.isInserted();
     }
 };
 
@@ -116,13 +98,12 @@ class HashJoinMethods
 
 public:
     /// Inserts the keys of clause `map_idx` of a block into `maps`. Each slot inserts its rows of `per_slot` under its
-    /// own lock. `slot_dense_keys` holds the key columns that the scatter gathered for each slot, or is empty.
+    /// own lock.
     static BuildResult insertFromBlockImpl(
         HashJoin & join,
         MapsTemplate & maps,
         size_t map_idx,
         std::span<const ScatteredBlock::Selector> per_slot,
-        const std::vector<Columns> & slot_dense_keys,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         UInt32 stored_block_no,
@@ -155,7 +136,6 @@ private:
         HashMap & map,
         size_t map_idx,
         std::span<const ScatteredBlock::Selector> per_slot,
-        const std::vector<Columns> & slot_dense_keys,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         UInt32 stored_block_no,
@@ -163,9 +143,7 @@ private:
         const JoinCommon::JoinMask & join_mask);
 
     /// Inserts the rows of one slot. The `is_inserted` it returns comes from these rows only, without `isInsertedWithoutRows`.
-    /// With `keys_are_dense`, `key_getter` reads the keys gathered for the slot,
-    /// so the key of the `i`-th row of `selector` is at row `i`.
-    template <bool keys_are_dense, typename KeyGetter, typename HashMap, typename Selector>
+    template <typename KeyGetter, typename HashMap, typename Selector>
     static BuildResult insertSlotRows(
         HashJoin & join,
         HashMap & map,
