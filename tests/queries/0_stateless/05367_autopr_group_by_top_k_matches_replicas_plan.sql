@@ -32,5 +32,7 @@ SET automatic_parallel_replicas_mode = 0;
 SELECT k, count() FROM t_group_by_top_k GROUP BY k LIMIT 3 OFFSET 2;
 SELECT replaceRegexpAll(explain, '^[│└├─ ]+', '') FROM (EXPLAIN actions = 1 SELECT k, count() FROM t_group_by_top_k GROUP BY k LIMIT 3)
 WHERE explain LIKE '%Top-K%' OR explain LIKE '%Sorting (%';
+-- Above the limit the heap refuses, the query is not ordered: that would only cost a sort.
+SELECT count() FROM (EXPLAIN SELECT k, count() FROM t_group_by_top_k GROUP BY k LIMIT 1001) WHERE explain LIKE '%Sorting (%';
 
 DROP TABLE t_group_by_top_k;

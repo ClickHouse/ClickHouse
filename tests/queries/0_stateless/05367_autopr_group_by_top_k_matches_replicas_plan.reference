@@ -5,3 +5,4 @@ top_k_order_by	1
 4	10
 Sorting (Sorting for ORDER BY)
 Top-K: limit=3, columns=1, directions=[1]
+0
