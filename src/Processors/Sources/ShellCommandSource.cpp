@@ -498,11 +498,12 @@ namespace
                     /// A downstream `LIMIT` can finish the port before the source reaches EOF.
                     /// A producer that goes on writing is not kept alive by draining it: its
                     /// stdout is closed after a limited amount of extra output, or once
-                    /// `command_termination_timeout` has passed, and it dies on `SIGPIPE`. The wait
-                    /// for its exit stays unbounded all the same, so a command that has stopped
-                    /// writing and takes its time to exit passes, as it does when it is read to
-                    /// the end. A command that neither writes nor exits is waited for until the
-                    /// query is killed - as the blocking `wait` did, which could not be killed.
+                    /// `command_termination_timeout` has passed, and it dies on `SIGPIPE`, which is
+                    /// not reported as its failure. The wait for its exit stays unbounded all the
+                    /// same, so a command that has stopped writing and takes its time to exit
+                    /// passes, as it does when it is read to the end. A command that neither
+                    /// writes nor exits is waited for until the query is killed - as the blocking
+                    /// `wait` did, which could not be killed.
                     const bool output_abandoned = !finished
                         && (!configuration.read_fixed_number_of_rows || current_read_rows < configuration.number_of_rows_to_read);
                     waitForCommandExit(*command, timeout_command_out, /*close_inputs_first=*/ true,

@@ -398,6 +398,10 @@ SharedMemoryRegion::SharedMemoryRegion(size_t size)
         throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY,
             "SharedMemoryRegion: size {} exceeds the maximum {}", size, static_cast<size_t>(std::numeric_limits<off_t>::max()));
 
+    /// Before the descriptor exists: the first call reads `/sys` and may throw, and nothing may
+    /// throw outside the `try` below once there is a descriptor to leak.
+    const size_t footprint = roundUpToPages(size);
+
     /// Close-on-exec, so that a concurrent `fork` + `exec` on another thread cannot carry this
     /// descriptor into an unrelated child. The one child that should have it gets it explicitly,
     /// through `dup2` - which clears the flag on the copy - before its `exec`.
@@ -443,8 +447,8 @@ SharedMemoryRegion::SharedMemoryRegion(size_t size)
     region_size = size;
     backing_size = size;
     reserved_size = size;
-    committed_size = roundUpToPages(size);
-    footprint_size = roundUpToPages(size);
+    committed_size = footprint;
+    footprint_size = footprint;
 }
 
 void SharedMemoryRegion::grow(size_t new_size)

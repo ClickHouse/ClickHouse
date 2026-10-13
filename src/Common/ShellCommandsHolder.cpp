@@ -190,6 +190,17 @@ void ShellCommandsHolder::wakeReaper() noexcept
 
 ShellCommandsHolder::~ShellCommandsHolder()
 {
+    /// The commands go first, while the rest of this holder is whole: `~ShellCommand` may hand a
+    /// child over to the reaper (`addSignalledChild`), and members are destroyed in the reverse
+    /// order of their declaration - the reaper's state before `shell_commands`. Outside the lock,
+    /// for the same reason as in `removeCommand`.
+    ShellCommands commands;
+    {
+        std::lock_guard lock(mutex);
+        commands.swap(shell_commands);
+    }
+    commands.clear();
+
     std::optional<std::thread> thread;
     {
         std::lock_guard lock(mutex);
@@ -255,9 +266,15 @@ void ShellCommandsHolder::runReaper()
     /// failed.
     static constexpr int step_without_pidfd_ms = 100;
 
-    /// What a round polls: the wake-up pipe, then the `pidfd` of every child that has one. Kept
-    /// from one round to the next, so that its memory is not allocated anew each time.
+    /// What a round polls: the wake-up pipe, then the `pidfd` of every child that has one, and the
+    /// pid each of those stands for. Kept from one round to the next, so that their memory is not
+    /// allocated anew each time.
     std::vector<pollfd> fds;
+    std::vector<pid_t> fd_pids;
+
+    /// Whether the next round has to look at every child: the first one, and one after a round that
+    /// failed or whose `poll` was interrupted, when what `poll` reported is not known.
+    bool reap_all = true;
 
     while (true)
     {
@@ -272,25 +289,64 @@ void ShellCommandsHolder::runReaper()
                 /// The last `poll` is over: the descriptors released during it are not in use any more.
                 closeReleasedPidFds();
 
-                /// Every child, whatever the last `poll` reported - or whether it succeeded at all:
-                /// a round that follows a failed one reaps all the same.
-                reapSignalledChildren();
+                if (reap_all)
+                {
+                    reapSignalledChildren();
+                }
+                else
+                {
+                    /// Only the children whose `pidfd` the last `poll` found readable - they have
+                    /// exited - and those without one, which nothing reports on. A child added since
+                    /// was looked at by `addSignalledChild` already, and is in the `poll` below.
+                    for (size_t i = 1; i < fds.size(); ++i)
+                    {
+                        if (fds[i].revents == 0)
+                            continue;
+                        /// By pid: the entry may have gone, or been replaced, since.
+                        if (auto it = signalled_children.find(fd_pids[i]); it != signalled_children.end())
+                            reapSignalledChild(it);
+                    }
+                    for (auto it = signalled_children.begin(); it != signalled_children.end();)
+                    {
+                        if (it->second.pidfd < 0)
+                            reapSignalledChild(it);
+                        else
+                            ++it;
+                    }
+                }
 
                 /// Reserved first, so that no `push_back` below allocates.
                 fds.reserve(signalled_children.size() + 1);
+                fd_pids.reserve(signalled_children.size() + 1);
                 fds.clear();
+                fd_pids.clear();
                 fds.push_back({.fd = reaper_wakeup.fds_rw[0], .events = POLLIN, .revents = 0});
-                for (const auto & [_, child] : signalled_children)
+                fd_pids.push_back(0);
+                for (const auto & [child_pid, child] : signalled_children)
                 {
                     if (child.pidfd < 0)
+                    {
                         timeout_ms = step_without_pidfd_ms;
+                    }
                     else
+                    {
                         fds.push_back({.fd = child.pidfd, .events = POLLIN, .revents = 0});
+                        fd_pids.push_back(child_pid);
+                    }
                 }
+                /// Until the `poll` below has reported, nothing is known about these.
+                reap_all = true;
             }
 
-            if (::poll(fds.data(), static_cast<nfds_t>(fds.size()), timeout_ms) < 0 && errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot wait for signalled commands to exit");
+            if (::poll(fds.data(), static_cast<nfds_t>(fds.size()), timeout_ms) < 0)
+            {
+                if (errno != EINTR)
+                    throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot wait for signalled commands to exit");
+            }
+            else
+            {
+                reap_all = false;
+            }
 
             char buffer[64];
             while (::read(reaper_wakeup.fds_rw[0], buffer, sizeof(buffer)) > 0)
@@ -304,6 +360,7 @@ void ShellCommandsHolder::runReaper()
             /// a memory limit) throws again as long as its cause lasts, and a round that started
             /// over at once would spin and log for as long as that is.
             tryLogCurrentException(log);
+            reap_all = true;
             sleepForMilliseconds(step_without_pidfd_ms);
         }
     }

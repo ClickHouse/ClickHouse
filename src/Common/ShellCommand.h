@@ -245,8 +245,9 @@ public:
     /// `limit_stdout_drain` is for a consumer that abandoned the output early: stdout is closed after
     /// the stray-output limit even when the status is checked, and also once
     /// `command_termination_timeout` has passed, however little arrived - so that a command that
-    /// keeps writing dies on `SIGPIPE`, while one that has stopped writing is not affected. The
-    /// `SIGPIPE` is then the command's status like any other. A command that neither writes nor
+    /// keeps writing dies on `SIGPIPE`, while one that has stopped writing is not affected. That
+    /// `SIGPIPE` is not raised even with the status checked: it was caused here, after the consumer
+    /// had what it wanted. Any other status is checked as usual. A command that neither writes nor
     /// exits is waited for, with `unbounded_status_wait`, until `check_cancelled` throws.
     /// `check_cancelled` may throw to interrupt the wait; cancellation also ends the termination
     /// grace period so the destructor can stop the command promptly.
@@ -448,6 +449,11 @@ private:
     /// established, or the constructor threw): the group it leads too, with `whole_group`. A child
     /// not reaped within a bound is handed to the reaper (`ShellCommandsHolder::addSignalledChild`).
     static void killAndReapOrphan(pid_t child_pid, bool whole_group) noexcept;
+    /// What `killAndReapNoThrow` and `killAndReapOrphan` share: sends `SIGKILL` to the child - and to
+    /// the group it leads, with `whole_group` - and waits a bound for it to be reaped. Returns whether
+    /// it is gone (reaped, or not a child of this process any more); otherwise it is still the
+    /// caller's, to hand over to the reaper.
+    static bool killAndWaitForChild(pid_t child_pid, bool whole_group);
 
     /// The read of the child's error pipe failed with `read_error`: whether the child started is
     /// established from the child itself. Throws unless it is running.

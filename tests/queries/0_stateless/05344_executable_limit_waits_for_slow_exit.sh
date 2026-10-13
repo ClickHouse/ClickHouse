@@ -23,7 +23,7 @@ $CLICKHOUSE_LOCAL --query "
 
 # A producer that goes on writing, slowly: it would take hours to write the extra output after which
 # its stdout is closed. It is closed once `command_termination_timeout` has passed instead, and the
-# producer dies on its next write - on `SIGPIPE`, which is its exit status.
+# producer dies on its next write. That `SIGPIPE` is caused by the closing, not a failure of the command.
 printf '#!/usr/bin/env bash\nwhile true; do echo row; sleep 0.1; done\n' > "${SCRIPTS_DIR}/ticker.sh"
 chmod +x "${SCRIPTS_DIR}/ticker.sh"
 
@@ -32,4 +32,26 @@ $CLICKHOUSE_LOCAL --query "
         SELECT * FROM executable('ticker.sh', 'TabSeparated', 'value String',
             SETTINGS check_exit_code = 1, command_termination_timeout = 1)
         LIMIT 3)
+" -- --user_scripts_path="$SCRIPTS_DIR"
+
+# The same for a producer that would finish on its own, after `command_termination_timeout`.
+printf '#!/usr/bin/env bash\nfor i in $(seq 1 30); do echo row; sleep 0.1; done\nexit 0\n' > "${SCRIPTS_DIR}/slow_finite.sh"
+chmod +x "${SCRIPTS_DIR}/slow_finite.sh"
+
+$CLICKHOUSE_LOCAL --query "
+    SELECT count() FROM (
+        SELECT * FROM executable('slow_finite.sh', 'TabSeparated', 'value String',
+            SETTINGS check_exit_code = 1, command_termination_timeout = 1)
+        LIMIT 3)
+" -- --user_scripts_path="$SCRIPTS_DIR"
+
+# Any other exit status after the closing is still the command's own.
+printf '#!/usr/bin/env bash\nfor i in $(seq 1 100); do echo row; done\nsleep 2\nexit 3\n' > "${SCRIPTS_DIR}/slow_fail.sh"
+chmod +x "${SCRIPTS_DIR}/slow_fail.sh"
+
+$CLICKHOUSE_LOCAL --query "
+    SELECT count() FROM (
+        SELECT * FROM executable('slow_fail.sh', 'TabSeparated', 'value String',
+            SETTINGS check_exit_code = 1, command_termination_timeout = 1)
+        LIMIT 10)
 " -- --user_scripts_path="$SCRIPTS_DIR" 2>&1 | grep -o 'CHILD_WAS_NOT_EXITED_NORMALLY' | head -1

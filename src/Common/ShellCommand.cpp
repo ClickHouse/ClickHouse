@@ -94,6 +94,22 @@ namespace
         [[maybe_unused]] ssize_t written = ::write(error_fd, &failure, sizeof(failure));
         _exit(1);
     }
+
+    /// Whether the command died of a write into a stdout that was closed under it: killed by
+    /// `SIGPIPE`, or exited with `128 + SIGPIPE`, which is how a shell reports a command of its
+    /// own that was (a script running `yes` without `exec`).
+    /// The exit code is ambiguous: a command may also exit with 141 for its own reasons, and nothing
+    /// the server can observe tells the two apart - not even whether the command was still writing,
+    /// since a slow producer may pause past the close and only then die on its next write. The
+    /// ambiguity is resolved in favour of the consumer: once the server has closed an abandoned
+    /// stdout, 141 is taken for the `SIGPIPE` that close causes, so that a `LIMIT` over a command
+    /// behind a shell does not fail depending on timing. A command that wants its own failure
+    /// reported under `check_exit_code` has to use another exit code.
+    bool diedOfSigpipe(int status)
+    {
+        return (WIFSIGNALED(status) && WTERMSIG(status) == SIGPIPE)
+            || (WIFEXITED(status) && WEXITSTATUS(status) == 128 + SIGPIPE);
+    }
 }
 
 namespace ProfileEvents
@@ -335,6 +351,41 @@ void ShellCommand::killGroupOfExitedChild()
         LOG_WARNING(getLogger(), "Cannot kill the process group of shell command pid {}, error: '{}'", pid, errnoToString());
 }
 
+bool ShellCommand::killAndWaitForChild(pid_t child_pid, bool whole_group)
+{
+    /// The group first, for what the child may have started already; `ESRCH` is a child that is
+    /// gone on its own.
+    if (whole_group && 0 != ::kill(-child_pid, SIGKILL) && errno != ESRCH)
+        LOG_WARNING(getLogger(), "Cannot kill the process group of shell command pid {}, error: '{}'", child_pid, errnoToString());
+
+    /// And the child itself - which the group does not reach if the child has moved to another
+    /// group (`setpgid`).
+    if (0 != ::kill(child_pid, SIGKILL) && errno != ESRCH)
+        LOG_WARNING(getLogger(), "Cannot kill shell command pid {}, error: '{}'", child_pid, errnoToString());
+
+    /// Nothing to wait out after `SIGKILL`: the child cannot run user code again, and the bound
+    /// only covers the time the kernel takes to tear it down - which is not always short: a child
+    /// in uninterruptible I/O is not reaped before that I/O ends.
+    static constexpr size_t reap_after_kill_timeout_ms = 5000;
+    switch (waitForPidMilliseconds(child_pid, reap_after_kill_timeout_ms))
+    {
+        case WaitForPidResult::EXITED:
+        case WaitForPidResult::NOT_OUR_CHILD:
+            return true;
+        /// The wait failed (run out of descriptors for `pidfd_open`, say), or ran out.
+        case WaitForPidResult::ERROR:
+        {
+            const int saved_errno = errno;
+            LOG_WARNING(getLogger(), "Cannot reap shell command pid {} after SIGKILL: {}", child_pid, errnoToString(saved_errno));
+            return false;
+        }
+        case WaitForPidResult::TIMEOUT:
+            LOG_WARNING(getLogger(), "Shell command pid {} was not reaped within {} ms after SIGKILL", child_pid, reap_after_kill_timeout_ms);
+            return false;
+    }
+    UNREACHABLE();
+}
+
 void ShellCommand::killAndReapNoThrow(bool whole_group) noexcept
 {
     /// Once: a second call - the destructor's `SCOPE_EXIT` after `tryWaitProcessWithTimeout` has
@@ -357,39 +408,13 @@ void ShellCommand::killAndReapNoThrow(bool whole_group) noexcept
             return;
         }
 
-        if (whole_group && 0 != ::kill(-pid, SIGKILL) && errno != ESRCH)
-            LOG_WARNING(getLogger(), "Cannot kill the process group of shell command pid {}, error: '{}'", pid, errnoToString());
-
-        /// And the child itself - which the group does not reach if the child has moved to another
-        /// group (`setpgid`).
-        if (0 != ::kill(pid, SIGKILL) && errno != ESRCH)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid {}, error: '{}'", pid, errnoToString());
-
-        /// Nothing to wait out after `SIGKILL`: the child cannot run user code again, and the bound
-        /// only covers the time the kernel takes to tear it down.
-        static constexpr size_t reap_after_kill_timeout_ms = 5000;
         wait_called = true;
-        switch (waitForPidMilliseconds(pid, reap_after_kill_timeout_ms))
-        {
-            case WaitForPidResult::EXITED:
-            case WaitForPidResult::NOT_OUR_CHILD:
-                forgetChild();
-                break;
-            /// Still ours, as far as anyone can tell, and not reaped here - the wait failed (run out
-            /// of descriptors for `pidfd_open`, say), or ran out: it is handed to the reaper, or
+        if (killAndWaitForChild(pid, whole_group))
+            forgetChild();
+        else
+            /// Still ours, as far as anyone can tell, and not reaped: it is handed to the reaper, or
             /// nobody would ever reap it once this object is gone.
-            case WaitForPidResult::ERROR:
-            {
-                const int saved_errno = errno;
-                LOG_WARNING(getLogger(), "Cannot reap shell command pid {} after SIGKILL: {}", pid, errnoToString(saved_errno));
-                handOverOrForgetKilledChild();
-                break;
-            }
-            case WaitForPidResult::TIMEOUT:
-                LOG_WARNING(getLogger(), "Shell command pid {} was not reaped within {} ms after SIGKILL", pid, reap_after_kill_timeout_ms);
-                handOverOrForgetKilledChild();
-                break;
-        }
+            handOverOrForgetKilledChild();
     }
     catch (...)
     {
@@ -787,29 +812,13 @@ void ShellCommand::killAndReapOrphan(pid_t child_pid, bool whole_group) noexcept
     /// Runs under the very memory limit that got us here: nothing in it may be refused.
     LockMemoryExceptionInThread lock(VariableContext::Global);
 
-    /// The child is ours and unreaped, so its pid, and the number of the group it leads, are its
-    /// own, and `SIGKILL` reaches it and nothing else. The group first, for what it may have
-    /// started already; `ESRCH` is a child that is gone on its own.
-    if (whole_group && 0 != ::kill(-child_pid, SIGKILL) && errno != ESRCH)
-        LOG_WARNING(getLogger(), "Cannot kill the process group of child process pid {}: {}", child_pid, errnoToString());
-    if (0 != ::kill(child_pid, SIGKILL) && errno != ESRCH)
-        LOG_WARNING(getLogger(), "Cannot kill child process pid {}: {}", child_pid, errnoToString());
-
-    /// Nothing to wait out after `SIGKILL`: the child cannot run user code again, and the bound
-    /// only covers the time the kernel takes to tear it down - which is not always short: a child
-    /// in uninterruptible I/O (a stuck NFS or FUSE mount) is not reaped before that I/O ends. The
-    /// query this fails must not be held for that, so a child not reaped within the bound is
-    /// handed to the reaper, as `killAndReapNoThrow` does for one that has a `ShellCommand`. It
-    /// has no entry in `UDFProcessRegistry` yet, so there is none to remove when it goes.
-    static constexpr size_t reap_after_kill_timeout_ms = 5000;
-    const auto result = waitForPidMilliseconds(child_pid, reap_after_kill_timeout_ms);
-    if (result == WaitForPidResult::EXITED || result == WaitForPidResult::NOT_OUR_CHILD)
+    /// The child is ours and unreaped - it has never been waited for - so its pid, and the number of
+    /// the group it leads, are its own, and `SIGKILL` reaches it and nothing else. A child not
+    /// reaped within the bound (one in uninterruptible I/O on a stuck NFS or FUSE mount) must not
+    /// hold up the query this fails, so it is handed to the reaper. It has no entry in
+    /// `UDFProcessRegistry` yet, so there is none to remove when it goes.
+    if (killAndWaitForChild(child_pid, whole_group))
         return;
-
-    if (result == WaitForPidResult::ERROR)
-        LOG_WARNING(getLogger(), "Cannot reap child process pid {} after SIGKILL: {}", child_pid, errnoToString());
-    else
-        LOG_WARNING(getLogger(), "Child process pid {} was not reaped within {} ms after SIGKILL", child_pid, reap_after_kill_timeout_ms);
 
     try
     {
@@ -1402,7 +1411,7 @@ bool ShellCommand::closeAbandonedStdout(int (&drain_fds)[2], const WaitDrainingO
     /// the whole termination budget under the default `stderr_reaction`, which is the common
     /// case; a diagnostic behind 64 KiB of stray output is not. With the status checked, stdout
     /// stays open unless the caller explicitly abandoned the output early, such as under `LIMIT`.
-    /// In that case the actual exit status, including a possible `SIGPIPE`, is still checked.
+    /// In that case the exit status is still checked, except for the `SIGPIPE` this close causes.
     static constexpr size_t stray_stdout_limit = 64 * 1024;
 
     /// An abandoned output is also closed once `command_termination_timeout` has passed,
@@ -1532,7 +1541,12 @@ bool ShellCommand::waitDrainingOutput(const WaitDrainingOptions & options)
             readBufferedOutput(drain_fds, stderr_sink);
             closeStreams();
 
-            if (check_exit_status)
+            /// A `SIGPIPE` after the abandoned stdout was closed here is not the command's failure
+            /// but the way it was told to stop: the consumer already has what it wanted, and the
+            /// command was still writing, so the status would otherwise depend on whether it
+            /// happened to finish before `command_termination_timeout`. Any other status is still
+            /// the command's own.
+            if (check_exit_status && !(stdout_closed_here && diedOfSigpipe(proc_status.raw_status)))
                 handleProcessStatus(proc_status.raw_status);
             return true;
         }
