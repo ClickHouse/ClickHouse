@@ -2240,10 +2240,14 @@ BlocksList HashJoin::releaseWorkerBlocks(size_t worker_id)
 {
     auto & worker = data->workers[worker_id];
     StoredBlocksList right_columns = std::move(worker.columns);
+    /// `data` outlives the last worker's list on purpose: other threads may still be draining theirs,
+    /// and the sample block is shared. So its byte counts drop with the blocks.
+    for (const auto & columns : right_columns)
+        data->subBytes(data->allocated_size, columns.allocatedBytes());
+    for (const auto & nullmap : worker.nullmaps)
+        data->subBytes(data->nullmaps_allocated_size, nullmap.allocatedBytes());
     worker.nullmaps.clear();
 
-    /// `data` outlives the last worker's list on purpose: other threads may still be draining theirs,
-    /// and the sample block is shared. The caller releases it once they are all done.
     BlocksList result;
     for (auto & columns : right_columns)
         result.emplace_back(data->sample_block.cloneWithColumns(materializeStoredBlock(columns, data->column_access_indexes)));
