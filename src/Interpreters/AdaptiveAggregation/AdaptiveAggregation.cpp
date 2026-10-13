@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
@@ -343,6 +344,32 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpilledRecords, spilled_records);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpilledBytes, spilled_bytes);
     LOG_TRACE(log, "Adaptive aggregation: spilled {} staged records ({} bytes)", spilled_records, spilled_bytes);
+}
+
+std::vector<AdaptiveAggregationSession::SpilledBucket::Block> AdaptiveAggregationSession::SpilledBucket::readBack()
+{
+    std::vector<Block> blocks;
+    if (!stream)
+        return blocks;
+
+    stream->finishWriting();
+    auto in = stream->read();
+    while (!in->eof())
+    {
+        UInt32 sub = 0;
+        UInt64 records = 0;
+        UInt64 bytes = 0;
+        readBinaryLittleEndian(sub, *in);
+        readBinaryLittleEndian(records, *in);
+        readBinaryLittleEndian(bytes, *in);
+        auto & block = blocks.emplace_back();
+        block.sub = sub;
+        block.records = records;
+        block.data.resize(bytes);
+        in->readStrict(block.data.data(), bytes);
+    }
+    stream.reset();
+    return blocks;
 }
 
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const

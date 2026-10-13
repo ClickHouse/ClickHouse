@@ -5346,14 +5346,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     /// into a fresh destination table one partition unit at a time (see `mergeAndConvertAdaptiveBucket`), so the
     /// destination goes in front of the tables and takes over their arenas, as the largest table does otherwise.
     if (adaptive_session && adaptive_session->engaged())
-    {
-        auto destination = std::make_shared<AggregatedDataVariants>();
-        destination->aggregator = this;
-        destination->keys_size = params.keys_size;
-        destination->key_sizes = key_sizes;
-        destination->init(non_empty_data.front()->type);
-        non_empty_data.insert(non_empty_data.begin(), std::move(destination));
-    }
+        non_empty_data.insert(non_empty_data.begin(), createAdaptiveMergeDestination());
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
 

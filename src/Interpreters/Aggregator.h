@@ -431,38 +431,31 @@ public:
     void prepareAdaptiveTopKPruning(
         AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
-    /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time. A unit is a run
-    /// of the bucket's partitions: its records from every producer and the cells of the sources' bucket tables that
-    /// fall into it are merged into the destination's bucket table, grown for them, which is converted into one
-    /// chunk, and the unit's staged records are freed. `data[0]` is the empty destination: the one
-    /// `prepareVariantsToMerge` puts in front of the adaptive sources, or, with no sources behind it, the one of
-    /// `createAdaptiveExternalMergeDestination`. The table is kept, emptied, from one unit to the next, and taken over
-    /// from the slot of `previous_bucket`, the bucket the calling task merged before (-1 for its first), so a task
-    /// allocates and faults in one table instead of one per unit. `full_group_count` receives the bucket's group
-    /// count over all its units, taken before any top-K truncation.
+    /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time, as a step of `task`.
+    /// A unit is a run of the bucket's partitions: its records from every producer and the cells of the sources' bucket
+    /// tables that fall into it are merged into the destination's bucket table, grown for them, which is converted into
+    /// one chunk, and the unit's staged records are freed. `data[0]` is the destination of
+    /// `createAdaptiveMergeDestination`: in front of the adaptive sources (see `prepareVariantsToMerge`), or with no
+    /// sources behind it for an external merge. The table is kept, emptied, from one unit to the next, and taken over
+    /// from the slot of the bucket the task merged before, so a task allocates and faults in one table instead of one
+    /// per unit. Once the bucket's last unit converted, its arena slot retires. `full_group_count` receives the bucket's
+    /// group count over all its units, taken before any top-K truncation.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
-        AdaptiveMergeScratch & scratch,
+        AdaptiveMergeTask & task,
         bool final,
         Int32 bucket,
-        Int32 previous_bucket,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
         size_t * full_group_count) const;
 
-    /// Retires a merged-and-converted bucket's arena slot, called by the bucket's merge task after its last unit
-    /// converted successfully (the output either copied the values out or captured the slot's ownership). Never
-    /// called for a cancelled or failed bucket: the destination still owns every non-retired slot, so ordinary
-    /// destruction covers those.
-    void retireAdaptiveMergedBucket(AggregatedDataVariants & dest, size_t bucket) const;
-
-    /// For a merge that goes external because a producer on the baseline path spilled, the staged records join it as
-    /// chunks of aggregate states, the form of a spilled part, made by `mergeAndConvertAdaptiveBucket` with no sources
-    /// behind the destination, instead of being read from parts written out for it. This is that destination: an
-    /// empty two-level variants of the aggregation's method with a fresh arena slot per bucket, in which the states of
-    /// the bucket's chunks are created.
-    AggregatedDataVariantsPtr createAdaptiveExternalMergeDestination() const;
+    /// The destination of the adaptive merge: an empty two-level variants of the aggregation's method with a fresh
+    /// arena slot per bucket, in which the merge creates the states of the bucket's groups. For a merge that goes
+    /// external because a producer on the baseline path spilled, the staged records join the external merge as chunks
+    /// of aggregate states, the form of a spilled part, which `mergeAndConvertAdaptiveBucket` makes with no sources
+    /// behind the destination.
+    AggregatedDataVariantsPtr createAdaptiveMergeDestination() const;
 
     /// The header of the blocks of aggregate states that the external aggregation spills and merges.
     Block getSpilledStatesHeader() const;
@@ -872,13 +865,13 @@ private:
 
     /// Merges the source states of a merge unit into their destinations, the state of `*source_slots[i]` into
     /// `places[i]`, then destroys the sources and clears their slots. The source tables keep ownership until all
-    /// aggregates merged successfully. `scratch` holds the working memory of the merge. A group's states use the pool
+    /// aggregates merged successfully. `task` holds the working memory of the merge. A group's states use the pool
     /// when their combined work amortizes its setup or would hold up the remaining merge; smaller groups use the
     /// parallelism across buckets.
     void mergeAdaptiveSourceStates(
         PaddedPODArray<AggregateDataPtr> & places,
         const PaddedPODArray<AggregateDataPtr *> & source_slots,
-        AdaptiveMergeScratch & scratch,
+        AdaptiveMergeTask & task,
         const AdaptiveAggregationSession & session,
         Arena * arena,
         std::atomic<bool> & is_cancelled) const;
@@ -956,10 +949,9 @@ private:
         Method & dest_method,
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
-        AdaptiveMergeScratch & scratch,
+        AdaptiveMergeTask & task,
         bool final,
         Int32 bucket,
-        Int32 previous_bucket,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
         size_t * full_group_count) const;
@@ -992,14 +984,14 @@ private:
 
     /// Takes the source cells of a merge unit that `filter` takes into `table`, and discards the others with their
     /// states. A cell whose key is new in `table` hands its state over, and an aggregation by a lone `count` adds the
-    /// count. Otherwise the cell's state is to merge into the table's: its place and its slot go to `scratch.places`
-    /// and `scratch.source_slots` for `mergeAdaptiveSourceStates`.
+    /// count. Otherwise the cell's state is to merge into the table's: its place and its slot go to `task.places` and
+    /// `task.source_slots` for `mergeAdaptiveSourceStates`.
     template <typename Method, typename Table, typename Cells, typename Filter>
-    void adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeScratch & scratch) const;
+    void adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeTask & task) const;
 
     /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
     /// cells and the records of every partition `for_each_partition` hands out, in the count bins `alive_bins` keeps
-    /// (all bins when null), and puts the hashes of its best groups by the count into `scratch.best_hashes`. With a
+    /// (all bins when null), and puts the hashes of its best groups by the count into `task.best_hashes`. With a
     /// descending order `top_k` keeps the best groups up to date while they are counted, and `pruning`, if any, drops
     /// those below its threshold; an ascending order selects them by a pass over the counted groups. Adds the records
     /// the bins skipped to `pruned_records`. Returns the unit's group count.
@@ -1011,7 +1003,7 @@ private:
         TopK * top_k,
         const AdaptiveTopKPruning * pruning,
         const ForEachPartition & for_each_partition,
-        AdaptiveMergeScratch & scratch,
+        AdaptiveMergeTask & task,
         size_t & pruned_records) const;
 
     /// Rebuilds the aggregate arguments of drained argument records into dense columns and applies them to the places

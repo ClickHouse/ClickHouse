@@ -58,8 +58,8 @@ struct AdaptiveAggregationProducer;
 /// The record layout of the aggregate arguments that general payloads stage.
 struct AdaptiveArgumentLayout;
 
-/// The working memory an adaptive merge task keeps across the buckets it merges.
-struct AdaptiveMergeScratch;
+/// An adaptive merge task: the bucket it merged last and the working memory it keeps across its buckets.
+struct AdaptiveMergeTask;
 
 /// The bin-bound pruning of an aggregation ranked by `count`, `uniqExact` or `uniqExactIf` in descending order, and a
 /// producer's count bins for it.

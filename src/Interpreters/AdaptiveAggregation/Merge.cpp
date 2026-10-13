@@ -256,59 +256,62 @@ namespace
         }
     }
 
-    /// A partition block read back from a bucket's spill stream (see `AdaptiveAggregationSession::spilled_buckets`):
-    /// the partition within the bucket, its record count and its records, in a padded buffer like a chunk's.
-    struct SpilledPartitionRecords
+    /// The staged records of the bucket that a merge task merges: the producers' chunks of its partitions, and the blocks
+    /// read back from its spill stream, kept in the order of their partitions. The blocks stay in memory until the
+    /// bucket is done: the tables of its units point into them.
+    class AdaptiveBucketRecords
     {
-        size_t sub = 0;
-        size_t records = 0;
-        DB::PaddedPODArray<char> data;
-    };
-
-    /// Reads the bucket's spill stream back and removes it. Called by the one task that merges the bucket, after the
-    /// finish barrier, so no producer writes to the stream any more.
-    std::vector<SpilledPartitionRecords> readSpilledBucket(DB::AdaptiveAggregationSession & session, size_t bucket)
-    {
-        std::vector<SpilledPartitionRecords> blocks;
-        auto & spilled = session.spilled_buckets[bucket];
-        if (!spilled.stream)
-            return blocks;
-
-        spilled.stream->finishWriting();
-        auto in = spilled.stream->read();
-        while (!in->eof())
+    public:
+        AdaptiveBucketRecords(DB::AdaptiveAggregationSession & session_, size_t bucket)
+            : session(session_)
+            , first_partition(session_.layout.firstPartition(bucket))
+            , spilled(session_.spilled_buckets[bucket].readBack())
         {
-            UInt32 sub = 0;
-            UInt64 records = 0;
-            UInt64 bytes = 0;
-            DB::readBinaryLittleEndian(sub, *in);
-            DB::readBinaryLittleEndian(records, *in);
-            DB::readBinaryLittleEndian(bytes, *in);
-            auto & block = blocks.emplace_back();
-            block.sub = sub;
-            block.records = records;
-            block.data.resize(bytes);
-            in->readStrict(block.data.data(), bytes);
+            std::ranges::stable_sort(spilled, {}, &SpilledBlock::sub);
         }
-        spilled.stream.reset();
-        return blocks;
-    }
 
-    /// The records of one partition: its chunks of every producer, then its blocks read back from the spill stream.
-    void collectPartitionRecords(
-        const DB::AdaptiveAggregationSession & session,
-        const std::vector<SpilledPartitionRecords> & spilled,
-        size_t partition,
-        size_t sub,
-        DB::AdaptiveRecordRanges & ranges)
-    {
-        ranges.clear();
-        for (const auto & producer : session.producer_buffers)
-            producer->forEachChunk(partition, [&](std::string_view records) { ranges.push_back(records); });
-        for (const auto & block : spilled)
-            if (block.sub == sub)
+        /// The record count of partition `sub` of the bucket.
+        size_t recordsOf(size_t sub) const
+        {
+            size_t records = 0;
+            for (const auto & producer : session.producer_buffers)
+                records += producer->recordsOf(first_partition + sub);
+            for (const auto & block : blocksOf(sub))
+                records += block.records;
+            return records;
+        }
+
+        /// The records of partition `sub` of the bucket: its chunks of every producer, then its read-back blocks.
+        void collect(size_t sub, DB::AdaptiveRecordRanges & ranges) const
+        {
+            ranges.clear();
+            for (const auto & producer : session.producer_buffers)
+                producer->forEachChunk(first_partition + sub, [&](std::string_view records) { ranges.push_back(records); });
+            for (const auto & block : blocksOf(sub))
                 ranges.emplace_back(block.data.data(), block.data.size());
-    }
+        }
+
+        /// Frees the producers' chunks of partition `sub` of the bucket. Its read-back blocks stay until the bucket is
+        /// done.
+        void release(size_t sub) const
+        {
+            for (const auto & producer : session.producer_buffers)
+                producer->releasePartition(first_partition + sub);
+        }
+
+    private:
+        using SpilledBlock = DB::AdaptiveAggregationSession::SpilledBucket::Block;
+
+        std::span<const SpilledBlock> blocksOf(size_t sub) const
+        {
+            const auto blocks = std::ranges::equal_range(spilled, sub, {}, &SpilledBlock::sub);
+            return {blocks.begin(), blocks.end()};
+        }
+
+        const DB::AdaptiveAggregationSession & session;
+        const size_t first_partition;
+        std::vector<SpilledBlock> spilled;
+    };
 
     /// The `limit` groups with the largest counts, kept up to date while the counts grow, so that no pass over all the
     /// counted groups selects them afterwards. Counts only grow, so the smallest count of a full top only rises: an
@@ -620,10 +623,10 @@ ALWAYS_INLINE void Aggregator::discardAdaptiveSourceState(AggregateDataPtr & pla
 }
 
 template <typename Method, typename Table, typename Cells, typename Filter>
-void Aggregator::adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeScratch & scratch) const
+void Aggregator::adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeTask & task) const
 {
-    scratch.places.clear();
-    scratch.source_slots.clear();
+    task.places.clear();
+    task.source_slots.clear();
     for (auto & cell : cells)
     {
         if (!filter.takes(cell.hash))
@@ -654,8 +657,8 @@ void Aggregator::adoptSourceCells(Table & table, Cells & cells, const Filter & f
             }
             else
             {
-                scratch.places.push_back(it->getMapped());
-                scratch.source_slots.push_back(&source_place);
+                task.places.push_back(it->getMapped());
+                task.source_slots.push_back(&source_place);
             }
         }
     }
@@ -669,7 +672,7 @@ size_t Aggregator::selectCountFirstBestGroups(
     TopK * top_k,
     const AdaptiveTopKPruning * pruning,
     const ForEachPartition & for_each_partition,
-    AdaptiveMergeScratch & scratch,
+    AdaptiveMergeTask & task,
     size_t & pruned_records) const
 {
     using Key = AdaptiveRecordKey<Method>;
@@ -714,7 +717,7 @@ size_t Aggregator::selectCountFirstBestGroups(
         count_records(AllStagedRecords{});
 
     /// The best groups by their counts, which are exact: the unit holds every record and source cell of its keys.
-    auto & best_hashes = scratch.best_hashes;
+    auto & best_hashes = task.best_hashes;
     best_hashes.clear();
     if (top_k)
     {
@@ -729,7 +732,7 @@ size_t Aggregator::selectCountFirstBestGroups(
     {
         /// The smallest counts, selected by a pass over the counted groups. Only the cells that enter the heap are
         /// hashed; its front holds the largest count kept.
-        auto & best = scratch.best_counts_and_hashes;
+        auto & best = task.best_counts_and_hashes;
         best.clear();
         const auto by_count = [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; };
         forEachMappedCellWithHashOnDemand(
@@ -900,10 +903,9 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
 Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
     ManyAggregatedDataVariants & data,
     AdaptiveAggregationSession & session,
-    AdaptiveMergeScratch & scratch,
+    AdaptiveMergeTask & task,
     bool final,
     Int32 bucket,
-    Int32 previous_bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
     size_t * full_group_count) const
@@ -915,7 +917,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
         [&](auto & method)
         {
             chunks = mergeAndConvertAdaptiveBucketImpl(
-                dest, method, data, session, scratch, final, bucket, previous_bucket, is_cancelled, updater, full_group_count);
+                dest, method, data, session, task, final, bucket, is_cancelled, updater, full_group_count);
         });
     return chunks;
 }
@@ -926,10 +928,9 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     Method & dest_method,
     ManyAggregatedDataVariants & data,
     AdaptiveAggregationSession & session,
-    AdaptiveMergeScratch & scratch,
+    AdaptiveMergeTask & task,
     bool final,
     Int32 bucket,
-    Int32 previous_bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
     size_t * full_group_count) const
@@ -939,8 +940,9 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     /// read again. Insertion grows the table by its distinct keys, and conversion retains that capacity
     /// for the next unit or bucket. Reserving by the record count would oversize tables with repeated keys,
     /// increasing the cost of probing, scanning and clearing them.
-    if (previous_bucket >= 0)
-        std::swap(dest_method.data.impls[bucket], dest_method.data.impls[previous_bucket]);
+    if (task.previous_bucket >= 0)
+        std::swap(dest_method.data.impls[bucket], dest_method.data.impls[task.previous_bucket]);
+    task.previous_bucket = bucket;
 
     using Table = std::decay_t<decltype(dest_method.data.impls[0])>;
     static_assert(std::decay_t<decltype(dest_method.data)>::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
@@ -949,20 +951,15 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
 
     const AdaptivePartitionLayout layout = session.layout;
     const size_t partitions_per_bucket = layout.partitionsPerBucket();
-    const size_t first_partition = layout.firstPartition(bucket);
 
-    /// The spilled records of the bucket stay in memory until the bucket is done: the units' tables point into them.
-    const auto spilled = readSpilledBucket(session, bucket);
-
+    const AdaptiveBucketRecords staged(session, bucket);
     std::vector<size_t> partition_records(partitions_per_bucket);
-    for (const auto & producer : session.producer_buffers)
-        for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
-            partition_records[sub] += producer->recordsOf(first_partition + sub);
-    for (const auto & block : spilled)
-        partition_records[block.sub] += block.records;
     size_t bucket_records = 0;
-    for (const size_t records : partition_records)
-        bucket_records += records;
+    for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
+    {
+        partition_records[sub] = staged.recordsOf(sub);
+        bucket_records += partition_records[sub];
+    }
 
     size_t source_cells = 0;
     for (size_t i = 1; i < data.size(); ++i)
@@ -1032,9 +1029,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         if (is_cancelled.load(std::memory_order_seq_cst))
             return chunks;
 
-        const size_t unit_first_partition = first_partition + unit * partitions_per_unit;
+        const size_t unit_first_sub = unit * partitions_per_unit;
+        const size_t unit_end_sub = unit_first_sub + partitions_per_unit;
         size_t unit_records = 0;
-        for (size_t sub = unit * partitions_per_unit; sub < (unit + 1) * partitions_per_unit; ++sub)
+        for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
             unit_records += partition_records[sub];
         auto & cells = unit_cells[unit];
         if (!unit_records && cells.empty())
@@ -1058,9 +1056,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 if constexpr (MapAggregationMethod<Method>)
                     for (auto & cell : cells)
                         discardAdaptiveSourceState(*cell.mapped);
-                for (const auto & producer : session.producer_buffers)
-                    for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
-                        producer->releasePartition(partition);
+                for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
+                    staged.release(sub);
                 pruned_records += unit_records;
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
                 continue;
@@ -1072,10 +1069,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// Calls `f` with the records of each partition of the unit.
         const auto for_each_partition = [&](auto && f)
         {
-            for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
+            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
             {
-                collectPartitionRecords(session, spilled, partition, layout.subOf(partition), scratch.ranges);
-                f(scratch.ranges);
+                staged.collect(sub, task.ranges);
+                f(task.ranges);
             }
         };
 
@@ -1084,13 +1081,13 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// instead of creating one. Returns how many records `filter` skipped.
         const auto merge_unit = [&](const auto & filter)
         {
-            adoptSourceCells<Method>(table, cells, filter, scratch);
-            if (!scratch.places.empty())
-                mergeAdaptiveSourceStates(scratch.places, scratch.source_slots, scratch, session, arena, is_cancelled);
+            adoptSourceCells<Method>(table, cells, filter, task);
+            if (!task.places.empty())
+                mergeAdaptiveSourceStates(task.places, task.source_slots, task, session, arena, is_cancelled);
             size_t skipped = 0;
             for_each_partition([&](const AdaptiveRecordRanges & ranges)
             {
-                skipped += drainAdaptivePartition<Method>(table, arena, ranges, filter, scratch.places, scratch.records);
+                skipped += drainAdaptivePartition<Method>(table, arena, ranges, filter, task.places, task.records);
             });
             return skipped;
         };
@@ -1105,9 +1102,9 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 /// the best groups in the bucket's table for the conversion, as the ordinary merge does, and the other
                 /// source cells go with their states.
                 unit_groups = selectCountFirstBestGroups<Method>(
-                    counting_table, cells, alive_bins, top_k ? &*top_k : nullptr, pruning, for_each_partition, scratch, pruned_records);
+                    counting_table, cells, alive_bins, top_k ? &*top_k : nullptr, pruning, for_each_partition, task, pruned_records);
                 counting_table.clear();
-                merge_unit(BestHashFilter(scratch.best_hashes));
+                merge_unit(BestHashFilter(task.best_hashes));
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationCountFirstUnits);
             }
         }
@@ -1145,9 +1142,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 
         /// The conversion copied the keys out of the records, so the unit's records go now.
-        for (const auto & producer : session.producer_buffers)
-            for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
-                producer->releasePartition(partition);
+        for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
+            staged.release(sub);
     }
 
     if (pruned_records)
@@ -1165,22 +1161,27 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         std::swap(table, counting_table);
     }
 
+    /// Every unit converted successfully: the output chunks either copied the values out of the bucket's arena slot or
+    /// captured its ownership, so the slot retires now. A throw or a cancellation returns before this and leaves every
+    /// slot that is not retired to the ordinary destruction of the destination.
+    dest.adaptive_merge_bucket_arenas[bucket].reset();
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
     return chunks;
 }
 
-void Aggregator::retireAdaptiveMergedBucket(AggregatedDataVariants & dest, size_t bucket) const
-{
-    dest.adaptive_merge_bucket_arenas[bucket].reset();
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
-}
-
-AggregatedDataVariantsPtr Aggregator::createAdaptiveExternalMergeDestination() const
+AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
 {
     auto destination = std::make_shared<AggregatedDataVariants>();
     destination->aggregator = this;
     destination->keys_size = params.keys_size;
     destination->key_sizes = key_sizes;
     destination->init(convertToTwoLevelTypeIfPossible(method_chosen));
+    /// The drain and the merge create the destination's states in per-bucket arenas, for two reasons. Fresh arenas,
+    /// rather than a source table's, because with a zero-size aggregate state (`Nothing`) an arena returns one address
+    /// for every allocation, so a drained state would alias that table's states and the bucket merge would see a state
+    /// merged into itself. And per bucket, rather than per source, so a converted bucket's states free with its slot
+    /// when the bucket retires. The slots live outside `aggregates_pools`, which every bucket's output columns capture
+    /// wholesale; each conversion is handed its own slot instead.
     destination->adaptive_merge_bucket_arenas.resize(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     for (auto & slot : destination->adaptive_merge_bucket_arenas)
         slot = std::make_shared<Arena>();
@@ -1190,7 +1191,7 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveExternalMergeDestination() c
 void Aggregator::mergeAdaptiveSourceStates(
     PaddedPODArray<AggregateDataPtr> & places,
     const PaddedPODArray<AggregateDataPtr *> & source_slots,
-    AdaptiveMergeScratch & scratch,
+    AdaptiveMergeTask & task,
     const AdaptiveAggregationSession & session,
     Arena * arena,
     std::atomic<bool> & is_cancelled) const
@@ -1206,8 +1207,8 @@ void Aggregator::mergeAdaptiveSourceStates(
         adaptive_parallel_merge_min_work,
         adaptive_parallel_merge_max_work);
 
-    auto & order = scratch.merge_order;
-    auto & group = scratch.merge_group;
+    auto & order = task.merge_order;
+    auto & group = task.merge_group;
     bool ordered = false;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
@@ -1263,7 +1264,7 @@ void Aggregator::mergeAdaptiveSourceStates(
     /// Source tables retain ownership until every aggregate has merged successfully, so an exception
     /// leaves complete states for their ordinary cleanup. Then the sources are destroyed, which does not throw,
     /// and their slots cleared.
-    auto & sources = scratch.merge_group;
+    auto & sources = task.merge_group;
     sources.resize(merges);
     for (size_t j = 0; j < merges; ++j)
         sources[j] = *source_slots[j];

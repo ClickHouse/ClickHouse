@@ -176,18 +176,36 @@ struct AdaptiveAggregationSession
     /// records, UInt64 bytes, the records}; the merge task of the bucket reads it back after the finish barrier.
     struct SpilledBucket
     {
+        /// A partition block read back: the partition within the bucket, its record count and its records, in a padded
+        /// buffer like a chunk's.
+        struct Block
+        {
+            size_t sub = 0;
+            size_t records = 0;
+            PaddedPODArray<char> data;
+        };
+
+        /// Reads the stream back and removes it. Called by the one task that merges the bucket, after the finish
+        /// barrier, so no producer writes to the stream any more.
+        std::vector<Block> readBack();
+
         std::mutex mutex;
         std::unique_ptr<TemporaryDataBuffer> stream;
     };
     std::array<SpilledBucket, ADAPTIVE_AGGREGATION_NUM_BUCKETS> spilled_buckets;
 };
 
-/// The working memory of one adaptive merge task, kept across the buckets it merges so their units do not allocate
-/// it again: the places of a unit's merge and the source slots whose states merge into them, the record pointers and
-/// ranges of a partition, and for a count-first unit the hashes of its best groups and the counts an ascending
-/// selection keeps.
-struct AdaptiveMergeScratch
+/// One adaptive merge task, which merges a sequence of buckets one at a time (see
+/// `Aggregator::mergeAndConvertAdaptiveBucket`). It keeps the bucket it merged last, whose table it takes over for the
+/// next one, and its working memory, so the units of its buckets do not allocate it again: the places of a unit's
+/// merge and the source slots whose states merge into them, the record pointers and ranges of a partition, and for a
+/// count-first unit the hashes of its best groups and the counts an ascending selection keeps.
+struct AdaptiveMergeTask
 {
+    /// The bucket the task merged last, or -1 before its first.
+    Int32 previous_bucket = -1;
+
+
     PaddedPODArray<AggregateDataPtr> places;
     PaddedPODArray<AggregateDataPtr *> source_slots;
     /// The merges of `source_slots` into `places` ordered by their destination, and one destination's states, for the

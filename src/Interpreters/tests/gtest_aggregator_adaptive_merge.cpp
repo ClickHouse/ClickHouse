@@ -184,16 +184,12 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
                 AggregatedDataWithUInt64KeyTwoLevel::getBucketFromHash(table.hash(UInt64{1})));
             aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
             auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
-            prepared.front()->adaptive_merge_bucket_arenas.resize(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
-            for (auto & arena : prepared.front()->adaptive_merge_bucket_arenas)
-                arena = std::make_shared<Arena>();
-            AdaptiveMergeScratch scratch;
+            AdaptiveMergeTask task;
             std::atomic<bool> cancelled{false};
             const auto merge = [&]
             {
                 return aggregator.mergeAndConvertAdaptiveBucket(
-                    prepared, *session, scratch, /*final=*/true, bucket, /*previous_bucket=*/-1,
-                    cancelled, /*updater=*/nullptr, /*full_group_count=*/nullptr);
+                    prepared, *session, task, /*final=*/true, bucket, cancelled, /*updater=*/nullptr, /*full_group_count=*/nullptr);
             };
             if (throws)
                 EXPECT_THROW(merge(), std::runtime_error);

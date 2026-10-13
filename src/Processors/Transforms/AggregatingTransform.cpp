@@ -206,18 +206,15 @@ namespace
                     auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
                         *destination,
                         *session,
-                        scratch,
+                        task,
                         /*final=*/false,
                         bucket,
-                        previous_bucket,
                         is_cancelled,
                         /*updater=*/nullptr,
                         /*full_group_count=*/nullptr);
-                    previous_bucket = bucket;
                     if (is_cancelled.load(std::memory_order_seq_cst))
                         return {};
 
-                    params->aggregator.retireAdaptiveMergedBucket(*destination->at(0), bucket);
                     chunks.splice(chunks.end(), agg_chunks);
                 }
             }
@@ -236,11 +233,10 @@ namespace
         AggregatingTransformParamsPtr params;
         AdaptiveAggregationSessionPtr session;
         ManyAggregatedDataVariantsPtr destination;
-        AdaptiveMergeScratch scratch;
+        AdaptiveMergeTask task;
         Aggregator::AggregatedChunks chunks;
         size_t next_bucket;
         const size_t step;
-        Int32 previous_bucket = -1;
         Int32 last_handed_out_bucket = -1;
         bool handed_out_first_chunk = false;
     };
@@ -402,24 +398,16 @@ private:
             auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
                 *data,
                 *adaptive_session,
-                adaptive_scratch,
+                adaptive_task,
                 params->final,
                 bucket_num,
-                previous_adaptive_bucket,
                 shared_data->is_cancelled,
                 updater,
                 &full_group_count);
-            previous_adaptive_bucket = bucket_num;
             if (shared_data->is_cancelled.load(std::memory_order_seq_cst))
                 return {};
 
             checkMergedGroupLimit(full_group_count);
-
-            /// Retire the bucket's working memory only after a successful conversion: the output
-            /// chunks either copied the values out or captured the arena slot's ownership. A throw
-            /// above or a cancellation skips retirement and leaves everything to the ordinary
-            /// destruction of the variants, which still owns every non-retired slot.
-            params->aggregator.retireAdaptiveMergedBucket(*data->at(0), bucket_num);
             shared_data->is_bucket_processed[bucket_num] = true;
 
             for (auto & agg_chunk : agg_chunks)
@@ -455,8 +443,7 @@ private:
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr adaptive_session;
     std::deque<Chunk> adaptive_chunks;
-    AdaptiveMergeScratch adaptive_scratch;
-    Int32 previous_adaptive_bucket = -1;
+    AdaptiveMergeTask adaptive_task;
 };
 
 /// Worker of the parallel single-level merge: atomically takes the next hash partition, merges it out of
@@ -1214,22 +1201,6 @@ private:
     {
         AggregatedDataVariantsPtr & first = data->at(0);
 
-        if (adaptive_session)
-        {
-            /// The adaptive drain and merge create the destination's states in per-bucket
-            /// arenas, for two reasons. Fresh arenas (rather than `pools[thread]`, typically a
-            /// source local's arena) because with a zero-size aggregate state (`Nothing`) an
-            /// arena returns one address for every allocation, so a drained state would alias
-            /// that local's states and the bucket merge would see a state merged into itself.
-            /// And per bucket (rather than per source) so a converted bucket's states free
-            /// with its slot when the bucket retires. The slots live outside
-            /// `aggregates_pools`, which every bucket's output columns capture wholesale;
-            /// each conversion is handed its own slot instead.
-            first->adaptive_merge_bucket_arenas.resize(ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS);
-            for (auto & slot : first->adaptive_merge_bucket_arenas)
-                slot = std::make_shared<Arena>();
-        }
-
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
             /// Select Arena to avoid race conditions; the adaptive sources pick their arena
@@ -1868,7 +1839,7 @@ void AggregatingTransform::initGenerate()
         if (adaptive_engaged)
         {
             const auto destination
-                = std::make_shared<ManyAggregatedDataVariants>(1, params->aggregator.createAdaptiveExternalMergeDestination());
+                = std::make_shared<ManyAggregatedDataVariants>(1, params->aggregator.createAdaptiveMergeDestination());
             const auto header = std::make_shared<const Block>(params->aggregator.getSpilledStatesHeader());
             const size_t num_sources = std::min(temporary_data_merge_threads, ADAPTIVE_AGGREGATION_NUM_BUCKETS);
             for (size_t first_bucket = 0; first_bucket < num_sources; ++first_bucket)
