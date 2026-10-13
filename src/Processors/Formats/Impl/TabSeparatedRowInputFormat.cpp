@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
@@ -111,13 +112,22 @@ void TabSeparatedFormatReader::skipRowEndDelimiter()
     assertChar('\n', *buf);
 }
 
+/// The same as readString, but removes the '\r' of a CRLF line ending. readString stops only at '\t'
+/// and '\n', so it reads such a '\r' as a part of the field.
+static void readStringCRLF(String & s, ReadBuffer & buf)
+{
+    readString(s, buf);
+    if (!s.empty() && s.back() == '\r' && (buf.eof() || *buf.position() == '\n'))
+        s.pop_back();
+}
+
 template <bool read_string>
 String TabSeparatedFormatReader::readFieldIntoString()
 {
     String field;
     bool support_crlf = format_settings.tsv.crlf_end_of_line_input;
     if (is_raw)
-        readString(field, *buf);
+        support_crlf ? readStringCRLF(field, *buf) : readString(field, *buf);
     else
     {
         if constexpr (read_string)
@@ -178,6 +188,21 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
     if (is_raw)
     {
+        /// Raw deserialization also keeps the '\r' of a CRLF line ending, so cut the field out of the
+        /// row first, then deserialize the value from the trimmed text.
+        if (format_settings.tsv.crlf_end_of_line_input)
+        {
+            String field;
+            readStringCRLF(field, *buf);
+            ReadBufferFromString field_buf(field);
+
+            if (as_nullable)
+                return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, field_buf, format_settings, serialization);
+
+            serialization->deserializeTextRaw(column, field_buf, format_settings);
+            return true;
+        }
+
         if (as_nullable)
             return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, *buf, format_settings, serialization);
 
