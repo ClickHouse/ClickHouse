@@ -216,10 +216,8 @@ private:
     /// known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want, BlockAndWindowSizes sizes);
     void countBytesFromSource(size_t file_offset, size_t size);
-    /// Serves from `fetched_ahead`, else from one fetch whose unserved rest goes to `fetched_ahead`.
-    ChainedBuffers readWithoutCaches(size_t pos, size_t max_serve, size_t max_fetch, BlockAndWindowSizes sizes);
     /// Serve one block at `pos` through the held `ReadPlan` (the plan reports memory hold / hit /
-    /// committed writer / fetch). Precondition: `!cache_chain.empty()`.
+    /// committed writer / fetch). Without caches, the plan only holds the fetched bytes in memory.
     ChainedBuffers readThroughCaches(size_t pos, size_t max_serve, size_t max_fetch, size_t demand_end, BlockAndWindowSizes sizes);
     /// Grow `read_plan` to cover `[pos, min(pos + look_ahead, demand_end))` (clamped to the file end) and drop
     /// whatever lies past it; rebuilds from `pos` on a seek or gap. `look_ahead` is the sampled `plan_bytes`.
@@ -260,8 +258,6 @@ private:
     std::optional<size_t> read_until;
     /// `nullopt` = no map was announced, the caller may read the whole file.
     std::optional<ByteRangeSet> request_map;
-    /// Without caches: what the last fetch read past what it served.
-    ChainedBuffers fetched_ahead;
 
     std::optional<LongConnection> long_conn;
     ReadContinuityTracker fetch_tracker;
@@ -271,7 +267,7 @@ private:
     size_t min_bytes_for_seek;
     size_t max_tail_for_drain;
     size_t plan_look_ahead;
-    /// Cache residency of the look-ahead range, held across serves (see `ReadPlan`). Empty without caches.
+    /// Cache residency of the look-ahead range, held across serves (see `ReadPlan`).
     /// Also owns the executor-local memory hold for fetched bytes no tier accepted.
     ReadPlan read_plan;
 

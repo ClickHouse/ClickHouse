@@ -489,30 +489,8 @@ void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead, size_t demand
     }
 }
 
-ChainedBuffers ReaderExecutor::readWithoutCaches(size_t pos, size_t max_serve, size_t max_fetch, BlockAndWindowSizes sizes)
-{
-    if (fetched_ahead.contains(pos))
-    {
-        const size_t held_end = fetched_ahead.range().end();
-        const size_t end = std::min(held_end, pos + max_serve);
-        ChainedBuffers out = fetched_ahead.slice(ByteRange{pos, end - pos});
-        fetched_ahead = end < held_end ? fetched_ahead.slice(ByteRange{end, held_end - end}) : ChainedBuffers{};
-        return out;
-    }
-    fetched_ahead = {};
-
-    ChainedBuffers fetched = readSource(pos, max_fetch, sizes);
-    const size_t got = fetched.empty() ? 0 : fetched.range().size;
-    if (got <= max_serve)
-        return fetched;
-    fetched_ahead = fetched.slice(ByteRange{pos + max_serve, got - max_serve});
-    return fetched.slice(ByteRange{pos, max_serve});
-}
-
 ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, size_t max_fetch, size_t demand_end, BlockAndWindowSizes sizes)
 {
-    chassert(!cache_chain.empty());
-
     /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
     auto serve_len = [&](size_t end) { return std::min({sizes.block_bytes, max_serve, end - pos}); };
 
@@ -796,8 +774,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// Sample the pressure level once per window; `Normal` keeps the base sizes.
     const BlockAndWindowSizes sizes = sampleWindowSizes();
 
-    /// The window and the demand bound the fetch; `read_until` bounds only the serve. The cache path serves
-    /// at most one block of it; the no-cache path serves it whole.
+    /// The window and the demand bound the fetch; `read_until` bounds only the serve, at most one block.
     const size_t demand_end = demandEnd(sizes.block_bytes);
     const size_t max_fetch = std::min(sizes.window_bytes, demand_end - position_physical);
     size_t max_serve = max_fetch;
@@ -810,9 +787,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         return {};
     }
 
-    ChainedBuffers chain = cache_chain.empty()
-        ? readWithoutCaches(position_physical, max_serve, max_fetch, sizes)
-        : readThroughCaches(position_physical, max_serve, max_fetch, demand_end, sizes);
+    ChainedBuffers chain = readThroughCaches(position_physical, max_serve, max_fetch, demand_end, sizes);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)
@@ -858,10 +833,9 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
 void ReaderExecutor::seek(size_t new_position)
 {
     LOG_TRACE(log, "seek: {} -> {}", position, new_position);
-    /// Feed the estimator unless `fetched_ahead` holds the target; a held connection that can't continue
-    /// is dropped lazily by the next `readNextWindow`.
-    if (!fetched_ahead.contains(toPhysical(new_position)))
-        fetch_tracker.recordSeek(toPhysical(new_position));
+    /// Feed the estimator; a held connection that can't continue is dropped lazily by the next
+    /// `readNextWindow`.
+    fetch_tracker.recordSeek(toPhysical(new_position));
     position = new_position;
     reached_eof = false;
     /// The plan's memory hold is offset-keyed, so it stays correct; `ensureResolved` on the next read

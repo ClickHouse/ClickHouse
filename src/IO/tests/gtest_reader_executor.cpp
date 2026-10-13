@@ -525,9 +525,8 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
 
 TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
 {
-    /// Under memory pressure the executor serves a smaller window, so its in-flight buffers hold
-    /// less. The no-cache path serves the whole (pressure-adjusted) window, so the first window's
-    /// size is exactly `sizeAtPressure(level, window_size, WINDOW_REDUCTION)`, capped by the file.
+    /// Under memory pressure the executor fetches a smaller window, so it holds less in memory. The first
+    /// fetch is exactly `sizeAtPressure(level, window_size, WINDOW_REDUCTION)`, capped by the file.
     constexpr size_t base_window = 8 * 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", base_window)};
 
@@ -546,11 +545,11 @@ TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
 
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
             ReaderExecutor::Options{.window_size = base_window});
-        ChainedBuffers w = ex.readNextWindow();
-        const size_t got = w.atEnd() ? 0 : w.totalBytes();
+        ex.readNextWindow();
+        const size_t fetched = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
 
         mt.adjustWithUntrackedMemory(-amount);
-        return got;
+        return fetched;
     };
 
     EXPECT_EQ(firstWindow(50), base_window);        /// Normal: full window
@@ -605,7 +604,7 @@ TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
     constexpr size_t base_block = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", base_window)};
 
-    /// Read one window and return {total bytes, largest node bytes}. See `WindowShrinksUnderMemoryPressure`
+    /// Read one window and return {fetched bytes, largest served node}. See `WindowShrinksUnderMemoryPressure`
     /// for how the pressure level is driven through the group memory tracker.
     auto windowNodes = [&](UInt64 pct) -> std::pair<size_t, size_t>
     {
@@ -619,25 +618,24 @@ TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
             ReaderExecutor::Options{.window_size = base_window, .block_size = base_block});
         ChainedBuffers w = ex.readNextWindow();
-        size_t total = 0;
         size_t max_node = 0;
         while (!w.atEnd())
         {
             auto span = w.peek();
             max_node = std::max(max_node, span.size);
-            total += span.size;
             w.advance(span.size);
         }
+        const size_t fetched = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
         mt.adjustWithUntrackedMemory(-amount);
-        return {total, max_node};
+        return {fetched, max_node};
     };
 
-    const auto [normal_total, normal_node] = windowNodes(50);   /// Normal
-    EXPECT_EQ(normal_total, base_window);
+    const auto [normal_fetched, normal_node] = windowNodes(50);   /// Normal
+    EXPECT_EQ(normal_fetched, base_window);
     EXPECT_EQ(normal_node, base_block);          /// nodes of the full block
 
-    const auto [elevated_total, elevated_node] = windowNodes(80);   /// Elevated
-    EXPECT_EQ(elevated_total, base_window / 4);   /// window / 4
+    const auto [elevated_fetched, elevated_node] = windowNodes(80);   /// Elevated
+    EXPECT_EQ(elevated_fetched, base_window / 4);   /// window / 4
     EXPECT_EQ(elevated_node, base_block / 2);     /// block / 2, smaller than the window
 }
 
@@ -935,8 +933,7 @@ TEST_F(ReaderExecutorTest, BypassTierServesCachedCellAfterHeadMiss)
 
 TEST_F(ReaderExecutorTest, NoCacheReadsFromSourceAndNeverTouchesCache)
 {
-    /// Case 1: an empty cache chain bypasses the plan entirely (`readNextWindow` -> `readSource`). Every
-    /// byte comes from source and no cache counter moves.
+    /// Case 1: without caches, every byte comes from source and no cache counter moves.
     const size_t block = 256;
     StoredObjects objects{makeFile("a.bin", 4 * block)};
 
@@ -1693,7 +1690,7 @@ TEST_F(ReaderExecutorTest, FetchStopsAtWideRequestMapHole)
     map.add({3 * kib, kib});
     ex.setRequestMap(map);
 
-    EXPECT_EQ(ex.readNextWindow().totalBytes(), kib);
+    ex.readNextWindow();
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), kib);
 
     ex.seek(3 * kib);
@@ -1719,15 +1716,14 @@ TEST_F(ReaderExecutorTest, FetchReadsThroughNarrowRequestMapHole)
     ex.setRequestMap(map);
 
     ex.setReadUntil(kib);
-    EXPECT_EQ(ex.readNextWindow().totalBytes(), kib);
+    EXPECT_EQ(drain(ex).size(), kib);
 
     ex.setReadUntil(2 * kib);
     ex.seek(kib + 512);
-    ChainedBuffers w = ex.readNextWindow();
-    ASSERT_FALSE(w.atEnd());
-    EXPECT_EQ(w.peek().logical_offset, kib + 512);
-    EXPECT_EQ(w.totalBytes(), 512u);
-    EXPECT_EQ(static_cast<unsigned char>(w.peek().data[0]), patternByte(kib + 512));
+    auto second = drain(ex);
+    ASSERT_EQ(second.size(), 512u);
+    for (size_t i = 0; i < second.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(second[i]), patternByte(kib + 512 + i)) << "at " << (kib + 512 + i);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 2 * kib);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesOutsideRequestMap), 512u) << "only the hole lies outside the map";
@@ -1763,12 +1759,15 @@ TEST_F(ReaderExecutorTest, NewRequestMapAppliesToTheNextFetch)
     first.add({0, kib});
     first.add({3 * kib, kib});
     ex.setRequestMap(first);
-    EXPECT_EQ(ex.readNextWindow().totalBytes(), kib);
+    ex.setReadUntil(kib);
+    EXPECT_EQ(drain(ex).size(), kib);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), kib);
 
     ByteRangeSet second;
     second.add({0, 4 * kib});
     ex.setRequestMap(second);
-    EXPECT_EQ(ex.readNextWindow().totalBytes(), 3 * kib);
+    ex.setReadUntil(std::nullopt);
+    EXPECT_EQ(drain(ex).size(), 3 * kib);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 2u);
 }
 
@@ -2076,12 +2075,11 @@ TEST_F(ReaderExecutorTest, RequestMapIsLogicalUnderEncryption)
     map.add({3 * kib, kib});
     executor.setRequestMap(map);
 
-    ChainedBuffers first = executor.readNextWindow();
-    ASSERT_EQ(first.totalBytes(), kib);
-    std::vector<char> head(kib);
-    first.copyTo(head.data(), ByteRange{0, kib});
-    EXPECT_EQ(String(head.begin(), head.end()), plaintext.substr(0, kib));
+    executor.setReadUntil(kib);
+    auto first = drain(executor);
+    EXPECT_EQ(String(first.begin(), first.end()), plaintext.substr(0, kib));
 
+    executor.setReadUntil(std::nullopt);
     executor.seek(3 * kib);
     auto second = drain(executor);
     EXPECT_EQ(String(second.begin(), second.end()), plaintext.substr(3 * kib));
