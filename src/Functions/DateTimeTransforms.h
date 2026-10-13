@@ -2291,10 +2291,11 @@ public:
 
     static constexpr auto name = "toDaysSinceYearZero";
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt32 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(t));
+        /// Compute in `Int64` and saturate to `[0, UInt32 max]`, as for `Date32` below.
+        return static_cast<UInt32>(std::clamp<Int64>(
+            Int64(DAYS_BETWEEN_YEARS_0_AND_1970) + time_zone.toDayNum(t).toUnderType(), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 d, const DateLUTImpl &)
     {
