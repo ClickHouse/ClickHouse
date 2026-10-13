@@ -199,3 +199,41 @@ SELECT k, uniqExactArgMax(n, toFloat64(intDiv(n, 50000))) AS mx, uniqExactArgMin
 FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 4, group_by_two_level_threshold = 8;
+
+-- Resample forwards the deferred merge to the nested uniqExact, bucket by bucket, on the keyed merge,
+-- the serial single-level merge, the state-block merge from remote shards, the spilled-state merge
+-- and the merge without keys; also for a state returned by -StateResample. The state is deferred as a whole
+-- when one bucket is large: here only the first bucket of the hot key is past the threshold.
+SELECT k, uniqExactResample(0, 2, 1)(n, n % 2) AS r, uniqExactResample(0, 1, 1)(n, 0) AS one
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 8;
+
+SELECT k, uniqExactResample(0, 2, 1)(n, n % 2) AS r
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_parallel_single_level_merge = 0;
+
+SELECT k, uniqExactResample(0, 2, 1)(n, n % 2) AS r
+FROM remote('127.0.0.{1,2}', view(SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000)))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, distributed_aggregation_memory_efficient = 0;
+
+SELECT k, uniqExactResample(0, 2, 1)(n, n % 2) AS r
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 8, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;
+
+SELECT uniqExactResample(0, 2, 1)(n, n % 2) AS r
+FROM (SELECT number AS n FROM numbers_mt(240000))
+SETTINGS max_threads = 4;
+
+SELECT k, arrayMap(s -> finalizeAggregation(s), uniqExactStateResample(0, 2, 1)(n, n % 2)) AS r
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 8;
+
+SELECT k, uniqExactResample(0, 2, 1)(n, n % 2) AS r
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 1;
