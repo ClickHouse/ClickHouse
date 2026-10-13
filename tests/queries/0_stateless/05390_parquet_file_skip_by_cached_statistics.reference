@@ -1,5 +1,4 @@
-row groups per file:
-2
+row groups per file: 2, skipped 0
 range, first read: 101 156550, skipped 0, pruned row groups 7
 range, second read: 101 156550, skipped 0, pruned row groups 7
 range, third read: 101 156550, skipped 3, pruned row groups 7
