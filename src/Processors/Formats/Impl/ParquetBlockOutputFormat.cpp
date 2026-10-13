@@ -248,19 +248,23 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
     const bool has_metadata_mapping = format_filter_info_ && format_filter_info_->column_mapper;
+    /// A mapper does not always carry `field_id`s: e.g. `DeltaLake` hands one over only for its
+    /// local-timestamp paths. Only a non-empty storage encoding is a `field_id` contract.
+    const bool has_metadata_field_ids = has_metadata_mapping
+        && !format_filter_info_->column_mapper->getStorageColumnEncoding().empty();
     const bool user_set_field_ids = !format_settings.parquet.column_field_ids.empty()
         || format_settings.parquet.auto_assign_field_ids;
 
     /// When a datalake (e.g. Iceberg) writer hands us a column-id mapping, that mapping is
     /// the source of truth — letting session settings override it would produce Parquet files
     /// whose `field_id`s no longer match the table metadata, breaking subsequent reads.
-    if (has_metadata_mapping && user_set_field_ids)
+    if (has_metadata_field_ids && user_set_field_ids)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "output_format_parquet_column_field_ids / output_format_parquet_auto_assign_field_ids "
             "cannot be used when writing to a datalake table that provides its own column-id mapping");
 
     /// Resolve Parquet `field_id`s from the user-facing settings (explicit overrides and/or
-    /// the Iceberg-style auto-assign toggle). Used only when there is no metadata mapping.
+    /// the Iceberg-style auto-assign toggle). Used only when the metadata carries no `field_id`s.
     column_field_ids = buildColumnFieldIds(
         header_.get(),
         format_settings.parquet.column_field_ids,
@@ -312,13 +316,11 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     }
 
     /// Datalake (Iceberg) metadata mapping wins over user settings — see the check above.
-    /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
+    /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids",
+    /// so a mapper without an encoding leaves the field ids resolved from the user settings.
     std::optional<std::unordered_map<String, Int64>> effective_field_ids = column_field_ids;
-    if (has_metadata_mapping)
-    {
-        const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
-        effective_field_ids = column_encoding.empty() ? std::nullopt : std::optional(column_encoding);
-    }
+    if (has_metadata_field_ids)
+        effective_field_ids = format_filter_info_->column_mapper->getStorageColumnEncoding();
 
     schema = convertSchema(*header_, options, effective_field_ids, iceberg_optionality);
 }
