@@ -129,21 +129,29 @@ for ((i = 1; i <= ${#LABELS[@]}; ++i)); do
 done
 
 # The kept ranges count in the cache weight as soon as they are kept, and a skip leaves the weight as it is. Reads
-# through the wrapper of `aggregate_function_input_format = 'value'` keep the ranges for later reads too. The metadata
-# cache of a clickhouse-local process serves no other query.
-Q_LOCAL="SELECT count() FROM file('${DATA_DIR}/f1.parquet', Parquet, 'x UInt32, s String') WHERE x > 100000
-    SETTINGS use_query_condition_cache = 0, $PINNED FORMAT Null;
-    SELECT value FROM system.metrics WHERE metric = 'ParquetMetadataCacheBytes';"
+# through the wrapper of `aggregate_function_input_format = 'value'` keep the ranges for later reads too. A read of
+# a file whose version token has not settled keeps nothing, even when its metadata is cached. The metadata cache of
+# a clickhouse-local process serves no other query.
+touch -d '2099-01-01 00:00:00' "$DATA_DIR/f4.parquet"
+read_with_weight() # file
+{
+    echo "SELECT count() FROM file('${DATA_DIR}/$1.parquet', Parquet, 'x UInt32, s String') WHERE x > 100000
+        SETTINGS use_query_condition_cache = 0, $PINNED FORMAT Null;
+        SELECT value FROM system.metrics WHERE metric = 'ParquetMetadataCacheBytes';"
+}
+Q_LOCAL=$(read_with_weight f1)
+Q_UNSETTLED=$(read_with_weight f4)
 Q_WRAPPED="SELECT count(), max(finalizeAggregation(s))
     FROM file('${DATA_DIR}/f2.parquet', Parquet, 'x UInt32, s AggregateFunction(any, String)') WHERE x > 100000
     SETTINGS aggregate_function_input_format = 'value', use_query_condition_cache = 0, $PINNED FORMAT Null;"
 Q_PLAIN="SELECT count() FROM file('${DATA_DIR}/f2.parquet', Parquet, 'x UInt32, s String') WHERE x > 100000
     SETTINGS use_query_condition_cache = 0, $PINNED FORMAT Null;"
 Q_SKIPPED="SELECT ifNull((SELECT value FROM system.events WHERE event = 'ParquetFilesSkippedByCachedStatistics'), 0);"
-read -r w1 w2 w3 skipped1 skipped2 <<< "$(${CLICKHOUSE_LOCAL} --query "$Q_LOCAL $Q_LOCAL $Q_LOCAL $Q_SKIPPED
-    $Q_WRAPPED $Q_WRAPPED $Q_PLAIN $Q_SKIPPED" | tr '\n' ' ')"
+read -r w1 w2 w3 skipped1 skipped2 u1 u2 <<< "$(${CLICKHOUSE_LOCAL} --query "$Q_LOCAL $Q_LOCAL $Q_LOCAL $Q_SKIPPED
+    $Q_WRAPPED $Q_WRAPPED $Q_PLAIN $Q_SKIPPED $Q_UNSETTLED $Q_UNSETTLED" | tr '\n' ' ')"
 echo "clickhouse-local: weight counts the kept ranges $((w2 > w1)), unchanged by the skip $((w3 == w2)), skipped $skipped1"
 echo "clickhouse-local, kept through the aggregate function wrapper: skipped $((skipped2 - skipped1))"
+echo "clickhouse-local, unsettled version token: weight unchanged by the second read $((u2 == u1))"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05390; DROP TABLE t_05390_i64"
 rm -rf "${DATA_DIR:?}"

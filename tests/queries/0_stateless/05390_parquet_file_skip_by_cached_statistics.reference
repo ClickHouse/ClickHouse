@@ -26,3 +26,4 @@ f4 settled, second read: 111 172050, skipped 2
 f4 settled, third read: 111 172050, skipped 3
 clickhouse-local: weight counts the kept ranges 1, unchanged by the skip 1, skipped 1
 clickhouse-local, kept through the aggregate function wrapper: skipped 1
+clickhouse-local, unsettled version token: weight unchanged by the second read 1

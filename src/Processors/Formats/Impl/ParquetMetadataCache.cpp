@@ -107,19 +107,28 @@ size_t heapBytesOfField(const Field & field)
 
 }
 
-bool ParquetKeptStatistics::add(const String & column_key, const Ranges & ranges)
+std::optional<ParquetKeptStatistics::Column> ParquetKeptStatistics::prepare(const String & column_key, const Ranges & ranges) const
+{
+    size_t bytes = sizeof(Ranges) + column_key.size() + ranges.size() * sizeof(Range);
+    {
+        std::lock_guard lock(mutex);
+        if (ranges_by_column.contains(column_key))
+            return std::nullopt;
+        for (const auto & range : ranges)
+            bytes += heapBytesOfField(range.left) + heapBytesOfField(range.right);
+        if (total_bytes + bytes > max_bytes)
+            return std::nullopt;
+    }
+    return Column{column_key, std::make_shared<const Ranges>(ranges), bytes};
+}
+
+bool ParquetKeptStatistics::add(Column column)
 {
     std::lock_guard lock(mutex);
-    if (ranges_by_column.contains(column_key))
+    if (ranges_by_column.contains(column.key) || total_bytes + column.bytes > max_bytes)
         return false;
-
-    size_t bytes = sizeof(Ranges) + column_key.size() + ranges.size() * sizeof(Range);
-    for (const auto & range : ranges)
-        bytes += heapBytesOfField(range.left) + heapBytesOfField(range.right);
-    if (total_bytes + bytes > max_bytes)
-        return false;
-    ranges_by_column.emplace(column_key, std::make_shared<const Ranges>(ranges));
-    total_bytes += bytes;
+    ranges_by_column.emplace(std::move(column.key), std::move(column.ranges));
+    total_bytes += column.bytes;
     return true;
 }
 
@@ -159,10 +168,14 @@ ParquetMetadataCacheKey ParquetMetadataCache::createKey(const String & file_path
 {
     return ParquetMetadataCacheKey{file_path, file_attr};
 }
-void ParquetMetadataCache::updateWeight(const ParquetMetadataCacheKey & key, const MappedPtr & cell)
+void ParquetMetadataCache::keepStatistics(
+    const ParquetMetadataCacheKey & key, const MappedPtr & cell, const String & column_key, const ParquetKeptStatistics::Ranges & ranges)
 {
-    /// `set` recomputes the weight.
-    Base::replaceIfMatches(key, cell, cell);
+    auto column = cell->kept_statistics->prepare(column_key, ranges);
+    if (!column)
+        return;
+    Base::updateIfMatches(
+        key, [&](const MappedPtr & resident) { return resident == cell && cell->kept_statistics->add(std::move(*column)); });
 }
 
 void ParquetMetadataCache::onEntryRemoval(const size_t weight_loss, const MappedPtr &)

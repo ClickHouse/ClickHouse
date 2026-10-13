@@ -283,14 +283,15 @@ public:
         return true;
     }
 
-    /// Atomically replaces the entry under `key` with `mapped` if it is `expected`. Returns whether it did.
-    bool replaceIfMatches(const Key & key, const MappedPtr & expected, const MappedPtr & mapped)
+    /// Like `removeIfMatches`, but if `update(resident)` returns true, sets the resident again to recompute its weight.
+    /// `update` runs under the cache lock, so no eviction sees a changed resident with its old weight.
+    bool updateIfMatches(const Key & key, std::function<bool(const MappedPtr &)> update)
     {
         std::lock_guard lock(mutex);
         auto value = cache_policy->get(key);
-        if (!value || value != expected)
+        if (!value || !update(value))
             return false;
-        cache_policy->set(key, mapped);
+        cache_policy->set(key, value);
         return true;
     }
 

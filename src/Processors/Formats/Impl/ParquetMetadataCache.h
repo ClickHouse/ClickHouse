@@ -53,10 +53,20 @@ struct ParquetKeptStatistics : private boost::noncopyable
     using Ranges = std::vector<Range>;
     using RangesPtr = std::shared_ptr<const Ranges>;
 
+    struct Column
+    {
+        String key;
+        RangesPtr ranges;
+        size_t bytes = 0;
+    };
+
     explicit ParquetKeptStatistics(size_t max_bytes_) : max_bytes(max_bytes_) {}
 
-    /// Returns false if ranges are already kept under `column_key` or all kept ranges would exceed `max_bytes`.
-    bool add(const String & column_key, const Ranges & ranges);
+    /// A copy of `ranges` to `add`, or nothing if ranges are already kept under `column_key` or all kept ranges would
+    /// exceed `max_bytes`.
+    std::optional<Column> prepare(const String & column_key, const Ranges & ranges) const;
+    /// Returns false if ranges are already kept under the key or all kept ranges would exceed `max_bytes`.
+    bool add(Column column);
     RangesPtr get(const String & column_key) const;
     size_t bytes() const;
 
@@ -72,7 +82,7 @@ struct ParquetMetadataCacheCell : private boost::noncopyable
 {
     parquet::format::FileMetaData metadata;
     UInt64 memory_bytes;
-    /// Counts in the weight of the cell (see `ParquetMetadataCache::updateWeight`).
+    /// Counts in the weight of the cell (see `ParquetMetadataCache::keepStatistics`).
     std::shared_ptr<ParquetKeptStatistics> kept_statistics;
     explicit ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_);
 private:
@@ -124,9 +134,10 @@ public:
         return result.first;
     }
 
-    /// Recomputes the weight of `cell` after statistics were kept in it, if the cache still holds it under `key`.
+    /// Keeps `ranges` in `cell` and counts them in its weight, if the cache still holds `cell` under `key`.
     /// Moves the cell in the cache like a hit.
-    void updateWeight(const ParquetMetadataCacheKey & key, const MappedPtr & cell);
+    void keepStatistics(
+        const ParquetMetadataCacheKey & key, const MappedPtr & cell, const String & column_key, const ParquetKeptStatistics::Ranges & ranges);
 
 private:
     LoggerPtr log;

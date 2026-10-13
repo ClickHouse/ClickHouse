@@ -160,8 +160,8 @@ void ParquetV3BlockInputFormat::cacheFilterColumnStatistics()
             continue;
         const auto & column = parquet_reader.extended_sample_block.getByPosition(idx);
         String column_key = ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings);
-        if (metadata_cache_cell->kept_statistics->add(column_key, ranges) && metadata_cache && metadata_cache_key)
-            metadata_cache->updateWeight(*metadata_cache_key, metadata_cache_cell);
+        if (metadata_cache && metadata_cache_key)
+            metadata_cache->keepStatistics(*metadata_cache_key, metadata_cache_cell, column_key, ranges);
     }
 }
 
