@@ -75,18 +75,18 @@ struct Impl
         PaddedPODArray<Float64> & col_gini_normalized)
     {
         size_t size = col_gini_predicted.size();
+        size_t array_size = size > 0 ? array_predicted_offsets[0] - array_predicted_offsets[-1] : 0;
+
+        if (array_size > MAX_ARRAY_SIZE)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
+            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
             size_t array2_size = array_labels_offsets[i] - array_labels_offsets[i - 1];
-
-            if (array_size > MAX_ARRAY_SIZE)
-                throw Exception(
-                    ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
-
-            if (array2_size != array_size)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Prediction and label arrays in function arrayNormalizedGini should have same size for each row");
+            if (array1_size != array_size || array2_size != array_size)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
 
@@ -406,7 +406,7 @@ REGISTER_FUNCTION(NormalizedGini)
     };
     FunctionDocumentation::ReturnedValue doc_returned_value = {"A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients)", {"Tuple(Float64, Float64, Float64)"}};
     FunctionDocumentation::Examples doc_examples = {
-        {"Usage example", "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);", "(0.18055555555555558,0.2638888888888889,0.6842105263157896)"}
+        {"Usage example", "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);", "(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)"}
     };
     FunctionDocumentation::IntroducedIn doc_introduced_in = {25, 1};
     FunctionDocumentation::Category doc_category = FunctionDocumentation::Category::Array;

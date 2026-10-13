@@ -13,7 +13,7 @@ ClickHouse는 다양한 방식으로 OLTP 데이터베이스 인프라와 쉽게
   ## SQL 덤프 생성
 </div>
 
-[SQLInsert](/ko/reference/formats/SQLInsert)를 사용하면 데이터를 SQL 포맷으로 덤프할 수 있습니다. ClickHouse는 데이터를 `INSERT INTO <table name> VALUES(...` 형식으로 기록하며, [`output_format_sql_insert_table_name`](/ko/reference/settings/formats/output-format#output_format_sql_insert_table_name) 설정 옵션의 값을 테이블 이름으로 사용합니다:
+[SQLInsert](/ko/reference/formats/SQLInsert)를 사용하면 데이터를 SQL 포맷으로 덤프할 수 있습니다. ClickHouse는 데이터를 `INSERT INTO <table name> VALUES(...` 형식으로 기록하며, [`output_format_sql_insert_table_name`](/ko/reference/settings/formats#output_format_sql_insert_table_name) 설정 옵션의 값을 테이블 이름으로 사용합니다:
 
 ```sql
 SET output_format_sql_insert_table_name = 'some_table';
@@ -22,7 +22,7 @@ INTO OUTFILE 'dump.sql'
 FORMAT SQLInsert
 ```
 
-컬럼 이름은 [`output_format_sql_insert_include_column_names`](/ko/reference/settings/formats/output-format#output_format_sql_insert_include_column_names) 옵션을 비활성화하여 생략할 수 있습니다:
+컬럼 이름은 [`output_format_sql_insert_include_column_names`](/ko/reference/settings/formats#output_format_sql_insert_include_column_names) 옵션을 비활성화하여 생략할 수 있습니다:
 
 ```sql
 SET output_format_sql_insert_include_column_names = 0
@@ -36,7 +36,7 @@ mysql some_db < dump.sql
 
 `some_db` MySQL 데이터베이스에 `some_table` 테이블이 존재한다고 가정합니다.
 
-일부 DBMS는 단일 배치에서 처리할 수 있는 값의 수에 제한이 있을 수 있습니다. 기본적으로 ClickHouse는 65k개의 값으로 이루어진 배치를 생성하지만, 이는 [`output_format_sql_insert_max_batch_size`](/ko/reference/settings/formats/output-format#output_format_sql_insert_max_batch_size) 옵션으로 변경할 수 있습니다:
+일부 DBMS는 단일 배치에서 처리할 수 있는 값의 수에 제한이 있을 수 있습니다. 기본적으로 ClickHouse는 65k개의 값으로 이루어진 배치를 생성하지만, 이는 [`output_format_sql_insert_max_batch_size`](/ko/reference/settings/formats#output_format_sql_insert_max_batch_size) 옵션으로 변경할 수 있습니다:
 
 ```sql
 SET output_format_sql_insert_max_batch_size = 1000;
@@ -78,14 +78,14 @@ LIMIT 5
 └────────────────────────────────┴────────────┴──────┘
 ```
 
-기본적으로 ClickHouse는 알 수 없는 컬럼을 건너뛰고([input&#95;format&#95;skip&#95;unknown&#95;fields](/ko/reference/settings/formats/input-format#input_format_skip_unknown_fields) 옵션으로 제어), 덤프에서 처음 발견된 테이블의 데이터를 처리합니다(여러 테이블이 하나의 파일에 덤프된 경우). DDL 문은 건너뜁니다. MySQL 덤프에서 테이블로 데이터를 로드하려면([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) 파일):
+기본적으로 ClickHouse는 알 수 없는 컬럼을 건너뛰고([input&#95;format&#95;skip&#95;unknown&#95;fields](/ko/reference/settings/formats#input_format_skip_unknown_fields) 옵션으로 제어), 덤프에서 처음 발견된 테이블의 데이터를 처리합니다(여러 테이블이 하나의 파일에 덤프된 경우). DDL 문은 건너뜁니다. MySQL 덤프에서 테이블로 데이터를 로드하려면([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) 파일):
 
 ```sql
 INSERT INTO some_data
 FROM INFILE 'mysql.sql' FORMAT MySQLDump
 ```
 
-MySQL 덤프 파일을 사용해 테이블을 자동으로 생성할 수도 있습니다:
+MySQL dump 파일을 사용해 테이블을 자동으로 생성할 수도 있습니다:
 
 ```sql
 CREATE TABLE table_from_mysql

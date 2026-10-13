@@ -8,8 +8,6 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <base/getL2CacheSize.h>
-
 #include <atomic>
 #include <memory>
 #include <utility>
@@ -75,39 +73,6 @@ public:
             else
             {
                 asTwoLevel().insert(std::forward<Arg>(arg));
-            }
-        }
-    }
-
-    /// Batch-inserts a run of keys.
-    ///
-    /// Once the set spills out of L2 the inserts become cache-miss bound and mutually independent, so
-    /// while inserting the current key we software-prefetch the destination cell of a look-ahead key,
-    template <SetLevelHint hint>
-    void ALWAYS_INLINE insertMany(const value_type * values, size_t n)
-    {
-        if constexpr (hint == SetLevelHint::twoLevel)
-        {
-            insertManyIntoSet(asTwoLevel(), values, n, /*prefetch=*/ true);
-        }
-        else if constexpr (hint == SetLevelHint::singleLevel)
-        {
-            auto & set = asSingleLevel();
-            insertManyIntoSet(set, values, n, set.getBufferSizeInBytes() > getL2CacheSize());
-        }
-        else
-        {
-            if (isTwoLevel())
-            {
-                insertManyIntoSet(asTwoLevel(), values, n, /*prefetch=*/ true);
-            }
-            else
-            {
-                auto & set = asSingleLevel();
-                insertManyIntoSet(set, values, n, set.getBufferSizeInBytes() > getL2CacheSize());
-
-                if (worthConvertingToTwoLevel(set.size()))
-                    convertToTwoLevel();
             }
         }
     }
@@ -398,26 +363,6 @@ public:
     bool isTwoLevel() const { return !!two_level_set; }
 
 private:
-    static constexpr size_t insert_prefetch_look_ahead = 16;
-
-    template <typename Set>
-    static void ALWAYS_INLINE insertManyIntoSet(Set & set, const value_type * values, size_t n, bool prefetch)
-    {
-        size_t i = 0;
-
-        if (prefetch)
-        {
-            for (; i + insert_prefetch_look_ahead < n; ++i)
-            {
-                set.prefetch(values[i + insert_prefetch_look_ahead]);
-                set.insert(values[i]);
-            }
-        }
-
-        for (; i < n; ++i)
-            set.insert(values[i]);
-    }
-
     SingleLevelSet & asSingleLevel() { return single_level_set; }
     const SingleLevelSet & asSingleLevel() const { return single_level_set; }
 

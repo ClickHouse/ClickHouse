@@ -277,7 +277,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-The [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) setting is
+The [`mutations_sync`](/reference/settings/session-settings#mutations_sync) setting is
 used to force synchronous execution.
 
 We create and populate projection `prj_gby_county` – an additional (hidden) table
@@ -415,28 +415,21 @@ INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 
 #### Build a Projection {#build-projection}
 
-Let's create an aggregate projection by the dimensions `year`, `district`, and `town`.
-The projection groups sales by the year of each sale, so we materialize that
-expression as a column to make it referable by filters:
-
-```sql
-ALTER TABLE uk.uk_price_paid_with_projections_v2
-    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
-```
+Let's create an aggregate projection by the dimensions `toYear(date)`, `district`, and `town`:
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            year,
+            toYear(date),
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            year,
+            toYear(date),
             district,
             town
     )
@@ -450,14 +443,14 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-The following queries contrast performance with and without projections. To disable projection use we use the setting [`optimize_use_projections`](/reference/settings/session-settings/optimize-use#optimize_use_projections), which is enabled by default.
+The following queries contrast performance with and without projections. To disable projection use we use the setting [`optimize_use_projections`](/reference/settings/session-settings#optimize_use_projections), which is enabled by default.
 
 #### Query 1. Average price per year {#average-price-projections}
 
 <RunnableCode>
 ```sql
 SELECT
-    year,
+    toYear(date) AS year,
     round(avg(price)) AS price,
     bar(price, 0, 1000000, 80)
 FROM uk.uk_price_paid_with_projections_v2
@@ -469,7 +462,7 @@ SETTINGS optimize_use_projections=0
 <RunnableCode>
 ```sql
 SELECT
-    year,
+    toYear(date) AS year,
     round(avg(price)) AS price,
     bar(price, 0, 1000000, 80)
 FROM uk.uk_price_paid_with_projections_v2
@@ -485,7 +478,7 @@ The results should be the same, but the performance better on the latter example
 <RunnableCode>
 ```sql
 SELECT
-    year,
+    toYear(date) AS year,
     round(avg(price)) AS price,
     bar(price, 0, 2000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
@@ -498,7 +491,7 @@ SETTINGS optimize_use_projections=0
 <RunnableCode>
 ```sql
 SELECT
-    year,
+    toYear(date) AS year,
     round(avg(price)) AS price,
     bar(price, 0, 2000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
@@ -509,7 +502,7 @@ ORDER BY year ASC
 </RunnableCode>
 #### Query 3. The most expensive neighborhoods {#most-expensive-neighborhoods-projections}
 
-The filter for rows from 2020 onwards references the stored projection dimension `year` directly:
+The condition (date >= '2020-01-01') needs to be modified so that it matches the projection dimension (`toYear(date) >= 2020)`:
 
 <RunnableCode>
 ```sql
@@ -520,7 +513,7 @@ SELECT
     round(avg(price)) AS price,
     bar(price, 0, 5000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
-WHERE year >= 2020
+WHERE toYear(date) >= 2020
 GROUP BY
     town,
     district
@@ -539,7 +532,7 @@ SELECT
     round(avg(price)) AS price,
     bar(price, 0, 5000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
-WHERE year >= 2020
+WHERE toYear(date) >= 2020
 GROUP BY
     town,
     district
@@ -549,13 +542,6 @@ LIMIT 100
 ```
 </RunnableCode>
 Again, the result is the same but notice the improvement in query performance for the 2nd query.
-
-<Note>
-The filter must reference the stored dimension `year` directly. Writing
-`WHERE toYear(date) >= 2020` doesn't use the projection: the optimizer rewrites
-the condition into a range on `date`, and the projection doesn't store a `date`
-column, so ClickHouse falls back to scanning the base table.
-</Note>
 
 ### Combining projections in one query {#combining-projections}
 
