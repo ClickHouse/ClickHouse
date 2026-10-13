@@ -777,6 +777,21 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 return res;
             }
 
+            if (node_copy.children.size() < node->children.size())
+            {
+                /// The copy still has the function built for all the arguments of `node`.
+                ActionsDAG tmp_dag;
+                FunctionOverloadResolverPtr func_builder_and
+                    = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                const ActionsDAG::Node * res = &tmp_dag.addFunction(func_builder_and, node_copy.children, {});
+                additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+
+                if (!res->result_type->equals(*node->result_type))
+                    res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
+
+                return res;
+            }
+
             return &node_copy;
         }
         if (node->function_base->getName() == "or")

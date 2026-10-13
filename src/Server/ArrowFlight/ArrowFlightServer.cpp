@@ -7,6 +7,7 @@
 #include <Server/ArrowFlight/commandSelector.h>
 #include <Server/ArrowFlight/PollSession.h>
 
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -610,6 +611,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         {
             if (!block.empty())
             {
+                removeSpecialColumnRepresentations(block);
                 if (block_modifier)
                     block_modifier(query_context, block);
                 if (!header)
@@ -1103,7 +1105,11 @@ arrow::Status ArrowFlightServer::DoGet(
                 while (executor.pull(block))
                 {
                     if (!block.empty())
+                    {
+                        /// PullingPipelineExecutor returns sparse and other special column representations, which CHColumnToArrowColumn does not read.
+                        removeSpecialColumnRepresentations(block);
                         chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                    }
                 }
 
                 auto header = executor.getHeader();
