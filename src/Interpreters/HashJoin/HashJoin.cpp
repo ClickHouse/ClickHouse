@@ -816,9 +816,6 @@ size_t HashJoin::getTotalRowCount() const
 
 void HashJoin::recomputeBucketBytes()
 {
-    if (!data)
-        return;
-
     size_t res = data->slots.arenaBytes();
 
     const auto maps_kind = getMapsKind();
@@ -862,15 +859,6 @@ void HashJoin::doDebugAsserts() const
             "data->nullmaps_allocated_size != debug_nullmaps_allocated_size ({} != {})",
             data->nullmaps_allocated_size.load(std::memory_order_relaxed),
             debug_nullmaps_allocated_size);
-
-    const size_t accounted = data->allocated_size.load(std::memory_order_relaxed)
-        + data->nullmaps_allocated_size.load(std::memory_order_relaxed) + data->bucket_bytes.load(std::memory_order_relaxed);
-    if (data->total_bytes.load(std::memory_order_relaxed) != accounted)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "data->total_bytes != allocated + nullmaps + bucket_bytes ({} != {})",
-            data->total_bytes.load(std::memory_order_relaxed),
-            accounted);
 #endif
 }
 
@@ -1393,10 +1381,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
         }
     }
     else
-    {
-        for (auto & worker : data->workers)
-            worker.shrink_done = false;
-    }
+        data->workers[worker_id].shrink_done = false; /// Only `StorageJoin` forces, and its join has one worker.
 
     LOG_DEBUG(
         log,
@@ -1406,17 +1391,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
         ReadableSize(query_memory_usage_delta),
         max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
 
-    /// The others catch up on their next call. `force_optimize` runs outside the build, so there
-    /// will be no next call.
-    if (force_optimize)
-    {
-        for (auto & worker : data->workers)
-            shrinkWorkerStoredBlocks(worker);
-    }
-    else
-    {
-        shrinkWorkerStoredBlocks(data->workers[worker_id]);
-    }
+    /// The other workers catch up on their next call.
+    shrinkWorkerStoredBlocks(data->workers[worker_id]);
 
     auto new_total_bytes_in_join = getTotalByteCount();
     Int64 new_current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
@@ -2106,25 +2082,11 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
     return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, 0, 1);
 }
 
-namespace
-{
-
-/// Without equi keys nothing reaches a map, so no right row is ever marked used and the non-joined
-/// scan cannot be split by bucket.
-bool anyClauseHasRightKeys(const TableJoin & table_join)
-{
-    for (const auto & clause : table_join.getClauses())
-        if (!clause.key_names_right.empty())
-            return true;
-    return false;
-}
-
-}
-
 bool HashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
-    return supportParallelJoin() && table_join->allowParallelNonJoinedRowsProcessing()
-        && JoinCommon::hasNonJoinedBlocks(*table_join) && anyClauseHasRightKeys(*table_join);
+    /// Without equi keys nothing reaches a map, so no right row is ever marked used and the scan cannot be split by bucket.
+    return supportParallelJoin() && table_join->allowParallelNonJoinedRowsProcessing() && JoinCommon::hasNonJoinedBlocks(*table_join)
+        && std::ranges::any_of(table_join->getClauses(), [](const auto & clause) { return !clause.key_names_right.empty(); });
 }
 
 IBlocksStreamPtr
@@ -2132,9 +2094,6 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
                              size_t bucket_idx, size_t num_buckets) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join) || !isRightOrFull(kind) || !data || data->rows_to_join == 0)
-        return {};
-
-    if (num_buckets > 1 && !anyClauseHasRightKeys(*table_join) && bucket_idx != 0)
         return {};
 
     size_t left_columns_count = left_sample_block.columns();
@@ -2275,11 +2234,6 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 
 BlocksList HashJoin::releaseWorkerBlocks(size_t worker_id)
 {
-    if (!data || worker_id >= data->workers.size())
-        return {};
-
-    const auto column_access_indexes = data->column_access_indexes;
-
     auto & worker = data->workers[worker_id];
     StoredBlocksList right_columns = std::move(worker.columns);
     worker.nullmaps.clear();
@@ -2288,15 +2242,12 @@ BlocksList HashJoin::releaseWorkerBlocks(size_t worker_id)
     /// and the sample block is shared. The caller releases it once they are all done.
     BlocksList result;
     for (auto & columns : right_columns)
-        result.emplace_back(data->sample_block.cloneWithColumns(materializeStoredBlock(columns, column_access_indexes)));
+        result.emplace_back(data->sample_block.cloneWithColumns(materializeStoredBlock(columns, data->column_access_indexes)));
     return result;
 }
 
 void HashJoin::releaseJoinMaps()
 {
-    if (!data)
-        return;
-
     data->maps.clear();
     data->slots.releaseArenas();
     data->setBytes(data->bucket_bytes, 0);
