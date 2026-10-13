@@ -628,7 +628,8 @@ public:
         virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
-        virtual NameSet getAllUpdatedColumns() const = 0;
+        /// Columns changed on the fly by patches, data mutations and alter mutations of the whole snapshot.
+        virtual NameSet getColumnsChangedOnFly() const = 0;
 
         virtual bool hasPatchParts() const = 0;
         virtual bool hasDataMutations() const = 0;
@@ -660,6 +661,8 @@ public:
     protected:
         NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+        /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
+        void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -1465,6 +1468,11 @@ public:
 #endif
         );
 
+#if CLICKHOUSE_CLOUD
+    /// Commands that apply the enabled masking policies on the fly.
+    static MutationCommands getMaskingPolicyCommands(const StorageID & storage_id, const EnabledMaskingPoliciesPtr & enabled_masking_policies);
+#endif
+
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
 
@@ -1523,8 +1531,16 @@ public:
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
-    ExpressionActionsPtr
-    getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
+    /// `use_index_expression` selects skip index expressions by result name; without it all of them are used.
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::function<bool(const String &)> & use_index_expression = {}) const;
+    /// Returns nullptr when no expression is selected.
+    ExpressionActionsPtr getSkipIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::function<bool(const String &)> & use_index_expression = {}) const;
 
     struct PartCompressionCodec
     {
@@ -2256,6 +2272,8 @@ protected:
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
     /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
     bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
+    /// Set before `refresh_stats_task` is deactivated, so that a running `refreshStatistics` returns between parts.
+    std::atomic_bool refresh_stats_cancelled = false;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
