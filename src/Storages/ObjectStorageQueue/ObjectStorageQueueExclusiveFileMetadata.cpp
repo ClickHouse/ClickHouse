@@ -128,12 +128,15 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
         case FileStatus::State::Processed: return PathState::Processed;
         case FileStatus::State::Failed:
             failure_message = file_status->getException();
-            if (retries_out)
-                *retries_out = file_status->retries.load();
-            /// Exclusive mode has no `.retriable` marker concept - a Failed state here
-            /// is always the terminal, non-retryable outcome.
-            if (is_terminal_out)
-                *is_terminal_out = true;
+            {
+                const auto retries = file_status->retries.load();
+                if (retries_out)
+                    *retries_out = retries;
+                /// Exclusive mode has no `.retriable` marker, but a failure is still retryable
+                /// until the retry budget is exhausted. Mirror the claim check in setProcessingImpl().
+                if (is_terminal_out)
+                    *is_terminal_out = (retries == 0 || retries >= max_loading_retries);
+            }
             return PathState::Failed;
         default:
             return PathState::Unknown;
