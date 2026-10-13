@@ -193,8 +193,22 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     /// Re-apply it on every startup until one of them completes: for a ClickHouse-managed slot this
     /// re-arms the create-style startup that reloads the removed tables, and for a user-managed slot it
     /// fails closed again below.
+    bool partial_drop_recovery_pending = false;
+    {
+        std::lock_guard tables_lock(tables_mutex);
+        partial_drop_recovery_pending = partial_drop_recovery_in_progress;
+    }
     if (getDisk()->existsFile(getPartialDropRecoveryMarkerPath()))
         applyPartialDropRecoveryMode();
+    else if (partial_drop_recovery_pending)
+    {
+        /// `recoverAfterRefusedDrop` could not persist the marker. Do not start the create-style startup,
+        /// which drops the replication slot and clears the surviving nested tables, until the marker is
+        /// durable: a restart in the middle of it would otherwise take the steady-state attach path and
+        /// resume from the new slot into partially loaded tables. A failure propagates, and
+        /// `tryStartSynchronization` retries the startup later.
+        persistPartialDropRecoveryMarker();
+    }
 
     /// A refused DROP DATABASE removed some of the nested tables of a database with a user-managed
     /// replication slot, which cannot be repaired automatically (see `recoverAfterRefusedDrop`). Refuse to
@@ -1273,7 +1287,20 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapsh
         /// for the nested tables the refused drop has removed and retry forever. Record the partial drop
         /// next to the database metadata first, so the same decision is taken again on every startup until
         /// one completes (see `startSynchronization`).
-        persistPartialDropRecoveryMarker();
+        try
+        {
+            persistPartialDropRecoveryMarker();
+        }
+        catch (...)
+        {
+            /// This runs while the refused drop's exception is being propagated, and the startup task must still
+            /// be re-armed below, so do not throw. The decision is not lost: `applyPartialDropRecoveryMode` sets
+            /// `partial_drop_recovery_in_progress`, and `startSynchronization` refuses to start the create-style
+            /// startup until it has persisted the marker itself.
+            tryLogCurrentException(log,
+                "Could not persist the partial-drop recovery marker " + getPartialDropRecoveryMarkerPath()
+                + ", the startup will retry persisting it before reloading the nested tables");
+        }
         applyPartialDropRecoveryMode();
     }
 
@@ -1315,21 +1342,9 @@ void DatabaseMaterializedPostgreSQL::persistPartialDropRecoveryMarker()
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::persistPartialDropRecoveryMarker");
     const auto marker_path = getPartialDropRecoveryMarkerPath();
-    try
-    {
-        auto db_disk = getDisk();
-        if (!db_disk->existsFile(marker_path))
-            db_disk->createFile(marker_path);
-    }
-    catch (...)
-    {
-        /// The in-memory recovery still runs, so this is no worse than before the marker existed: only a
-        /// server restart before the re-armed startup finishes would lose the decision. Report it loudly,
-        /// because such a restart leaves the database retrying a startup that cannot succeed.
-        tryLogCurrentException(log,
-            "Could not persist the partial-drop recovery marker " + marker_path + ". If this server is "
-            "restarted before replication is started again, the database will have to be dropped and recreated");
-    }
+    auto db_disk = getDisk();
+    if (!db_disk->existsFile(marker_path))
+        db_disk->createFile(marker_path);
 }
 
 
