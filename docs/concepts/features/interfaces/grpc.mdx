@@ -30,7 +30,7 @@ To use the gRPC interface set `grpc_port` in the main [server configuration](/co
     <grpc>
         <enable_ssl>false</enable_ssl>
 
-        <!-- The following two files are used only if SSL is enabled -->
+        <!-- The following two files are used only if SSL is enabled. They are reloaded when they change -->
         <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
         <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
 
