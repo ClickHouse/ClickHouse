@@ -31,7 +31,7 @@ from ci.jobs.scripts.test_selection_config import (
     SELECTION_CONFIG,
 )
 
-from ci.praktika.cidb import CIDB
+from ci.praktika.cidb import CIDB, CIDBTimeoutError
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell
@@ -777,6 +777,9 @@ class Targeting:
             tests = self.get_previously_failed_tests()
         except Exception as e:
             if strict:
+                # The targeted jobs skip on a CIDB timeout.
+                if isinstance(e, CIDBTimeoutError):
+                    raise
                 raise RuntimeError(
                     "Failed to get previously failed tests required for test selection"
                 ) from e
