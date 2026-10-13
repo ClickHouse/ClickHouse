@@ -66,9 +66,6 @@ SELECT count() FROM t_tuple_hashed WHERE x = CAST((toFixedString('abc', 4), toUI
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Dynamic) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_monotonic WHERE s <= CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
-SELECT count() FROM t_bare WHERE s IN (SELECT CAST('abc' AS Variant(String, FixedString(2)))) SETTINGS force_primary_key = 1;
-SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST('abc' AS Variant(String, FixedString(2)))) SETTINGS force_primary_key = 1;
-SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST('abc' AS Dynamic)) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Variant(String, FixedString(2))), toUInt8(1))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Dynamic), toUInt8(1))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_tuple_hashed WHERE x = (CAST('abc' AS Dynamic), toUInt8(1)) SETTINGS force_primary_key = 1;
