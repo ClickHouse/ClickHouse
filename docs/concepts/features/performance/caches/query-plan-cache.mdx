@@ -31,9 +31,12 @@ A `SELECT` query can use the plan cache when all of the following hold:
   subquery/`IN`-set sub-plans re-execute on every run. A materialized view is not inlined: the cached plan reads it like a table,
   through its target table, exactly as a query without the cache does.
 - The query contains no non-deterministic functions (e.g. `now`, `rand`), including inside expanded view bodies. Queries calling
+  SQL user-defined functions (created with `CREATE FUNCTION`) directly are not cached, because the cache key does not include the
+  function body, so `CREATE OR REPLACE FUNCTION` could otherwise leave a stale plan under the same key. Queries calling
   executable or WebAssembly user-defined functions (directly or from a row policy) are not cached even when such a function is declared
   deterministic, because a cache hit rebuilds functions through the built-in function factory only. A query reading a table whose
-  applicable row policy calls a non-deterministic function (e.g. `today`, `currentUser`) is not cached either.
+  applicable row policy calls a non-deterministic function (e.g. `today`, `currentUser`) is not cached either. A row policy calling
+  a deterministic SQL user-defined function does not prevent caching: the current function body is part of the row policy fingerprint.
 - The query is run without the `additional_table_filters` and `additional_result_filter` settings.
 - All referenced storages are local, non-temporary tables or views (no table functions, no `system` tables except `system.one`,
   no `Merge`/`Distributed`/`Alias` storages), in databases that assign table UUIDs (e.g. `Atomic`; tables in `Ordinary` or `Lazy` databases

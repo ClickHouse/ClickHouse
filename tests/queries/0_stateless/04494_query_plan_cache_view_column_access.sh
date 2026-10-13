@@ -51,6 +51,19 @@ hits()
           AND user = '$user'"
 }
 
+validation_misses()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    $CLICKHOUSE_CLIENT --query "
+        SELECT ProfileEvents['QueryPlanCacheValidationMisses']
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND event_date >= yesterday()
+          AND type = 'QueryFinish'
+          AND query_id = '04494_${CLICKHOUSE_DATABASE}_$1'
+          AND user = '$user'"
+}
+
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
 
 # Table-level SELECT on the base table so its plan-leaf recheck always passes; only the view matters.
@@ -79,6 +92,8 @@ $CLICKHOUSE_CLIENT --query "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.v_inv FROM $
 $CLICKHOUSE_CLIENT --query "GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.v_inv TO $user"
 run_user "$VIEW_QUERY" replanned
 hits replanned
+echo "-- the refused hit is counted as a validation miss although the schema and row policies are unchanged:"
+validation_misses replanned
 
 $CLICKHOUSE_CLIENT --query "
     DROP USER IF EXISTS $user;

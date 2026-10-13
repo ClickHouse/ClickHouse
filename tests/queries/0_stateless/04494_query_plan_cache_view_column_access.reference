@@ -17,3 +17,5 @@ ACCESS_DENIED
 1
 2
 0
+-- the refused hit is counted as a validation miss although the schema and row policies are unchanged:
+1
