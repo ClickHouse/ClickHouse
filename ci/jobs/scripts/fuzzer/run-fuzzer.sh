@@ -114,10 +114,8 @@ function collect_jemalloc_profiles
         echo "No jemalloc profiles were dumped"
         return 0
     fi
-    # Sorted by jemalloc's dump sequence number (clickhouse.jemalloc.$PID.$SEQ.m$SEQ.heap)
-    # rather than mtime, which the server does not control.
     local latest
-    latest=$(printf '%s\n' "${profiles[@]}" | sort -t. -k4,4n | tail -n1)
+    latest=$(find "$JEMALLOC_PROFILES_DIR" -maxdepth 1 -name '*.heap' -printf '%T@ %p\n' | sort -n | tail -n1 | cut -d' ' -f2-)
 
     # Symbolizing a debug build takes minutes, so render only the latest profile and only when
     # the memory is actually in question. The raw .heap files always ship and can be rendered
