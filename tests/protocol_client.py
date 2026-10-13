@@ -83,7 +83,7 @@ def parse_key_values(items):
 
 HINT_RE = re.compile(r"\{\s*(serverError|clientError)\b")
 INSERT_RE = re.compile(r"\s*(EXPLAIN|INSERT)\b", re.IGNORECASE)
-FORMAT_AT_LINE_END_RE = re.compile(r"\bFORMAT\s+(\w+)[ \t]*$", re.IGNORECASE)
+FORMAT_RE = re.compile(r"\bFORMAT\s+(\w+)\b", re.IGNORECASE)
 HEREDOC_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
 
@@ -156,7 +156,7 @@ def split_queries(text):
         elif char == "\n":
             # The data of an `INSERT ... FORMAT <not Values>` starts after the format name and ends
             # at an empty line, regardless of semicolons in it.
-            insert_format = has_tokens and FORMAT_AT_LINE_END_RE.search(text, line_begin, pos)
+            insert_format = has_tokens and FORMAT_RE.search(text, line_begin, pos)
             if (
                 insert_format
                 and insert_format.group(1) != "Values"
@@ -223,9 +223,39 @@ def expects_error(query, hint):
 RESULT_KEYWORDS = {"SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "EXISTS", "CHECK"}
 
 
+WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def top_level_words(query):
+    """Yield the upper-cased words of the query outside of literals, comments and parentheses."""
+    query = strip_comments(query)
+    depth = 0
+    pos = 0
+    while pos < len(query):
+        char = query[pos]
+        if char in "'\"`":
+            pos = skip_quoted(query, pos, char)
+        elif char == "(":
+            depth += 1
+            pos += 1
+        elif char == ")":
+            depth -= 1
+            pos += 1
+        elif word := WORD_RE.match(query, pos):
+            if depth == 0:
+                yield word.group(0).upper()
+            pos = word.end()
+        else:
+            pos += 1
+
+
 def returns_result(query):
-    words = re.findall(r"[A-Za-z_]+", strip_comments(query)[:100])
-    return bool(words) and words[0].upper() in RESULT_KEYWORDS
+    words = top_level_words(query)
+    first = next(words, None)
+    if first == "WITH":
+        # `WITH ... SELECT` returns a result, while `WITH ... INSERT` does not.
+        return next((word for word in words if word in ("SELECT", "INSERT")), "SELECT") == "SELECT"
+    return first in RESULT_KEYWORDS
 
 
 def format_value(value):
@@ -651,16 +681,25 @@ def run_ssh(args, text):
 
 
 class WebTerminal:
-    """Types the queries into the interactive embedded client behind `/webterminal`, one line each,
+    """Pastes the queries into the interactive embedded client behind `/webterminal` one by one,
     and waits for the prompt after every query, like a person at the browser would."""
 
     PROMPT = b":) "
+    # A bracketed paste keeps the text as is, line breaks included, and the line break after it
+    # submits the whole text. The client splits it into queries and applies the test hints itself.
+    PASTE_START = b"\x1b[200~"
+    PASTE_END = b"\x1b[201~"
+    # What the interactive client prints, instead of stopping, on an error that no hint expects
+    # (`ClientEmbedded::processError`) and on an error or its absence that does not match the hint
+    # (`ClientBase::executeMultiQuery`).
+    ERROR_RE = re.compile(
+        rb"Received exception\r?\n|(Expected |The query succeeded but )[^\r\n]*\berrors?\b[^\r\n]*\(query: "
+    )
 
     def __init__(self, args):
         self.host = args.host
         self.port = env_port("CLICKHOUSE_PORT_HTTP", 8123)
         self.user = args.user
-        self.buffer = b""
 
     def connect(self):
         self.sock = socket.create_connection((self.host, self.port), timeout=SOCKET_TIMEOUT)
@@ -739,31 +778,38 @@ class WebTerminal:
         return payload
 
     def wait_for_prompt(self):
-        while self.PROMPT not in self.buffer:
+        """Read the output until the next prompt, return the output."""
+        output = bytearray()
+        while self.PROMPT not in output[-1024:]:
             data = self.read_output()
             if data is None:
                 raise QueryError("The web terminal session ended before the prompt")
-            self.buffer = (self.buffer + data)[-1024:]
-        self.buffer = b""
+            output += data
+        return output
 
     def run(self, queries):
+        """Run the queries, return whether all of them succeeded or failed as their hints expect."""
         for query in queries:
-            # One line per query: a line break submits the query in the interactive client.
-            line = " ".join(strip_comments(query).split())
-            self.send_frame(0x2, line.encode("utf-8", errors="surrogateescape") + b";\r")
-            self.wait_for_prompt()
+            text = query.encode("utf-8", errors="surrogateescape")
+            self.send_frame(0x2, self.PASTE_START + text + self.PASTE_END + b"\r")
+            if self.ERROR_RE.search(self.wait_for_prompt()):
+                self.sock.close()
+                return False
         self.send_frame(0x2, b"exit\r")
         while self.read_output() is not None:
             pass
         self.sock.close()
+        return True
 
 
 def run_webterminal(args, text):
     terminal = WebTerminal(args)
     terminal.connect()
     setup = [f"USE `{args.database}`"] + setup_queries(args.settings, args.params)
-    terminal.run(setup + [query for query, _ in split_queries(text)])
-    return 0
+    # A query goes with its hint after the semicolon. A query without a hint goes without the
+    # semicolon, because the data of `INSERT ... FORMAT` would take it as a part of the data.
+    queries = [f"{query}; {hint}" if hint else query for query, hint in split_queries(text)]
+    return 0 if terminal.run(setup + queries) else 1
 
 
 def run_queries(client, text):
