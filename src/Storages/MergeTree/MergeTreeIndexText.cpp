@@ -27,6 +27,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -1173,10 +1174,7 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
         auto * positions = postings.getPositions();
         chassert(positions);
 
-        info.header |= HasPositions;
-        info.position_offset = positions_stream->plain_hashing.count();
-        positions->finalize(positions_stream->plain_hashing);
-        info.position_bytes = positions_stream->plain_hashing.count() - info.position_offset;
+        TextIndexSerialization::serializePositions(info, positions_stream->plain_hashing, [&](WriteBuffer & out) { positions->finalize(out); });
     }
 
     /// Tiny posting lists are embedded into the dictionary block
@@ -1220,6 +1218,38 @@ void TextIndexSerialization::serializeRawPostings(std::span<const UInt32> row_id
         writeVarUInt(row_id, ostr);
 }
 
+void TextIndexSerialization::serializePositions(TokenPostingsInfo & info, WriteBuffer & positions_out, const std::function<void(WriteBuffer &)> & finalize)
+{
+    using enum PostingsSerialization::Flags;
+    info.header |= HasPositions;
+
+    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    {
+        PODArrayWithStackMemory<char, 64> blob;
+        {
+            WriteBufferFromVector<PODArrayWithStackMemory<char, 64>> out(blob);
+            finalize(out);
+            out.finalize();
+        }
+        info.position_bytes = blob.size();
+
+        if (blob.size() <= info.embedded_positions.size())
+        {
+            info.header |= EmbeddedPositions;
+            std::memcpy(info.embedded_positions.data(), blob.data(), blob.size());
+            return;
+        }
+
+        info.position_offset = positions_out.count();
+        positions_out.write(blob.data(), blob.size());
+        return;
+    }
+
+    info.position_offset = positions_out.count();
+    finalize(positions_out);
+    info.position_bytes = positions_out.count() - info.position_offset;
+}
+
 void TextIndexSerialization::checkTokenSize(size_t token_size)
 {
     if (token_size > SerializationString::MAX_STRING_SIZE)
@@ -1245,7 +1275,13 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     writeVarUInt(token_info.cardinality, ostr);
 
     /// Position metadata is right after (header, cardinality), before posting data.
-    if (token_info.header & HasPositions)
+    if (token_info.header & EmbeddedPositions)
+    {
+        chassert(token_info.position_bytes <= token_info.embedded_positions.size());
+        writeVarUInt(token_info.position_bytes, ostr);
+        ostr.write(token_info.embedded_positions.data(), token_info.position_bytes);
+    }
+    else if (token_info.header & HasPositions)
     {
         writeVarUInt(token_info.position_offset, ostr);
         writeVarUInt(token_info.position_bytes, ostr);
@@ -1375,7 +1411,24 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
 
     /// Position metadata is always right after (header, cardinality),
     /// before any posting data, to keep the layout consistent for all token types.
-    if (info.header & HasPositions)
+    if (info.header & EmbeddedPositions)
+    {
+        if (!(info.header & HasPositions))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: embedded positions without the positions flag");
+
+        readVarUInt(info.position_bytes, istr);
+        if (info.position_bytes > TextIndexBlockedPositionsCodec::MAX_EMBEDDED_BYTES)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: embedded positions of {} bytes exceed the maximum ({})", info.position_bytes, TextIndexBlockedPositionsCodec::MAX_EMBEDDED_BYTES);
+
+        if (with_postings)
+            istr.readStrict(info.embedded_positions.data(), info.position_bytes);
+        else
+        {
+            istr.ignore(info.position_bytes);
+        }
+    }
+    else if (info.header & HasPositions)
     {
         readVarUInt(info.position_offset, istr);
         readVarUInt(info.position_bytes, istr);
@@ -1459,7 +1512,13 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     readVarUInt(cardinality, istr);
 
     /// Position metadata (offset, bytes) is right after (header, cardinality).
-    if (header & HasPositions)
+    if (header & EmbeddedPositions)
+    {
+        UInt64 position_bytes = 0;
+        readVarUInt(position_bytes, istr);
+        istr.ignore(position_bytes);
+    }
+    else if (header & HasPositions)
     {
         ignoreVarUInt(istr);
         ignoreVarUInt(istr);
