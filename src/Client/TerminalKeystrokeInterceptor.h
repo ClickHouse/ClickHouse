@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <string>
 #include <thread>
 #include <unordered_map>
 
@@ -26,9 +27,12 @@ public:
     void startIntercept();
     void stopIntercept();
 
+    /// Returns and clears the bytes read during interception that were not hotkeys.
+    std::string takeUnhandledInput();
+
 private:
     void run(CallbackMap);
-    void runImpl(const CallbackMap &) const;
+    void runImpl(const CallbackMap &);
 
     const int fd;
     std::ostream & error_stream;
@@ -40,6 +44,7 @@ private:
     std::unique_ptr<struct termios> orig_termios;
 
     bool stop_requested = false;
+    std::string unhandled_input;
     std::mutex stop_requested_mutex;
     std::condition_variable stop_requested_cv;
 };

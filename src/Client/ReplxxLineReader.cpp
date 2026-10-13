@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
 #include <chrono>
 #include <cerrno>
@@ -28,6 +29,7 @@
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/UTF8Helpers.h>
 #include "config.h" // USE_SKIM
 
 #if USE_SKIM
@@ -1024,6 +1026,52 @@ void ReplxxLineReader::setInitialText(const String & text)
         /// preload, in which case it just stays inert).
         suppress_hints_once = true;
         suppress_hints_for_text = text;
+    }
+}
+
+void ReplxxLineReader::addTypedInput(const String & bytes)
+{
+    using Key = replxx::Replxx::KEY;
+    for (size_t i = 0; i < bytes.size();)
+    {
+        const auto c = static_cast<UInt8>(bytes[i]);
+        if (c == 0x1B)
+        {
+            /// Keep plain arrows, Home and End (ESC [ x or ESC O x); drop other escape sequences.
+            size_t end = i + 1;
+            if (end < bytes.size() && (bytes[end] == '[' || bytes[end] == 'O'))
+            {
+                ++end;
+                while (end < bytes.size() && bytes[end] >= 0x30 && bytes[end] <= 0x3F)
+                    ++end;
+                if (end == i + 2 && end < bytes.size())
+                {
+                    static const std::unordered_map<char, char32_t> keys
+                        = {{'A', Key::UP}, {'B', Key::DOWN}, {'C', Key::RIGHT}, {'D', Key::LEFT}, {'H', Key::HOME}, {'F', Key::END}};
+                    if (auto it = keys.find(bytes[end]); it != keys.end())
+                        rx.emulate_key_press(it->second);
+                }
+            }
+            i = std::min(end + 1, bytes.size());
+        }
+        else if (c == 0x7F)
+        {
+            rx.emulate_key_press(Key::BACKSPACE);
+            ++i;
+        }
+        else if (c < 0x20)
+        {
+            /// The same mapping as replxx applies to control characters read from the terminal.
+            rx.emulate_key_press(Key::control(c < 27 ? c + 0x40 : c + 0x18));
+            ++i;
+        }
+        else
+        {
+            const size_t length = std::min(UTF8::seqLength(c), bytes.size() - i);
+            if (auto code_point = UTF8::convertUTF8ToCodePoint(bytes.data() + i, length))
+                rx.emulate_key_press(*code_point);
+            i += length;
+        }
     }
 }
 

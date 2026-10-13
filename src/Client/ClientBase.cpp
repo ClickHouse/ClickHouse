@@ -5252,6 +5252,10 @@ void ClientBase::runInteractive()
                 next_query_to_prepopulate.clear();
             }
 
+            /// Keys typed while the previous query ran go to this prompt.
+            if (keystroke_interceptor)
+                lr->addTypedInput(keystroke_interceptor->takeUnhandledInput());
+
             input = lr->readLine(getPrompt(), ":-] ");
         }
 
