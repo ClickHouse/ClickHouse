@@ -2505,8 +2505,8 @@ void HashJoin::tryRerangeRightTableData()
     data->sorted = true;
 }
 
-template <bool is_signed, typename Key, typename SourcePtr, typename MapsTemplate>
-void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & source_ptr)
+template <bool is_signed, typename Key, typename MapsTemplate>
+void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
 {
     using SignedKey = std::make_signed_t<Key>;
 
@@ -2515,7 +2515,13 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & sou
     /// ensuring they use at most around twice the memory of the source HashMap.
     static constexpr size_t MAX_RANGE_SPARSITY_FACTOR = 4;
 
-    auto & source_map = *source_ptr;
+    auto & source_map = [&]() -> auto &
+    {
+        if constexpr (std::is_same_v<Key, UInt32>)
+            return *maps.key32;
+        else
+            return *maps.key64;
+    }();
 
     if (source_map.empty() || source_map.size() > MAX_RANGE)
         return;
@@ -2609,7 +2615,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & sou
             Type::range17_key32,
             maps.range18_key32,
             Type::range18_key32,
-            source_ptr);
+            maps.key32);
     else
         result = dispatch_conversion(
             maps.range8_key64,
@@ -2620,7 +2626,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & sou
             Type::range17_key64,
             maps.range18_key64,
             Type::range18_key64,
-            source_ptr);
+            maps.key64);
 
     if (result)
         LOG_DEBUG(
@@ -2635,8 +2641,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & sou
 bool HashJoin::canConvertToFixedHashMap() const
 {
     return !conversion_to_fixed_hash_map_attempted && data && data->rows_to_join && table_join->enableJoinFixedHashTableConversion()
-        && (toSingleLevelType(data->type) == Type::key32 || toSingleLevelType(data->type) == Type::key64) && data->maps.size() == 1
-        && strictness != JoinStrictness::Asof;
+        && (data->type == Type::key32 || data->type == Type::key64) && data->maps.size() == 1 && strictness != JoinStrictness::Asof;
 }
 
 /// The build leaves two things unset that probing reads: cell prefix sums, and the min/max
@@ -3021,24 +3026,20 @@ void HashJoin::tryConvertToFixedHashMap()
             if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll> || std::is_same_v<MapType, MapsSet>)
             {
                 bool is_signed = !right_table_keys.getByPosition(0).type->isValueRepresentedByUnsignedInteger();
-                /// Either source layout converts to the same one-bucket range map. No other step changes the bucket count after the
-                /// constructor. A parallel join keeps its non-joined streams, but with one bucket, only stream 0 scans the map.
-                auto convert = [&]<typename Key>(auto & source_ptr)
+                if (data->type == Type::key32)
                 {
                     if (is_signed)
-                        tryConvertToFixedHashMapImpl<true, Key>(map, source_ptr);
+                        tryConvertToFixedHashMapImpl<true, UInt32>(map);
                     else
-                        tryConvertToFixedHashMapImpl<false, Key>(map, source_ptr);
-                };
-
-                if (data->type == Type::key32)
-                    convert.template operator()<UInt32>(map.key32);
-                else if (data->type == Type::two_level_key32)
-                    convert.template operator()<UInt32>(map.two_level_key32);
-                else if (data->type == Type::key64)
-                    convert.template operator()<UInt64>(map.key64);
+                        tryConvertToFixedHashMapImpl<false, UInt32>(map);
+                }
                 else
-                    convert.template operator()<UInt64>(map.two_level_key64);
+                {
+                    if (is_signed)
+                        tryConvertToFixedHashMapImpl<true, UInt64>(map);
+                    else
+                        tryConvertToFixedHashMapImpl<false, UInt64>(map);
+                }
             }
         },
         data->maps.front());

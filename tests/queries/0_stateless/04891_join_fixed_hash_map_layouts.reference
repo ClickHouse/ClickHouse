@@ -84,8 +84,10 @@ rf1	2500
 04891_key16_serial	['key16']	[]	1
 04891_key8_compare	['key8','two_level_key8']	[]	1
 04891_key8_serial	['key8']	[]	1
-04891_range_i32	['two_level_key32']	['range8_key32']	1
-04891_range_u32	['two_level_key32']	['range8_key32']	1
+04891_range_i32	['two_level_key32']	[]	0
+04891_range_i32_serial	['key32']	['range8_key32']	1
+04891_range_u32	['two_level_key32']	[]	0
+04891_range_u32_serial	['key32']	['range8_key32']	1
 04891_rf_parallel_off	['two_level_key8']	[]	0
 04891_rf_parallel_on	['two_level_key8']	[]	1
 04891_rf_serial_off	['key8']	[]	0

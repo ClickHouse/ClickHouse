@@ -1,10 +1,10 @@
 -- Hash joins on 8-bit and 16-bit keys use a fixed-size map. With the serial layout it is one map
 -- (`key8`, `key16`). With the parallel layout it is split into buckets (`two_level_key8`,
 -- `two_level_key16`). Both layouts must return the same rows for INNER, RIGHT and FULL joins, so each
--- serial result is printed and the parallel result is compared with it. After a parallel build, the
--- map of a `UInt32` or `Int32` key with values in a small range becomes a one-bucket range map. This
--- conversion must not change the result. In both layouts, the fixed-size map serves as a runtime
--- filter only when `join_runtime_filter_from_fixed_hash_table` is on.
+-- serial result is printed and the parallel result is compared with it. After a serial build, the map
+-- of a `UInt32` or `Int32` key with values in a small range becomes a range map. This conversion must
+-- not change the result. A parallel build keeps its split map, as `ConcurrentHashJoin` did. In both
+-- layouts, the fixed-size map serves as a runtime filter only when `join_runtime_filter_from_fixed_hash_table` is on.
 -- `parallel_hash_join_threshold = 1000000000` builds the serial layout and `0` the parallel one.
 
 DROP TABLE IF EXISTS t_u8_l;
@@ -151,6 +151,8 @@ SELECT
 
 SELECT count() FROM t_range_l AS l INNER JOIN t_range_r AS r ON l.k = r.k FORMAT Null
 SETTINGS parallel_hash_join_threshold = 0, log_comment = '04891_range_u32';
+SELECT count() FROM t_range_l AS l INNER JOIN t_range_r AS r ON l.k = r.k FORMAT Null
+SETTINGS parallel_hash_join_threshold = 1000000000, log_comment = '04891_range_u32_serial';
 
 SELECT '-- range uint32 inner conversion on vs off';
 SELECT
@@ -168,6 +170,8 @@ SELECT
 
 SELECT count() FROM t_range_i32_l AS l INNER JOIN t_range_i32_r AS r ON l.k = r.k FORMAT Null
 SETTINGS parallel_hash_join_threshold = 0, log_comment = '04891_range_i32';
+SELECT count() FROM t_range_i32_l AS l INNER JOIN t_range_i32_r AS r ON l.k = r.k FORMAT Null
+SETTINGS parallel_hash_join_threshold = 1000000000, log_comment = '04891_range_i32_serial';
 
 SELECT '-- range int32 inner conversion on vs off';
 SELECT

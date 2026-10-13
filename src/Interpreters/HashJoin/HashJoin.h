@@ -997,8 +997,8 @@ private:
     void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 
-    template <bool is_signed, typename Key, typename SourcePtr, typename MapsTemplate>
-    void tryConvertToFixedHashMapImpl(MapsTemplate & maps, SourcePtr & source_ptr);
+    template <bool is_signed, typename Key, typename MapsTemplate>
+    void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
     void freezeMapsForProbing();
 
