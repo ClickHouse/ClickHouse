@@ -170,6 +170,19 @@ CassandraDictionarySource::Configuration::Configuration(
     , where(config.getString(config_prefix + ".where", ""))
 {
     setConsistency(config.getString(config_prefix + ".consistency", "One"));
+
+    if (!query.empty())
+    {
+        /// `where` would be silently ignored, because a custom query is used as is.
+        if (!table.empty() || !where.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "The `column_family` and `where` settings of a Cassandra dictionary source cannot be used together with `query`");
+    }
+    else if (db.empty() || table.empty())
+    {
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "A Cassandra dictionary source requires either `query` or both `keyspace` and `column_family` settings");
+    }
 }
 
 void CassandraDictionarySource::Configuration::setConsistency(const String & config_str)
