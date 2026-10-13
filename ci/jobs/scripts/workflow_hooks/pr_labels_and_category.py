@@ -62,6 +62,7 @@ class Labels:
     NO_FAST_TESTS = "no-fast-tests"
     MUST_BACKPORT = "pr-must-backport"
     JEPSEN_TEST = "jepsen-test"
+    MEMORY = "memory"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
     PR_BACKPORT = "pr-backport"
     PR_BACKPORTS_CREATED = "pr-backports-created"
@@ -97,7 +98,6 @@ class Labels:
 
     # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"
-    MEMORY = "memory"
 
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}
