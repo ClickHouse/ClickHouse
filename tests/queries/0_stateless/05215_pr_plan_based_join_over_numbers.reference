@@ -7,9 +7,12 @@ an offset range is shipped too
 a filtered read is shipped too
 1
 10	45
-an unbounded read is not shipped
-0
-10
+an unbounded read is shipped too
+1
+10	45
+an unbounded multithreaded read is shipped too
+1
+10	45
 the shipped filter still prunes the domain
 10
 1

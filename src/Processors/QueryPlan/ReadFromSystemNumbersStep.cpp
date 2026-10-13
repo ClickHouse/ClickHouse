@@ -466,26 +466,11 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
 }
 
 
-bool ReadFromSystemNumbersStep::isSerializable() const
-{
-    const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
-
-    /// The generated domain has to be reproducible on the replica. The source filter is shipped
-    /// along with the table's parameters, so a filtered read is fine; an unbounded one is not,
-    /// because nothing then bounds what the replica generates.
-    return numbers_storage.limit.has_value();
-}
-
-
 void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
 {
     const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
-    chassert(numbers_storage.limit.has_value());
 
     writeStringBinary(numbers_storage.column_name, ctx.out);
-    writeBinaryLittleEndian(*numbers_storage.limit, ctx.out);
-    writeBinaryLittleEndian(numbers_storage.offset, ctx.out);
-    writeBinaryLittleEndian(numbers_storage.step, ctx.out);
 
     UInt8 flags = 0;
     if (numbers_storage.multithreaded)
@@ -496,7 +481,16 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (filter_actions_dag)
         flags |= 8;
+    if (numbers_storage.limit.has_value())
+        flags |= 16;
     writeIntBinary(flags, ctx.out);
+
+    /// An unbounded read (`system.numbers`, `numbers()`) has no domain size; it is ended by the plan's own
+    /// limiting and filtering steps, or by cancelling the query, the same as when it runs locally.
+    if (numbers_storage.limit.has_value())
+        writeBinaryLittleEndian(*numbers_storage.limit, ctx.out);
+    writeBinaryLittleEndian(numbers_storage.offset, ctx.out);
+    writeBinaryLittleEndian(numbers_storage.step, ctx.out);
 
     /// A LIMIT pushed into the read is only a hint - the plan keeps its own limiting steps - but
     /// carrying it keeps the replica from generating rows that are thrown away.
@@ -519,19 +513,24 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
     String column_name;
     readStringBinary(column_name, ctx.in);
 
-    UInt128 storage_limit = 0;
-    readBinaryLittleEndian(storage_limit, ctx.in);
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    const bool multithreaded = flags & 1;
+    const bool descending = flags & 2;
+
+    std::optional<UInt128> storage_limit;
+    if (flags & 16)
+    {
+        UInt128 value = 0;
+        readBinaryLittleEndian(value, ctx.in);
+        storage_limit = value;
+    }
 
     UInt64 offset = 0;
     readBinaryLittleEndian(offset, ctx.in);
 
     UInt64 step = 0;
     readBinaryLittleEndian(step, ctx.in);
-
-    UInt8 flags = 0;
-    readIntBinary(flags, ctx.in);
-    const bool multithreaded = flags & 1;
-    const bool descending = flags & 2;
 
     std::optional<size_t> pushed_down_limit;
     if (flags & 4)

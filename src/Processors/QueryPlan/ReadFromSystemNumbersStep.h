@@ -30,12 +30,10 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    /// A replica rebuilds the read from the table's parameters, so only a read whose domain is bounded
-    /// and unfiltered is shipped. The source filter is what prunes the generated domain, and an
-    /// unbounded read relies on that pruning to terminate at all, so shipping either without it would
-    /// be worse than keeping the fragment local.
+    /// A replica rebuilds the read from the table's parameters, the source filter and the pushed-down
+    /// LIMIT. The filter is what prunes the generated domain, so it is shipped with the read.
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override;
+    bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:

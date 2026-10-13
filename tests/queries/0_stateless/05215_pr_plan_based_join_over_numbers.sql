@@ -1,7 +1,7 @@
 -- A plan fragment is serialized before it is sent to a replica, so a join can only be shipped when
 -- every step of its broadcast side is serializable. `ReadFromSystemNumbers` rebuilds itself on the
--- replica from the table's parameters plus its source filter, so a bounded read ships whether or not
--- it is filtered. An unbounded one does not: nothing would bound what the replica generates.
+-- replica from the table's parameters plus its source filter, so a read ships whether or not it is
+-- filtered or bounded. An unbounded read is ended by the plan's own limiting steps, as it is locally.
 --
 -- Shipping the filter matters beyond correctness - the plan keeps its own filtering step either way.
 -- The filter is what prunes the generated domain, so a read that yields one value out of a huge
@@ -38,11 +38,18 @@ SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
 SELECT count(), sum(r.key) FROM (SELECT number FROM numbers(20) WHERE number % 3 = 0) AS l
 RIGHT JOIN t_numbers_join AS r ON l.number = r.key;
 
-SELECT 'an unbounded read is not shipped';
+SELECT 'an unbounded read is shipped too';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count() FROM (SELECT number FROM system.numbers LIMIT 5) AS l
+    EXPLAIN SELECT count(), sum(r.key) FROM (SELECT number FROM system.numbers LIMIT 5) AS l
     RIGHT JOIN t_numbers_join AS r ON l.number = r.key);
-SELECT count() FROM (SELECT number FROM system.numbers LIMIT 5) AS l
+SELECT count(), sum(r.key) FROM (SELECT number FROM system.numbers LIMIT 5) AS l
+RIGHT JOIN t_numbers_join AS r ON l.number = r.key;
+
+SELECT 'an unbounded multithreaded read is shipped too';
+SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
+    EXPLAIN SELECT count(), sum(r.key) FROM (SELECT number FROM numbers_mt() WHERE number < 5) AS l
+    RIGHT JOIN t_numbers_join AS r ON l.number = r.key);
+SELECT count(), sum(r.key) FROM (SELECT number FROM numbers_mt() WHERE number < 5) AS l
 RIGHT JOIN t_numbers_join AS r ON l.number = r.key;
 
 -- The domain is large and the filter selects one value out of it: with the filter shipped the
