@@ -27,6 +27,10 @@ name such as `Server died` gets no issue at all. Any triage problem
 job status exactly as the fuzzer set it and only appends a note that triage
 was unavailable.
 
+Relatedness never rests on a record this triage could have written itself: only
+an open issue opened before the tested change, and not filed by triage of a PR
+run, counts as proof that the failure is older (`independent_occurrences`).
+
 PRs authored by an agent that already triages its own failures are skipped
 (`SELF_TRIAGING_AUTHORS`); their post-merge runs are not.
 
@@ -45,9 +49,10 @@ import subprocess
 import tempfile
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 
-from ci.jobs.scripts.agent_cli import (
+from ci.jobs.scripts.agent import (
     AGENT_MODEL,
     ROBOT_NAMES,
     codex_login,
@@ -90,6 +95,12 @@ FINGERPRINT_FIELD = "Fuzz fingerprint"
 # newest-first window (REST). The window only needs to cover the concurrent jobs
 # on this commit, because that is the only case search can be too stale to see.
 RECENT_ISSUE_WINDOW = 100
+# Provenance line of an issue filed by triage of a PR run. Such an issue records
+# that run's verdict, not an observation of the failure on a branch.
+FOUND_WHILE_TESTING_FIELD = "Found while testing"
+FOUND_WHILE_TESTING_RE = re.compile(
+    rf"^[\s`>*-]*{FOUND_WHILE_TESTING_FIELD}:", re.MULTILINE
+)
 
 # Values that differ between two runs of the same crash and so must not reach the
 # fingerprint. Order matters: addresses and UUIDs before the bare-number rule.
@@ -186,14 +197,35 @@ NO_FINGERPRINT_NOTE = """\
 """
 
 
-def _relatedness_task(info, repo_name, pr_mode, fingerprint):
+def _occurrences_note(fingerprint, occurrences, change, weight):
+    if not fingerprint:
+        return NO_FINGERPRINT_NOTE
+    if occurrences is None:
+        return f"""\
+- Known occurrences of this failure could not be looked up. An issue carrying
+  its fingerprint may have been written by this same triage, so it is not
+  evidence: do not look for one here. Judge from the code and the logs alone.
+"""
+    if occurrences:
+        urls = "".join(f"  - {url}\n" for url in occurrences)
+        return (
+            f"- Known occurrences: these open issues carry this failure's fingerprint\n"
+            f"  and were filed before this {change}, not by triage of a PR run, so the\n"
+            f"  failure predates the {change}. That {weight}:\n{urls}"
+        )
+    return f"""\
+- No open issue with this failure's fingerprint was filed before this {change},
+  other than by triage of a PR run. Any other issue carrying the fingerprint
+  was written by this same triage (an earlier run, a sibling job on this commit,
+  or another PR's verdict): it is not evidence, so do not look for one here.
+  Judge from the code and the logs alone.
+"""
+
+
+def _relatedness_task(info, repo_name, pr_mode, fingerprint, occurrences):
     if pr_mode:
-        occurrences = (
-            f"- Check for known occurrences: {_fingerprint_lookup(repo_name, fingerprint)}.\n"
-            f"  A pre-existing issue with the same fingerprint, opened before this PR, is\n"
-            f"  strong evidence for `unrelated`.\n"
-            if fingerprint
-            else NO_FINGERPRINT_NOTE
+        occurrences = _occurrences_note(
+            fingerprint, occurrences, "PR", "is strong evidence for `unrelated`"
         )
         return f"""\
 ## Task 1 - relatedness
@@ -211,11 +243,8 @@ in master:
 - If you cannot decide, answer `uncertain`. The job then stays red and a human
   decides - never guess `unrelated` to make CI green.
 """
-    occurrences = (
-        f"- Check for known occurrences: {_fingerprint_lookup(repo_name, fingerprint)}.\n"
-        f"  A pre-existing issue with the same fingerprint means verdict `unrelated`.\n"
-        if fingerprint
-        else NO_FINGERPRINT_NOTE
+    occurrences = _occurrences_note(
+        fingerprint, occurrences, "commit", "means verdict `unrelated`"
     )
     return f"""\
 ## Task 1 - attribution
@@ -237,7 +266,10 @@ pre-existing bug:
 
 
 def _fingerprint_lookup(repo_name, fingerprint):
-    """The one authoritative duplicate check, shared by both tasks that need it.
+    """The one authoritative duplicate check, for the issue task only.
+
+    It also finds issues this triage filed itself, so it must not feed the
+    relatedness judgment; `_prior_occurrences` does that.
 
     Two queries, because neither alone is sufficient: search reaches the whole
     (thousands-strong) `fuzz` backlog but its index lags, and the REST list is
@@ -246,9 +278,10 @@ def _fingerprint_lookup(repo_name, fingerprint):
     marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
     return (
         f"run BOTH of these and treat a hit from either as a duplicate -\n"
-        f"  (a) `gh search issues --repo {repo_name} --state all"
-        f' "{marker}" --json number,url,title,state`, which covers the whole'
-        f" backlog but can be minutes stale;\n"
+        f"  (a) `gh search issues {fingerprint} --repo {repo_name}"
+        f" --json number,url,title,state,body` and keep the issues whose body"
+        f" contains the line `{marker}`, which covers the whole backlog but can"
+        f" be minutes stale;\n"
         f"  (b) `gh issue list --repo {repo_name} --label fuzz --state all"
         f" --limit {RECENT_ISSUE_WINDOW} --json number,url,title,state,body`"
         f" (newest first, immediately consistent) and keep the issues whose body"
@@ -281,7 +314,7 @@ Do not create or comment on any issue. Leave `issue_url` empty and
     if pr_mode:
         provenance = (
             f"    `Found by {job_kind} in CI: {found_in}`\n"
-            f"    `Found while testing: {tested_change}` (state in the issue that\n"
+            f"    `{FOUND_WHILE_TESTING_FIELD}: {tested_change}` (state in the issue that\n"
             f"    the failure does not look related to that PR)"
         )
     else:
@@ -327,7 +360,14 @@ similar two titles look - decides whether an issue already exists.
 
 
 def _build_prompt(
-    info, job_kind, failures, evidence_paths, repro_hint, pr_mode, fingerprint
+    info,
+    job_kind,
+    failures,
+    evidence_paths,
+    repro_hint,
+    pr_mode,
+    fingerprint,
+    occurrences,
 ):
     repo_name = _triage_repo(info)
     try:
@@ -379,7 +419,7 @@ You are triaging a failed `{job_kind}` CI job {run_kind}.
 - The `gh` CLI is pre-authenticated. Never run destructive gh commands (close,
   edit, delete); you may only search/read and create ONE issue as described below.
 
-{_relatedness_task(info, repo_name, pr_mode, fingerprint)}
+{_relatedness_task(info, repo_name, pr_mode, fingerprint, occurrences)}
 ## Task 2 - minimal reproducer (best effort, <= 15 minutes)
 
 {repro_hint}
@@ -546,6 +586,68 @@ def _github_reachable():
 
 def _triage_repo(info):
     return repo_from_pr_url(info.pr_url) or info.repo_name
+
+
+def _parse_github_time(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def independent_occurrences(issues, fingerprint, cutoff):
+    """URLs of the open issues that prove the failure predates the tested change.
+
+    Only a record this triage cannot have written counts: one opened before the
+    change existed and not filed by triage of a PR run, which holds that run's
+    verdict rather than an observation on a branch. Otherwise an earlier run, or
+    a sibling job on the same commit, would confirm its own verdict.
+    """
+    marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
+    urls = []
+    for issue in issues:
+        body = issue.get("body") or ""
+        if (
+            (issue.get("state") or "").upper() == "OPEN"
+            and marker in body
+            and not FOUND_WHILE_TESTING_RE.search(body)
+            and _parse_github_time(issue["createdAt"]) < cutoff
+        ):
+            urls.append(issue["url"])
+    return sorted(urls)
+
+
+def _prior_occurrences(info, repo_name, pr_mode, fingerprint):
+    """`independent_occurrences` from GitHub, or None when they cannot be read.
+
+    The cutoff is when the change came to exist: the PR's opening, or the
+    tested commit for a post-merge run.
+    """
+    try:
+        if pr_mode:
+            path, field = f"repos/{repo_name}/pulls/{info.pr_number}", ".created_at"
+        else:
+            path, field = (
+                f"repos/{repo_name}/commits/{info.sha}",
+                ".commit.committer.date",
+            )
+        cutoff = _parse_github_time(_robot_gh("api", path, "--jq", field).strip())
+        # Index lag does not matter here: only issues older than the change count.
+        # The bare token, since `gh` mangles a quoted phrase with a colon.
+        output = _robot_gh(
+            "search",
+            "issues",
+            fingerprint,
+            "--repo",
+            repo_name,
+            "--state",
+            "open",
+            "--limit",
+            "30",
+            "--json",
+            "url,state,createdAt,body",
+        )
+        return independent_occurrences(json.loads(output or "[]"), fingerprint, cutoff)
+    except Exception as e:  # noqa: BLE001 - no lookup means no evidence, never more
+        print(f"WARNING: AI fuzz triage: cannot look up prior occurrences: {e}")
+        return None
 
 
 def _verify_issue_marker(issue_url, fingerprint, repo_name):
@@ -788,14 +890,26 @@ def triage_and_apply(
             print(
                 f"AI fuzz triage: failures the fingerprint does not cover: {uncovered}"
             )
+        repo_name = _triage_repo(info)
+        occurrences = (
+            _prior_occurrences(info, repo_name, pr_mode, fingerprint)
+            if fingerprint
+            else []
+        )
+        print(f"AI fuzz triage: prior occurrences {occurrences}")
         prompt = _build_prompt(
-            info, job_kind, failures, evidence_paths, repro_hint, pr_mode, fingerprint
+            info,
+            job_kind,
+            failures,
+            evidence_paths,
+            repro_hint,
+            pr_mode,
+            fingerprint,
+            occurrences,
         )
         timeout_sec = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
         verdict = _run_agent(prompt, timeout_sec)
-        _apply_verdict(
-            result, verdict, pr_mode, fingerprint, uncovered, _triage_repo(info)
-        )
+        _apply_verdict(result, verdict, pr_mode, fingerprint, uncovered, repo_name)
     except Exception as e:  # noqa: BLE001 - triage must never break the job
         print(f"WARNING: AI fuzz triage unavailable: {e}")
         traceback.print_exc()

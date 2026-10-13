@@ -1,8 +1,9 @@
 """
-Shared helpers for jobs that drive coding-agent CLIs (Codex, Copilot).
+Shared helpers for jobs that drive a coding agent (Codex, Copilot).
 
 Used by the AI code review job and the AI fuzz triage step, so the robot
-rotation, the model choice, and the auth sequences live in one place.
+rotation, the model choice, and the auth sequences live in one place. The
+agents run as CLIs today; helpers for calling them through an API belong here too.
 """
 
 import os
@@ -25,7 +26,7 @@ ROBOT_NAMES = [
 # via `codex login --with-api-key`.
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
-# One model for every agent-CLI consumer, so review and triage quality
+# One model for every agent consumer, so review and triage quality
 # stay comparable across backends and jobs.
 AGENT_MODEL = "gpt-5.4"
 

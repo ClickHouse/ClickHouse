@@ -33,7 +33,7 @@ import tempfile
 import time
 import traceback
 
-from ci.jobs.scripts.agent_cli import (
+from ci.jobs.scripts.agent import (
     AGENT_MODEL,
     ROBOT_NAMES,
     codex_login,
