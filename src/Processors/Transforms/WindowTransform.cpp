@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <utility>
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
 template <>
@@ -122,7 +123,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
     const Int64 offset = static_cast<Int64>(params.window_description.frame.begin_offset.safeGet<UInt64>()) * (params.window_description.frame.begin_preceding ? -1 : 1);
-    const std::optional<RowNumber> moved_row = blocks.move(current_row, offset);
+    const std::optional<RowNumber> moved_row = blocks.move(current.location, offset);
 
     if (!moved_row && offset < 0)
     {
@@ -164,15 +165,15 @@ void WindowTransform::advanceFrameStartRangeOffset()
     const bool preceding = params.window_description.frame.begin_preceding
         == (direction > 0);
     const auto * reference_column
-        = blocks.blockAt(current_row.block).materialized_columns[params.order_by_indices[0]].get();
+        = blocks.blockAt(current.location.block).materialized_columns[params.order_by_indices[0]].get();
     for (; frame_start < partition_end; frame_start = blocks.next(frame_start))
     {
-        // The first frame value is [current_row] with offset, so we advance
-        // while [frames_start] < [current_row] with offset.
+        // The first frame value is [the current row] with offset, so we advance
+        // while [frames_start] < [the current row] with offset.
         const auto * compared_column
             = blocks.blockAt(frame_start.block).materialized_columns[params.order_by_indices[0]].get();
         if (params.range_offset_comparator(compared_column, frame_start.row,
-            reference_column, current_row.row,
+            reference_column, current.location.row,
             params.window_description.frame.begin_offset,
             preceding)
                 * direction >= 0)
@@ -206,12 +207,12 @@ void WindowTransform::advanceFrameStart()
         case WindowFrame::BoundaryType::Current:
             // CURRENT ROW differs between frame types only in how the peer
             // groups are accounted.
-            chassert(partition.bounds().start <= peer_group_start);
-            chassert(peer_group_start < partition.bounds().end);
-            chassert(peer_group_start <= current_row);
-            frame_start = peer_group_start;
+            chassert(partition.bounds().start <= peer_group_start.location);
+            chassert(peer_group_start.location < partition.bounds().end);
+            chassert(peer_group_start.location <= current.location);
+            frame_start = peer_group_start.location;
             // peer_group_start is in the current group.
-            frame_start_group_number = peer_group_number;
+            frame_start_group_number = current.peer_group_index_in_partition + 1;
             frame_started = true;
             break;
         case WindowFrame::BoundaryType::Offset:
@@ -309,18 +310,18 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // Advance frame_end to the end of the current row's peer group.
     if (params.window_description.frame.type != WindowFrame::FrameType::ROWS)
     {
-        // RANGE/GROUPS: peers are the rows whose ORDER BY values equal current_row's (or all rows if
+        // RANGE/GROUPS: peers are the rows whose ORDER BY values equal the current row's (or all rows if
         // there is no ORDER BY). The input is sorted by ORDER BY within the partition, so we find the
         // peer group's end with a fast equal-range scan.
-        // First check whether frame_end is still a peer of current_row -- the reference (current_row)
+        // First check whether frame_end is still a peer of the current row -- the reference (the current row)
         // may be in a different block, so we compare against it directly.
         const size_t order_by_columns = params.order_by_indices.size();
         size_t i = 0;
         for (; i < order_by_columns; ++i)
         {
-            const auto * reference_column = blocks.blockAt(current_row.block).materialized_columns[params.order_by_indices[i]].get();
+            const auto * reference_column = blocks.blockAt(current.location.block).materialized_columns[params.order_by_indices[i]].get();
             const auto * compared_column = blocks.blockAt(frame_end.block).materialized_columns[params.order_by_indices[i]].get();
-            if (compared_column->compareAt(frame_end.row, current_row.row, *reference_column, 1 /* nan_direction_hint */) != 0)
+            if (compared_column->compareAt(frame_end.row, current.location.row, *reference_column, 1 /* nan_direction_hint */) != 0)
             {
                 break;
             }
@@ -349,10 +350,10 @@ void WindowTransform::advanceFrameEndCurrentRow()
     }
     else
     {
-        // ROWS frame: a row is only its own peer, so the peer group is just current_row, and
-        // frame_end sits at current_row on entry -- advancing it one row reaches the peer group's
+        // ROWS frame: a row is only its own peer, so the peer group is just the current row, and
+        // frame_end sits at the current row on entry -- advancing it one row reaches the peer group's
         // end.
-        if (frame_end == current_row)
+        if (frame_end == current.location)
             ++frame_end.row;
 
         if (frame_end.row < rows_end)
@@ -387,7 +388,7 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Walk the specified offset from the current row. The "+1" is needed
     // because the frame_end is a past-the-end pointer.
     const Int64 offset = static_cast<Int64>(params.window_description.frame.end_offset.safeGet<UInt64>()) * (params.window_description.frame.end_preceding ? -1 : 1) + 1;
-    const std::optional<RowNumber> moved_row = blocks.move(current_row, offset);
+    const std::optional<RowNumber> moved_row = blocks.move(current.location, offset);
 
     if (!moved_row && offset < 0)
     {
@@ -430,16 +431,16 @@ void WindowTransform::advanceFrameEndRangeOffset()
     const bool preceding = params.window_description.frame.end_preceding
         == (direction > 0);
     const auto * reference_column
-        = blocks.blockAt(current_row.block).materialized_columns[params.order_by_indices[0]].get();
+        = blocks.blockAt(current.location.block).materialized_columns[params.order_by_indices[0]].get();
     for (; frame_end < partition_end; frame_end = blocks.next(frame_end))
     {
-        // The last frame value is current_row with offset, and we need a
+        // The last frame value is the current row with offset, and we need a
         // past-the-end pointer, so we advance while
-        // [frame_end] <= [current_row] with offset.
+        // [frame_end] <= [the current row] with offset.
         const auto * compared_column
             = blocks.blockAt(frame_end.block).materialized_columns[params.order_by_indices[0]].get();
         if (params.range_offset_comparator(compared_column, frame_end.row,
-            reference_column, current_row.row,
+            reference_column, current.location.row,
             params.window_description.frame.end_offset,
             preceding)
                 * direction > 0)
@@ -562,6 +563,7 @@ void WindowTransform::advanceFrameStartGroupsOffset()
         = static_cast<Int64>(params.window_description.frame.begin_offset.safeGet<UInt64>()) * (params.window_description.frame.begin_preceding ? -1 : 1);
 
     // The frame starts at the first row of the peer group `offset` groups away from the current one.
+    const Int64 peer_group_number = current.peer_group_index_in_partition + 1;
     const Int64 target_group = peer_group_number + offset;
 
     if (target_group <= 1)
@@ -585,6 +587,7 @@ void WindowTransform::advanceFrameEndGroupsOffset()
         = static_cast<Int64>(params.window_description.frame.end_offset.safeGet<UInt64>()) * (params.window_description.frame.end_preceding ? -1 : 1);
 
     // frame_end is not inclusive, so it must reach the first row of the group after the target one.
+    const Int64 peer_group_number = current.peer_group_index_in_partition + 1;
     const Int64 target_group = peer_group_number + offset + 1;
 
     if (target_group <= 1)
@@ -735,15 +738,14 @@ void WindowTransform::updateAggregationState()
 
 void WindowTransform::writeOutCurrentRow()
 {
-    chassert(current_row < partition.bounds().end);
-    chassert(current_row.block >= blocks.begin().block);
+    chassert(current.location < partition.bounds().end);
+    chassert(current.location.block >= blocks.begin().block);
 
-    // Whether this row's frame equals the previous row's. When current_row_number == 1 it's the first
-    // row of the partition, so there's no previous row in this partition (and thus no previous frame)
-    // to compare against.
-    const bool frame_unchanged = current_row_number > 1 && frame_start == prev_frame_start && frame_end == prev_frame_end;
+    // Whether this row's frame equals the previous row's. The first row of the partition has no
+    // previous row in this partition (and thus no previous frame) to compare against.
+    const bool frame_unchanged = current.row_index_in_partition > 0 && frame_start == prev_frame_start && frame_end == prev_frame_end;
 
-    const auto & block = blocks.blockAt(current_row.block);
+    const auto & block = blocks.blockAt(current.location.block);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
         auto & ws = workspaces[wi];
@@ -758,7 +760,7 @@ void WindowTransform::writeOutCurrentRow()
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
 
-        if (frame_unchanged && !ws.is_aggregate_function_state && current_row.row > 0)
+        if (frame_unchanged && !ws.is_aggregate_function_state && current.location.row > 0)
         {
             // Same frame as the previous row -> same result. When that row is in this same block its
             // result is already in result_column one position back, so copy it instead of
@@ -766,8 +768,8 @@ void WindowTransform::writeOutCurrentRow()
             // insertRangeFrom appends via resize + memcpy from a disjoint source range, which is
             // self-safe even if the append reallocates and even for nested columns (Array, Variant,
             // Dynamic, JSON) whose sub-columns are not covered by the top-level reserve.
-            chassert(std::cmp_equal(result_column->size(), current_row.row));
-            result_column->insertRangeFrom(*result_column, current_row.row - 1, 1);
+            chassert(std::cmp_equal(result_column->size(), current.location.row));
+            result_column->insertRangeFrom(*result_column, current.location.row - 1, 1);
         }
         else if (ws.is_aggregate_function_state)
         {
@@ -814,15 +816,13 @@ void WindowTransform::computeReadyRows()
         // After that, try to calculate window functions for each next row.
         // We can continue until the end of partition or current end of data,
         // which is precisely the definition of the known end of the partition.
-        while (current_row < partition_end)
+        while (current.location < partition_end)
         {
-            // We now know that the current row is valid, so we can update the
-            // peer group start.
-            if (!arePeers(peer_group_start, current_row))
+            // We now know that the current row is valid, so we can update the peer group start.
+            if (peer_group_start.location != current.location && blocks.blockAt(current.location.block).index.peer_group_starts[current.location.row])
             {
-                peer_group_start = current_row;
-                peer_group_start_row_number = current_row_number;
-                ++peer_group_number;
+                ++current.peer_group_index_in_partition;
+                peer_group_start = current;
             }
 
             // Advance the frame start.
@@ -894,9 +894,9 @@ void WindowTransform::computeReadyRows()
 
             // Move to the next row. The frame will have to be recalculated.
             // The peer group start is updated at the beginning of the loop,
-            // because current_row might now be past-the-end.
-            current_row = blocks.next(current_row);
-            ++current_row_number;
+            // because the current row might now be past-the-end.
+            current.location = blocks.next(current.location);
+            ++current.row_index_in_partition;
             frame_ended = false;
             frame_started = false;
         }
@@ -933,11 +933,9 @@ void WindowTransform::startNextPartition()
     frame_end = partition_start;
     prev_frame_start = partition_start;
     prev_frame_end = partition_start;
-    chassert(current_row == partition_start);
-    current_row_number = 1;
-    peer_group_start = partition_start;
-    peer_group_start_row_number = 1;
-    peer_group_number = 1;
+    chassert(current.location == partition_start);
+    current = RowPoint{.location = partition_start};
+    peer_group_start = current;
     frame_start_group_number = 1;
     frame_end_group_number = 1;
 
@@ -988,17 +986,17 @@ IProcessor::Status WindowTransform::prepare()
         return Status::Finished;
     }
 
-    chassert(current_row.block >= blocks.begin().block);
-    // The current_row might be past-the-end if we have already calculated the
+    chassert(current.location.block >= blocks.begin().block);
+    // The the current row might be past-the-end if we have already calculated the
     // window functions for all input rows. That's why the equality is also
     // valid here.
-    chassert(current_row.block <= blocks.end().block);
+    chassert(current.location.block <= blocks.end().block);
 
     // Output the ready data prepared by work(). A block is ready when the
     // current row has left it, because rows are computed in order.
     // We inspect the calculation state and create the output chunk right here,
     // because this is pretty lightweight.
-    if (next_output_block_number < current_row.block)
+    if (next_output_block_number < current.location.block)
     {
         if (output.canPush())
         {
@@ -1027,7 +1025,7 @@ IProcessor::Status WindowTransform::prepare()
         // and we don't have ready output data (checked above). We must be
         // finished.
         chassert(next_output_block_number == blocks.end().block);
-        chassert(current_row == blocks.end());
+        chassert(current.location == blocks.end());
 
         // The consumer learns that the data ended only from the closed output port.
         output.finish();
@@ -1096,20 +1094,14 @@ void WindowTransform::releaseUnusedBlocks()
     // after the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
-    // We also keep the start of the current peer group: it can lag behind the
-    // current row (its group may have started in an earlier block), and it is
-    // dereferenced by arePeers() on the next row. A FOLLOWING frame pushes the
-    // frame pointers ahead of the current row, so peer_group_start can be the
-    // trailing pointer.
     chassert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block, peer_group_start.block});
+    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current.location.block});
     while (blocks.begin().block < first_used_block)
         blocks.pop();
 
     chassert(frame_start.block >= blocks.begin().block);
     chassert(prev_frame_start.block >= blocks.begin().block);
-    chassert(current_row.block >= blocks.begin().block);
-    chassert(peer_group_start.block >= blocks.begin().block);
+    chassert(current.location.block >= blocks.begin().block);
 }
 
 }
