@@ -132,8 +132,7 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
     catch (Exception & exception)
     {
         /// A logical error here means the pipeline was built incorrectly: append a dump of it, with addresses to match the
-        /// endpoints the exception names even when `getUniqID` degrades to `_0`. Other errors (e.g. a memory limit hit by an
-        /// allocation) say nothing about the pipeline.
+        /// endpoints the exception names even when `getUniqID` degrades to `_0`.
         if (exception.code() == ErrorCodes::LOGICAL_ERROR)
         {
             WriteBufferFromOwnString buf;
