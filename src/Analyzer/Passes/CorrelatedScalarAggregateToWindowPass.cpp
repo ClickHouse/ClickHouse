@@ -11,6 +11,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
@@ -20,10 +21,14 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDictionary.h>
+#include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <unordered_set>
@@ -120,6 +125,21 @@ bool hasGlobalJoin(const QueryTreeNodePtr & join_tree)
     if (const auto * array_join = join_tree->as<ArrayJoinNode>())
         return hasGlobalJoin(array_join->getTableExpressionNode());
     return false;
+}
+
+/// A `Join` table, a dictionary or a key-value storage on the right side of a join is looked up by the keys
+/// instead of being read into a hash table, so no runtime filter is built from it.
+bool isJoinedByLookup(const IQueryTreeNode * table_expression)
+{
+    StoragePtr storage;
+    if (const auto * table = table_expression->as<TableNode>())
+        storage = table->getStorage();
+    else if (const auto * table_function = table_expression->as<TableFunctionNode>())
+        storage = table_function->getStorage();
+    if (!storage)
+        return false;
+    return castStorage<StorageJoin>(storage, DeferredTable::Load) || castStorage<StorageDictionary>(storage, DeferredTable::Load)
+        || castStorage<IKeyValueEntity>(storage, DeferredTable::Load);
 }
 
 std::pair<const ColumnNode *, const ColumnNode *> asColumnEquality(const QueryTreeNodePtr & node)
@@ -305,10 +325,12 @@ private:
         const std::vector<JoinAlgorithm> join_algorithms = getSettings()[Setting::join_algorithm];
         /// A runtime filter restricts only the probe (left) side of a join. With the automatic swap of the join sides,
         /// the larger table becomes the probe side, and the window over a smaller one is small. With a fixed choice,
-        /// the target may stay on the build side.
+        /// the target may stay on the build side. An `ie_join` listed first takes the joins with inequalities, and
+        /// builds no runtime filter.
         const bool runtime_join_filters = optimization_settings.enable_join_runtime_filters
             && std::ranges::any_of(join_algorithms, QueryPlanOptimizations::supportsRuntimeFilter)
             && !optimization_settings.join_swap_table.has_value()
+            && join_algorithms.front() != JoinAlgorithm::IE_JOIN
             && !hasGlobalJoin(query_node.getJoinTreeNode());
 
         for (auto & [target, target_candidates] : by_target)
@@ -532,7 +554,7 @@ private:
     ///   the join can build a runtime filter: it is on the join key, and only a filter on the `PARTITION BY` keys is
     ///   pushed below the window. The runtime filter is not built for a small probe side, but then the window is small.
     ///   The condition must also be one the filter push-down below a join moves to the joined table, otherwise it
-    ///   does not shrink the table the runtime filter is built from.
+    ///   does not shrink the table the runtime filter is built from. A table joined by lookups builds no runtime filter.
     /// Otherwise the decorrelated plan, which needs memory per key only, is better.
     static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Names & keys, bool runtime_join_filters)
     {
@@ -554,9 +576,9 @@ private:
                 const auto * rhs_source = rhs->getColumnSourceOrNull().get();
                 if (!lhs_source || !rhs_source)
                     continue;
-                if (reached(*lhs, lhs_source) && rhs_source != target)
+                if (reached(*lhs, lhs_source) && rhs_source != target && !isJoinedByLookup(rhs_source))
                     changed |= joined_on_keys.insert(rhs_source).second;
-                if (reached(*rhs, rhs_source) && lhs_source != target)
+                if (reached(*rhs, rhs_source) && lhs_source != target && !isJoinedByLookup(lhs_source))
                     changed |= joined_on_keys.insert(lhs_source).second;
             }
         }

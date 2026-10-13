@@ -33,6 +33,8 @@ declare -A TABLES=(
         INSERT INTO tp VALUES (1, 2, 10), (2, 1, 20), (3, 2, 30), (4, 1, 40);"
     [ts]="CREATE TABLE ts (k Int32, s String) ENGINE = MergeTree ORDER BY k;
         INSERT INTO ts VALUES (1, 'a'), (1, 'bcd'), (2, 'ef');"
+    [jt]="CREATE TABLE jt (k Int32, w Int32) ENGINE = Join(ALL, INNER, k);
+        INSERT INTO jt VALUES (1, 100), (2, 200), (4, 400);"
 )
 
 # Creates and fills the tables named in the arguments.

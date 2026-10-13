@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `optimize_correlated_scalar_aggregate_to_window` must not change any answer, also where the subquery is not rewritten.
 
-create_tables t u x nn nk r tn vt tp
+create_tables t u x nn nk r tn vt tp jt
 
 check "nothing restricts the keys, the decorrelated plan needs less memory" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k ORDER BY k, v"
 check "non-deterministic condition on the key, not pushed below the window" "SELECT countIf(c != multiIf(k = 1, 30, k = 2, 1e308, -7)) FROM (SELECT o.k AS k, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE rand64(o.k) % 2 = 0)"
@@ -39,6 +39,8 @@ check "condition on the key that also depends on the other table" "SELECT o.k AS
 check "condition on a table that is not joined on the key" "SELECT u.k AS k, x.z AS z, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k CROSS JOIN x WHERE x.z > 3 ORDER BY k, z, v"
 check "no runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS enable_join_runtime_filters = 0"
 check "join algorithm without runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS join_algorithm = 'full_sorting_merge'"
+check "ie_join first, no runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS join_algorithm = 'ie_join,hash'"
+check "condition on a table joined by lookups, no runtime filters" "SELECT o.k AS k, o.v AS v, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o INNER JOIN jt ON o.k = jt.k WHERE jt.w > 0 ORDER BY k, v"
 check "GLOBAL join, no runtime filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u GLOBAL INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
 check "fixed choice of the join sides, the target may be on the build side" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS query_plan_join_swap_table = 0"
 check "no filter push-down" "SELECT o.k AS k, o.v AS v, (SELECT count() FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE o.k > 1 ORDER BY k, v SETTINGS query_plan_filter_push_down = 0"
