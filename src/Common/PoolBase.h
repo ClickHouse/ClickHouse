@@ -117,7 +117,7 @@ private:
 public:
     virtual ~PoolBase()
     {
-        MemoryTrackerBlockerInThread pooled_objects_not_charged_to_the_query;
+        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
         items.clear();
     }
 
@@ -146,7 +146,7 @@ public:
                     }
 
                     {
-                        MemoryTrackerBlockerInThread pooled_object_not_charged_to_the_query;
+                        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
                         expireObject(item->object);
                         item->object = allocObject();
                     }
@@ -158,8 +158,7 @@ public:
             {
                 PooledObject * item = nullptr;
                 {
-                    /// It lives as long as the pool, which outlives the query that happens to need one more object.
-                    MemoryTrackerBlockerInThread pooled_object_not_charged_to_the_query;
+                    auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
                     item = items.emplace_back(std::make_shared<PooledObject>(allocObject())).get();
                 }
                 item->in_use = true;
@@ -210,7 +209,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        MemoryTrackerBlockerInThread pooled_objects_not_charged_to_the_query;
+        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
         while (items.size() < count)
             items.emplace_back(std::make_shared<PooledObject>(allocObject()));
     }
@@ -235,6 +234,14 @@ private:
         return std::any_of(items.begin(), items.end(), [](const auto & item) { return !item->in_use; });
     }
 
+    /// A pooled object lives as long as the pool, so a long-lived pool does not charge it to the query that happens to create it.
+    std::optional<MemoryTrackerBlockerInThread> blockQueryTrackingIfPoolOutlivesQuery() const
+    {
+        if (!pool_outlives_query)
+            return {};
+        return std::optional<MemoryTrackerBlockerInThread>(std::in_place);
+    }
+
     Entry makeEntry(PooledObject & item)
     {
         bool * in_use = &item.in_use;
@@ -253,6 +260,8 @@ private:
     /** The maximum size of the pool. */
     unsigned max_items;
 
+    const bool pool_outlives_query;
+
     /** Pool. */
     Objects items;
 
@@ -263,8 +272,8 @@ private:
 protected:
     LoggerPtr log;
 
-    PoolBase(unsigned max_items_, LoggerPtr log_)
-       : max_items(max_items_), log(log_)
+    PoolBase(unsigned max_items_, LoggerPtr log_, bool pool_outlives_query_)
+       : max_items(max_items_), pool_outlives_query(pool_outlives_query_), log(log_)
     {
         items.reserve(max_items);
     }
