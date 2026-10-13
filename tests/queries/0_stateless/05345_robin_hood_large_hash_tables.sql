@@ -26,6 +26,8 @@ SELECT 'Merge of two-level states';
 SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM remote('127.0.0.{1,2}', numbers(9000000)) GROUP BY k);
 
 SELECT 'JOIN';
+-- Only `parallel_hash` uses two-level maps, plain `hash` uses one-level maps.
+-- The two-level map is shared by all slots, so its buckets are large even with a single thread.
 SELECT count(), sum(r) FROM numbers(9000000) AS l
 INNER JOIN (SELECT number * 2 AS k, number AS r FROM numbers(9000000)) AS rt ON l.number = rt.k
-SETTINGS join_algorithm = 'hash';
+SETTINGS join_algorithm = 'parallel_hash';
