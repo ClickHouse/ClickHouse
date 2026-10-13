@@ -51,13 +51,11 @@ struct SimplePostingsCursor
 {
     /// Reads the posting lists of a part from its files. `positions_buf_` is null if the positions are not read.
     SimplePostingsCursor(
-        const String & part_name_,
         PostingsSerialization postings_serialization_,
         std::unique_ptr<ReadBufferFromFileBase> postings_buf_,
         std::unique_ptr<ReadBufferFromFileBase> positions_buf_,
         size_t positions_file_size_)
-        : part_name(part_name_)
-        , postings_serialization(std::move(postings_serialization_))
+        : postings_serialization(std::move(postings_serialization_))
         , postings_buf(std::move(postings_buf_))
         , positions_buf(std::move(positions_buf_))
         , positions_file_size(positions_file_size_)
@@ -138,26 +136,7 @@ private:
         static constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
 
         if (first_rank == 0)
-        {
-            if (!(token_info.header & PostingsSerialization::Flags::HasPositions))
-            {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted data in text index: a token has no positions in part {}", part_name);
-            }
-
-            /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
-            if ((token_info.position_bytes == 0)
-                || (token_info.position_offset > positions_file_size)
-                || (token_info.position_bytes > positions_file_size - token_info.position_offset))
-            {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
-                    token_info.position_bytes, token_info.position_offset, positions_file_size);
-            }
-
-            positions_buf->seek(static_cast<off_t>(token_info.position_offset), SEEK_SET);
-            positions_directory = TextIndexBlockedPositionsCodec::readDirectory(*positions_buf, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
-        }
+            positions_directory = readPositionsDirectory(token_info, *positions_buf, positions_file_size);
 
         const size_t end_rank = first_rank + num_ranks;
         if (end_rank > positions_directory.num_docs)
@@ -181,7 +160,6 @@ private:
     }
 
     /// Files of the posting lists and positions of the current part.
-    String part_name;
     PostingsSerialization postings_serialization;
     std::unique_ptr<ReadBufferFromFileBase> postings_buf;
     std::unique_ptr<ReadBufferFromFileBase> positions_buf;
@@ -510,7 +488,7 @@ private:
         }
 
         PostingsSerialization postings_serialization(PostingListCodecFactory::createPostingListCodec(index_header.codec_type), index_header.version);
-        postings_cursor.emplace(part.name, std::move(postings_serialization), std::move(postings_buf), std::move(positions_buf), positions_file_size);
+        postings_cursor.emplace(std::move(postings_serialization), std::move(postings_buf), std::move(positions_buf), positions_file_size);
     }
 
     /// Loads the header of the index in `part` if it is needed, and finds the dictionary blocks matching the token condition.
