@@ -1,39 +1,37 @@
 #include <GPU/Cudf.cuh>
+#include <GPU/CudfMemory.cuh>
 
 #include <cudf/strings/strings_column_view.hpp>
 #include <cudf/unary.hpp>
 
-#include <rmm/error.hpp>
+#include <rmm/mr/cuda_async_view_memory_resource.hpp>
+#include <rmm/mr/per_device_resource.hpp>
 
-#include <cxxabi.h>
-
-#include <cstdlib>
+#include <cstdint>
 #include <exception>
 #include <limits>
-#include <stdexcept>
 #include <string>
 
 namespace DB::GPU
 {
 
-namespace
-{
-
-__host__ std::string typeNameOf(const std::exception & exception)
-{
-    int status = 0;
-    char * demangled = abi::__cxa_demangle(typeid(exception).name(), nullptr, nullptr, &status);
-    std::string name = status == 0 && demangled ? demangled : typeid(exception).name();
-    std::free(demangled);
-    return name;
-}
-
-}
-
 __host__ void checkCuda(cudaError_t status, const std::string & what)
 {
     if (status != cudaSuccess)
         throwGPUError((what + ": " + cudaGetErrorString(status)).c_str());
+}
+
+__host__ void setCudfMemoryPool(cudaMemPool_t pool)
+{
+    guarded("making cuDF allocate from the device's memory pool", [&]
+    {
+        rmm::mr::set_current_device_resource(rmm::mr::cuda_async_view_memory_resource{pool});
+    });
+}
+
+__host__ void resetCudfMemoryPool()
+{
+    guarded("resetting the memory resource of cuDF", [] { rmm::mr::reset_current_device_resource(); });
 }
 
 __host__ cudf::data_type cudfTypeOf(GPUElementType element_type)
@@ -58,12 +56,15 @@ __host__ cudf::data_type cudfTypeOf(GPUElementType element_type)
 namespace
 {
 
-__host__ cudf::size_type rowsForCudf(size_t rows, const std::string & what)
+/// `max_rows` is below the largest `cudf::size_type` for a column that also needs a count of offsets one larger.
+__host__ cudf::size_type rowsForCudf(size_t rows, size_t max_rows, const std::string & what)
 {
-    if (rows > static_cast<size_t>(std::numeric_limits<cudf::size_type>::max()))
+    if (rows > max_rows)
         throwGPUError((what + " of " + std::to_string(rows) + " rows is too large for cuDF").c_str());
     return static_cast<cudf::size_type>(rows);
 }
+
+constexpr size_t max_cudf_rows = std::numeric_limits<cudf::size_type>::max();
 
 }
 
@@ -97,17 +98,24 @@ __host__ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUEle
             (what + " arrived as element type " + std::to_string(static_cast<int>(column.element_type)) + ", expected "
             + std::to_string(static_cast<int>(expected_type))).c_str());
 
-    return cudf::column_view(cudfTypeOf(column.element_type), rowsForCudf(column.rows, what), column.data, nullptr, 0);
+    /// cuDF reads the values as of their type, which takes them aligned to their size.
+    if (reinterpret_cast<uintptr_t>(column.data) % sizeOf(column.element_type) != 0)
+        throwGPUError(
+            (what + " arrived at an address not aligned to its values of " + std::to_string(sizeOf(column.element_type)) + " bytes")
+                .c_str());
+
+    return cudf::column_view(cudfTypeOf(column.element_type), rowsForCudf(column.rows, max_cudf_rows, what), column.data, nullptr, 0);
 }
 
 __host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::string & what)
 {
-    const cudf::size_type rows = rowsForCudf(column.rows, what);
+    const cudf::size_type rows = rowsForCudf(column.rows, max_cudf_rows - 1, what);
 
     /// An empty column may come without offsets, and cuDF's own empty strings column has no children either.
     if (rows == 0)
         return cudf::column_view(cudf::data_type{cudf::type_id::STRING}, 0, nullptr, nullptr, 0);
 
+    /// cuDF takes signed offsets, and ClickHouse's unsigned ones are the same bytes, as no column reaches 2^63 bytes.
     const cudf::column_view offsets(cudf::data_type{cudf::type_id::INT64}, rows + 1, column.offsets, nullptr, 0);
     return cudf::column_view(cudf::data_type{cudf::type_id::STRING}, rows, column.chars, nullptr, 0, 0, {offsets});
 }
@@ -161,6 +169,8 @@ __host__ DeviceVariableColumn deviceViewOfVariable(
             widened_offsets = guarded(
                 "widening the offsets of " + what, [&] { return cudf::cast(offsets, cudf::data_type{cudf::type_id::INT64}, stream); });
             offsets = widened_offsets->view();
+            /// cuDF returns once the cast is queued, and the offsets may be read on another stream or by the host.
+            checkCuda(cudaStreamSynchronize(stream.value()), "cannot wait for the offsets of " + what + " to be widened");
             break;
         default:
             throwGPUError(("the offsets of " + what + " are of cuDF type " + std::to_string(static_cast<int32_t>(offsets.type().id()))).c_str());
@@ -171,6 +181,7 @@ __host__ DeviceVariableColumn deviceViewOfVariable(
             ("the device returned " + std::to_string(offsets.size()) + " offsets of " + what + " of " + std::to_string(column.size())
             + " rows").c_str());
 
+    /// The same bytes as the signed offsets of cuDF, see `columnViewOf`.
     return {
         .offsets = offsets.data<uint64_t>(),
         .chars = strings.chars_begin(stream),

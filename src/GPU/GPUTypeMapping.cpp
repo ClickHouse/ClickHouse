@@ -12,6 +12,7 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GPU
@@ -40,7 +41,7 @@ GPUElementType elementTypeOrThrow(const IDataType & type)
     if (const auto element_type = elementTypeOf(type))
         return *element_type;
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} cannot be sent to a GPU", type.getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columns of {} are not supported on the GPU yet", type.getName());
 }
 
 std::optional<GPUCodec> codecOf(UInt8 method_byte)

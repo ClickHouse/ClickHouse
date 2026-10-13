@@ -255,7 +255,7 @@ void ColumnUploadPipe::stageFixed(const IColumn & column)
     const std::string_view values = rawValuesOf(column, column.size(), sizeOf(column_type));
 
     makeRoomFor(values.size());
-    staged_data.append(values);
+    appendHostBytes(staged_data, values);
 
     staging_bytes += values.size();
     staged_bytes += values.size();
@@ -273,10 +273,10 @@ void ColumnUploadPipe::stageVariable(const IColumn & column)
 
     makeRoomFor(block_bytes);
 
-    auto * to = reinterpret_cast<UInt64 *>(staged_offsets.grow(offsets.size() * sizeof(UInt64)));
+    auto * to = reinterpret_cast<UInt64 *>(growBy(staged_offsets, offsets.size() * sizeof(UInt64)));
     for (size_t row = 0; row < offsets.size(); ++row)
         to[row] = offsets[row] + staged_chars;
-    staged_data.append({reinterpret_cast<const char *>(chars.data()), chars.size()});
+    appendHostBytes(staged_data, {reinterpret_cast<const char *>(chars.data()), chars.size()});
 
     staged_chars += chars.size();
     staging_bytes += block_bytes;
@@ -299,7 +299,11 @@ std::span<char> ColumnUploadPipe::reserveRaw(size_t max_bytes)
 
 void ColumnUploadPipe::commitRaw(size_t bytes)
 {
-    staged_data.grow(bytes);
+    if (staged_data.size() + bytes > staged_data.capacity())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Committing {} raw bytes after {} into a staging area of {}", bytes, staged_data.size(), staged_data.capacity());
+
+    staged_data.resize(staged_data.size() + bytes);
     staging_bytes += bytes;
     staged_bytes += bytes;
     staged_rows = staged_bytes / sizeOf(column_type);
@@ -313,10 +317,10 @@ void ColumnUploadPipe::sendStagedToDevice()
     switch (columnKindOf(column_type))
     {
         case GPUColumnKind::Fixed:
-            std::get<DeviceFixedColumnBuffer>(device).appendPlain(staged_data.bytes());
+            std::get<DeviceFixedColumnBuffer>(device).appendPlain(bytesOf(staged_data));
             break;
         case GPUColumnKind::Variable:
-            std::get<DeviceVariableColumnBuffer>(device).append(staged_offsets.bytes(), staged_data.bytes());
+            std::get<DeviceVariableColumnBuffer>(device).append(bytesOf(staged_offsets), bytesOf(staged_data));
             break;
     }
 
@@ -385,7 +389,7 @@ void CompressedUploadPipe::stageBlock(StagedBlocks & staged, std::string_view pa
         .compressed_bytes = payload.size(),
         .decompressed_bytes = decompressed_bytes,
     });
-    staged.bytes.append(payload);
+    appendHostBytes(staged.bytes, payload);
     staged.expanded_bytes += decompressed_bytes;
     staged_bytes += decompressed_bytes;
 }
@@ -407,7 +411,7 @@ void CompressedUploadPipe::sendStagedToDevice()
 {
     const auto expand = [&](StagedBlocks & staged, char * destination)
     {
-        decompressor.decompress(codec, staged.bytes.bytes(), staged.blocks, destination);
+        decompressor.decompress(codec, bytesOf(staged.bytes), staged.blocks, destination);
         staged.bytes.clear();
         staged.blocks.clear();
         staged.expanded_bytes = 0;

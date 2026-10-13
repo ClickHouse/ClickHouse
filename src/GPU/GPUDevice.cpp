@@ -2,7 +2,12 @@
 
 #if USE_GPU
 
-#include <limits>
+#include <GPU/CudfMemory.cuh>
+
+#include <Interpreters/Context.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
+
 #include <string_view>
 
 namespace DB::ErrorCodes
@@ -24,40 +29,85 @@ bool isClickHouseException(const std::exception & exception)
     return dynamic_cast<const Exception *>(&exception) != nullptr;
 }
 
+GPUDeviceSettings GPUDeviceSettings::fromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+{
+    const GPUDeviceSettings defaults;
+    return {
+        .max_pooled_pinned_bytes = config.getUInt64(prefix + ".max_pooled_pinned_bytes", defaults.max_pooled_pinned_bytes),
+        .max_pooled_pinned_capacity = config.getUInt64(prefix + ".max_pooled_pinned_capacity", defaults.max_pooled_pinned_capacity),
+        .memory_pool_release_threshold = config.getUInt64(prefix + ".memory_pool_release_threshold", defaults.memory_pool_release_threshold),
+    };
+}
+
+namespace
+{
+
+cudaMemPool_t defaultMemoryPool()
+{
+    int count = 0;
+    checkCuda(cudaGetDeviceCount(&count), "Cannot count the CUDA devices");
+    if (count == 0)
+        throw Exception(ErrorCodes::GPU_ERROR, "There is no CUDA device");
+
+    checkCuda(cudaFree(nullptr), "Cannot initialize a CUDA context");
+
+    int device = 0;
+    checkCuda(cudaGetDevice(&device), "Cannot tell the current CUDA device");
+
+    cudaMemPool_t pool = nullptr;
+    checkCuda(cudaDeviceGetDefaultMemPool(&pool, device), "Cannot get the device's default memory pool");
+    return pool;
+}
+
+}
+
+GPUDevice::GPUDevice(const GPUDeviceSettings & settings)
+    : memory_pool(defaultMemoryPool())
+    , upload_stream(createStream())
+    , decompression_stream(createStream())
+    , stream_registry{
+          .compute = rmm::cuda_stream_view{cudaStreamLegacy},
+          .upload = rmm::cuda_stream_view{upload_stream.get()},
+          .decompression = rmm::cuda_stream_view{decompression_stream.get()},
+      }
+{
+    uint64_t release_threshold = settings.memory_pool_release_threshold;
+    checkCuda(
+        cudaMemPoolSetAttribute(memory_pool, cudaMemPoolAttrReleaseThreshold, &release_threshold),
+        "Cannot set the release threshold of the device's memory pool");
+
+    PinnedMemoryPool::instance().configure(settings.max_pooled_pinned_bytes, settings.max_pooled_pinned_capacity);
+
+    setCudfMemoryPool(memory_pool);
+}
+
+GPUDevice::~GPUDevice()
+{
+    try
+    {
+        checkCuda(cudaDeviceSynchronize(), "Cannot wait for the device");
+        resetCudfMemoryPool();
+        checkCuda(cudaMemPoolTrimTo(memory_pool, 0), "Cannot return the memory of the device's memory pool");
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    PinnedMemoryPool::instance().drain();
+}
+
+GPUDevice & GPUDevice::instance()
+{
+    const ContextPtr context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::GPU_ERROR, "The GPU is used before the server has started");
+    return context->getGPU();
+}
+
 const StreamRegistry & StreamRegistry::get()
 {
-    static const StreamRegistry registry = []
-    {
-        int count = 0;
-        checkCuda(cudaGetDeviceCount(&count), "Cannot count the CUDA devices");
-        if (count == 0)
-            throw Exception(ErrorCodes::GPU_ERROR, "There is no CUDA device");
-
-        checkCuda(cudaFree(nullptr), "Cannot initialize a CUDA context");
-
-        int device = 0;
-        checkCuda(cudaGetDevice(&device), "Cannot tell the current CUDA device");
-
-        cudaMemPool_t pool = nullptr;
-        checkCuda(cudaDeviceGetDefaultMemPool(&pool, device), "Cannot get the device's default memory pool");
-
-        uint64_t release_threshold = std::numeric_limits<uint64_t>::max();
-        checkCuda(
-            cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &release_threshold),
-            "Cannot tell the device's memory pool to keep freed memory");
-
-        cudaStream_t upload_stream = nullptr;
-        cudaStream_t decompression_stream = nullptr;
-        checkCuda(cudaStreamCreateWithFlags(&upload_stream, cudaStreamNonBlocking), "Cannot create a stream for uploads");
-        checkCuda(cudaStreamCreateWithFlags(&decompression_stream, cudaStreamNonBlocking), "Cannot create a stream for decompression");
-
-        StreamRegistry made;
-        made.compute = rmm::cuda_stream_view{cudaStreamLegacy};
-        made.upload = rmm::cuda_stream_view{upload_stream};
-        made.decompression = rmm::cuda_stream_view{decompression_stream};
-        return made;
-    }();
-    return registry;
+    return GPUDevice::instance().streams();
 }
 
 void synchronizeStream(rmm::cuda_stream_view stream)

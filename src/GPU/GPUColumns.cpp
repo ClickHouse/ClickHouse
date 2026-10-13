@@ -16,6 +16,7 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GPU
@@ -34,7 +35,7 @@ GPUElementType columnTypeOrThrow(const IDataType & type)
     if (const auto column_type = columnTypeOf(type))
         return *column_type;
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} for the device, which does not take it", type.getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columns of {} are not supported on the GPU yet", type.getName());
 }
 
 namespace
@@ -76,6 +77,12 @@ void fillVariable(IColumn & column, size_t rows, std::string_view offsets, std::
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Strings from the device run from {} to {} over {} bytes", from[0], from[rows], chars.size());
 
+    /// With the ends checked above, this also keeps every offset within the chars, which `ColumnString` relies on.
+    for (size_t row = 0; row < rows; ++row)
+        if (from[row + 1] < from[row])
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "String {} from the device ends at {}, before it starts at {}", row, from[row + 1], from[row]);
+
     auto & column_chars = strings->getChars();
     column_chars.resize(chars.size());
     memcpy(column_chars.data(), chars.data(), chars.size());
@@ -100,31 +107,38 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
     if (from.size() != to.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} columns from the device into {} columns", from.size(), to.size());
 
+    /// The values of a column of fixed-width values, or the chars and offsets of one of values of varying width.
     struct Landed
     {
-        PinnedBuffer data;
+        PinnedBuffer values;
         PinnedBuffer offsets;
     };
     std::vector<Landed> landed(from.size());
 
-    for (size_t i = 0; i < from.size(); ++i)
+    waitOnFailure(stream, [&]
     {
-        const DeviceColumnView & view = from[i];
-        checkNoNulls(view);
-        switch (view.kind)
+        for (size_t i = 0; i < from.size(); ++i)
         {
-            case GPUColumnKind::Fixed:
-                landed[i].data.appendFromDevice(view.fixed.data, view.fixed.rows * sizeOf(view.fixed.element_type), stream);
-                break;
-            case GPUColumnKind::Variable:
-                if (view.variable.rows == 0)
+            const DeviceColumnView & view = from[i];
+            checkNoNulls(view);
+            switch (view.kind)
+            {
+                case GPUColumnKind::Fixed:
+                    appendFromDevice(landed[i].values, view.fixed.data, view.fixed.rows * sizeOf(view.fixed.element_type), stream);
                     break;
-                landed[i].data.appendFromDevice(
-                    reinterpret_cast<const char *>(view.variable.offsets), (view.variable.rows + 1) * sizeof(UInt64), stream);
-                landed[i].offsets.appendFromDevice(view.variable.chars, view.variable.chars_bytes, stream);
-                break;
+                case GPUColumnKind::Variable:
+                    if (view.variable.rows == 0)
+                        break;
+                    appendFromDevice(
+                        landed[i].offsets,
+                        reinterpret_cast<const char *>(view.variable.offsets),
+                        (view.variable.rows + 1) * sizeof(UInt64),
+                        stream);
+                    appendFromDevice(landed[i].values, view.variable.chars, view.variable.chars_bytes, stream);
+                    break;
+            }
         }
-    }
+    });
 
     checkCuda(cudaStreamSynchronize(stream), "Cannot wait for columns to be copied back from the device");
 
@@ -134,10 +148,10 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
         switch (view.kind)
         {
             case GPUColumnKind::Fixed:
-                fillFixed(*to[i], view.fixed.element_type, view.fixed.rows, landed[i].data.bytes());
+                fillFixed(*to[i], view.fixed.element_type, view.fixed.rows, bytesOf(landed[i].values));
                 break;
             case GPUColumnKind::Variable:
-                fillVariable(*to[i], view.variable.rows, landed[i].data.bytes(), landed[i].offsets.bytes());
+                fillVariable(*to[i], view.variable.rows, bytesOf(landed[i].offsets), bytesOf(landed[i].values));
                 break;
         }
     }

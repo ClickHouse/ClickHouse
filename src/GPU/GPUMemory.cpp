@@ -4,14 +4,18 @@
 
 #include <GPU/GPUDevice.h>
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
 #include <bit>
 #include <cstring>
-#include <map>
-#include <mutex>
 #include <utility>
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DB::GPU
 {
@@ -19,147 +23,157 @@ namespace DB::GPU
 namespace
 {
 
-/// Keeps pinned host buffers for reuse, as `cudaHostAlloc` is slow. The buffers are by power-of-two size class, and a
-/// request takes one of exactly its class, so a large buffer is never kept for small requests. Buffers larger than
-/// `max_pooled_capacity` are allocated to size and freed as soon as they are released, and at most `max_pooled_bytes`
-/// are kept in all, so a large query does not keep its peak of unswappable memory after it ends.
-class PinnedBufferPool
+/// What `cudaHostAlloc` aligns to, and the smallest size class, as `cudaHostAlloc` gives whole pages anyway.
+constexpr size_t pinned_alignment = 4096;
+
+}
+
+PinnedMemoryPool & PinnedMemoryPool::instance()
 {
-public:
-    static PinnedBufferPool & instance()
-    {
-        static PinnedBufferPool pool;
-        return pool;
-    }
+    /// Never destroyed, see the comment of the class.
+    static PinnedMemoryPool * const pool = new PinnedMemoryPool;
+    return *pool;
+}
 
-    std::pair<char *, size_t> acquire(size_t bytes)
-    {
-        const size_t capacity = bytes <= max_pooled_capacity ? std::bit_ceil(bytes) : bytes;
+void PinnedMemoryPool::configure(size_t max_pooled_bytes_, size_t max_pooled_capacity_)
+{
+    std::lock_guard lock(mutex);
+    max_pooled_bytes = max_pooled_bytes_;
+    max_pooled_capacity = max_pooled_capacity_;
+}
 
-        if (capacity <= max_pooled_capacity)
-        {
-            std::lock_guard lock(mutex);
-            const auto it = free_buffers.find(capacity);
-            if (it != free_buffers.end())
-            {
-                char * const taken = it->second;
-                pooled_bytes -= capacity;
-                free_buffers.erase(it);
-                return {taken, capacity};
-            }
-        }
-
-        void * fresh = nullptr;
-        checkCuda(cudaHostAlloc(&fresh, capacity, cudaHostAllocDefault), "Cannot allocate {} bytes of pinned host memory", capacity);
-
-        return {static_cast<char *>(fresh), capacity};
-    }
-
-    void release(char * buffer, size_t capacity) noexcept
-    {
-        if (buffer == nullptr)
-            return;
-
-        if (capacity <= max_pooled_capacity)
-        {
-            std::lock_guard lock(mutex);
-            if (pooled_bytes + capacity <= max_pooled_bytes)
-            {
-                free_buffers.emplace(capacity, buffer);
-                pooled_bytes += capacity;
-                return;
-            }
-        }
-
+void PinnedMemoryPool::drain() noexcept
+{
+    std::lock_guard lock(mutex);
+    for (const auto & [capacity, buffer] : free_buffers)
         cudaFreeHost(buffer);
-    }
-
-private:
-    ~PinnedBufferPool() = default;
-
-    /// The largest staging buffer of `GPUAccumulator`.
-    static constexpr size_t max_pooled_capacity = 256UL * 1024 * 1024;
-    static constexpr size_t max_pooled_bytes = 1024UL * 1024 * 1024;
-
-    std::mutex mutex;
-    std::multimap<size_t, char *> free_buffers TSA_GUARDED_BY(mutex);
-    size_t pooled_bytes TSA_GUARDED_BY(mutex) = 0;
-};
-
+    free_buffers.clear();
+    pooled_bytes = 0;
+    max_pooled_bytes = 0;
 }
 
-namespace
+size_t PinnedMemoryPool::capacityFor(size_t bytes) const
 {
-
-constexpr size_t min_capacity = 1024 * 1024;
-
+    if (bytes > max_pooled_capacity)
+        return bytes;
+    return std::bit_ceil(std::max(bytes, pinned_alignment));
 }
 
-PinnedBuffer::~PinnedBuffer()
+char * PinnedMemoryPool::acquire(size_t bytes)
 {
-    PinnedBufferPool::instance().release(memory, capacity);
-}
+    const size_t capacity = capacityFor(bytes);
 
-PinnedBuffer::PinnedBuffer(PinnedBuffer && other) noexcept
-    : memory(std::exchange(other.memory, nullptr))
-    , capacity(std::exchange(other.capacity, 0))
-    , used(std::exchange(other.used, 0))
-{
-}
-
-PinnedBuffer & PinnedBuffer::operator=(PinnedBuffer && other) noexcept
-{
-    if (this != &other)
+    if (bytes <= max_pooled_capacity)
     {
-        PinnedBufferPool::instance().release(memory, capacity);
-        memory = std::exchange(other.memory, nullptr);
-        capacity = std::exchange(other.capacity, 0);
-        used = std::exchange(other.used, 0);
+        std::lock_guard lock(mutex);
+        const auto it = free_buffers.find(capacity);
+        if (it != free_buffers.end())
+        {
+            char * const taken = it->second;
+            pooled_bytes -= capacity;
+            free_buffers.erase(it);
+            return taken;
+        }
     }
-    return *this;
+
+    void * fresh = nullptr;
+    checkCuda(cudaHostAlloc(&fresh, capacity, cudaHostAllocDefault), "Cannot allocate {} bytes of pinned host memory", capacity);
+    return static_cast<char *>(fresh);
 }
 
-void PinnedBuffer::reserve(size_t bytes)
+void PinnedMemoryPool::release(char * buffer, size_t bytes) noexcept
 {
-    if (bytes <= capacity)
+    if (buffer == nullptr)
         return;
 
-    const auto [fresh, fresh_capacity] = PinnedBufferPool::instance().acquire(std::max({bytes, capacity * 2, min_capacity}));
+    if (bytes <= max_pooled_capacity)
+    {
+        const size_t capacity = capacityFor(bytes);
 
-    if (used != 0)
-        memcpy(fresh, memory, used);
+        std::lock_guard lock(mutex);
+        if (pooled_bytes + capacity <= max_pooled_bytes)
+        {
+            free_buffers.emplace(capacity, buffer);
+            pooled_bytes += capacity;
+            return;
+        }
+    }
 
-    PinnedBufferPool::instance().release(memory, capacity);
-    memory = fresh;
-    capacity = fresh_capacity;
+    cudaFreeHost(buffer);
 }
 
-void PinnedBuffer::append(std::string_view bytes)
+
+void * PinnedAllocator::alloc(size_t size, size_t alignment)
+{
+    if (alignment > pinned_alignment)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pinned host memory aligned to {} bytes, more than {}", alignment, pinned_alignment);
+
+    PinnedMemoryPool & pool = GPUDevice::instance().pinnedPool();
+    const size_t capacity = pool.capacityFor(size);
+
+    auto trace = CurrentMemoryTracker::alloc(capacity);
+    char * buffer = nullptr;
+    try
+    {
+        buffer = pool.acquire(size);
+    }
+    catch (...)
+    {
+        [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(capacity);
+        throw;
+    }
+
+    trace.onAlloc(buffer, capacity);
+    return buffer;
+}
+
+void PinnedAllocator::free(void * buf, size_t size, size_t /* alignment */) noexcept
+{
+    PinnedMemoryPool & pool = PinnedMemoryPool::instance();
+    const size_t capacity = pool.capacityFor(size);
+
+    pool.release(static_cast<char *>(buf), size);
+
+    auto trace = CurrentMemoryTracker::free(capacity);
+    trace.onFree(buf, capacity);
+}
+
+void * PinnedAllocator::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
+{
+    const PinnedMemoryPool & pool = PinnedMemoryPool::instance();
+    if (pool.capacityFor(old_size) == pool.capacityFor(new_size))
+        return buf;
+
+    void * const fresh = alloc(new_size, alignment);
+    memcpy(fresh, buf, std::min(old_size, new_size));
+    free(buf, old_size, alignment);
+    return fresh;
+}
+
+char * growBy(PinnedBuffer & buffer, size_t bytes)
+{
+    const size_t start = buffer.size();
+    buffer.resize(start + bytes);
+    return buffer.data() + start;
+}
+
+void appendHostBytes(PinnedBuffer & buffer, std::string_view bytes)
 {
     if (bytes.empty())
         return;
 
-    memcpy(grow(bytes.size()), bytes.data(), bytes.size());
+    buffer.insert(bytes.data(), bytes.data() + bytes.size());
 }
 
-void PinnedBuffer::appendFromDevice(const char * device_bytes, size_t bytes, rmm::cuda_stream_view stream)
+void appendFromDevice(PinnedBuffer & buffer, const char * device_bytes, size_t bytes, rmm::cuda_stream_view stream)
 {
     if (bytes == 0)
         return;
 
     checkCuda(
-        cudaMemcpyAsync(grow(bytes), device_bytes, bytes, cudaMemcpyDeviceToHost, stream),
+        cudaMemcpyAsync(growBy(buffer, bytes), device_bytes, bytes, cudaMemcpyDeviceToHost, stream),
         "Cannot copy {} bytes back from the device",
         bytes);
-}
-
-char * PinnedBuffer::grow(size_t bytes)
-{
-    reserve(used + bytes);
-
-    char * const destination = memory + used;
-    used += bytes;
-    return destination;
 }
 
 

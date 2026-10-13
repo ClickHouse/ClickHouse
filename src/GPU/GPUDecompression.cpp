@@ -131,15 +131,19 @@ void SyncDecompressor::decompress(
         cudaStreamWaitEvent(StreamRegistry::get().decompression, destination_ready.get(), 0),
         "Cannot make the decompression stream wait for the compute stream");
 
-    device_compressed.clear();
-    device_compressed.append(host_compressed.substr(0, compressed_total));
+    /// The upload reads `host_compressed`, which the caller gives back to the pool once this throws.
+    waitOnFailure(StreamRegistry::get().decompression, [&]
+    {
+        device_compressed.clear();
+        device_compressed.append(host_compressed.substr(0, compressed_total));
 
-    const CompressedPiece piece{
-        .device_compressed = device_compressed.data(),
-        .compressed_bytes = compressed_total,
-        .blocks = blocks,
-    };
-    batch.launch(codec, std::span<const CompressedPiece>(&piece, 1), device_destination);
+        const CompressedPiece piece{
+            .device_compressed = device_compressed.data(),
+            .compressed_bytes = compressed_total,
+            .blocks = blocks,
+        };
+        batch.launch(codec, std::span<const CompressedPiece>(&piece, 1), device_destination);
+    });
     batch.waitAndCheck();
 }
 
@@ -262,7 +266,7 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
 
     const size_t arguments_bytes = num_blocks * (2 * sizeof(void *) + 2 * sizeof(size_t));
     host_arguments.clear();
-    char * const arguments = host_arguments.grow(arguments_bytes);
+    char * const arguments = growBy(host_arguments, arguments_bytes);
 
     size_t offset = 0;
     const void ** compressed_ptrs = arrayAt<const void *>(arguments, offset, num_blocks);
@@ -286,54 +290,59 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         }
     }
 
-    device_arguments.clear();
-    device_arguments.append(host_arguments.bytes());
+    /// From here the device reads `host_arguments` and the pieces, and nvcomp may write into `destination`. Once this
+    /// throws, the caller frees them, and the pools may give them to another query while the device still uses them.
+    waitOnFailure(stream, [&]
+    {
+        device_arguments.clear();
+        device_arguments.append(bytesOf(host_arguments));
 
-    offset = 0;
-    const void * const * d_compressed_ptrs = arrayAt<const void *>(device_arguments.data(), offset, num_blocks);
-    void * const * d_value_ptrs = arrayAt<void *>(device_arguments.data(), offset, num_blocks);
-    const size_t * d_compressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_blocks);
-    const size_t * d_decompressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_blocks);
+        offset = 0;
+        const void * const * d_compressed_ptrs = arrayAt<const void *>(device_arguments.data(), offset, num_blocks);
+        void * const * d_value_ptrs = arrayAt<void *>(device_arguments.data(), offset, num_blocks);
+        const size_t * d_compressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_blocks);
+        const size_t * d_decompressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_blocks);
 
-    const size_t results_bytes = num_blocks * (sizeof(size_t) + sizeof(nvcompStatus_t));
-    device_results.clear();
-    device_results.grow(results_bytes);
+        const size_t results_bytes = num_blocks * (sizeof(size_t) + sizeof(nvcompStatus_t));
+        device_results.clear();
+        device_results.grow(results_bytes);
 
-    offset = 0;
-    size_t * d_actual_bytes = arrayAt<size_t>(device_results.data(), offset, num_blocks);
-    nvcompStatus_t * d_statuses = arrayAt<nvcompStatus_t>(device_results.data(), offset, num_blocks);
+        offset = 0;
+        size_t * d_actual_bytes = arrayAt<size_t>(device_results.data(), offset, num_blocks);
+        nvcompStatus_t * d_statuses = arrayAt<nvcompStatus_t>(device_results.data(), offset, num_blocks);
 
-    size_t temp_bytes = 0;
-    checkNvcomp(
-        decompressTempBytes(codec, num_blocks, max_decompressed, decompressed_total, &temp_bytes),
-        "Cannot size nvcomp's scratch space");
+        size_t temp_bytes = 0;
+        checkNvcomp(
+            decompressTempBytes(codec, num_blocks, max_decompressed, decompressed_total, &temp_bytes),
+            "Cannot size nvcomp's scratch space");
 
-    device_temp.clear();
-    device_temp.grow(temp_bytes);
+        device_temp.clear();
+        device_temp.grow(temp_bytes);
 
-    checkNvcomp(
-        decompressAsync(
-            codec,
-            d_compressed_ptrs,
-            d_compressed_bytes,
-            d_decompressed_bytes,
-            d_actual_bytes,
-            num_blocks,
-            device_temp.data(),
-            temp_bytes,
-            d_value_ptrs,
-            d_statuses,
-            stream),
-        "Cannot decompress on the device");
+        host_results.clear();
+        char * const results = growBy(host_results, results_bytes);
 
-    host_results.clear();
-    char * const results = host_results.grow(results_bytes);
+        checkNvcomp(
+            decompressAsync(
+                codec,
+                d_compressed_ptrs,
+                d_compressed_bytes,
+                d_decompressed_bytes,
+                d_actual_bytes,
+                num_blocks,
+                device_temp.data(),
+                temp_bytes,
+                d_value_ptrs,
+                d_statuses,
+                stream),
+            "Cannot decompress on the device");
 
-    checkCuda(
-        cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream),
-        "Cannot copy the decompression statuses back");
+        checkCuda(
+            cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream),
+            "Cannot copy the decompression statuses back");
 
-    checkCuda(cudaEventRecord(expanded.get(), stream), "Cannot mark a point in the decompression stream");
+        checkCuda(cudaEventRecord(expanded.get(), stream), "Cannot mark a point in the decompression stream");
+    });
 }
 
 void DecompressionBatch::wait()

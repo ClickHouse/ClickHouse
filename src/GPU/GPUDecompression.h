@@ -33,7 +33,9 @@ struct CompressedPiece
     cudaEvent_t uploaded = nullptr;
 };
 
-/// One batched nvcomp call on the decompression stream, shared by both decompressors.
+/// One batched nvcomp call on the decompression stream, shared by both decompressors. Only the codecs of `GPUCodec`
+/// are expanded on the device; `codecOf` gives nothing for the others, whose columns are read decompressed by the CPU
+/// and sent through `ColumnUploadPipe` instead.
 class DecompressionBatch
 {
 public:
@@ -55,6 +57,12 @@ private:
     std::vector<size_t> expected_bytes;
 };
 
+/// The two decompressors differ in who owns the expanded bytes, as they differ in when the bytes are there:
+///  - `SyncDecompressor` expands into a device buffer of the caller, and the bytes are there when `decompress`
+///    returns, so the caller keeps the buffer, and clears or frees it, as any other of its own.
+///  - `AsyncDecompressor` returns before the bytes are there, so it owns the buffer they go to, which must live until
+///    the device is done writing it and then reading it. The caller only borrows it between `wait` and `release`.
+
 /// Uploads compressed bytes from the host and expands them into the caller's device buffer, blocking until done.
 class SyncDecompressor
 {
@@ -67,8 +75,9 @@ private:
 };
 
 /// Expands already uploaded pieces into an owned buffer without blocking:
-/// `launch` queues the work, `wait` blocks and returns the expanded bytes,
-/// `release` hands the buffer back once the compute stream has consumed it.
+/// `launch` queues the work, `wait` blocks and returns the expanded bytes, which stay valid until `release`,
+/// `release` hands the buffer back once the work the caller queued on the compute stream to read it is queued, and
+/// the next `launch` waits for that work before it writes the buffer again.
 class AsyncDecompressor
 {
 public:
