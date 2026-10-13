@@ -972,7 +972,7 @@ Chunk StorageURLSource::generate()
         const bool read_whole_file = !isCancelled() && !cancellation->isCancelled();
 
         if (read_whole_file && input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied())
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         releaseReader();
@@ -1783,6 +1783,9 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
+    bool supportsMinMaxFromStatistics() const override;
+    void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
+
     ReadFromURL(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -1826,9 +1829,17 @@ private:
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper;
     bool is_url_with_globs = false;
     bool is_empty_glob = false;
+    bool read_min_max_from_statistics = false;
 
     void createIterator(const ActionsDAG::Node * predicate);
 };
+
+bool ReadFromURL::supportsMinMaxFromStatistics() const
+{
+    return boost::iequals(storage->format_name, "Parquet") && !need_only_count
+        && !filter_actions_dag && !query_info.prewhere_info && !query_info.row_level_filter
+        && info.formatReturnsColumnsUnchanged(*getOutputHeader());
+}
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 {
@@ -1988,6 +1999,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->min_max_from_statistics = read_min_max_from_statistics && supportsMinMaxFromStatistics();
 
     for (size_t i = 0; i < num_streams; ++i)
     {

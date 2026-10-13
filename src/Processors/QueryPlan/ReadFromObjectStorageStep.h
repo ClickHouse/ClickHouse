@@ -48,6 +48,9 @@ public:
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
+    bool supportsMinMaxFromStatistics() const override;
+    void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 #if CLICKHOUSE_CLOUD
@@ -95,6 +98,7 @@ private:
     const size_t max_num_streams;
     const bool distributed_processing;
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+    bool read_min_max_from_statistics = false;
 #if CLICKHOUSE_CLOUD
     /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
     /// "bucket_id" task parameter will be used to determine what part of the data to read.
