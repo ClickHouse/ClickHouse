@@ -33,6 +33,28 @@ FROM numbers(3)
 SETTINGS snappy_mode = 'framed';
 "
 
+# Prove that the writer really emitted a compressed chunk, so the read below exercises the
+# compressed path and not the uncompressed fallback that SnappyFramedWriteBuffer takes when
+# compressed_size >= size. A framed stream starts with the 10-byte stream identifier chunk
+# (type 0xff, length 6, "sNaPpY"); every chunk after it has a 1-byte type and a 3-byte
+# little-endian length. Type 0x00 is a compressed data chunk, type 0x01 an uncompressed one.
+compressed_chunks=0
+uncompressed_chunks=0
+offset=10
+size=$(stat -c %s "${FILE}")
+while [ "${offset}" -lt "${size}" ]; do
+    chunk_type=$(od -An -tx1 -j "${offset}" -N 1 "${FILE}" | tr -d ' \n')
+    read -r b0 b1 b2 < <(od -An -tu1 -j $((offset + 1)) -N 3 "${FILE}")
+    chunk_len=$((b0 + b1 * 256 + b2 * 65536))
+    case "${chunk_type}" in
+        00) compressed_chunks=$((compressed_chunks + 1)) ;;
+        01) uncompressed_chunks=$((uncompressed_chunks + 1)) ;;
+    esac
+    offset=$((offset + 4 + chunk_len))
+done
+echo "compressed chunks present: $([ "${compressed_chunks}" -gt 0 ] && echo 1 || echo 0)"
+echo "uncompressed chunks present: $([ "${uncompressed_chunks}" -gt 0 ] && echo 1 || echo 0)"
+
 # Read back via SnappyFramedReadBuffer with snappy_mode='framed'.
 # This exercises the compressed-chunk path (lines 150-191).
 ${CLICKHOUSE_CLIENT} -q "
