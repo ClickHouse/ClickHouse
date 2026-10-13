@@ -339,8 +339,19 @@ void deleteFilesFromS3(
                 /// DeleteObjects didn't succeed, that means either a) this operation isn't supported at all;
                 /// or b) all the objects didn't exist; or c) some failure occurred.
                 const auto & err = outcome.GetError();
+
+                /// A digest error can also be a transient fault, such as a body altered in transit. It means that `DeleteObjects`
+                /// is unsupported only if every automatic digest has been rejected, and only while that is still undecided:
+                /// once `DeleteObjects` has worked, flipping the capability would be a mismatch (`setIsBatchDeleteSupported`).
+                /// An explicit algorithm and `S3Express` are never second-guessed. `GCS` only has `Content-MD5`.
+                const bool digest_rejected = err.GetExceptionName() == "MissingContentMD5" || err.GetExceptionName() == "InvalidDigest";
+                const bool automatic_digests_exhausted = !explicit_checksum_algorithm && !s3_client->isS3ExpressBucket()
+                    && (!use_checksum_header || checksum_algorithm == S3::RequestChecksum::Algorithm::SHA256);
+                const bool digest_means_unsupported
+                    = digest_rejected && automatic_digests_exhausted && !s3_capabilities.isBatchDeleteSupported().has_value();
+
                 if ((err.GetExceptionName() == "InvalidRequest") || (err.GetExceptionName() == "InvalidArgument")
-                    || (err.GetExceptionName() == "NotImplemented"))
+                    || (err.GetExceptionName() == "NotImplemented") || digest_means_unsupported)
                 {
                     LOG_TRACE(log, "DeleteObjects is not supported: {} (Code: {}). Retrying with plain DeleteObject.",
                               err.GetMessage(), static_cast<size_t>(err.GetErrorType()));

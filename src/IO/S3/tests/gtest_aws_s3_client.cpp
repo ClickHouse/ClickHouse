@@ -399,9 +399,10 @@ TEST(IOTestAwsS3Client, DeleteObjectsSendsRequestedChecksum)
 namespace
 {
 
-/// A `DeleteObjects` endpoint that, like a store requiring a digest, answers `400 MissingContentMD5` unless the request
-/// carries an `x-amz-checksum-sha256` header (or, with `accept_sha256 = false`, always). It keeps no other state:
-/// what a later batch does is decided by the client. Records whether each request carried `Content-MD5` or `SHA256`.
+/// A `DeleteObjects` endpoint that, like a store requiring a digest, answers `400` with `error_code` unless the request
+/// carries an `x-amz-checksum-sha256` header (or, with `accept_sha256 = false`, always). Plain `DeleteObject` requests
+/// succeed. It keeps no other state: what a later batch does is decided by the client. Records whether each
+/// `DeleteObjects` request carried `Content-MD5` or `SHA256`, and counts the plain deletes.
 class DeleteObjectsStubServer
 {
 public:
@@ -412,11 +413,12 @@ public:
         None,
     };
 
-    explicit DeleteObjectsStubServer(bool accept_sha256_)
+    explicit DeleteObjectsStubServer(bool accept_sha256_, String error_code_ = "MissingContentMD5")
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , factory(new Factory(*this))
         , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
         , accept_sha256(accept_sha256_)
+        , error_code(std::move(error_code_))
     {
         server->start();
     }
@@ -431,6 +433,12 @@ public:
         return digests;
     }
 
+    size_t getPlainDeleteCount() const
+    {
+        std::lock_guard lock(mutex);
+        return plain_deletes;
+    }
+
 private:
     class Handler : public Poco::Net::HTTPRequestHandler
     {
@@ -439,6 +447,17 @@ private:
 
         void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
         {
+            if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
+            {
+                {
+                    std::lock_guard lock(stub.mutex);
+                    ++stub.plain_deletes;
+                }
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_NO_CONTENT);
+                response.send();
+                return;
+            }
+
             const bool has_sha256 = request.has("x-amz-checksum-sha256");
             const bool has_md5 = request.has("content-md5");
             {
@@ -457,7 +476,7 @@ private:
             response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             response.setContentType("application/xml");
             response.send() << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                               "<Error><Code>MissingContentMD5</Code><Message>Missing required header</Message></Error>";
+                               "<Error><Code>" << stub.error_code << "</Code><Message>Digest rejected</Message></Error>";
         }
 
     private:
@@ -482,9 +501,11 @@ private:
     Poco::SharedPtr<Factory> factory;
     std::unique_ptr<Poco::Net::HTTPServer> server;
     const bool accept_sha256;
+    const String error_code;
 
     mutable std::mutex mutex;
     std::vector<Digest> digests;
+    size_t plain_deletes = 0;
 };
 
 using Digest = DeleteObjectsStubServer::Digest;
@@ -522,21 +543,49 @@ TEST(IOTestAwsS3Client, DeleteObjectsRetriesWithSHA256AndRemembers)
     EXPECT_EQ(stub.getDigests().size(), md5_available ? 3u : 2u);
 }
 
-TEST(IOTestAwsS3Client, DeleteObjectsDoesNotRememberFailedSHA256Retry)
+/// The server accepts no digest. With `DeleteObjects` support still undecided, that means it is unsupported.
+TEST(IOTestAwsS3Client, DeleteObjectsFallsBackWhenNoDigestIsAccepted)
 {
-    if (!DB::OpenSSLInitializer::instance().isMD5Available())
-        GTEST_SKIP() << "No MD5 attempt to retry without MD5";
+    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
+    for (const String error_code : {"MissingContentMD5", "InvalidDigest"})
+    {
+        DeleteObjectsStubServer stub(/*accept_sha256=*/ false, error_code);
+        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
 
-    DeleteObjectsStubServer stub(/*accept_sha256=*/ false);
-    DB::S3::URI uri(stub.getUrl() + "/bucket/key");
-    auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+        DB::S3Capabilities capabilities;
+        DB::S3::S3RequestSettings automatic;
 
-    DB::S3Capabilities capabilities;
-    DB::S3::S3RequestSettings automatic;
+        deleteTwoKeys(client, uri, capabilities, automatic);
+        if (md5_available)
+            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256})) << error_code;
+        else
+            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256})) << error_code;
+        EXPECT_EQ(stub.getPlainDeleteCount(), 2u) << error_code;
+        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(false)) << error_code;
+        /// The `SHA256` retry did not succeed, so it is not remembered.
+        EXPECT_FALSE(capabilities.isDeleteMD5Rejected()) << error_code;
+    }
+}
 
-    EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, automatic), DB::Exception);
-    EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256}));
-    EXPECT_FALSE(capabilities.isDeleteMD5Rejected());
+/// Once `DeleteObjects` has worked, a digest error is a fault of that request, not a lack of support.
+TEST(IOTestAwsS3Client, DeleteObjectsDigestErrorAfterSuccessIsThrown)
+{
+    for (const String error_code : {"MissingContentMD5", "InvalidDigest"})
+    {
+        DeleteObjectsStubServer stub(/*accept_sha256=*/ false, error_code);
+        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+        DB::S3Capabilities capabilities;
+        capabilities.setIsBatchDeleteSupported(true);
+        DB::S3::S3RequestSettings automatic;
+
+        EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, automatic), DB::Exception) << error_code;
+        EXPECT_EQ(stub.getPlainDeleteCount(), 0u) << error_code;
+        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(true)) << error_code;
+        EXPECT_FALSE(capabilities.isDeleteMD5Rejected()) << error_code;
+    }
 }
 
 TEST(IOTestAwsS3Client, DeleteObjectsExplicitChecksumIsNotRetried)
@@ -552,6 +601,8 @@ TEST(IOTestAwsS3Client, DeleteObjectsExplicitChecksumIsNotRetried)
     /// The stub wants `SHA256`, but an explicit algorithm is never replaced.
     EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, explicit_crc32), DB::Exception);
     EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::None}));
+    EXPECT_EQ(stub.getPlainDeleteCount(), 0u);
+    EXPECT_FALSE(capabilities.isBatchDeleteSupported().has_value());
     EXPECT_FALSE(capabilities.isDeleteMD5Rejected());
 }
 
