@@ -13,6 +13,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/Util/SystemConfiguration.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
@@ -2625,11 +2626,12 @@ try
                     incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
-            /// The Prometheus check below, the reloaders and `latest_config` keep the configuration
-            /// they are given, so it must have the command line on top of the file.
+            /// The Prometheus check below, the reloaders and `latest_config` keep the configuration they are given, so it
+            /// must have the command line on top of the file and, like `config()`, resolve `${system.*}` references.
             Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
             file_and_command_line->add(loaded_config, PRIO_DEFAULT);
             argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+            file_and_command_line->add(new Poco::Util::SystemConfiguration, PRIO_SYSTEM, /* shared */ false);
             const ConfigurationPtr reload_config = file_and_command_line;
 
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes

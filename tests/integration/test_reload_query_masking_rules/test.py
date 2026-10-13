@@ -8,6 +8,11 @@ from helpers.test_tools import assert_logs_contain_with_retry
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", user_configs=["configs/empty_settings.xml"])
+node_env = cluster.add_instance(
+    "node_env",
+    main_configs=["configs/env_masking_rule.xml"],
+    env_variables={"MASK_PATTERN": "env_secret_value"},
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -57,3 +62,17 @@ def test_reload_query_masking_rules():
     assert not node.contains_in_log("SELECT 'TOPSECRET.TOPSECRET'")
 
     node.rotate_logs()
+
+
+def test_reload_keeps_system_env_reference():
+    # The rule reads its pattern through `${system.env.MASK_PATTERN}`; masking must hold before and after a reload.
+    node_env.query("SELECT 'env_secret_value'")
+    assert_logs_contain_with_retry(node_env, r"SELECT '\[env-hidden\]'")
+    assert not node_env.contains_in_log("SELECT 'env_secret_value'")
+    node_env.rotate_logs()
+
+    node_env.query("SYSTEM RELOAD CONFIG")
+
+    node_env.query("SELECT 'env_secret_value'")
+    assert_logs_contain_with_retry(node_env, r"SELECT '\[env-hidden\]'")
+    assert not node_env.contains_in_log("SELECT 'env_secret_value'")
