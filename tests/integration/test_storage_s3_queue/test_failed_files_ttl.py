@@ -1461,3 +1461,111 @@ def test_wait_for_path_reads_loading_retries_live(started_cluster):
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
+def test_system_drop_failed_files_removes_terminal_nodes(started_cluster):
+    node = started_cluster.instances["instance"]
+    table = f"test_drop_failed_{uuid.uuid4().hex[:8]}"
+    dst = f"{table}_dst"
+    keeper_path = f"/clickhouse/test_{table}"
+    files_path = f"{table}_data"
+    zk = started_cluster.get_kazoo_client("zoo1")
+    failed_path = f"{keeper_path}/failed"
+
+    create_table(
+        started_cluster, node, table, "unordered", files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,
+            "polling_min_timeout_ms": 1000,
+            "polling_max_timeout_ms": 1000,
+        },
+    )
+    try:
+        put_s3_file_content(started_cluster, f"{files_path}/bad.csv", b"not,valid,data\n")
+        create_mv(node, table, dst)
+
+        deadline = time.monotonic() + 60
+        terminal = []
+        while time.monotonic() < deadline:
+            children = zk.get_children(failed_path) if zk.exists(failed_path) else []
+            terminal = [c for c in children if not c.endswith(".retriable")]
+            if terminal:
+                break
+            time.sleep(0.2)
+        assert terminal, "No terminal /failed node appeared"
+
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table}")
+
+        remaining = [c for c in zk.get_children(failed_path) if not c.endswith(".retriable")]
+        assert not remaining, f"terminal failed nodes were not dropped: {remaining}"
+    finally:
+        for obj in (f"{table}_mv", dst, table):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {obj}")
+            except Exception:
+                pass
+
+
+def test_system_drop_failed_files_like_filter(started_cluster):
+    import json
+
+    node = started_cluster.instances["instance"]
+    table = f"test_drop_like_{uuid.uuid4().hex[:8]}"
+    dst = f"{table}_dst"
+    keeper_path = f"/clickhouse/test_{table}"
+    files_path = f"{table}_data"
+    zk = started_cluster.get_kazoo_client("zoo1")
+    failed_path = f"{keeper_path}/failed"
+
+    def terminal_file_paths():
+        if not zk.exists(failed_path):
+            return []
+        result = []
+        for c in zk.get_children(failed_path):
+            if c.endswith(".retriable"):
+                continue
+            try:
+                data, _ = zk.get(f"{failed_path}/{c}")
+            except Exception:
+                continue
+            result.append(json.loads(data.decode())["file_path"])
+        return result
+
+    create_table(
+        started_cluster, node, table, "unordered", files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,
+            "polling_min_timeout_ms": 1000,
+            "polling_max_timeout_ms": 1000,
+        },
+    )
+    try:
+        put_s3_file_content(started_cluster, f"{files_path}/alpha_bad.csv", b"not,valid,data\n")
+        put_s3_file_content(started_cluster, f"{files_path}/beta_bad.csv", b"not,valid,data\n")
+        create_mv(node, table, dst)
+
+        deadline = time.monotonic() + 60
+        paths = []
+        while time.monotonic() < deadline:
+            paths = terminal_file_paths()
+            if len(paths) == 2:
+                break
+            time.sleep(0.2)
+        assert len(paths) == 2, f"Expected 2 terminal /failed nodes, got {paths}"
+
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table} LIKE '%alpha%'")
+
+        remaining = terminal_file_paths()
+        assert len(remaining) == 1, f"expected only beta to remain, got {remaining}"
+        assert "beta_bad.csv" in remaining[0], remaining
+
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table}")
+        assert terminal_file_paths() == []
+    finally:
+        for obj in (f"{table}_mv", dst, table):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {obj}")
+            except Exception:
+                pass
