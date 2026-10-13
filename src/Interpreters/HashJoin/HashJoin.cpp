@@ -44,7 +44,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <Interpreters/IJoin.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -64,7 +63,6 @@
 
 namespace ProfileEvents
 {
-extern const Event HashJoinBuildMicroseconds;
 extern const Event HashJoinBuiltWithParallelLayout;
 extern const Event HashJoinBuiltWithSerialLayout;
 extern const Event JoinNonJoinedHashTableScans;
@@ -1067,8 +1065,6 @@ BuildResult HashJoin::insertClause(
 
 bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, JoinBuildContext context)
 {
-    ProfileEventTimeIncrement<Microseconds> build_watch(ProfileEvents::HashJoinBuildMicroseconds);
-
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
@@ -3063,8 +3059,6 @@ bool HashJoin::recordsRowRefsForStats() const
 
 void HashJoin::onBuildPhaseFinish()
 {
-    ProfileEventTimeIncrement<Microseconds> build_watch(ProfileEvents::HashJoinBuildMicroseconds);
-
     freezeMapsForProbing();
     reinitUsedFlags();
 

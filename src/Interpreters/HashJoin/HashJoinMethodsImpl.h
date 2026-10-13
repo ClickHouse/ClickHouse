@@ -8,7 +8,6 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/ProfileEvents.h>
 
@@ -18,7 +17,6 @@
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
-extern const Event HashJoinProbeMicroseconds;
 }
 
 namespace DB
@@ -209,8 +207,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     const MapsTemplateVector & maps_,
     bool is_join_get)
 {
-    ProfileEventTimeIncrement<Microseconds> probe_watch(ProfileEvents::HashJoinProbeMicroseconds);
-
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
     std::vector<JoinOnKeyColumns> join_on_keys;
