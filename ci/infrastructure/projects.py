@@ -339,7 +339,7 @@ PROJECTS = [
                 availability_zones=["ap-southeast-2b"],
                 instance_type="mac2-m2pro.metal",
                 image_id=MAC_OS_TAHOE_ARM_IMAGE_AMI,
-                quantity_per_az=10,
+                quantity_per_az=16,
                 vpc_name="macos-ap-southeast-2",
             ),
         ],
