@@ -88,7 +88,8 @@ bool SpillingHashJoin::addBlockToExternalJoin(const Block & block, size_t num_ro
     if (keep_left_block_order)
     {
         /// MergeJoin cannot build right side concurrently, thus protect it with a mutex
-        /// FIXME(antaljanosbenjamin): SortedBlock
+        /// TODO(antaljanosbenjamin): Make SortedBlockWriter multi-threaded
+        chassert(!chosen_join->supportParallelJoin());
         std::lock_guard lock(merge_join_insert_mutex);
         return chosen_join->addBlockToJoin(block, num_rows, context);
     }
