@@ -259,7 +259,7 @@ struct TestPipeline
         processors->emplace_back(std::move(data_sink));
     }
 
-    void execute(size_t num_threads = 4)
+    void execute(size_t num_threads = 4) const
     {
         QueryStatusPtr element;
         Runtime::V1::PipelineExecutor executor(processors, element);
@@ -268,7 +268,7 @@ struct TestPipeline
 
     /// Executes while another thread waits for the filter registration (30 s failsafe), then
     /// cancels. Returns whether the registration was observed.
-    bool executeUntilRegistered()
+    bool executeUntilRegistered() const
     {
         QueryStatusPtr element;
         Runtime::V1::PipelineExecutor executor(processors, element);
@@ -298,7 +298,7 @@ struct TestPipeline
 
     /// Executes while another thread cancels as soon as `cancel_after` opens, then releases
     /// `release_after_cancel` so a source blocked on it can finish.
-    void executeAndCancel(const std::shared_ptr<Gate> & cancel_after, const std::shared_ptr<Gate> & release_after_cancel)
+    void executeAndCancel(const std::shared_ptr<Gate> & cancel_after, const std::shared_ptr<Gate> & release_after_cancel) const
     {
         QueryStatusPtr element;
         Runtime::V1::PipelineExecutor executor(processors, element);
