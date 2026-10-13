@@ -45,6 +45,157 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
+/// Reads the posting lists of the tokens of a part a dictionary block at a time, segment by segment of each posting list,
+/// with the positions of the token in the rows if they are requested.
+struct SimplePostingsCursor
+{
+    /// Reads the posting lists of a part from its files. `positions_buf_` is null if the positions are not read.
+    SimplePostingsCursor(
+        const String & part_name_,
+        PostingsSerialization postings_serialization_,
+        std::unique_ptr<ReadBufferFromFileBase> postings_buf_,
+        std::unique_ptr<ReadBufferFromFileBase> positions_buf_,
+        size_t positions_file_size_)
+        : part_name(part_name_)
+        , postings_serialization(std::move(postings_serialization_))
+        , postings_buf(std::move(postings_buf_))
+        , positions_buf(std::move(positions_buf_))
+        , positions_file_size(positions_file_size_)
+    {
+    }
+
+    /// Starts reading the posting lists of the tokens of `block_`, whose columns of the tokens are `block_columns_`.
+    void setBlock(DictionaryBlock block_, MutableColumns block_columns_)
+    {
+        block = std::move(block_);
+        block_columns = std::move(block_columns_);
+        token_index = 0;
+        segment_index = 0;
+        segment_rank = 0;
+    }
+
+    /// Reads the next segment of a posting list of the block into `row_ids`, and into `positions` if they are read.
+    /// Returns false if all posting lists of the block are read.
+    bool readNextSegment()
+    {
+        if (!block)
+            return false;
+
+        while (token_index < block->size() && segment_index == block->token_infos[token_index].offsets.size())
+        {
+            ++token_index;
+            segment_index = 0;
+            segment_rank = 0;
+        }
+
+        if (token_index == block->size())
+            return false;
+
+        readSegment(block->token_infos[token_index]);
+        return true;
+    }
+
+    /// The dictionary block whose posting lists are read, with its columns of the tokens (a row per token).
+    std::optional<DictionaryBlock> block;
+    MutableColumns block_columns;
+    /// The token of the last read segment.
+    size_t token_index = 0;
+
+    /// Data of the last read segment of a posting list.
+    PaddedPODArray<UInt32> row_ids;
+    PaddedPODArray<UInt32> position_offsets;
+    PaddedPODArray<UInt32> positions;
+
+private:
+    /// Reads the segment `segment_index` of the posting list of the current token, then moves to the next segment.
+    void readSegment(const TokenPostingsInfo & token_info)
+    {
+        row_ids.clear();
+        position_offsets.clear();
+        positions.clear();
+
+        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+        {
+            row_ids.insert(token_info.embedded_postings.begin(), token_info.embedded_postings.end());
+        }
+        else
+        {
+            postings_buf->seek(static_cast<off_t>(token_info.offsets[segment_index]), SEEK_SET);
+            postings_serialization.deserializeToArray(*postings_buf, token_info, segment_index, row_ids);
+        }
+
+        if (positions_buf)
+            readPositions(token_info, segment_rank, row_ids.size());
+
+        segment_rank += row_ids.size();
+        ++segment_index;
+    }
+
+    /// Reads the positions of the postings [first_rank, first_rank + num_ranks) of the token into `positions`,
+    /// delimited by the end offsets in `position_offsets`.
+    void readPositions(const TokenPostingsInfo & token_info, size_t first_rank, size_t num_ranks)
+    {
+        static constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+
+        if (first_rank == 0)
+        {
+            if (!(token_info.header & PostingsSerialization::Flags::HasPositions))
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted data in text index: a token has no positions in part {}", part_name);
+            }
+
+            /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
+            if ((token_info.position_bytes == 0)
+                || (token_info.position_offset > positions_file_size)
+                || (token_info.position_bytes > positions_file_size - token_info.position_offset))
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
+                    token_info.position_bytes, token_info.position_offset, positions_file_size);
+            }
+
+            positions_buf->seek(static_cast<off_t>(token_info.position_offset), SEEK_SET);
+            positions_directory = TextIndexBlockedPositionsCodec::readDirectory(*positions_buf, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
+        }
+
+        const size_t end_rank = first_rank + num_ranks;
+        if (end_rank > positions_directory.num_docs)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: more posting documents than position lists ({})", positions_directory.num_docs);
+        }
+
+        for (size_t rank = first_rank; rank < end_rank;)
+        {
+            const size_t block_idx = rank / block_docs;
+            const size_t block_end = std::min(end_rank, (block_idx + 1) * block_docs);
+
+            block_local_ranks.resize(block_end - rank);
+            std::iota(block_local_ranks.begin(), block_local_ranks.end(), static_cast<UInt32>(rank % block_docs));
+
+            positions_buf->seek(static_cast<off_t>(positions_directory.block_offsets[block_idx]), SEEK_SET);
+            TextIndexBlockedPositionsCodec::decodeBlock(*positions_buf, positions_directory, block_idx, block_local_ranks, position_offsets, positions, positions_scratch);
+            rank = block_end;
+        }
+    }
+
+    /// Files of the posting lists and positions of the current part.
+    String part_name;
+    PostingsSerialization postings_serialization;
+    std::unique_ptr<ReadBufferFromFileBase> postings_buf;
+    std::unique_ptr<ReadBufferFromFileBase> positions_buf;
+    size_t positions_file_size = 0;
+
+    /// The next segment of the posting list of the current token, and the rank of its first posting in the list.
+    size_t segment_index = 0;
+    size_t segment_rank = 0;
+
+    TextIndexBlockedPositionsCodec::Directory positions_directory;
+    PaddedPODArray<UInt32> block_local_ranks;
+    TextIndexBlockedPositionsCodec::DecodeScratch positions_scratch;
+};
+
 class MergeTreeTextIndexSource final : public ISource
 {
 public:
@@ -132,39 +283,27 @@ private:
 
         while (total_rows < max_block_size)
         {
-            if (!current_block || current_token == current_block->size())
+            if (!postings_cursor || !postings_cursor->readNextSegment())
             {
                 auto dict_block = readNextDictionaryBlock();
                 if (!dict_block)
                     break;
 
-                current_block = std::move(dict_block);
-                current_block_columns = header->cloneEmptyColumns();
-                fillTokenColumns(*current_block, current_block_columns);
-                current_token = 0;
-                current_segment = 0;
-                current_segment_rank = 0;
+                MutableColumns block_columns = header->cloneEmptyColumns();
+                fillTokenColumns(*dict_block, block_columns);
+                postings_cursor->setBlock(std::move(*dict_block), std::move(block_columns));
                 continue;
             }
 
-            const auto & token_info = current_block->token_infos[current_token];
-
-            if (current_segment == token_info.offsets.size())
-            {
-                ++current_token;
-                current_segment = 0;
-                current_segment_rank = 0;
-                continue;
-            }
-
-            readPostingsSegment(token_info);
+            const auto & row_ids = postings_cursor->row_ids;
             size_t num_rows = row_ids.size();
 
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
                 if (pos == row_id_pos)
                 {
-                    assert_cast<ColumnUInt32 &>(*result_columns[pos]).getData().insert(row_ids.begin(), row_ids.end());
+                    auto & row_id_data = assert_cast<ColumnUInt32 &>(*result_columns[pos]).getData();
+                    row_id_data.insert(row_ids.begin(), row_ids.end());
                 }
                 else if (pos == positions_pos)
                 {
@@ -173,13 +312,13 @@ private:
                     auto & offsets = array_column.getOffsets();
                     const size_t base = data.size();
 
-                    data.insert(positions.begin(), positions.end());
-                    for (UInt32 offset : position_offsets)
+                    data.insert(postings_cursor->positions.begin(), postings_cursor->positions.end());
+                    for (UInt32 offset : postings_cursor->position_offsets)
                         offsets.push_back(base + offset);
                 }
                 else
                 {
-                    result_columns[pos]->insertManyFrom(*current_block_columns[pos], current_token, num_rows);
+                    result_columns[pos]->insertManyFrom(*postings_cursor->block_columns[pos], postings_cursor->token_index, num_rows);
                 }
             }
 
@@ -206,17 +345,14 @@ private:
             const auto & col_with_type = header->getByPosition(pos);
             const auto & column_name = col_with_type.name;
 
-            if (column_name == "token")
+            if (pos == row_id_pos || pos == positions_pos || pos == token_key_pos || pos == token_value_pos)
+            {
+                /// These columns are filled separately.
+                continue;
+            }
+            else if (column_name == "token")
             {
                 columns[pos]->insertRangeFrom(*dict_block.tokens, 0, block_size);
-            }
-            else if (column_name == "token_key" || column_name == "token_value")
-            {
-                /// Filled together below: one decode per token serves both columns.
-            }
-            else if (pos == row_id_pos || pos == positions_pos)
-            {
-                /// Filled from the posting lists.
             }
             else if (column_name == "cardinality")
             {
@@ -293,79 +429,6 @@ private:
         }
     }
 
-    /// Reads the segment `current_segment` of the posting list of the current token into `row_ids`,
-    /// and into `positions` if they are requested, then moves to the next segment.
-    void readPostingsSegment(const TokenPostingsInfo & token_info)
-    {
-        row_ids.clear();
-        position_offsets.clear();
-        positions.clear();
-
-        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-        {
-            row_ids.insert(token_info.embedded_postings.begin(), token_info.embedded_postings.end());
-        }
-        else
-        {
-            postings_buf->seek(static_cast<off_t>(token_info.offsets[current_segment]), SEEK_SET);
-            postings_serialization->deserializeToArray(*postings_buf, token_info, current_segment, row_ids);
-        }
-
-        if (positions_pos)
-            readPositions(token_info, current_segment_rank, row_ids.size());
-
-        current_segment_rank += row_ids.size();
-        ++current_segment;
-    }
-
-    /// Reads the positions of the postings [first_rank, first_rank + num_ranks) of the token into `positions`,
-    /// delimited by the end offsets in `position_offsets`.
-    void readPositions(const TokenPostingsInfo & token_info, size_t first_rank, size_t num_ranks)
-    {
-        static constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
-
-        if (first_rank == 0)
-        {
-            if (!(token_info.header & PostingsSerialization::Flags::HasPositions))
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a token has no positions in part {}", current_part_name);
-
-            /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
-            if ((token_info.position_bytes == 0) || (token_info.position_offset > positions_file_size)
-                || (token_info.position_bytes > positions_file_size - token_info.position_offset))
-            {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
-                    token_info.position_bytes, token_info.position_offset, positions_file_size);
-            }
-
-            positions_buf->seek(static_cast<off_t>(token_info.position_offset), SEEK_SET);
-            positions_directory = TextIndexBlockedPositionsCodec::readDirectory(
-                *positions_buf, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
-        }
-
-        const size_t end_rank = first_rank + num_ranks;
-        if (end_rank > positions_directory.num_docs)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions: more posting documents than position lists ({})", positions_directory.num_docs);
-        }
-
-        for (size_t rank = first_rank; rank < end_rank;)
-        {
-            const size_t block_idx = rank / block_docs;
-            const size_t block_end = std::min(end_rank, (block_idx + 1) * block_docs);
-
-            block_local_ranks.resize(block_end - rank);
-            std::iota(block_local_ranks.begin(), block_local_ranks.end(), static_cast<UInt32>(rank % block_docs));
-
-            positions_buf->seek(static_cast<off_t>(positions_directory.block_offsets[block_idx]), SEEK_SET);
-            TextIndexBlockedPositionsCodec::decodeBlock(
-                *positions_buf, positions_directory, block_idx, block_local_ranks, position_offsets, positions, positions_scratch);
-
-            rank = block_end;
-        }
-    }
-
     /// Read the next dictionary block.
     /// Returns std::nullopt when all parts are exhausted.
     std::optional<DictionaryBlock> readNextDictionaryBlock()
@@ -388,7 +451,7 @@ private:
                 }
 
                 size_t block_idx = matching_blocks[next_matching_block++];
-                dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
+                dictionary_buf->seek(index_header.sparse_index.getOffsetInFile(block_idx), 0);
                 return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*with_postings=*/ read_postings);
             }
             else /// Sequential reading without filtering.
@@ -420,9 +483,9 @@ private:
         return {part.getDataPartStorage().readFile(file_name, read_settings, file_size), file_size};
     }
 
-    /// Opens the files of the posting lists and positions of the part,
+    /// Creates the cursor over the posting lists of the part from the files of the posting lists and positions,
     /// whose index must store the data of the requested columns.
-    void openPostingsFiles(const IMergeTreeDataPart & part, const TextIndexHeader & index_header)
+    void initPostingsCursor(const IMergeTreeDataPart & part)
     {
         if (positions_pos && !index_header.has_positions)
         {
@@ -432,12 +495,12 @@ private:
                 index_name, part.name, index_name);
         }
 
-        auto postings_codec = PostingListCodecFactory::createPostingListCodec(index_header.codec_type);
-        postings_serialization.emplace(std::move(postings_codec), index_header.version);
-
-        postings_buf = openIndexFile(part, MergeTreeIndexSubstream::Type::TextIndexPostings).first;
+        auto postings_buf = openIndexFile(part, MergeTreeIndexSubstream::Type::TextIndexPostings).first;
         if (!postings_buf)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Text index '{}' in part '{}' has no file with posting lists", index_name, part.name);
+
+        std::unique_ptr<ReadBufferFromFileBase> positions_buf;
+        size_t positions_file_size = 0;
 
         if (positions_pos)
         {
@@ -445,6 +508,37 @@ private:
             if (!positions_buf)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Text index '{}' in part '{}' has no file with positions", index_name, part.name);
         }
+
+        PostingsSerialization postings_serialization(PostingListCodecFactory::createPostingListCodec(index_header.codec_type), index_header.version);
+        postings_cursor.emplace(part.name, std::move(postings_serialization), std::move(postings_buf), std::move(positions_buf), positions_file_size);
+    }
+
+    /// Loads the header of the index in `part` if it is needed, and finds the dictionary blocks matching the token condition.
+    /// Returns false if the part must be skipped: the index is not materialized in the part or no block matches.
+    bool loadHeader(const IMergeTreeDataPart & part)
+    {
+        if (!token_key_condition && !read_postings)
+            return true;
+
+        auto idx_file = openIndexFile(part, MergeTreeIndexSubstream::Type::Regular).first;
+
+        /// Skip part if index is not materialized in the part.
+        if (!idx_file)
+            return false;
+
+        CompressedReadBufferFromFile idx_buf(std::move(idx_file));
+
+        /// Without a token condition only the version and codecs are needed to read the posting lists.
+        if (token_key_condition)
+        {
+            index_header = TextIndexSerialization::deserializeHeader(idx_buf);
+
+            computeMatchingBlocks();
+            return !matching_blocks.empty();
+        }
+
+        index_header = TextIndexSerialization::deserializeHeaderPrefix(idx_buf);
+        return true;
     }
 
     /// Claim and open index files for the next part that has this text index.
@@ -453,14 +547,10 @@ private:
     bool advanceToNextPart()
     {
         dictionary_buf.reset();
-        sparse_index = {};
+        index_header = {};
         matching_blocks.clear();
         next_matching_block = 0;
-
-        postings_buf.reset();
-        positions_buf.reset();
-        positions_file_size = 0;
-        postings_serialization.reset();
+        postings_cursor.reset();
 
         while (true)
         {
@@ -469,39 +559,16 @@ private:
                 return false;
 
             const auto & part = (*data_parts)[idx];
-            std::optional<TextIndexHeader> index_header;
-
-            if (token_key_condition || read_postings)
-            {
-                auto idx_file = openIndexFile(*part, MergeTreeIndexSubstream::Type::Regular).first;
-
-                /// Skip part if index is not materialized in the part.
-                if (!idx_file)
-                    continue;
-
-                CompressedReadBufferFromFile idx_buf(std::move(idx_file));
-                index_header = TextIndexSerialization::deserializeHeader(idx_buf);
-
-                if (index_header->sparse_index.empty())
-                    continue;
-            }
-
-            if (token_key_condition)
-            {
-                sparse_index = std::move(index_header->sparse_index);
-                computeMatchingBlocks();
-                if (matching_blocks.empty())
-                    continue;
-            }
+            if (!loadHeader(*part))
+                continue;
 
             auto dict_file = openIndexFile(*part, MergeTreeIndexSubstream::Type::TextIndexDictionary).first;
-
             /// Skip part if index is not materialized in the part.
             if (!dict_file)
                 continue;
 
             if (read_postings)
-                openPostingsFiles(*part, *index_header);
+                initPostingsCursor(*part);
 
             dictionary_buf = std::make_unique<CompressedReadBufferFromFile>(std::move(dict_file));
             current_part_name = part->name;
@@ -512,13 +579,13 @@ private:
     /// Use the KeyCondition against the sparse index to find which dictionary blocks match.
     void computeMatchingBlocks()
     {
-        size_t num_blocks = sparse_index.size();
+        size_t num_blocks = index_header.sparse_index.size();
         auto string_type = std::make_shared<DataTypeString>();
         DataTypes key_types = {string_type};
 
         /// FieldRef can reference a column cell by pointer, avoiding string copies.
         /// The sparse index is loaded without a cache here, so tokens are stored as a raw column.
-        ColumnsWithTypeAndName ref_columns = {{sparse_index.getTokensColumn(), string_type, "token"}};
+        ColumnsWithTypeAndName ref_columns = {{index_header.sparse_index.getTokensColumn(), string_type, "token"}};
 
         for (size_t i = 0; i < num_blocks; ++i)
         {
@@ -550,7 +617,6 @@ private:
     /// Positions of the columns of the posting lists in the header, if requested.
     std::optional<size_t> row_id_pos;
     std::optional<size_t> positions_pos;
-    /// Whether any column of the posting lists is requested, so a row is returned per posting.
     bool read_postings = false;
 
     /// State for current part
@@ -558,33 +624,12 @@ private:
     std::unique_ptr<CompressedReadBufferFromFile> dictionary_buf;
 
     /// State for KeyCondition-based block filtering
-    DictionarySparseIndex sparse_index;
+    TextIndexHeader index_header;
     std::vector<size_t> matching_blocks;
     size_t next_matching_block = 0;
 
-    /// State for reading the posting lists of the current part.
-    std::unique_ptr<ReadBufferFromFileBase> postings_buf;
-    std::unique_ptr<ReadBufferFromFileBase> positions_buf;
-    size_t positions_file_size = 0;
-    std::optional<PostingsSerialization> postings_serialization;
-
-    /// The dictionary block whose posting lists are read, with its columns of the tokens (a row per token).
-    std::optional<DictionaryBlock> current_block;
-    MutableColumns current_block_columns;
-    size_t current_token = 0;
-    /// The next segment of the posting list of the current token, and the rank of its first posting in the list.
-    size_t current_segment = 0;
-    size_t current_segment_rank = 0;
-    /// The positions directory of the current token.
-    TextIndexBlockedPositionsCodec::Directory positions_directory;
-
-    /// Data of the last read segment of a posting list.
-    PaddedPODArray<UInt32> row_ids;
-    PaddedPODArray<UInt32> position_offsets;
-    PaddedPODArray<UInt32> positions;
-
-    std::vector<UInt32> block_local_ranks;
-    TextIndexBlockedPositionsCodec::DecodeScratch positions_scratch;
+    /// State for reading the posting lists.
+    std::optional<SimplePostingsCursor> postings_cursor;
 };
 
 class ReadFromMergeTreeTextIndex : public SourceStepWithFilter
@@ -719,12 +764,16 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals(const MergeT
     desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
 
-    desc.addEphemeral("row_id", std::make_shared<DataTypeUInt32>(),
+    desc.addEphemeral("row_id",
+        std::make_shared<DataTypeUInt32>(),
         "Number of the row in the data part from the posting list of the token", VirtualsMaterializationPlace::Reader);
 
     if (text_index.params.enable_positions)
-        desc.addEphemeral("positions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()),
+    {
+        desc.addEphemeral("positions",
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()),
             "Positions of the token in the row", VirtualsMaterializationPlace::Reader);
+    }
 
     return desc;
 }
