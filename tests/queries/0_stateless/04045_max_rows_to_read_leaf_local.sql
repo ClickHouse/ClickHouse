@@ -16,5 +16,7 @@ SELECT count() FROM (SELECT * FROM v_leaf_limit ORDER BY number LIMIT 3) SETTING
 -- View without ORDER BY should also work (this was the failing case)
 SELECT count() FROM (SELECT * FROM v_leaf_limit LIMIT 3) SETTINGS max_rows_to_read_leaf = 5000000;
 
+SELECT count() FROM numbers(1000) SETTINGS max_rows_to_read_leaf = 10;
+
 DROP VIEW v_leaf_limit;
 DROP TABLE t_leaf_limit;
