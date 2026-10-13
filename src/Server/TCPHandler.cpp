@@ -1602,7 +1602,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 std::lock_guard lock(*callback_mutex);
                 if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT)
                     sendProgress(state);
-                sendInsertProfileEvents(state);
+                sendInsertProfileEvents(state, /* final_report = */ true);
             }
             return;
         }
@@ -1625,7 +1625,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
-    sendInsertProfileEvents(state);
+    sendInsertProfileEvents(state, /* final_report = */ true);
 }
 
 
@@ -1987,11 +1987,15 @@ void TCPHandler::sendSelectProfileEvents(QueryState & state)
 }
 
 
-void TCPHandler::sendInsertProfileEvents(QueryState & state)
+void TCPHandler::sendInsertProfileEvents(QueryState & state, bool final_report)
 {
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
         return;
-    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    /// The initiator of a distributed `INSERT` (`RemoteInserter`) does not read the packets of the remote
+    /// server while it sends the data, so the periodic reports could fill the socket buffers on both sides
+    /// and deadlock. But it waits for the end of the query after sending all the data, and charges the
+    /// final report to the quotas over profile events of the initiating user.
+    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY && !final_report)
         return;
 
     sendProfileEvents(state);

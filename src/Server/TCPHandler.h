@@ -357,7 +357,8 @@ private:
     void sendExtremes(QueryState & state, const Block & extremes);
     void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
-    void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
+    /// `final_report` is the report after all the data of the `INSERT` has been received.
+    void sendInsertProfileEvents(QueryState & state, bool final_report = false) TSA_REQUIRES(callback_mutex);
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.

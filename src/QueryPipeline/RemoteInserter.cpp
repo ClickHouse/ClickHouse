@@ -8,6 +8,7 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProcessList.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
 
@@ -18,6 +19,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsBool send_profile_events;
 }
 
 namespace ErrorCodes
@@ -31,10 +33,12 @@ RemoteInserter::RemoteInserter(
     const ConnectionTimeouts & timeouts_,
     const String & query_,
     const Settings & settings_,
-    const ClientInfo & client_info_)
+    const ClientInfo & client_info_,
+    QueryStatusPtr process_list_element_)
     : insert_settings(settings_)
     , client_info(client_info_)
     , timeouts(timeouts_)
+    , process_list_element(std::move(process_list_element_))
     , connection(connection_)
     , query(query_)
     , server_revision(connection.getServerRevision(timeouts))
@@ -68,6 +72,13 @@ void RemoteInserter::initialize()
     ///
     /// So that is why send_logs_level had been disabled here.
     settings[Setting::send_logs_level] = "none";
+
+    /// The quotas over profile events charge the initiating user with what the remote server reports in
+    /// its `ProfileEvents` packets, so the reports must not depend on `send_profile_events` of the query
+    /// or of the user's profile on the remote server, the same as for `SELECT`. There is no deadlock like
+    /// with `send_logs_level` above: the remote server sends the profile events of a secondary `INSERT`
+    /// only once, after it has received all the data, when this side is already waiting in `onFinish`.
+    settings[Setting::send_profile_events] = true;
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
@@ -100,10 +111,15 @@ void RemoteInserter::initialize()
             /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
             /// client's already got this information for remote table. Ignore.
         }
-        else if (Protocol::Server::Progress == packet.type || Protocol::Server::ProfileEvents == packet.type)
+        else if (Protocol::Server::ProfileEvents == packet.type)
         {
-            /// A subquery executed while the remote server is still analysing the query reports progress and
-            /// profile events, so these can arrive before the header block. They are ignored.
+            /// A subquery executed while the remote server is still analysing the query reports profile
+            /// events, so these can arrive before the header block.
+            processProfileEventsPacket(packet.block);
+        }
+        else if (Protocol::Server::Progress == packet.type)
+        {
+            /// The same as above, the progress of such a subquery is ignored.
         }
         else
             throw NetException(
@@ -158,9 +174,10 @@ void RemoteInserter::onFinish()
 
         if (Protocol::Server::Exception == packet.type)
             packet.exception->rethrow();
+        else if (Protocol::Server::ProfileEvents == packet.type)
+            processProfileEventsPacket(packet.block);
         else if (Protocol::Server::Log == packet.type ||
             Protocol::Server::Progress == packet.type ||
-            Protocol::Server::ProfileEvents == packet.type ||
             Protocol::Server::TimezoneUpdate == packet.type)
         {
             // Do nothing
@@ -173,6 +190,12 @@ void RemoteInserter::onFinish()
     }
 
     finished = true;
+}
+
+void RemoteInserter::processProfileEventsPacket(const Block & block)
+{
+    if (process_list_element)
+        process_list_element->addRemoteProfileEvents(block);
 }
 
 RemoteInserter::~RemoteInserter()
