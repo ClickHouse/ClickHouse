@@ -375,7 +375,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
         result.all_values_unique &= slot_result.all_values_unique;
     };
 
-    slots.insert(per_slot, stored_block_no, insert_slot);
+    slots.insert(per_slot, insert_slot);
     return result;
 }
 

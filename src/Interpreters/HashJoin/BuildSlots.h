@@ -91,9 +91,8 @@ public:
     }
 
     /// Calls `insert_slot(slot)` under the lock of every slot that `per_slot` gives rows to. Slots are taken in
-    /// whatever order they come free, from slot `start % size()` on, so that concurrent build threads do not all
-    /// queue behind slot 0.
-    void insert(std::span<const ScatteredBlock::Selector> per_slot, size_t start, absl::FunctionRef<void(size_t)> insert_slot);
+    /// whatever order they come free.
+    void insert(std::span<const ScatteredBlock::Selector> per_slot, absl::FunctionRef<void(size_t)> insert_slot);
 
 private:
     template <typename F>

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void BuildSlots::insert(std::span<const ScatteredBlock::Selector> per_slot, size_t start, absl::FunctionRef<void(size_t)> insert_slot)
+void BuildSlots::insert(std::span<const ScatteredBlock::Selector> per_slot, absl::FunctionRef<void(size_t)> insert_slot)
 {
     const size_t num_slots = slots.size();
     std::vector<char> pending(num_slots, 0);
@@ -19,15 +19,12 @@ void BuildSlots::insert(std::span<const ScatteredBlock::Selector> per_slot, size
         }
     }
 
-    const size_t first_slot = start & (num_slots - 1);
-
     while (slots_left > 0)
     {
         bool made_progress = false;
 
-        for (size_t i = 0; i < num_slots; ++i)
+        for (size_t slot = 0; slot < num_slots; ++slot)
         {
-            const size_t slot = (first_slot + i) & (num_slots - 1);
             if (!pending[slot])
                 continue;
 
