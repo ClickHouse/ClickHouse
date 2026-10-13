@@ -82,6 +82,8 @@ waiting a medium time usually means one transaction is holding a lock
 that others need. Click any wait chart to open the [Waits](#waits)
 table.
 
+<Image img="/images/managed-postgres/monitoring/query-insights-wait-charts.webp" alt="Wait charts showing active sessions stacked by wait type, lock wait time at p50, p95, and max, and blocked sessions over time" size="lg" border/>
+
 ## Slow patterns {#slow-patterns}
 
 When the overview points at trouble, the patterns table is where the
@@ -155,6 +157,8 @@ Expand the **Waits** section, or click any of the
 each wait type. The table lists every wait event that active sessions
 reported over the selected time period, ranked by average active
 sessions.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-waits.webp" alt="Waits table showing wait events ranked by average active sessions, with Wait event, Wait type, Avg active sessions, and Share of load columns" size="lg" border/>
 
 | Column | What it shows |
 |---|---|
