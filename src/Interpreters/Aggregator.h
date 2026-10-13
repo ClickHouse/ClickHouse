@@ -930,18 +930,34 @@ private:
         AdaptiveAggregationProducer & adaptive,
         bool all_keys_are_const) const;
 
-    /// Appends the current block's misses to the producer's partitions in the format `visitStagedRecordFormat`
-    /// selects. Each record carries a key and either a run length (an aggregation by a lone `count`), no payload (no
-    /// aggregates), or the row's aggregate arguments laid out by `adaptive_argument_layout`. Variable-size records
-    /// also carry a hash and lengths; fixed-size records recover the hash from the key when drained. Folds the batch
-    /// into the thaw sampler.
-    template <typename RecordKey, typename State>
-    void appendDelayedRecords(
-        const Columns & columns,
-        AdaptiveAggregationProducer & adaptive,
-        State & local_find_state,
+    /// Collects the misses of a block of an aggregation by a lone `count` into the producer's batch: a row whose key the
+    /// local table holds adds one to the key's inline count, and the other rows become count records, a run of one key
+    /// in one record. Within a block, a key's later misses may join its record through a per-partition cache, while a
+    /// trial shows that they often do. Neither writes the records nor records the probe results. Returns the number of
+    /// local hits.
+    template <typename RecordKey, typename LocalMethod, typename State>
+    size_t collectCountMisses(
+        LocalMethod & local_method,
+        State & find_state,
+        size_t row_begin,
+        size_t row_end,
         Arena & scratch_pool,
-        std::optional<UInt32> key_row_override = std::nullopt) const;
+        AdaptiveAggregationProducer & adaptive,
+        bool bypass_local_probe) const;
+
+    /// Appends the producer's batch of misses to its partitions in the format `visitStagedRecordFormat` selects. Each
+    /// record carries a key and either a run length (an aggregation by a lone `count`), no payload (no aggregates), or
+    /// the row's aggregate arguments laid out by `adaptive_argument_layout`. Variable-size records also carry a hash and
+    /// lengths; fixed-size records recover the hash from the key when drained. Returns what it staged for the
+    /// accounting of the batch (see `accountStagedBatch`).
+    template <typename RecordKey, typename State>
+    AdaptiveStagedBytes appendDelayedRecords(
+        const Columns & columns, AdaptiveAggregationProducer & adaptive, State & local_find_state, Arena & scratch_pool) const;
+
+    /// Accounts the producer's batch of misses, which `appendDelayedRecords` staged with `staged`, then clears the
+    /// batch: adds the batch's rows to the count bins, its records to the merge-work estimate and to the profile events,
+    /// and its footprint and sampled hashes to the thaw evidence (see `adaptiveStagingRepeats`).
+    void accountStagedBatch(const Columns & columns, AdaptiveAggregationProducer & adaptive, const AdaptiveStagedBytes & staged) const;
 
     template <typename Method>
     AggregatedChunks mergeAndConvertAdaptiveBucketImpl(

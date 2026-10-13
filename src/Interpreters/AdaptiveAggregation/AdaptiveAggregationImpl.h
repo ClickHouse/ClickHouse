@@ -3,6 +3,7 @@
 #include <array>
 #include <memory>
 #include <mutex>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -218,9 +219,87 @@ struct AdaptiveMergeTask
     PaddedPODArray<UInt64> best_hashes;
 };
 
+/// The misses of a frozen producer's current block, one descriptor per delayed record in staging order: the routing
+/// hash, the source row of the record's arguments, the run length of a count record, and the key. A string-like key is
+/// kept as its size, and the writer copies its bytes out of the block. A fixed-width key is kept as its value, which
+/// the kernel has at hand, while reading it back from the key columns would pack it a second time. The arrays are
+/// cleared after every block but keep their capacity.
+struct AdaptiveMissBatch
+{
+    /// Adds the miss of `row`.
+    template <typename RecordKey, typename Key>
+    ALWAYS_INLINE void add(UInt32 row, UInt64 hash, const Key & key)
+    {
+        source_rows.push_back(row);
+        hashes.push_back(hash);
+        addKey<RecordKey>(key);
+    }
+
+    /// Adds a count record of `rows` rows of one key, starting at `row`. A fixed-width key stages no size: the writer
+    /// substitutes the compile-time constant, so the hot staging loop skips a dead store per record.
+    template <typename RecordKey, typename Key>
+    ALWAYS_INLINE void addCount(UInt32 row, UInt64 hash, const Key & key, UInt32 rows)
+    {
+        hashes.push_back(hash);
+        multiplicities.push_back(rows);
+        addKey<RecordKey>(key);
+        source_rows.push_back(row);
+    }
+
+    /// Adds a row to the run of count record `i`.
+    ALWAYS_INLINE void incrementCount(size_t i) { ++multiplicities[i]; }
+
+    size_t size() const { return hashes.size(); }
+
+    void clear()
+    {
+        source_rows.clear();
+        hashes.clear();
+        key_sizes.clear();
+        keys.clear();
+        multiplicities.clear();
+        keys_are_const = false;
+    }
+
+    PaddedPODArray<UInt32> source_rows;
+    PaddedPODArray<UInt64> hashes;
+    /// The keys of the records: the sizes of string-like keys, or the raw bytes of one fixed-width key per record.
+    PaddedPODArray<UInt64> key_sizes;
+    PaddedPODArray<char> keys;
+    PaddedPODArray<UInt32> multiplicities;
+    /// Whether the block's keys are constant: their columns hold a single row, from which every key is read, while the
+    /// arguments of each record stay at its source row.
+    bool keys_are_const = false;
+
+private:
+    template <typename RecordKey, typename Key>
+    ALWAYS_INLINE void addKey(const Key & key)
+    {
+        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+        {
+            key_sizes.push_back(static_cast<std::string_view>(key).size());
+        }
+        else
+        {
+            const RecordKey staged = key;
+            const char * bytes = reinterpret_cast<const char *>(&staged);
+            keys.insert(bytes, bytes + sizeof(staged));
+        }
+    }
+};
+
+/// What `Aggregator::appendDelayedRecords` staged beyond the fixed parts of a batch's records, for the accounting of the
+/// batch (see `Aggregator::accountStagedBatch`): the key bytes as staged, the variable-size argument bytes at their
+/// serialized sizes, and whether the keys were staged as bytes, which adds a key size to every record.
+struct AdaptiveStagedBytes
+{
+    size_t key_bytes = 0;
+    size_t variable_argument_bytes = 0;
+    bool keys_as_bytes = false;
+};
+
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
-/// phase-owned counters, its staged records, and the current block's misses (the arrays are cleared but keep their
-/// capacity across blocks).
+/// phase-owned counters, its staged records, and the current block's misses.
 struct AdaptiveAggregationProducer
 {
     explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
@@ -336,14 +415,8 @@ struct AdaptiveAggregationProducer
     /// The producer's staged records, including those already written to disk, for the merge-work estimate.
     size_t total_staged_records = 0;
 
-    /// The current block's misses, one entry per delayed record, in staging order: the source row, the routing hash,
-    /// the run length of a count record, and the key, as its size for a string-like key or its value for a
-    /// fixed-width one (`miss_keys`, the raw bytes of one key per record).
-    PaddedPODArray<UInt32> miss_source_rows;
-    PaddedPODArray<UInt64> miss_hashes;
-    PaddedPODArray<UInt64> miss_key_sizes;
-    PaddedPODArray<char> miss_keys;
-    PaddedPODArray<UInt32> miss_multiplicities;
+    /// The current block's misses.
+    AdaptiveMissBatch misses;
 
     /// The producer's count bins when the aggregation prunes by the top-K, handed over at the finish.
     AdaptiveTopKCountBins count_bins;

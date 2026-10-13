@@ -3,6 +3,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -14,6 +15,8 @@ namespace ProfileEvents
 {
     extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationThaws;
+    extern const Event AdaptiveAggregationStagedRecords;
+    extern const Event AdaptiveAggregationStagedBytes;
     extern const Event AdaptiveAggregationSpills;
     extern const Event AdaptiveAggregationSpilledRecords;
     extern const Event AdaptiveAggregationSpilledBytes;
@@ -59,6 +62,84 @@ bool Aggregator::adaptiveStagingWastes(
 
     return static_cast<UInt128>(frozen.staged_records - distinct) * staged_bytes
         > state_bytes * frozen.staged_records * state_cost_multiplier;
+}
+
+void Aggregator::accountStagedBatch(
+    const Columns & columns, AdaptiveAggregationProducer & adaptive, const AdaptiveStagedBytes & staged) const
+{
+    auto & misses = adaptive.misses;
+    const size_t total = misses.size();
+    if (!total)
+        return;
+    const auto * hashes = misses.hashes.data();
+
+    /// The rows behind the records go to the count bins of the top-K pruning: a count record carries
+    /// its combined multiplicity.
+    if (adaptive.count_bins.isAllocated())
+        for (size_t i = 0; i < total; ++i)
+            adaptive.count_bins.add(hashes[i], is_simple_count ? misses.multiplicities[i] : 1);
+
+    adaptive.total_staged_records += total;
+
+    /// The thaw evidence of the thread (see `adaptiveStagingRepeats`). A batch updates:
+    ///
+    /// - `staged_records` grows by the batch's record count.
+    /// - `staged_bytes` grows by the batch's estimated footprint, computed below as
+    ///   `batch_bytes`. It counts the key bytes as the kernel staged them, the variable-width
+    ///   aggregate arguments at their serialized sizes, and the per-record bookkeeping (the
+    ///   eight-byte routing hash, plus eight bytes of key size and padding only for byte-staged
+    ///   keys). A column read by several aggregates is staged once, so it is counted once; a
+    ///   count batch stages the combined multiplicity instead of arguments.
+    ///   Variable-width arguments count in full because staging such a value pays real work
+    ///   at every step. The record copies it out of the block, the record pins that memory
+    ///   until the merge drains it, and updating the aggregate state from it copies the value
+    ///   once more (a string min keeps its own copy of the winning value). A repeated key pays
+    ///   all of that on every occurrence, where an unfrozen table would have paid a single
+    ///   in-place state update, so each repeat of a heavy value is genuine waste.
+    ///   Fixed-width arguments also occupy memory until the drain, and rebuilding their dense
+    ///   columns copies them again before the ordinary batch executor consumes them. A repeated
+    ///   key pays these copies on each occurrence, while an ordinary table updates its states in
+    ///   place. Their fixed area is counted by `adaptiveStagingWastes` from the record count and
+    ///   `AdaptiveArgumentLayout::fixed_bytes`. The comparison uses repetition within this producer,
+    ///   since equal keys in different producers would also occupy separate ordinary tables. A
+    ///   stream of five `UInt64` arguments at global repeat 10 can therefore remain profitable when
+    ///   its local streams repeat little.
+    /// - The sample receives routing hashes matching `hash & 0xFF == 0`. Each distinct key has the
+    ///   same sampling probability, and `distinct_sampled_hashes` collapses its repeats onto one entry.
+    ///   For a growing set aggregate, a bounded sketch also counts distinct argument tuples of these
+    ///   keys, including the key in their hash because equal arguments in different groups occupy
+    ///   separate states.
+    if (params.adaptiveMayThaw())
+    {
+        chassert(!adaptive_state_bytes_per_distinct_input || adaptive_distinct_input_aggregate < aggregates_positions.size());
+        size_t batch_bytes = staged.key_bytes + (is_simple_count ? total * sizeof(UInt32) : staged.variable_argument_bytes);
+        batch_bytes += total * (sizeof(UInt64) + (staged.keys_as_bytes ? sizeof(UInt64) : 0));
+
+        auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
+        frozen.staged_records += total;
+        frozen.staged_bytes += batch_bytes;
+        for (size_t i = 0; i < total; ++i)
+        {
+            const auto hash = hashes[i];
+            if ((hash & adaptive_thaw_sample_mask) == 0)
+            {
+                frozen.distinct_sampled_hashes.insert(hash);
+                if (adaptive_state_bytes_per_distinct_input)
+                {
+                    SipHash input_hash;
+                    input_hash.update(hash);
+                    for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
+                        columns[position]->updateHashWithValue(misses.source_rows[i], input_hash);
+                    frozen.addSampledInputHash(input_hash.get64());
+                }
+            }
+        }
+    }
+
+    misses.clear();
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecords, total);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, staged.key_bytes);
 }
 
 AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers) const

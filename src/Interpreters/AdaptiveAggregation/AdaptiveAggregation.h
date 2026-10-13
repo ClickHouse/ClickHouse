@@ -58,6 +58,9 @@ struct AdaptiveAggregationProducer;
 /// The record layout of the aggregate arguments that general payloads stage.
 struct AdaptiveArgumentLayout;
 
+/// What the record writer staged beyond the fixed parts of a batch's records, for the accounting of the batch.
+struct AdaptiveStagedBytes;
+
 /// An adaptive merge task: the bucket it merged last and the working memory it keeps across its buckets.
 struct AdaptiveMergeTask;
 
