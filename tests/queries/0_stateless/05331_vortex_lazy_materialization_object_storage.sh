@@ -31,7 +31,7 @@ ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg 1 --query "
     SELECT number AS k, number % 17 AS f, concat('val_', toString(number)) AS s FROM numbers(1000, 1000)
     SETTINGS s3_truncate_on_insert = 1;
 
-    CREATE TABLE t (k UInt64, f UInt64, s String) ENGINE = IcebergLocal('${LOCAL_DIR}/t/', 'Vortex');
+    CREATE TABLE t (k Int64, f Int64, s String) ENGINE = IcebergLocal('${LOCAL_DIR}/t/', 'Vortex');
     INSERT INTO t SELECT number AS k, number % 7 AS f, concat('val_', toString(number)) AS s FROM numbers(5000);
     INSERT INTO t SELECT number AS k, number % 7 AS f, concat('val_', toString(number)) AS s FROM numbers(5000, 5000);
 "

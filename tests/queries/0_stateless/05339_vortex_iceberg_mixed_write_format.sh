@@ -19,13 +19,13 @@ trap 'rm -rf "${LOCAL_DIR}"' EXIT
 cd "${LOCAL_DIR}" || exit 1
 
 ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg 1 --query "
-    CREATE TABLE t (a UInt64, s String) ENGINE = IcebergLocal('${LOCAL_DIR}/t/', 'Vortex');
+    CREATE TABLE t (a Int64, s String) ENGINE = IcebergLocal('${LOCAL_DIR}/t/', 'Vortex');
     INSERT INTO t SELECT number, toString(number) FROM numbers(1000);
     ALTER TABLE t RENAME COLUMN a TO b;
-    ALTER TABLE t ADD COLUMN a Nullable(UInt64);
+    ALTER TABLE t ADD COLUMN a Nullable(Int64);
     INSERT INTO t SELECT number, toString(number), number FROM numbers(1000, 10);
 
-    CREATE TABLE l (k UInt64, s String) ENGINE = IcebergLocal('${LOCAL_DIR}/l/', 'Vortex');
+    CREATE TABLE l (k Int64, s String) ENGINE = IcebergLocal('${LOCAL_DIR}/l/', 'Vortex');
     INSERT INTO l SELECT number, concat('val_', toString(number)) FROM numbers(5000);
 "
 

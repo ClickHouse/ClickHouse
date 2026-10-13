@@ -39,10 +39,10 @@ run_counting_pushdown()
 }
 
 ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg 1 --query "
-    CREATE TABLE t (a UInt64, s String) ENGINE = IcebergLocal('${LOCAL_DIR}/t/', 'Vortex');
+    CREATE TABLE t (a Int64, s String) ENGINE = IcebergLocal('${LOCAL_DIR}/t/', 'Vortex');
     INSERT INTO t SELECT number, toString(number) FROM numbers(1000);
     ALTER TABLE t RENAME COLUMN a TO b;
-    ALTER TABLE t ADD COLUMN a Nullable(UInt64);
+    ALTER TABLE t ADD COLUMN a Nullable(Int64);
     INSERT INTO t SELECT number, toString(number), number FROM numbers(1000, 10);
 "
 
