@@ -46,7 +46,11 @@ Ouvrez la [console ClickHouse Cloud](https://clickhouse.cloud) et sélectionnez 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Carte du service Managed Postgres dans la liste des services ClickHouse Cloud](/images/managed-postgres/pgpg/servicecard.webp)
+
+</Frame>
 
 </div>
 
@@ -54,7 +58,11 @@ Dans la barre latérale de gauche, cliquez sur **Sources de données**.
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Entrée Sources de données dans la barre latérale du service Managed Postgres](/images/managed-postgres/pgpg/overview.webp)
+
+</Frame>
 
 </div>
 
@@ -62,7 +70,11 @@ Cliquez sur **Démarrer l&#39;importation**.
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Page Sources de données avec le bouton Démarrer l'importation](/images/managed-postgres/pgpg/startimport.webp)
+
+</Frame>
 
 </div>
 
@@ -78,7 +90,11 @@ Choisissez une méthode d&#39;ingestion :
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 1 : formulaire de connexion à la base de données source avec options de méthode d'ingestion](/images/managed-postgres/pgpg/migrationform.webp)
+
+</Frame>
 
 </div>
 
@@ -88,7 +104,11 @@ Cliquez sur **Suivant**.
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 2 : migration automatisée du schéma avec sélecteur de base de données de destination](/images/managed-postgres/pg_dump_restore/automated.webp)
+
+</Frame>
 
 </div>
 
@@ -100,7 +120,11 @@ Sélectionnez la base de données de destination dans la liste déroulante ou cl
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Boîte de dialogue Créer une base de données Postgres](/images/managed-postgres/pg_dump_restore/newdb.webp)
+
+</Frame>
 
 </div>
 
@@ -118,7 +142,11 @@ Si votre base de données cible contient déjà des données ou si vous souhaite
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 2 : migration manuelle du schéma avec la commande d’exportation pg_dump](/images/managed-postgres/pg_dump_restore/manual.webp)
+
+</Frame>
 
 </div>
 
@@ -128,7 +156,11 @@ L&#39;assistant affiche une commande `pg_dump` préremplie avec les informations
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 2 : commande pg_dump pour l'export du schéma](/images/managed-postgres/pgpg/nextexport.webp)
+
+</Frame>
 
 </div>
 
@@ -145,7 +177,11 @@ Cela crée `pg.sql` dans votre répertoire courant.
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sortie du terminal après l'exécution de pg_dump](/images/managed-postgres/pgpg/psqlexport.webp)
+
+</Frame>
 
 </div>
 
@@ -159,7 +195,11 @@ L&#39;assistant affiche une commande `psql` pour appliquer le dump du schéma à
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 3 : commande psql pour l'import du schéma](/images/managed-postgres/pgpg/nextimport.webp)
+
+</Frame>
 
 </div>
 
@@ -174,7 +214,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sortie du terminal après l'exécution de l'import du schéma avec psql](/images/managed-postgres/pgpg/psqlimport.webp)
+
+</Frame>
 
 </div>
 
@@ -196,7 +240,11 @@ Développez **Paramètres avancés de réplication** pour ajuster le débit :
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 4 : formulaire des paramètres d’ingestion avec publication et options avancées de réplication](/images/managed-postgres/pgpg/advancedsettings.webp)
+
+</Frame>
 
 </div>
 
@@ -208,7 +256,11 @@ Sélectionnez les tables que vous souhaitez répliquer. Les tables sont regroup�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 5 : sélecteur de tables regroupées par schéma avec le bouton Créer la migration](/images/managed-postgres/pgpg/tablepicker.webp)
+
+</Frame>
 
 </div>
 
@@ -220,7 +272,11 @@ Après avoir créé la migration, elle apparaît dans **Sources de données** av
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Liste des sources de données affichant une migration en cours d’exécution](/images/managed-postgres/pgpg/migrationlist.webp)
+
+</Frame>
 
 </div>
 
@@ -228,7 +284,11 @@ Cliquez sur la migration pour ouvrir la vue détaillée. L’onglet **Tables** a
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Vue détaillée de la migration affichant les statistiques du chargement initial par table](/images/managed-postgres/pgpg/initialload.webp)
+
+</Frame>
 
 </div>
 
@@ -261,7 +321,11 @@ Cliquez sur **Mark as completed** pour continuer.
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 1 post-migration : passer la source database en mode lecture seule](/images/managed-postgres/pgpg/post-migration/readonly.webp)
+
+</Frame>
 
 </div>
 
@@ -271,7 +335,11 @@ Sélectionnez les tables répliquées que vous souhaitez valider. ClickPipes com
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 2 post-migration : sélectionner les tables et valider le nombre de lignes entre la source et la cible](/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp)
+
+</Frame>
 
 </div>
 
@@ -281,7 +349,11 @@ Mettez le ClickPipe en pause afin d&#39;arrêter la réplication avant de réini
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 3 post-migration : mettre le ClickPipe en pause pour arrêter la réplication](/images/managed-postgres/pgpg/post-migration/pause-pipe.webp)
+
+</Frame>
 
 </div>
 
@@ -291,7 +363,11 @@ Réinitialisez les séquences sur la destination afin que les nouvelles insertio
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 4 post-migration : réinitialiser les séquences sur la destination](/images/managed-postgres/pgpg/post-migration/reset-sequences.webp)
+
+</Frame>
 
 </div>
 
@@ -301,7 +377,11 @@ Dirigez les lectures et les écritures vers votre service Managed Postgres en re
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 5 post-migration : basculer le trafic à l'aide de la connection string Managed Postgres](/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp)
+
+</Frame>
 
 </div>
 
@@ -317,7 +397,11 @@ Cliquez ensuite sur **Delete ClickPipe migration** pour supprimer la migration d
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Étape 6 post-migration : nettoyage par suppression du slot de réplication et de la migration](/images/managed-postgres/pgpg/post-migration/cleanup.webp)
+
+</Frame>
 
 </div>
 

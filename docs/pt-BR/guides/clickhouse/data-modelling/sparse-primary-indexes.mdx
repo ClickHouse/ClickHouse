@@ -317,7 +317,11 @@ O ClickHouse é um <a href="/pt-BR/get-started/about/distinctive-features#true-c
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 01](/images/guides/best-practices/sparse-primary-indexes-01.webp)
+
+</Frame>
 
 </div>
 
@@ -344,7 +348,11 @@ são organizados em 1083 grânulos, como resultado da instrução DDL da tabela 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices primários esparsos 02](/images/guides/best-practices/sparse-primary-indexes-02.webp)
+
+</Frame>
 
 </div>
 
@@ -379,7 +387,11 @@ Por exemplo:
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices primários esparsos 03a](/images/guides/best-practices/sparse-primary-indexes-03a.webp)
+
+</Frame>
 
 </div>
 
@@ -387,7 +399,11 @@ No total, o índice tem 1083 entradas para nossa tabela com 8,87 milhões de lin
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices primários esparsos 03b](/images/guides/best-practices/sparse-primary-indexes-03b.webp)
+
+</Frame>
 
 </div>
 
@@ -607,7 +623,11 @@ O diagrama a seguir ilustra uma parte do arquivo de índice primário da nossa t
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices Primários Esparsos 04](/images/guides/best-practices/sparse-primary-indexes-04.webp)
+
+</Frame>
 
 </div>
 
@@ -629,7 +649,11 @@ O diagrama a seguir mostra os três arquivos de marcação `UserID.mrk`, `URL.mr
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices Primários Esparsos 05](/images/guides/best-practices/sparse-primary-indexes-05.webp)
+
+</Frame>
 
 </div>
 
@@ -681,7 +705,11 @@ O diagrama a seguir e o texto abaixo ilustram como, na nossa consulta de exemplo
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices primários esparsos 06](/images/guides/best-practices/sparse-primary-indexes-06.webp)
+
+</Frame>
 
 </div>
 
@@ -802,7 +830,11 @@ Suponha que UserID tivesse baixa cardinalidade. Nesse caso, seria provável que 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 06](/images/guides/best-practices/sparse-primary-indexes-07.webp)
+
+</Frame>
 
 </div>
 
@@ -820,7 +852,11 @@ Quando o UserID tem alta cardinalidade, é improvável que o mesmo valor de User
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 06](/images/guides/best-practices/sparse-primary-indexes-08.webp)
+
+</Frame>
 
 </div>
 
@@ -858,7 +894,11 @@ O ClickHouse então criou um índice adicional que armazena — para cada grupo 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices Primários Esparsos 13a](/images/guides/best-practices/sparse-primary-indexes-13a.webp)
+
+</Frame>
 
 </div>
 
@@ -900,7 +940,11 @@ Ao criar uma **segunda tabela** com uma chave primária diferente, as consultas 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 09a](/images/guides/best-practices/sparse-primary-indexes-09a.webp)
+
+</Frame>
 
 </div>
 
@@ -908,7 +952,11 @@ Com uma **visão materializada**, a tabela adicional é criada implicitamente, e
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 09b](/images/guides/best-practices/sparse-primary-indexes-09b.webp)
+
+</Frame>
 
 </div>
 
@@ -916,7 +964,11 @@ Já a **projeção** é a opção mais transparente porque, além de manter auto
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 09c](/images/guides/best-practices/sparse-primary-indexes-09c.webp)
+
+</Frame>
 
 </div>
 
@@ -968,7 +1020,11 @@ Como alteramos a ordem das colunas na chave primária, as linhas inseridas agora
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices Primários Esparsos 10](/images/guides/best-practices/sparse-primary-indexes-10.webp)
+
+</Frame>
 
 </div>
 
@@ -976,7 +1032,11 @@ Esta é a chave primária resultante:
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Índices Primários Esparsos 11](/images/guides/best-practices/sparse-primary-indexes-11.webp)
+
+</Frame>
 
 </div>
 
@@ -1497,7 +1557,11 @@ O diagrama abaixo mostra a ordem das linhas em disco para uma chave primária em
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 14a](/images/guides/best-practices/sparse-primary-indexes-14a.webp)
+
+</Frame>
 
 </div>
 
@@ -1513,7 +1577,11 @@ Em contraste com o diagrama acima, o diagrama abaixo mostra a ordem das linhas e
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 14b](/images/guides/best-practices/sparse-primary-indexes-14b.webp)
+
+</Frame>
 
 </div>
 
@@ -1558,7 +1626,11 @@ O diagrama a seguir mostra
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 15a](/images/guides/best-practices/sparse-primary-indexes-15a.webp)
+
+</Frame>
 
 </div>
 
@@ -1579,7 +1651,11 @@ O diagrama a seguir mostra
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 15b](/images/guides/best-practices/sparse-primary-indexes-15b.webp)
+
+</Frame>
 
 </div>
 

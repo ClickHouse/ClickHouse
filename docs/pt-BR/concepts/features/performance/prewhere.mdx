@@ -19,7 +19,11 @@ Vamos começar mostrando como uma consulta na tabela [uk&#95;price&#95;paid&#95;
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Processamento de consultas sem a otimização PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</Frame>
 
 </div>
 
@@ -49,7 +53,11 @@ As três primeiras etapas do processamento são iguais às anteriores:
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Processamento da consulta com a otimização PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</Frame>
 
 </div>
 
@@ -74,7 +82,11 @@ No nosso exemplo, todos os grânulos selecionados correspondem, então ② os gr
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Etapa 1: Filtragem por town](/images/guides/best-practices/prewhere_03.webp)
+
+</Frame>
 
 </div>
 
@@ -89,7 +101,11 @@ Nesse caso, dois dos três grânulos contêm linhas correspondentes, então ② 
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Etapa 2: Filtragem por date](/images/guides/best-practices/prewhere_04.webp)
+
+</Frame>
 
 </div>
 
@@ -104,7 +120,11 @@ Apenas um dos dois grânulos contém linhas correspondentes, então ② somente 
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Etapa 2: Filtragem por price](/images/guides/best-practices/prewhere_05.webp)
+
+</Frame>
 
 </div>
 

@@ -19,7 +19,11 @@ keywords: ['prewhere', 'query optimization', 'performance', 'filtering', 'best p
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![PREWHERE 최적화 없이 쿼리 처리](/images/guides/best-practices/prewhere_01.webp)
+
+</Frame>
 
 </div>
 
@@ -49,7 +53,11 @@ keywords: ['prewhere', 'query optimization', 'performance', 'filtering', 'best p
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![PREWHERE 최적화가 적용된 쿼리 처리](/images/guides/best-practices/prewhere_02.webp)
+
+</Frame>
 
 </div>
 
@@ -74,7 +82,11 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![1단계: town으로 필터링](/images/guides/best-practices/prewhere_03.webp)
+
+</Frame>
 
 </div>
 
@@ -89,7 +101,11 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![2단계: date로 필터링](/images/guides/best-practices/prewhere_04.webp)
+
+</Frame>
 
 </div>
 
@@ -104,7 +120,11 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![2단계: price로 필터링](/images/guides/best-practices/prewhere_05.webp)
+
+</Frame>
 
 </div>
 

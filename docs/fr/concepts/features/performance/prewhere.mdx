@@ -19,7 +19,11 @@ Nous allons commencer par illustrer comment une requête sur la table [uk&#95;pr
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Traitement des requêtes sans optimisation PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</Frame>
 
 </div>
 
@@ -49,7 +53,11 @@ Les trois premières étapes du traitement sont les mêmes que précédemment :
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Traitement de la requête avec l’optimisation PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</Frame>
 
 </div>
 
@@ -74,7 +82,11 @@ Dans notre exemple, tous les granules sélectionnés correspondent, donc ② les
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Étape 1 : Filtrage par ville](/images/guides/best-practices/prewhere_03.webp)
+
+</Frame>
 
 </div>
 
@@ -89,7 +101,11 @@ Dans ce cas, deux granules sur trois contiennent des lignes correspondantes, don
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Étape 2 : Filtrage par date](/images/guides/best-practices/prewhere_04.webp)
+
+</Frame>
 
 </div>
 
@@ -104,7 +120,11 @@ Un seul des deux granules contient des lignes correspondantes, donc ② seul son
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Étape 2 : Filtrage par prix](/images/guides/best-practices/prewhere_05.webp)
+
+</Frame>
 
 </div>
 

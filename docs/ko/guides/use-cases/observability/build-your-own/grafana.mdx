@@ -30,7 +30,11 @@ Traces 구성은 약간 더 복잡합니다(전체 목록은 [여기](/ko/refere
 
 <div className="ch-image-sm">
 
+<Frame>
+
 ![Connector config](/images/use-cases/observability/observability-15.webp)
+
+</Frame>
 
 </div>
 
@@ -48,7 +52,11 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![커넥터 로그 구성](/images/use-cases/observability/observability-16.webp)
+
+</Frame>
 
 </div>
 
@@ -62,7 +70,11 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![로그에서 트레이스로](/images/use-cases/observability/observability-17.webp)
+
+</Frame>
 
 </div>
 
@@ -89,7 +101,11 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Traces](/images/use-cases/observability/observability-18.webp)
+
+</Frame>
 
 </div>
 
@@ -131,7 +147,11 @@ LIMIT 1000
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![트레이스 세부 정보](/images/use-cases/observability/observability-19.webp)
+
+</Frame>
 
 </div>
 
@@ -151,7 +171,11 @@ ORDER BY timestamp ASC LIMIT 1000
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![트레이스에서 로그로](/images/use-cases/observability/observability-20.webp)
+
+</Frame>
 
 </div>
 
@@ -165,7 +189,11 @@ Grafana에서 ClickHouse 데이터 소스를 사용해 대시보드를 만들 �
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![대시보드](/images/use-cases/observability/observability-21.webp)
+
+</Frame>
 
 </div>
 
@@ -192,7 +220,11 @@ LIMIT 100000
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![시계열](/images/use-cases/observability/observability-22.webp)
+
+</Frame>
 
 </div>
 
@@ -223,7 +255,11 @@ LIMIT 100000
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![여러 선이 있는 차트](/images/use-cases/observability/observability-23.webp)
+
+</Frame>
 
 </div>
 
@@ -253,6 +289,10 @@ GROUP BY hash
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Geo 데이터 시각화](/images/use-cases/observability/observability-24.webp)
+
+</Frame>
 
 </div>

@@ -43,7 +43,11 @@ For logical replication to work, we need to ensure that the source database is s
 Make sure your source database is set up like this:
 <div className="ch-image-md">
 
+<Frame>
+
 ![Source PostgreSQL Replication Setup](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</Frame>
 
 </div>
 
@@ -66,7 +70,11 @@ Here:
 In our case, we have two tables - `events` and `users`. `events` has a million rows, and `users` has a thousand rows.
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Source PostgreSQL Tables Setup](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</Frame>
 
 </div>
 
@@ -74,7 +82,11 @@ In our case, we have two tables - `events` and `users`. `events` has a million r
 First, ensure you have a ClickHouse Managed Postgres instance set up, preferably in the same region as the source. You can follow the quick guide [here](/products/managed-postgres/quickstart#create-postgres-database). Here's what we're going to spin up for this guide:
 <div className="ch-image-md">
 
+<Frame>
+
 ![Create ClickHouse Managed Postgres Instance](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</Frame>
 
 </div>
 
@@ -94,7 +106,11 @@ This command will create all the tables, indexes, views, and other schema object
 In our case, after running this command, we have our two tables and they're empty:
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Target ClickHouse Managed Postgres Initial Setup](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</Frame>
 
 </div>
 
@@ -123,7 +139,11 @@ This will automatically create a replication slot on the source database and sta
 In our case, after setting up the subscription, the data flowed in:
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Migration Result after Logical Replication](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</Frame>
 
 </div>
 

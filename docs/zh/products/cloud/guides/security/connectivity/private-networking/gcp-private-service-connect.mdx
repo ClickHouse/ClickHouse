@@ -17,7 +17,11 @@ Private Service Connect (PSC) 是 Google Cloud 的一项网络功能，可让消
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Private Service Connect 概览](/images/cloud/security/gcp-psc-overview.webp)
+
+</Frame>
 
 </div>
 
@@ -103,7 +107,11 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![专用终结点](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+</Frame>
 
 </div>
 
@@ -155,7 +163,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![在 Google Cloud Console 中打开 Private Service Connect](/images/cloud/security/gcp-psc-open.webp)
+
+</Frame>
 
 </div>
 
@@ -169,7 +181,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![为 Private Service Connect 启用 Global Access](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+</Frame>
 
 </div>
 
@@ -179,7 +195,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![复制 PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+</Frame>
 
 </div>
 
@@ -267,7 +287,11 @@ output "psc_connection_id" {
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![从 ClickHouse Cloud 移除专用终结点](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
+
+</Frame>
 
 </div>
 
@@ -340,7 +364,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![专用终结点过滤器](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+</Frame>
 
 </div>
 
@@ -404,7 +432,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![专用终结点 DNS 名称](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+</Frame>
 
 </div>
 

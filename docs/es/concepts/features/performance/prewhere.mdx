@@ -19,7 +19,11 @@ Comenzaremos ilustrando cómo se procesa una consulta en la tabla [uk&#95;price&
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Procesamiento de consultas sin optimización de PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</Frame>
 
 </div>
 
@@ -49,7 +53,11 @@ Los tres primeros pasos del procesamiento son los mismos que antes:
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Procesamiento de la consulta con optimización de PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</Frame>
 
 </div>
 
@@ -74,7 +82,11 @@ En nuestro ejemplo, todos los gránulos seleccionados coinciden, por lo que ② 
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Paso 1: Filtrado por town](/images/guides/best-practices/prewhere_03.webp)
+
+</Frame>
 
 </div>
 
@@ -89,7 +101,11 @@ En este caso, dos de los tres gránulos contienen filas coincidentes, por lo que
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Paso 2: Filtrado por date](/images/guides/best-practices/prewhere_04.webp)
+
+</Frame>
 
 </div>
 
@@ -104,7 +120,11 @@ Solo uno de los dos gránulos contiene filas coincidentes, por lo que ② solo e
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Paso 2: Filtrado por price](/images/guides/best-practices/prewhere_05.webp)
+
+</Frame>
 
 </div>
 

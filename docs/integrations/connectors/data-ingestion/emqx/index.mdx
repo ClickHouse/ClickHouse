@@ -20,7 +20,11 @@ With the infrastructure provided by cloud providers, EMQX Cloud serves dozens of
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud Architecture diagram showing cloud infrastructure components](/images/integrations/data-ingestion/emqx/emqx-cloud-artitecture.png)
+
+</Frame>
 
 </div>
 
@@ -37,7 +41,11 @@ During this setup, we deployed the ClickHouse instance on AWS in N. Virginia (us
 
 <div className="ch-image-sm">
 
+<Frame>
+
 ![ClickHouse Cloud Service Deployment interface showing AWS region selection](/images/integrations/data-ingestion/emqx/clickhouse_cloud_1.webp)
+
+</Frame>
 
 </div>
 
@@ -45,7 +53,11 @@ During the setup process, you will also need to pay attention to the connection 
 
 <div className="ch-image-sm">
 
+<Frame>
+
 ![ClickHouse Cloud Connection Settings showing IP access configuration](/images/integrations/data-ingestion/emqx/clickhouse_cloud_2.webp)
+
+</Frame>
 
 </div>
 
@@ -53,7 +65,11 @@ Then you need to save your username and password for future use.
 
 <div className="ch-image-sm">
 
+<Frame>
+
 ![ClickHouse Cloud Credentials screen showing username and password](/images/integrations/data-ingestion/emqx/clickhouse_cloud_3.webp)
+
+</Frame>
 
 </div>
 
@@ -61,7 +77,11 @@ After that, you will get a running ClickHouse instance. Click "Connect" to get t
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ClickHouse Cloud Running Instance dashboard with connection options](/images/integrations/data-ingestion/emqx/clickhouse_cloud_4.webp)
+
+</Frame>
 
 </div>
 
@@ -69,7 +89,11 @@ Click "Connect to SQL Console" to create database and table for integration with
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ClickHouse Cloud SQL Console interface](/images/integrations/data-ingestion/emqx/clickhouse_cloud_5.webp)
+
+</Frame>
 
 </div>
 
@@ -90,7 +114,11 @@ PRIMARY KEY (client_id, timestamp)
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ClickHouse Cloud Create Database and Table SQL query execution](/images/integrations/data-ingestion/emqx/clickhouse_cloud_6.webp)
+
+</Frame>
 
 </div>
 
@@ -106,7 +134,11 @@ Start at the [EMQX Cloud sign up](https://accounts.emqx.com/signup?continue=http
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud Signup Page with registration form](/images/integrations/data-ingestion/emqx/emqx_cloud_sign_up.webp)
+
+</Frame>
 
 </div>
 
@@ -116,7 +148,11 @@ Once logged in, click on "Cloud console" under the account menu and you will be 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud Create Deployment Step 1 showing deployment options](/images/integrations/data-ingestion/emqx/emqx_cloud_create_1.webp)
+
+</Frame>
 
 </div>
 
@@ -126,7 +162,11 @@ Select Pro version and choose `N.Virginial` region and click `Create Now`. In ju
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud Create Deployment Step 2 showing region selection](/images/integrations/data-ingestion/emqx/emqx_cloud_create_2.png)
+
+</Frame>
 
 </div>
 
@@ -134,7 +174,11 @@ Now click the panel to go to the cluster view. On this dashboard, you will see t
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud Overview Dashboard showing broker metrics](/images/integrations/data-ingestion/emqx/emqx_cloud_overview.webp)
+
+</Frame>
 
 </div>
 
@@ -146,7 +190,11 @@ Click 'Authentication & ACL' on the left menu and click 'Authentication' in the 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud Authentication Setup interface for adding credentials](/images/integrations/data-ingestion/emqx/emqx_cloud_auth.webp)
+
+</Frame>
 
 </div>
 
@@ -160,7 +208,11 @@ Go back to the Overview page and scroll down to the bottom of the page where you
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud NAT Gateway Configuration panel](/images/integrations/data-ingestion/emqx/emqx_cloud_nat_gateway.webp)
+
+</Frame>
 
 </div>
 
@@ -172,7 +224,11 @@ The [EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/data_in
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud Data Integration Options showing available connectors](/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png)
+
+</Frame>
 
 </div>
 
@@ -180,7 +236,11 @@ EMQX Cloud offers more than 30 native integrations with popular data systems. Cl
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud ClickHouse Data Integration connector details](/images/integrations/data-ingestion/emqx/data_integration_clickhouse.webp)
+
+</Frame>
 
 </div>
 
@@ -198,7 +258,11 @@ Click the ClickHouse card to create a new resource.
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud ClickHouse Resource Setup form with connection details](/images/integrations/data-ingestion/emqx/data_integration_resource.webp)
+
+</Frame>
 
 </div>
 
@@ -231,7 +295,11 @@ So, the raw JSON you send to the topic:
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![EMQX Cloud Data Integration Rule Creation Step 1 showing SQL query](/images/integrations/data-ingestion/emqx/data_integration_rule_1.webp)
+
+</Frame>
 
 </div>
 
@@ -239,7 +307,11 @@ You can use the SQL test to test and see the results.
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![EMQX Cloud Data Integration Rule Creation Step 2 showing test results](/images/integrations/data-ingestion/emqx/data_integration_rule_2.webp)
+
+</Frame>
 
 </div>
 
@@ -256,7 +328,11 @@ INSERT INTO temp_hum (client_id, timestamp, topic, temp, hum) VALUES ('${client_
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![EMQX Cloud Data Integration Rule Action Setup with SQL template](/images/integrations/data-ingestion/emqx/data_integration_rule_action.webp)
+
+</Frame>
 
 </div>
 
@@ -268,7 +344,11 @@ Click "Confirm" and "View Details". Now, everything should be well set. You can 
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![EMQX Cloud Data Integration Rule Details showing configuration summary](/images/integrations/data-ingestion/emqx/data_integration_details.webp)
+
+</Frame>
 
 </div>
 
@@ -280,7 +360,11 @@ We will simulate temperature and humidity data and report these data to EMQX Clo
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud to ClickHouse Workflow diagram showing data flow](/images/integrations/data-ingestion/emqx/work-flow.png)
+
+</Frame>
 
 </div>
 
@@ -290,7 +374,11 @@ You can use any MQTT client or SDK to publish the message. In this tutorial, we 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![MQTTX Overview showing the client interface](/images/integrations/data-ingestion/emqx/mqttx-overview.webp)
+
+</Frame>
 
 </div>
 
@@ -303,7 +391,11 @@ Click "New Connection" on MQTTX and fill the connection form:
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![MQTTX New Connection Setup form with connection details](/images/integrations/data-ingestion/emqx/mqttx-new.webp)
+
+</Frame>
 
 </div>
 
@@ -325,7 +417,11 @@ The data sent to EMQX Cloud should be processed by the rule engine and inserted 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![MQTTX Publish MQTT Messages interface showing message composition](/images/integrations/data-ingestion/emqx/mqttx-publish.webp)
+
+</Frame>
 
 </div>
 
@@ -335,7 +431,11 @@ Check the rule monitoring and add one to the number of success.
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![EMQX Cloud Rule Monitoring dashboard showing message processing metrics](/images/integrations/data-ingestion/emqx/rule_monitor.webp)
+
+</Frame>
 
 </div>
 
@@ -352,7 +452,11 @@ SELECT * FROM emqx.temp_hum;
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ClickHouse Query Results showing persisted IoT data](/images/integrations/data-ingestion/emqx/clickhouse_result.webp)
+
+</Frame>
 
 </div>
 

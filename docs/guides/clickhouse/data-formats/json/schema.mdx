@@ -969,7 +969,11 @@ ClickHouse stores each JSON path as a subcolumn in a true columnar layout, enabl
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Column per JSON path](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
+
+</Frame>
 
 </div>
 
@@ -979,7 +983,11 @@ Additionally, by leveraging offsets, ClickHouse ensures that these sub-columns r
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![JSON offsets](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
+
+</Frame>
 
 </div>
 
@@ -989,7 +997,11 @@ To mitigate this, ClickHouse introduces the concept of an overflow subcolumn: on
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Shared JSON column](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
+
+</Frame>
 
 </div>
 

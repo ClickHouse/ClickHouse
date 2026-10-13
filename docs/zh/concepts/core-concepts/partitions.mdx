@@ -47,7 +47,11 @@ PARTITION BY toStartOfMonth(date);
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![INSERT PROCESSING](/images/managing-data/core-concepts/partitions.webp)
+
+</Frame>
 
 </div>
 
@@ -66,7 +70,11 @@ ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![分片合并](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</Frame>
 
 </div>
 
@@ -167,7 +175,11 @@ ClickHouse 通过依次应用一系列剪枝技术来处理该查询，从而避
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![分片合并 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</Frame>
 
 </div>
 

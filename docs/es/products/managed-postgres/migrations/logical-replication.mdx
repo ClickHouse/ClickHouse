@@ -52,7 +52,11 @@ Asegúrate de que tu base de datos de origen esté configurada de esta manera:
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Configuración de la replicación de PostgreSQL de origen](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</Frame>
 
 </div>
 
@@ -81,7 +85,11 @@ En nuestro caso, tenemos dos tablas: `events` y `users`. `events` tiene un mill�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Configuración de las tablas PostgreSQL de origen](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</Frame>
 
 </div>
 
@@ -93,7 +101,11 @@ Primero, asegúrate de tener configurada una instancia de ClickHouse Managed Pos
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Crear una instancia de ClickHouse Managed Postgres](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</Frame>
 
 </div>
 
@@ -120,7 +132,11 @@ En nuestro caso, después de ejecutar este comando, tenemos las dos tablas y est
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Configuración inicial del destino ClickHouse Managed Postgres](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</Frame>
 
 </div>
 
@@ -162,7 +178,11 @@ En nuestro caso, después de configurar la suscripción, los datos comenzaron a 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Resultado de la migración después de la replicación lógica](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</Frame>
 
 </div>
 

@@ -17,7 +17,11 @@ We'll start by illustrating how a query on the [uk_price_paid_simple](/concepts/
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Query processing without PREWHERE optimization](/images/guides/best-practices/prewhere_01.webp)
+
+</Frame>
 
 </div>
 
@@ -42,7 +46,11 @@ The first three processing steps are the same as before:
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Query processing with PREWHERE optimization](/images/guides/best-practices/prewhere_02.webp)
+
+</Frame>
 
 </div>
 
@@ -64,7 +72,11 @@ In our example, all selected granules do match, so ② the corresponding positio
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Step 1: Filtering by town](/images/guides/best-practices/prewhere_03.webp)
+
+</Frame>
 
 </div>
 
@@ -76,7 +88,11 @@ In this case, two out of three granules contain matching rows, so ② only their
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Step 2: Filtering by date](/images/guides/best-practices/prewhere_04.webp)
+
+</Frame>
 
 </div>
 
@@ -88,7 +104,11 @@ Only one of the two granules contains matching rows, so ② just its positionall
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Step 2: Filtering by price](/images/guides/best-practices/prewhere_05.webp)
+
+</Frame>
 
 </div>
 

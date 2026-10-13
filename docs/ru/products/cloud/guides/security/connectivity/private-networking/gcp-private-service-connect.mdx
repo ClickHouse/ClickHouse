@@ -17,7 +17,11 @@ Private Service Connect (PSC) — это сетевая функция Google Cl
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Обзор Private Service Connect](/images/cloud/security/gcp-psc-overview.webp)
+
+</Frame>
 
 </div>
 
@@ -103,7 +107,11 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Частные конечные точки](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+</Frame>
 
 </div>
 
@@ -155,7 +163,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Откройте Private Service Connect в консоли Google Cloud](/images/cloud/security/gcp-psc-open.webp)
+
+</Frame>
 
 </div>
 
@@ -169,7 +181,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Включите Global Access для Private Service Connect](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+</Frame>
 
 </div>
 
@@ -179,7 +195,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Скопируйте PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+</Frame>
 
 </div>
 
@@ -267,7 +287,11 @@ output "psc_connection_id" {
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Удаление частной конечной точки из ClickHouse Cloud](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
+
+</Frame>
 
 </div>
 
@@ -340,7 +364,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Фильтр частных конечных точек](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+</Frame>
 
 </div>
 
@@ -404,7 +432,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![DNS-имя частной конечной точки](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+</Frame>
 
 </div>
 

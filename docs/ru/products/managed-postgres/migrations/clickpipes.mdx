@@ -46,7 +46,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Карточка сервиса Managed Postgres в списке сервисов ClickHouse Cloud](/images/managed-postgres/pgpg/servicecard.webp)
+
+</Frame>
 
 </div>
 
@@ -54,7 +58,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Пункт источник данных на боковой панели сервиса Managed Postgres](/images/managed-postgres/pgpg/overview.webp)
+
+</Frame>
 
 </div>
 
@@ -62,7 +70,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Страница источник данных с кнопкой Start import](/images/managed-postgres/pgpg/startimport.webp)
+
+</Frame>
 
 </div>
 
@@ -78,7 +90,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 1: форма подключения к исходной базе данных с вариантами метода ингестии](/images/managed-postgres/pgpg/migrationform.webp)
+
+</Frame>
 
 </div>
 
@@ -88,7 +104,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 2: автоматизированная миграция схемы с выбором целевой базы данных](/images/managed-postgres/pg_dump_restore/automated.webp)
+
+</Frame>
 
 </div>
 
@@ -100,7 +120,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Диалог создания новой базы данных Postgres](/images/managed-postgres/pg_dump_restore/newdb.webp)
+
+</Frame>
 
 </div>
 
@@ -118,7 +142,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 2: ручная миграция схемы с помощью команды экспорта pg_dump](/images/managed-postgres/pg_dump_restore/manual.webp)
+
+</Frame>
 
 </div>
 
@@ -128,7 +156,11 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 2: команда pg_dump для экспорта схемы](/images/managed-postgres/pgpg/nextexport.webp)
+
+</Frame>
 
 </div>
 
@@ -145,7 +177,11 @@ pg_dump \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Вывод терминала после выполнения pg_dump](/images/managed-postgres/pgpg/psqlexport.webp)
+
+</Frame>
 
 </div>
 
@@ -159,7 +195,11 @@ pg_dump \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 3: команда psql для импорта схемы](/images/managed-postgres/pgpg/nextimport.webp)
+
+</Frame>
 
 </div>
 
@@ -174,7 +214,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Вывод терминала после выполнения импорта схемы через psql](/images/managed-postgres/pgpg/psqlimport.webp)
+
+</Frame>
 
 </div>
 
@@ -196,7 +240,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 4: форма параметров ингестии с публикацией и расширенными параметрами репликации](/images/managed-postgres/pgpg/advancedsettings.webp)
+
+</Frame>
 
 </div>
 
@@ -208,7 +256,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 5: панель выбора таблиц, сгруппированных по схемам, с кнопкой Create migration](/images/managed-postgres/pgpg/tablepicker.webp)
+
+</Frame>
 
 </div>
 
@@ -220,7 +272,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Список источников данных с миграцией в статусе Running](/images/managed-postgres/pgpg/migrationlist.webp)
+
+</Frame>
 
 </div>
 
@@ -228,7 +284,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Подробное представление миграции со статистикой начальной загрузки по таблицам](/images/managed-postgres/pgpg/initialload.webp)
+
+</Frame>
 
 </div>
 
@@ -261,7 +321,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 1 после миграции: перевод исходной базы данных в режим только для чтения](/images/managed-postgres/pgpg/post-migration/readonly.webp)
+
+</Frame>
 
 </div>
 
@@ -271,7 +335,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 2 после миграции: выбор таблиц и проверка количества строк между источником и целевой системой](/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp)
+
+</Frame>
 
 </div>
 
@@ -281,7 +349,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 3 после миграции: приостановка ClickPipe для остановки репликации](/images/managed-postgres/pgpg/post-migration/pause-pipe.webp)
+
+</Frame>
 
 </div>
 
@@ -291,7 +363,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 4 после миграции: сброс последовательностей в пункте назначения](/images/managed-postgres/pgpg/post-migration/reset-sequences.webp)
+
+</Frame>
 
 </div>
 
@@ -301,7 +377,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Шаг 5 после миграции: переключение трафика с использованием строки подключения Managed Postgres](/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp)
+
+</Frame>
 
 </div>
 
@@ -317,7 +397,11 @@ SELECT pg_drop_replication_slot('<slot_name>');
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Post-migration step 6: clean up by dropping the replication slot and deleting the migration](/images/managed-postgres/pgpg/post-migration/cleanup.webp)
+
+</Frame>
 
 </div>
 

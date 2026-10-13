@@ -19,7 +19,11 @@ When ClickHouse ① runs an aggregation query with a filter on the table's prima
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Index analysis](/images/guides/best-practices/query-parallelism_01.webp)
+
+</Frame>
 
 </div>
 
@@ -29,7 +33,11 @@ The selected data is then [dynamically](#load-balancing-across-processing-lanes)
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![4 parallel processing lanes](/images/guides/best-practices/query-parallelism_02.webp)
+
+</Frame>
 
 </div>
 
@@ -40,7 +48,11 @@ On a machine with `8` cores, query processing throughput would roughly double (b
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![8 parallel processing lanes](/images/guides/best-practices/query-parallelism_03.webp)
+
+</Frame>
 
 </div>
 
@@ -53,7 +65,11 @@ When table data is distributed across multiple servers as [shards](/guides/oss/d
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Distributed lanes](/images/guides/best-practices/query-parallelism_04.webp)
+
+</Frame>
 
 </div>
 
@@ -122,7 +138,11 @@ ClickHouse's [embedded web UI](/concepts/features/interfaces/http) (available at
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Query pipeline](/images/guides/best-practices/query-parallelism_05.webp)
+
+</Frame>
 
 </div>
 

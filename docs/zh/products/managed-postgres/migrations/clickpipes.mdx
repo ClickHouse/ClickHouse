@@ -46,7 +46,11 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ClickHouse Cloud 服务列表中的 Managed Postgres 服务卡片](/images/managed-postgres/pgpg/servicecard.webp)
+
+</Frame>
 
 </div>
 
@@ -54,7 +58,11 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Managed Postgres 服务侧边栏中的数据源条目](/images/managed-postgres/pgpg/overview.webp)
+
+</Frame>
 
 </div>
 
@@ -62,7 +70,11 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![带有“开始导入”按钮的数据源页面](/images/managed-postgres/pgpg/startimport.webp)
+
+</Frame>
 
 </div>
 
@@ -78,7 +90,11 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![步骤 1：带有摄取方式选项的源数据库连接表单](/images/managed-postgres/pgpg/migrationform.webp)
+
+</Frame>
 
 </div>
 
@@ -88,7 +104,11 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![第 2 步：使用目标数据库选择器自动迁移 schema](/images/managed-postgres/pg_dump_restore/automated.webp)
+
+</Frame>
 
 </div>
 
@@ -100,7 +120,11 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![创建新 Postgres 数据库对话框](/images/managed-postgres/pg_dump_restore/newdb.webp)
+
+</Frame>
 
 </div>
 
@@ -118,7 +142,11 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![第 2 步：使用 pg_dump 导出命令进行手动 schema 迁移](/images/managed-postgres/pg_dump_restore/manual.webp)
+
+</Frame>
 
 </div>
 
@@ -128,7 +156,11 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![步骤 2：用于导出 schema 的 pg_dump 命令](/images/managed-postgres/pgpg/nextexport.webp)
+
+</Frame>
 
 </div>
 
@@ -145,7 +177,11 @@ pg_dump \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![运行 pg_dump 后的终端输出](/images/managed-postgres/pgpg/psqlexport.webp)
+
+</Frame>
 
 </div>
 
@@ -159,7 +195,11 @@ pg_dump \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![步骤 3：用于导入 schema 的 psql 命令](/images/managed-postgres/pgpg/nextimport.webp)
+
+</Frame>
 
 </div>
 
@@ -174,7 +214,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![运行 psql 导入 schema 后的终端输出](/images/managed-postgres/pgpg/psqlimport.webp)
+
+</Frame>
 
 </div>
 
@@ -196,7 +240,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![第 4 步：包含 publication 和高级复制选项的摄取设置表单](/images/managed-postgres/pgpg/advancedsettings.webp)
+
+</Frame>
 
 </div>
 
@@ -208,7 +256,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![第 5 步：按 schema 分组的表选择器，带有“Create migration”按钮](/images/managed-postgres/pgpg/tablepicker.webp)
+
+</Frame>
 
 </div>
 
@@ -220,7 +272,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![显示正在运行的迁移的数据源列表](/images/managed-postgres/pgpg/migrationlist.webp)
+
+</Frame>
 
 </div>
 
@@ -228,7 +284,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![显示各表初始加载统计信息的迁移详情视图](/images/managed-postgres/pgpg/initialload.webp)
+
+</Frame>
 
 </div>
 
@@ -261,7 +321,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Post-migration step 1: set the source database in read-only mode](/images/managed-postgres/pgpg/post-migration/readonly.webp)
+
+</Frame>
 
 </div>
 
@@ -271,7 +335,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Post-migration step 2: select tables and validate row counts between source and target](/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp)
+
+</Frame>
 
 </div>
 
@@ -281,7 +349,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Post-migration step 3: pause the ClickPipe to stop replication](/images/managed-postgres/pgpg/post-migration/pause-pipe.webp)
+
+</Frame>
 
 </div>
 
@@ -291,7 +363,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![迁移后步骤 4：在目标端重置序列](/images/managed-postgres/pgpg/post-migration/reset-sequences.webp)
+
+</Frame>
 
 </div>
 
@@ -301,7 +377,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Post-migration step 5: cut over traffic using the Managed Postgres connection string](/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp)
+
+</Frame>
 
 </div>
 
@@ -317,7 +397,11 @@ SELECT pg_drop_replication_slot('<slot_name>');
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![迁移后步骤 6：删除 replication slot 并删除 migration 以完成清理](/images/managed-postgres/pgpg/post-migration/cleanup.webp)
+
+</Frame>
 
 </div>
 

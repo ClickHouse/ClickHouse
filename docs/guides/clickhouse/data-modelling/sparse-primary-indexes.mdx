@@ -286,7 +286,11 @@ ClickHouse is a <a href="/get-started/about/distinctive-features#true-column-ori
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 01](/images/guides/best-practices/sparse-primary-indexes-01.webp)
+
+</Frame>
 
 </div>
 
@@ -312,7 +316,11 @@ are organized into 1083 granules, as a result of the table's DDL statement conta
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 02](/images/guides/best-practices/sparse-primary-indexes-02.webp)
+
+</Frame>
 
 </div>
 
@@ -346,7 +354,11 @@ For example
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 03a](/images/guides/best-practices/sparse-primary-indexes-03a.webp)
+
+</Frame>
 
 </div>
 
@@ -354,7 +366,11 @@ In total the index has 1083 entries for our table with 8.87 million rows and 108
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 03b](/images/guides/best-practices/sparse-primary-indexes-03b.webp)
+
+</Frame>
 
 </div>
 
@@ -573,7 +589,11 @@ The following diagram illustrates a part of the primary index file for our table
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 04](/images/guides/best-practices/sparse-primary-indexes-04.webp)
+
+</Frame>
 
 </div>
 
@@ -596,7 +616,11 @@ The following diagram shows the three mark files `UserID.mrk`, `URL.mrk`, and `E
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 05](/images/guides/best-practices/sparse-primary-indexes-05.webp)
+
+</Frame>
 
 </div>
 
@@ -650,7 +674,11 @@ The following diagram and the text below illustrate how for our example query Cl
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 06](/images/guides/best-practices/sparse-primary-indexes-06.webp)
+
+</Frame>
 
 </div>
 
@@ -763,7 +791,11 @@ Suppose UserID had low cardinality. In this case it would be likely that the sam
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 06](/images/guides/best-practices/sparse-primary-indexes-07.webp)
+
+</Frame>
 
 </div>
 
@@ -781,7 +813,11 @@ When the UserID has high cardinality then it is unlikely that the same UserID va
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 06](/images/guides/best-practices/sparse-primary-indexes-08.webp)
+
+</Frame>
 
 </div>
 
@@ -817,7 +853,11 @@ ClickHouse now created an additional index that is storing - per group of 4 cons
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 13a](/images/guides/best-practices/sparse-primary-indexes-13a.webp)
+
+</Frame>
 
 </div>
 
@@ -857,7 +897,11 @@ When creating a **second table** with a different primary key then queries must 
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 09a](/images/guides/best-practices/sparse-primary-indexes-09a.webp)
+
+</Frame>
 
 </div>
 
@@ -865,7 +909,11 @@ With a **materialized view** the additional table is implicitly created and data
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 09b](/images/guides/best-practices/sparse-primary-indexes-09b.webp)
+
+</Frame>
 
 </div>
 
@@ -873,7 +921,11 @@ And the **projection** is the most transparent option because next to automatica
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 09c](/images/guides/best-practices/sparse-primary-indexes-09c.webp)
+
+</Frame>
 
 </div>
 
@@ -923,7 +975,11 @@ Because we switched the order of the columns in the primary key, the inserted ro
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 10](/images/guides/best-practices/sparse-primary-indexes-10.webp)
+
+</Frame>
 
 </div>
 
@@ -931,7 +987,11 @@ This is the resulting primary key:
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 11](/images/guides/best-practices/sparse-primary-indexes-11.webp)
+
+</Frame>
 
 </div>
 
@@ -1069,7 +1129,11 @@ Ok.
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 12b1](/images/guides/best-practices/sparse-primary-indexes-12b-1.webp)
+
+</Frame>
 
 </div>
 
@@ -1077,7 +1141,11 @@ ClickHouse is storing the [column data files](#data-is-stored-on-disk-ordered-by
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Sparse Primary Indices 12b2](/images/guides/best-practices/sparse-primary-indexes-12b-2.webp)
+
+</Frame>
 
 </div>
 </Note>
@@ -1156,7 +1224,11 @@ ALTER TABLE hits_UserID_URL
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 12c1](/images/guides/best-practices/sparse-primary-indexes-12c-1.webp)
+
+</Frame>
 
 </div>
 
@@ -1164,7 +1236,11 @@ ClickHouse is storing the [column data files](#data-is-stored-on-disk-ordered-by
 
 <div className="ch-image-sm">
 
+<Frame>
+
 ![Sparse Primary Indices 12c2](/images/guides/best-practices/sparse-primary-indexes-12c-2.webp)
+
+</Frame>
 
 </div>
 </Note>
@@ -1413,7 +1489,11 @@ The diagram below sketches the on-disk order of rows for a primary key where the
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 14a](/images/guides/best-practices/sparse-primary-indexes-14a.webp)
+
+</Frame>
 
 </div>
 
@@ -1429,7 +1509,11 @@ In contrast to the diagram above, the diagram below sketches the on-disk order o
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 14b](/images/guides/best-practices/sparse-primary-indexes-14b.webp)
+
+</Frame>
 
 </div>
 
@@ -1469,7 +1553,11 @@ The following diagram shows
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 15a](/images/guides/best-practices/sparse-primary-indexes-15a.webp)
+
+</Frame>
 
 </div>
 
@@ -1487,7 +1575,11 @@ The following diagram shows
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Sparse Primary Indices 15b](/images/guides/best-practices/sparse-primary-indexes-15b.webp)
+
+</Frame>
 
 </div>
 

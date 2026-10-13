@@ -31,7 +31,11 @@ First, we need to create peers for both the source and target databases. A peer 
 Create a peer for your source PostgreSQL database by filling in the connection details such as host, port, database name, username, and password. Once you have filled in the details, click on the `Create peer` button to save the peer.
 <div className="ch-image-md">
 
+<Frame>
+
 ![Source Peer Creation](/images/managed-postgres/peerdb/source-peer.webp)
+
+</Frame>
 
 </div>
 
@@ -39,14 +43,22 @@ Create a peer for your source PostgreSQL database by filling in the connection d
 Similarly, create a peer for your ClickHouse Managed Postgres instance by providing the necessary connection details. You can get the [connection details](/products/managed-postgres/connection) for your instance from the ClickHouse Cloud console. After filling in the details, click on the `Create peer` button to save the target peer.
 <div className="ch-image-md">
 
+<Frame>
+
 ![Target Peer Creation](/images/managed-postgres/peerdb/target-peer.webp)
+
+</Frame>
 
 </div>
 
 Now, you should see both the source and target peers listed in the "Peers" section.
 <div className="ch-image-md">
 
+<Frame>
+
 ![Peers List](/images/managed-postgres/peerdb/peers.webp)
+
+</Frame>
 
 </div>
 
@@ -117,7 +129,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 Next, we need to create a mirror to define the data migration process between the source and target peers. In PeerDB UI, navigate to the "Mirrors" section by clicking on "Mirrors" in the sidebar. To create a new mirror, click on the `+ New mirror` button.
 <div className="ch-image-md">
 
+<Frame>
+
 ![Create Mirror](/images/managed-postgres/peerdb/create-mirror.webp)
+
+</Frame>
 
 </div>
 1. Give your mirror a name that describes the migration.
@@ -127,13 +143,21 @@ Next, we need to create a mirror to define the data migration process between th
 - Expand `Advanced settings`. Make sure that the **Postgres type system is enabled** and **PeerDB columns are disabled**.
 <div className="ch-image-md">
 
+<Frame>
+
 ![Mirror Settings](/images/managed-postgres/peerdb/settings.webp)
+
+</Frame>
 
 </div>
 4. Select the tables you want to migrate. You can choose specific tables or select all tables from the source database.
 <div className="ch-image-md">
 
+<Frame>
+
 ![Table Picker](/images/managed-postgres/peerdb/table-picker.webp)
+
+</Frame>
 
 </div>
 
@@ -148,7 +172,11 @@ Make sure the destination table names are the same as the source table names in 
 You should see your newly created mirror in the "Mirrors" section.
 <div className="ch-image-md">
 
+<Frame>
+
 ![Mirrors List](/images/managed-postgres/peerdb/mirrors.webp)
+
+</Frame>
 
 </div>
 
@@ -156,7 +184,11 @@ You should see your newly created mirror in the "Mirrors" section.
 After creating the mirror, PeerDB will start the initial data load from the source to the target database. You can click on the mirror and click on the **Initial load** tab to monitor the progress of the initial data migration.
 <div className="ch-image-md">
 
+<Frame>
+
 ![Initial Load Progress](/images/managed-postgres/peerdb/initial-load.webp)
+
+</Frame>
 
 </div>
 Once the initial load is complete, you should see a status indicating that the migration is finished.

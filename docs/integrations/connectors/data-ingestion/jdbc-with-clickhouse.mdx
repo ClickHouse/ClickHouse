@@ -19,7 +19,11 @@ Using JDBC requires the ClickHouse JDBC bridge, so you will need to use `clickho
 
 <div className="ch-image-lg ch-image-background-white">
 
+<Frame>
+
 ![ClickHouse JDBC Bridge architecture diagram](/images/integrations/data-ingestion/dbms/jdbc-01.webp)
+
+</Frame>
 
 </div>
 This is handy when there is no native built-in [integration engine](/reference/engines/table-engines/integrations/index), table function, or external dictionary for the external data source available, but a JDBC driver for the data source exists.
@@ -47,7 +51,11 @@ The easiest way to use the ClickHouse JDBC Bridge is to install and run it on th
 
 <div className="ch-image-lg ch-image-background-white">
 
+<Frame>
+
 ![ClickHouse JDBC Bridge locally deployment diagram](/images/integrations/data-ingestion/dbms/jdbc-02.webp)
+
+</Frame>
 
 </div>
 
@@ -141,7 +149,11 @@ As the first parameter for the jdbc table function we're using the name of the n
 For a distributed ClickHouse cluster (a cluster with more than one ClickHouse host) it makes sense to install and run the ClickHouse JDBC Bridge externally on its own host:
 <div className="ch-image-lg ch-image-background-white">
 
+<Frame>
+
 ![ClickHouse JDBC Bridge external deployment diagram](/images/integrations/data-ingestion/dbms/jdbc-03.webp)
+
+</Frame>
 
 </div>
 This has the advantage that each ClickHouse host can access the JDBC Bridge. Otherwise the JDBC Bridge would need to be installed locally for each ClickHouse instance that is supposed to access external data sources via the Bridge.

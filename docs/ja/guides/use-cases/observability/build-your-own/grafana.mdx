@@ -30,7 +30,11 @@ Traces の設定はやや複雑です (完全な一覧は [こちら](/ja/refere
 
 <div className="ch-image-sm">
 
+<Frame>
+
 ![コネクタ設定](/images/use-cases/observability/observability-15.webp)
+
+</Frame>
 
 </div>
 
@@ -48,7 +52,11 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![コネクタのログ設定](/images/use-cases/observability/observability-16.webp)
+
+</Frame>
 
 </div>
 
@@ -62,7 +70,11 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ログからトレースへ](/images/use-cases/observability/observability-17.webp)
+
+</Frame>
 
 </div>
 
@@ -89,7 +101,11 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![トレース](/images/use-cases/observability/observability-18.webp)
+
+</Frame>
 
 </div>
 
@@ -131,7 +147,11 @@ LIMIT 1000
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![トレースの詳細](/images/use-cases/observability/observability-19.webp)
+
+</Frame>
 
 </div>
 
@@ -151,7 +171,11 @@ ORDER BY timestamp ASC LIMIT 1000
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![トレースからログへ](/images/use-cases/observability/observability-20.webp)
+
+</Frame>
 
 </div>
 
@@ -165,7 +189,11 @@ Grafana では、ClickHouse データソースを使用してダッシュボー�
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ダッシュボード](/images/use-cases/observability/observability-21.webp)
+
+</Frame>
 
 </div>
 
@@ -192,7 +220,11 @@ LIMIT 100000
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![時系列](/images/use-cases/observability/observability-22.webp)
+
+</Frame>
 
 </div>
 
@@ -223,7 +255,11 @@ LIMIT 100000
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![複数系列チャート](/images/use-cases/observability/observability-23.webp)
+
+</Frame>
 
 </div>
 
@@ -253,6 +289,10 @@ GROUP BY hash
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![地理データの可視化](/images/use-cases/observability/observability-24.webp)
+
+</Frame>
 
 </div>

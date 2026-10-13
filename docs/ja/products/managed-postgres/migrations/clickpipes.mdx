@@ -46,7 +46,11 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ClickHouse Cloud のサービス一覧に表示される Managed Postgres のサービスカード](/images/managed-postgres/pgpg/servicecard.webp)
+
+</Frame>
 
 </div>
 
@@ -54,7 +58,11 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Managed Postgres サービスのサイドバーにある データソース エントリ](/images/managed-postgres/pgpg/overview.webp)
+
+</Frame>
 
 </div>
 
@@ -62,7 +70,11 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Start import ボタンが表示された データソース ページ](/images/managed-postgres/pgpg/startimport.webp)
+
+</Frame>
 
 </div>
 
@@ -78,7 +90,11 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ステップ 1: インジェスト方法のオプションを含むソースデータベース接続フォーム](/images/managed-postgres/pgpg/migrationform.webp)
+
+</Frame>
 
 </div>
 
@@ -88,7 +104,11 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ステップ 2: 宛先データベースセレクターを使用した自動スキーマ移行](/images/managed-postgres/pg_dump_restore/automated.webp)
+
+</Frame>
 
 </div>
 
@@ -100,7 +120,11 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![新しい Postgres データベースを作成するダイアログ](/images/managed-postgres/pg_dump_restore/newdb.webp)
+
+</Frame>
 
 </div>
 
@@ -118,7 +142,11 @@ ClickPipes の詳細ビューで、スキーマ移行の進行状況を確認で
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ステップ2: pg_dumpエクスポートコマンドによる手動スキーマ移行](/images/managed-postgres/pg_dump_restore/manual.webp)
+
+</Frame>
 
 </div>
 
@@ -128,7 +156,11 @@ ClickPipes の詳細ビューで、スキーマ移行の進行状況を確認で
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ステップ 2: スキーマのエクスポート用 `pg_dump` コマンド](/images/managed-postgres/pgpg/nextexport.webp)
+
+</Frame>
 
 </div>
 
@@ -145,7 +177,11 @@ pg_dump \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![`pg_dump` 実行後のターミナル出力](/images/managed-postgres/pgpg/psqlexport.webp)
+
+</Frame>
 
 </div>
 
@@ -159,7 +195,11 @@ pg_dump \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ステップ 3: スキーマのインポート用 `psql` コマンド](/images/managed-postgres/pgpg/nextimport.webp)
+
+</Frame>
 
 </div>
 
@@ -174,7 +214,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![`psql` によるスキーマのインポート実行後のターミナル出力](/images/managed-postgres/pgpg/psqlimport.webp)
+
+</Frame>
 
 </div>
 
@@ -196,7 +240,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ステップ 4: パブリケーションと高度なレプリケーションオプションを含むインジェスト設定フォーム](/images/managed-postgres/pgpg/advancedsettings.webp)
+
+</Frame>
 
 </div>
 
@@ -210,7 +258,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![ステップ5: スキーマごとにグループ化されたテーブル選択画面。［移行を作成］ボタン付き](/images/managed-postgres/pgpg/tablepicker.webp)
+
+</Frame>
 
 </div>
 
@@ -222,7 +274,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![実行中の移行が表示されたデータソース一覧](/images/managed-postgres/pgpg/migrationlist.webp)
+
+</Frame>
 
 </div>
 
@@ -230,7 +286,11 @@ psql \
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![テーブルごとの初期ロード統計を表示する移行詳細ビュー](/images/managed-postgres/pgpg/initialload.webp)
+
+</Frame>
 
 </div>
 
@@ -263,7 +323,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![移行後の手順 1: ソースデータベースを読み取り専用モードに設定する](/images/managed-postgres/pgpg/post-migration/readonly.webp)
+
+</Frame>
 
 </div>
 
@@ -273,7 +337,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![移行後の手順 2: select tables and validate row counts between source and target](/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp)
+
+</Frame>
 
 </div>
 
@@ -283,7 +351,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![移行後の手順 3: pause the ClickPipe to stop replication](/images/managed-postgres/pgpg/post-migration/pause-pipe.webp)
+
+</Frame>
 
 </div>
 
@@ -293,7 +365,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![移行後の手順 4: reset sequences on the destination](/images/managed-postgres/pgpg/post-migration/reset-sequences.webp)
+
+</Frame>
 
 </div>
 
@@ -303,7 +379,11 @@ WHERE datname = '<source_db>'
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![移行後の手順 5: トラフィックを切り替える using the Managed Postgres connection string](/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp)
+
+</Frame>
 
 </div>
 
@@ -319,7 +399,11 @@ SELECT pg_drop_replication_slot('<slot_name>');
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![移行後の手順 6: clean up by dropping the replication slot and deleting the migration](/images/managed-postgres/pgpg/post-migration/cleanup.webp)
+
+</Frame>
 
 </div>
 

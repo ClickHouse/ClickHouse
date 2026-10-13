@@ -21,7 +21,11 @@ Quando o ClickHouse ① executa uma consulta de agregação com um filtro na cha
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Análise do índice](/images/guides/best-practices/query-parallelism_01.webp)
+
+</Frame>
 
 </div>
 
@@ -33,7 +37,11 @@ Os dados selecionados são então distribuídos [dinamicamente](#load-balancing-
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![4 lanes de processamento paralelas](/images/guides/best-practices/query-parallelism_02.webp)
+
+</Frame>
 
 </div>
 
@@ -47,7 +55,11 @@ Em uma máquina com `8` núcleos, a taxa de processamento de consultas praticame
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![8 lanes de processamento paralelas](/images/guides/best-practices/query-parallelism_03.webp)
+
+</Frame>
 
 </div>
 
@@ -65,7 +77,11 @@ Quando os dados da tabela são distribuídos entre vários servidores em [shards
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Lanes distribuídas](/images/guides/best-practices/query-parallelism_04.webp)
+
+</Frame>
 
 </div>
 
@@ -143,7 +159,11 @@ A [interface web embutida](/pt-BR/concepts/features/interfaces/http) do ClickHou
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Pipeline da consulta](/images/guides/best-practices/query-parallelism_05.webp)
+
+</Frame>
 
 </div>
 

@@ -24,7 +24,11 @@ Two main factors, in addition to hardware size, influence the performance and re
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Insert block size mechanics in ClickHouse](/images/integrations/data-ingestion/s3/insert_mechanics.webp)
+
+</Frame>
 
 </div>
 
@@ -36,7 +40,11 @@ When using an `INSERT INTO SELECT` query in combination with an integration tabl
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Pulling data from external sources in ClickHouse](/images/integrations/data-ingestion/s3/pull.webp)
+
+</Frame>
 
 </div>
 
@@ -71,7 +79,11 @@ ClickHouse will continuously [merge parts](https://clickhouse.com/blog/asynchron
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Background merges in ClickHouse](/images/integrations/data-ingestion/s3/merges.webp)
+
+</Frame>
 
 </div>
 
@@ -97,7 +109,11 @@ Parts that were merged into larger parts are marked as [inactive](/reference/sys
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Resource usage for insert parallelism](/images/integrations/data-ingestion/s3/resource_usage.webp)
+
+</Frame>
 
 </div>
 
@@ -107,7 +123,11 @@ Table functions like s3 allow specifying sets of to-be-loaded-file names via glo
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Parallel insert threads in ClickHouse](/images/integrations/data-ingestion/s3/insert_threads.webp)
+
+</Frame>
 
 </div>
 
@@ -135,7 +155,11 @@ Optimizing the performance of queries using the S3 table functions is required w
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Impact of hardware size on ClickHouse performance](/images/integrations/data-ingestion/s3/hardware_size.webp)
+
+</Frame>
 
 </div>
 
@@ -354,7 +378,11 @@ The server that initially receives the insert query first resolves the glob patt
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![s3Cluster function in ClickHouse](/images/integrations/data-ingestion/s3/s3Cluster.webp)
+
+</Frame>
 
 </div>
 

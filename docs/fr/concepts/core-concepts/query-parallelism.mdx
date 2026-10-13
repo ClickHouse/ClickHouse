@@ -21,7 +21,11 @@ Lorsque ClickHouse ① exécute une requête d’agrégation avec un filtre sur 
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Analyse de l’index](/images/guides/best-practices/query-parallelism_01.webp)
+
+</Frame>
 
 </div>
 
@@ -33,7 +37,11 @@ Les données sélectionnées sont ensuite réparties [dynamiquement](#load-balan
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![4 voies de traitement parallèles](/images/guides/best-practices/query-parallelism_02.webp)
+
+</Frame>
 
 </div>
 
@@ -47,7 +55,11 @@ Sur une machine avec `8` cœurs, le débit du traitement des requêtes doublerai
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![8 voies de traitement parallèles](/images/guides/best-practices/query-parallelism_03.webp)
+
+</Frame>
 
 </div>
 
@@ -65,7 +77,11 @@ Lorsque les données d&#39;une table sont réparties sur plusieurs serveurs en [
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![Lanes distribuées](/images/guides/best-practices/query-parallelism_04.webp)
+
+</Frame>
 
 </div>
 
@@ -143,7 +159,11 @@ L’[interface web intégrée](/fr/concepts/features/interfaces/http) de ClickHo
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Pipeline de requête](/images/guides/best-practices/query-parallelism_05.webp)
+
+</Frame>
 
 </div>
 

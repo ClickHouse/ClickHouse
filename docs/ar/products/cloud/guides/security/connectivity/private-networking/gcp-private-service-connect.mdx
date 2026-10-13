@@ -17,7 +17,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![نظرة عامة على Private Service Connect](/images/cloud/security/gcp-psc-overview.webp)
+
+</Frame>
 
 </div>
 
@@ -103,7 +107,11 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![نقاط النهاية الخاصة](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+</Frame>
 
 </div>
 
@@ -155,7 +163,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![افتح Private Service Connect في Google Cloud console](/images/cloud/security/gcp-psc-open.webp)
+
+</Frame>
 
 </div>
 
@@ -169,7 +181,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-md">
 
+<Frame>
+
 ![فعّل Global Access لـ Private Service Connect](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+</Frame>
 
 </div>
 
@@ -179,7 +195,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![انسخ PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+</Frame>
 
 </div>
 
@@ -267,7 +287,11 @@ output "psc_connection_id" {
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![إزالة Private Endpoint من ClickHouse Cloud](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
+
+</Frame>
 
 </div>
 
@@ -340,7 +364,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![عامل تصفية Private Endpoints](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+</Frame>
 
 </div>
 
@@ -404,7 +432,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![اسم DNS لنقطة النهاية الخاصة](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+</Frame>
 
 </div>
 

@@ -21,7 +21,11 @@ This guide provides step-by-step instructions on how to migrate your PostgreSQL 
 To go through the steps, let's use a sample RDS Postgres database as the source database. Something like this:
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Source PostgreSQL Database Setup](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</Frame>
 
 </div>
 
@@ -52,7 +56,11 @@ You can test this process once to get a sense of how long it takes and the size 
 Here's what running this command looks like:
 <div className="ch-image-lg">
 
+<Frame>
+
 ![pg_dump Command Execution](/images/managed-postgres/pg_dump_restore/dump-command.webp)
+
+</Frame>
 
 </div>
 
@@ -63,7 +71,11 @@ Now that we have the dump file, we can restore it to our ClickHouse Managed Post
 First, ensure you have a ClickHouse Managed Postgres instance set up, preferably in the same region as the source. You can follow the quick guide [here](/products/managed-postgres/quickstart#create-postgres-database). Here's what we're going to spin up for this guide:
 <div className="ch-image-md">
 
+<Frame>
+
 ![Create ClickHouse Managed Postgres Instance](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</Frame>
 
 </div>
 
@@ -84,7 +96,11 @@ Here too there are a couple of flags to note:
 In our case, it looks like this:
 <div className="ch-image-lg">
 
+<Frame>
+
 ![pg_restore Command Execution](/images/managed-postgres/pg_dump_restore/restore-command.webp)
+
+</Frame>
 
 </div>
 
@@ -93,7 +109,11 @@ Once the restore process is complete, you can connect to your ClickHouse Managed
 Here's what our ClickHouse Managed Postgres setup looks like after the migration:
 <div className="ch-image-lg">
 
+<Frame>
+
 ![Target ClickHouse Managed Postgres Database Setup](/images/managed-postgres/pg_dump_restore/target-setup.webp)
+
+</Frame>
 
 </div>
 We see that we have all our tables, indexes, views, and sequences intact, along with the data counts matching.

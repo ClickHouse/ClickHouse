@@ -47,7 +47,11 @@ PARTITION BY toStartOfMonth(date);
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![INSERT の処理](/images/managing-data/core-concepts/partitions.webp)
+
+</Frame>
 
 </div>
 
@@ -66,7 +70,11 @@ ClickHouse サーバーはまず、上の図に示されている 4 行の挿入
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![パーツのマージ](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</Frame>
 
 </div>
 
@@ -167,7 +175,11 @@ ClickHouse はこのクエリを処理する際、無関係なデータを評価
 
 <div className="ch-image-lg">
 
+<Frame>
+
 ![パーツマージ 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</Frame>
 
 </div>
 
