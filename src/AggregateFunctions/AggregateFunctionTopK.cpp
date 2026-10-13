@@ -17,6 +17,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/SpaceSaving.h>
+#include <base/normalizeNegativeZero.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -43,6 +44,8 @@ namespace
 
 inline constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
 
+/// `HashCRC32` hashes negative zero as positive zero, so the two zeros are counted together, and the inserted values
+/// are canonicalized as well - otherwise the key reported in the result would be the one that arrived first.
 template <typename T>
 struct AggregateFunctionTopKData
 {
@@ -153,9 +156,9 @@ public:
                 if (flags[i])
                 {
                     if constexpr (is_weighted)
-                        set.insert(data[i], columns[1]->getUInt(i));
+                        set.insert(normalizeNegativeZero(data[i]), columns[1]->getUInt(i));
                     else
-                        set.insert(data[i]);
+                        set.insert(normalizeNegativeZero(data[i]));
                 }
             }
         }
@@ -164,9 +167,9 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if constexpr (is_weighted)
-                    set.insert(data[i], columns[1]->getUInt(i));
+                    set.insert(normalizeNegativeZero(data[i]), columns[1]->getUInt(i));
                 else
-                    set.insert(data[i]);
+                    set.insert(normalizeNegativeZero(data[i]));
             }
         }
     }
@@ -193,9 +196,9 @@ public:
                 if (!null_map[i] && flags[i])
                 {
                     if constexpr (is_weighted)
-                        set.insert(data[i], columns[1]->getUInt(i));
+                        set.insert(normalizeNegativeZero(data[i]), columns[1]->getUInt(i));
                     else
-                        set.insert(data[i]);
+                        set.insert(normalizeNegativeZero(data[i]));
                 }
             }
         }
@@ -206,9 +209,9 @@ public:
                 if (!null_map[i])
                 {
                     if constexpr (is_weighted)
-                        set.insert(data[i], columns[1]->getUInt(i));
+                        set.insert(normalizeNegativeZero(data[i]), columns[1]->getUInt(i));
                     else
-                        set.insert(data[i]);
+                        set.insert(normalizeNegativeZero(data[i]));
                 }
             }
         }
@@ -221,9 +224,9 @@ public:
 
         auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
         if constexpr (is_weighted)
-            set.insert(data[0], length * columns[1]->getUInt(0));
+            set.insert(normalizeNegativeZero(data[0]), length * columns[1]->getUInt(0));
         else
-            set.insert(data[0], length);
+            set.insert(normalizeNegativeZero(data[0]), length);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -232,9 +235,9 @@ public:
         ensureCapacity(set);
 
         if constexpr (is_weighted)
-            set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], columns[1]->getUInt(row_num));
+            set.insert(normalizeNegativeZero(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]), columns[1]->getUInt(row_num));
         else
-            set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+            set.insert(normalizeNegativeZero(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]));
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
