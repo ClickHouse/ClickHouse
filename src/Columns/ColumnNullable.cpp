@@ -114,8 +114,12 @@ namespace
 {
 
 /// Never written, so it does not take memory: the pages of `.bss` are mapped to the zero page on reading.
+/// Padded on both sides like `PaddedPODArray`, because the readers may read past the end of the null map
+/// (e.g. `memcpySmallAllowReadWriteOverflow15` in `GatherUtils`).
 constexpr size_t zeros_size = 16 << 20;
-alignas(4096) UInt8 zeros[zeros_size];
+constexpr size_t zeros_pad_left = PADDING_FOR_SIMD;
+alignas(4096) UInt8 zeros_with_padding[zeros_pad_left + zeros_size + PADDING_FOR_SIMD];
+UInt8 * const zeros = zeros_with_padding + zeros_pad_left;
 
 }
 
