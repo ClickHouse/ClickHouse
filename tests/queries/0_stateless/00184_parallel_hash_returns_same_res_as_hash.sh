@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful
+# Tags: stateful, long
 
 set -e
 
