@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET enable_lightweight_update = 1;
@@ -31,7 +29,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(s, ['a b']) SETTINGS ignore_data_skip
 
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
     EXPLAIN actions = 1
-    SELECT hasAnyTokens(s, ['a b']) FROM tab
+    SELECT hasAnyTokens(s, ['a b']) FROM tab SETTINGS enable_parallel_replicas = 0
 ) WHERE explain ILIKE '%hasAnyTokens%';
 
 DROP TABLE tab;
