@@ -22,6 +22,9 @@ SELECT array[2], ARRAY[1, 2] FROM (SELECT [10, 20] AS array);
 SELECT a.array[1] FROM (SELECT [10, 20] AS array) AS a;
 SELECT `array`[1] FROM (SELECT [10, 20] AS array);
 SELECT arrayMap(array -> array[1], [[5], [6]]);
+-- Only the bracket syntax is the constructor, not an explicit `arrayElement` call.
+SELECT arrayElement(array, 1); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT arrayElement(ARRAY, 1); -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '-- Composite types';
 SELECT CAST([1, 2] AS ARRAY(INTEGER)) AS x, toTypeName(x);

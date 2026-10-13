@@ -1389,7 +1389,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// The parser cannot distinguish the single element array constructor `ARRAY[x]` from subscripting
     /// a column named `ARRAY`, and parses it as a subscript. If there is no such column, it is the constructor.
+    /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
     if (function_name == "arrayElement"
+        && function_node_ptr->isOperator()
         && !function_node_ptr->isWindowFunction()
         && function_node_ptr->getParameters().getNodes().empty()
         && function_node_ptr->getArguments().getNodes().size() == 2)
