@@ -3,8 +3,11 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
@@ -132,24 +135,208 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
 /// renders as its name, a `Bool` as `'true'`/`'false'`), while `IColumn::get` returns the nested value
 /// alone. One layer is enough: an alternative may not itself be a `Variant` or a `Dynamic`. A `NULL` row
 /// has no alternative, and the callers own the `NULL` contract.
-DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePtr & from)
+DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePtr & from, size_t row = 0)
 {
     if (const auto * dynamic_column = checkAndGetColumn<ColumnDynamic>(&value))
     {
-        if (DataTypePtr alternative = dynamic_column->getTypeAt(0))
+        if (DataTypePtr alternative = dynamic_column->getTypeAt(row))
             return alternative;
     }
     else if (const auto * variant_column = checkAndGetColumn<ColumnVariant>(&value))
     {
         /// `ColumnVariant` does not store the alternatives' types, so they are named by `from`. The bound
         /// also rejects `NULL_DISCRIMINATOR`, which is above every valid alternative index.
-        const auto discriminator = variant_column->globalDiscriminatorAt(0);
+        const auto discriminator = variant_column->globalDiscriminatorAt(row);
         const auto * variant_type = typeid_cast<const DataTypeVariant *>(from.get());
         if (variant_type && discriminator < variant_type->getVariants().size())
             return variant_type->getVariant(discriminator);
     }
 
     return from;
+}
+
+bool isVariantOrDynamic(const IDataType & type)
+{
+    return typeid_cast<const DataTypeVariant *>(&type) || isDynamic(type);
+}
+
+/// `resolveActiveAlternativeType` recovers the alternative of a top-level `Variant`/`Dynamic` only. Inside
+/// a composite (`Array(Dynamic)`, `Tuple(Variant(...))`, `Map(K, Dynamic)`) every member may occupy a
+/// different alternative, so no single source type describes them and `convertFieldToType` would see just
+/// the carrier - a `Bool` member then renders as `'1'` instead of what `CAST` writes. So convert each such
+/// member here, with its own alternative as the source type, straight to the matching member of `to`.
+/// `rewriteNestedAlternativesType` gives the source type of the result: those members already have the
+/// type of `to`, and `convertFieldToType` leaves a value whose source type equals the target as it is.
+DataTypePtr rewriteNestedAlternativesType(const DataTypePtr & from, const DataTypePtr & to, bool top_level)
+{
+    if (isVariantOrDynamic(*from))
+        return top_level ? from : to;
+
+    if (const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from.get()))
+    {
+        const DataTypePtr nested = rewriteNestedAlternativesType(nullable_from->getNestedType(), to, top_level);
+        return nested == nullable_from->getNestedType() ? from : makeNullable(nested);
+    }
+
+    const DataTypePtr unwrapped_to = removeLowCardinalityAndNullable(to);
+
+    if (const auto * array_from = typeid_cast<const DataTypeArray *>(from.get()))
+    {
+        const auto * array_to = typeid_cast<const DataTypeArray *>(unwrapped_to.get());
+        if (!array_to)
+            return from;
+        const DataTypePtr nested = rewriteNestedAlternativesType(array_from->getNestedType(), array_to->getNestedType(), false);
+        return nested == array_from->getNestedType() ? from : std::make_shared<DataTypeArray>(nested);
+    }
+
+    if (const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from.get()))
+    {
+        const auto * tuple_to = typeid_cast<const DataTypeTuple *>(unwrapped_to.get());
+        if (!tuple_to || tuple_to->getElements().size() != tuple_from->getElements().size())
+            return from;
+        DataTypes elements = tuple_from->getElements();
+        bool changed = false;
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            DataTypePtr element = rewriteNestedAlternativesType(elements[i], tuple_to->getElements()[i], false);
+            changed |= element != elements[i];
+            elements[i] = std::move(element);
+        }
+        if (!changed)
+            return from;
+        if (tuple_from->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple_from->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * map_from = typeid_cast<const DataTypeMap *>(from.get()))
+    {
+        const auto * map_to = typeid_cast<const DataTypeMap *>(unwrapped_to.get());
+        if (!map_to)
+            return from;
+        const DataTypePtr key = rewriteNestedAlternativesType(map_from->getKeyType(), map_to->getKeyType(), false);
+        const DataTypePtr value = rewriteNestedAlternativesType(map_from->getValueType(), map_to->getValueType(), false);
+        if (key == map_from->getKeyType() && value == map_from->getValueType())
+            return from;
+        return std::make_shared<DataTypeMap>(key, value);
+    }
+
+    return from;
+}
+
+/// Converts the members of `field` that `rewriteNestedAlternativesType` retypes, walking row `row` of `column`
+/// alongside it to find the alternative of each member. `field` was read from that row, so its shape matches.
+void rewriteNestedAlternatives(
+    Field & field,
+    const IColumn & column,
+    size_t row,
+    const DataTypePtr & from,
+    const DataTypePtr & to,
+    bool top_level,
+    const FormatSettings & format_settings,
+    bool strict,
+    bool convert_inexact_floats)
+{
+    if (field.isNull())
+        return;
+
+    if (isVariantOrDynamic(*from))
+    {
+        if (top_level)
+            return;
+        const DataTypePtr alternative = resolveActiveAlternativeType(column, from, row);
+        retagBoolInField(field, alternative);
+        field = convertFieldToType(field, *to, alternative.get(), format_settings, strict, convert_inexact_floats);
+        return;
+    }
+
+    if (const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from.get()))
+    {
+        const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
+        rewriteNestedAlternatives(
+            field, nullable_column.getNestedColumn(), row, nullable_from->getNestedType(), to, top_level,
+            format_settings, strict, convert_inexact_floats);
+        return;
+    }
+
+    const DataTypePtr unwrapped_to = removeLowCardinalityAndNullable(to);
+
+    if (const auto * array_from = typeid_cast<const DataTypeArray *>(from.get()))
+    {
+        const auto * array_to = typeid_cast<const DataTypeArray *>(unwrapped_to.get());
+        if (!array_to)
+            return;
+        const auto & array_column = assert_cast<const ColumnArray &>(column);
+        const size_t offset = array_column.getOffsets()[row - 1];
+        auto & elements = field.safeGet<Array>();
+        for (size_t i = 0; i < elements.size(); ++i)
+            rewriteNestedAlternatives(
+                elements[i], array_column.getData(), offset + i, array_from->getNestedType(), array_to->getNestedType(), false,
+                format_settings, strict, convert_inexact_floats);
+        return;
+    }
+
+    if (const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from.get()))
+    {
+        const auto * tuple_to = typeid_cast<const DataTypeTuple *>(unwrapped_to.get());
+        if (!tuple_to || tuple_to->getElements().size() != tuple_from->getElements().size())
+            return;
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
+        auto & elements = field.safeGet<Tuple>();
+        for (size_t i = 0; i < elements.size(); ++i)
+            rewriteNestedAlternatives(
+                elements[i], tuple_column.getColumn(i), row, tuple_from->getElements()[i], tuple_to->getElements()[i], false,
+                format_settings, strict, convert_inexact_floats);
+        return;
+    }
+
+    if (const auto * map_from = typeid_cast<const DataTypeMap *>(from.get()))
+    {
+        const auto * map_to = typeid_cast<const DataTypeMap *>(unwrapped_to.get());
+        if (!map_to)
+            return;
+        const auto & nested_array = assert_cast<const ColumnMap &>(column).getNestedColumn();
+        const auto & key_value_columns = assert_cast<const ColumnTuple &>(nested_array.getData());
+        const size_t offset = nested_array.getOffsets()[row - 1];
+        auto & entries = field.safeGet<Map>();
+        for (size_t i = 0; i < entries.size(); ++i)
+        {
+            auto & key_and_value = entries[i].safeGet<Tuple>();
+            rewriteNestedAlternatives(
+                key_and_value[0], key_value_columns.getColumn(0), offset + i, map_from->getKeyType(), map_to->getKeyType(), false,
+                format_settings, strict, convert_inexact_floats);
+            rewriteNestedAlternatives(
+                key_and_value[1], key_value_columns.getColumn(1), offset + i, map_from->getValueType(), map_to->getValueType(), false,
+                format_settings, strict, convert_inexact_floats);
+        }
+        return;
+    }
+}
+
+/// Reads row 0 of `value` as the `Field` and the source type that the delegated `convertFieldToType` should see.
+std::pair<Field, DataTypePtr> getSourceField(
+    const IColumn & value,
+    const DataTypePtr & from,
+    const DataTypePtr & to,
+    const FormatSettings & format_settings,
+    bool strict,
+    bool convert_inexact_floats)
+{
+    Field field;
+    value.get(0, field);
+    /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
+    /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
+    const DataTypePtr source = resolveActiveAlternativeType(value, from);
+    retagBoolInField(field, source);
+
+    const DataTypePtr rewritten_source = rewriteNestedAlternativesType(source, to, true);
+    if (rewritten_source != source)
+    {
+        /// A top-level alternative is never a `Variant`/`Dynamic`, so a retyped member is inside `from` itself.
+        chassert(source == from);
+        rewriteNestedAlternatives(field, value, 0, source, to, true, format_settings, strict, convert_inexact_floats);
+    }
+    return {std::move(field), rewritten_source};
 }
 
 }
@@ -175,12 +362,7 @@ ColumnPtr convertColumnToTypeOrNull(
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native
     /// fast paths above shrink this over time; the differential test pins equivalence.
-    Field field;
-    unwrapped.get(0, field);
-    /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
-    /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
-    const DataTypePtr source = resolveActiveAlternativeType(unwrapped, from);
-    retagBoolInField(field, source);
+    const auto [field, source] = getSourceField(unwrapped, from, to, format_settings, strict, convert_inexact_floats);
 
     const Field converted = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);
 
@@ -244,10 +426,7 @@ ColumnPtr convertColumnToTypeOrThrow(
         /// types) instead of a generic message - materializing a `Field` only on this exceptional path;
         /// the happy path in `convertColumnToTypeOrNull` stays `Field`-free.
         const ColumnPtr full = value.convertToFullColumnIfConst();
-        Field field;
-        full->get(0, field);
-        const DataTypePtr source = resolveActiveAlternativeType(*full, from);
-        retagBoolInField(field, source);
+        const auto [field, source] = getSourceField(*full, from, to, format_settings, /*strict=*/false, convert_inexact_floats);
         convertFieldToTypeOrThrow(field, *to, source.get(), format_settings, convert_inexact_floats);
 
         /// `convertFieldToTypeOrThrow` must have thrown for a value that `convertColumnToTypeOrNull`

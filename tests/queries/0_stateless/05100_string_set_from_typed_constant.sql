@@ -91,4 +91,16 @@ SELECT ['yes', 'x'] IN ([true, 'x']), ['true', 'x'] IN ([true, 'x']) SETTINGS en
 SELECT ['yes', 'x'] IN ([true, 'x']), ['true', 'x'] IN ([true, 'x']) SETTINGS enable_analyzer = 1;
 SET bool_true_representation = 'true';
 
+-- A `Variant` or `Dynamic` member of a composite constant can hold a different alternative in every member,
+-- and each member is rendered from its own alternative, as `CAST` renders it.
+SELECT 'Variant and Dynamic members of composites are rendered as CAST renders them';
+SET bool_true_representation = 'yes';
+SELECT CAST(CAST([true, 'a', toDate('2020-01-01')], 'Array(Dynamic)'), 'Array(String)');
+SELECT x FROM values('x Array(String)', CAST([true, 'a', toDate('2020-01-01')], 'Array(Dynamic)'));
+SELECT x FROM values('x Tuple(String, String)', CAST((true, toDate('2020-01-02')), 'Tuple(Variant(Bool, String), Dynamic)'));
+SELECT x FROM values('x Map(String, String)', CAST(map('k', true), 'Map(String, Dynamic)'));
+SELECT x FROM values('x Array(Nullable(String))', CAST([true, NULL], 'Array(Dynamic)'));
+SELECT ['yes'] IN (CAST([true], 'Array(Dynamic)')), ['1'] IN (CAST([true], 'Array(Dynamic)'));
+SET bool_true_representation = 'true';
+
 DROP TABLE t_string_set;

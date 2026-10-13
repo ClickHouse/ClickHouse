@@ -53,3 +53,10 @@ mixed-type literal arrays are rendered as CAST renders them
 ['yes','x']
 1	0
 1	0
+Variant and Dynamic members of composites are rendered as CAST renders them
+['yes','a','2020-01-01']
+['yes','a','2020-01-01']
+('yes','2020-01-02')
+{'k':'yes'}
+['yes',NULL]
+1	0
