@@ -227,6 +227,9 @@
          ClickHouse will extract information about proxy-forwarded client address from the header.
     -->
     <!-- <tcp_with_proxy_port>9011</tcp_with_proxy_port> -->
+    <!-- Set to false to reject the native protocol's interserver mode on tcp_with_proxy_port,
+         for example when that port is exposed to untrusted clients through a proxy. -->
+    <!-- <tcp_with_proxy_allow_interserver_mode>false</tcp_with_proxy_allow_interserver_mode> -->
 
     <!-- Port for communication between replicas. Used for data exchange.
          It provides low-level data access between servers.
@@ -908,6 +911,10 @@
         <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
+
+        <!-- Whether SET ROLE is refused when the session or the query is readonly.
+             By default this setting is false. -->
+        <readonly_restricts_set_role>false</readonly_restricts_set_role>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>

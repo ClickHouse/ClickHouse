@@ -214,6 +214,29 @@ ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWit
   */
 
 
+#if USE_MULTITARGET_CODE
+/// Compares `size` 16-byte values ordered by their bytes (`IPv6`, `FixedString(16)`); `Op` is over `int`.
+template <typename Op, bool b_is_constant>
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE void compareBigEndian16_x86_64_v4(
+    const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+    {
+        if constexpr (b_is_constant)
+            c[i] = Op::apply(compareBigEndian16Halves(a + i * 16, b), 0);
+        else
+            c[i] = Op::apply(compareBigEndian16Halves(a + i * 16, b + i * 16), 0);
+    }
+}
+
+template <typename Op> struct OrderedComparisonOverInt { using Type = void; };
+template <typename A, typename B> struct OrderedComparisonOverInt<LessOp<A, B>> { using Type = LessOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<GreaterOp<A, B>> { using Type = GreaterOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<LessOrEqualsOp<A, B>> { using Type = LessOrEqualsOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<GreaterOrEqualsOp<A, B>> { using Type = GreaterOrEqualsOp<int, int>; };
+#endif
+
+
 template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
@@ -244,12 +267,21 @@ struct NumComparisonImpl
         }
     }))
 
+#if USE_MULTITARGET_CODE
+    using OrderedOpOverInt = typename OrderedComparisonOverInt<Op>::Type;
+    static constexpr bool is_ordered_ipv6 = std::is_same_v<A, IPv6> && std::is_same_v<B, IPv6> && !std::is_void_v<OrderedOpOverInt>;
+#endif
+
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorVectorImpl_x86_64_v4(a, b, c);
+            if constexpr (is_ordered_ipv6)
+                compareBigEndian16_x86_64_v4<OrderedOpOverInt, false>(
+                    reinterpret_cast<const UInt8 *>(a.data()), reinterpret_cast<const UInt8 *>(b.data()), c.data(), a.size());
+            else
+                vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -275,12 +307,24 @@ struct NumComparisonImpl
         }
     }))
 
+#if USE_MULTITARGET_CODE
+    /// Takes `b` by value, so that only the AVX-512 path needs it in memory.
+    static void X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE vectorConstantOrderedIPv6_x86_64_v4(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+    {
+        compareBigEndian16_x86_64_v4<OrderedOpOverInt, true>(
+            reinterpret_cast<const UInt8 *>(a.data()), reinterpret_cast<const UInt8 *>(&b), c.data(), a.size());
+    }
+#endif
+
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImpl_x86_64_v4(a, b, c);
+            if constexpr (is_ordered_ipv6)
+                vectorConstantOrderedIPv6_x86_64_v4(a, b, c);
+            else
+                vectorConstantImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -394,6 +438,14 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            compareBigEndian16_x86_64_v4<Op, false>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
+            return;
+        }
+#endif
+
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
@@ -405,6 +457,14 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            compareBigEndian16_x86_64_v4<Op, true>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
+            return;
+        }
+#endif
+
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)

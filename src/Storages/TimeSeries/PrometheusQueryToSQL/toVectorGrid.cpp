@@ -45,6 +45,15 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             query_piece.store_method = StoreMethod::VECTOR_GRID;
             query_piece.metric_name_dropped = true;
 
+            /// An empty piece has no time grid of its own, so it takes the evaluation range of its node.
+            const auto & node_range = context.node_range_getter.get(query_piece.node);
+            if (!node_range.empty())
+            {
+                query_piece.start_time = node_range.start_time;
+                query_piece.end_time = node_range.end_time;
+                query_piece.step = node_range.step;
+            }
+
             return std::move(query_piece);
         }
 
