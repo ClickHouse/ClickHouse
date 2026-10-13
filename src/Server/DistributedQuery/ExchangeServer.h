@@ -14,12 +14,12 @@
 namespace DB
 {
 
-/// Authenticates an incoming exchange connection from the auth token presented in
+/// Authenticates an incoming exchange connection from the JWT presented in
 /// SourceHello (empty when the peer sent none). Throws to reject the connection
 /// before it is registered. Empty (default, and the case when no authenticator is
 /// configured) means authentication is not enforced and the token is ignored; a
 /// caller can inject a closure that verifies the token.
-using ExchangeConnectionAuthenticator = std::function<void(const String & auth_token)>;
+using ExchangeConnectionAuthenticator = std::function<void(const String & jwt_token)>;
 
 /// Accepts connections for streaming exchanges used by distributed queries.
 //  Reads first packet from the connections that contains distributed query id and exchange stream id.
@@ -32,14 +32,12 @@ public:
 
     void start();
     void stop();
-    /// The port the server listens on; tells the port chosen for a listen port of 0.
-    UInt16 port() const { return server_socket.address().port(); }
 
     void run() override;
 
     /// Runs the SourceHello/SinkHello handshake on `socket` and registers the
     /// resulting connection in `connections` on success. When `authenticate`
-    /// is set, the SourceHello auth token is checked before registration and a failure
+    /// is set, the SourceHello JWT is checked before registration and a failure
     /// throws without registering. Throws on protocol mismatch or transport
     /// failure without registering. Exposed for tests.
     static void handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log, const ExchangeConnectionAuthenticator & authenticate);

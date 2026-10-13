@@ -39,6 +39,8 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
     extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
     extern const SettingsBool enable_s3_requests_logging;
+    extern const SettingsBool s3_disable_checksum;
+    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
 }
@@ -133,7 +135,7 @@ private:
         context->getGlobalContext()->getRemoteHostFilter().checkURL(s3_uri.uri);
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        NormalizedHTTPHeaderEntries headers;
+        HTTPHeaderEntries headers;
         String session_token = settings.auth_settings[S3AuthSetting::session_token];
         String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
         S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
@@ -165,6 +167,7 @@ private:
 
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
+        const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
         /// The passed-in role_arn comes from the query/named collection; if empty, fall back to server config.
@@ -219,6 +222,7 @@ private:
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
+        client_configuration.maxConnections = static_cast<unsigned>(global_settings[Setting::s3_max_connections]);
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
@@ -258,6 +262,7 @@ private:
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
+            .disable_checksum = local_settings[Setting::s3_disable_checksum],
             .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
@@ -409,6 +414,9 @@ BackupReaderS3::BackupReaderS3(
     const bool gcp_oauth_supplied_by_query = named_collection_auth
         && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
+
+    if (auto blob_storage_system_log = context_->getBlobStorageLog())
+        blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
 }
 
 BackupReaderS3::~BackupReaderS3() = default;
@@ -472,20 +480,17 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
             auto dest_client = destination_disk->getS3StorageClient();
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
             auto create_read_buffer = [&, this] { return readFile(path_in_backup); };
-            auto copy_blob_storage_log = BlobStorageLogWriter::create(destination_disk->getName());
-            if (copy_blob_storage_log)
-                copy_blob_storage_log->local_path = destination_path;
 
             if (is_range)
                 copyS3FileRange(
                     client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
-                    s3_settings.request_settings, read_settings, copy_blob_storage_log, runner, create_read_buffer, object_attributes);
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
             else
                 copyS3File(
                     client, s3_uri.bucket, src_key, size,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
-                    s3_settings.request_settings, read_settings, copy_blob_storage_log, runner, create_read_buffer, object_attributes);
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
 
             return size;
         };

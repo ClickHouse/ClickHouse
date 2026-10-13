@@ -65,12 +65,9 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
 {
     String name = trim(type_name);
 
-    /// Iceberg names this type `list`, Hive names it `array`; Glue passes through whichever spelling
-    /// the writer that registered the table used.
-    if ((name.starts_with("array<") || name.starts_with("list<")) && name.ends_with(">"))
+    if (name.starts_with("array<") && name.ends_with(">"))
     {
-        const size_t open = name.find('<');
-        String inner = name.substr(open + 1, name.size() - open - 2);
+        String inner = name.substr(6, name.size() - 7);
         return std::make_shared<DB::DataTypeArray>(getType(inner, nullable));
     }
 
