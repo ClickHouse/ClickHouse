@@ -962,10 +962,11 @@ void logQueryFinish(
     auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
 
-    /// The deferred flush of asynchronous inserts is not run by `executeQuery`, whose finish callback
-    /// charges the quotas over profile events for the other queries, so it is charged here; the
-    /// counters have been finalized above.
-    if (query_ast && query_ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush)
+    /// The queries finished here (the deferred flush of asynchronous inserts, the tasks of a distributed
+    /// plan, refreshes of materialized views) are not run by `executeQuery`, whose finish callback charges
+    /// the quotas over profile events for the other queries, so they are charged here, by the same rule
+    /// as on the exception path (`logQueryException`); the counters have been finalized above.
+    if (chargesQuotaProfileEvents(query_ast, internal))
         usedQuotaProfileEvents(context->getQuota(), context->getProcessListElementSafe(), elem.normalized_query_hash);
 }
 
