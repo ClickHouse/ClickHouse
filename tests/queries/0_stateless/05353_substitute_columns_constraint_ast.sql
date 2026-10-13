@@ -34,8 +34,10 @@ ENGINE = MergeTree ORDER BY a;
 -- Each check counts, in the optimized AST, how often the substituted expression cityHash64(a)
 -- appears and how often the replaced column b still appears. A substituted query has no b left.
 
--- SELECT list and WHERE are both rewritten -> 2 0
-SELECT countIf(explain LIKE '%Function cityHash64%'), countIf(explain LIKE '%Identifier b%')
+-- SELECT list and WHERE are both rewritten. In the SELECT list the substituted expression must also
+-- keep the replaced name as its alias, so that it is still exposed downstream as column b -> 2 0 1
+SELECT countIf(explain LIKE '%Function cityHash64%'), countIf(explain LIKE '%Identifier b%'),
+       countIf(explain LIKE '%(alias b)%')
 FROM (EXPLAIN AST optimize = 1 SELECT i, b FROM t_substitute WHERE b = 123);
 
 -- PREWHERE is rewritten too -> 2 0
@@ -59,7 +61,14 @@ SELECT countIf(explain LIKE '%Function cityHash64%'), countIf(explain LIKE '%Ide
 FROM (EXPLAIN AST optimize = 1 SELECT i, b FROM t_substitute WHERE b = 123)
 SETTINGS optimize_substitute_columns = 0;
 
+-- The alias is what makes the substitution transparent to the rest of the query. The outer SELECT
+-- resolves the identifier b against the column names of the already rewritten subquery, so without
+-- the alias this query would fail with UNKNOWN_IDENTIFIER instead of printing a row -> 1 1
+SELECT countIf(explain LIKE '%Function cityHash64 (alias b)%'), countIf(explain LIKE '%Identifier b%')
+FROM (EXPLAIN AST optimize = 1 SELECT b FROM (SELECT b FROM t_substitute WHERE a = '7'));
+
 -- The rewrite is a read-cost choice only, so the answers themselves do not change.
+SELECT b = cityHash64('7') FROM (SELECT b FROM t_substitute WHERE a = '7');
 SELECT count() FROM t_substitute WHERE b = cityHash64(a);
 SELECT count() FROM t_substitute WHERE b = 123;
 SELECT i, b = cityHash64(a) FROM t_substitute WHERE a = '7';
