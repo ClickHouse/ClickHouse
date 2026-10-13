@@ -530,7 +530,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         query_info_.row_level_filter,
         query_info_.prewhere_info)), all_column_names_, query_info_, storage_snapshot_, context_)
     , data_settings(std::move(data_settings_))
-    , reader_settings(MergeTreeReaderSettings::createForQuery(context_, *data_settings, query_info_))
+    , reader_settings(MergeTreeReaderSettings::createForQuery(context_, *data_settings, query_info_, storage_snapshot_->metadata->getColumns()))
     , prepared_parts(std::move(parts_))
     , mutations_snapshot(std::move(mutations_))
     , all_column_names(std::move(all_column_names_))
@@ -2828,6 +2828,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
+bool ReadFromMergeTree::isQueryConditionCacheAllowed() const
+{
+    return allow_query_condition_cache && !MergeTreeDataSelectExecutor::hasPendingMetadataMutations(mutations_snapshot);
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool allow_query_condition_cache_) const
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
@@ -3681,7 +3686,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist || find_exact_ranges;
     bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (has_projections || find_exact_ranges);
 
-    auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
+    auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_, metadata_snapshot->getColumns());
     if (!allow_query_condition_cache_)
         reader_settings.use_query_condition_cache = false;
 
@@ -3692,6 +3697,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     const bool filter_depends_on_non_deterministic_virtuals = filterDependsOnNonDeterministicVirtuals(metadata_snapshot->virtuals, query_info_);
     if (filter_depends_on_non_deterministic_virtuals)
+        reader_settings.use_query_condition_cache = false;
+
+    if (MergeTreeDataSelectExecutor::hasPendingMetadataMutations(mutations_snapshot))
         reader_settings.use_query_condition_cache = false;
 
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
@@ -3741,6 +3749,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 result.sampling.use_sampling,
                 mutations_snapshot,
                 *indexes,
+                reader_settings.query_condition_cache_salt,
                 context_,
                 log);
 
@@ -3888,7 +3897,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
             if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
             {
-                size_t hash = queryConditionCacheHash(outputs.front()->getHash(), reader_settings.query_condition_cache_settings_salt);
+                size_t hash = queryConditionCacheHash(outputs.front()->getHash(), reader_settings.query_condition_cache_salt);
                 if (top_k_filter_info)
                     boost::hash_combine(hash, top_k_filter_info->condition_hash);
                 condition_hash = hash;
@@ -5333,6 +5342,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
 
+    if (MergeTreeDataSelectExecutor::hasPendingMetadataMutations(mutations_snapshot))
+        reader_settings.use_query_condition_cache = false;
+
     /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part
     /// in the read, not only on the part being read. The per-part `appliesMutationsBeforePrewhere` guard
     /// of the write paths is therefore not enough: a part without mutations of its own may record its
@@ -5344,6 +5356,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (top_k_filter_info && mutations_snapshot
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         reader_settings.use_query_condition_cache = false;
+
+    /// Not for a TopK read: the granules it drops depend on the sort column too, which may be outside the WHERE condition.
+    if (reader_settings.use_query_condition_cache && query_info.filter_actions_dag && !top_k_filter_info)
+    {
+        auto where_columns = query_info.filter_actions_dag->getRequiredColumnsNames();
+        reader_settings.query_condition_cache_where_columns = std::make_shared<const NameSet>(where_columns.begin(), where_columns.end());
+    }
 
     /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be
     /// recorded in the query condition cache under a key salted with the TopK plan parameters,
