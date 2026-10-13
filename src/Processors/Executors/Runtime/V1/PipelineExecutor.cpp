@@ -411,6 +411,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 /// Push other tasks to global queue.
                 if (updated)
                     spawn_count = tasks.pushTasks(queue, async_queue, context);
+                else
+                {
+                    /// The execution is being cancelled, maybe by a thread that has not finished the tasks yet. The task
+                    /// has been prepared again, so it must not be executed again unless the graph schedules it.
+                    context.setTask(nullptr);
+                }
 
                 if (release_queues)
                 {
