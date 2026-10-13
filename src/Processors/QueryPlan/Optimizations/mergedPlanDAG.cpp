@@ -178,14 +178,51 @@ struct Built
 
 Built buildImpl(QueryPlan::Node & node);
 
+}
+
+bool canEnterStep(const QueryPlan::Node & node)
+{
+    const auto * step = node.step.get();
+
+    if (step->hasCorrelatedExpressions())
+        return false;
+
+    /// A step that cannot prune its columns keeps them all, which a caller pruning the plan cannot have.
+    if (!step->canRemoveUnusedColumns())
+        return false;
+
+    /// An `arrayJoin` changes the number of rows, so what it produces cannot be had above the `LIMIT`, which
+    /// counted them. Stopping here defers the columns above it all the same.
+    ///
+    /// Reading columns lazily from below an `arrayJoin` is not out of the question - the row index would be
+    /// replicated along with every other column, which is what the transform already sorts out for the
+    /// replication a join does - but nothing downstream of this is ready to be asked that yet.
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+        return node.children.size() == 1 && !expression_step->getExpression().hasArrayJoin();
+
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+        return node.children.size() == 1 && !filter_step->getExpression().hasArrayJoin();
+
+    if (typeid_cast<const BuildRuntimeFilterStep *>(step))
+        return node.children.size() == 1;
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step))
+        return node.children.size() == 2 && !join_step->getActionsDAG().hasArrayJoin();
+
+    return false;
+}
+
+namespace
+{
+
 /// Returns nullopt when the step cannot be represented, which is not a failure: the caller stops the
 /// walk there and the step becomes a source.
 std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
 {
-    auto * step = node.step.get();
-
-    if (step->hasCorrelatedExpressions())
+    if (!canEnterStep(node))
         return {};
+
+    auto * step = node.step.get();
 
     const auto mergeAndTrack = [&node](Built & built, const ActionsDAG & step_dag, ActionsDAG::NodeMapping & clone_mapping)
     {
@@ -213,16 +250,6 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     if (auto * expression_step = typeid_cast<ExpressionStep *>(step))
     {
         const auto & step_dag = expression_step->getExpression();
-        /// An `arrayJoin` changes the number of rows, so what it produces cannot be had above the
-        /// `LIMIT`, which counted them. Stopping here defers the columns above it all the same.
-        ///
-        /// Reading columns lazily from below an `arrayJoin` is not out of the question - the row index
-        /// would be replicated along with every other column, which is what the transform already sorts
-        /// out for the replication a join does - but nothing downstream of this is ready to be asked
-        /// that yet.
-        if (step_dag.hasArrayJoin())
-            return {};
-
         auto built = buildImpl(*node.children.front());
 
         ActionsDAG::NodeMapping clone_mapping;
@@ -242,15 +269,13 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
 
         /// The step outputs what it reads, so the outputs stand as they are.
         const auto & outputs = built.dag.getOutputs();
-        const auto & key_name = runtime_filter_step->getFilterColumnName();
-        if (std::ranges::count_if(outputs, [&](const auto * output) { return output->result_name == key_name; }) != 1)
-            return {};
-
-        built.dag.step_read_nodes.push_back(
-            *std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == key_name; }));
-
         if (!outputsMatchHeader(outputs, *step->getOutputHeader()))
             return {};
+
+        /// The key name occurs once in the header, which `canEnterStep` checked.
+        const auto & key_name = runtime_filter_step->getFilterColumnName();
+        built.dag.step_read_nodes.push_back(
+            *std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == key_name; }));
 
         built.dag.step_outputs.emplace(&node, outputs);
         return built;
@@ -259,9 +284,6 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     if (auto * filter_step = typeid_cast<FilterStep *>(step))
     {
         const auto & step_dag = filter_step->getExpression();
-        if (step_dag.hasArrayJoin())
-            return {};
-
         auto built = buildImpl(*node.children.front());
 
         ActionsDAG::NodeMapping clone_mapping;
@@ -287,14 +309,8 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
         return built;
     }
 
-    /// A join that cannot prune its columns keeps them all, which a caller pruning the plan cannot have, so it is a source.
     auto * join_step = typeid_cast<JoinStepLogical *>(step);
-    if (!join_step || node.children.size() != 2 || !join_step->canRemoveUnusedColumns())
-        return {};
-
     const auto & step_dag = join_step->getActionsDAG();
-    if (step_dag.hasArrayJoin())
-        return {};
 
     auto built = buildImpl(*node.children.front());
     auto right = buildImpl(*node.children.back());

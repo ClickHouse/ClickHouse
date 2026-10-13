@@ -273,8 +273,10 @@ public:
 
         /// A subtree reading one source is what `optimizeLazyMaterialization2` handles. A join is the only step with more
         /// than one child the merged DAG goes through, so more sources than one mean a join.
-        if (merged.sources.size() < 2 || !collectParents())
+        if (merged.sources.size() < 2)
             return false;
+
+        collectParents();
 
         const auto & outputs = merged.getOutputs();
         for (size_t position : sort_key_positions)
@@ -582,19 +584,14 @@ private:
     };
 
     /// Records the parent of every node between `chain_top` and the sources: the ones the walk building the merged DAG
-    /// entered. The columns this pass adds are found by name, so a name of this pass in a header of theirs rules the plan
-    /// out.
-    bool collectParents()
+    /// entered.
+    void collectParents()
     {
         std::vector<QueryPlan::Node *> stack{chain_top};
         while (!stack.empty())
         {
             auto * node = stack.back();
             stack.pop_back();
-
-            for (const auto & column : *node->step->getOutputHeader())
-                if (isNameOfThisPass(column.name))
-                    return false;
 
             if (source_numbers.contains(node))
                 continue;
@@ -605,8 +602,6 @@ private:
                 stack.push_back(child);
             }
         }
-
-        return true;
     }
 
     /// Picks the columns each source reads lazily. A column the frontier wants read lazily that something
@@ -1195,6 +1190,37 @@ private:
     std::unordered_map<const MergedPlanDAG::Stuffing *, size_t> mask_slots;
 };
 
+/// A cheap look at the plan before the merged DAG is built: the steps its walk can go through hold a join, and a source
+/// they reach can be read lazily. The walk can stop higher up, so this only rules plans out. The columns this pass adds
+/// are found by name, so a name of this pass in a header of those steps or sources rules the plan out as well.
+bool mayDeferOverJoins(const QueryPlan::Node & chain_top, const QueryPlanOptimizationSettings & settings)
+{
+    bool has_join = false;
+    bool has_lazy_source = false;
+
+    std::vector<const QueryPlan::Node *> stack{&chain_top};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        for (const auto & column : *node->step->getOutputHeader())
+            if (isNameOfThisPass(column.name))
+                return false;
+
+        if (!canEnterStep(*node))
+        {
+            has_lazy_source |= canReadLazily(*node, settings);
+            continue;
+        }
+
+        has_join |= typeid_cast<const JoinStepLogical *>(node->step.get()) != nullptr;
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+
+    return has_join && has_lazy_source;
+}
+
 }
 
 bool optimizeLazyMaterialization3(
@@ -1233,6 +1259,9 @@ bool optimizeLazyMaterialization3(
     }
 
     auto * chain_top = sorting_node ? sorting_node->children.front() : root.children.front();
+    if (!mayDeferOverJoins(*chain_top, settings))
+        return false;
+
     const auto merged = buildMergedPlanDAG(*chain_top);
 
     std::vector<bool> lazy_sources(merged.sources.size(), false);

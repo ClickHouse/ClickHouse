@@ -133,6 +133,12 @@ struct MergedPlanDAG
     const Origin & getOrigin(const ActionsDAG::Node * node) const;
 };
 
+/// Whether the walk of `buildMergedPlanDAG` can go through the step of this node, as far as the step alone tells: an
+/// expression, a filter, a runtime filter or a join of two inputs, which can prune its columns and computes no
+/// `arrayJoin`. The walk can still stop at such a step, where the DAG built for it does not reproduce its header, so
+/// this is what a cheap check of the plan before the walk can rely on, not what the walk does.
+bool canEnterStep(const QueryPlan::Node & node);
+
 /// Always succeeds: where a step cannot be represented the walk stops and that step becomes a source, so
 /// the worst answer is a DAG of one source and no expressions, which a caller finds nothing to defer in.
 MergedPlanDAG buildMergedPlanDAG(QueryPlan::Node & root);
