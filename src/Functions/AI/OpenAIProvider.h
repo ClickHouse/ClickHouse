@@ -33,6 +33,7 @@ class OpenAIProvider : public IAIProvider
 public:
     OpenAIProvider(const String & endpoint_, const String & api_key_);
 
+    bool supportsChat() const override { return true; }
     void call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
     bool supportsEmbeddings() const override { return true; }
     void embed(
