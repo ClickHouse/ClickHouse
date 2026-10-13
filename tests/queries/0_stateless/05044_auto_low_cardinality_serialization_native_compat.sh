@@ -2,7 +2,7 @@
 # Mixed-version `Native` compatibility for automatic `LowCardinality` serialization.
 #
 # Automatic `LowCardinality` serialization must be invisible on the wire: a column declared as
-# `String` is dictionary-encoded on disk, but every reader - of any protocol revision - has to see
+# `String` (or `FixedString`) is dictionary-encoded on disk, but every reader - of any protocol revision - has to see
 # exactly the bytes of a plain, unencoded `String` column. In particular a peer older than
 # `DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION` (54495) does not understand the
 # `LOW_CARDINALITY` entry of the serialization kind stack, so it must never be emitted to it.
@@ -20,24 +20,24 @@ DROP TABLE IF EXISTS t_native_lc;
 DROP TABLE IF EXISTS t_native_plain;
 DROP TABLE IF EXISTS t_native_read;
 
-CREATE TABLE t_native_lc (id UInt64, s String STATISTICS(uniq)) ENGINE = MergeTree ORDER BY id
+CREATE TABLE t_native_lc (id UInt64, s String STATISTICS(uniq), f FixedString(8) STATISTICS(uniq)) ENGINE = MergeTree ORDER BY id
 SETTINGS max_uniq_number_for_low_cardinality = 1000, ratio_of_defaults_for_sparse_serialization = 1.0, min_bytes_for_wide_part = 0;
 
-CREATE TABLE t_native_plain (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+CREATE TABLE t_native_plain (id UInt64, s String, f FixedString(8)) ENGINE = MergeTree ORDER BY id
 SETTINGS max_uniq_number_for_low_cardinality = 0, ratio_of_defaults_for_sparse_serialization = 1.0, min_bytes_for_wide_part = 0;
 
-CREATE TABLE t_native_read (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+CREATE TABLE t_native_read (id UInt64, s String, f FixedString(8)) ENGINE = MergeTree ORDER BY id
 SETTINGS max_uniq_number_for_low_cardinality = 0, ratio_of_defaults_for_sparse_serialization = 1.0, min_bytes_for_wide_part = 0;
 
-INSERT INTO t_native_lc SELECT number, 'val_' || toString(number % 10) FROM numbers(10000);
-INSERT INTO t_native_plain SELECT number, 'val_' || toString(number % 10) FROM numbers(10000);
+INSERT INTO t_native_lc SELECT number, 'val_' || toString(number % 10), toFixedString('fix_' || toString(number % 7), 8) FROM numbers(10000);
+INSERT INTO t_native_plain SELECT number, 'val_' || toString(number % 10), toFixedString('fix_' || toString(number % 7), 8) FROM numbers(10000);
 "
 
 echo 'serialization kinds'
 ${CLICKHOUSE_CLIENT} -q "
-SELECT table, serialization_kind FROM system.parts_columns
-WHERE database = currentDatabase() AND table IN ('t_native_lc', 't_native_plain') AND active AND column = 's'
-ORDER BY table"
+SELECT table, column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table IN ('t_native_lc', 't_native_plain') AND active AND column IN ('s', 'f')
+ORDER BY table, column"
 
 # Reading without `ORDER BY`, with a single thread and without parallel replicas keeps the block layout of the two tables
 # identical, so the dumps may be compared byte by byte.
@@ -46,7 +46,7 @@ dump()
     local table=$1
     local revision=$2
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=${revision}&max_threads=1&max_block_size=1000000&enable_parallel_replicas=0" \
-        --data-binary "SELECT id, s FROM ${table} FORMAT Native"
+        --data-binary "SELECT id, s, f FROM ${table} FORMAT Native"
 }
 
 compare()
@@ -69,8 +69,8 @@ compare 54495
 echo 'revision 0 round-trip'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+t_native_read+FORMAT+Native" \
     --data-binary @"${CLICKHOUSE_TMP}/auto_lc_0.native"
-${CLICKHOUSE_CLIENT} -q "SELECT count(), uniqExact(s), sum(cityHash64(id, s)) FROM t_native_read"
-${CLICKHOUSE_CLIENT} -q "SELECT count(), uniqExact(s), sum(cityHash64(id, s)) FROM t_native_lc"
+${CLICKHOUSE_CLIENT} -q "SELECT count(), uniqExact(s), uniqExact(f), sum(cityHash64(id, s, f)) FROM t_native_read"
+${CLICKHOUSE_CLIENT} -q "SELECT count(), uniqExact(s), uniqExact(f), sum(cityHash64(id, s, f)) FROM t_native_lc"
 
 rm -f "${CLICKHOUSE_TMP}"/auto_lc_*.native "${CLICKHOUSE_TMP}"/plain_*.native
 
