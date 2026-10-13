@@ -346,7 +346,7 @@ void ColumnNullable::insertManyDefaults(size_t length)
     }
     catch (...)
     {
-        /// Keep the rows the nested column appended before throwing, as the per-row `insertDefault` loop does.
+        /// Keep the null map in sync with the rows the nested column appended before throwing.
         null_map_data.resize_fill(getNestedColumn().size(), 1);
         throw;
     }
