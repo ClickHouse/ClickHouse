@@ -15,6 +15,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
+#include <Poco/String.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/ParserPreparedStatement.h>
@@ -22,6 +23,7 @@
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <limits>
 #include <optional>
@@ -77,6 +79,7 @@ enum class FrontMessageType : Int32
     EXECUTE = 'E',
     COPY_DATA = 'd',
     COPY_COMPLETION = 'c',
+    COPY_FAILURE = 'f',
 };
 
 enum class MessageType : Int32
@@ -160,8 +163,22 @@ enum class ColumnType : Int32
     FLOAT8 = 701,
     VARCHAR = 1043,
     DATE = 1082,
+    TIMESTAMP = 1114,
     NUMERIC = 1700,
     UUID = 2950,
+
+    /// Array types (`typcategory` = 'A'); each carries the OID of its element type in `typelem`.
+    /// The same OIDs are served by the `pg_type` emulation (see PostgreSQLHandler).
+    BOOL_ARRAY = 1000,
+    INT2_ARRAY = 1005,
+    INT4_ARRAY = 1007,
+    TEXT_ARRAY = 1009,
+    INT8_ARRAY = 1016,
+    FLOAT4_ARRAY = 1021,
+    FLOAT8_ARRAY = 1022,
+    DATE_ARRAY = 1182,
+    NUMERIC_ARRAY = 1231,
+    UUID_ARRAY = 2951,
 };
 
 class ColumnTypeSpec
@@ -169,8 +186,11 @@ class ColumnTypeSpec
 public:
     ColumnType type;
     Int16 len;
+    /// PostgreSQL type modifier (`atttypmod`), sent verbatim in `RowDescription`. -1 means "no modifier";
+    /// for `numeric` it carries the precision and scale (see `convertDataTypeToPostgresColumnTypeSpec`).
+    Int32 type_modifier;
 
-    ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
+    ColumnTypeSpec(ColumnType type_, Int16 len_, Int32 type_modifier_ = -1) : type(type_), len(len_), type_modifier(type_modifier_) {}
 };
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
@@ -1111,7 +1131,7 @@ public:
         writeBinaryBigEndian(static_cast<Int16>(0), out);
         writeBinaryBigEndian(static_cast<Int32>(type_spec.type), out);
         writeBinaryBigEndian(type_spec.len, out);
-        writeBinaryBigEndian(static_cast<Int32>(-1), out);
+        writeBinaryBigEndian(type_spec.type_modifier, out);
         writeBinaryBigEndian(static_cast<Int16>(format_code), out);
     }
 
@@ -1243,18 +1263,27 @@ public:
 
 class CopyInResponse : public BackendMessage
 {
+    int num_columns;
+
 public:
+    explicit CopyInResponse(int num_columns_ = 1)
+        : num_columns(num_columns_)
+    {
+    }
+
     void serialize(WriteBuffer & out) const override
     {
         out.write('G');
         writeBinaryBigEndian(size(), out);
         writeBinaryBigEndian(static_cast<char>(0), out);
-        writeBinaryBigEndian(static_cast<Int16>(0), out);
+        writeBinaryBigEndian(static_cast<Int16>(num_columns), out);
+        for (int i = 0; i < num_columns; ++i)
+            writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
     }
 
     Int32 size() const override
     {
-        return 4 + 1 + 2;
+        return 4 + 1 + 2 + 2 * num_columns;
     }
 
     MessageType getMessageType() const override
@@ -1327,6 +1356,33 @@ public:
     MessageType getMessageType() const override
     {
         return MessageType::COPY_DONE;
+    }
+};
+
+/// Sent by the client to abort an in-progress `COPY FROM STDIN` (libpq emits it when the local data
+/// source errors out or the copy is cancelled). The body is a human-readable failure reason.
+class CopyFail : FrontMessage
+{
+public:
+    String message;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz = 0;
+        readBinaryBigEndian(sz, in);
+        if (sz < static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyFail, it must be at least 4", sz);
+        /// The length is declared by the client, so do not reserve it up front.
+        readStringOfDeclaredSize(message, sz - sizeof(Int32), in);
+        /// The reason is a null-terminated string; drop the trailing NUL if present.
+        if (!message.empty() && message.back() == '\0')
+            message.pop_back();
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_FAIL;
     }
 };
 
@@ -1424,14 +1480,15 @@ public:
         ALTER_TABLE = 14,
         TRUNCATE = 15,
         USE = 16,
-        SET = 17
+        SET = 17,
+        ROLLBACK = 18
     };
 private:
-    String enum_to_string[18] =
+    String enum_to_string[19] =
     {
         "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET"
+        "TRUNCATE", "USE", "SET", "ROLLBACK"
     };
 
     String value;
@@ -1482,7 +1539,12 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
-    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
+    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly.
+    // Only ASCII is classified and case-folded. The text is matched against ASCII keywords, while the query carries
+    // arbitrary user bytes - a `SET application_name` value, a string literal - so the locale-dependent `std::isspace` /
+    // `std::toupper` must not see it: they are undefined for a negative `char` (any byte >= 0x80 on a signed-`char`
+    // build) and would otherwise make the classification depend on the process locale. Non-ASCII bytes are copied
+    // through unchanged, which is what keyword matching needs.
     static String extractNormalizedPrefix(const String & query, size_t max_len)
     {
         String prefix;
@@ -1492,7 +1554,8 @@ public:
 
         for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
         {
-            if (std::isspace(query[i]))
+            const char c = query[i];
+            if (isWhitespaceASCII(c))
             {
                 if (!prev_was_space)
                 {
@@ -1502,7 +1565,7 @@ public:
             }
             else
             {
-                prefix.push_back(static_cast<char>(std::toupper(query[i])));
+                prefix.push_back(isAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c);
                 prev_was_space = false;
             }
         }
@@ -1521,7 +1584,11 @@ public:
             {"ALTER TABLE", Command::ALTER_TABLE},
             {"TRUNCATE", Command::TRUNCATE},
             {"BEGIN", Command::BEGIN},
+            {"START TRANSACTION", Command::BEGIN},
             {"COMMIT", Command::COMMIT},
+            {"END", Command::COMMIT},
+            {"ROLLBACK", Command::ROLLBACK},
+            {"ABORT", Command::ROLLBACK},
             {"INSERT", Command::INSERT},
             {"DELETE", Command::DELETE},
             {"UPDATE", Command::UPDATE},
@@ -1997,6 +2064,110 @@ public:
 namespace PostgresPreparedStatements
 {
 
+/// If `body[i]` starts an opaque SQL token, returns the position just past it; otherwise returns `i`.
+/// Opaque tokens are the constructs a PostgreSQL-flavored scan must not look inside:
+///   - a string literal or a quoted identifier (`'`, `"` or a backtick; a doubled quote is an escaped
+///     quote in all three, and a backslash additionally escapes the next character in a single-quoted
+///     string - ClickHouse semantics, since the text is executed as ClickHouse SQL);
+///   - a `--` line comment or a `/* */` block comment (block comments nest, as in PostgreSQL and
+///     ClickHouse);
+///   - a bare identifier or keyword. Both PostgreSQL and the ClickHouse lexer allow `$` inside an
+///     unquoted identifier, so in `foo$1bar` the whole text is one identifier, not a reference to a
+///     parameter, and `foo$tag$` does not open a dollar-quoted string either. A word cannot start
+///     with a digit, so numeric constants are not consumed here. PostgreSQL identifiers may start
+///     with a letter, an underscore or a non-ASCII character, and continue with those plus digits
+///     and `$`;
+///   - a dollar-quoted string `$tag$ ... $tag$`, where the tag may be empty. The tag of a
+///     placeholder never starts with a digit, so a `$n` placeholder is never consumed here.
+/// An unterminated token extends to the end of the text.
+inline size_t skipOpaqueSQLToken(const String & body, size_t i)
+{
+    const size_t size = body.size();
+    const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+    const auto is_tag_start = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };
+    const auto is_tag_char = [&](char c) { return is_tag_start(c) || is_digit(c); };
+    const auto is_word_start = [&](char c) { return is_tag_start(c) || static_cast<unsigned char>(c) >= 0x80; };
+    const auto is_word_char = [&](char c) { return is_tag_char(c) || static_cast<unsigned char>(c) >= 0x80; };
+
+    const char c = body[i];
+    if (c == '\'' || c == '"' || c == '`')
+    {
+        size_t j = i + 1;
+        while (j < size)
+        {
+            if (c == '\'' && body[j] == '\\' && j + 1 < size)
+            {
+                j += 2;
+                continue;
+            }
+            if (body[j] == c)
+            {
+                if (j + 1 < size && body[j + 1] == c)
+                {
+                    j += 2;
+                    continue;
+                }
+                ++j;
+                break;
+            }
+            ++j;
+        }
+        return j;
+    }
+
+    if (c == '-' && i + 1 < size && body[i + 1] == '-')
+    {
+        const size_t j = body.find('\n', i);
+        return j == String::npos ? size : j;
+    }
+
+    if (c == '/' && i + 1 < size && body[i + 1] == '*')
+    {
+        size_t depth = 1;
+        size_t j = i + 2;
+        while (j < size && depth > 0)
+        {
+            if (body[j] == '/' && j + 1 < size && body[j + 1] == '*')
+            {
+                ++depth;
+                j += 2;
+            }
+            else if (body[j] == '*' && j + 1 < size && body[j + 1] == '/')
+            {
+                --depth;
+                j += 2;
+            }
+            else
+                ++j;
+        }
+        return j;
+    }
+
+    if (is_word_start(c))
+    {
+        size_t j = i + 1;
+        while (j < size && (is_word_char(body[j]) || body[j] == '$'))
+            ++j;
+        return j;
+    }
+
+    if (c == '$' && i + 1 < size && (is_tag_start(body[i + 1]) || body[i + 1] == '$'))
+    {
+        size_t j = i + 1;
+        while (j < size && is_tag_char(body[j]))
+            ++j;
+        if (j < size && body[j] == '$')
+        {
+            const String tag = body.substr(i, j - i + 1);
+            const size_t close = body.find(tag, j + 1);
+            return close == String::npos ? size : close + tag.size();
+        }
+        return i;
+    }
+
+    return i;
+}
+
 class PreparedStatemetsManager
 {
 public:
@@ -2005,8 +2176,17 @@ public:
     {
     }
 
+    /// `statement->parameter_types` are the type OIDs an extended-protocol `Parse` declares for the
+    /// statement's parameters; a simple-query `PREPARE` supplies none, and its `EXECUTE` arguments
+    /// are SQL text already, so they need no literalization.
     void addStatement(ASTPreparedStatement * statement)
     {
+        /// The unnamed prepared statement is replaceable, but PostgreSQL
+        /// requires clients to close a named statement before parsing another
+        /// statement under the same name.
+        if (!statement->function_name.empty() && statements.contains(statement->function_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prepared statement '{}' already exists", statement->function_name);
+
         if (limit_statements && statements.size() + 1 >= limit_statements.value())
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Statements limit exceeded");
 
@@ -2291,12 +2471,14 @@ private:
         }
         UInt32 scale = static_cast<UInt32>(point_from_right);
 
+        /// Check the precision before padding: the zeros added below are display-only, so a value like
+        /// `0.0...01` with 76 fractional digits still fits `Decimal256(76)`.
+        if (scale > DECIMAL256_MAX_PRECISION || digits.size() > DECIMAL256_MAX_PRECISION)
+            return std::nullopt;
+
         /// Add a leading zero when the scale covers all digits.
         if (scale >= digits.size())
             digits.insert(0, String(scale - digits.size() + 1, '0'));
-
-        if (scale > DECIMAL256_MAX_PRECISION || digits.size() > DECIMAL256_MAX_PRECISION)
-            return std::nullopt;
 
         String plain;
         if (negative)
@@ -2355,7 +2537,292 @@ private:
             /// Quote both arguments because a type name can contain quotes.
             return fmt::format("accurateCast({}, {})", quoteString(value), quoteString(type));
 
+        if (auto element_oid = elementOIDForArrayOID(oid))
+            return formatArrayParameter(*element_oid, value);
+
         return std::nullopt;
+    }
+
+    /// The element type of the PostgreSQL array types whose elements a declared parameter can carry.
+    static std::optional<Int32> elementOIDForArrayOID(Int32 oid)
+    {
+        switch (oid)
+        {
+            case 1000: return 16;    /// bool[]
+            case 1005: return 21;    /// int2[]
+            case 1007: return 23;    /// int4[]
+            case 1016: return 20;    /// int8[]
+            case 1028: return 26;    /// oid[]
+            case 1021: return 700;   /// float4[]
+            case 1022: return 701;   /// float8[]
+            case 1182: return 1082;  /// date[]
+            case 1115: return 1114;  /// timestamp[]
+            case 1185: return 1184;  /// timestamptz[]
+            case 2951: return 2950;  /// uuid[]
+            case 1231: return 1700;  /// numeric[]
+            case 1009: return 25;    /// text[]
+            case 1015: return 1043;  /// varchar[]
+            default:   return std::nullopt;
+        }
+    }
+
+    /// One element of a parsed PostgreSQL array literal: a nested array, a value, or `NULL`.
+    struct ArrayLiteralElement
+    {
+        std::optional<String> value;
+        VectorWithMemoryTracking<ArrayLiteralElement> nested;
+        bool is_array = false;
+    };
+
+    static ArrayLiteralElement makeArrayLiteralValue(String value)
+    {
+        ArrayLiteralElement element;
+        element.value = std::move(value);
+        return element;
+    }
+
+    /// PostgreSQL's own limit on the number of dimensions of an array.
+    static constexpr size_t MAX_ARRAY_DIMENSIONS = 6;
+
+    /// The dimensions of a parsed array literal: the length of every dimension, which is the same for all
+    /// sub-arrays of that dimension, and the number of dimensions, which is the same for all values.
+    struct ArrayLiteralShape
+    {
+        std::array<std::optional<size_t>, MAX_ARRAY_DIMENSIONS> lengths;
+        std::optional<size_t> dimensions;
+    };
+
+    [[noreturn]] static void throwMalformedArrayLiteral(const String & value)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid value {} for an array prepared-statement parameter: not a PostgreSQL array literal",
+                        quoteString(value));
+    }
+
+    /// Parse the PostgreSQL array literal `{...}` starting at `pos` (which points at `{`), the text form a
+    /// client sends for an array-typed parameter: elements are separated by commas, a `"`-quoted element is
+    /// taken literally after unescaping `\`, an unquoted element is trimmed and may use `\` escapes too, and
+    /// an unquoted `NULL` in any case is a null element. The array has to be rectangular, as PostgreSQL
+    /// requires: every value at the same depth, and all sub-arrays of one dimension of the same length.
+    static ArrayLiteralElement parseArrayLiteral(const String & value, size_t & pos, size_t depth, ArrayLiteralShape & shape)
+    {
+        const auto skip_spaces = [&]
+        {
+            while (pos < value.size() && isWhitespaceASCII(value[pos]))
+                ++pos;
+        };
+
+        if (depth >= MAX_ARRAY_DIMENSIONS || pos >= value.size() || value[pos] != '{')
+            throwMalformedArrayLiteral(value);
+        ++pos;
+
+        ArrayLiteralElement result;
+        result.is_array = true;
+        /// Whether this dimension holds sub-arrays; unknown until its first element.
+        std::optional<bool> holds_arrays;
+
+        skip_spaces();
+        if (pos < value.size() && value[pos] == '}')
+        {
+            ++pos;
+        }
+        else
+        {
+            while (true)
+            {
+                skip_spaces();
+                if (pos >= value.size())
+                    throwMalformedArrayLiteral(value);
+
+                const bool is_array = value[pos] == '{';
+                if (holds_arrays.has_value() && *holds_arrays != is_array)
+                    throwMalformedArrayLiteral(value);
+                holds_arrays = is_array;
+
+                if (is_array)
+                {
+                    result.nested.push_back(parseArrayLiteral(value, pos, depth + 1, shape));
+                }
+                else if (value[pos] == '"')
+                {
+                    ++pos;
+                    String element;
+                    while (true)
+                    {
+                        if (pos >= value.size())
+                            throwMalformedArrayLiteral(value);
+                        char c = value[pos++];
+                        if (c == '"')
+                            break;
+                        if (c == '\\')
+                        {
+                            if (pos >= value.size())
+                                throwMalformedArrayLiteral(value);
+                            c = value[pos++];
+                        }
+                        element += c;
+                    }
+                    result.nested.push_back(makeArrayLiteralValue(std::move(element)));
+                }
+                else
+                {
+                    String element;
+                    /// The end of the element without its trailing spaces; escaped characters are kept.
+                    size_t significant_size = 0;
+                    bool has_escapes = false;
+                    while (pos < value.size() && value[pos] != ',' && value[pos] != '}')
+                    {
+                        char c = value[pos++];
+                        if (c == '{' || c == '"')
+                            throwMalformedArrayLiteral(value);
+                        if (c == '\\')
+                        {
+                            if (pos >= value.size())
+                                throwMalformedArrayLiteral(value);
+                            element += value[pos++];
+                            significant_size = element.size();
+                            has_escapes = true;
+                            continue;
+                        }
+                        element += c;
+                        if (!isWhitespaceASCII(c))
+                            significant_size = element.size();
+                    }
+                    element.resize(significant_size);
+                    if (element.empty())
+                        throwMalformedArrayLiteral(value);
+                    if (!has_escapes && equalsCaseInsensitive(element, "null"))
+                        result.nested.push_back(ArrayLiteralElement{});
+                    else
+                        result.nested.push_back(makeArrayLiteralValue(std::move(element)));
+                }
+
+                skip_spaces();
+                if (pos >= value.size())
+                    throwMalformedArrayLiteral(value);
+                if (value[pos] == '}')
+                {
+                    ++pos;
+                    break;
+                }
+                if (value[pos] != ',')
+                    throwMalformedArrayLiteral(value);
+                ++pos;
+            }
+        }
+
+        /// An empty sub-array, as in `{{},{}}`, counts as a dimension of values of length 0, so the
+        /// shape checks below reject it next to a non-empty sub-array or a deeper one.
+        if (!holds_arrays.value_or(false))
+        {
+            if (shape.dimensions.has_value() && *shape.dimensions != depth + 1)
+                throwMalformedArrayLiteral(value);
+            shape.dimensions = depth + 1;
+        }
+
+        auto & length = shape.lengths[depth];
+        if (length.has_value() && *length != result.nested.size())
+            throwMalformedArrayLiteral(value);
+        length = result.nested.size();
+
+        return result;
+    }
+
+    /// Render a parsed array literal as a ClickHouse array of string literals (or `NULL`), for `accurateCast`
+    /// to convert to the element type. `transform` turns the text of every element into the string to cast.
+    /// Sets `has_null` if any element is `NULL`.
+    template <typename Transform>
+    static void writeArrayLiteral(const ArrayLiteralElement & element, String & out, bool & has_null, Transform && transform)
+    {
+        if (element.is_array)
+        {
+            out += '[';
+            for (size_t i = 0; i < element.nested.size(); ++i)
+            {
+                if (i > 0)
+                    out += ", ";
+                writeArrayLiteral(element.nested[i], out, has_null, transform);
+            }
+            out += ']';
+        }
+        else if (element.value.has_value())
+            out += quoteString(transform(*element.value));
+        else
+        {
+            out += "NULL";
+            has_null = true;
+        }
+    }
+
+    /// Format a declared array-typed parameter: its PostgreSQL array literal (`{1,2}`, `{{a,b},{c,NULL}}`)
+    /// becomes a ClickHouse array of the element type, validated with `accurateCast` like a scalar of that
+    /// type, instead of reaching the query as a string.
+    static String formatArrayParameter(Int32 element_oid, const String & value)
+    {
+        size_t pos = 0;
+        while (pos < value.size() && isWhitespaceASCII(value[pos]))
+            ++pos;
+        /// PostgreSQL prefixes the literal of an array whose lower bound is not 1 with its dimensions,
+        /// as in `[0:1]={1,2}`. A ClickHouse array always starts at index 1, so such a value cannot be
+        /// represented, and dropping the bounds would silently shift the indices of its elements.
+        if (pos < value.size() && value[pos] == '[')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value {} for an array prepared-statement parameter: explicit array bounds are not supported, "
+                            "because a ClickHouse array always starts at index 1",
+                            quoteString(value));
+        ArrayLiteralShape shape;
+        const ArrayLiteralElement array = parseArrayLiteral(value, pos, 0, shape);
+        while (pos < value.size() && isWhitespaceASCII(value[pos]))
+            ++pos;
+        if (pos != value.size())
+            throwMalformedArrayLiteral(value);
+
+        String element_type;
+        String literal;
+        bool has_null = false;
+        if (element_oid == 1700) /// numeric
+        {
+            /// Every element gets the scale of the most precise one, as in a `numeric` column without a
+            /// declared scale.
+            UInt32 scale = 0;
+            const auto normalize = [&value](const String & element)
+            {
+                std::optional<std::pair<String, UInt32>> normalized;
+                if (isSingleNumericLiteral(element))
+                    normalized = normalizeDecimal(element);
+                if (!normalized)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Invalid element {} of the numeric array prepared-statement parameter {}",
+                                    quoteString(element), quoteString(value));
+                return std::move(*normalized);
+            };
+            writeArrayLiteral(array, literal, has_null, [&](const String & element)
+            {
+                auto normalized = normalize(element);
+                scale = std::max(scale, normalized.second);
+                return std::move(normalized.first);
+            });
+            if (scale > DECIMAL256_MAX_PRECISION)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Value {} for a numeric array prepared-statement parameter exceeds the maximum "
+                                "representable Decimal precision", quoteString(value));
+            element_type = fmt::format("Decimal256({})", scale);
+        }
+        else
+        {
+            if (element_oid == 25 || element_oid == 1043) /// text, varchar
+                element_type = "String";
+            else
+                element_type = clickhouseTypeForOID(element_oid);
+            writeArrayLiteral(array, literal, has_null, [](const String & element) { return element; });
+        }
+
+        /// Every element of a PostgreSQL array may be `NULL`, but the element type is made `Nullable` only
+        /// when one is: many ClickHouse array functions (`arraySum`, ...) do not accept `Nullable` elements.
+        String type = has_null ? fmt::format("Nullable({})", element_type) : element_type;
+        for (size_t i = 0; i < shape.dimensions.value_or(1); ++i)
+            type = fmt::format("Array({})", type);
+        return fmt::format("accurateCast({}, {})", literal, quoteString(type));
     }
 
     /// Match only the case-insensitive boolean keywords `true` and `false`.

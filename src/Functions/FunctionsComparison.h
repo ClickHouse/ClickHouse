@@ -214,6 +214,29 @@ ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWit
   */
 
 
+#if USE_MULTITARGET_CODE
+/// Compares `size` 16-byte values ordered by their bytes (`IPv6`, `FixedString(16)`); `Op` is over `int`.
+template <typename Op, bool b_is_constant>
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE void compareBigEndian16_x86_64_v4(
+    const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+    {
+        if constexpr (b_is_constant)
+            c[i] = Op::apply(compareBigEndian16Halves(a + i * 16, b), 0);
+        else
+            c[i] = Op::apply(compareBigEndian16Halves(a + i * 16, b + i * 16), 0);
+    }
+}
+
+template <typename Op> struct OrderedComparisonOverInt { using Type = void; };
+template <typename A, typename B> struct OrderedComparisonOverInt<LessOp<A, B>> { using Type = LessOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<GreaterOp<A, B>> { using Type = GreaterOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<LessOrEqualsOp<A, B>> { using Type = LessOrEqualsOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<GreaterOrEqualsOp<A, B>> { using Type = GreaterOrEqualsOp<int, int>; };
+#endif
+
+
 template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
@@ -244,12 +267,21 @@ struct NumComparisonImpl
         }
     }))
 
+#if USE_MULTITARGET_CODE
+    using OrderedOpOverInt = typename OrderedComparisonOverInt<Op>::Type;
+    static constexpr bool is_ordered_ipv6 = std::is_same_v<A, IPv6> && std::is_same_v<B, IPv6> && !std::is_void_v<OrderedOpOverInt>;
+#endif
+
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorVectorImpl_x86_64_v4(a, b, c);
+            if constexpr (is_ordered_ipv6)
+                compareBigEndian16_x86_64_v4<OrderedOpOverInt, false>(
+                    reinterpret_cast<const UInt8 *>(a.data()), reinterpret_cast<const UInt8 *>(b.data()), c.data(), a.size());
+            else
+                vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -275,12 +307,24 @@ struct NumComparisonImpl
         }
     }))
 
+#if USE_MULTITARGET_CODE
+    /// Takes `b` by value, so that only the AVX-512 path needs it in memory.
+    static void X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE vectorConstantOrderedIPv6_x86_64_v4(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+    {
+        compareBigEndian16_x86_64_v4<OrderedOpOverInt, true>(
+            reinterpret_cast<const UInt8 *>(a.data()), reinterpret_cast<const UInt8 *>(&b), c.data(), a.size());
+    }
+#endif
+
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImpl_x86_64_v4(a, b, c);
+            if constexpr (is_ordered_ipv6)
+                vectorConstantOrderedIPv6_x86_64_v4(a, b, c);
+            else
+                vectorConstantImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -394,6 +438,14 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            compareBigEndian16_x86_64_v4<Op, false>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
+            return;
+        }
+#endif
+
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
@@ -405,6 +457,14 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            compareBigEndian16_x86_64_v4<Op, true>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
+            return;
+        }
+#endif
+
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
@@ -888,10 +948,17 @@ struct ComparisonParams
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
     FormatSettings format_settings;
+    /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
+    UInt64 format_settings_hash = 0;
 
     explicit ComparisonParams(const ContextPtr & context);
 
     ComparisonParams() = default;
+
+    /// Everything here decides what a comparison produces for the same arguments (how a string literal
+    /// is read as a `DateTime`, whether an enum literal or a decimal overflow throws), so a hash that
+    /// keys an expression has to see it all. See `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const;
 };
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
@@ -1251,25 +1318,6 @@ private:
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
-        /// comparisons would produce ColumnNothing which doesn't match the declared
-        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
-        /// Skip this for null-safe comparison mode because NULL <=> NULL should return 1,
-        /// and the element-wise null-safe comparison handles Nothing types correctly.
-        if constexpr (!is_null_safe_cmp_mode)
-        {
-            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
-            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
-                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
-                {
-                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                }
-            }
-        }
-
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
@@ -1296,6 +1344,18 @@ private:
 
             x[i].column = x_columns[i];
             y[i].column = y_columns[i];
+
+            /// An element of type `Nothing` or `Nullable(Nothing)` is an untyped NULL. A non-null-safe comparison with NULL
+            /// is NULL whatever the other value, so compare a typed NULL pair and let the other elements decide the result.
+            if constexpr (!is_null_safe_cmp_mode)
+            {
+                if (x[i].type->onlyNull() || isNothing(x[i].type) || y[i].type->onlyNull() || isNothing(y[i].type))
+                {
+                    auto null_type = makeNullable(std::make_shared<DataTypeUInt8>());
+                    x[i] = {null_type->createColumnConstWithDefaultValue(input_rows_count), null_type, ""};
+                    y[i] = x[i];
+                }
+            }
         }
 
         return executeTupleImpl(x, y, tuple_size, input_rows_count);
@@ -1745,6 +1805,8 @@ public:
     {
         return name;
     }
+
+    void updateHash(SipHash & hash) const override { params.updateHash(hash); }
 
     size_t getNumberOfArguments() const override { return 2; }
 
