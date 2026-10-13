@@ -10,6 +10,7 @@
 #include <base/getL2CacheSize.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -757,8 +758,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery();
 
     aggregate_functions.resize(params.aggregates_size);
+    is_aggregate_function_order_dependent.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
         aggregate_functions[i] = params.aggregates[i].function.get();
+
+        /// A function that is not found in the factory is treated as order-dependent: the in-order path is always correct.
+        auto properties = AggregateFunctionFactory::instance().tryGetProperties(aggregate_functions[i]->getName(), NullsAction::EMPTY);
+        is_aggregate_function_order_dependent[i] = !properties || properties->is_order_dependent;
+    }
 
     /// Initialize sizes of aggregation states and its offsets.
     offsets_of_aggregate_states.resize(params.aggregates_size);
@@ -2184,6 +2192,11 @@ void Aggregator::addBatchSinglePlace(
             place,
             inst->batch_arguments,
             arena);
+    else if (inst->has_sparse_arguments && inst->is_order_dependent)
+        inst->batch_that->addBatchSparseSinglePlaceInOrder(
+            row_begin, row_end, place,
+            inst->batch_arguments,
+            arena);
     else if (inst->has_sparse_arguments)
         inst->batch_that->addBatchSparseSinglePlace(
             row_begin, row_end, place,
@@ -2304,6 +2317,7 @@ void Aggregator::buildAggregateFunctionInstruction(
     NestedColumnsHolder & nested_columns_holder) const
 {
     aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
+    aggregate_functions_instructions[i].is_order_dependent = is_aggregate_function_order_dependent[i];
     aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
     aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
     aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
