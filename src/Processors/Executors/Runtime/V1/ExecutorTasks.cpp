@@ -23,7 +23,7 @@ void ExecutorTasks::notifySpillRequested()
     spill_requested.store(true, std::memory_order_release);
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     if (num_threads == 1)
-        async_task_queue.wakeUp();
+        async_task_queue.notify(PollingQueue::Notification::Spill);
 #endif
     if (!threads_queue.empty())
         executor_contexts[threads_queue.popAny()]->wakeUp();
@@ -120,11 +120,14 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
     #if defined(OS_LINUX) || defined(OS_DARWIN)
         if (num_threads == 1)
         {
-            if (auto res = async_task_queue.tryGetReadyTask(lock))
+            auto res = async_task_queue.tryGetReadyTask(lock);
+            if (res)
             {
                 context.setTask(static_cast<IProcessor *>(res.data));
                 return;
             }
+            if (res.hasNotification(PollingQueue::Notification::Finish) || res.hasNotification(PollingQueue::Notification::Spill))
+                return;
         }
     #endif
 
@@ -169,8 +172,9 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
             auto res = async_task_queue.wait(lock);
             if (!res)
             {
-                /// A notification may have been consumed before polling its wakeup descriptor.
-                return;
+                if (res.hasNotification(PollingQueue::Notification::Finish) || res.hasNotification(PollingQueue::Notification::Spill))
+                    return;
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
             }
 
             context.setTask(static_cast<IProcessor *>(res.data));
@@ -384,8 +388,16 @@ void ExecutorTasks::processAsyncTasks()
     {
         /// Wait for async tasks.
         std::unique_lock lock(mutex);
-        while (auto task = async_task_queue.wait(lock))
+        while (true)
         {
+            auto task = async_task_queue.wait(lock);
+            if (task.hasNotification(PollingQueue::Notification::Finish))
+                break;
+            if (task.hasNotification(PollingQueue::Notification::Spill))
+                continue;
+            if (!task)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
+
             auto * processor = static_cast<IProcessor *>(task.data);
             processor->onAsyncJobReady();
 
