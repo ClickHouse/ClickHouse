@@ -108,6 +108,20 @@ void StorageGCSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with
     const auto key_value_args = parseKeyValueArguments(args, context);
     auto & auth = s3_settings->auth_settings;
 
+    /// The shared `s3` parser accepts arbitrary trailing `key = value` pairs, so these credential modes of
+    /// the native disk configuration would be silently dropped here, and the request would authenticate as
+    /// Application Default Credentials or anonymously while the caller believes their credential is in use.
+    /// They are only supported in the server-side disk configuration, so reject them instead.
+    for (const char * disk_only_key : {"service_account_key", "service_account_key_file", "access_token"})
+    {
+        if (key_value_args.contains(disk_only_key))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Argument `{}` is not supported by the `gcs` table function and the `GCS` table engine: "
+                "it is only accepted in the configuration of a native GCS disk. "
+                "Use `google_adc_*` refresh-token credentials, Application Default Credentials or `NOSIGN`",
+                disk_only_key);
+    }
+
     const std::pair<const char *, S3AuthSettingsString> google_adc_settings[] = {
         {"google_adc_client_id", S3AuthSetting::google_adc_client_id},
         {"google_adc_client_secret", S3AuthSetting::google_adc_client_secret},

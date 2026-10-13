@@ -5,7 +5,8 @@
 # The bare-URL form of `gcs(...)` with `use_native_gcs = 1` must honour the credential arguments the native
 # backend understands -- the `google_adc_*` refresh-token triple and `use_environment_credentials` -- exactly
 # like a named collection does, instead of silently dropping them and falling back to Application Default
-# Credentials. With the default `s3_allow_server_credentials_in_user_queries = 0`, falling back is refused,
+# Credentials. The credential modes that only the disk configuration supports (`service_account_key`,
+# `service_account_key_file`, `access_token`) must be rejected rather than ignored. With the default `s3_allow_server_credentials_in_user_queries = 0`, falling back is refused,
 # so each case records which layer answered. The test server sets `<s3><use_environment_credentials>0` (see
 # `tests/config/config.d/disable_s3_env_credentials.xml`), so a request without any credential argument reads
 # anonymously instead of falling back. `EXPLAIN` builds the object storage, where all of these
@@ -22,6 +23,7 @@ classify() {
     case "$1" in
         *"may not use Application Default Credentials"*) echo "refused_for_credentials" ;;
         *"must be specified together"*) echo "rejected_by_validation" ;;
+        *"only accepted in the configuration of a native GCS disk"*) echo "rejected_disk_only" ;;
         *"ReadFromObjectStorage"*) echo "accepted" ;;
         *) echo "unexpected" ;;
     esac
@@ -39,10 +41,16 @@ if [ "$native_gcs_available" = "1" ]; then
     echo "complete_triple: $(classify "$(explain_gcs \
         ", google_adc_client_id = 'client-id', google_adc_client_secret = 'client-secret', google_adc_refresh_token = 'refresh-token'")")"
     echo "partial_triple: $(classify "$(explain_gcs ", google_adc_client_id = 'client-id'")")"
+    echo "service_account_key: $(classify "$(explain_gcs ", service_account_key = '{}'")")"
+    echo "service_account_key_file: $(classify "$(explain_gcs ", service_account_key_file = '/key.json'")")"
+    echo "access_token: $(classify "$(explain_gcs ", access_token = 'token'")")"
 else
     echo "no_credentials: accepted"
     echo "environment_credentials_off: accepted"
     echo "environment_credentials_on: refused_for_credentials"
     echo "complete_triple: accepted"
     echo "partial_triple: rejected_by_validation"
+    echo "service_account_key: rejected_disk_only"
+    echo "service_account_key_file: rejected_disk_only"
+    echo "access_token: rejected_disk_only"
 fi
