@@ -400,14 +400,20 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
-    /// Join reordering also builds other join orders when Cascades will choose between them, see
-    /// `JoinOrderAlternativesStep`; the same condition decides below whether Cascades runs.
-    optimization_settings.build_join_order_alternatives = optimization_settings.cascades_join_order_alternatives > 0
-        && optimization_settings.make_distributed_plan && optimization_settings.enable_cascades_optimizer
+    /// The same condition decides below whether Cascades runs on this plan.
+    const bool cascades_will_run = optimization_settings.make_distributed_plan && optimization_settings.enable_cascades_optimizer
         && !planContainsLogicalExchange(root);
 
+    /// Join reordering also builds other join orders when Cascades will choose between them, see
+    /// `JoinOrderAlternativesStep`.
+    optimization_settings.build_join_order_alternatives = optimization_settings.cascades_join_order_alternatives > 0 && cascades_will_run;
+
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
-    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
+    /// When Cascades distributes the plan, every task optimizes its fragment again and places the runtime filters of
+    /// the joins it runs; a filter placed here would arrive there without its lookup key and do nothing, while its
+    /// steps would still take part in the Cascades search.
+    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext()
+        && !cascades_will_run;
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)

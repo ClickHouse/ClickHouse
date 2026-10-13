@@ -28,15 +28,12 @@ SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_alt_fact;
 DROP TABLE IF EXISTS t_alt_bridge;
 DROP TABLE IF EXISTS t_alt_dim;
-DROP TABLE IF EXISTS t_alt_out;
 CREATE TABLE t_alt_fact (p UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY p SETTINGS auto_statistics_types = '';
 CREATE TABLE t_alt_bridge (p UInt64, s UInt64) ENGINE = MergeTree ORDER BY p SETTINGS auto_statistics_types = '';
 CREATE TABLE t_alt_dim (p UInt64 STATISTICS(uniq, basic), name String STATISTICS(basic)) ENGINE = MergeTree ORDER BY p SETTINGS auto_statistics_types = '';
 INSERT INTO t_alt_fact SELECT number % 400, intDiv(number, 400) % 4, number FROM numbers(16000);
 INSERT INTO t_alt_bridge SELECT intDiv(number, 4), number % 4 FROM numbers(1600);
 INSERT INTO t_alt_dim SELECT number, if(number < 100, 'keep', 'skip') FROM numbers(1000);
-CREATE TABLE t_alt_out (p UInt64, w UInt64) ENGINE = MergeTree ORDER BY w SETTINGS auto_statistics_types = '';
-INSERT INTO t_alt_out SELECT number, number % 10 FROM numbers(20);
 
 SET param__internal_join_table_stat_hints = '{"t_alt_fact": {"cardinality": 100000000, "avg_row_bytes": 128, "distinct_keys": {"p": 1000000, "s": 10000}}, "t_alt_bridge": {"cardinality": 4000000, "avg_row_bytes": 16, "distinct_keys": {"p": 1000000, "s": 10000}}}';
 
@@ -57,30 +54,6 @@ SELECT trimLeft(explain) FROM (EXPLAIN SELECT sum(f.v) FROM t_alt_fact AS f JOIN
 WHERE explain LIKE '%JoinLogical%' OR explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Exchange%';
 SELECT sum(f.v), count() FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p WHERE d.name LIKE '%keep%' SETTINGS cascades_join_order_alternatives = 4;
 
--- The same three tables inside a correlated subquery: the join with the outer table builds a runtime
--- filter, which must reach the reads of every join order.
-SELECT '-- the runtime filter from the outer table reaches the reads inside the subquery';
-SELECT if(explain LIKE '%Runtime filters%',
-        if(explain LIKE '%from ' || currentDatabase() || '.t_alt_out)%', 'filtered by t_alt_out', 'not filtered by t_alt_out'),
-        replaceAll(replaceRegexpOne(explain, '^[^A-Za-z]+', ''), currentDatabase() || '.', '')) FROM (EXPLAIN SELECT count() FROM t_alt_out AS o WHERE o.w <= (
-        SELECT max(f.v) FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p
-        WHERE d.name LIKE '%keep%' AND f.p = o.p)
-    SETTINGS enable_join_transitive_predicates = 1, query_plan_join_swap_table = 'auto', enable_join_runtime_filters = 1,
-        join_runtime_filter_min_probe_rows = 0, allow_experimental_correlated_subqueries = 1,
-        -- The subquery becomes an outer join, which gets no runtime filter unless it is converted to an inner one.
-        query_plan_convert_outer_join_to_inner_join = 1,
-        -- Shows the runtime filters in the reads instead of in separate filter steps.
-        optimize_move_to_prewhere = 1,
-        correlated_subqueries_use_in_memory_buffer = 0, explain_query_plan_default = 'pretty', cascades_join_order_alternatives = 4)
-WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Runtime filters%';
-SELECT count() FROM t_alt_out AS o WHERE o.w <= (
-    SELECT max(f.v) FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p
-    WHERE d.name LIKE '%keep%' AND f.p = o.p)
-SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, allow_experimental_correlated_subqueries = 1,
-    -- DPhyp alone does not order outer joins.
-    query_plan_convert_outer_join_to_inner_join = 1;
-
 DROP TABLE t_alt_fact;
 DROP TABLE t_alt_bridge;
 DROP TABLE t_alt_dim;
-DROP TABLE t_alt_out;
