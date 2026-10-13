@@ -759,6 +759,13 @@ def main():
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
+    elif is_targeted_check and info.is_merge_queue_event:
+        # The merge-queue targeted check is a drift guard like the merge-queue
+        # flaky check: the PR CI already repeated the selection 50 times, and
+        # this run only needs to catch tests broken by the merged `master`
+        # state. A few repetitions still sample the randomized settings, and the
+        # run usually ends well before its time limit instead of filling it.
+        rerun_count = 3
     elif is_targeted_check:
         rerun_count = 50
 
@@ -919,8 +926,9 @@ def main():
                 Shell.check(
                     "python3 -m ci.jobs.scripts.test_selection_smoke", strict=True
                 )
+            # In the merge queue the flaky check already reruns the changed tests.
             tests, selection_result = targeter.get_all_relevant_tests_with_info(
-                include_changed_tests=True
+                include_changed_tests=not info.is_merge_queue_event
             )
             SELECTION_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
             SELECTION_MANIFEST.write_text(
@@ -1247,7 +1255,9 @@ def main():
             )
 
         elif is_targeted_check:
-            TARGETED_CHECK_TIME_LIMIT = 30 * 60  # 30 min
+            # The merge-queue run delays merges directly; its time limit bounds
+            # the queue latency, and its reduced rerun_count usually ends earlier.
+            TARGETED_CHECK_TIME_LIMIT = 40 * 60 if info.is_merge_queue_event else 30 * 60
             global_time_limit = max(
                 TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )

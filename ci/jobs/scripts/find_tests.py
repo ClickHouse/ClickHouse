@@ -89,6 +89,18 @@ class Targeting:
         else:
             self.job_type = None
 
+    @property
+    def pr_number(self):
+        """The pull request whose change the selection is for.
+
+        In a merge-queue run `Info.pr_number` is 0, but the queue entry is built
+        for exactly one PR, parsed from the merge group head ref (the same PR
+        `GH.get_changed_file_statuses` lists the changed files of).
+        """
+        if self.info.pr_number <= 0 and self.info.is_merge_queue_event:
+            return self.info.linked_pr_number
+        return self.info.pr_number
+
     def _ci_db(self):
         # Queries run as the privileged CI user. The public `play` user is
         # rate/row/time-limited and must be used only for links handed to humans
@@ -375,7 +387,7 @@ class Targeting:
             )
         elif self.info.is_local_run:
             changed_files = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo ClickHouse/ClickHouse --name-only"
+                f"gh pr diff {self.pr_number} --repo ClickHouse/ClickHouse --name-only"
             ).splitlines()
         else:
             changed_files = self.info.get_changed_files()
@@ -474,7 +486,7 @@ class Targeting:
     def get_previously_failed_tests(self):
         assert self.job_type, "Unsupported job type"
         assert (
-            self.info.pr_number > 0
+            self.pr_number > 0
         ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
@@ -486,7 +498,7 @@ class Targeting:
         else:
             assert False, f"Not supported job type [{self.job_type}]"
         query = FAILED_TESTS_QUERY.format(
-            PR_NUMBER=self.info.pr_number,
+            PR_NUMBER=self.pr_number,
             JOB_TYPE=self.job_type,
             TEST_NAME_PATTERN=test_name_pattern,
             CUTOFF=self.selection_cutoff(),
@@ -876,11 +888,11 @@ class Targeting:
         """
         if hasattr(self, "_diff_text") and self._diff_text is not None:
             return self._diff_text
-        assert self.info.pr_number > 0, "Diff fetching applicable for PRs only"
+        assert self.pr_number > 0, "Diff fetching applicable for PRs only"
         repo = self.info.repo_name or "ClickHouse/ClickHouse"
         if self.info.is_local_run:
             self._diff_text = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo {repo}"
+                f"gh pr diff {self.pr_number} --repo {repo}"
             )
         else:
             import requests
@@ -890,20 +902,26 @@ class Targeting:
             if token:
                 headers["Authorization"] = f"Bearer {token}"
             response = requests.get(
-                f"https://api.github.com/repos/{repo}/pulls/{self.info.pr_number}",
+                f"https://api.github.com/repos/{repo}/pulls/{self.pr_number}",
                 headers=headers,
                 timeout=60,
             )
             response.raise_for_status()
             metadata = response.json()
-            if metadata["head"]["sha"] != self.info.sha:
+            head_sha = self.info.sha
+            if self.info.is_merge_queue_event:
+                # The merge group commit is the PR merged onto the queue base, not
+                # the PR head, and a PR cannot change while it is queued (a push
+                # removes it from the queue). Select by the PR's own diff.
+                head_sha = metadata["head"]["sha"]
+            elif metadata["head"]["sha"] != self.info.sha:
                 raise RuntimeError(
                     "PR head changed before test selection; refusing a diff for a different SHA"
                 )
             base_sha = metadata["base"]["sha"]
             headers["Accept"] = "application/vnd.github.diff"
             response = requests.get(
-                f"https://api.github.com/repos/{repo}/compare/{base_sha}...{self.info.sha}",
+                f"https://api.github.com/repos/{repo}/compare/{base_sha}...{head_sha}",
                 headers=headers,
                 timeout=60,
             )
@@ -917,7 +935,7 @@ class Targeting:
         Return changed lines from the PR diff.
         In CI fetches the diff from GitHub API; for local runs uses `gh pr diff`.
         """
-        assert self.info.pr_number > 0, "Find tests by diff applicable for PRs only"
+        assert self.pr_number > 0, "Find tests by diff applicable for PRs only"
         return self._parse_diff_lines(self.get_diff_text())
 
     @classmethod
@@ -987,8 +1005,14 @@ class Targeting:
         if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
             changed, result = self.get_changed_or_new_tests_with_info(strict=True)
             results.append(result)
-        failed, result = self.get_previously_failed_tests_with_info(strict=True)
-        results.append(result)
+        failed = []
+        # The merge queue reruns the selection against the merged state to catch
+        # conflicts with `master` changes that landed after the PR's last CI run.
+        # The tests that failed while the PR was developed were already rerun in
+        # its CI, and a flaky one among them would only bounce the PR from the queue.
+        if not self.info.is_merge_queue_event:
+            failed, result = self.get_previously_failed_tests_with_info(strict=True)
+            results.append(result)
         _, result = self.get_most_relevant_tests()
         candidates = self._coverage_candidates
         results.append(result)
@@ -1045,6 +1069,7 @@ if __name__ == "__main__":
     class InfoLocalTest:
         pr_number = int(args.pr)
         is_local_run = True
+        is_merge_queue_event = False
         job_name = "Stateless"
 
     info = InfoLocalTest()

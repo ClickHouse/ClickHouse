@@ -115,6 +115,7 @@ class SelectionSmoke(unittest.TestCase):
                 pr_number=1,
                 repo_name="ClickHouse/ClickHouse",
                 is_local_run=False,
+                is_merge_queue_event=False,
                 sha="head",
             )
         )
@@ -125,6 +126,30 @@ class SelectionSmoke(unittest.TestCase):
         diff = SimpleNamespace(raise_for_status=lambda: None, text=FIXTURE_DIFF)
         with patch("requests.get", side_effect=[metadata, diff]) as get:
             self.assertEqual(target.get_diff_text(), FIXTURE_DIFF)
+        self.assertTrue(get.call_args.args[0].endswith("/compare/base...head"))
+
+    def test_merge_queue_diff_is_the_linked_pr_diff(self):
+        # The merge group commit is not the PR head: select by the PR's own diff.
+        target = Targeting(
+            SimpleNamespace(
+                job_name="Stateless tests",
+                pr_number=0,
+                linked_pr_number=1,
+                repo_name="ClickHouse/ClickHouse",
+                is_local_run=False,
+                is_merge_queue_event=True,
+                sha="merge-group",
+            )
+        )
+        self.assertEqual(target.pr_number, 1)
+        metadata = SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {"head": {"sha": "head"}, "base": {"sha": "base"}},
+        )
+        diff = SimpleNamespace(raise_for_status=lambda: None, text=FIXTURE_DIFF)
+        with patch("requests.get", side_effect=[metadata, diff]) as get:
+            self.assertEqual(target.get_diff_text(), FIXTURE_DIFF)
+        self.assertTrue(get.call_args_list[0].args[0].endswith("/pulls/1"))
         self.assertTrue(get.call_args.args[0].endswith("/compare/base...head"))
 
     def test_cutoff_is_pinned_per_attempt(self):
@@ -170,7 +195,11 @@ class SelectionSmoke(unittest.TestCase):
         for path in canonical_coverage_paths("src/Interpreters/Fixture.cpp"):
             with self.subTest(path=path):
                 target = Targeting(
-                    SimpleNamespace(job_name="Stateless tests", pr_number=1)
+                    SimpleNamespace(
+                        job_name="Stateless tests",
+                        pr_number=1,
+                        is_merge_queue_event=False,
+                    )
                 )
                 target._cidb = FixtureCIDB(path)
                 target._coverage_snapshots = fixture_snapshots()

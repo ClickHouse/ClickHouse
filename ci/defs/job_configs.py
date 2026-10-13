@@ -876,6 +876,16 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
+    # The merge queue reruns the targeted selection (the changed tests and the tests
+    # covering the changed lines) against the merge group state, on the only build
+    # the queue makes. See `ci/workflows/merge_queue.py`.
+    stateless_tests_targeted_mq_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -1606,6 +1616,15 @@ class JobConfigs:
     integration_test_targeted_pr_jobs = targeted_variants(
         integration_test_jobs_required + integration_test_jobs_non_required,
         allow_failure=False,
+    )
+    # The merge-queue counterpart of `integration_test_targeted_pr_jobs`, on the only
+    # build the queue makes. See `ci/workflows/merge_queue.py`.
+    integration_test_targeted_mq_jobs = common_integration_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        )
     )
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job

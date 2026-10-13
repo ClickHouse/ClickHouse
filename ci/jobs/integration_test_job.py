@@ -2107,16 +2107,26 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # than a best-effort report). 45 min matches the functional flaky check and leaves
     # ample room for the hard-kill backstop (+600s below), cleanup and reporting.
     FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min - kept below the external job-cancellation ceiling
+    # The merge-queue targeted check delays merges directly, so it gets a soft budget
+    # too, counted from the job start like the flaky one. It runs the selection once,
+    # and a session-timeout of a targeted check is not a job failure (see below), so a
+    # selection that does not fit is cut short rather than holding the queue.
+    MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT = 40 * 60
+    check_time_limit = 0
     if is_flaky_check:
-        elapsed_for_flaky = int(sw.duration)
-        flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 60)
+        check_time_limit = FLAKY_CHECK_TIME_LIMIT
+    elif is_targeted_check and info.is_merge_queue_event:
+        check_time_limit = MERGE_QUEUE_TARGETED_CHECK_TIME_LIMIT
+    if check_time_limit:
+        elapsed_s = int(sw.duration)
+        remaining_s = max(check_time_limit - elapsed_s, 60)
         print(
-            f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s "
-            f"(elapsed so far: {elapsed_for_flaky}s, remaining: {flaky_check_remaining_s}s)"
+            f"Check time limit: {check_time_limit}s "
+            f"(elapsed so far: {elapsed_s}s, remaining: {remaining_s}s)"
         )
         # Cap per-phase session timeouts so a single phase cannot consume the entire budget.
-        session_timeout_parallel = min(session_timeout_parallel, flaky_check_remaining_s)
-        session_timeout_sequential = min(session_timeout_sequential, flaky_check_remaining_s)
+        session_timeout_parallel = min(session_timeout_parallel, remaining_s)
+        session_timeout_sequential = min(session_timeout_sequential, remaining_s)
 
     error_info = []
 
@@ -2201,20 +2211,20 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # (non-coverage) jobs. An infrastructure error still skips the phase.
     if sequential_test_modules and (fail_num < MAX_FAILS_BEFORE_DROP or is_llvm_coverage) and not has_error:
         for attempt in range(sequential_repeat_cnt):
-            # Recompute remaining budget for flaky-check at every iteration and stop
-            # scheduling new runs once it is exhausted (soft timeout).
+            # Recompute the remaining budget at every iteration and stop scheduling
+            # new runs once it is exhausted (soft timeout).
             iter_session_timeout_sequential = session_timeout_sequential
-            if is_flaky_check:
-                elapsed_for_flaky = int(sw.duration)
-                flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 0)
-                if flaky_check_remaining_s < 60:
+            if check_time_limit:
+                elapsed_s = int(sw.duration)
+                remaining_s = max(check_time_limit - elapsed_s, 0)
+                if remaining_s < 60:
                     print(
-                        f"Flaky-check time limit reached after [{attempt}/{sequential_repeat_cnt}] sequential attempts "
-                        f"(elapsed: {elapsed_for_flaky}s, limit: {FLAKY_CHECK_TIME_LIMIT}s); stopping"
+                        f"Check time limit reached after [{attempt}/{sequential_repeat_cnt}] sequential attempts "
+                        f"(elapsed: {elapsed_s}s, limit: {check_time_limit}s); stopping"
                     )
                     break
                 iter_session_timeout_sequential = min(
-                    session_timeout_sequential, flaky_check_remaining_s
+                    session_timeout_sequential, remaining_s
                 )
             (
                 test_result_sequential,

@@ -23,6 +23,14 @@ workflow = Workflow.Config(
         # after the PR's last CI run (e.g. a new randomized setting in
         # `tests/clickhouse-test`). Self-skips when the PR changes no tests.
         *JobConfigs.stateless_tests_flaky_mq_jobs,
+        # Rerun the targeted selection of the PR (its changed tests and the tests
+        # covering its changed lines) against the merge group state. A PR tested
+        # against an older `master` can break tests that landed after its last CI
+        # run, e.g. https://github.com/ClickHouse/ClickHouse/pull/117198 broke two
+        # `test_storage_delta` tests added to `master` meanwhile. Both jobs stop
+        # at 40 minutes from their start, so they bound the queue latency.
+        *JobConfigs.stateless_tests_targeted_mq_jobs,
+        *JobConfigs.integration_test_targeted_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a
         # pull request and a `master` commit that are each green on their own
         # cannot break them together. Cheap enough to run unconditionally - see
