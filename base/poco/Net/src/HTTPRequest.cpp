@@ -203,7 +203,7 @@ namespace
 void HTTPRequest::write(std::ostream& ostr) const
 {
 	/// CR or LF in the request line or in a header would let the value inject headers or a whole second request.
-	if (hasLineBreak(_method) || hasLineBreak(_uri))
+	if (hasLineBreak(_method) || hasLineBreak(_uri) || hasLineBreak(getVersion()))
 		throw InvalidArgumentException("HTTP request line contains CR or LF");
 	for (const auto& header : *this)
 	{
