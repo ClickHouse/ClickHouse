@@ -65,7 +65,7 @@ For local development and testing, you can run SeaweedFS and ClickHouse with Doc
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -94,7 +94,7 @@ networks:
     driver: bridge
 ```
 
-The `mini` command starts the whole SeaweedFS stack in a single container. The `-tableBucket=analytics` flag pre-creates an S3 Tables bucket named `analytics`, which serves as the Iceberg warehouse.
+The `mini` command starts the whole SeaweedFS stack in a single container. The `-tableBucket=analytics` flag pre-creates an S3 Tables bucket named `analytics`, which serves as the Iceberg warehouse. `-admin.port=12646` keeps the admin gRPC port that SeaweedFS derives from it below the Linux ephemeral port range, where a startup connection could otherwise claim it first.
 
 **Step 3:** Run the following command to start the services:
 

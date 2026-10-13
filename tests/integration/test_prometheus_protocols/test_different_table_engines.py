@@ -229,6 +229,20 @@ def test_custom_id_algorithm():
     ) == TSV([["FixedString(16)", ""]])
 
 
+# Checks that an identifier type which the tags collector has no typed map for works too:
+# such identifiers are kept in the generic map in their serialized form.
+# Only `FixedString(16)` has a typed map, so a shorter fixed string takes the generic path.
+def test_generic_id():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "TAGS INNER COLUMNS (id FixedString(10) DEFAULT toFixedString(substring(murmurHash3_128(tags), 1, 10), 10))"
+    )
+    check()
+
+    assert re.search(r"\bid\s+FixedString\(10\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
+    assert re.search(r"\bid\s+FixedString\(10\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+
+
 # Checks that a multi-component identifier `Tuple(F, S)` can be used.
 def test_multi_component_id():
     # Case 1: the identifier expression is specified as a DEFAULT expression of the `id` column.
@@ -257,9 +271,9 @@ def test_multi_component_id():
 
 # Checks that timestamps can be stored with microsecond precision (`DateTime64(6)`).
 def test_microsecond_precision():
-    node.query("CREATE TABLE prometheus (time_series Array(Tuple(DateTime64(6), Float64))) ENGINE=TimeSeries")
+    node.query("CREATE TABLE prometheus (samples Array(Tuple(DateTime64(6), Float64))) ENGINE=TimeSeries")
     check(eps=1e-9) # Here eps > 0 because otherwise the check will fail because of different precisions.
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'samples'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`timestamp` DateTime64\(6\)", create_query)
     assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
@@ -268,7 +282,7 @@ def test_microsecond_precision():
 
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(6))")
     check(eps=1e-9)
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'samples'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`timestamp` DateTime64\(6\)", create_query)
     assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
@@ -276,9 +290,9 @@ def test_microsecond_precision():
 
 # Checks that scalar values can be stored as `Float32` instead of the default `Float64`.
 def test_float32_scalar():
-    node.query("CREATE TABLE prometheus (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries")
+    node.query("CREATE TABLE prometheus (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries")
     check()
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'samples'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`value` Float32", create_query)
     assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
@@ -287,7 +301,7 @@ def test_float32_scalar():
 
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SAMPLES INNER COLUMNS (value Float32)")
     check()
-    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
+    assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'samples'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`value` Float32", create_query)
     assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
@@ -335,7 +349,7 @@ def test_inner_engines():
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "SAMPLES ENGINE=MergeTree ORDER BY (id, timestamp) "
         "TAGS ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     check()
 
@@ -395,8 +409,8 @@ def test_external_tables():
     )
 
     node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String) "
-        "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "CREATE TABLE mymetrics (metric_family String, type LowCardinality(String), unit LowCardinality(String), help String) "
+        "ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
@@ -412,7 +426,7 @@ def test_data_keyword():
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "DATA ENGINE=MergeTree ORDER BY (id, timestamp) "
         "TAGS ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     check()
 
@@ -433,8 +447,8 @@ def test_data_keyword():
         "SETTINGS allow_dimensions_outside_sorting_key = 1"
     )
     node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type String, unit String, help String) "
-        "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "CREATE TABLE mymetrics (metric_family String, type String, unit String, help String) "
+        "ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "

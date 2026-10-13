@@ -43,15 +43,47 @@ If `gh` is not available or not authenticated, use WebFetch to get the data. App
 
 Report the PR title, author, branch, and current state to the user.
 
+### 1a. Verify "already integrated" claims before closing
+
+Treat closing a PR as already integrated or obsolete as a high-confidence decision. Verify both of these independently against freshly fetched refs:
+
+1. **Historical ancestry:** Resolve and print the exact base and PR-head OIDs, then check the candidate commit in this direction only:
+   ```bash
+   HEAD_REMOTE=origin
+   if [ "$IS_CROSS_REPOSITORY" = "true" ]; then
+       HEAD_REMOTE="pr-$AUTHOR_LOGIN"
+       git remote add "$HEAD_REMOTE" "$FORK_URL" 2>/dev/null || git remote set-url "$HEAD_REMOTE" "$FORK_URL"
+   fi
+   git fetch origin "$BASE_BRANCH"
+   git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+   git rev-parse "origin/$BASE_BRANCH" "$HEAD_REMOTE/$HEAD_BRANCH"
+   git merge-base --is-ancestor "$CANDIDATE_COMMIT" "origin/$BASE_BRANCH"
+   ```
+   Derive `$IS_CROSS_REPOSITORY`, `$AUTHOR_LOGIN`, and `$FORK_URL` from the PR metadata as in step 2. Exit status `0` means the base contains the commit; any other status means it does not. Never check against `HEAD`, the PR branch, `--all`, or a worktree and describe that result as containment by the base branch. If this check is nonzero, do not claim the commit is in the base and do not close the PR as integrated.
+2. **Current effective state:** An ancestor commit may have been reverted or backed out later. Ancestry, `git branch --contains`, `git cherry`, and patch-equivalence results are historical evidence only; none proves that the change remains effective. Inspect all later base-branch commits touching the changed paths, search for explicit and manual reverts/backouts, compare the current base tree with the PR's intended effect, and run the reproducer or regression test against the current base when feasible. If the change was fully or partially reverted, count it as **not integrated**. If the current effect cannot be established confidently, leave the PR open for human review.
+
+Before posting a closure comment, state the fetched base OID and the evidence for both ancestry and the current effective state. Do not close from a remembered ref, a stale local branch, a matching subject, or a commit merely visible somewhere in the repository.
+
 ### 2. Check out the PR branch locally
+
+Before checking out the PR, require a clean worktree. This interactive skill
+can run in a developer's normal checkout, so it must fail closed rather than
+discarding staged, unstaged, or untracked work:
+
+```bash
+test -z "$(git status --porcelain)" || {
+    echo "The worktree is dirty; use a clean worktree before continuing this PR" >&2
+    exit 1
+}
+```
 
 Determine whether the PR branch is in the main repository or in the author's fork.
 
 **If the branch is in the main repository (`ClickHouse/ClickHouse`):**
 ```bash
-git fetch origin "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "origin/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull origin "$HEAD_BRANCH"
+HEAD_REMOTE=origin
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
@@ -62,10 +94,33 @@ Derive the fork clone URL from the PR metadata (`headRepository.url` or `headRep
 REMOTE_NAME="pr-$AUTHOR_LOGIN"
 FORK_URL="https://github.com/$FORK_OWNER/$FORK_REPO.git"  # from headRepository in PR metadata
 git remote add "$REMOTE_NAME" "$FORK_URL" 2>/dev/null || git remote set-url "$REMOTE_NAME" "$FORK_URL"
-git fetch "$REMOTE_NAME" "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "$REMOTE_NAME/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull "$REMOTE_NAME" "$HEAD_BRANCH"
+HEAD_REMOTE="$REMOTE_NAME"
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
+
+After the clean checkout, record the immutable baseline; it is the only
+authoritative record of the PR surface that existed when the worker began:
+
+```bash
+git fetch origin "$BASE_BRANCH"
+mkdir -p tmp
+PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
+rm -rf "$PR_BASELINE_DIR"
+mkdir -p "$PR_BASELINE_DIR"
+INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
+test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
+INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
+printf '%s\n%s\n' "$INITIAL_PR_HEAD" "$INITIAL_BASE_HEAD" > "$PR_BASELINE_DIR/state"
+git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
+git diff --stat "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/stat"
+git diff --binary "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/diff"
+```
+
+Do not modify, stage, or delete this artifact during the session. It must remain
+available through the push safety gate in step 7. The deterministic path and
+`state` file are required because each resumed worker turn starts a fresh shell
+process.
 
 ### 3. Resolve conflicts with the base branch (if any)
 
@@ -78,7 +133,7 @@ git fetch origin "$BASE_BRANCH"
 git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD || echo "needs merge"
 ```
 
-If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts, merge:
+If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts, or the merge queue removed the PR after its last commit (see step 4), merge:
 
 ```bash
 git merge "origin/$BASE_BRANCH"
@@ -96,7 +151,35 @@ If there are merge conflicts:
 
 ### 4. Analyze CI status and fix failures
 
-Use the CI analysis tool to fetch reports:
+**First, check whether the merge queue rejected the PR.** The PR's own CI runs on its head commit, but the merge queue re-tests the PR merged with the latest base branch (a `gh-readonly-queue/<base>/pr-<N>-<base-sha>` ref, workflow `MergeQueueCI`). A PR can therefore be all green and `CLEAN` yet keep being rejected - typically a semantic conflict: a test added on the base branch that pins behaviour this PR changes, or an API the PR uses that was changed on the base branch. Look for the latest merge-queue event:
+
+```bash
+gh api graphql -f query="
+{
+  repository(owner: \"${REPO%%/*}\", name: \"${REPO#*/}\") {
+    pullRequest(number: $PR_NUMBER) {
+      mergeQueueEntry { state }
+      commits(last: 1) { nodes { commit { oid committedDate } } }
+      timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes { __typename ... on RemovedFromMergeQueueEvent { createdAt reason beforeCommit { oid } } }
+      }
+    }
+  }
+}"
+```
+
+If the last event is a `RemovedFromMergeQueueEvent` (with a reason other than `merged`) newer than the last commit, and the PR is not back in the queue, the rejection is the first failure to fix. `beforeCommit.oid` is the merge-queue commit that was tested. `fetch_ci_report.js` with the PR URL detects this case and adds the failed jobs of that merge-queue run to its output (marked with a ⚠️ line and listed under `MergeQueueCI`). To look at the run directly, take its report links from the commit statuses (the check runs link to GitHub Actions jobs instead):
+
+```bash
+MQ_SHA=<beforeCommit.oid>
+gh api "repos/$REPO/commits/$MQ_SHA/statuses" --paginate \
+    --jq '.[] | select(.state != "success") | "\(.context)\t\(.state)\t\(.target_url)"'
+node .claude/tools/fetch_ci_report.js "<a praktika.html?REF=gh-readonly-queue/...&sha=$MQ_SHA&name_0=MergeQueueCI&name_1=<job> URL from above>" --failed
+```
+
+The per-job JSON is also directly at `https://s3.amazonaws.com/clickhouse-test-reports/REFs/gh-readonly-queue/<base>/pr-<N>-<base-sha>/$MQ_SHA/mergequeueci/result_<job>.json` (gzip-compressed). Do not construct artifact URLs such as log paths by hand: Praktika stores attached files under normalized sub-result directories (e.g. `.../mergequeueci/build_amd_binary/build_clickhouse/build_clickhouse.log`), so guessed paths return `AccessDenied`. Follow the `links` of the failed results in that JSON instead, as printed by `fetch_ci_report.js` (also with `--links`), or use `--download-logs`. To fix the rejection, merge the latest base branch (step 3) even if the PR is otherwise current, reproduce the failure on the merged tree, and fix it in the PR - adapt the code to the changed API, or update a newly added test when the PR intentionally changes the behaviour it pins (say so in the commit message and the PR comment). Do not re-add the PR to the merge queue yourself, and do not dismiss a merge-queue failure as flaky without the same evidence as for any other failure.
+
+Then fetch the PR's own CI reports:
 
 ```bash
 node .claude/tools/fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/$PR_NUMBER" --failed --cidb
@@ -240,12 +323,47 @@ Determine where to push based on step 2:
 
 **If the branch is in the main repository:**
 ```bash
-git push origin "$HEAD_BRANCH"
+PUSH_REMOTE=origin
 ```
 
 **If the branch is in the author's fork:**
 ```bash
-git push "$REMOTE_NAME" "$HEAD_BRANCH"
+PUSH_REMOTE="$REMOTE_NAME"
+```
+
+Before every commit and push, run this safety gate. It is a hard stop:
+
+1. Restore and validate the recorded state before using it; resumed turns do not inherit shell variables:
+   ```bash
+   PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
+   mapfile -t BASELINE_STATE < "$PR_BASELINE_DIR/state"
+   test "${#BASELINE_STATE[@]}" = 2
+   INITIAL_PR_HEAD=${BASELINE_STATE[0]}
+   INITIAL_BASE_HEAD=${BASELINE_STATE[1]}
+   git cat-file -e "$INITIAL_PR_HEAD^{commit}"
+   git cat-file -e "$INITIAL_BASE_HEAD^{commit}"
+   git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
+   ```
+   Preserve `INITIAL_PR_HEAD` as an ancestor: only add commits on top of the existing PR history. Never rebase, reset the branch onto another commit, amend published commits, delete the remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
+2. Stage only explicit paths with `git add <path>`. Never use `git add -A`, `git add .`, or `git commit -a` in this workflow. Before committing, inspect both `git diff --cached --name-status` and `git diff --cached --stat`. Every staged path must be explained by the requested fix or by a specific conflict resolution. Unstage unexpected paths and do not commit when the scope is unclear.
+3. Before pushing, fetch the remote PR branch again and require its current tip to be an ancestor of local `HEAD`:
+   ```bash
+   git fetch "$PUSH_REMOTE" "$HEAD_BRANCH"
+   REMOTE_HEAD=$(git rev-parse "$PUSH_REMOTE/$HEAD_BRANCH")
+   git merge-base --is-ancestor "$REMOTE_HEAD" HEAD
+   ```
+   If the check is nonzero, merge the remote branch normally or stop and report the lineage problem. Never replace its history.
+4. Inspect the complete proposed PR diff with `git diff --name-status "origin/$BASE_BRANCH"...HEAD` and `git diff --stat "origin/$BASE_BRANCH"...HEAD`, then compare both against the immutable checkout baseline:
+   ```bash
+   diff -u "$PR_BASELINE_DIR/name-status" <(git diff --name-status "origin/$BASE_BRANCH"...HEAD)
+   diff -u "$PR_BASELINE_DIR/stat" <(git diff --stat "origin/$BASE_BRANCH"...HEAD)
+   ```
+   Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
+
+After the gate succeeds, push with:
+
+```bash
+git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
 ```
 
 Report the result and provide the PR URL.

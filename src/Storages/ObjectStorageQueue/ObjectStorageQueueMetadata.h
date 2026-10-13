@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <filesystem>
 #include <optional>
+#include <mutex>
+#include <unordered_set>
+#include <unordered_map>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -82,6 +85,7 @@ public:
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
         size_t persistent_processing_node_abandoned_reclaim_ttl_seconds_,
+        size_t processing_state_cache_ttl_seconds_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
         size_t metadata_cache_size_elements_);
@@ -134,6 +138,9 @@ public:
         const std::string & path,
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {},
         const std::string & active_registry_id = {});
+
+    bool tryAcquireExclusiveProcessing(const std::string & path);
+    void releaseExclusiveProcessing(const std::string & path);
 
     /// Register table in keeper metadata.
     /// active = false:
@@ -215,8 +222,18 @@ public:
             : std::max(ttl_seconds, reclaim_ttl_seconds);
         return lease_seconds ? std::max<size_t>(1, lease_seconds / 4) : 0;
     }
+    size_t getProcessingStateCacheTTLSeconds() const { return processing_state_cache_ttl_seconds; }
 
     size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
+
+    /// Update the "newest object seen" watermark (used together with
+    /// updateNewestCommittedTimestamp() to estimate per-table pipeline lag).
+    /// `timestamp` is the object's own last-modified time, as reported by object storage.
+    /// Tracked per `storage_id`, because this metadata object can be shared by several
+    /// tables pointing at the same Keeper path.
+    void updateNewestSeenTimestamp(time_t timestamp, const StorageID & storage_id);
+    /// Update the "newest object committed" watermark, see updateNewestSeenTimestamp().
+    void updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id);
 
 private:
     void cleanupThreadFunc();
@@ -250,6 +267,18 @@ private:
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
     std::atomic<size_t> persistent_processing_node_abandoned_reclaim_ttl_seconds;
+    std::atomic<size_t> processing_state_cache_ttl_seconds;
+
+    /// Watermarks for the pipeline-lag metrics, see updateNewestSeenTimestamp().
+    /// Keyed by `StorageID::getFullTableName()`, because this metadata object can be
+    /// shared by several tables pointing at the same Keeper path.
+    struct PipelineLagWatermarks
+    {
+        time_t newest_seen = 0;
+        time_t newest_committed = 0;
+    };
+    std::mutex pipeline_lag_watermarks_mutex;
+    std::unordered_map<String, PipelineLagWatermarks> pipeline_lag_watermarks;
 
     size_t buckets_num;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
@@ -261,6 +290,8 @@ private:
     BackgroundSchedulePoolTaskHolder cleanup_task;
 
     FileStatusesCache local_file_statuses;
+    std::mutex exclusive_processing_paths_mutex;
+    std::unordered_set<UInt128, UInt128TrivialHash> exclusive_processing_paths TSA_GUARDED_BY(exclusive_processing_paths_mutex);
 
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().

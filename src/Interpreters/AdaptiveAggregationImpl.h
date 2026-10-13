@@ -48,22 +48,31 @@ constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
 /// less than a million rows).
 constexpr size_t adaptive_freeze_give_up_row_multiple = 16;
 
-/// The thaw guard for the opposite failure past the freeze. Staged misses are supposed to
-/// be rare keys, each staged about once; a uniform mid-cardinality stream instead misses on
-/// the same keys over and over, and staging then re-processes the bulk of the stream that
-/// ordinary insertion would absorb as cheap in-place updates. The repeat factor of the
-/// staged stream is estimated over a shared sparse sample of staged hashes: repeats of a
-/// key collapse onto one sample entry across all threads, so the estimate does not depend
-/// on how a key's occurrences spread over the threads. Once the factor exceeds the bound,
-/// every thread thaws its table and returns to the baseline path. The unit is the delayed
-/// record, because staging and draining cost per record (a run of one key collapses into a
-/// single value-staged record). Streams that want the freeze stay well below the bound
-/// (high-cardinality keys repeat a few times in total, a skewed tail almost never); a
-/// stream that crosses it fires after about the bound times the distinct staged keys in
-/// records, a small share of a repeat-dominated stream.
+/// The thaw guard, for the failure the give-up cannot see: the table filled and froze, but
+/// the stream behind it keeps repeating the same missing keys instead of bringing rare ones.
+/// Staged misses are supposed to be rare keys, each staged about once. A key's first staged
+/// record is the price of storing it once, repaid by the merge working on deduplicated keys;
+/// every repeat is bytes the baseline would have absorbed as a cheap in-place update. The
+/// verdict therefore weighs the repeats by the records' bytes: the stream thaws once the
+/// wasted staged bytes per distinct key, (repeat factor - 1) * bytes per record, exceed the
+/// bound. The repeat factor is estimated over a shared sparse sample of staged hashes.
+/// Repeats of a key collapse onto one sample entry across all threads, so the estimate does
+/// not depend on how a key's occurrences spread over the threads. The weighting separates the shapes by how
+/// much a repeat costs. A near-unique stream has repeat ~ 1, so its wasted bytes are ~ 0 and
+/// it can never fire, no matter how heavy its records are. A stream of narrow fixed-width
+/// records pays ~ 24 bytes per repeat (a numeric key plus the bookkeeping), so it crosses the
+/// bound only past repeat ~ 13, where the pathological mid-cardinality streams live. A stream
+/// of wide keys or wide string arguments pays the whole record per repeat, so ~ 100-byte
+/// records cross already at repeat ~ 4. The bound of 300 splits the measured shapes: every
+/// shape that wants the thaw wastes at least ~ 440 bytes per key (a 90-byte string key at
+/// repeat ~ 3, a 90-byte string argument at repeat ~ 5, high-repeat count streams land in the
+/// kilobytes), and every shape that wins when kept engaged wastes at most ~ 275 (fixed-width
+/// arguments up to repeat ~ 12.5, count streams far below). `adaptive_thaw_min_staged_records`
+/// is the evidence floor before the verdict may fire. It is in records rather than bytes
+/// because the repeat estimate's confidence comes from the number of sampled observations.
 constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
 constexpr size_t adaptive_thaw_min_staged_records = 524'288;
-constexpr size_t adaptive_thaw_repeat_factor = 12;
+constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
 
 /// Staged batches smaller than this are coalesced into one bucket-grouped chunk before they
 /// reach the backlogs, so the merge-time drain processes a few large contiguous slices per
@@ -72,13 +81,25 @@ constexpr size_t adaptive_thaw_repeat_factor = 12;
 constexpr size_t adaptive_seal_target_bytes = 4 << 20;
 /// A drain table is detached and written only once it holds at least this many keys, so the
 /// spilled parts stay reasonably sized instead of one tiny file per chunk; the same floor
-/// sizes the batch a pressure sweep claims for a producer-local drain.
+/// sizes the batch a pressure sweep claims for a producer-local drain. A key count cannot
+/// bound memory on its own - a million wide keys with their states is hundreds of megabytes -
+/// so it is paired with a byte bound derived from the query's own external-aggregation
+/// threshold (see `Aggregator::adaptivePressurePartBytes`), whichever comes first.
 constexpr size_t adaptive_pressure_spill_min_keys = 1'000'000;
+/// The floor under that byte bound. A part smaller than this is a false economy: a drain table
+/// carries an arena per bucket, so below a few tens of megabytes its footprint is mostly chunk
+/// padding rather than keys, and every extra part costs a reader with its own deserialization
+/// arena at merge time. Measured on a 3M-key external `GROUP BY` spilling at 20 MB, the peak is
+/// a U in this bound - 200 MB of peak at 8 MiB (90 parts), 150 MB at 32 MiB (26 parts), 200 MB
+/// again at 64 MiB (15 parts) - so the middle is where the residue and the readers balance.
+constexpr size_t adaptive_pressure_min_part_bytes = 32 << 20;
 /// The in-flight concurrency budget for detached tables awaiting serialization, across the
 /// session (roughly four floor-sized tables). It bounds how much detached work exists at
 /// once, not memory exactly: a reservation is corrected upward once the table is built, and
 /// `allocatedBytes` cannot see heap owned internally by complex aggregate states. The finish
-/// drain ignores the budget because it must leave nothing behind.
+/// drain ignores the budget because it must leave nothing behind. Like the key floor it is a
+/// ceiling that the external-aggregation threshold narrows where it is set (see
+/// `Aggregator::adaptivePressureDetachedBytesBudget`).
 constexpr size_t adaptive_pressure_detached_bytes_budget = 256 << 20;
 
 /// The staged records route by the two-level bucket of their key's hash, so the backlogs and
@@ -256,13 +277,23 @@ struct AdaptiveAggregationSession
     /// records into it early (see `drainStagedChunksUnderMemoryPressure`); it joins the merge
     /// set when it holds data.
     AggregatedDataVariantsPtr early_drain_variants;
+    /// The variant of `early_drain_variants` and of every table the drains build, fixed at
+    /// initialization: the sweeps replace the table but never its type, and a producer reads
+    /// this to size its chunks at publication without taking the coordinator lock.
+    AggregatedDataVariants::Type drain_type = AggregatedDataVariants::Type::EMPTY;
+    /// What the drains into `early_drain_variants` were seen to allocate, as the sweeping
+    /// threads' memory trackers count them, summed since the table was last replaced. The
+    /// table's `allocatedBytes` sums its arenas and hash-table buffers; the heap that states
+    /// such as `uniqExact` or `groupBitmap` own outside the arenas is seen only here. Guarded
+    /// by `pressure_sweep_mutex`, like the table itself.
+    size_t early_drain_tracked_bytes = 0;
 
     /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
     /// needs no per-bucket coordination; merge-time drains run after the finish barrier and
     /// need none either. Producers over the trigger block on it deliberately - pausing
     /// production is the backpressure that lets the sweep win.
     std::mutex pressure_sweep_mutex;
-    /// Reservations of detached-table bytes against `adaptive_pressure_detached_bytes_budget`,
+    /// Reservations of detached-table bytes against the budget the caller passes in,
     /// released as their writes finish. Guarded by a mutex with a condition variable so a
     /// producer that cannot reserve waits for a writer instead of staging on into an
     /// unbounded backlog; the wait breaks on cancellation (`cancel` notifies).
@@ -282,13 +313,15 @@ struct AdaptiveAggregationSession
 
         /// Waits for writers to release enough budget; gives up only when the query is
         /// cancelled. A request larger than the whole budget is granted when it is alone, so
-        /// one oversized table cannot deadlock the valve.
-        bool reserveOrWait(AdaptiveAggregationSession & session_, size_t bytes_)
+        /// one oversized table cannot deadlock the valve. The budget is passed in because it
+        /// is derived from the aggregator's external-aggregation threshold, which the session
+        /// does not carry (see `Aggregator::adaptivePressureDetachedBytesBudget`).
+        bool reserveOrWait(AdaptiveAggregationSession & session_, size_t bytes_, size_t budget_)
         {
             std::unique_lock lock(session_.detached_spill_mutex);
             session_.detached_spill_cv.wait(
-                lock, [&] { return fits(session_, bytes_) || session_.cancelled.load(std::memory_order_relaxed); });
-            if (session_.cancelled.load(std::memory_order_relaxed) || !fits(session_, bytes_))
+                lock, [&] { return fits(session_, bytes_, budget_) || session_.cancelled.load(std::memory_order_relaxed); });
+            if (session_.cancelled.load(std::memory_order_relaxed) || !fits(session_, bytes_, budget_))
                 return false;
             grab(session_, bytes_);
             return true;
@@ -327,12 +360,12 @@ struct AdaptiveAggregationSession
         }
 
     private:
-        static bool fits(const AdaptiveAggregationSession & session_, size_t bytes_)
+        static bool fits(const AdaptiveAggregationSession & session_, size_t bytes_, size_t budget_)
         {
             if (session_.estimated_detached_spill_bytes == 0)
                 return true;
-            return session_.estimated_detached_spill_bytes < adaptive_pressure_detached_bytes_budget
-                && bytes_ <= adaptive_pressure_detached_bytes_budget - session_.estimated_detached_spill_bytes;
+            return session_.estimated_detached_spill_bytes < budget_
+                && bytes_ <= budget_ - session_.estimated_detached_spill_bytes;
         }
 
         void grab(AdaptiveAggregationSession & session_, size_t bytes_)
@@ -372,6 +405,10 @@ struct AdaptiveAggregationSession
     HashSet<UInt64> distinct_sampled_hashes;
     size_t thaw_sampled_records = 0;
     size_t staged_records = 0;
+    /// The staged records' estimated footprint: key bytes, argument bytes and per-record
+    /// overhead. Summed before any deduplication, so it measures the same stream as
+    /// `staged_records` and the sample.
+    size_t staged_bytes = 0;
     /// Set once the staged stream proves repeat-dominated; every thread then thaws its local
     /// table at the next block and returns to the baseline path for good.
     std::atomic<bool> thaw_all{false};
@@ -502,7 +539,6 @@ struct AdaptiveAggregationProducer
 
 struct StagedChunkPreparation
 {
-    Columns materialized_columns;
     Aggregator::AggregateColumns aggregate_columns;
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions instructions;

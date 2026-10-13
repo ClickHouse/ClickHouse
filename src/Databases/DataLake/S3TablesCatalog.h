@@ -38,6 +38,8 @@ public:
 
     CatalogTables getTables() const override;
 
+    bool managesTableLocation() const override { return true; }
+
     bool tryGetTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
@@ -57,7 +59,7 @@ protected:
         const DB::HTTPHeaderEntries & headers,
         const std::optional<DB::HTTPHeaderEntries> & auth_headers) const override;
 
-    void sendRequest(
+    String sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,

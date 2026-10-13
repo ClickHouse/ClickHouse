@@ -8,13 +8,15 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromTextIndexCount.h>
 
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Core/Settings.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ITokenizer.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -33,7 +35,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
 }
@@ -59,6 +60,10 @@ std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 
     const auto & params = aggregating.getParams();
     if (!params.keys.empty() || params.aggregates.size() != 1)
+        return {};
+
+    /// Also set for constant `GROUP BY` keys; the count source would emit a `0` row instead of no row.
+    if (params.empty_result_for_aggregation_by_empty_set)
         return {};
 
     const auto & desc = params.aggregates.front();
@@ -219,10 +224,6 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (context->getCurrentTransaction())
         return false;
 
-    /// An empty set must then yield an empty result, not a 0 row.
-    if (context->getSettingsRef()[Setting::empty_result_for_aggregation_by_empty_set])
-        return false;
-
     if (reading.isQueryWithFinal() || reading.isQueryWithSampling())
         return false;
 
@@ -241,14 +242,12 @@ bool guardsHold(const ReadFromMergeTree & reading)
         if (!useful.index->isTextIndex())
             return false;
 
-    /// Row policy filters rows the cardinality ignores; without a database name it can't be resolved, so fail closed.
-    auto storage_id = reading.getStorageID();
-    if (!storage_id.hasDatabase())
+    /// The effective row policy may belong to a wrapper such as `Alias`.
+    if (reading.getRowLevelFilter())
         return false;
 
-    if (auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    /// Row policy filters rows the cardinality ignores; without a database name it can't be resolved, so fail closed.
+    if (!reading.getStorageID().hasDatabase() || getEffectiveRowPolicyFilter(reading.getMergeTreeData(), context))
         return false;
 
     if (const auto & mutations = reading.getMutationsSnapshot();
@@ -274,15 +273,15 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     for (const auto & [index_name, task] : reading.getIndexReadTasks())
     {
         /// Only the task that produced this virtual column can resolve it.
-        bool owns_column = std::ranges::any_of(task.columns, [&column_name](const auto & column) { return column.name == column_name; });
-        if (!owns_column || !task.index.condition_template)
+        auto task_column_it = std::ranges::find(task.columns, column_name, &IndexReadTask::Column::name);
+        if (task_column_it == task.columns.end() || !task.index.condition_template)
             continue;
 
         auto condition = std::dynamic_pointer_cast<MergeTreeIndexConditionText>(task.index.condition_template->generateUnsubstituted());
         if (!condition)
             continue;
 
-        auto query = condition->getSearchQueryForVirtualColumn(column_name);
+        auto query = task_column_it->search_query;
 
         /// Hint mode keeps the original predicate, so only Exact is answerable from the index alone.
         if (query->getDirectReadMode() != TextIndexDirectReadMode::Exact)
@@ -301,22 +300,24 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     return {};
 }
 
-/// E.g. "Trivial count from text index (idx, token = 'alpha')" or "... (idx, tokens = ['alpha', 'zeta'])".
+/// E.g. "Trivial count from text index (idx, token = "alpha")" or "... (idx, tokens = ["alpha", "zeta"])".
 String makeStepDescription(const ResolvedQuery & resolved)
 {
     const auto & query_tokens = resolved.query->getTokens();
+    const auto & tokenizer = *resolved.condition->getTokenizer();
 
     WriteBufferFromOwnString description;
     description << "Trivial count from text index (" << resolved.index.index->index.name << ", ";
+
     if (query_tokens.size() == 1)
     {
-        description << "token = '" << query_tokens.front() << "'";
+        description << "token = " << tokenizer.formatTokenForLogs(query_tokens.front());
     }
     else
     {
         description << "tokens = [";
         for (size_t i = 0; i < query_tokens.size(); ++i)
-            description << (i == 0 ? "'" : ", '") << query_tokens[i] << "'";
+            description << (i == 0 ? "" : ", ") << tokenizer.formatTokenForLogs(query_tokens[i]);
         description << "]";
     }
     description << ")";
@@ -328,6 +329,8 @@ String makeStepDescription(const ResolvedQuery & resolved)
 
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
+    auto component_guard = Coordination::setCurrentComponent("optimizeTrivialCountFromTextIndex");
+
     /// `ReadFromTextIndexCount` is not serializable, so it must not end up in a distributed plan fragment.
     /// `applyParallelReplicas` runs first and builds such fragments around the `ReadFromMergeTree` we would
     /// replace, so bail and let the reader be distributed across replicas as before.
@@ -364,7 +367,7 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         return false;
     }
 
-    /// Split the parts by index materialization (checksum lookups, no I/O).
+    /// Split the parts by index materialization (checksum lookups if materialized)
     const auto & text_index = *search_query->index.index;
     auto is_materialized_part = [&](const RangesInDataPart & part_with_ranges)
     {

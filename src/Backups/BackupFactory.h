@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -7,7 +9,11 @@
 #include <Access/Common/AccessType.h>
 #include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
+#if CLICKHOUSE_CLOUD
+#include <Backups/BackupResumeParams.h>
+#endif
 #include <Backups/IBackup.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -52,6 +58,10 @@ public:
         bool azure_attempt_to_create_container = true;
         ReadSettings read_settings;
         WriteSettings write_settings;
+#if CLICKHOUSE_CLOUD
+        /// Set only when this attempt continues an interrupted one; see `BackupResumer`.
+        std::optional<BackupResumeParams> resume;
+#endif
 
         CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
     };
@@ -75,8 +85,7 @@ public:
         AccessFlags flags;
     };
 
-    /// `std::nullopt` for engines with no external location (`Memory`, `Null`) or whose location is an
-    /// operator-allowlisted disk (`Disk`).
+    /// `std::nullopt` for engines with no external location (`Memory`, `Null`).
     using SourceAccessFn
         = std::function<std::optional<SourceAccessTarget>(const BackupInfo &, ContextPtr, IBackup::OpenMode)>;
 
@@ -90,7 +99,10 @@ public:
         const String & engine_name,
         const CreatorFn & creator_fn,
         const DestinationIdentityFn & destination_identity_fn,
-        const SourceAccessFn & source_access_fn);
+        const SourceAccessFn & source_access_fn,
+        SecretArgumentsSpec secret_arguments);
+
+    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
 
 private:
     struct RegisteredEngine
@@ -98,11 +110,15 @@ private:
         CreatorFn creator;
         DestinationIdentityFn destination_identity;
         SourceAccessFn source_access;
+        SecretArgumentsSpec secret_arguments;
     };
 
     BackupFactory();
 
     std::unordered_map<String, RegisteredEngine> engines;
 };
+
+/// A backup engine whose locator names a destination with no credential in it, taking `arity` arguments.
+SecretArgumentsSpec credentialFreeBackupSecretArguments(size_t arity);
 
 }

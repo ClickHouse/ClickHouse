@@ -13,6 +13,14 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+<div id="database">
+  ## database
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "用于指定查询当前数据库的新设置。取代对 HTTP `database` URL 参数和 `X-ClickHouse-Database` 请求头的特殊处理。"}]}]} />
+
+设置查询的当前数据库，即解析未限定表名时所使用的数据库，效果等同于 `USE <database>`。与 `USE` 语句不同，这是一项普通的会话设置：与其他设置一样，它接受值时不进行验证；仅在设置生效时 (即运行查询时) 才会报告未知数据库，而非在执行 `SET` 时。它遵循客户端提供的默认数据库的权限规则 (该设置对其进行了泛化) ，而非 `USE` 的权限规则：选择当前数据库无需 `SHOW_DATABASES` 权限，但仍会照常检查对其中表的访问权限。用作 HTTP 接口的 `database` URL 参数和 `X-ClickHouse-Database` 请求头的目标端。
+
 <div id="database_atomic_wait_for_drop_and_detach_synchronously">
   ## database_atomic_wait_for_drop_and_detach_synchronously
 </div>

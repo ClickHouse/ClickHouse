@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -21,9 +22,11 @@
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
 #include <ranges>
 #include <sstream>
 #include <string_view>
+#include <unordered_set>
 
 namespace DB
 {
@@ -648,6 +651,102 @@ BigQueryConfiguration StorageBigQuery::getConfiguration(ASTs & engine_args, Cont
     return BigQueryConfiguration::fromArguments(engine_args, context, table_id);
 }
 
+namespace
+{
+
+void findBigQuerySecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    /// bigquery('project', 'dataset', 'table'[, 'access_token'][, key = value, ...])
+    /// bigquery(named_collection[, key = value, ...])
+    /// `BigQueryConfiguration::fromArguments` folds arbitrary constant expressions for the
+    /// positional arguments and for both sides of the `key = value` arguments (via
+    /// `getKeyValueFromAST`), so none of them has to be a plain literal, and `key = value`
+    /// arguments can be interleaved with positional ones. The finder cannot evaluate
+    /// expressions, so every argument whose meaning is not evident from the AST alone
+    /// fails closed and is hidden whole.
+
+    /// The keys whose values never carry credentials; the values of the other known keys
+    /// (`access_token`, `service_account_key`, `client_secret`, `refresh_token`), of unknown
+    /// keys (rejected, but logged before validation), and of keys that are constant
+    /// expressions rather than literals are hidden.
+    static constexpr std::string_view plain_keys[]
+        = {"project", "dataset", "table", "client_id", "billing_project", "base_url", "token_url"};
+
+    /// The positional arguments fill these slots in this order, exactly as
+    /// `BigQueryConfiguration::fromArguments` does; a slot already claimed by a `key = value`
+    /// argument makes the query invalid, but it is logged before validation rejects it.
+    static constexpr std::string_view positional_slots[] = {"project", "dataset", "table", "access_token"};
+
+    const size_t start = finder.isNamedCollectionName(0) ? 1 : 0;
+
+    /// The first pass reads the keys: a positional argument is only non-secret when the slot it
+    /// lands on is not claimed by a named argument, and the named arguments can follow it.
+    std::unordered_set<std::string_view> named_slots;
+    bool all_keys_readable = true;
+    for (size_t i = start; i < finder.function->arguments->size(); ++i)
+    {
+        const auto equals_func = finder.function->arguments->at(i)->getFunction();
+        if (!equals_func || equals_func->name() != "equals")
+            continue;
+
+        String key;
+        if (equals_func->arguments && equals_func->arguments->size() == 2
+            && FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals_func->arguments->at(0), &key))
+        {
+            const auto * slot = std::find(std::begin(positional_slots), std::end(positional_slots), key);
+            if (slot != std::end(positional_slots))
+                named_slots.emplace(*slot);
+        }
+        else
+        {
+            /// A key we cannot read may claim any slot, so no positional argument can be trusted.
+            all_keys_readable = false;
+        }
+    }
+
+    size_t num_positional = 0;
+    for (size_t i = start; i < finder.function->arguments->size(); ++i)
+    {
+        const auto equals_func = finder.function->arguments->at(i)->getFunction();
+        if (equals_func && equals_func->name() == "equals")
+        {
+            String key;
+            if (equals_func->arguments && equals_func->arguments->size() == 2
+                && FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals_func->arguments->at(0), &key))
+            {
+                if (std::find(std::begin(plain_keys), std::end(plain_keys), key) == std::end(plain_keys))
+                    finder.markSecretArgument(i, /* argument_is_named= */ true);
+            }
+            else
+            {
+                /// A key we cannot read (e.g. `concat('access', '_token') = '...'`) may name a
+                /// credential, and echoing the key expression is not safe either.
+                finder.markSecretArgument(i);
+            }
+        }
+        else
+        {
+            const size_t slot_index = num_positional;
+            ++num_positional;
+            /// Only the positional arguments landing on the free 'project', 'dataset' and 'table'
+            /// slots are not secret: the 4th slot is the access token, and anything past it - a
+            /// positional argument after a named collection, a 5th positional, or one whose slot
+            /// is already taken by a `key = value` argument - is invalid, but the query is logged
+            /// before validation rejects it.
+            if (start == 1 || !all_keys_readable || slot_index >= 3 || named_slots.contains(positional_slots[slot_index]))
+                finder.markSecretArgument(i);
+        }
+    }
+}
+
+}
+
+SecretArgumentsSpec bigQuerySecretArguments()
+{
+    /// Accepts positional arguments after named ones and models their slots itself.
+    return {.custom = findBigQuerySecretArguments, .custom_reads_named_arguments = true};
+}
+
 void registerStorageBigQuery(StorageFactory & factory);
 void registerStorageBigQuery(StorageFactory & factory)
 {
@@ -659,6 +758,7 @@ void registerStorageBigQuery(StorageFactory & factory)
             return std::make_shared<StorageBigQuery>(
                 args.table_id, std::move(configuration), args.columns, args.constraints, args.comment, args.getLocalContext());
         },
+        bigQuerySecretArguments(),
         {
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::BIGQUERY,
@@ -683,7 +783,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
 ```
 
-The column list is optional: when omitted, the structure is inferred from the BigQuery table schema. When specified, the columns can be a subset of the BigQuery columns, and each column must be declared with the exact type the BigQuery schema maps to (see the [data type mapping](/reference/functions/table-functions/bigquery#data-type-mapping)). A table whose definition omits a `REQUIRED` BigQuery field without a default value expression can be read but not written to: BigQuery streaming inserts reject rows that omit such a field, so such an `INSERT` is rejected up front. When the omitted `REQUIRED` field declares a `defaultValueExpression`, BigQuery fills the default in and the table stays writable. A `NULLABLE` `RECORD` is mapped to `Nullable(Tuple(...))` so `NULL` records round-trip losslessly; creating such a table (whether the structure is inferred or declared explicitly) requires the `enable_nullable_tuple_type` setting, as for any `Nullable(Tuple)` column. When declaring columns explicitly, a `RECORD` field may instead be declared as a plain `Tuple(...)` to avoid the setting, at the cost of coercing a whole-record `NULL` to a default tuple; the only accepted difference from the inferred type is dropping a `Nullable` that wraps a `RECORD`'s `Tuple`, and only at that same record — the nullability cannot be moved to a different (inner or outer) record.
+The column list is optional: when omitted, the structure is inferred from the BigQuery table schema. When specified, the columns can be a subset of the BigQuery columns, and each column must be declared with the exact type the BigQuery schema maps to (see the [data type mapping](/reference/functions/table-functions/bigquery#data-type-mapping)). A table whose definition omits a `REQUIRED` BigQuery field without a default value expression can be read but not written to: BigQuery streaming inserts reject rows that omit such a field, so such an `INSERT` is rejected up front. When the omitted `REQUIRED` field declares a `defaultValueExpression`, BigQuery fills the default in and the table stays writable. A `NULLABLE` `RECORD` is mapped to `Nullable(Tuple(...))` so `NULL` records round-trip losslessly. When declaring columns explicitly, a `RECORD` field may instead be declared as a plain `Tuple(...)`, at the cost of coercing a whole-record `NULL` to a default tuple; the only accepted difference from the inferred type is dropping a `Nullable` that wraps a `RECORD`'s `Tuple`, and only at that same record — the nullability cannot be moved to a different (inner or outer) record.
 
 **Engine parameters**
 

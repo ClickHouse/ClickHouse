@@ -21,7 +21,7 @@ You can insert data from S3 into ClickHouse and also use S3 as an export destina
 The `s3` table function allows you to read and write files from and to S3 compatible storage. The outline for this syntax is:
 
 ```sql
-s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
+s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
 ```
 
 where:
@@ -29,7 +29,7 @@ where:
 * path — Bucket URL with a path to the file. This supports following wildcards in read-only mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` are numbers, `'abc'`, `'def'` are strings. For more information, see the docs on [using wildcards in path](/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * format — The [format](/reference/formats/index#formats-overview) of the file.
 * structure — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-* compression — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension.
+* compression — Parameter is optional. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 
 Using wildcards in the path expression allow multiple files to be referenced and opens the door for parallelism.
 
@@ -38,13 +38,13 @@ Using wildcards in the path expression allow multiple files to be referenced and
 Prior to creating the table in ClickHouse, you may want to first take a closer look at the data in the S3 bucket. You can do this directly from ClickHouse using the `DESCRIBE` statement:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
 ```
 
 The output of the `DESCRIBE TABLE` statement should show you how ClickHouse would automatically infer this data, as viewed in the S3 bucket. Notice that it also automatically recognizes and decompresses the gzip compression format:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
 ```
 
 ```response
@@ -163,7 +163,7 @@ We can query S3 data as a source without requiring persistence in ClickHouse.  I
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 10;
 ```
 
@@ -173,7 +173,7 @@ Queries additionally support [virtual columns](/reference/functions/table-functi
 
 ```sql
 SELECT  _path, _file, trip_id
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', NOSIGN, 'TabSeparatedWithNames')
 LIMIT 5;
 ```
 
@@ -191,7 +191,7 @@ Confirm the number of rows in this sample dataset. Note the use of wildcards for
 
 ```sql
 SELECT count() AS count
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
 ```
 
 ```response
@@ -207,7 +207,7 @@ While useful for sampling data and executing ae-hoc, exploratory queries, readin
 The `clickhouse-local` program enables you to perform fast processing on local files without deploying and configuring the ClickHouse server. Any queries using the `s3` table function can be performed with this utility. For example:
 
 ```sql
-clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 ### Inserting Data from S3 {#inserting-data-from-s3}
@@ -218,7 +218,7 @@ We combine our `s3` function with a simple `INSERT` statement to achieve this. N
 ```sql
 INSERT INTO trips
    SELECT *
-   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
    LIMIT 1000000;
 ```
 
@@ -227,7 +227,7 @@ INSERT INTO trips
 If network security policies prevent your ClickHouse cluster from making outbound connections, you can potentially insert S3 data using `clickhouse-local`. In the example below, we read from an S3 bucket and insert into ClickHouse using the `remote` function:
 
 ```sql
-clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <Note>
@@ -300,7 +300,7 @@ The node which receives the query, known as the initiator, creates a connection 
 The `s3Cluster` function takes the same format as the single node variants, except that a target cluster is required to denote the worker nodes:
 
 ```sql
-s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+s3Cluster(cluster_name, source, [NOSIGN | access_key_id, secret_access_key,] format, structure)
 ```
 
 * `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
@@ -319,6 +319,7 @@ INSERT INTO default.trips_all
    FROM s3Cluster(
        'events',
        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz',
+       NOSIGN,
        'TabSeparatedWithNames'
     )
 ```
@@ -331,14 +332,14 @@ While the `s3` functions allow ad-hoc queries to be performed on data stored in 
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
-    ENGINE = S3(path, [aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS ...]
 ```
 
 * `path` — Bucket URL with a path to the file. Supports following wildcards in read-only mode: `*`, `?`, `{abc,def}` and `{N..M}` where N, M — numbers, 'abc', 'def' — strings. For more information, see [here](/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `format` — The[ format](/reference/formats/index#formats-overview) of the file.
 * `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the AWS account user. You can use these to authenticate your requests. The parameter is optional. If credentials aren't specified, configuration file values are used. For more information, see [Managing credentials](#managing-credentials).
-* `compression` — Compression type. Supported values: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. The parameter is optional. By default, it will autodetect compression by file extension.
+* `compression` — Compression type. Supported values: none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. The parameter is optional. By default, it will autodetect compression by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 
 ### Reading data {#reading-data}
 
@@ -392,7 +393,7 @@ CREATE TABLE trips_raw
    `dropoff_ntacode`       FixedString(4),
    `dropoff_ntaname`       String,
    `dropoff_puma`          UInt16
-) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', 'TabSeparatedWithNames', 'gzip');
+) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', NOSIGN, 'TabSeparatedWithNames', 'gzip');
 ```
 
 Notice the use of the `{0..9}` pattern to limit to the first ten files. Once created, we can query this table like any other table:
@@ -629,7 +630,7 @@ SETTINGS storage_policy='s3_main'
 ```
 
 ```sql
-INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
 Depending on the hardware, this latter insert of 1m rows may take a few minutes to execute. You can confirm the progress via the system.processes table. Feel free to adjust the row count up to the limit of 10m and explore some sample queries.
@@ -1166,7 +1167,7 @@ These tests will verify that data is being replicated across the two servers, an
          tip_amount,
          total_amount,
          payment_type
-     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
   ```
 - Verify that data is stored in S3.
 

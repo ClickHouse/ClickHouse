@@ -1,13 +1,13 @@
 ---
-sidebarTitle: '网络'
-description: 'ClickPipes 的网络配置选项。'
-slug: /integrations/clickpipes/networking
-title: '网络'
-doc_type: 'guide'
-keywords: ['clickpipes networking', 'private networking', 'reverse private endpoint', 'aws privatelink', 'gcp private service connect', 'private connectivity', 'azure privatelink']
+title: "概述"
+sidebarTitle: "概述"
+description: "ClickPipes 的网络配置选项。"
+slug: "/integrations/clickpipes/networking"
+doc_type: "guide"
+keywords: ["clickpipes networking", "private networking", "reverse private endpoint", "aws privatelink", "gcp private service connect", "private connectivity", "azure privatelink"]
 integration:
-  - support_level: 'core'
-  - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 根据上游数据源的网络配置，您可以通过以下方式连接 ClickPipes：
@@ -26,11 +26,11 @@ integration:
 
 是否支持 RPE 取决于托管数据源的云提供商和区域：
 
-| 提供商                                                                         | 支持情况 | 说明                                                                                                                         |
-| --------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------- |
-| [AWS PrivateLink](/zh/integrations/clickpipes/networking/aws-privatelink)      | 是    | 适用于托管在 AWS 上的数据源。可通过 VPC endpoint service 配置跨区域连接。                                                                         |
-| [GCP Private Service Connect](/zh/integrations/clickpipes/networking/gcp-psc)  | 是    | 适用于托管在 GCP 上的 `AlloyDB` 数据源。尚不支持通过 Global Access 实现跨区域连接；如需访问位于不受支持 GCP 区域中的私有 `AlloyDB` 数据源，请使用 [SSH 隧道](#ssh-tunneling)。 |
-| [Azure Private Link](/zh/integrations/clickpipes/networking/azure-privatelink) | 否    | 请使用 [SSH 隧道](#ssh-tunneling) 访问私有 Azure 数据源。                                                                               |
+| 提供商                                                                         | 支持情况 | 说明                                                                                                                                     |
+| --------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| [AWS PrivateLink](/zh/integrations/clickpipes/networking/aws-privatelink)      | 是    | 适用于托管在 AWS 上的数据源。可通过 VPC endpoint service 配置跨区域连接。                                                                                     |
+| [GCP Private Service Connect](/zh/integrations/clickpipes/networking/gcp-psc)  | 是    | 适用于托管在 GCP 上的数据源。可通过[全局访问](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)配置跨区域连接。 |
+| [Azure Private Link](/zh/integrations/clickpipes/networking/azure-privatelink) | 否    | 请使用 [SSH 隧道](#ssh-tunneling) 访问私有 Azure 数据源。                                                                                           |
 
 <div id="ssh-tunneling">
   ## SSH 隧道
@@ -42,4 +42,4 @@ integration:
 
 * 数据源托管在 Azure 上。
 * 数据源与 ClickPipes 托管在不同的云提供商或区域，且无法通过[托管专用终结点](#managed-private-endpoints)实现跨区域连接。
-* 无法使用[托管专用终结点](#managed-private-endpoints)，例如只能通过堡垒机访问的本地部署。
+* 无法使用[托管专用终结点](#managed-private-endpoints)，&#95;例如&#95;只能通过堡垒机访问的本地部署。

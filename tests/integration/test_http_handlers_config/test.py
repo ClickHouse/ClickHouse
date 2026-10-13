@@ -129,7 +129,9 @@ def test_dynamic_handler_put_delete_still_readonly():
     # matching such a rule must still force readonly, so a user-supplied modifying query is rejected.
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__, "test_dynamic_handler_put_delete_still_readonly"),
+            ClickHouseCluster(
+                __file__, "test_dynamic_handler_put_delete_still_readonly"
+            ),
             "dynamic_handler",
             "test_dynamic_handler",
         )
@@ -142,7 +144,8 @@ def test_dynamic_handler_put_delete_still_readonly():
         for method in ("PUT", "DELETE"):
             # A read-only query is allowed over PUT/DELETE for a config handler (nothing to force).
             res_select = cluster.instance.http_request(
-                "test_dynamic_handler_put_delete?get_dynamic_handler_query=" + select_query,
+                "test_dynamic_handler_put_delete?get_dynamic_handler_query="
+                + select_query,
                 method=method,
             )
             assert 200 == res_select.status_code, method
@@ -155,7 +158,9 @@ def test_dynamic_handler_put_delete_still_readonly():
                 method=method,
             )
             assert 200 != res_modify.status_code, method
-            assert "Cannot execute query in readonly mode" in res_modify.content.decode(), method
+            assert (
+                "Cannot execute query in readonly mode" in res_modify.content.decode()
+            ), method
 
 
 def test_predefined_query_handler():
@@ -249,6 +254,66 @@ def test_predefined_query_handler():
         )
         assert res_settings.status_code == 200
         assert b"5\n" == res_settings.content
+
+        # A configuration-defined predefined handler executes server-owned query text. Request settings must not
+        # lower the limits needed to parse that text. The stored query's nesting is kept modest on purpose: it is
+        # parsed while the server starts, where a query deep enough to exceed the default limit of 1000 exhausts
+        # the thread stack of a sanitizer build (`checkStackSize` fires long before the depth limit under TSan),
+        # taking the whole server down instead of testing anything about handlers.
+        for setting, value in (
+            ("max_parser_depth", "1"),
+            ("max_query_size", "10"),
+        ):
+            response = cluster.instance.http_request(
+                f"test_predefined_handler_request_parser_limits?{setting}={value}",
+                method="GET",
+            )
+            assert response.status_code == 200, response.content
+            assert response.content == b"1\n"
+
+        # This query shape exceeds a low backtracking limit, unlike the deeply parenthesized query above.
+        response = cluster.instance.http_request(
+            "test_predefined_handler_request_parser_backtracks?max_parser_backtracks=1",
+            method="GET",
+        )
+        assert response.status_code == 200, response.content
+        assert response.content == b"1\n"
+
+        # The stored query is parsed without limits, but request-controlled construction settings still use the
+        # caller's limits. Otherwise a predefined handler could let a request bypass parser restrictions.
+        response = cluster.instance.http_request(
+            "test_predefined_handler_request_parser_limits?max_parser_depth=1&filter=(((((1)))))",
+            method="GET",
+        )
+        assert response.status_code == 500
+        assert b"Maximum parse depth" in response.content
+
+        # The stored query is server-owned, so it is parsed as ClickHouse SQL whatever `dialect` the request
+        # names. A request that switches the dialect would otherwise feed the stored `SELECT ...` to the PRQL,
+        # KQL, PromQL, polyglot or JSON parser and make the handler uninvokable.
+        for dialect_params in (
+            "dialect=prql",
+            "dialect=kusto",
+            "dialect=promql",
+            "dialect=polyglot",
+            "dialect=clickhouse_json",
+            "dialect=clickhouse_json&enable_json_ast_dialect=1",
+        ):
+            response = cluster.instance.http_request(
+                f"test_predefined_handler_request_parser_limits?{dialect_params}",
+                method="GET",
+            )
+            assert response.status_code == 200, (dialect_params, response.content)
+            assert response.content == b"1\n", (dialect_params, response.content)
+
+        # The handler is parsed while the server starts and when its configuration is reloaded. Both paths
+        # must keep accepting it.
+        cluster.instance.query("SYSTEM RELOAD CONFIG")
+        response = cluster.instance.http_request(
+            "test_predefined_handler_request_parser_limits", method="GET"
+        )
+        assert response.status_code == 200, response.content
+        assert response.content == b"1\n"
 
         assert (
             cluster.instance.http_request("test_predefined_handler_auth_with_password")
@@ -641,7 +706,9 @@ def test_defaults_http_handlers_config_order():
 
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__, "test_defaults_http_handlers_config_order_first"),
+            ClickHouseCluster(
+                __file__, "test_defaults_http_handlers_config_order_first"
+            ),
             "defaults_handlers_config_order_first",
             "test_defaults_handlers_config_order/defaults_first",
         )
@@ -650,7 +717,9 @@ def test_defaults_http_handlers_config_order():
 
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__, "test_defaults_http_handlers_config_order_last"),
+            ClickHouseCluster(
+                __file__, "test_defaults_http_handlers_config_order_last"
+            ),
             "defaults_handlers_config_order_first",
             "test_defaults_handlers_config_order/defaults_last",
         )
@@ -746,14 +815,25 @@ def test_replicas_status_handler():
 
 def test_headers_in_response():
     with contextlib.closing(
-            SimpleCluster(
-                ClickHouseCluster(__file__, "test_headers_in_response"),
-                "headers_in_response",
-                "test_headers_in_response",
-            )
+        SimpleCluster(
+            ClickHouseCluster(__file__, "test_headers_in_response"),
+            "headers_in_response",
+            "test_headers_in_response",
+        )
     ) as cluster:
-        for endpoint in ("static", "ping", "replicas_status", "play", "dashboard", "binary", "merges", "metrics",
-                         "js/lz-string.js", "js/uplot.js", "?query=SELECT%201"):
+        for endpoint in (
+            "static",
+            "ping",
+            "replicas_status",
+            "play",
+            "dashboard",
+            "binary",
+            "merges",
+            "metrics",
+            "js/lz-string.js",
+            "js/uplot.js",
+            "?query=SELECT%201",
+        ):
             response = cluster.instance.http_request(endpoint, method="GET")
 
             assert "X-My-Answer" in response.headers
@@ -766,12 +846,14 @@ def test_headers_in_response():
             else:
                 assert response.headers["X-My-Answer"] == f"Iam {endpoint}"
 
-
         # Handle predefined_query_handler separately because we need to pass headers there
         response_predefined = cluster.instance.http_request(
-            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
+            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"}
+        )
         assert response_predefined.headers["X-My-Answer"] == "Iam predefined"
-        assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
+        assert (
+            response_predefined.headers["X-My-Common-Header"] == "Common header present"
+        )
 
 
 def test_common_headers_without_per_handler():
@@ -779,26 +861,31 @@ def test_common_headers_without_per_handler():
     dynamic_query_handler and predefined_query_handler even when those handlers
     have no per-handler http_response_headers configured."""
     with contextlib.closing(
-            SimpleCluster(
-                ClickHouseCluster(__file__, "test_common_headers_without_per_handler"),
-                "common_headers_no_per_handler",
-                "test_common_headers_without_per_handler",
-            )
+        SimpleCluster(
+            ClickHouseCluster(__file__, "test_common_headers_without_per_handler"),
+            "common_headers_no_per_handler",
+            "test_common_headers_without_per_handler",
+        )
     ) as cluster:
         # dynamic_query_handler without per-handler headers
         response = cluster.instance.http_request("?query=SELECT%201", method="GET")
         assert response.status_code == 200
-        assert "X-My-Common-Header" in response.headers, \
-            "common_http_response_headers missing from dynamic_query_handler without per-handler headers"
+        assert (
+            "X-My-Common-Header" in response.headers
+        ), "common_http_response_headers missing from dynamic_query_handler without per-handler headers"
         assert response.headers["X-My-Common-Header"] == "Common header present"
 
         # predefined_query_handler without per-handler headers
         response_predefined = cluster.instance.http_request(
-            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
+            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"}
+        )
         assert response_predefined.status_code == 200
-        assert "X-My-Common-Header" in response_predefined.headers, \
-            "common_http_response_headers missing from predefined_query_handler without per-handler headers"
-        assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
+        assert (
+            "X-My-Common-Header" in response_predefined.headers
+        ), "common_http_response_headers missing from predefined_query_handler without per-handler headers"
+        assert (
+            response_predefined.headers["X-My-Common-Header"] == "Common header present"
+        )
 
 
 def test_redirect_handler():
@@ -809,8 +896,11 @@ def test_redirect_handler():
             "test_redirect_handler",
         )
     ) as cluster:
+
         def get(uri, *args, **kwargs):
-            return cluster.instance.http_request(uri, method="GET", allow_redirects=False, *args, **kwargs)
+            return cluster.instance.http_request(
+                uri, method="GET", allow_redirects=False, *args, **kwargs
+            )
 
         req = get("")
         assert req.status_code == 302
@@ -858,7 +948,9 @@ def test_predefined_handler_whitespace():
 
         # Prepare RowBinary data: a row with id=1 and value='test'
         # RowBinary format: UInt64 (8 bytes little-endian) + String (varint length + bytes)
-        row_data = struct.pack("<Q", 1) + b"\x04test"  # 1 as UInt64 + "test" with length prefix
+        row_data = (
+            struct.pack("<Q", 1) + b"\x04test"
+        )  # 1 as UInt64 + "test" with length prefix
 
         # POST RowBinary data to the predefined handler
         # The handler has a query with leading/trailing whitespace in the config XML.
@@ -885,6 +977,7 @@ def test_url_prefix_handler():
             "test_url_prefix_handler",
         )
     ) as cluster:
+
         def get(path):
             return cluster.instance.http_request(path, method="GET")
 
@@ -922,6 +1015,7 @@ def test_url_regexp_handler():
             "test_url_regexp_handler",
         )
     ) as cluster:
+
         def get(path):
             return cluster.instance.http_request(path, method="GET")
 
@@ -955,6 +1049,7 @@ def test_headers_regexp_handler():
             "test_headers_regexp_handler",
         )
     ) as cluster:
+
         def get(headers):
             return cluster.instance.http_request(
                 "test_headers_regex", method="GET", headers=headers

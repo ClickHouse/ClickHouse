@@ -3,7 +3,9 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
@@ -12,6 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -76,13 +79,9 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
 /// `LowCardinality` - so the delegated `convertFieldToType` sees what it would for a genuine value of
 /// `from`. Verified by `gtest_convert_column_to_type`.
 ///
-/// Not handled: `Bool` under `Variant` (and thus `Dynamic`/`JSON`). `ColumnVariant::get` erases the
-/// active alternative to the nested column's field, and for an ambiguous variant (e.g.
-/// `Variant(Bool, UInt8)`) the reconstructed `Field` no longer says which alternative was active, so it
-/// cannot be recovered structurally here - a `ColumnVariant`-aware path before `get` would be needed.
-/// See the header for why this is acceptable (no caller needs it; the legacy `Field` path has the same
-/// limitation). Other tag-sensitive types (IPv4/IPv6/UUID/Decimal) have dedicated columns/`Field` types
-/// and round-trip through `get` already.
+/// A `Bool` under `Variant`/`Dynamic` is reached as well, because the callers resolve the active
+/// alternative with `resolveActiveAlternativeType` and pass its type here. Other tag-sensitive types
+/// (IPv4/IPv6/UUID/Decimal) have dedicated columns/`Field` types and round-trip through `get` already.
 void retagBoolInField(Field & field, const DataTypePtr & type)
 {
     if (field.isNull())
@@ -127,6 +126,32 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
     }
 }
 
+/// The type of the alternative that row 0 of a `Variant`/`Dynamic` column occupies, else `from`. A
+/// genuine value of such a constant has that type rather than the carrier's - the carrier only records
+/// which alternative it is - and `convertFieldToType` keys its conversions on the source type (an `Enum`
+/// renders as its name, a `Bool` as `'true'`/`'false'`), while `IColumn::get` returns the nested value
+/// alone. One layer is enough: an alternative may not itself be a `Variant` or a `Dynamic`. A `NULL` row
+/// has no alternative, and the callers own the `NULL` contract.
+DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePtr & from)
+{
+    if (const auto * dynamic_column = checkAndGetColumn<ColumnDynamic>(&value))
+    {
+        if (DataTypePtr alternative = dynamic_column->getTypeAt(0))
+            return alternative;
+    }
+    else if (const auto * variant_column = checkAndGetColumn<ColumnVariant>(&value))
+    {
+        /// `ColumnVariant` does not store the alternatives' types, so they are named by `from`. The bound
+        /// also rejects `NULL_DISCRIMINATOR`, which is above every valid alternative index.
+        const auto discriminator = variant_column->globalDiscriminatorAt(0);
+        const auto * variant_type = typeid_cast<const DataTypeVariant *>(from.get());
+        if (variant_type && discriminator < variant_type->getVariants().size())
+            return variant_type->getVariant(discriminator);
+    }
+
+    return from;
+}
+
 }
 
 ColumnPtr convertColumnToTypeOrNull(
@@ -152,11 +177,12 @@ ColumnPtr convertColumnToTypeOrNull(
     /// fast paths above shrink this over time; the differential test pins equivalence.
     Field field;
     unwrapped.get(0, field);
-    /// `get` does not round-trip the `Bool` tag (see `retagBoolInField`); restore it so the delegated
-    /// `convertFieldToType` behaves as it would for a genuine value of `from`.
-    retagBoolInField(field, from);
+    /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
+    /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
+    const DataTypePtr source = resolveActiveAlternativeType(unwrapped, from);
+    retagBoolInField(field, source);
 
-    const Field converted = convertFieldToType(field, *to, from.get(), format_settings, strict, convert_inexact_floats);
+    const Field converted = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);
 
     if (converted.isNull())
     {
@@ -217,10 +243,12 @@ ColumnPtr convertColumnToTypeOrThrow(
         /// Reproduce `convertFieldToTypeOrThrow`'s diagnostic (which names the offending value and the
         /// types) instead of a generic message - materializing a `Field` only on this exceptional path;
         /// the happy path in `convertColumnToTypeOrNull` stays `Field`-free.
+        const ColumnPtr full = value.convertToFullColumnIfConst();
         Field field;
-        value.convertToFullColumnIfConst()->get(0, field);
-        retagBoolInField(field, from);
-        convertFieldToTypeOrThrow(field, *to, from.get(), format_settings, convert_inexact_floats);
+        full->get(0, field);
+        const DataTypePtr source = resolveActiveAlternativeType(*full, from);
+        retagBoolInField(field, source);
+        convertFieldToTypeOrThrow(field, *to, source.get(), format_settings, convert_inexact_floats);
 
         /// `convertFieldToTypeOrThrow` must have thrown for a value that `convertColumnToTypeOrNull`
         /// reported as not representable; guard in case the two ever disagree.

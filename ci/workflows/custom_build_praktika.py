@@ -5,6 +5,7 @@ from praktika import Job, Workflow
 workflow = Workflow.Config(
     name="Build Praktika for PyPI",
     event=Workflow.Event.DISPATCH,
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         Job.Config(
             name="Build Praktika",

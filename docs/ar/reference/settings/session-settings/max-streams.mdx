@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويجري توليدها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_streams_for_files_processing_in_cluster_functions">
-  ## max_streams_for_files_processing_in_cluster_functions
-</div>
+## max_streams_for_files_processing_in_cluster_functions {#max_streams_for_files_processing_in_cluster_functions}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,27 +21,21 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا لم تكن القيمة صفراً، فسيتم تقييد عدد خيوط التنفيذ التي تقرأ البيانات من الملفات في *دوال الجدول Cluster*.
 
-<div id="max_streams_for_merge_tree_reading">
-  ## max_streams_for_merge_tree_reading
-</div>
+## max_streams_for_merge_tree_reading {#max_streams_for_merge_tree_reading}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 إذا لم تكن القيمة صفراً، فسيُحدَّد عدد تدفقات القراءة لجدول MergeTree.
 
-<div id="max_streams_for_union_step">
-  ## max_streams_for_union_step
-</div>
+## max_streams_for_union_step {#max_streams_for_union_step}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد لتقييد عدد تدفقات البيانات النشطة بالتزامن في خطوة UNION لتقليل ذروة استخدام الذاكرة."}]}]} />
 
-يقيّد عدد تدفقات البيانات النشطة بالتزامن في خطوة `UNION` (وينطبق ذلك على كلٍّ من `UNION ALL` و`UNION DISTINCT`، لأن `UNION DISTINCT` يُنفَّذ عبر خطوة `UNION ALL` تليها خطوة `DISTINCT`). عندما يحتوي استعلام `UNION` على عدد كبير من الاستعلامات الفرعية، فإنها تفتح جميعًا مخازن القراءة المؤقتة الخاصة بها في الوقت نفسه، مما يؤدي إلى استهلاك ذاكرة يتناسب مع عدد الاستعلامات الفرعية. يُدرج هذا الإعداد معالجات `Concat` لتضييق خط الأنابيب بحيث لا يكون هناك أكثر من هذا العدد من التدفقات النشطة في الوقت نفسه، مما يقلل ذروة الذاكرة بشكل كبير. والحد الفعلي هو القيمة الصغرى بين هذه القيمة و`max_threads * max_streams_for_union_step_to_max_threads_ratio` (إذا كانت أيٌّ منهما تساوي 0 فهذا يعني تجاهلها). وعندما تكون كلتاهما 0، لا يُطبَّق أي تضييق. كذلك لا يُطبَّق هذا الحد عندما تتطلب خطة الاستعلام أن يظل كل تدفق خرج من `UNION` مرتَّبًا بصورة مستقلة (على سبيل المثال، عند تطبيق تحسين read-in-order عبر `UNION`)؛ ففي هذه الحالة تكون صحة الترتيب هي الأولوية ويُتجاوز التضييق.
+يقيّد عدد تدفقات البيانات النشطة بالتزامن في خطوة `UNION` (وينطبق ذلك على `UNION ALL`، وعلى `UNION DISTINCT` لأنه يُنفَّذ عبر خطوة `UNION ALL` تليها خطوة `DISTINCT`، وعلى القراءة من جدول `Merge` مع النسخ المتماثلة المتوازية القائمة على الخطة، والتي تُوسَّع إلى اتحاد للقراءات من الجداول الأساسية التابعة له). عندما يحتوي استعلام `UNION` على عدد كبير من الاستعلامات الفرعية، فإنها تفتح جميعًا مخازن القراءة المؤقتة الخاصة بها في الوقت نفسه، مما يؤدي إلى استهلاك ذاكرة يتناسب مع عدد الاستعلامات الفرعية. يُدرج هذا الإعداد معالجات `Concat` لتضييق خط الأنابيب بحيث لا يكون هناك أكثر من هذا العدد من التدفقات النشطة في الوقت نفسه، مما يقلل ذروة الذاكرة بشكل كبير. والحد الفعلي هو القيمة الصغرى بين هذه القيمة و`max_threads * max_streams_for_union_step_to_max_threads_ratio` (إذا كانت أيٌّ منهما تساوي 0 فهذا يعني تجاهلها). وعندما تكون كلتاهما 0، لا يُطبَّق أي تضييق. كذلك لا يُطبَّق هذا الحد عندما تتطلب خطة الاستعلام أن يظل كل تدفق خرج من `UNION` مرتَّبًا بصورة مستقلة (على سبيل المثال، عند تطبيق تحسين read-in-order عبر `UNION`)؛ ففي هذه الحالة تكون صحة الترتيب هي الأولوية ويُتجاوز التضييق.
 
-<div id="max_streams_for_union_step_to_max_threads_ratio">
-  ## max_streams_for_union_step_to_max_threads_ratio
-</div>
+## max_streams_for_union_step_to_max_threads_ratio {#max_streams_for_union_step_to_max_threads_ratio}
 
 <SettingsInfoBlock type="Float" default_value="8" />
 
@@ -51,17 +43,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 تحدّد هذه النسبة، عند ضربها في `max_threads`، حدًا أقصى لعدد التدفقات النشطة بالتزامن في خطوة `UNION` (وينطبق ذلك على كلٍّ من `UNION ALL` و`UNION DISTINCT`). والحد الفعلي هو أصغر قيمة بين هذه القيمة المحسوبة و`max_streams_for_union_step` (وإذا كانت قيمة أيٍّ منهما 0، فسيتم تجاهلها). على سبيل المثال، إذا كان `max_threads = 8` وتم ضبط هذه النسبة على 1، فسيكون الحد الأقصى لعدد التدفقات النشطة 8. اضبطها على 0 لتعطيل هذا الحد المستند إلى النسبة. وكما هو الحال مع `max_streams_for_union_step`، لا يُطبَّق هذا الحد عندما تتطلب خطة الاستعلام أن يظل كل تدفق خرج من `UNION` مرتبًا على حدة.
 
-<div id="max_streams_multiplier_for_merge_tables">
-  ## max_streams_multiplier_for_merge_tables
-</div>
+## max_streams_multiplier_for_merge_tables {#max_streams_multiplier_for_merge_tables}
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
-اطلب عددًا أكبر من التدفقات عند القراءة من Merge table. ستُوزَّع التدفقات عبر الجداول التي يستخدمها Merge table. يتيح ذلك توزيع العمل بشكل أكثر توازنًا عبر خيوط التنفيذ، ويكون مفيدًا بشكل خاص عندما تختلف هذه الجداول في الحجم.
+اطلب عددًا أكبر من التدفقات عند القراءة من جدول Merge. ستُوزَّع التدفقات عبر الجداول التي يستخدمها جدول Merge. يتيح ذلك توزيع العمل بشكل أكثر توازنًا عبر خيوط التنفيذ، ويكون مفيدًا بشكل خاص عندما تختلف هذه الجداول في الحجم.
 
-<div id="max_streams_to_max_threads_ratio">
-  ## max_streams_to_max_threads_ratio
-</div>
+كما يَحُدّ هذا المُضاعِف أيضًا عدد التدفقات التي تقرأ في الوقت نفسه — باستثناء القراءة من جدول `Merge` باستخدام النسخ المتماثلة المتوازية القائمة على الخطة ([parallel&#95;replicas&#95;allow&#95;merge&#95;tables](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_merge_tables))، إذ تُوسَّع إلى اتحاد من القراءات من الجداول الأساسية، ومن ثمّ يحدّها [max&#95;streams&#95;for&#95;union&#95;step](/ar/reference/settings/session-settings/max-streams#max_streams_for_union_step)، شأنها شأن أي اتحاد آخر.
+
+## max_streams_to_max_threads_ratio {#max_streams_to_max_threads_ratio}
 
 <SettingsInfoBlock type="Float" default_value="1" />
 

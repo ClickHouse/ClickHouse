@@ -1,0 +1,141 @@
+---
+description: 'Documentación sobre cómo ordenar, filtrar y paginar un resultado en la Web SQL UI integrada (`/play`)'
+sidebarTitle: 'Configuración de resultados en la Web UI'
+slug: /interfaces/web-ui-result-shaping
+title: 'Ordenación, filtrado y paginación en la Web UI'
+doc_type: 'reference'
+sidebar: false
+---
+
+La Web SQL UI integrada (`play.html`, disponible en la ruta [`/play`](/es/concepts/features/interfaces/http) de cualquier puerto HTTP de ClickHouse) puede ordenar un resultado por sus columnas, filtrarlo por sus valores y recorrerlo por páginas, todo ello sin editar la consulta.
+
+Nada de esto ocurre en el navegador. Cada cambio vuelve a ejecutar la consulta con la configuración de construcción de consultas correspondiente, que el servidor materializa envolviendo la consulta en una tabla derivada con `ORDER BY`, `WHERE` y `LIMIT` externos. Por tanto, el resultado que se muestra en pantalla es el resultado ordenado, filtrado y paginado de toda la consulta, no una reorganización de las filas que la página contenía casualmente.
+
+<div id="sorting">
+  ## Ordenación
+</div>
+
+A la derecha del encabezado de cada columna aparecen dos flechas: ▲ ordena el resultado por esa columna de forma ascendente y ▼ de forma descendente. Al hacer clic en una flecha, se activa esa ordenación y se vuelve a ejecutar la consulta; al hacer clic en la flecha de la dirección ya activa, se desactiva, y al hacer clic en la flecha de la otra dirección, se cambia a ella. Las flechas son botones reales, por lo que los usuarios de teclado pueden acceder a ellas con la tecla Tab y activarlas con el teclado, y cada una expone su estado a las tecnologías de asistencia (el encabezado incluye `aria-sort`).
+
+En dispositivos con un puntero que permite pasar el cursor por encima (un ratón), las flechas solo se muestran al pasar el cursor sobre el encabezado o cuando una flecha tiene el foco, para no estorbar en otros casos; en dispositivos táctiles y otros dispositivos con punteros poco precisos, que no permiten pasar el cursor por encima, siempre se muestran para poder pulsarlas directamente. Una columna que forma parte de la ordenación muestra ambas flechas sin necesidad de pasar el cursor por encima: una para que la ordenación se pueda interpretar de un vistazo y la otra porque invertir la dirección es la acción siguiente más probable.
+
+Todos los iconos de un encabezado de columna se interpretan del mismo modo, independientemente de la funcionalidad que controlen: aparecen atenuados mientras esa funcionalidad no esté activa en la columna y se muestran en el color reservado para los controles activos —magenta en el tema claro, amarillo en el oscuro— cuando sí lo está; asimismo, permanecen visibles sin necesidad de pasar el cursor por encima. La atenuación implica pérdida de color, nunca de transparencia, de modo que un icono nunca parece desvanecido sobre el nombre de una columna ni sobre la codificación por colores de las celdas.
+
+<div id="sorting-by-several-columns">
+  ### Ordenar por varias columnas
+</div>
+
+Al activar una ordenación, se reemplaza la actual: las columnas ordenadas previamente se desactivan y la columna seleccionada pasa a ser la única clave de ordenación. Mantén pulsada la tecla <kbd>Shift</kbd> mientras haces clic para conservar las claves de ordenación ya activas y añadir esta columna después de ellas. Este es el orden que utiliza `ORDER BY`: la primera clave decide y cada clave posterior resuelve los empates de las anteriores. Con más de una clave de ordenación, cada flecha activa también muestra como superíndice la posición de su columna en ese orden (▼¹, ▲², …).
+
+<kbd>Shift</kbd> en una columna que ya es una clave de ordenación solo cambia su dirección y conserva su posición en el orden. Al desactivar una columna, solo se elimina esa columna y las claves restantes permanecen en su lugar.
+
+<div id="filtering">
+  ## Filtrado
+</div>
+
+<div id="filtering-from-a-column-header">
+  ### Desde un encabezado de columna
+</div>
+
+En cada encabezado de columna aparece un icono de embudo, junto a las flechas de ordenación, que se muestra de la misma manera. Al hacer clic en él, se abre un campo de entrada para especificar un predicado para esa columna, con un botón Aplicar (▶) a su derecha; el texto de ejemplo indica la forma que adopta un predicado según el tipo de columna: `> 10` para un número y `LIKE '%test%'` para una cadena. El campo se abre dentro de la celda del encabezado, que añade una segunda línea para darle espacio; es la misma línea en la que se muestra el filtro una vez establecido, de modo que el filtro se edita donde se lee. Lo que se escribe es la parte que sigue al nombre de la columna, por lo que `> 10` se convierte en `WHERE column > 10`, y funciona cualquier expresión que el servidor acepte en ese contexto: `BETWEEN 1 AND 5`, `IN (1, 2, 3)`, `IS NOT NULL`, `% 2 = 0`.
+
+Al pulsar el botón Aplicar (o <kbd>Enter</kbd>), se aplica el filtro y se vuelve a ejecutar la consulta; al pulsar <kbd>Esc</kbd>, o al hacer clic o cambiar de pestaña en cualquier otro lugar, se cancela la edición y se oculta el campo. El botón Aplicar permanece inactivo mientras no haya nada que aplicar —un campo vacío en una columna sin filtro—, pero sigue activo si el campo está vacío en una columna que sí tiene un filtro, ya que vaciar el campo y aplicarlo es la forma de eliminar el filtro. Los filtros de varias columnas se combinan con `AND`.
+
+<div id="filtering-from-a-cell">
+  ### Desde una celda
+</div>
+
+Al seleccionar una celda, también aparece un icono de embudo junto al icono de copia si la columna admite filtrar por ese valor. Al hacer clic en él, se muestran las comparaciones aplicables:
+
+| Valor                                                             | Opciones disponibles                                                                                   |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Un número                                                         | `=`, `!=`, `>`, `<`, `>=`, `<=`                                                                        |
+| Una fecha o una hora (`Date`, `Date32`, `DateTime`, `DateTime64`) | `=`, `!=`, `>`, `<`, `>=`, `<=`                                                                        |
+| Una cadena de hasta 100 caracteres                                | `=`, `!=`, `contains` — una cadena vacía solo admite `=` y `!=`, ya que todas las cadenas la contienen |
+| Un `Bool`                                                         | `true`, `false` — los propios valores, en lugar de compararlos con el valor de esta celda              |
+| Un `Enum`                                                         | `=`, `!=` — una coincidencia parcial en un conjunto cerrado de nombres no resulta útil como filtro     |
+| `NULL`                                                            | `IS NULL`, `IS NOT NULL`                                                                               |
+
+Al elegir una opción, se aplica de inmediato. Una fecha, una hora o un enum se compara con el texto exacto con el que lo representó el servidor, que ClickHouse vuelve a interpretar como el tipo de la columna (en el caso de un enum, el nombre del valor). `contains` se convierte en un patrón `LIKE` en el que se escapan los caracteres `%` y `_` del valor, por lo que coincide literalmente con el valor. Una celda cuyo valor no sea ninguno de los anteriores —una matriz, una tupla, un mapa o texto largo— no ofrece ningún menú; aun así, su columna puede filtrarse desde el campo de entrada del encabezado.
+
+<div id="the-filter-in-effect">
+  ### El filtro aplicado
+</div>
+
+Una columna filtrada muestra su predicado debajo de su nombre mientras esté activo, de modo que siempre es evidente que las filas en pantalla son un subconjunto del resultado; su embudo se desplaza hacia abajo, junto a él, hasta la esquina inferior izquierda del encabezado. Al hacer clic en el predicado, se vuelve a abrir en su lugar el campo de entrada correspondiente; la ✕ situada junto a él elimina el filtro, al igual que aplicar una entrada vacía. Ambas acciones vuelven a ejecutar la consulta.
+
+Hay un filtro por columna, independientemente de su origen: al establecer un filtro desde una celda se reemplaza cualquier filtro introducido mediante el campo del encabezado, y el encabezado siempre muestra el filtro aplicado.
+
+Un resultado filtrado que no devuelve filas conserva sus encabezados de columna (en lugar del diseño vertical con el que normalmente se muestra un resultado vacío), para que el filtro que no coincidió con nada pueda verse y eliminarse de nuevo.
+
+<div id="pagination">
+  ## Paginación
+</div>
+
+Se muestra un resultado hasta un límite: 1000 filas, o menos si el resultado es muy ancho. Cuando un resultado se trunca en ese límite y hay más resultados que ver, aparece un paginador debajo de la tabla:
+
+```text
+Page: 1 2 …   Per page: 1000
+```
+
+Al hacer clic en un número de página, se establece el límite de visualización como tamaño de página y se configura esa página mediante el ajuste [`page`](/es/reference/settings/session-settings/other#page); después se vuelve a ejecutar la consulta. El servidor traduce la página al `OFFSET` correspondiente. El paginador se mantiene mientras el resultado esté paginado, aunque todas las páginas estén completas y, por tanto, ya no parezcan truncadas.
+
+No se muestra el número de páginas porque se desconoce: contar las filas del resultado requeriría ejecutar una segunda consulta. El paginador muestra las diez páginas anteriores a la actual, la actual y la siguiente, seguidas de `…`. Al hacer clic en `…`, se convierte en un campo para introducir cualquier número de página, que se aplica cuando el campo pierde el foco (pulsar <kbd>Enter</kbd> provoca esto).
+
+La página siguiente se ofrece solo mientras la actual esté completa. Una página que devuelve menos filas de las que caben en ella marca el final del resultado, por lo que no hay ninguna página posterior. (Un resultado cuya longitud sea exactamente múltiplo del tamaño de página sigue ofreciendo una página más, que vuelve vacía: distinguir ese caso también requeriría contar las filas).
+
+`Por página` muestra cuántas filas contiene una página y se edita del mismo modo: haga clic en el valor e introduzca otro. No puede superar el número de filas que el resultado puede mostrar a la vez: una página mayor devolvería filas que la tabla truncaría, y la página siguiente empezaría después de ellas, por lo que al seguir paginando se omitirían silenciosamente las filas que nunca llegaron a mostrarse; un número mayor se interpreta como ese máximo, que pasa a ser el valor mostrado. Al cambiarlo, se vuelve a la primera página, ya que las páginas con un nuevo tamaño contienen filas diferentes.
+
+Cambiar la ordenación o cualquier filtro devuelve a la primera página: ambos cambian qué filas contiene el resultado o en qué orden, por lo que la página en la que estaba el usuario ya no representa la misma porción del resultado.
+
+<div id="how-it-is-applied">
+  ## Cómo se aplica
+</div>
+
+La configuración se envía como configuración para construir consultas mediante [`order`](/es/reference/settings/session-settings/other#order), [`filter`](/es/reference/settings/session-settings/other#filter), [`limit`](/es/reference/settings/session-settings/other#limit) y [`page`](/es/reference/settings/session-settings/other#page). Como el servidor la aplica a la consulta analizada en lugar de a su texto, se integra con cualquier estructura que ya tenga la consulta: un `UNION`, una cláusula `FORMAT` final o sus propios `ORDER BY` y `LIMIT` siguen funcionando, y la consulta del editor nunca se reescribe.
+
+Los nombres de columna se pasan como identificadores entre comillas, por lo que una columna de resultados cuyo nombre sea una expresión (`count()`) o contenga un espacio puede utilizarse como clave de ordenación o filtro.
+
+<div id="when-it-is-available">
+  ## Cuándo está disponible
+</div>
+
+La configuración solo está disponible para las sentencias cuyos ajustes configuran el resultado, es decir, las consultas `SELECT` y `UNION` (incluidas las consultas que comienzan con una cláusula `WITH` o con `FROM`). No está disponible para `SHOW`, `DESCRIBE`, `EXISTS` ni `EXPLAIN`: estas producen una tabla, pero los ajustes no se aplican a ellas, por lo que un control en ese caso prometería un resultado que las filas no tienen.
+
+Una configuración se aplica al resultado de una sola sentencia, por lo que no está disponible para una ejecución de varias sentencias con «Ejecutar todo», cuyas sentencias son consultas independientes con columnas independientes.
+
+Tampoco está disponible para un resultado de como máximo una fila en su primera página: cualquier orden de una sola fila es el mismo orden, y un filtro sobre ella solo puede conservarla o descartarla, por lo que los controles no podrían hacer nada más que volver a ejecutar la consulta para obtener las mismas filas; un resultado vacío ni siquiera tiene una fila que descartar. Es la misma razón por la que los conmutadores de [codificación por colores](/es/concepts/features/interfaces/web-ui-color-coding) se ocultan en ese caso: con no más de una fila no hay nada que comparar.
+
+Dos resultados de una sola fila conservan sus controles, porque en ellos los controles son la única forma de volver atrás:
+
+* uno que ya está ordenado o filtrado, cuyo orden debe seguir siendo reversible y cuyo filtro debe poder borrarse; un filtro que coincide con una sola fila es exactamente como un resultado largo se convierte en uno corto, y quitar los controles junto con él dejaría al usuario con el filtro activado;
+* uno truncado en el límite de visualización, que es la primera página de un resultado más largo: el tamaño de página está limitado por el número de celdas que la tabla puede mostrar a la vez, por lo que un resultado muy ancho puede truncarse a una sola fila, y las filas posteriores son precisamente a las que permiten acceder la ordenación y la paginación.
+
+Una configuración pertenece a la sentencia en la que se creó. Ejecutar una sentencia distinta —tras editar la consulta o mover el cursor a otra sentencia en un editor de varias sentencias— la descarta, en lugar de aplicar un `ORDER BY` o un `WHERE` a una columna que la nueva sentencia podría no tener.
+
+También pertenece al contexto en el que se ejecutó esa sentencia: la base de datos seleccionada, el servidor y el usuario al que se envió, así como los valores de sus parámetros de consulta. El mismo texto designa columnas diferentes tras cambiar cualquiera de estos elementos —`SELECT * FROM events` después de cambiar de base de datos o `SELECT * FROM {tbl:Identifier}` después de editar el parámetro—, por lo que la configuración también se descarta en ese caso y la siguiente ejecución devuelve el resultado sin configuración.
+
+<div id="downloading-and-copying">
+  ## Descargar y copiar
+</div>
+
+Al descargar, se vuelve a ejecutar la consulta que generó el resultado con la misma configuración, por lo que el archivo exportado contiene las mismas filas en el mismo orden que el resultado mostrado en pantalla. Al copiar, se utiliza el resultado renderizado, por lo que también coincide con él.
+
+<div id="persistence">
+  ## Persistencia
+</div>
+
+La configuración se guarda en la URL de la página (`sort_columns`, `filters`, `page` y `page_size`), en el historial del navegador y en la instantánea de resultados de cada pestaña, por lo que se conserva al recargar la página, compartir el enlace o navegar hacia atrás y hacia delante. Puesto que la configuración determina las filas y no solo su presentación, un enlace compartido que ejecuta automáticamente su consulta (`run=1`) la vuelve a ejecutar con la misma configuración y, por tanto, reproduce el resultado. Solo se almacena una configuración activa —un resultado sin configuración no añade nada a la URL ni al estado del historial— para mantener ambos compactos.
+
+Un resultado restaurado mantiene su configuración vinculada al contexto que lo produjo, como se ha descrito anteriormente: la instantánea registra la base de datos, la conexión y los valores de los parámetros con los que se generaron sus filas, por lo que volver a ejecutar la sentencia tras cambiar cualquiera de ellos descarta la configuración en lugar de aplicarla a un resultado distinto.
+
+Al igual que los [modos de codificación por colores](/es/concepts/features/interfaces/web-ui-color-coding) y las [columnas fijadas](/es/concepts/features/interfaces/web-ui-pinned-columns), la configuración se conserva para cada pestaña de consulta, por lo que ordenar o filtrar un resultado en una pestaña no vuelve a ejecutar el resultado de otra.
+
+<div id="limitations">
+  ## Limitaciones
+</div>
+
+* Una configuración que el servidor no puede aplicar provoca un error en la consulta, que se muestra como en cualquier otra consulta fallida. A continuación, la configuración se descarta, ya que una ejecución fallida no muestra ni los encabezados ni el paginador que permitirían eliminarla.
+* La ordenación y el filtrado identifican una columna por su nombre en el resultado. Un resultado puede incluir el mismo nombre dos veces (`SELECT 1 AS x, 2 AS x`, una unión de tablas que comparten nombres de columnas), y esas columnas no se pueden distinguir por el nombre, por lo que no tienen controles de ordenación ni filtrado; las columnas con nombres únicos del mismo resultado conservan los suyos.
+* La ordenación por varias columnas requiere la tecla <kbd>Mayús</kbd>, por lo que no está disponible en dispositivos táctiles; la ordenación por una sola columna sí lo está.
+* El diseño vertical (transpuesto) de un resultado de una sola fila no tiene encabezados de columna ni controles; por este motivo, un resultado al que el usuario ya ha aplicado una configuración conserva su diseño horizontal.

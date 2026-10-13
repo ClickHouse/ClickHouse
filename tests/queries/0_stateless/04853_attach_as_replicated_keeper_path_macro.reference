@@ -1,0 +1,8 @@
+safe_name_converts	ReplicatedMergeTree	2
+definition_not_rewritten	1
+as_not_replicated_allows_unsafe_name	MergeTree
+stored_macro_armed	1
+short_attach OK
+short_attach_count	1
+restart_replica OK
+restart_replica_count	1

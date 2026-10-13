@@ -32,6 +32,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -95,6 +96,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
+    extern const CoordinationSettingsMilliseconds slow_member_backpressure_no_progress_timeout_ms;
+    extern const CoordinationSettingsUInt64 slow_member_backpressure_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
@@ -107,6 +110,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int OPENSSL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 using namespace std::chrono_literals;
@@ -148,12 +152,18 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     if (config.has(root_ca_file_property))
         params.caLocation = config.getString(root_ca_file_property);
 
-    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
+    /// Unlike `Poco::Net::SSLManager`, the default CA certificates are not trusted unless `loadDefaultCAFile` is set.
+    constexpr bool load_default_cas_default = false;
+    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, load_default_cas_default);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
 
     const String cipher_list_property = config_prefix + "cipherList";
     if (config.has(cipher_list_property))
         params.cipherList = config.getString(cipher_list_property);
+
+    const String cipher_suites_property = config_prefix + "cipherSuites";
+    if (config.has(cipher_suites_property))
+        params.cipherSuites = config.getString(cipher_suites_property);
 
     const String dh_params_file_property = config_prefix + "dhParamsFile";
     if (config.has(dh_params_file_property))
@@ -174,6 +184,8 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
         else if (token == "tlsv1_2")
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
+        else if (token == "tlsv1_3")
+            disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_3;
     }
 
     auto prefer_server_cypher = config.getBool(config_prefix + "preferServerCiphers", false);
@@ -194,7 +206,7 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
 
         /// Try to register with CertificateReloader for hot-reload support.
         /// If registration fails, fall back to static certificate loading.
-        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix))
+        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix, load_default_cas_default))
         {
             /// For passphrase-protected keys, load certificates manually
             if (certificate_data)
@@ -548,7 +560,7 @@ void KeeperServer::forceRecovery()
 {
     // notify threads containing the lock that we want to enter recovery mode
     is_recovering = true;
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     auto params = raft_instance->get_current_params();
     enterRecoveryMode(params);
     raft_instance->setConfig(state_manager->load_config());
@@ -614,6 +626,19 @@ nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_se
     params.max_bytes_in_flight_in_stream_
         = static_cast<int64_t>(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
     params.max_uncommitted_log_entries_ = coordination_settings[CoordinationSetting::nuraft_max_uncommitted_log_entries];
+    params.slow_member_backpressure_no_progress_timeout_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::slow_member_backpressure_no_progress_timeout_ms].totalMilliseconds(),
+        "slow_member_backpressure_no_progress_timeout_ms",
+        log);
+    params.slow_member_backpressure_max_uncommitted_
+        = coordination_settings[CoordinationSetting::slow_member_backpressure_max_uncommitted_log_entries];
+
+    if (params.max_uncommitted_log_entries_ == 0 && params.slow_member_backpressure_max_uncommitted_ == 0)
+        LOG_WARNING(
+            log,
+            "Both nuraft_max_uncommitted_log_entries and slow_member_backpressure_max_uncommitted_log_entries are 0, so "
+            "nothing bounds the log while the slow member backpressure is switched on with `bpon`: the leader keeps "
+            "appending while the commit index is held at the slowest voting replica. Set at least one of them before using it.");
     params.append_entries_backward_probe_throttle_threshold_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
@@ -758,6 +783,37 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk.load());
+
+    /// `init()` above may have removed orphaned nodes from the snapshot
+    /// (`keeper_server.remove_orphaned_nodes_on_startup`). Only now, with the log store loaded, can we
+    /// tell whether there are local log entries above the snapshot -- those get re-preprocessed and
+    /// committed once the raft server starts (see the comment at the nuraft callback below), and with
+    /// digest checking disabled, which orphan removal requires, an entry referencing a removed path
+    /// would silently resolve differently instead of failing.
+    ///
+    /// A successful check also persists the repaired snapshot, so Raft can only serve the repaired
+    /// tree and a restart no longer needs orphan removal enabled.
+    /// This must stay between `setLogStore` above and `launchRaftServer` below: throwing here is a
+    /// clean startup failure, whereas failing later inside `KeeperStateMachine::preprocess` would
+    /// `abort()` the process.
+    if (auto conflict = state_machine->findOrphanConflictInLogTail(
+            state_machine->last_commit_index() + 1, last_log_idx_on_disk.load() + 1))
+    {
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Orphaned nodes were removed while loading the snapshot at index {}, but local log entry {}{}{} cannot be replayed on top "
+            "of the repaired tree: {}{}. Replaying it would silently produce a state that differs from the rest of the cluster, and "
+            "digest checking is disabled. Refusing to start. Recover this node from a healthy peer (stop it, remove its coordination "
+            "directory and let it re-sync from the leader), or restore its snapshots and changelog from a backup. Setting "
+            "'keeper_server.remove_orphaned_nodes_on_startup' back to false restores the original snapshot-load error",
+            state_machine->last_commit_index(),
+            conflict->log_idx,
+            conflict->op_num.empty() ? "" : fmt::format(" ({})", conflict->op_num),
+            conflict->request_path.empty() ? "" : fmt::format(" on '{}'", conflict->request_path),
+            conflict->reason,
+            conflict->subtree_root.empty() ? "" : fmt::format(" (removed subtree rooted at '{}')", conflict->subtree_root));
+    }
+
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
     {
         LOG_INFO(log, "No log preprocessing needed (last_commit_index={} >= last_log_idx_on_disk={})", state_machine->last_commit_index(), last_log_idx_on_disk.load());
@@ -923,18 +979,8 @@ void KeeperServer::startLeaderMetricsPolling(int32_t poll_interval_ms)
 
 void KeeperServer::stopLeaderMetricsPolling()
 {
-    nuraft::ptr<nuraft::delayed_task> polling_task;
-    {
-        std::lock_guard lock(leader_unavailable_metrics_mutex);
-        if (!leader_unavailable_polling_task)
-            return;
-
-        polling_task = *leader_unavailable_polling_task;
-        leader_unavailable_polling_task.reset();
-    }
-
-    if (asio_service)
-        asio_service->cancel(polling_task);
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    leader_unavailable_polling_task.reset();
 }
 
 void KeeperServer::collectLeaderMetrics()
@@ -1011,6 +1057,13 @@ void KeeperServer::resetLeaderMetrics()
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
+    /// We / nuraft currently don't have a good way to recover from exceptions here, the whole
+    /// server crashes if this throws. So we suppress MEMORY_LIMIT_EXCEEDED and take the risk of OOM.
+    /// The soft limit check in KeeperRequestDispatcher should mostly keep memory in check.
+    /// (Although that check is not always applied on the correct node - a request we're applying
+    ///  here could come from the dispatcher on another node.)
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     if (type == nuraft::cb_func::BecomeLeader)
     {
         startLeaderUptimeMetrics();
@@ -1407,7 +1460,7 @@ void KeeperServer::waitInit()
     std::unique_lock lock(initialized_mutex);
 
     int64_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::startup_timeout].totalMilliseconds();
-    if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
+    if (!initialized_cv.wait_for(lock, saturatedWaitMilliseconds(timeout), [&] { return initialized_flag.load(); }))
         LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 
@@ -1420,7 +1473,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
     const ClusterUpdateAction & action, bool last_command_was_leader_change)
 {
     using enum ConfigUpdateState;
-    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledExclusiveLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
@@ -1490,7 +1543,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
     if (!diff.empty())
     {
-        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+        ProfiledExclusiveLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
         last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]).cluster_config;
     }
 
@@ -1499,7 +1552,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    ProfiledMutexLock server_write_lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledExclusiveLock server_write_lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
@@ -1636,6 +1689,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     }
     result.is_standalone = !result.is_follower && result.follower_count == 0;
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
+    result.is_slow_member_backpressure = isSlowMemberBackpressure();
     return result;
 }
 
@@ -1686,6 +1740,16 @@ std::vector<KeeperChangelogStatus> KeeperServer::getChangelogsStatus() const
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
+}
+
+bool KeeperServer::requestSlowMemberBackpressure(bool enable)
+{
+    return raft_instance->request_slow_member_backpressure(enable);
+}
+
+bool KeeperServer::isSlowMemberBackpressure() const
+{
+    return raft_instance->get_current_params().slow_member_backpressure_enabled_;
 }
 
 int64_t KeeperServer::getLeaderID() const

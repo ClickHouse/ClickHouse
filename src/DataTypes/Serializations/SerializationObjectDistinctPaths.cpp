@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -46,6 +47,11 @@ SerializationPtr SerializationObjectDistinctPaths::create(const std::vector<Stri
     return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
 }
 
+bool SerializationObjectDistinctPaths::isDistinctPathsSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::ObjectDistinctPaths;
+}
+
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
 {
     /// State of the whole Object column structure.
@@ -70,24 +76,6 @@ struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::De
         for (size_t bucket = 0; bucket != bucket_shared_data_structure_states.size(); ++bucket)
             new_state->bucket_shared_data_structure_states[bucket] = bucket_shared_data_structure_states[bucket] ? bucket_shared_data_structure_states[bucket]->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (object_structure_state)
-            callback(object_structure_state);
-        if (shared_data_paths_state)
-            callback(shared_data_paths_state);
-        for (const auto & bucket_state : bucket_shared_data_paths_state)
-        {
-            if (bucket_state)
-                callback(bucket_state);
-        }
-        for (const auto & bucket_state : bucket_shared_data_structure_states)
-        {
-            if (bucket_state)
-                callback(bucket_state);
-        }
     }
 };
 
@@ -129,6 +117,7 @@ void SerializationObjectDistinctPaths::enumerateStreams(
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
             for (size_t bucket = 0; bucket < object_structure_state->shared_data_buckets; ++bucket)
             {
@@ -210,6 +199,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
             object_distinct_paths_state->bucket_shared_data_structure_states.resize(object_structure_state->shared_data_buckets);
             for (size_t bucket = 0; bucket != object_structure_state->shared_data_buckets; ++bucket)
@@ -232,8 +222,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -242,10 +231,10 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     if (!state)
         return;
 
-    if (rows_offset + limit == 0)
+    if (limit == 0)
         return;
 
-    auto & array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
+    auto & array_column = assert_cast<ColumnArray &>(column);
     auto & paths_column = assert_cast<ColumnString &>(array_column.getData());
     auto * object_distinct_paths_state = checkAndGetState<DeserializeBinaryBulkStateObjectDistinctPaths>(state);
     auto * object_structure_state = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(object_distinct_paths_state->object_structure_state);
@@ -265,14 +254,11 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     {
         case SerializationObjectSharedData::SerializationVersion::MAP:
         {
-            ColumnPtr shared_data_paths_column = column->cloneEmpty();
-            auto settings_copy = settings;
-            settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
+            auto shared_data_paths_column = column.cloneEmpty();
             shared_data_paths_serialization->deserializeBinaryBulkWithMultipleStreams(
-                shared_data_paths_column,
-                rows_offset,
+                *shared_data_paths_column,
                 limit,
-                settings_copy,
+                settings,
                 object_distinct_paths_state->shared_data_paths_state,
                 cache);
 
@@ -287,10 +273,9 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
             {
                 settings.path.push_back(Substream::Bucket);
                 settings.path.back().bucket = bucket;
-                ColumnPtr bucket_shared_data_paths_column = column->cloneEmpty();
+                auto bucket_shared_data_paths_column = column.cloneEmpty();
                 shared_data_paths_serialization->deserializeBinaryBulkWithMultipleStreams(
-                    bucket_shared_data_paths_column,
-                    rows_offset,
+                    *bucket_shared_data_paths_column,
                     limit,
                     settings,
                     object_distinct_paths_state->bucket_shared_data_paths_state[bucket],
@@ -302,25 +287,41 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
 
                 if (bucket == 0)
                     num_new_rows = bucket_shared_data_paths_column->size();
+                /// All buckets store the same rows, and the number of rows of the first one is used as
+                /// the number of rows of the result.
+                else if (bucket_shared_data_paths_column->size() != num_new_rows)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Bucket {} of Object shared data has {} rows, but bucket 0 has {} rows",
+                        bucket,
+                        bucket_shared_data_paths_column->size(),
+                        num_new_rows);
             }
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
+            std::shared_ptr<SerializationObjectSharedData::ChunkStructures> first_bucket_chunk_structures;
             for (size_t bucket = 0; bucket < object_structure_state->shared_data_buckets; ++bucket)
             {
                 settings.path.push_back(Substream::Bucket);
                 settings.path.back().bucket = bucket;
 
                 auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(object_distinct_paths_state->bucket_shared_data_structure_states[bucket]);
-                auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);
-                for (const auto & structure_granule : *structure_granules)
+                auto chunk_structures = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
+                if (bucket == 0)
+                    first_bucket_chunk_structures = chunk_structures;
+                else
+                    SerializationObjectSharedData::checkChunksMatchFirstBucket(*chunk_structures, *first_bucket_chunk_structures, bucket);
+
+                for (const auto & chunk_structure : *chunk_structures)
                 {
-                    for (const auto & path : structure_granule.all_paths)
+                    for (const auto & path : chunk_structure.all_paths)
                         paths_column.insertData(path.data(), path.size());
 
                     if (bucket == 0)
-                        num_new_rows += structure_granule.limit;
+                        num_new_rows += chunk_structure.limit;
                 }
                 settings.path.pop_back();
             }
@@ -328,8 +329,12 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
         }
     }
 
-    array_column.getOffsets().push_back(paths_column.size());
-    array_column.insertManyDefaults(num_new_rows - 1);
+    /// The streams may return no rows at all, and then there is no first row to hold the paths.
+    if (num_new_rows != 0)
+    {
+        array_column.getOffsets().push_back(paths_column.size());
+        array_column.insertManyDefaults(num_new_rows - 1);
+    }
 
     settings.path.pop_back();
     settings.path.pop_back();
