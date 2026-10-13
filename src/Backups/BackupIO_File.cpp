@@ -108,12 +108,12 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 
 std::unique_ptr<WriteBuffer> BackupWriterFile::writeFileIfNotExists(const String & file_name)
 {
-    auto file_path = root_path / file_name;
+    auto file_path = root_path / pathFromString(file_name);
     fs::create_directories(file_path.parent_path());
     /// `O_EXCL` makes the creation atomic: the open either creates the file or fails with `EEXIST`,
     /// so this never replaces a file another backup has created.
     return std::make_unique<WriteBufferFromFile>(
-        file_path, write_buffer_size, O_WRONLY | O_CREAT | O_EXCL, write_settings.local_throttler);
+        pathToGenericString(file_path), write_buffer_size, O_WRONLY | O_CREAT | O_EXCL, write_settings.local_throttler);
 }
 
 void BackupWriterFile::removeFile(const String & file_name)
