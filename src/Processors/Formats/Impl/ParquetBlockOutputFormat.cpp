@@ -107,10 +107,10 @@ namespace
     ///
     /// Path identity is a dotted string, so a top-level column literally named `a.b` and the nested
     /// field `b` under `a Tuple(b ...)` would flatten to the same key. Letting that slide silently
-    /// would either emit duplicate `field_id`s in auto-assign mode, make full coverage in
-    /// override-only mode impossible, or — for a datalake column-id mapping, which is keyed by the
-    /// same dotted paths — collapse two logical fields onto one id. Detect the collision and reject
-    /// it up front.
+    /// would either emit duplicate `field_id`s in auto-assign mode or make full coverage in
+    /// override-only mode impossible. Detect the collision and reject it up front. A datalake
+    /// column-id mapping does not go through here: a datalake schema may legitimately contain
+    /// a dotted field name (e.g. `Delta Lake`), and its writer handles such paths itself.
     std::vector<String> enumerateOutputFieldPaths(const Block & header, bool write_geometadata)
     {
         std::vector<String> all_paths;
@@ -258,12 +258,6 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "output_format_parquet_column_field_ids / output_format_parquet_auto_assign_field_ids "
             "cannot be used when writing to a datalake table that provides its own column-id mapping");
-
-    /// A datalake column-id mapping is keyed by the same dotted paths as the user settings, so an
-    /// ambiguous header would collapse two logical fields onto one id there as well. The mapping
-    /// path never goes through `buildColumnFieldIds`, so the invariant is enforced here.
-    if (has_metadata_mapping)
-        enumerateOutputFieldPaths(*header_, format_settings.parquet.write_geometadata);
 
     /// Resolve Parquet `field_id`s from the user-facing settings (explicit overrides and/or
     /// the Iceberg-style auto-assign toggle). Used only when there is no metadata mapping.
