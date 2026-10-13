@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
@@ -141,6 +142,10 @@ public:
             }
 
             #endif
+
+            /// The null map was created for the compiled code to write to. Drop it if the result has no NULLs.
+            if (auto * nullable_result = typeid_cast<ColumnNullable *>(result_column.get()))
+                nullable_result->dropNullMapIfNoNulls();
         }
 
         return result_column;
