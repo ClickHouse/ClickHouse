@@ -304,6 +304,34 @@ static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
     return true;
 }
 
+/// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
+/// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
+static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            if (node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments))
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+    return false;
+}
+
 /// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
 /// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
 /// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
@@ -367,6 +395,8 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
 
     /// A heavy atom is evaluated only on the rows that passed the atoms split before it. If a cheap atom follows it,
     /// split the cheap one first. The atoms that are not moved keep their relative order.
+    /// A cheap atom is never moved in front of another cheap atom: it does not save anything, while the written order
+    /// may put the more selective condition first, as in `notEmpty(s) AND s < 'x'`.
     /// This is decided once per pipeline, not per block, so the profile event `ShortCircuitArgumentsReordered` is not incremented here.
     if (reorder)
     {
@@ -374,7 +404,7 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
         {
             if (canBeMovedToTheFrontOfAndChain(atom))
                 return splitSingleAndFilter(dag, atom);
-            if (hasOrderSensitiveFunctions(atom))
+            if (!isHeavyAndChainAtom(atom) || hasOrderSensitiveFunctions(atom))
                 break;
         }
     }
