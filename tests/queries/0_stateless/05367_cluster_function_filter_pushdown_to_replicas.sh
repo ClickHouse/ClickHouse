@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 
 # In a query with several tables, the filter on a table read by a cluster function is sent to the
-# replicas, so they return only the matching rows instead of the whole table.
+# replicas, serialized, so they return only the matching rows instead of the whole table.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,7 +28,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM ${TABLE} WHERE mode I
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
-        countIf(query LIKE '%WHERE%') = count() AS all_secondary_queries_have_filter,
+        countIf(Settings['cluster_table_function_pushed_down_filter'] != '') = count() AS all_secondary_queries_have_filter,
         sum(result_rows) < 30000 AS replicas_returned_fewer_rows
     FROM system.query_log
     WHERE initial_query_id = '${query_id}' AND type = 'QueryFinish' AND is_initial_query = 0 AND query LIKE '%${TABLE}%'"

@@ -22,13 +22,13 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
-#include <DataTypes/DataTypeFunction.h>
-#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/SetSerialization.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/Base64.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsString cluster_table_function_pushed_down_filter;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -72,80 +73,65 @@ IStorageCluster::IStorageCluster(
 namespace
 {
 
-ASTPtr filterNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<String, ASTPtr> & read_columns)
+bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordered_map<String, String> & read_columns)
 {
-    switch (node.type)
+    if (!node.isDeterministic() || node.is_runtime_filter_id)
+        return false;
+    if (node.type == ActionsDAG::ActionType::INPUT)
+        return read_columns.contains(node.result_name);
+    if (node.type == ActionsDAG::ActionType::COLUMN)
     {
-        case ActionsDAG::ActionType::INPUT:
-        {
-            auto it = read_columns.find(node.result_name);
-            if (it == read_columns.end())
-                return nullptr;
-            auto expression = it->second->clone();
-            if (auto * with_alias = dynamic_cast<ASTWithAlias *>(expression.get()))
-                with_alias->setAlias("");
-            return expression;
-        }
-        case ActionsDAG::ActionType::COLUMN:
-        {
-            if (!node.column || !node.is_deterministic_constant || node.is_runtime_filter_id || node.is_masked_secret)
-                return nullptr;
-            if (typeid_cast<const DataTypeFunction *>(node.result_type.get()))
-                return nullptr;
-            if (const auto * column_set = checkAndGetColumn<ColumnSet>(&node.column->getDataColumn()))
-            {
-                const auto * tuple_set = dynamic_cast<const FutureSetFromTuple *>(column_set->getData().get());
-                if (!tuple_set || !tuple_set->getSourceAST() || tuple_set->getInputRowCount() > 100000)
-                    return nullptr;
-                return tuple_set->getSourceAST()->clone();
-            }
-            return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(node.column->getField()), make_intrusive<ASTLiteral>(node.result_type->getName()));
-        }
-        case ActionsDAG::ActionType::ALIAS:
-            return filterNodeToAST(*node.children.at(0), read_columns);
-        case ActionsDAG::ActionType::FUNCTION:
-        {
-            if (!node.function_base || !node.function_base->isDeterministic() || node.function_base->getName().starts_with("__")
-                || !FunctionFactory::instance().hasNameOrAlias(node.function_base->getName()))
-                return nullptr;
-            auto function = makeASTFunction(node.function_base->getName());
-            for (const auto * child : node.children)
-            {
-                auto argument = filterNodeToAST(*child, read_columns);
-                if (!argument)
-                    return nullptr;
-                function->arguments->children.push_back(std::move(argument));
-            }
-            return function;
-        }
-        default:
-            return nullptr;
+        const auto * column_set = node.column ? checkAndGetColumn<ColumnSet>(&node.column->getDataColumn()) : nullptr;
+        return !column_set || typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
     }
+    for (const auto * child : node.children)
+        if (!isSerializableFilterNode(*child, read_columns))
+            return false;
+    return node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS;
 }
 
-ASTPtr filterToAST(const ActionsDAG::Node & predicate, const std::unordered_map<String, ASTPtr> & read_columns)
+String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const std::unordered_map<String, String> & read_columns, const ContextPtr & context)
 {
-    std::vector<const ActionsDAG::Node *> conjuncts;
     const auto * root = &predicate;
     while (root->type == ActionsDAG::ActionType::ALIAS)
         root = root->children.at(0);
+
+    ActionsDAG::NodeRawConstPtrs conjuncts;
     if (root->type == ActionsDAG::ActionType::FUNCTION && root->function_base && root->function_base->getName() == "and")
         conjuncts.assign(root->children.begin(), root->children.end());
     else
         conjuncts.push_back(root);
 
-    ASTs translated;
+    ActionsDAG::NodeRawConstPtrs serializable;
     for (const auto * conjunct : conjuncts)
-        if (auto ast = filterNodeToAST(*conjunct, read_columns))
-            translated.push_back(std::move(ast));
+        if (isSerializableFilterNode(*conjunct, read_columns))
+            serializable.push_back(conjunct);
+    if (serializable.empty())
+        return {};
 
-    if (translated.empty())
-        return nullptr;
-    if (translated.size() == 1)
-        return translated.front();
-    auto result = makeASTFunction("and");
-    result->arguments->children = std::move(translated);
-    return result;
+    auto filter = ActionsDAG::cloneSubDAG(serializable, /*remove_aliases=*/ false);
+    if (filter.getOutputs().size() > 1)
+    {
+        const auto & conjunction = filter.addFunction(FunctionFactory::instance().get("and", context), filter.getOutputs(), {});
+        filter.getOutputs() = {&conjunction};
+    }
+
+    ActionsDAG replica_filter;
+    for (const auto * input : filter.getInputs())
+    {
+        const auto & replica_input = replica_filter.addInput(read_columns.at(input->result_name), input->result_type);
+        replica_filter.getOutputs().push_back(&replica_filter.addAlias(replica_input, input->result_name));
+    }
+    ActionsDAG::NodeMapping inputs_map;
+    replica_filter.mergeInplace(std::move(filter), inputs_map, /*remove_dangling_inputs=*/ true);
+    replica_filter.getOutputs().resize(1);
+    replica_filter.removeUnusedActions(/*allow_remove_inputs=*/ true, /*allow_constant_folding=*/ false);
+
+    WriteBufferFromOwnString out;
+    SerializedSetsRegistry registry;
+    replica_filter.serialize(out, registry);
+    QueryPlan::serializeReadySets(registry, out);
+    return base64Encode(out.str());
 }
 
 }
@@ -159,30 +145,24 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter)
         predicate = filter->getOutputs().at(0);
 
-    if (filter_actions_dag && !filter_actions_dag->getOutputs().empty())
+    pushed_down_filter.clear();
+    const auto * select = query_to_send->as<ASTSelectQuery>();
+    if (filter_actions_dag && !filter_actions_dag->getOutputs().empty() && select && select->select())
     {
-        if (!query_to_send_without_filter)
-            query_to_send_without_filter = query_to_send->clone();
-
-        auto query = query_to_send_without_filter->clone();
-        auto * select = query->as<ASTSelectQuery>();
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
-        std::unordered_map<String, ASTPtr> read_columns;
-        if (select && select->select() && select->select()->children.size() == header_columns.size())
-            for (size_t i = 0; i < header_columns.size(); ++i)
-            {
-                const auto & expression = select->select()->children[i];
-                read_columns.emplace(header_columns[i].name, expression);
-                read_columns.emplace(expression->getAliasOrColumnName(), expression);
-            }
-
-        if (auto where = read_columns.empty() ? nullptr : filterToAST(*filter_actions_dag->getOutputs().at(0), read_columns))
+        const auto & select_expressions = select->select()->children;
+        std::unordered_map<String, String> read_columns;
+        for (size_t i = 0; i < select_expressions.size() && select_expressions.size() == header_columns.size(); ++i)
         {
-            if (auto existing = select->where())
-                where = makeASTFunction("and", existing->clone(), where);
-            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
-            query_to_send = std::move(query);
+            if (const auto * identifier = select_expressions[i]->as<ASTIdentifier>())
+            {
+                read_columns.emplace(header_columns[i].name, identifier->shortName());
+                read_columns.emplace(select_expressions[i]->getAliasOrColumnName(), identifier->shortName());
+            }
         }
+
+        if (!read_columns.empty())
+            pushed_down_filter = serializeFilterForReplicas(*filter_actions_dag->getOutputs().at(0), read_columns, context);
     }
 
     createExtension(predicate);
@@ -356,6 +336,7 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
+    new_settings[Setting::cluster_table_function_pushed_down_filter] = pushed_down_filter;
 
     /// Strip the initiator-only settings (the query-shaping settings, the result-serialisation
     /// settings, and `database`): they are materialized on the initiator and must not be forwarded

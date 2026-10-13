@@ -127,7 +127,7 @@ public:
 private:
     std::shared_ptr<IStorageCluster> storage;
     ASTPtr query_to_send;
-    ASTPtr query_to_send_without_filter;
+    String pushed_down_filter;
     QueryProcessingStage::Enum processed_stage;
     ClusterPtr cluster;
     LoggerPtr log;
