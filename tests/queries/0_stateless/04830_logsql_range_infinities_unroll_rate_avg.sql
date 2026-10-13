@@ -17,7 +17,7 @@ INSERT INTO logs_04830 VALUES
     ('2024-01-01 01:00:00', 'second', '0.12345678901234567890123456789012345678901234567891', 15, 2, NULL, '["c"]'),
     ('2024-01-01 02:00:00', 'third', '100', 20, NULL, NULL, '[]');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04830';
 SET dialect = 'logsql';
 
