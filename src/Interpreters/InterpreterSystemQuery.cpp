@@ -1512,9 +1512,11 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
-    /// The resolved pointer must not outlive this check. `waitDetachedTableNotInUse` below waits
-    /// for the last reference to the detached table to be released.
-    if (!castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load))
+    /// The storage that implements the engine: `table` itself, or the storage behind a lazy-load stand-in.
+    /// It is released together with `table`, because `waitDetachedTableNotInUse` below waits for the last
+    /// reference to the detached table to be released.
+    StoragePtr nested_table = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load);
+    if (!nested_table)
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
@@ -1522,11 +1524,16 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
+    /// The database iterator hands out the storage behind a materialized lazy-load stand-in directly, and a
+    /// reader such as `system.parts` keeps it and locks it later, so that storage must be marked as well.
     SCOPE_EXIT({
         if (table)
             table->is_being_restarted = false;
+        if (nested_table)
+            nested_table->is_being_restarted = false;
     });
     table->is_being_restarted = true;
+    nested_table->is_being_restarted = true;
     table->flushAndShutdown();
 
     /// The definition re-attached below was read back from this server's own metadata, so it must be
@@ -1549,6 +1556,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
+    nested_table.reset();
     {
         QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
         database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
