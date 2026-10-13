@@ -505,10 +505,22 @@ struct Reader
         std::vector<ColumnPtr> cached_columns;
         /// The output columns to write to the cache: their rows are accumulated as the row subgroups
         /// are read, and written once the whole row group is read, see `addToColumnsCacheWrite`.
+        /// The copy of a column being written to the columns cache. It goes to the shared cache, so
+        /// it is allocated and released outside the memory tracker of the query, like the marks in
+        /// the mark cache: otherwise warming the cache could exceed `max_memory_usage` of a query
+        /// that fits without it.
         struct ColumnsCacheWrite
         {
             bool active = false;
             MutableColumnPtr column;
+
+            ColumnsCacheWrite() = default;
+            ColumnsCacheWrite(ColumnsCacheWrite &&) noexcept = default;
+            ColumnsCacheWrite & operator=(ColumnsCacheWrite &&) = delete;
+            ~ColumnsCacheWrite();
+
+            /// Ends the write and releases the copy.
+            void reset();
         };
         std::vector<ColumnsCacheWrite> columns_cache_writes;
 

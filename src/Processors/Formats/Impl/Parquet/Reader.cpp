@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
 #include <Formats/FormatFilterInfo.h>
@@ -4254,6 +4255,9 @@ void Reader::addToColumnsCacheWrite(
     if (!write.active)
         return;
 
+    /// The copy is moved to the shared cache, see `ColumnsCacheWrite`.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
     /// Only the whole column of a row group is written: every row subgroup has to read all its
     /// rows, and the subgroups come one after another. A subgroup filtered by PREWHERE before this
     /// column was decoded, or one skipped by the column index, ends the write.
@@ -4268,7 +4272,7 @@ void Reader::addToColumnsCacheWrite(
 
     if (!complete || !canWriteToColumnsCache())
     {
-        write = {};
+        write.reset();
         return;
     }
 
@@ -4284,6 +4288,9 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
 {
     if (row_group.columns_cache_writes.empty())
         return;
+
+    /// The columns are moved to the shared cache, or released if it does not admit them, see `ColumnsCacheWrite`.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     const ColumnsCacheOptions & cache_options = *options.columns_cache;
     const size_t num_rows = size_t(row_group.meta->num_rows);
@@ -4323,6 +4330,18 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
     const size_t bytes_admitted = cache_options.cache->setMany(entries, columns_cache_generation);
     if (bytes_admitted)
         cache_options.write_budget->bytes_written.fetch_add(bytes_admitted, std::memory_order_relaxed);
+}
+
+Reader::RowGroup::ColumnsCacheWrite::~ColumnsCacheWrite()
+{
+    reset();
+}
+
+void Reader::RowGroup::ColumnsCacheWrite::reset()
+{
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    active = false;
+    column.reset();
 }
 
 Reader::PrimitiveColumnInfo::~PrimitiveColumnInfo() = default;
