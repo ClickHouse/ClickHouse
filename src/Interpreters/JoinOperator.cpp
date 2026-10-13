@@ -210,7 +210,9 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
-    allow_block_nested_loop_join = settings[QueryPlanSerializationSetting::allow_block_nested_loop_join];
+    /// A plan from before the name existed was built where the block nested loop join did not exist.
+    allow_block_nested_loop_join = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN
+        && settings[QueryPlanSerializationSetting::allow_block_nested_loop_join];
     max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
 
     max_rows_in_join = settings[QueryPlanSerializationSetting::max_rows_in_join];
@@ -448,7 +450,10 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
-    settings[QueryPlanSerializationSetting::allow_block_nested_loop_join] = allow_block_nested_loop_join;
+    /// `QueryPlanSerializationSettings` is a strict named schema, so the name goes on the wire only towards a peer
+    /// that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN)
+        settings[QueryPlanSerializationSetting::allow_block_nested_loop_join] = allow_block_nested_loop_join;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 
     settings[QueryPlanSerializationSetting::max_rows_in_join] = max_rows_in_join;

@@ -13,6 +13,7 @@ namespace DB::Iceberg
 DEFINE_ICEBERG_FIELD(boolean);
 DEFINE_ICEBERG_FIELD(bigint);
 DEFINE_ICEBERG_FIELD(binary);
+DEFINE_ICEBERG_FIELD(varbyte);
 DEFINE_ICEBERG_FIELD(double);
 DEFINE_ICEBERG_FIELD(date);
 DEFINE_ICEBERG_FIELD(data_file);
@@ -44,6 +45,7 @@ DEFINE_ICEBERG_FIELD(summary);
 DEFINE_ICEBERG_FIELD(time);
 DEFINE_ICEBERG_FIELD(timestamp);
 DEFINE_ICEBERG_FIELD(timestamptz);
+DEFINE_ICEBERG_FIELD_ALIAS(timestamp_with_local_time_zone, timestamp with local time zone);
 DEFINE_ICEBERG_FIELD(timestamp_ns);
 DEFINE_ICEBERG_FIELD(timestamptz_ns);
 DEFINE_ICEBERG_FIELD(type)
