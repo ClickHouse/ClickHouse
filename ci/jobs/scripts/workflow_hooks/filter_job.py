@@ -48,6 +48,18 @@ COVERAGE_REPLACEMENT_JOBS = [
     for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
     + JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
 ]
+# The builds the replacement jobs require, kept with them when `ci-llvm-coverage` meets `ci-no-coverage`.
+COVERAGE_REPLACEMENT_BUILDS = [
+    j.name
+    for j in JobConfigs.build_jobs
+    if any(
+        artifact in r.requires
+        for artifact in j.provides
+        for r in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+        + JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
+    )
+]
+assert COVERAGE_REPLACEMENT_BUILDS, "no build provides the artifacts of the coverage replacement jobs"
 
 BUILDS_FOR_TESTS = [
     j.name
@@ -886,10 +898,17 @@ def should_skip_job(job_name):
         )
 
     # The coverage family and `LLVM_COVERAGE_ONLY_JOBS` only. The family jobs go on to the family
-    # rule below, which runs them (`_llvm_coverage_requested`), and the flaky check to its own rule,
-    # which skips it when the pull request changes no test.
+    # rule below, which runs them (`_llvm_coverage_requested`), and the flaky checks to their own
+    # rule, which skips them when the pull request changes no test. With `ci-no-coverage` on top,
+    # the family is skipped and the `arm_binary` replacement jobs with their build take its place,
+    # as with `ci-coverage`: they go on to the replacement rules below.
     if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels and not (
-        _is_llvm_coverage_family_job(job_name) or job_name in LLVM_COVERAGE_ONLY_JOBS
+        _is_llvm_coverage_family_job(job_name)
+        or job_name in LLVM_COVERAGE_ONLY_JOBS
+        or (
+            job_name in COVERAGE_REPLACEMENT_JOBS + COVERAGE_REPLACEMENT_BUILDS
+            and Labels.CI_NO_COVERAGE in _info_cache.pr_labels
+        )
     ):
         _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
         return (
