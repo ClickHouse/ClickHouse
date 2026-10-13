@@ -20,10 +20,6 @@ These settings are available in [system.settings](/reference/system-tables/setti
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
-<Note>
-Supported only with the analyzer (`enable_analyzer = 1`).
-</Note>
-
 ## optimize_rewrite_array_exists_to_has {#optimize_rewrite_array_exists_to_has}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -31,6 +27,14 @@ Supported only with the analyzer (`enable_analyzer = 1`).
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."}]}]}/>
 
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
+
+## optimize_rewrite_array_filter_length_to_array_count {#optimize_rewrite_array_filter_length_to_array_count}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to rewrite `length(arrayFilter(func, arr))` into `arrayCount(func, arr)`, which does not build the filtered array."}]}]}/>
+
+Rewrite `length(arrayFilter(func, arr))` to `arrayCount(func, arr)`. `arrayFilter` builds an array of the matching elements only for `length` to throw it away, while `arrayCount` just counts them.
 
 ## optimize_rewrite_has_to_in {#optimize_rewrite_has_to_in}
 

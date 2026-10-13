@@ -21,6 +21,7 @@
 #include <Disks/loadLocalDiskConfig.h>
 
 #include <Interpreters/Context.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <Common/Macros.h>
 
@@ -72,7 +73,9 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const ContextPtr & context,
-    bool skip_access_check) const
+    bool run_access_check,
+    bool run_local_paths_check,
+    bool run_remote_host_filter_check) const
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
@@ -92,7 +95,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, skip_access_check);
+    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, run_remote_host_filter_check);
 }
 
 #if USE_AWS_S3
@@ -132,13 +135,19 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
+        bool run_remote_host_filter_check) -> ObjectStoragePtr
     {
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
         settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), Poco::URI(endpoint).getScheme(), true);
         auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
+        /// The endpoint of a disk created in SQL is user input, so it is subject to `remote_url_allow_hosts`
+        /// like the URL of an `s3` table; checked before the client is built, which already talks to the endpoint.
+        if (run_remote_host_filter_check)
+            uri.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -162,7 +171,9 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
-           bool /* skip_access_check */) -> ObjectStoragePtr
+           bool /* run_access_check */,
+           bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -185,7 +196,9 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -204,7 +217,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         return std::make_shared<AzureObjectStorage>(
             name,
-            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };
@@ -223,7 +236,9 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -250,11 +265,16 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool run_local_paths_check,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
+
+        if (run_local_paths_check)
+            checkCustomLocalDiskPath(object_key_prefix, context);
 
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);

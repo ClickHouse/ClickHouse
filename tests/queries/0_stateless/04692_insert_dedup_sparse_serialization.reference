@@ -1,0 +1,6 @@
+retry before the merge	1
+source is sparse	Sparse
+tuple element is sparse	1
+selected row unchanged	1	x	(1,'y')
+retry after the merge	1
+sparse rows stored sparse	1

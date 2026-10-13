@@ -1,0 +1,6 @@
+Target policy through Alias	[1,2]
+Target policy through Merge over Alias	[1,2]
+Count through Alias, trivial count disabled	2
+Count through Alias, trivial count enabled	2
+Combined policies	[1]
+Alias policy only	[1,3]

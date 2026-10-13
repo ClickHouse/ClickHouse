@@ -77,7 +77,7 @@
         },
         {
           "expanded": false,
-          "group": "Intégrations communautaires",
+          "group": "Intégrations de la communauté",
           "pages": [
             "fr/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "fr/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
@@ -100,11 +100,17 @@
     },
     {
       "expanded": true,
-      "group": "Ingestion des données",
+      "group": "Ingestion de données",
       "pages": [
-        "fr/integrations/connectors/data-ingestion/index",
         "fr/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
-        "fr/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+        {
+          "expanded": false,
+          "group": "Apache Airflow",
+          "pages": [
+            "fr/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+            "fr/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin"
+          ]
+        },
         "fr/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
         {
           "expanded": false,
@@ -149,15 +155,7 @@
         },
         "fr/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "fr/integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "fr/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "fr/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "fr/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
+          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
         },
         "fr/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -180,7 +178,7 @@
         },
         {
           "expanded": false,
-          "group": "Intégrations communautaires",
+          "group": "Intégrations de la communauté",
           "pages": [
             "fr/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "fr/integrations/connectors/data-ingestion/community-integrations/erathos",
@@ -203,6 +201,7 @@
         "fr/integrations/connectors/tools/data-integration-index",
         "fr/integrations/connectors/data-integrations/integrations/retool",
         "fr/integrations/connectors/data-integrations/integrations/easypanel",
+        "fr/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "fr/integrations/connectors/data-integrations/integrations/middleware",
         "fr/integrations/connectors/data-integrations/integrations/notion",
         "fr/integrations/connectors/data-integrations/integrations/splunk"

@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'ClickPipes용 AWS PrivateLink'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'AWS PrivateLink를 사용하여 ClickPipes와 데이터 소스 간에 보안 연결을 설정합니다.'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'ClickPipes용 AWS PrivateLink'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'ClickPipes 보안', 'vpc 엔드포인트', '프라이빗 연결', 'vpc 리소스']
 integration:
@@ -13,7 +14,7 @@ integration:
 import { Image } from "/snippets/ko/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-[AWS PrivateLink](https://aws.amazon.com/privatelink/)를 사용하면 ClickPipes와 AWS에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 VPC에 **역방향 프라이빗 엔드포인트(RPE)**를 생성하고 이를 데이터 소스용으로 게시된 프라이빗 엔드포인트 서비스에 연결하므로, 트래픽이 퍼블릭 인터넷에 노출되지 않습니다.
+[AWS PrivateLink](https://aws.amazon.com/privatelink/)를 사용하면 ClickPipes와 AWS에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 VPC에 **역방향 private 엔드포인트(RPE)**를 생성하고 이를 데이터 소스용으로 게시된 프라이빗 엔드포인트 서비스에 연결하므로, 트래픽이 퍼블릭 인터넷에 노출되지 않습니다.
 
 <Note>
   시작하기 전에 [지원되는 AWS 리전](#aws-privatelink-regions)을 확인하십시오.

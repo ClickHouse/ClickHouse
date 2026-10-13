@@ -1,0 +1,44 @@
+--- a negative declared count is rejected at the header, not at the payload
+1
+1
+1
+1
+--- valid input counts the same with and without the count shortcut
+optimize_count_from_files = 1
+500
+1000
+200000
+500
+500
+1000
+optimize_count_from_files = 0
+500
+1000
+200000
+500
+500
+1000
+--- valid input reads and counts the same at several block sizes
+500	1772942825771434699
+500	1772942825771434699
+500	1772942825771434699
+500
+--- a declared count the payload cannot hold is rejected at the header, not counted
+1
+1
+1
+1
+1
+1
+--- the count shortcut answers from the block header without decoding the payload
+502
+1
+--- the shortcut is declined where the declared payload size is not verified
+1
+1
+1
+1
+1
+1
+1
+1

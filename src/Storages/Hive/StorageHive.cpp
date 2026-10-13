@@ -299,6 +299,7 @@ public:
                     });
                 }
                 pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
+                pipeline->disableProfileEventUpdate();
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
@@ -1146,6 +1147,7 @@ void registerStorageHive(StorageFactory & factory)
                 std::move(hive_settings),
                 args.getContext());
         },
+        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,

@@ -1,7 +1,13 @@
--- Tags: no-random-mergetree-settings, no-random-settings
+-- Tags: no-random-mergetree-settings, no-random-settings, no-flaky-check
 -- ^^ Prevent the data sizes from varying with random parameters.
+-- ^^ The test asserts exact compressed byte sizes with all randomization disabled, so its
+--    result is deterministic and the flaky check has nothing to detect by re-running it, while
+--    it can exceed the flaky check's per-run time budget under the heaviest sanitizer configuration.
 
 -- This test validates the storage size of the text index without and with posting list compression.
+-- The text index files follow the part's default compression codec (the `default_compression_codec`
+-- MergeTree setting), which is pinned to `LZ4` below so the expected `secondary_indices_compressed_bytes`
+-- stay stable regardless of the server-wide default codec.
 
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
@@ -38,7 +44,8 @@ SETTINGS
    max_compress_block_size = 1048576,
    ratio_of_defaults_for_sparse_serialization = 0.95,
    serialization_info_version = 'basic',
-   auto_statistics_types = 'basic';
+   auto_statistics_types = 'basic',
+   default_compression_codec = 'LZ4';
 
 CREATE TABLE tab_uncompressed
 (
@@ -64,7 +71,8 @@ SETTINGS
    max_compress_block_size = 1048576,
    ratio_of_defaults_for_sparse_serialization = 0.95,
    serialization_info_version = 'basic',
-   auto_statistics_types = 'basic';
+   auto_statistics_types = 'basic',
+   default_compression_codec = 'LZ4';
 
 INSERT INTO tab_bitpacking
 SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') AS str

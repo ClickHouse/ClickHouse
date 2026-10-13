@@ -37,8 +37,9 @@ SELECT 'The spill was exercised';
 SELECT coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'ExternalAggregationWritePart';
 "
 
-# A freeze threshold above both the key count and the give-up bound keeps every producer in the
-# learning phase for the whole query, which is the one regime where no frozen table is ever built.
+# A key freeze threshold above both the key count and the give-up bound, with the byte bound
+# disabled, keeps every producer in the learning phase for the whole query. The learning phase
+# is the one regime where no frozen table is ever built.
 # A learning table must still spill: the counter has to advance across the query, and the query
 # has to fit in a limit that only the spilling arm can meet. Both external thresholds are pinned
 # per query because the runner randomizes them, and `max_memory_usage` is the cell that encodes
@@ -48,9 +49,9 @@ $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET group_by_two_level_threshold = 1000;
 SET collect_hash_table_stats_during_aggregation = 0;
-SET enable_sharding_aggregator = 0;
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 4000000;
+SET adaptive_aggregator_freeze_threshold_bytes = 0;
 SET max_bytes_before_external_group_by = 20000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 
@@ -72,9 +73,9 @@ $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET group_by_two_level_threshold = 1000;
 SET collect_hash_table_stats_during_aggregation = 0;
-SET enable_sharding_aggregator = 0;
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 4000000;
+SET adaptive_aggregator_freeze_threshold_bytes = 0;
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 
