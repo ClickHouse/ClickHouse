@@ -17,7 +17,7 @@ namespace DB
 /// keeps aggregating in place with zero coordination, while a miss (a rare key) is not inserted
 /// anywhere: it becomes a delayed record, appended to the thread's own buffer of the partition its
 /// key's hash falls in. A partition is a slice of a two-level bucket. A record carries the key's bytes,
-/// plus a run-length count when the only aggregate is `count`, or the row's aggregate-argument values
+/// plus the key's multiplicity in the block when the only aggregate is `count`, or the row's aggregate-argument values
 /// otherwise. Variable-length records also carry the hash; fixed-stride records omit it because rehashing
 /// a fixed-width key costs less than storing and reading the extra bytes. Records never point into the
 /// source block, so the block is released.

@@ -71,13 +71,13 @@ void Aggregator::accountStagedBatch(
     const size_t total = misses.size();
     if (!total)
         return;
-    const auto * hashes = misses.hashes.data();
+    const auto * hashes = misses.getHashes().data();
 
     /// The rows behind the records go to the count bins of the top-K pruning: a count record carries
     /// its combined multiplicity.
     if (adaptive.count_bins.isAllocated())
         for (size_t i = 0; i < total; ++i)
-            adaptive.count_bins.add(hashes[i], is_simple_count ? misses.multiplicities[i] : 1);
+            adaptive.count_bins.add(hashes[i], is_simple_count ? misses.getMultiplicities()[i] : 1);
 
     adaptive.total_staged_records += total;
 
@@ -129,7 +129,7 @@ void Aggregator::accountStagedBatch(
                     SipHash input_hash;
                     input_hash.update(hash);
                     for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
-                        columns[position]->updateHashWithValue(misses.source_rows[i], input_hash);
+                        columns[position]->updateHashWithValue(misses.getSourceRows()[i], input_hash);
                     frozen.addSampledInputHash(input_hash.get64());
                 }
             }

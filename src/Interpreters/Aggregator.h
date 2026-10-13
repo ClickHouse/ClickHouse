@@ -930,10 +930,10 @@ private:
         bool all_keys_are_const) const;
 
     /// Collects the misses of a block of an aggregation by a lone `count` into the producer's batch: a row whose key the
-    /// local table holds adds one to the key's inline count, and the other rows become count records, a run of one key
-    /// in one record. Within a block, a key's later misses may join its record through a per-partition cache, while a
-    /// trial shows that they often do. Neither writes the records nor records the probe results. Returns the number of
-    /// local hits.
+    /// local table holds adds one to the key's inline count, and the other rows become count records, each with the
+    /// multiplicity of the rows it combines. A run of one key goes into one record, and while a trial shows that it
+    /// pays, so do the later rows of the key found through a per-partition cache. Neither writes the records nor records
+    /// the probe results. Returns the number of local hits.
     template <typename RecordKey, typename LocalMethod, typename State>
     size_t collectCountMisses(
         LocalMethod & local_method,
@@ -945,7 +945,7 @@ private:
         bool bypass_local_probe) const;
 
     /// Appends the producer's batch of misses to its partitions in the format `visitStagedRecordFormat` selects. Each
-    /// record carries a key and either a run length (an aggregation by a lone `count`), no payload (no aggregates), or
+    /// record carries a key and either a multiplicity (an aggregation by a lone `count`), no payload (no aggregates), or
     /// the row's aggregate arguments laid out by `adaptive_argument_layout`. Variable-size records also carry a hash and
     /// lengths; fixed-size records recover the hash from the key when drained. Returns what it staged for the
     /// accounting of the batch (see `accountStagedBatch`).

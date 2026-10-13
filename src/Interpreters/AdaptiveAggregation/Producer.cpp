@@ -142,7 +142,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         const auto found = local_method.data.find(key, hash);
         if (!found)
         {
-            misses.keys_are_const = true;
+            misses.setKeysConst();
             misses.add<RecordKey>(static_cast<UInt32>(row_begin), hash, key);
             stage_misses();
         }
@@ -212,7 +212,7 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
         size_t hits = 0;
         /// Only this pass's new descriptors seed consecutive runs. The trial's last missed key may
         /// refer to an earlier descriptor rather than the last one in the array.
-        const size_t first_record = can_combine_partition_counts ? misses.hashes.size() : 0;
+        const size_t first_record = can_combine_partition_counts ? misses.size() : 0;
         size_t last_record = 0;
         size_t combining_lookups = 0;
         size_t combined_records = 0;
@@ -239,9 +239,8 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
 
             /// Without combining, the previous record is always the last descriptor. Spelling it so keeps
             /// `first_record` and `last_record` out of the loop of the keys that never combine.
-            bool run_continues = (can_combine_partition_counts
-                ? misses.hashes.size() != first_record : !misses.hashes.empty())
-                && (combine_partition_counts ? misses.hashes[last_record] : misses.hashes.back()) == hash;
+            bool run_continues = (can_combine_partition_counts ? misses.size() != first_record : !misses.empty())
+                && (combine_partition_counts ? misses.hashAt(last_record) : misses.lastHash()) == hash;
             if constexpr (std::is_same_v<RecordKey, std::string_view>)
                 run_continues = run_continues && stable_key_views && staged_key == last_staged_key;
             else
@@ -249,13 +248,14 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
 
             if (run_continues)
             {
-                auto & multiplicity = combine_partition_counts
-                    ? misses.multiplicities[last_record] : misses.multiplicities.back();
-                ++multiplicity;
+                if constexpr (combine_partition_counts)
+                    misses.incrementCount(last_record);
+                else
+                    misses.incrementLastCount();
             }
             else
             {
-                size_t record = misses.hashes.size();
+                size_t record = misses.size();
                 if constexpr (combine_partition_counts)
                 {
                     /// Keep each partition's last missed key for this block. Its bytes remain alive until
@@ -263,7 +263,7 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
                     /// Packed-key equality checks its inline signature before comparing the string bytes.
                     auto & last = last_partition_keys[layout.partitionOf(hash)];
                     if (last.record_index != std::numeric_limits<size_t>::max()
-                        && (std::is_same_v<RecordKey, PackedStringRef> || misses.hashes[last.record_index] == hash)
+                        && (std::is_same_v<RecordKey, PackedStringRef> || misses.hashAt(last.record_index) == hash)
                         && staged_key == last.key)
                     {
                         record = last.record_index;
@@ -281,7 +281,7 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
                     }
                 }
 
-                if (record == misses.hashes.size())
+                if (record == misses.size())
                     misses.addCount<RecordKey>(static_cast<UInt32>(i), hash, staged_key, 1);
                 else
                     misses.incrementCount(record);
@@ -403,7 +403,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         }
         else
         {
-            misses.keys_are_const = true;
+            misses.setKeysConst();
             if (is_simple_count)
             {
                 misses.addCount<RecordKey>(static_cast<UInt32>(row_begin), hash, key, static_cast<UInt32>(row_end - row_begin));
@@ -513,11 +513,11 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
 
     auto & partitions = *adaptive.partitions;
     const AdaptivePartitionLayout layout = adaptive.session->layout;
-    const auto * hashes = misses.hashes.data();
-    const auto * source_rows = misses.source_rows.data();
-    const auto * staged_key_sizes = misses.key_sizes.data();
-    const char * staged_keys = misses.keys.data();
-    const bool keys_are_const = misses.keys_are_const;
+    const auto * hashes = misses.getHashes().data();
+    const auto * source_rows = misses.getSourceRows().data();
+    const auto * staged_key_sizes = misses.getKeySizes().data();
+    const char * staged_keys = misses.getKeys().data();
+    const bool keys_are_const = misses.keysAreConst();
 
     /// A constant key is read from the key columns' single row, while the arguments of each record stay its own
     /// source row.
@@ -561,7 +561,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             const size_t partition = layout.partitionOf(hash);
             const size_t key_size = key_size_of(i);
             char * record = partitions.append(partition, Record::bytesForKey(key_size));
-            Record::writeHeader(record, hash, Record::with_count ? misses.multiplicities[i] : 0, key_size);
+            Record::writeHeader(record, hash, Record::with_count ? misses.getMultiplicities()[i] : 0, key_size);
             write_key(i, key_size, record + Record::key_offset);
             zeroStagedRecordPadding(record + Record::key_offset + key_size);
             key_bytes += key_size;

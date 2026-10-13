@@ -220,12 +220,14 @@ struct AdaptiveMergeTask
 };
 
 /// The misses of a frozen producer's current block, one descriptor per delayed record in staging order: the routing
-/// hash, the source row of the record's arguments, the run length of a count record, and the key. A string-like key is
-/// kept as its size, and the writer copies its bytes out of the block. A fixed-width key is kept as its value, which
-/// the kernel has at hand, while reading it back from the key columns would pack it a second time. The arrays are
-/// cleared after every block but keep their capacity.
-struct AdaptiveMissBatch
+/// hash, the source row of the record's arguments, the multiplicity of a count record, and the key. A count record
+/// stands for the rows of its key that the kernel combined into it, consecutive or not. A string-like key is kept as its
+/// size, and the writer copies its bytes out of the block. A fixed-width key is kept as its value, which the kernel has
+/// at hand, while reading it back from the key columns would pack it a second time. The arrays are cleared after every
+/// block but keep their capacity.
+class AdaptiveMissBatch
 {
+public:
     /// Adds the miss of `row`.
     template <typename RecordKey, typename Key>
     ALWAYS_INLINE void add(UInt32 row, UInt64 hash, const Key & key)
@@ -235,21 +237,38 @@ struct AdaptiveMissBatch
         addKey<RecordKey>(key);
     }
 
-    /// Adds a count record of `rows` rows of one key, starting at `row`. A fixed-width key stages no size: the writer
+    /// Adds a count record of the key of `row` with `multiplicity` rows. A fixed-width key stages no size: the writer
     /// substitutes the compile-time constant, so the hot staging loop skips a dead store per record.
     template <typename RecordKey, typename Key>
-    ALWAYS_INLINE void addCount(UInt32 row, UInt64 hash, const Key & key, UInt32 rows)
+    ALWAYS_INLINE void addCount(UInt32 row, UInt64 hash, const Key & key, UInt32 multiplicity)
     {
         hashes.push_back(hash);
-        multiplicities.push_back(rows);
+        multiplicities.push_back(multiplicity);
         addKey<RecordKey>(key);
         source_rows.push_back(row);
     }
 
-    /// Adds a row to the run of count record `i`.
+    /// Adds a row to count record `i`, or to the last count record.
     ALWAYS_INLINE void incrementCount(size_t i) { ++multiplicities[i]; }
+    ALWAYS_INLINE void incrementLastCount() { ++multiplicities.back(); }
+
+    /// Marks the block's keys as constant: their columns hold a single row, from which every key is read, while the
+    /// arguments of each record stay at its source row.
+    void setKeysConst() { keys_are_const = true; }
+    bool keysAreConst() const { return keys_are_const; }
 
     size_t size() const { return hashes.size(); }
+    bool empty() const { return hashes.empty(); }
+    UInt64 hashAt(size_t i) const { return hashes[i]; }
+    UInt64 lastHash() const { return hashes.back(); }
+
+    /// The descriptors, read-only, for the writer and the accounting of the batch. The keys are the sizes of string-like
+    /// keys, or the raw bytes of one fixed-width key per record.
+    const PaddedPODArray<UInt32> & getSourceRows() const { return source_rows; }
+    const PaddedPODArray<UInt64> & getHashes() const { return hashes; }
+    const PaddedPODArray<UInt64> & getKeySizes() const { return key_sizes; }
+    const PaddedPODArray<char> & getKeys() const { return keys; }
+    const PaddedPODArray<UInt32> & getMultiplicities() const { return multiplicities; }
 
     void clear()
     {
@@ -260,16 +279,6 @@ struct AdaptiveMissBatch
         multiplicities.clear();
         keys_are_const = false;
     }
-
-    PaddedPODArray<UInt32> source_rows;
-    PaddedPODArray<UInt64> hashes;
-    /// The keys of the records: the sizes of string-like keys, or the raw bytes of one fixed-width key per record.
-    PaddedPODArray<UInt64> key_sizes;
-    PaddedPODArray<char> keys;
-    PaddedPODArray<UInt32> multiplicities;
-    /// Whether the block's keys are constant: their columns hold a single row, from which every key is read, while the
-    /// arguments of each record stay at its source row.
-    bool keys_are_const = false;
 
 private:
     template <typename RecordKey, typename Key>
@@ -286,6 +295,13 @@ private:
             keys.insert(bytes, bytes + sizeof(staged));
         }
     }
+
+    PaddedPODArray<UInt32> source_rows;
+    PaddedPODArray<UInt64> hashes;
+    PaddedPODArray<UInt64> key_sizes;
+    PaddedPODArray<char> keys;
+    PaddedPODArray<UInt32> multiplicities;
+    bool keys_are_const = false;
 };
 
 /// What `Aggregator::appendDelayedRecords` staged beyond the fixed parts of a batch's records, for the accounting of the
