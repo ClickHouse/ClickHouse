@@ -413,7 +413,7 @@ void MergeTextIndexesTask::PositionsMerge::start()
 
         auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
         /// The positions are not compressed, so the stream reads a plain file buffer.
-        auto & data_buffer = assert_cast<SeekableReadBuffer &>(*stream->getDataBuffer());
+        auto & data_buffer = dynamic_cast<SeekableReadBuffer &>(*stream->getDataBuffer());
         reader.directory = readPositionsDirectory(info, data_buffer, stream->getFileSize());
         reader.in = &data_buffer;
     }
