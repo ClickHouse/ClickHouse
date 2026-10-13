@@ -1691,9 +1691,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         not is_per_test_coverage or is_llvm_coverage
     ), "per_test_coverage requires an amd_llvm_coverage* build"
     if is_targeted_check and info.is_local_run:
-        # The PR workflow has only targeted integration jobs, so a local run of one
-        # (e.g. the `integration` job alias) runs as a regular job: test selection needs
-        # the PR diff and CIDB.
+        # Apart from the full `amd_tsan` shards for submodule bumps, the PR workflow has only
+        # targeted integration jobs, so a local run of one (e.g. the `integration` job alias)
+        # runs as a regular job: test selection needs the PR diff and CIDB.
         is_targeted_check = False
 
     per_test_coverage_dir = f"{temp_path}/per_test_coverage"
