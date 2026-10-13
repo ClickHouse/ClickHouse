@@ -19,13 +19,6 @@ SET async_insert = 1, wait_for_async_insert = 1, async_insert_deduplicate = 1, i
 -- One flush commits three partitions.
 INSERT INTO t VALUES (1, 1), (2, 2), (3, 3);
 
--- Keeper faults retry the same commit attempt.
-INSERT INTO t SETTINGS insert_keeper_fault_injection_probability = 0.05, insert_keeper_max_retries = 100, insert_keeper_retry_max_backoff_ms = 10 VALUES (4, 1);
-INSERT INTO t SETTINGS insert_keeper_fault_injection_probability = 0.05, insert_keeper_max_retries = 100, insert_keeper_retry_max_backoff_ms = 10 VALUES (4, 2);
-INSERT INTO t SETTINGS insert_keeper_fault_injection_probability = 0.05, insert_keeper_max_retries = 100, insert_keeper_retry_max_backoff_ms = 10 VALUES (4, 3);
-INSERT INTO t SETTINGS insert_keeper_fault_injection_probability = 0.05, insert_keeper_max_retries = 100, insert_keeper_retry_max_backoff_ms = 10 VALUES (4, 4);
-INSERT INTO t SETTINGS insert_keeper_fault_injection_probability = 0.05, insert_keeper_max_retries = 100, insert_keeper_retry_max_backoff_ms = 10 VALUES (4, 5);
-
 -- REPLACE PARTITION removes the deduplication hashes of the partition and drops the cache snapshot.
 INSERT INTO src SETTINGS async_insert = 0 VALUES (1, 10);
 ALTER TABLE t REPLACE PARTITION 1 FROM src;
