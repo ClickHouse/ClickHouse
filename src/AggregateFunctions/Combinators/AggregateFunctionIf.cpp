@@ -183,6 +183,21 @@ public:
         {
             /// The nested function skips the rows that are NULL or fail the condition at position 1.
             const IColumn * columns_with_filter[] = {columns_param[0], filter_column};
+
+            if (!column->hasNullMap())
+            {
+                /// No NULLs at all: take the same path as for non-`Nullable` arguments.
+                if constexpr (result_is_nullable)
+                {
+                    if (!countBytesInFilter(filter_values, row_begin, row_end))
+                        return;
+                    this->setFlag(place);
+                }
+                this->nested_function->addBatchSinglePlace(
+                    row_begin, row_end, this->nestedPlace(place), columns_with_filter, arena, 1);
+                return;
+            }
+
             if constexpr (result_is_nullable)
             {
                 if (!countBytesInFilterWithNull(assert_cast<const ColumnUInt8 &>(*filter_column).getData(), null_map, row_begin, row_end))
