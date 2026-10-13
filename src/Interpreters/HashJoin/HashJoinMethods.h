@@ -9,7 +9,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 #include <base/types.h>
-
 #include <span>
 
 namespace DB
@@ -23,7 +22,6 @@ size_t getMinBytesForPrefetchInJoin();
 template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
-    /// `new_keys` counts keys the map lacked, not rows accepted: `any_take_last_row` overwrites.
     /// `any_take_last_row` is read from the join once, before the loop that calls this. Reading it here
     /// costs a load per row: the map this writes to lives inside the join object, so the compiler cannot
     /// prove that the write leaves the flag alone and has to reload it.
@@ -40,15 +38,14 @@ struct Inserter
     }
 
     /// A set map holds no reference to a right row, so there is nothing to do beyond adding the key.
-    /// The key is still counted. `~HashJoin` records the size statistics from `keys_to_join`, and
-    /// the runtime filter reads it to see whether the build has more than one distinct key.
+    /// The key is still counted: `~HashJoin` statistics and the runtime filter read `keys_to_join`.
     static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool, size_t & new_keys)
     {
         new_keys += key_getter.emplaceKey(map, i, pool).isInserted();
     }
 
-    static ALWAYS_INLINE bool insertAll(
-        const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
+    static ALWAYS_INLINE bool
+    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
         new_keys += emplace_result.isInserted();
@@ -94,10 +91,10 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
 public:
-    /// Inserts the keys of clause `map_idx` of a block into `maps`. Each slot inserts its rows of `per_slot` under its
-    /// own lock.
+    /// Inserts clause `map_idx` of a block into `maps`. Each slot inserts its rows of `per_slot` under its own lock.
     static BuildResult insertFromBlockImpl(
         HashJoin & join,
+        HashJoin::Type type,
         MapsTemplate & maps,
         size_t map_idx,
         std::span<const ScatteredBlock::Selector> per_slot,
@@ -124,6 +121,9 @@ public:
         bool is_join_get = false);
 
 private:
+    template <typename KeyGetter, bool is_asof_join>
+    static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {});
+
     template <typename KeyGetter, typename HashMap>
     static BuildResult insertFromBlockImplTypeCase(
         HashJoin & join,
@@ -189,7 +189,7 @@ private:
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,
-        const ScatteredBlock::Selector::Range & range);
+        const ScatteredBlock::Selector::Range & selector);
 
     template <
         typename KeyGetter,
@@ -202,7 +202,7 @@ private:
         const Map * map,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,
-        const ScatteredBlock::Selector::Range & range);
+        const ScatteredBlock::Selector::Range & selector);
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
     template <typename KeyGetter, typename Map, typename AddedColumns>

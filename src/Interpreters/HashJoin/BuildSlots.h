@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <span>
+#include <thread>
 #include <vector>
 
 namespace DB
@@ -42,7 +43,8 @@ public:
         if constexpr (is_partitioned_fixed_table<Map>)
             res += slot == 0 ? map.getBufferSizeInBytes() : 0;
         else
-            forEachBucketOfSlot(slot, Map::NUM_BUCKETS, [&](size_t bucket) { res += map.impls[bucket].getBufferSizeInBytes(); });
+            for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
+                res += map.impls[bucket].getBufferSizeInBytes();
         return res;
     }
 
@@ -89,7 +91,8 @@ public:
             if (!size_hint || reserved[map_idx][slot])
                 return 0;
             const size_t keys = clampReserve<Map>(size_hint, max_reserve_bytes);
-            forEachBucketOfSlot(slot, Map::NUM_BUCKETS, [&](size_t bucket) { map.impls[bucket].reserve(keys / Map::NUM_BUCKETS); });
+            for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
+                map.impls[bucket].reserve(keys / Map::NUM_BUCKETS);
             reserved[map_idx][slot] = 1;
             return keys / slots.size();
         }
@@ -97,16 +100,40 @@ public:
 
     /// Calls `insert_slot(slot)` under the lock of every slot that `per_slot` gives rows to. Slots are taken in
     /// whatever order they come free.
-    void insert(std::span<const ScatteredBlock::Selector> per_slot, absl::FunctionRef<void(size_t)> insert_slot);
-
-private:
-    template <typename F>
-    void forEachBucketOfSlot(size_t slot, size_t num_buckets, F && f) const
+    void insert(std::span<const ScatteredBlock::Selector> per_slot, absl::FunctionRef<void(size_t)> insert_slot)
     {
-        for (size_t bucket = slot; bucket < num_buckets; bucket += slots.size())
-            f(bucket);
+        const size_t num_slots = slots.size();
+        std::vector<char> pending(num_slots);
+        for (size_t slot = 0; slot < num_slots; ++slot)
+            pending[slot] = per_slot[slot].size() != 0;
+        size_t slots_left = std::ranges::count(pending, 1);
+
+        while (slots_left > 0)
+        {
+            bool made_progress = false;
+
+            for (size_t slot = 0; slot < num_slots; ++slot)
+            {
+                if (!pending[slot])
+                    continue;
+
+                std::unique_lock lock(slots[slot].mutex, std::try_to_lock);
+                if (!lock.owns_lock())
+                    continue;
+
+                made_progress = true;
+                insert_slot(slot);
+                pending[slot] = 0;
+                --slots_left;
+            }
+
+            /// Yielding beats blocking: another slot of this block is probably free.
+            if (!made_progress)
+                std::this_thread::yield();
+        }
     }
 
+private:
     /// A statistics-derived reserve is an estimate, so cap it at the spill budget.
     template <typename Table>
     static size_t clampReserve(size_t reserve, size_t max_reserve_bytes)

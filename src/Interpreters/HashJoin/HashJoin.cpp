@@ -610,12 +610,17 @@ HashJoin::Type HashJoin::toTwoLevelType(Type type)
 {
     switch (type)
     {
-#define M(NAME) \
-    case Type::NAME: return Type::two_level_##NAME;
-        APPLY_FOR_SINGLE_LEVEL_JOIN_VARIANTS(M)
-#undef M
         case Type::key8: return Type::two_level_key8;
         case Type::key16: return Type::two_level_key16;
+        case Type::key32: return Type::two_level_key32;
+        case Type::key64: return Type::two_level_key64;
+        case Type::key_string: return Type::two_level_key_string;
+        case Type::key_fixed_string: return Type::two_level_key_fixed_string;
+        case Type::keys32: return Type::two_level_keys32;
+        case Type::keys64: return Type::two_level_keys64;
+        case Type::keys128: return Type::two_level_keys128;
+        case Type::keys256: return Type::two_level_keys256;
+        case Type::hashed: return Type::two_level_hashed;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash join map type {} has no two-level variant", type);
     }
@@ -1190,6 +1195,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
                     const BuildResult result = HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
                         *this,
+                        data->type,
                         map,
                         onexpr_idx,
                         per_slot,
@@ -2508,7 +2514,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
     using Mapped = typename MapsTemplate::MappedType;
     auto convert_to_fixed_hash_map = [&]<size_t size_bits>(auto & dst_map, Type type)
     {
-        using RangeMap = JoinFixedHashMap<Key, Mapped, size_bits>;
+        using RangeMap = JoinFixedHashMapWithSizeBits<Key, Mapped, size_bits>;
         auto range_map = std::make_shared<RangeMap>();
         for (auto source_map_it = source_map.begin(); source_map_it != source_map.end(); ++source_map_it)
         {
@@ -3057,7 +3063,8 @@ bool HashJoin::hasPostBuildPhase() const
     /// but publishSharedRuntimeFilters still needs to run for them when the feature is on.
     const bool needs_shared_filter_publish =
         data && data->rows_to_join && data->maps.size() == 1
-        && (toSingleLevelType(data->type) == Type::key8 || toSingleLevelType(data->type) == Type::key16)
+        && (data->type == Type::key8 || data->type == Type::key16 || data->type == Type::two_level_key8
+            || data->type == Type::two_level_key16)
         && table_join->joinRuntimeFilterFromFixedHashTable()
         && !table_join->getSharedRuntimeFilterDescriptors().empty();
 

@@ -1,9 +1,7 @@
 #include <Interpreters/HashJoin/SlotScatter.h>
 
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <Columns/IColumn.h>
 #include <Common/Arena.h>
-#include <Common/Exception.h>
 #include <Common/PODArray.h>
 
 #include <base/defines.h>
@@ -13,11 +11,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 namespace
 {
@@ -38,8 +31,9 @@ std::vector<ScatteredBlock::Selector> scatterImpl(
         static_assert(!KeyGetter::has_pre_computed_hashes, "Bucket routing assumes the map computes the hash it places by");
 
     /// For ASOF the key getter leaves out the ASOF column.
-    KeyGetter key_getter
-        = is_asof ? createKeyGetter<KeyGetter, true>(key_columns, key_sizes) : createKeyGetter<KeyGetter, false>(key_columns, key_sizes);
+    KeyGetter key_getter = is_asof
+        ? KeyGetter(ColumnRawPtrs(key_columns.begin(), key_columns.end() - 1), Sizes(key_sizes.begin(), key_sizes.end() - 1), nullptr)
+        : KeyGetter(key_columns, key_sizes, nullptr);
 
     /// Nothing here outlives the call: the key holders are read for their hash, never persisted.
     Arena scratch_pool;
@@ -101,7 +95,7 @@ std::vector<ScatteredBlock::Selector> scatterBlockBySlot(
             APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
 #undef M
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash join map type {} is not split into slots", type);
+            UNREACHABLE();
     }
 }
 

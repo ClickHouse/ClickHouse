@@ -313,33 +313,4 @@ struct KeyGetterForType
     using Mapped = std::conditional_t<std::is_const_v<Data> && !std::is_void_v<Mapped_t>, const Mapped_t, Mapped_t>;
     using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
 };
-
-/// Builds one clause's key getter. For ASOF the last key column is the inequality one, which the
-/// getter must not see. Only the range getters read `key_range`; callers that run before the build
-/// settles it pass the default, i.e. no shift.
-template <typename KeyGetter, bool is_asof_join>
-KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {})
-{
-    KeyGetter getter = [&]
-    {
-        if constexpr (is_asof_join)
-        {
-            auto key_column_copy = key_columns;
-            auto key_size_copy = key_sizes;
-            key_column_copy.pop_back();
-            key_size_copy.pop_back();
-            return KeyGetter(key_column_copy, key_size_copy, nullptr);
-        }
-        else
-            return KeyGetter(key_columns, key_sizes, nullptr);
-    }();
-
-    if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
-    {
-        getter.min_key = static_cast<decltype(getter.min_key)>(key_range.min_key);
-        getter.range_size = static_cast<decltype(getter.range_size)>(key_range.size);
-    }
-
-    return getter;
-}
 }
