@@ -35,6 +35,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int POSTGRESQL_CONNECTION_FAILURE;
     extern const int TOO_MANY_COLUMNS;
 }
@@ -273,10 +274,15 @@ Chunk PostgreSQLSource<T>::generate()
         if (!row)
             break;
 
-        if (row->size() > description.sample_block.columns())
-            throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
-                            "Row has too many columns: {}, expected structure: {}",
-                            row->size(), description.sample_block.dumpStructure());
+        if (row->size() != description.sample_block.columns())
+            throw Exception(
+                row->size() > description.sample_block.columns() ? ErrorCodes::TOO_MANY_COLUMNS
+                                                                  : ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "Row has {} columns instead of {}, expected structure: {}{}",
+                row->size(),
+                description.sample_block.columns(),
+                description.sample_block.dumpStructure(),
+                structure_hint.empty() ? "" : ": " + structure_hint);
 
         for (const auto idx : collections::range(0, row->size()))
         {
