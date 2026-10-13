@@ -192,22 +192,26 @@ SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT w, count() FROM 
 WHERE explain ILIKE '%prewhere filter column: and(\_\_topKFilter(w), %';
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3 SETTINGS log_comment = 'qcc_gbtopk_proj_r1' FORMAT Null;
-SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3 SETTINGS log_comment = 'qcc_gbtopk_proj_r2' FORMAT Null;
+SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3 SETTINGS log_comment = 'qcc_gbtopk_proj_r2';
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3
 SETTINGS optimize_use_projections = 0, log_comment = 'qcc_gbtopk_noproj_r1' FORMAT Null;
 SELECT w, count() FROM ptab WHERE k < 100000 AND v > 5 GROUP BY w ORDER BY w LIMIT 3
-SETTINGS optimize_use_projections = 0, log_comment = 'qcc_gbtopk_noproj_r2' FORMAT Null;
+SETTINGS optimize_use_projections = 0, log_comment = 'qcc_gbtopk_noproj_r2';
 SYSTEM FLUSH LOGS query_log;
--- Per arm, run 2's hits, misses, whether it read fewer marks than run 1, and whether it read the table, not the projection.
--- The arm without the projection is the control that already pruned.
+-- Per arm, run 2's hits, misses, whether it read fewer marks than run 1, index analyses (the projection's adds one), and
+-- whether it read the table, not the projection. The arm without the projection is the control that already pruned.
 SELECT replaceOne(r2.log_comment, '_r2', ''), r2.ProfileEvents['QueryConditionCacheHits'], r2.ProfileEvents['QueryConditionCacheMisses'],
-       r2.ProfileEvents['SelectedMarks'] < r1.ProfileEvents['SelectedMarks'], empty(r2.projections)
+       r2.ProfileEvents['SelectedMarks'] < r1.ProfileEvents['SelectedMarks'], r2.ProfileEvents['IndexAnalysisRounds'], empty(r2.projections)
 FROM system.query_log AS r2 INNER JOIN system.query_log AS r1 ON replaceOne(r2.log_comment, '_r2', '_r1') = r1.log_comment
 WHERE r2.event_date >= yesterday() AND r1.event_date >= yesterday() AND r2.type = 'QueryFinish' AND r1.type = 'QueryFinish'
   AND r2.current_database = currentDatabase() AND r1.current_database = currentDatabase()
   AND r2.log_comment IN ('qcc_gbtopk_proj_r2', 'qcc_gbtopk_noproj_r2')
 ORDER BY r2.log_comment DESC;
+-- Both warm runs read the same marks.
+SELECT uniqExact(ProfileEvents['SelectedMarks']) FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
+  AND log_comment IN ('qcc_gbtopk_proj_r2', 'qcc_gbtopk_noproj_r2');
 
 DROP TABLE ptab;
 DROP TABLE dim;
