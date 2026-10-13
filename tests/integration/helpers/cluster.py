@@ -6065,7 +6065,13 @@ class ClickHouseInstance:
                         raise
                     time.sleep(time_to_sleep)
 
-        raise Exception("Cannot start ClickHouse, see additional info in logs")
+        # Every attempt above fails the same way when docker removed the container's interface;
+        # say so, the CI job reports that as an infrastructure error.
+        lost_interface = self.describe_lost_network_interface()
+        raise Exception(
+            (f"{lost_interface} " if lost_interface else "")
+            + "Cannot start ClickHouse, see additional info in logs"
+        )
 
     def stop_clickhouse_client(self, signal="INT"):
         client_pid = self.get_process_pid("clickhouse client")
