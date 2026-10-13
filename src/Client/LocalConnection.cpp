@@ -21,7 +21,6 @@
 #include <Storages/IStorage.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/SettingSource.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
@@ -234,14 +233,14 @@ void LocalConnection::sendQuery(
     const UInt64 parse_time_max_ast_depth = parse_time_settings[Setting::max_ast_depth];
     const UInt64 parse_time_max_ast_elements = parse_time_settings[Setting::max_ast_elements];
 
-    /// Apply the per-query settings passed with the query, like a remote server does with the
-    /// settings sent over the wire: only the changed ones, on top of the session (throwing if they
-    /// violate the constraints, as for an initial query). Not the whole object: the internal
-    /// queries of the client pass a `Settings` holding a few changes, and its defaults must not
-    /// replace what the session has. The query below is also parsed with them (e.g. the `dialect`).
+    /// Apply only what the client changed, like `TCPHandler` does. Replacing the whole `Settings`
+    /// would drop what the session context holds beyond the client's copy, e.g. the settings of
+    /// a `SET profile`, which the client does not track.
+    /// The changes must be checked against the constraints, as the session may belong to a restricted
+    /// user (the embedded client of the web terminal and the SSH interface).
     if (query_settings)
     {
-        const auto settings_changes = query_settings->changes();
+        SettingsChanges settings_changes = query_settings->changes();
         query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
     }
