@@ -66,6 +66,7 @@ public:
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
     std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
     bool isTopKFilterApplied() const override;
+    bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
 private:
     Chunk read() override;
@@ -86,6 +87,9 @@ private:
 
     std::optional<Parquet::ReadManager> reader;
     bool reported_count = false; // if need_only_count
+
+    /// The rows were replaced by min / max from column chunk statistics; no row groups were read.
+    bool min_max_from_statistics = false;
 
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
