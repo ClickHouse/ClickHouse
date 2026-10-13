@@ -11,8 +11,8 @@ namespace DB
   * does, and an arm whose column types differ from the union's result types is wrapped in a subquery converting them,
   * like the set-operation step converts its inputs.
   *
-  * A union whose columns have a `Dynamic` type (which cannot be a join key), or whose arm has duplicate column
-  * names (which cannot be referenced from the join), keeps the set-operation step, as do the `ALL` modes and
+  * A union whose columns have a `Dynamic` type (which cannot be a join key), whose arm has duplicate column
+  * names (which cannot be referenced from the join) or totals, keeps the set-operation step, as do the `ALL` modes and
   * every union when the join would not be a hash join reading all of both sides.
   */
 class RewriteIntersectExceptToJoinPass final : public IQueryTreePass

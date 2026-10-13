@@ -23,3 +23,9 @@ executed as a join
 an empty left side stops the right one, even when the right one produces nothing until it is read to the end
 0
 0
+totals keep the set-operation step
+0	34
+1	33
+2	33
+
+0	100

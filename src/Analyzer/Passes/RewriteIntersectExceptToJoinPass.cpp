@@ -110,6 +110,14 @@ JoinSide makeJoinSide(
     return {makeSubquery(arm, std::move(projection), result_columns, aliases, context), result_columns};
 }
 
+/// The set-operation step passes on the totals of its inputs, while a join joins them.
+bool hasTotals(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->isGroupByWithTotals();
+    return std::ranges::any_of(node->as<UnionNode &>().getQueries().getNodes(), hasTotals);
+}
+
 QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, JoinStrictness strictness, SubqueryAliases & aliases, const ContextPtr & context)
 {
     const auto & arms = union_node.getQueries().getNodes();
@@ -118,6 +126,9 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, JoinStrictness str
     for (const auto & column : result_columns)
         if (hasDynamicType(column.type))
             return nullptr;
+
+    if (std::ranges::any_of(arms, hasTotals))
+        return nullptr;
 
     std::vector<NamesAndTypes> arm_columns;
     arm_columns.reserve(arms.size());

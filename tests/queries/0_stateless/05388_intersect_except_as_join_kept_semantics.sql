@@ -38,3 +38,12 @@ SELECT count() FROM (SELECT number FROM numbers(0) EXCEPT DISTINCT SELECT max(nu
 SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw';
 SELECT count() FROM (SELECT number FROM numbers(0) INTERSECT DISTINCT SELECT number FROM system.numbers)
 SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw', query_plan_join_swap_table = 'true';
+
+SELECT 'totals keep the set-operation step';
+SELECT * FROM
+(
+    SELECT number % 3 AS k, count() FROM numbers(100) GROUP BY k
+    INTERSECT DISTINCT
+    SELECT number % 3, count() FROM numbers(100) GROUP BY number % 3 WITH TOTALS
+)
+ORDER BY k;
