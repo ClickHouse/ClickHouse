@@ -2168,7 +2168,10 @@ def test_list_collections_and_databases_honor_filter_and_name_only(started_clust
     assert [entry["name"] for entry in databases(filter={"name": {"$in": ["db_listing", "absent"]}})] == ["db_listing"]
     assert [entry["name"] for entry in databases(filter={"name": {"$regex": "^db_list"}})] == ["db_listing"]
     assert databases(filter={"name": "absent"}) == []
-    assert set(databases(filter={"name": "db_listing"})[0].keys()) == {"name", "empty"}
+    assert databases(filter={"name": "db_listing"}) == [{"name": "db_listing", "empty": False}]
+    node.query("CREATE DATABASE IF NOT EXISTS db_listing_empty", password="123")
+    assert databases(filter={"name": "db_listing_empty"}) == [{"name": "db_listing_empty", "empty": True}]
+    node.query("DROP DATABASE db_listing_empty", password="123")
     assert databases(filter={"name": "db_listing"}, nameOnly=True) == [{"name": "db_listing"}]
     assert "db_listing" in client.list_database_names()
 
@@ -2482,7 +2485,8 @@ def test_parser_limits_come_from_the_user_profile(started_cluster):
 
 def test_list_collections_needs_a_database_grant_and_reports_views(started_cluster):
     """`listCollections` needs a grant on the whole database, unless it asks only for the names of
-    the collections the user has a grant on. A view is listed as a read-only view."""
+    the collections the user has a grant on. A view is listed as a read-only view. `listDatabases`
+    lists only the databases the user has a grant on, unless the user has the global grant."""
     node = cluster.instances["node"]
     database = make_client()["db_list_grants"]
     database["visible"].drop()
@@ -2507,6 +2511,21 @@ def test_list_collections_needs_a_database_grant_and_reports_views(started_clust
             lister.command({"listCollections": 1, **options})
     reply = lister.command({"listCollections": 1, "authorizedCollections": True, "nameOnly": True})
     assert reply["cursor"]["firstBatch"] == [{"name": "visible", "type": "collection"}]
+
+    # Without the global `SHOW DATABASES` grant `listDatabases` lists only the databases the user has
+    # a grant on, and the full listing of `authorizedDatabases: false` is refused.
+    node.query("CREATE DATABASE IF NOT EXISTS db_list_hidden", password="123")
+    admin = make_client(user="mongo_lister", password="mongo_pass", database="admin")["admin"]
+    for options in [{}, {"authorizedDatabases": True}]:
+        names = [entry["name"] for entry in admin.command({"listDatabases": 1, **options})["databases"]]
+        assert "db_list_grants" in names
+        assert "db_list_hidden" not in names
+    with pytest.raises(pymongo.errors.OperationFailure, match="Not authorized"):
+        admin.command({"listDatabases": 1, "authorizedDatabases": False})
+    node.query("GRANT SHOW DATABASES ON *.* TO mongo_lister", password="123")
+    names = [entry["name"] for entry in admin.command({"listDatabases": 1, "authorizedDatabases": False})["databases"]]
+    assert "db_list_hidden" in names
+    node.query("DROP DATABASE db_list_hidden", password="123")
 
     node.query("DROP USER mongo_lister", password="123")
     node.query("DROP DATABASE db_list_grants", password="123")
