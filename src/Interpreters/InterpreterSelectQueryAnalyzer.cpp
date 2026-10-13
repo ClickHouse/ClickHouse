@@ -310,6 +310,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
 /// Like `extractAllTableReferences`, but does not descend into the inner queries of views inlined
 /// by the analyzer (`analyzer_inline_views`) into a query that is not itself inside a view:
 /// they read their own tables, just like a view that is not inlined.
+/// With `with_expression_subqueries`, also walks the subqueries in expressions and the children of a `TableNode`.
 static bool isViewInnerQueryNode(const QueryTreeNodePtr & node)
 {
     if (const auto * query_node = node->as<QueryNode>())
@@ -319,32 +320,50 @@ static bool isViewInnerQueryNode(const QueryTreeNodePtr & node)
     return false;
 }
 
-static void extractTableReferencesOutsideViews(const QueryTreeNodePtr & node, bool outer_is_view_inner, QueryTreeNodes & result)
+static void extractTableReferencesOutsideViews(
+    const QueryTreeNodePtr & node, bool outer_is_view_inner, bool with_expression_subqueries, QueryTreeNodes & result)
 {
     bool is_view_inner = isViewInnerQueryNode(node);
     if (is_view_inner && !outer_is_view_inner)
         return;
 
     if (node->getNodeType() == QueryTreeNodeType::TABLE)
-    {
         result.push_back(node);
+
+    if (with_expression_subqueries)
+    {
+        /// Like in `extractAllTableReferences`, the arguments of a table function are not table references.
+        if (node->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+            return;
+
+        /// Only a query or a union can enter or leave a view inner query.
+        if (!node->as<QueryNode>() && !node->as<UnionNode>())
+            is_view_inner = outer_is_view_inner;
+
+        /// Also reaches the subquery of a materialized CTE, a child of its `TableNode`.
+        for (const auto & child : node->getChildren())
+            if (child)
+                extractTableReferencesOutsideViews(child, is_view_inner, with_expression_subqueries, result);
     }
     else if (const auto * query_node = node->as<QueryNode>())
     {
         for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ false))
-            extractTableReferencesOutsideViews(table_expression, is_view_inner, result);
+            extractTableReferencesOutsideViews(table_expression, is_view_inner, with_expression_subqueries, result);
     }
     else if (const auto * union_node = node->as<UnionNode>())
     {
         for (const auto & query : union_node->getQueries().getNodes())
-            extractTableReferencesOutsideViews(query, is_view_inner, result);
+            extractTableReferencesOutsideViews(query, is_view_inner, with_expression_subqueries, result);
     }
 }
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
+    /// `tryResolveTableIdentifier` types every reference to the view source table outside view inner queries
+    /// by the view source, not only those in the join tree, so all of them are replaced.
+    bool with_expression_subqueries = storage == context->getViewSource();
     QueryTreeNodes nodes;
-    extractTableReferencesOutsideViews(query_tree, isViewInnerQueryNode(query_tree), nodes);
+    extractTableReferencesOutsideViews(query_tree, isViewInnerQueryNode(query_tree), with_expression_subqueries, nodes);
     IQueryTreeNode::ReplacementMap replacement_map;
 
     for (auto & node : nodes)

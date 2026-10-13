@@ -488,6 +488,10 @@ struct Reader
         /// the row group when it provably contains no row that can enter the top-K
         /// (see topKShouldSkipRowGroup).
         std::optional<Range> top_k_sort_column_range;
+        /// TopN dynamic filtering: a single-row column with the best value of the sort column among
+        /// the rows delivered from this row group so far, in the query's order. Only maintained with
+        /// `FormatTopKFilterInfo::track_row_group_best_values` (see updateTopKBestValue).
+        ColumnPtr top_k_best_value;
 
         std::deque<RowSubgroup> subgroups;
 
@@ -585,6 +589,9 @@ struct Reader
     /// the reader only produces type defaults for it while the threshold comes from the values the
     /// pipeline puts in their place, so the filter must not be applied at all.
     bool top_k_column_is_read = false;
+    /// TopN dynamic filtering: position of the sort column in `sample_block`, when the best value of
+    /// each row group is tracked (see RowGroup::top_k_best_value).
+    std::optional<size_t> top_k_best_value_column_pos;
     /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
     bool row_groups_ordered_by_top_k = false;
 
@@ -592,7 +599,7 @@ struct Reader
 
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
-    /// `footer_read_size` overrides the initial footer read size; 0 sizes it adaptively to the file.
+    /// `footer_read_size` overrides the initial footer read size; 0 reads 64 KiB of a local file and sizes the read to the file otherwise.
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
     void preparePrewhere();
@@ -649,10 +656,16 @@ struct Reader
     /// describe only the non-null values, and null rows may belong to the top-K). Statistics that
     /// are present but cannot be decoded throw, as in the static min/max pruning path.
     std::optional<Range> getTopKSortColumnRange(const parq::RowGroup & meta) const;
+    /// Two rows (min, max of every output column) from chunk statistics; nullopt if some chunk lacks exact statistics.
+    std::optional<Chunk> readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const;
+    /// If set, no row groups are read and the format returns this chunk instead.
+    std::optional<Chunk> min_max_chunk;
     /// True if the running top-K threshold proves that no row of this row group can enter the
     /// top-K heap, so the row group can be skipped without reading its column data. The threshold
     /// only ever tightens, so a `false` result is safely revisited by the row filter later.
     bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
+    /// Folds the sort column of a chunk delivered from the row group into RowGroup::top_k_best_value.
+    void updateTopKBestValue(RowGroup & row_group, const IColumn & column) const;
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
@@ -665,6 +678,9 @@ struct Reader
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
+    /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
+    /// capped far below overflow.
+    size_t memoryEstimateLimit() const;
 
     void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup);
 

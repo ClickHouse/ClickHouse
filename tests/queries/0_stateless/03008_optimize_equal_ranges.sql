@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the ProfileEvents of the replicas are missing in the initiator's `query_log`, https://github.com/ClickHouse/ClickHouse/issues/123994
 DROP TABLE IF EXISTS t_optimize_equal_ranges;
 
 CREATE TABLE t_optimize_equal_ranges (a UInt64, b String, c UInt64) ENGINE = MergeTree ORDER BY a;
