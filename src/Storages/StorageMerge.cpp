@@ -67,7 +67,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -860,6 +862,42 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+namespace
+{
+
+/// Passes two-level partially aggregated chunks on as single-level, so the merging step re-buckets their keys itself.
+class ForgetAggregationBucketsTransform final : public ISimpleTransform
+{
+public:
+    explicit ForgetAggregationBucketsTransform(const SharedHeader & header_) : ISimpleTransform(header_, header_, false) {}
+    String getName() const override { return "ForgetAggregationBucketsTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        auto info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+        if (!info || info->bucket_num < 0)
+            return;
+
+        auto single_level_info = std::make_shared<AggregatedChunkInfo>();
+        single_level_info->is_overflows = info->is_overflows;
+        chunk.getChunkInfos().extract<AggregatedChunkInfo>();
+        chunk.getChunkInfos().add(std::move(single_level_info));
+    }
+};
+
+bool haveSameColumnTypes(const Block & lhs, const Block & rhs)
+{
+    if (lhs.columns() != rhs.columns())
+        return false;
+    for (size_t i = 0; i < lhs.columns(); ++i)
+        if (!lhs.getByPosition(i).type->equals(*rhs.getByPosition(i).type))
+            return false;
+    return true;
+}
+
+}
+
 /// Equalizes top-level constness across the sibling pipelines `ReadFromMerge` is about to unite.
 static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines)
 {
@@ -1392,6 +1430,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             child.plan.addInterpreterContext(modified_context);
 
+            /// Bucket numbers depend on the aggregation key types, and the merging step merges the children's buckets as they are.
+            if (child.plan.isInitialized() && common_processed_stage == QueryProcessingStage::WithMergeableState && query_info.need_aggregate)
+                child.forget_aggregation_buckets = !haveSameColumnTypes(*child.plan.getCurrentHeader(), *common_header);
+
             if (child.plan.isInitialized())
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
@@ -1406,7 +1448,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     row_policy_data_opt,
                     context,
                     child,
-                    is_smallest_column_requested);
+                    is_smallest_column_requested,
+                    column_names_to_read);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1876,6 +1919,9 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         builder->addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
     }
 
+    if (child.forget_aggregation_buckets)
+        builder->addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<ForgetAggregationBucketsTransform>(stream_header); });
+
     return builder;
 }
 
@@ -2269,7 +2315,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     ChildPlan & child,
-    bool is_smallest_column_requested)
+    bool is_smallest_column_requested,
+    const Names & column_names_read)
 {
     auto before_block_header = child.plan.getCurrentHeader();
 
@@ -2424,6 +2471,12 @@ void ReadFromMerge::convertAndFilterSourceStream(
     };
 
     String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
+
+    /// A column the child reads only for itself (its row policy or ALIAS columns) makes this a by-name read.
+    const NameSet column_names_read_set(column_names_read.begin(), column_names_read.end());
+    const bool has_columns_read_only_for_child = std::ranges::any_of(current_step_columns, [&](const auto & column)
+        { return !header.has(column.name) && column_names_read_set.contains(column.name); });
+
     for (size_t i = 0; i < size; ++i)
     {
         const auto & source_elem = current_step_columns[i];
@@ -2436,7 +2489,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
             /// This column is unneeded in the result.
             converted_columns.push_back(source_elem);
         }
-        else if (header.columns() == current_step_columns.size())
+        else if (!has_columns_read_only_for_child && header.columns() == current_step_columns.size())
         {
             /// Virtual columns and columns read from Distributed tables (having different name but matched by position).
             converted_columns.push_back(materializeIfSourceIsNotConst(header.getByPosition(i), source_elem));
@@ -2513,13 +2566,39 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
+bool ReadFromMerge::canReadInReverseOrder()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    auto can_read_in_reverse_order = [](ReadFromMergeTree & read_from_merge_tree)
+    {
+        return read_from_merge_tree.canReadInReverseOrder();
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized()
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read_in_reverse_order))
+            return false;
+
+    return true;
+}
+
+void ReadFromMerge::resetChildPlans()
+{
+    chassert(!order_info);
+    child_plans.reset();
+    selected_tables.clear();
+    expandable_reads.reset();
+}
+
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
 {
     filterTablesAndCreateChildrenPlans();
 
-    /// Disable read-in-order optimization for reverse order with final.
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
+    /// Not every reading step accepts a reverse direction (with `FINAL`, only some engines do, see
+    /// `ReadFromMergeTree::canReadInReverseOrder`). Ask all of them before the loop below switches
+    /// the children one by one, so that no child is left reading in order when the request is rejected.
+    if (order_info_->direction != 1 && !canReadInReverseOrder())
         return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
@@ -2575,7 +2654,7 @@ std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
     return plans;
 }
 
-const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
+std::vector<StorageID> ReadFromMerge::computeExpandableReads(
     const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
 {
     /// The parallel-replicas plan transformation only understands `ReadFromMergeTree` reads and unions of
@@ -2586,13 +2665,10 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     /// `MergeTree` reads. This tells the caller whether that is possible, and which tables the union would
     /// read, without touching the plan - so that the decision to distribute can be taken before anything is
     /// rewritten.
-    if (expandable_reads)
-        return *expandable_reads;
-
     filterTablesAndCreateChildrenPlans();
 
     if (selected_tables.empty() || child_plans->empty())
-        return expandable_reads.emplace();
+        return {};
 
     /// Every child must be a `MergeTree` table read by a plain read step, and none of them may be `FINAL`.
     /// A child read through an interpreter (a `View`, a nested `Merge`) or a table of another engine has no
@@ -2620,13 +2696,13 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     for (const auto & child : *child_plans)
     {
         if (table_it == selected_tables.end())
-            return expandable_reads.emplace();
+            return {};
 
         const auto & storage = std::get<1>(*table_it);
         ++table_it;
 
         if (!storage->isMergeTree() || !child.plan.isInitialized())
-            return expandable_reads.emplace();
+            return {};
 
         const auto * node = child.plan.getRootNode();
 
@@ -2637,7 +2713,7 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
         /// whole `Merge` on a single replica, deliberately and not through the shape check below.
         if (node
             && (typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())))
-            return expandable_reads.emplace();
+            return {};
 
         /// Descend the steps the child plan puts on top of the read - the converting expressions and the
         /// row policy filter of `convertAndFilterSourceStream`. Anything else means the child is not read
@@ -2648,12 +2724,34 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
 
         const auto * reading = node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
         if (!reading || reading->isQueryWithFinal() || !can_ship_read(*reading))
-            return expandable_reads.emplace();
+            return {};
 
         storage_ids.push_back(reading->getMergeTreeData().getStorageID());
     }
 
-    return expandable_reads.emplace(std::move(storage_ids));
+    return storage_ids;
+}
+
+const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
+    const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
+{
+    if (!expandable_reads)
+        expandable_reads.emplace(computeExpandableReads(can_ship_read));
+    return *expandable_reads;
+}
+
+bool ReadFromMerge::mayBeExpandedForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
+{
+    /// A `FINAL` read is never expanded (`getExpandableReads` rejects a `FINAL` child), and neither is any
+    /// `Merge` read with `parallel_replicas_allow_merge_tables = 0` (`expandMergeReadsForParallelReplicas`).
+    /// Otherwise the verdict is the one of `getExpandableReads`, but computed afresh and not cached: the
+    /// child plans may still change before `applyParallelReplicas` asks (a filter pushed down later is
+    /// added to them and they are optimized again), and that later answer must not be pinned by this one.
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::parallel_replicas_plan_based]
+        && settings[Setting::parallel_replicas_allow_merge_tables]
+        && !InterpreterSelectQuery::isQueryWithFinal(query_info)
+        && !computeExpandableReads(can_ship_read).empty();
 }
 
 QueryPlan ReadFromMerge::expandForParallelReplicas()
@@ -2845,6 +2943,7 @@ void registerStorageMerge(StorageFactory & factory)
         return std::make_shared<StorageMerge>(
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getLocalContext());
     },
+    SecretArgumentsSpec{},
     {
         .supports_schema_inference = true
     },

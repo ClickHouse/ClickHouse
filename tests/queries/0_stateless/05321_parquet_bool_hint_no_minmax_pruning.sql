@@ -3,9 +3,9 @@
 
 -- A Parquet integer column holding 2, read with a `LowCardinality(Bool)` hint: every nonzero value is
 -- read as `true`, but the row group and page min/max statistics still say [2, 2], so pruning by them
--- dropped the rows equal to `true`. A plain `Bool` keeps the stored 2, which `IN (true)` still matches.
--- Statistics of 0 and 1 keep pruning. The bloom and dictionary filters lose these rows through a separate
--- mechanism, so they are pinned off to leave only the min/max legs under test.
+-- dropped the rows equal to `true`. The same holds for a plain `Bool`.
+-- Statistics of 0 and 1 keep pruning. The bloom filter loses these rows through a separate mechanism,
+-- so it and the dictionary filter are pinned off to leave only the min/max legs under test.
 
 set engine_file_truncate_on_insert = 1;
 set max_threads = 1;
