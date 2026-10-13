@@ -517,8 +517,8 @@ TEST(ParserCreateQuery, MaskKafkaTableEngineCredentials)
 
     EXPECT_EQ(first_arg_masked.find("plain_first_password"), String::npos);
     EXPECT_NE(first_arg_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
-    /// The positional argument beside it is not a secret and stays visible.
-    EXPECT_NE(first_arg_masked.find("'clickhouse'"), String::npos);
+    /// A positional argument after a named one has an unknowable slot, so it is hidden.
+    EXPECT_EQ(first_arg_masked.find("'clickhouse'"), String::npos);
 
     /// The `SETTINGS` clause form is masked by `Kafka::SETTINGS_TO_HIDE` and must agree.
     const String settings_query =
