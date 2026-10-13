@@ -8,5 +8,6 @@
 -- a stream and a file ClickHouse writes itself still read back
 6
 6
--- a stream pyarrow writes at the lowest version this reader implements still reads back
-6
+-- a stream pyarrow writes at V4 is rejected
+1
+1

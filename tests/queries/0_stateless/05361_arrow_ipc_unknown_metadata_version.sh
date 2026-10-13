@@ -14,9 +14,9 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 # `Message.version` and `Footer.version` name the edition of the Arrow IPC specification the writer used.
 # A reader cannot interpret an edition it does not implement, because the buffer layout differs between
-# editions, so it must reject such an input instead of decoding it under the wrong layout. No writer can
-# produce a version that does not exist, so the inputs below are written by pyarrow and then patched in
-# the one field that holds the version.
+# editions, so it must reject such an input instead of decoding it under the wrong layout. This reader
+# implements V5 only. No writer can produce a version that does not exist, so the inputs below are written
+# by pyarrow and then patched in the one field that holds the version; V4 pyarrow writes on its own.
 
 python3 - "$TMP_DIR" <<'PYEOF'
 import struct
@@ -44,7 +44,7 @@ def set_version(buf, flatbuffer_start, value):
 
 # The enum counts from zero, so V5 is 4 and 5 is a version that does not exist.
 V6 = 5
-# V1 is the lowest value the enum has, and this reader implements V4 and later.
+# V1 is the lowest value the enum has, and this reader implements V5 only.
 V1 = 0
 
 
@@ -79,13 +79,13 @@ PYEOF
 
 echo "-- a stream whose schema message declares a version that does not exist"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('$TMP_DIR/future.arrows', ArrowStream)" 2>&1 |
-    grep -c "Unsupported future Arrow IPC metadata version V6"
+    grep -c "Unsupported Arrow IPC metadata version V6"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$TMP_DIR/future.arrows', ArrowStream)" 2>&1 |
-    grep -c "Unsupported future Arrow IPC metadata version V6"
+    grep -c "Unsupported Arrow IPC metadata version V6"
 
 echo "-- a stream whose schema message declares a version this reader does not implement"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('$TMP_DIR/legacy.arrows', ArrowStream)" 2>&1 |
-    grep -c "Unsupported legacy Arrow IPC metadata version V1"
+    grep -c "Unsupported Arrow IPC metadata version V1"
 
 echo "-- a file whose footer declares a version that does not exist"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('$TMP_DIR/future_footer.arrow', Arrow)" 2>&1 |
@@ -99,12 +99,17 @@ $CLICKHOUSE_LOCAL --multiquery "
     SELECT sum(number) FROM file('$TMP_DIR/roundtrip.arrow', Arrow);
 "
 
-echo "-- a stream pyarrow writes at the lowest version this reader implements still reads back"
+# V4 is a real edition, but it keeps the validity buffer in unions that V5 removed, and `RecordBatchDecoder`
+# implements the V5 layout only. Reject it rather than read a union from the wrong buffer offsets.
+echo "-- a stream pyarrow writes at V4 is rejected"
 python3 -c "
-import pyarrow as pa, pyarrow.ipc as ipc, sys
+import pyarrow as pa, pyarrow.ipc as ipc
 table = pa.table({'x': pa.array([1, 2, 3], pa.int32())})
 options = ipc.IpcWriteOptions(metadata_version=ipc.MetadataVersion.V4)
 with ipc.new_stream('$TMP_DIR/v4.arrows', table.schema, options=options) as writer:
     writer.write_table(table)
 "
-$CLICKHOUSE_LOCAL -q "SELECT sum(x) FROM file('$TMP_DIR/v4.arrows', ArrowStream)"
+$CLICKHOUSE_LOCAL -q "DESCRIBE file('$TMP_DIR/v4.arrows', ArrowStream)" 2>&1 |
+    grep -c "Unsupported Arrow IPC metadata version V4"
+$CLICKHOUSE_LOCAL -q "SELECT sum(x) FROM file('$TMP_DIR/v4.arrows', ArrowStream)" 2>&1 |
+    grep -c "Unsupported Arrow IPC metadata version V4"

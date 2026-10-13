@@ -93,22 +93,19 @@ bool MessageReader::readNextMessage(Message & out, Int64 expected_metadata_lengt
     /// under the wrong edition's rules takes every following buffer from the wrong offset and produces
     /// silently wrong values. FlatBuffers verification cannot catch this: an enum field is a plain `int16`,
     /// so a value outside the enum is still a well-formed buffer. Reject an unknown edition here, before any
-    /// field whose meaning depends on it is read. A message with no `version` field reads as the default `V1`
-    /// and the same lower bound rejects it, as in the Arrow-library based reader this one replaced.
+    /// field whose meaning depends on it is read.
+    ///
+    /// `RecordBatchDecoder` implements the V5 union layout only, so V5 is the single accepted edition. A
+    /// message with no `version` field reads as the default `V1` and is rejected by the same check.
     static_assert(
         flatbuf::MetadataVersion_MAX == flatbuf::MetadataVersion_V5,
         "The Arrow submodule added a metadata version. Implement its layout in RecordBatchDecoder before "
         "widening this guard.");
     const auto version = out.header->version();
-    if (version > flatbuf::MetadataVersion_MAX)
+    if (version != flatbuf::MetadataVersion_V5)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "Unsupported future Arrow IPC metadata version V{}: this reader implements V4 to V5",
-            static_cast<Int16>(version) + 1);
-    if (version < flatbuf::MetadataVersion_V4)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Unsupported legacy Arrow IPC metadata version V{}: this reader implements V4 to V5",
+            "Unsupported Arrow IPC metadata version V{}: this reader implements V5 only",
             static_cast<Int16>(version) + 1);
 
     /// FlatBuffers verification only proves that a union value, *if present*, is a well-formed table; the
