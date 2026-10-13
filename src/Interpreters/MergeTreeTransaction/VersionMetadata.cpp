@@ -158,10 +158,16 @@ void VersionMetadata::setAndStoreCreationCSN(CSN csn)
 {
     LOG_DEBUG(log, "Object {}, setAndStoreCreationCSN {}", getObjectName(), csn);
 
-    fiu_do_on(FailPoints::version_metadata_store_creation_csn_fail,
+    /// Only the rollback mark, never a commit: `MergeTreeTransaction::afterCommit` is `noexcept`
+    /// and stores the committed CSN the same way, so an injection there terminates the server
+    /// instead of failing a statement, and would consume this one-shot injection on the way.
+    if (csn == Tx::RolledBackCSN)
     {
-        throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE, "Injected failure of the creation_csn store of {}", getObjectName());
-    });
+        fiu_do_on(FailPoints::version_metadata_store_creation_csn_fail,
+        {
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE, "Injected failure of the creation_csn store of {}", getObjectName());
+        });
+    }
 
     auto update_function = [csn](VersionInfo & info)
     {

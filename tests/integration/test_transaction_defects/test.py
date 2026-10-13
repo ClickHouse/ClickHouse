@@ -526,7 +526,8 @@ def mutation_outcome(table, future, timeout=HANG_TIMEOUT, stop_early=True):
 
     poll(check, timeout)
     if not stop_early and not future.done():
-        postponed = VERSION_NOT_VISIBLE in mutation_postpone_reasons(table)
+        # The budget above is spent; this last read gets a bound of its own, not `QUERY_TIMEOUT`.
+        postponed = VERSION_NOT_VISIBLE in mutation_postpone_reasons(table, MIN_REQUEST_TIMEOUT)
     return future.done(), postponed
 
 
@@ -583,7 +584,11 @@ def wait_for_no_merges(timeout=60):
         timeout,
     ):
         raise Precondition(
-            "merges are still running: " + q("SELECT database, table FROM system.merges")
+            "merges are still running: "
+            + q(
+                "SELECT database, table FROM system.merges",
+                timeout=MIN_REQUEST_TIMEOUT,
+            )
         )
 
 
@@ -611,7 +616,8 @@ def wait_for_no_cleanup(table=None, timeout=60):
             "a cleanup round is still running after it was stopped: "
             + q(
                 "SELECT log_name, elapsed_ms FROM system.background_schedule_pool "
-                f"WHERE executing AND log_name {scope}"
+                f"WHERE executing AND log_name {scope}",
+                timeout=MIN_REQUEST_TIMEOUT,
             )
         )
 
