@@ -22,22 +22,27 @@ SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366',
          after_processing = 'delete'; -- { serverError METADATA_MISMATCH }
 
 -- `bucketing_mode`: stored as 'path', local 'partition'. A 'partition' bucketing mode hashes the
--- partition key instead of the path, so it is only meaningful together with a partitioning mode.
--- To vary `bucketing_mode` alone, a second keeper path already stores `partitioning_mode = 'hive'`.
+-- partition key instead of the path, so `bucketing_mode = 'partition'` is rejected outright unless a
+-- partitioning mode is set too. To vary `bucketing_mode` alone, a second keeper path already stores
+-- `partitioning_mode = 'regex'`, which needs no experimental setting.
 CREATE TABLE tq_bucket_base (x String)
 ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
 SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_bucket',
-         partitioning_mode = 'hive', processing_threads_num = 1,
+         partitioning_mode = 'regex', partition_regex = '(?P<part>.+)/', partition_component = 'part',
+         processing_threads_num = 1,
          polling_min_timeout_ms = 1, polling_max_timeout_ms = 1, polling_backoff_ms = 0;
 
 CREATE TABLE tq2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
 SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_bucket',
-         partitioning_mode = 'hive', bucketing_mode = 'partition'; -- { serverError METADATA_MISMATCH }
+         partitioning_mode = 'regex', partition_regex = '(?P<part>.+)/', partition_component = 'part',
+         bucketing_mode = 'partition'; -- { serverError METADATA_MISMATCH }
 
--- `partitioning_mode`: stored as 'none', local 'hive'.
+-- `partitioning_mode`: stored as 'none', local 'regex'. The stored `partition_regex` and
+-- `partition_component` differ too, but the partitioning mode is compared first.
 CREATE TABLE tq3 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
 SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366',
-         partitioning_mode = 'hive'; -- { serverError METADATA_MISMATCH }
+         partitioning_mode = 'regex', partition_regex = '(?P<part>.+)/',
+         partition_component = 'part'; -- { serverError METADATA_MISMATCH }
 
 -- `partition_regex`: stored empty, local set.
 CREATE TABLE tq4 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_queue/*', NOSIGN, 'CSV')
