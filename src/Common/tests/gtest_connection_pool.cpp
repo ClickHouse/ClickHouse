@@ -1,12 +1,16 @@
+#include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Common/HTTPConnectionPoolDetail.h>
 #include <Common/HostResolvePool.h>
+#include <base/errnoToString.h>
 #include <base/scope_guard.h>
 
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/MessageHeader.h>
+#include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPServer.h>
@@ -15,8 +19,17 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
+#include <Poco/Net/StreamSocketImpl.h>
+#include <Poco/Exception.h>
 
 #include <atomic>
+#include <cerrno>
+#include <cstring>
+#include <stdexcept>
+
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <gtest/gtest.h>
 
@@ -52,9 +65,145 @@ protected:
 
 struct RequestOptions
 {
+    enum class ResponseMode : uint8_t
+    {
+        Echo,
+        FixedLength,
+        IncompleteFixedLength,
+        Chunked,
+    };
+
     size_t slowdown_receive = 0;
     int overwrite_keep_alive_timeout = 0;
     int overwrite_keep_alive_max_requests = 10;
+    ResponseMode response_mode = ResponseMode::Echo;
+    String response_body = "abcdefghij";
+};
+
+/// Supplies explicit packets to Poco's real session buffer. Reading past them fails immediately,
+/// which makes any accidental socket receive during cleanup observable without timing assumptions.
+class PacketSocket : public Poco::Net::StreamSocketImpl
+{
+public:
+    explicit PacketSocket(std::vector<String> packets_) : packets(std::move(packets_))
+    {
+    }
+
+    int receiveBytes(void * buffer, int length, int) override
+    {
+        ++receive_calls;
+        if (next_packet == packets.size())
+            throw Poco::TimeoutException("Unexpected socket read while draining buffered response");
+
+        const auto & packet = packets[next_packet++];
+        if (packet.size() > static_cast<size_t>(length))
+            throw Poco::InvalidArgumentException("Test packet does not fit in Poco's HTTP buffer");
+
+        std::memcpy(buffer, packet.data(), packet.size());
+        return static_cast<int>(packet.size());
+    }
+
+    size_t receive_calls = 0;
+
+private:
+    std::vector<String> packets;
+    size_t next_packet = 0;
+};
+
+class PooledPacketSocket : public Poco::Net::StreamSocketImpl
+{
+public:
+    /// The pool checks the native descriptor directly when deciding whether a connection is idle.
+    /// Keep the peer of a real socket pair open so that check succeeds even though test I/O is overridden.
+    explicit PooledPacketSocket(std::vector<String> packets_)
+        : PooledPacketSocket(createSocketPair(), std::move(packets_))
+    {
+    }
+
+    int sendBytes(const void *, int length, int) override
+    {
+        return length;
+    }
+
+    int receiveBytes(void * buffer, int length, int) override
+    {
+        ++receive_calls;
+        if (next_packet == packets.size())
+            throw Poco::TimeoutException("Unexpected socket read from pooled test transport");
+
+        const auto & packet = packets[next_packet++];
+        if (packet.size() > static_cast<size_t>(length))
+            throw Poco::InvalidArgumentException("Test response does not fit in Poco's HTTP buffer");
+
+        std::memcpy(buffer, packet.data(), packet.size());
+        return static_cast<int>(packet.size());
+    }
+
+    size_t receive_calls = 0;
+
+protected:
+    ~PooledPacketSocket() override
+    {
+        ::close(peer_socket);
+    }
+
+private:
+    struct SocketPair
+    {
+        poco_socket_t session_socket;
+        poco_socket_t peer_socket;
+    };
+
+    static SocketPair createSocketPair()
+    {
+        poco_socket_t sockets[2];
+        if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) != 0)
+        {
+            const int socket_errno = errno;
+            throw Poco::IOException(
+                "Cannot create socket pair for HTTP connection pool test: " + errnoToString(socket_errno));
+        }
+        return {.session_socket = sockets[0], .peer_socket = sockets[1]};
+    }
+
+    PooledPacketSocket(SocketPair socket_pair, std::vector<String> packets_)
+        : StreamSocketImpl(socket_pair.session_socket)
+        , peer_socket(socket_pair.peer_socket)
+        , packets(std::move(packets_))
+    {
+    }
+
+    poco_socket_t peer_socket;
+    std::vector<String> packets;
+    size_t next_packet = 0;
+};
+
+class BufferedSession : public Poco::Net::HTTPClientSession
+{
+public:
+    explicit BufferedSession(PacketSocket * socket) : HTTPClientSession(Poco::Net::StreamSocket(socket))
+    {
+        /// The sentinel represents the final byte consumed by the HTTP header parser.
+        if (get() != '#')
+            throw Poco::InvalidArgumentException("Missing test packet sentinel");
+    }
+
+    int bufferedBytes() const { return buffered(); }
+    void refillBuffer() { refill(); }
+};
+
+struct FixedLengthResponse
+{
+    explicit FixedLengthResponse(std::vector<String> packets, size_t content_length)
+        : socket(new PacketSocket(std::move(packets)))
+        , session(socket)
+        , body(session, content_length)
+    {
+    }
+
+    PacketSocket * socket;
+    BufferedSession session;
+    Poco::Net::HTTPFixedLengthInputStream body;
 };
 
 size_t stream_copy_n(std::istream & in, std::ostream & out, std::size_t count = std::numeric_limits<size_t>::max())
@@ -103,6 +252,27 @@ public:
             response.setKeepAliveTimeout(params.overwrite_keep_alive_timeout, params.overwrite_keep_alive_max_requests);
 
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+
+        if (params.response_mode == RequestOptions::ResponseMode::FixedLength)
+        {
+            response.sendBuffer(params.response_body.data(), params.response_body.size());
+            return;
+        }
+
+        if (params.response_mode == RequestOptions::ResponseMode::IncompleteFixedLength)
+        {
+            response.setContentLength(params.response_body.size() + 4);
+            response.send().write(params.response_body.data(), params.response_body.size());
+            return;
+        }
+
+        if (params.response_mode == RequestOptions::ResponseMode::Chunked)
+        {
+            response.setChunkedTransferEncoding(true);
+            response.send().write(params.response_body.data(), params.response_body.size());
+            return;
+        }
+
         auto size = request.getContentLength();
         if (size > 0)
             response.setContentLength(size); // ContentLength is required for keep alive
@@ -207,6 +377,20 @@ protected:
         options->set(std::move(opt));
     }
 
+    void setResponseMode(RequestOptions::ResponseMode mode)
+    {
+        auto opt = options->get();
+        opt.response_mode = mode;
+        options->set(std::move(opt));
+    }
+
+    void setResponseBody(String body)
+    {
+        auto opt = options->get();
+        opt.response_body = std::move(body);
+        options->set(std::move(opt));
+    }
+
     DB::ConnectionTimeouts timeouts;
     SafeHandler<RequestOptions>::Ptr options;
 
@@ -264,6 +448,23 @@ static void echoRequest(String data, HTTPSession & session)
         stream_copy_n(istream, result);
         ASSERT_EQ(data, result.str());
     }
+}
+
+static std::istream & receiveResponseWithoutReadingBody(HTTPSession & session)
+{
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+    session.sendRequest(request);
+
+    Poco::Net::HTTPResponse response;
+    std::istream & body = session.receiveResponse(response);
+    EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+    return body;
+}
+
+static String fixedLengthResponse(const String & body, bool keep_alive = true)
+{
+    return "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size())
+        + "\r\nConnection: " + (keep_alive ? "keep-alive" : "close") + "\r\n\r\n" + body;
 }
 
 TEST_F(ConnectionPoolTest, CanConnect)
@@ -380,6 +581,284 @@ TEST_F(ConnectionPoolTest, CanReuse)
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+}
+
+TEST_F(ConnectionPoolTest, ReusedConnectionHandlesDistinctSecondResponse)
+{
+    setResponseMode(RequestOptions::ResponseMode::FixedLength);
+    setResponseBody("x");
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        std::istream & body = receiveResponseWithoutReadingBody(*connection);
+        std::stringstream result;
+        stream_copy_n(body, result);
+        ASSERT_EQ("x", result.str());
+    }
+
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.drained]);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    setResponseMode(RequestOptions::ResponseMode::Echo);
+    auto connection = pool->getConnection(timeouts, nullptr);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    echoRequest("second response", *connection);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    connection->reset();
+}
+
+TEST_F(ConnectionPoolTest, DrainsActualPooledConnectionAndReusesIt)
+{
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        connection->socket() = Poco::Net::StreamSocket(new PooledPacketSocket(
+            {fixedLengthResponse("first"), fixedLengthResponse("second response")}));
+        receiveResponseWithoutReadingBody(*connection);
+    }
+
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.drained]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    std::istream & body = receiveResponseWithoutReadingBody(*connection);
+    std::stringstream result;
+    stream_copy_n(body, result);
+    EXPECT_EQ("second response", result.str());
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    connection->reset();
+}
+
+TEST_F(ConnectionPoolTest, DrainsActualPooledConnectionDuringUnwinding)
+{
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+
+    EXPECT_THROW(
+        {
+            auto connection = pool->getConnection(timeouts, nullptr);
+            connection->socket() = Poco::Net::StreamSocket(
+                new PooledPacketSocket({fixedLengthResponse("buffered body")}));
+            receiveResponseWithoutReadingBody(*connection);
+            throw std::runtime_error("test exception");
+        },
+        std::runtime_error);
+
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.drained]);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+}
+
+TEST_F(ConnectionPoolTest, DoesNotDrainConnectionCloseResponse)
+{
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        connection->socket() = Poco::Net::StreamSocket(
+            new PooledPacketSocket({fixedLengthResponse("buffered body", false)}));
+        receiveResponseWithoutReadingBody(*connection);
+    }
+
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.drained]);
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+}
+
+TEST_F(ConnectionPoolTest, DrainedMetricDoesNotImplyPreservation)
+{
+    DB::HTTPConnectionPools::Limits limits;
+    limits.store_limit = 0;
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        connection->socket() = Poco::Net::StreamSocket(
+            new PooledPacketSocket({fixedLengthResponse("buffered body")}));
+        receiveResponseWithoutReadingBody(*connection);
+    }
+
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.drained]);
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+}
+
+TEST_F(ConnectionPoolTest, DoesNotReuseIncompleteFixedLengthResponse)
+{
+    setResponseMode(RequestOptions::ResponseMode::IncompleteFixedLength);
+    setResponseBody("x");
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        receiveResponseWithoutReadingBody(*connection);
+    }
+
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.drained]);
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+}
+
+TEST(HTTPConnectionPoolDrain, DrainsOnlyBufferedFixedLengthResponse)
+{
+    FixedLengthResponse response({"#abcdefghij"}, 10);
+    EXPECT_TRUE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+        response.body, [&] { return response.session.bufferedBytes(); }));
+    EXPECT_TRUE(response.body.isComplete());
+    EXPECT_EQ(0, response.session.bufferedBytes());
+    EXPECT_EQ(1, response.socket->receive_calls);
+}
+
+TEST(HTTPConnectionPoolDrain, DoesNotReceiveWhenBufferedBodyIsIncomplete)
+{
+    FixedLengthResponse response({"#abcdef"}, 10);
+    EXPECT_FALSE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+        response.body, [&] { return response.session.bufferedBytes(); }));
+    EXPECT_FALSE(response.body.isComplete());
+    EXPECT_EQ(0, response.session.bufferedBytes());
+    EXPECT_EQ(1, response.socket->receive_calls);
+}
+
+TEST(HTTPConnectionPoolDrain, DoesNothingWhenSessionBufferIsEmpty)
+{
+    FixedLengthResponse response({"#"}, 10);
+    EXPECT_FALSE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+        response.body, [&] { return response.session.bufferedBytes(); }));
+    EXPECT_FALSE(response.body.isComplete());
+    EXPECT_EQ(0, response.session.bufferedBytes());
+    EXPECT_EQ(1, response.socket->receive_calls);
+}
+
+TEST(HTTPConnectionPoolDrain, DrainsWithBytesInStreamAndSessionBuffers)
+{
+    FixedLengthResponse response({"#abc", "def"}, 10);
+    EXPECT_EQ('a', response.body.get());
+    EXPECT_GT(response.body.rdbuf()->in_avail(), 0);
+    EXPECT_EQ(0, response.session.bufferedBytes());
+
+    response.session.refillBuffer();
+    ASSERT_EQ(3, response.session.bufferedBytes());
+    ASSERT_EQ(2, response.socket->receive_calls);
+
+    EXPECT_FALSE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+        response.body, [&] { return response.session.bufferedBytes(); }));
+    EXPECT_FALSE(response.body.isComplete());
+    EXPECT_EQ(0, response.session.bufferedBytes());
+    EXPECT_EQ(2, response.socket->receive_calls);
+}
+
+TEST(HTTPConnectionPoolDrain, CompleteStreamBufferNeedsNoDrain)
+{
+    FixedLengthResponse response({"#abc"}, 3);
+    EXPECT_EQ('a', response.body.get());
+    ASSERT_TRUE(response.body.isComplete());
+    ASSERT_GT(response.body.rdbuf()->in_avail(), 0);
+
+    EXPECT_TRUE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+        response.body, [&] { return response.session.bufferedBytes(); }));
+    EXPECT_EQ(1, response.socket->receive_calls);
+}
+
+TEST(HTTPConnectionPoolDrain, CompletesWithBytesInStreamAndSessionBuffers)
+{
+    FixedLengthResponse response({"#abc", "defghij"}, 10);
+    EXPECT_EQ('a', response.body.get());
+    ASSERT_GT(response.body.rdbuf()->in_avail(), 0);
+    response.session.refillBuffer();
+    ASSERT_EQ(7, response.session.bufferedBytes());
+
+    EXPECT_TRUE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+        response.body, [&] { return response.session.bufferedBytes(); }));
+    EXPECT_TRUE(response.body.isComplete());
+    EXPECT_EQ(0, response.session.bufferedBytes());
+    EXPECT_EQ(2, response.socket->receive_calls);
+}
+
+TEST(HTTPConnectionPoolDrain, UsesStreamBufferWhenSessionBufferIsAlmostEmpty)
+{
+    const size_t body_size = Poco::Net::HTTP_DEFAULT_BUFFER_SIZE - 3;
+    FixedLengthResponse response({"#" + String(body_size, 'x')}, body_size);
+    size_t buffered_size_checks = 0;
+
+    EXPECT_TRUE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(response.body, [&]
+    {
+        ++buffered_size_checks;
+        return response.session.bufferedBytes();
+    }));
+    EXPECT_TRUE(response.body.isComplete());
+    EXPECT_LE(buffered_size_checks, 10);
+    EXPECT_EQ(1, response.socket->receive_calls);
+}
+
+TEST(HTTPConnectionPoolDrain, LeavesBytesAfterContentLengthBuffered)
+{
+    FixedLengthResponse response({"#abcd"}, 3);
+    EXPECT_TRUE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+        response.body, [&] { return response.session.bufferedBytes(); }));
+    EXPECT_TRUE(response.body.isComplete());
+    EXPECT_EQ(1, response.session.bufferedBytes());
+    EXPECT_EQ(1, response.socket->receive_calls);
+}
+
+TEST(HTTPConnectionPoolDrain, DoesNotAccessFreedConsumerBuffer)
+{
+    FixedLengthResponse response({"#abcdefghij"}, 10);
+    auto reader = std::make_unique<DB::ReadBufferFromIStream>(response.body, 1);
+    auto external = std::make_unique<char[]>(1);
+    reader->set(external.get(), 1);
+    ASSERT_TRUE(reader->next());
+    external.reset();
+    reader.reset();
+
+    EXPECT_TRUE(DB::HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+        response.body, [&] { return response.session.bufferedBytes(); }));
+    EXPECT_TRUE(response.body.isComplete());
+    EXPECT_EQ(1, response.socket->receive_calls);
+}
+
+TEST_F(ConnectionPoolTest, DoesNotDrainChunkedResponse)
+{
+    setResponseMode(RequestOptions::ResponseMode::Chunked);
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        receiveResponseWithoutReadingBody(*connection);
+    }
+
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.drained]);
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+}
+
+TEST_F(ConnectionPoolTest, DoesNotDrainAfterKeepAliveRequestLimit)
+{
+    setResponseMode(RequestOptions::ResponseMode::FixedLength);
+    timeouts.http_keep_alive_max_requests = 1;
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        receiveResponseWithoutReadingBody(*connection);
+    }
+
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.drained]);
+    EXPECT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    EXPECT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired]);
 }
 
 TEST_F(ConnectionPoolTest, CanReuse10)
