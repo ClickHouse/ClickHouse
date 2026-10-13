@@ -438,7 +438,7 @@ SQLQueryPiece applyFunctionOverRange(
                 make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step)),
                 value);
 
-            res.store_method = StoreMethod::SCALAR_GRID;
+            res.store_method = StoreMethod::VECTOR_GRID;
             res.scalar_value = {};
             break;
         }
@@ -448,6 +448,7 @@ SQLQueryPiece applyFunctionOverRange(
             /// SELECT <aggregate_function>(timeSeriesRange(<start_time>, <end_time>, <step>), values) AS values
             /// FROM <scalar_grid>
             values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
+            res.store_method = StoreMethod::VECTOR_GRID;
             break;
         }
 
@@ -752,10 +753,21 @@ SQLQueryPiece applyFunctionOverRange(
             timeSeriesDurationToAST(argument.step, context.result_timestamp_type));
     }
 
+    /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
+    /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
+    const bool from_scalar = !has_group;
+
     SelectQueryBuilder builder;
 
-    if (has_group)
+    if (from_scalar)
+    {
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+    }
+    else
+    {
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    }
 
     String ch_function_name{impl_info->ch_function_name};
     ASTs aggregate_arguments;
@@ -820,7 +832,7 @@ SQLQueryPiece applyFunctionOverRange(
         }
     }
 
-    if (has_group)
+    if (!from_scalar)
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (argument.select_query)
@@ -840,8 +852,15 @@ SQLQueryPiece applyFunctionOverRange(
     if (!sample_kinds_helpers.empty())
         res.select_query = buildRateFamilyProjection(std::move(res.select_query), *impl_info, context);
 
-    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
+    if (from_scalar)
+    {
+        /// A scalar has no metric name.
+        res.metric_name_dropped = true;
+    }
+    else if (drop_metric_name.value_or(impl_info->drop_metric_name))
+    {
         res = dropMetricName(std::move(res), context);
+    }
 
     return res;
 }
