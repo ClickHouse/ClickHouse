@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -20,8 +21,8 @@ class BlobLinkCounts
 public:
     uint32_t get(const std::string & blob_key) const;
 
-    /// Adds the deltas accumulated by a transaction.
-    void apply(const std::unordered_map<std::string, int64_t> & deltas);
+    /// Adds the deltas accumulated by a transaction. Returns the keys of the blobs whose last link was removed by the deltas.
+    std::vector<std::string> apply(const std::unordered_map<std::string, int64_t> & deltas);
 
     /// Replaces the contents with the counts calculated from the loaded layout. Counts of 1 are dropped.
     void replace(const std::unordered_map<std::string, uint32_t> & new_counts);

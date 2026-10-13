@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SetWithMemoryTracking.h>
@@ -211,6 +212,19 @@ public:
     }
 };
 
+/// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+void findHMACSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    if (finder.function->arguments->size() < 3)
+        return;
+
+    /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
+    /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+    /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
+    finder.result.start = 2;
+    finder.result.count = finder.function->arguments->size() - 2;
+}
+
 }
 
 REGISTER_FUNCTION(FunctionHMAC)
@@ -290,7 +304,7 @@ SELECT
         category
     };
 
-    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive, SecretArgumentsSpec{.custom = findHMACSecretArguments});
 }
 
 }
