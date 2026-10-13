@@ -690,6 +690,11 @@ protected:
     /// `sessionReadonlyIfKnown`) instead of trusting the stale local values. Not guarded by `USE_CLIENT_AI`: `help` needs it in every build.
     bool settings_may_be_changed_by_profile = false;
 
+    /// Whether the client changed `readonly` itself (with a `SET`) after the last `SET profile`.
+    /// A profile may replace `readonly` on the server unseen, so a local value changed before it
+    /// is not authoritative any more - see `sessionReadonlyIfKnown`.
+    bool readonly_changed_after_profile = false;
+
     /// The effective values of the settings of this session as the server reports them, asked one
     /// by one and cached - see `serverEffectiveSettingValue`. A `nullopt` value means the server
     /// does not know that setting. A `SET` of a setting drops the answer about it, and a

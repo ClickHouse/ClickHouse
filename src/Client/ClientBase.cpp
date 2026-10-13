@@ -3308,6 +3308,9 @@ void ClientBase::processParsedSingleQuery(
             if (changes_setting("profile"))
             {
                 settings_may_be_changed_by_profile = true;
+                /// Even when the same statement sets `readonly` too: which of them wins is up to the
+                /// server, so the server is asked.
+                readonly_changed_after_profile = false;
                 /// A profile changes an unknown set of settings and the client is not told which,
                 /// so no cached answer about the effective value of a setting survives it - see
                 /// `serverEffectiveSettingValue`. Without this, a value asked about before the
@@ -3325,6 +3328,8 @@ void ClientBase::processParsedSingleQuery(
                     server_effective_setting_values.erase(change.name);
                 for (const auto & name : set_query->default_settings)
                     server_effective_setting_values.erase(name);
+                if (changes_setting("readonly"))
+                    readonly_changed_after_profile = true;
             }
 
             /// Query parameters inside SET queries should be also saved on the client side
@@ -3460,6 +3465,33 @@ void ClientBase::processParsedSingleQuery(
 }
 
 
+static const char * findEndOfInlineInsertData(const ASTInsertQuery & insert_ast, const char * all_queries_end)
+{
+    if (insert_ast.format == "Values")
+    {
+        // Invoke the VALUES format parser to skip the inserted data.
+        // Skip SQL comments too (as ValuesBlockInputFormat::read does), not just
+        // whitespace: a trailing comment after the last row would otherwise be scanned
+        // as row data past the terminating ';', swallowing the following queries.
+        ReadBufferFromMemory data_in(insert_ast.data, all_queries_end - insert_ast.data);
+        skipBOMIfExists(data_in);
+        do
+        {
+            skipWhitespaceAndSQLComments(data_in);
+            if (data_in.eof() || *data_in.position() == ';')
+                break;
+        }
+        while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
+        return insert_ast.data + data_in.count();
+    }
+
+    // Handling of generic formats
+    auto pos_newline = std::string_view(insert_ast.data, all_queries_end - insert_ast.data).find("\n\n");
+    if (pos_newline != std::string_view::npos)
+        return insert_ast.data + pos_newline;
+    return all_queries_end;
+}
+
 MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
     ASTPtr & parsed_query,
@@ -3592,25 +3624,12 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     }
     if (insert_ast && insert_ast->data)
     {
+        this_query_end = findEndOfInlineInsertData(*insert_ast, all_queries_end);
         if (insert_ast->format == "Values")
         {
-            // Invoke the VALUES format parser to skip the inserted data.
-            // Skip SQL comments too (as ValuesBlockInputFormat::read does), not just
-            // whitespace: a trailing comment after the last row would otherwise be scanned
-            // as row data past the terminating ';', swallowing the following queries.
-            ReadBufferFromMemory data_in(insert_ast->data, all_queries_end - insert_ast->data);
-            skipBOMIfExists(data_in);
-            do
-            {
-                skipWhitespaceAndSQLComments(data_in);
-                if (data_in.eof() || *data_in.position() == ';')
-                    break;
-            }
-            while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
             // Handle the case of a comment followed by a semicolon
             //   Example: INSERT INTO tab VALUES xx; -- {serverError xx}
             // If we use this error hint, the next query should not be placed on the same line
-            this_query_end = insert_ast->data + data_in.count();
             const auto * pos_newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
             if (pos_newline != this_query_end)
             {
@@ -3618,15 +3637,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 if (hint.hasClientErrors() || hint.hasServerErrors())
                     this_query_end = pos_newline;
             }
-        }
-        else
-        {
-            // Handling of generic formats
-            auto pos_newline = String(insert_ast->data, all_queries_end).find("\n\n");
-            if (pos_newline != std::string::npos)
-                this_query_end = insert_ast->data + pos_newline;
-            else
-                this_query_end = all_queries_end;
         }
         insert_ast->end = this_query_end;
     }
@@ -4837,9 +4847,14 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// Tag the query in the query log as one the agent ran on its own, so it is distinguishable
         /// from the queries the user typed themselves (the `read_query_log` tool filters those out).
         /// Skipped when the session may reject the tag: the query must not fail over a marker that
-        /// nothing depends on once `read_query_log` is unavailable anyway.
+        /// nothing depends on once `read_query_log` is unavailable anyway. This is the one query
+        /// of the agent that can reach the query log without any marker (the hidden ones carry the
+        /// marked query id), so it is what takes `read_query_log` away for the rest of the session:
+        /// its row cannot be told apart from the history of the user any more.
         if (aiQueryLogMarkerAllowed())
             client_context->setSetting("log_comment", String(AI_AGENT_LOG_COMMENT));
+        else
+            ai_query_log_access_permanently_disabled = true;
 
         /// Keep a session that is already read-only as is: `readonly = 2` must not be lowered, and
         /// the server rejects any change of `readonly` in read-only mode anyway. The effective
@@ -5013,10 +5028,14 @@ std::optional<String> ClientBase::parseAIQueryStatements(const String & query, c
 
             on_statement(*ast);
 
-            /// An INSERT with inline data: everything after the statement is format-specific data,
-            /// not SQL, so stop parsing here (the statement itself parsed).
-            if (const auto * insert = ast->as<ASTInsertQuery>(); insert && insert->data)
-                break;
+            /// An INSERT with inline data (also under `EXPLAIN`): the data that follows the statement
+            /// is not SQL. Skip it up to the boundary that `analyzeMultiQueryText` finds when the
+            /// query is executed, so the statements after the data are seen too.
+            const auto * insert = ast->as<ASTInsertQuery>();
+            if (const auto * explain = ast->as<ASTExplainQuery>(); !insert && explain && explain->getExplainedQuery())
+                insert = explain->getExplainedQuery()->as<ASTInsertQuery>();
+            if (insert && insert->data)
+                pos = findEndOfInlineInsertData(*insert, end);
         }
     }
     catch (const Exception & e)
@@ -5118,14 +5137,12 @@ UInt64 ClientBase::aiSessionReadonly()
 bool ClientBase::aiQueryLogMarkerAllowed()
 {
     /// The marker is a `log_comment` setting change, so it takes a session that accepts changing
-    /// settings. Once the agent has run in a session that did not, its unmarked rows cannot be
-    /// told apart from the history of the user any more, so the capability does not come back
-    /// when the session starts accepting the marker again.
+    /// settings. Once the agent has run a visible query unmarked (see `runQueryForAI`), its row
+    /// cannot be told apart from the history of the user any more, so the capability does not
+    /// come back when the session starts accepting the marker again. Merely asking - e.g. while
+    /// refreshing the tool set before a turn - takes nothing away for good.
     if (ai_query_log_access_permanently_disabled || aiSessionReadonly() == 1)
-    {
-        ai_query_log_access_permanently_disabled = true;
         return false;
-    }
 
     /// `readonly` is not the only way a session can reject the marker: a settings profile can make
     /// `log_comment` alone `const` and leave everything else writable. Attaching the marker then
@@ -5176,12 +5193,7 @@ bool ClientBase::aiQueryLogMarkerAllowed()
         }
     }
 
-    if (!*ai_query_log_marker_writable)
-    {
-        ai_query_log_access_permanently_disabled = true;
-        return false;
-    }
-    return true;
+    return *ai_query_log_marker_writable;
 }
 
 String ClientBase::aiSessionRestrictions()
@@ -5563,8 +5575,12 @@ std::optional<UInt64> ClientBase::sessionReadonlyIfKnown()
     ///
     /// A value the client changed itself - `--readonly` on the command line, or a `SET` - travels
     /// with the queries of the session, so it is effective whatever the server would answer: the
-    /// question carries no settings of the session and would not see it.
-    if (!connection || settings.isChanged("readonly")
+    /// question carries no settings of the session and would not see it. But only when it was
+    /// changed after the last `SET profile`: a profile can replace `readonly` on the server
+    /// behind the client's back, just like the `dialect`.
+    const bool readonly_changed_by_client
+        = settings.isChanged("readonly") && (!settings_may_be_changed_by_profile || readonly_changed_after_profile);
+    if (!connection || readonly_changed_by_client
         || (settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile))
         return settings[Setting::readonly];
 
