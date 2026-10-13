@@ -29,6 +29,7 @@ namespace DB
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
     M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
+    M(BUCKET_SPLITTER, "BucketSplitter") \
     M(BACKUP_ASYNC_INTERNAL, "BackupAsyncInt") \
     M(BACKUP_COLLECTOR, "BackupCollect") \
     M(BACKUP_COORDINATION, "BackupCoord") \

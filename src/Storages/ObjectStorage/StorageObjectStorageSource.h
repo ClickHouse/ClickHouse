@@ -6,6 +6,10 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include <deque>
+#include <future>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -179,6 +183,8 @@ public:
         ObjectStoragePtr object_storage_,
         ContextPtr context_);
 
+    ~ReadTaskIterator() override;
+
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override { return buffer.size(); }
@@ -194,6 +200,11 @@ private:
     std::atomic_size_t index = 0;
     bool is_archive;
     ObjectStoragePtr object_storage;
+    ThreadPoolCallbackRunnerUnsafe<ClusterFunctionReadTaskResponsePtr> prefetch_runner;
+    std::mutex prefetch_mutex;
+    std::deque<std::future<ClusterFunctionReadTaskResponsePtr>> prefetched_tasks TSA_GUARDED_BY(prefetch_mutex);
+    std::deque<ObjectInfoPtr> leftover_tasks TSA_GUARDED_BY(prefetch_mutex);
+    bool exhausted TSA_GUARDED_BY(prefetch_mutex) = false;
     /// path_to_archive -> archive reader.
     std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;
     std::mutex archive_readers_mutex;

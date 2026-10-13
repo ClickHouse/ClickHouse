@@ -8,6 +8,11 @@
 #include <Common/Logger.h>
 #include <Common/Macros.h>
 #include <Formats/FormatSettings.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include <deque>
+#include <future>
+#include <mutex>
 
 namespace DB
 {
@@ -51,6 +56,8 @@ struct ObjectInfo
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
+
+    virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
@@ -127,24 +134,44 @@ public:
         const String & format_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
+        size_t min_buckets_per_file_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
         FormatFilterInfoPtr format_filter_info_ = nullptr);
+
+    ~ObjectIteratorSplitByBuckets() override;
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
-private:
-    const ObjectIterator iterator;
-    String format;
-    ObjectStoragePtr object_storage;
-    FormatSettings format_settings;
-    StorageID storage_id;
-    FormatFilterInfoPtr format_filter_info;
-    QueryConditionCachePtr query_condition_cache;
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        iterator->setEmitProfileEvents(value);
+    }
 
-    std::queue<ObjectInfoPtr> pending_objects_info;
-    const LoggerPtr log = getLogger("GlobIterator");
+private:
+    std::vector<ObjectInfoPtr> split(const ObjectInfoPtr & object_info) const;
+    void scheduleSplits(size_t id) TSA_REQUIRES(mutex);
+
+    const ObjectIterator iterator;
+    const String format;
+    const ObjectStoragePtr object_storage;
+    const FormatSettings format_settings;
+    const StorageID storage_id;
+    const FormatFilterInfoPtr format_filter_info;
+    QueryConditionCachePtr query_condition_cache;
+    const size_t bucket_size;
+    const size_t min_buckets_per_file;
+    const size_t max_in_flight;
+    ThreadPoolCallbackRunnerUnsafe<std::vector<ObjectInfoPtr>> runner;
+
+    std::mutex mutex;
+    std::deque<std::future<std::vector<ObjectInfoPtr>>> in_flight TSA_GUARDED_BY(mutex);
+    std::deque<ObjectInfoPtr> pending_objects_info TSA_GUARDED_BY(mutex);
+    bool iterator_exhausted TSA_GUARDED_BY(mutex) = false;
+
+    const LoggerPtr log = getLogger("ObjectIteratorSplitByBuckets");
 };
 
 

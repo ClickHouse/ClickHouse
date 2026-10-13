@@ -389,7 +389,7 @@ IcebergIterator::IcebergIterator(
             /// The data files of a skipped manifest are skipped by partition pruning just as the ones
             /// rejected entry by entry, so they are counted the same way; without this the counter
             /// silently drops to zero exactly when pruning got better.
-            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, manifest_list_entry.live_files_count);
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, manifest_list_entry.live_files_count.value_or(0));
             return true;
         });
 }
@@ -590,7 +590,18 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 
 size_t IcebergIterator::estimatedKeysCount()
 {
-    return std::numeric_limits<size_t>::max();
+    if (!data_snapshot)
+        return std::numeric_limits<size_t>::max();
+    size_t total = 0;
+    for (const auto & entry : data_snapshot->manifest_list_entries)
+    {
+        if (entry.content_type != Iceberg::ManifestFileContentType::DATA)
+            continue;
+        if (!entry.live_files_count)
+            return std::numeric_limits<size_t>::max();
+        total += static_cast<size_t>(*entry.live_files_count);
+    }
+    return total;
 }
 
 IcebergIterator::~IcebergIterator() = default;

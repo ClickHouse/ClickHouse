@@ -23,6 +23,9 @@
 namespace DB
 {
 
+class IInputFormat;
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
+
 class StorageObjectStorage;
 class NamedCollection;
 class SinkToStorage;
@@ -179,7 +182,8 @@ public:
         QueryPipelineBuilder & builder,
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
-        ContextPtr local_context) const;
+        ContextPtr local_context,
+        InputFormatPtr data_input_format) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,

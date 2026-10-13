@@ -295,14 +295,14 @@ ManifestFileCacheKeys getManifestList(
                     f_partition_spec_id);
             Int32 partition_spec_id = static_cast<Int32>(
                 manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
-            Int64 live_files_count = 0;
+            std::optional<Int64> live_files_count;
             for (const auto * count_field : {f_added_files_count, f_existing_files_count})
             {
                 if (!manifest_list_deserializer.hasPath(count_field))
                     continue;
                 auto count = manifest_list_deserializer.getValueFromRowByName(i, count_field);
                 if (!count.isNull())
-                    live_files_count += std::max<Int64>(0, count.safeGet<Int64>());
+                    live_files_count = live_files_count.value_or(0) + std::max<Int64>(0, count.safeGet<Int64>());
             }
 
             std::optional<UInt64> first_row_id;

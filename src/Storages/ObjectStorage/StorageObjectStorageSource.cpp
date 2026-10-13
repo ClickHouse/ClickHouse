@@ -9,6 +9,7 @@
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <IO/SharedThreadPools.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -1644,7 +1645,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
         }
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
+        configuration->addDeleteTransformers(
+            object_info,
+            builder,
+            format_settings,
+            parser_shared_resources,
+            context_,
+            input_format);
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows
@@ -2407,6 +2414,7 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     , callback(callback_)
     , is_archive(is_archive_)
     , object_storage(object_storage_)
+    , prefetch_runner(threadPoolCallbackRunnerUnsafe<ClusterFunctionReadTaskResponsePtr>(getIOThreadPool().get(), ThreadName::READ_TASK_ITERATOR))
 {
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -2448,6 +2456,13 @@ static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
     return object_metadata->size_bytes;
 }
 
+StorageObjectStorageSource::ReadTaskIterator::~ReadTaskIterator()
+{
+    std::lock_guard lock(prefetch_mutex);
+    for (auto & future : prefetched_tasks)
+        future.wait();
+}
+
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
@@ -2455,14 +2470,47 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     ObjectInfoPtr object_info;
     if (current_index >= buffer.size())
     {
-        auto task = callback();
+        std::future<ClusterFunctionReadTaskResponsePtr> future;
+        {
+            std::lock_guard lock(prefetch_mutex);
+            if (!leftover_tasks.empty())
+            {
+                object_info = leftover_tasks.front();
+                leftover_tasks.pop_front();
+                return object_info;
+            }
+            if (exhausted)
+                return nullptr;
+            if (prefetched_tasks.empty())
+                prefetched_tasks.push_back(prefetch_runner([callback = callback] { return callback(); }, Priority{}));
+            future = std::move(prefetched_tasks.front());
+            prefetched_tasks.pop_front();
+            prefetched_tasks.push_back(prefetch_runner([callback = callback] { return callback(); }, Priority{}));
+        }
+
+        auto task = future.get();
 
         if (auto query_status = getContext()->getProcessListElement())
             query_status->checkTimeLimit();
 
         if (!task || task->isEmpty())
-            return nullptr;
-        object_info = task->getObjectInfo();
+        {
+            std::lock_guard lock(prefetch_mutex);
+            while (!prefetched_tasks.empty())
+            {
+                auto other = prefetched_tasks.front().get();
+                prefetched_tasks.pop_front();
+                if (other && !other->isEmpty())
+                    leftover_tasks.push_back(other->getObjectInfo());
+            }
+            exhausted = true;
+            if (leftover_tasks.empty())
+                return nullptr;
+            object_info = leftover_tasks.front();
+            leftover_tasks.pop_front();
+        }
+        else
+            object_info = task->getObjectInfo();
     }
     else
     {

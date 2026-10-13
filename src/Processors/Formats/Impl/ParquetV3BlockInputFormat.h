@@ -15,24 +15,33 @@ namespace DB
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
     std::vector<size_t> row_group_ids;
+    std::optional<std::pair<UInt64, UInt64>> byte_range;
 
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
-    void serialize(WriteBuffer & buffer) override;
-    void deserialize(ReadBuffer & buffer) override;
+    ParquetFileBucketInfo(UInt64 offset, UInt64 length);
+    void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
+    void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
     String getIdentifier() const override;
     String getFormatName() const override
     {
         return "Parquet";
     }
     std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
+    std::optional<UInt64> getByteSize() const override
+    {
+        if (byte_range.has_value())
+            return byte_range->second;
+        return std::nullopt;
+    }
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
 struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
-    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, size_t min_buckets, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t min_buckets, size_t file_size, const std::vector<UInt64> & split_offsets) override;
 };
 
 class ParquetV3BlockInputFormat final : public IInputFormat
@@ -64,6 +73,7 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
+    std::optional<std::pair<size_t, size_t>> getRowRangeToRead() const override;
     bool isTopKFilterApplied() const override;
 
 private:
@@ -91,6 +101,7 @@ private:
 
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
+    Parquet::RowGroupSelection rowGroupSelection() const;
 
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
