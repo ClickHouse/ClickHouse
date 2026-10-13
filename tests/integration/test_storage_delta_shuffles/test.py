@@ -48,7 +48,6 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
-        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 
