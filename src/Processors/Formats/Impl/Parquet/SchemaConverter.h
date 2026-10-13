@@ -144,6 +144,7 @@ private:
     bool processSubtreeArrayOuter(TraversalNode & node);
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
+    bool processSubtreeDynamic(TraversalNode & node);
 
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint,

@@ -458,6 +458,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setFunctionsRequiringGrantFromConfig(config_);
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
     setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
+    setReadonlyRestrictsSetRole(config_.getBool("access_control_improvements.readonly_restricts_set_role", false));
 
     /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
