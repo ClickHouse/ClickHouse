@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -128,7 +129,8 @@ bool hasGlobalJoin(const QueryTreeNodePtr & join_tree)
 }
 
 /// A `Join` table, a dictionary or a key-value storage on the right side of a join is looked up by the keys
-/// instead of being read into a hash table, so no runtime filter is built from it.
+/// instead of being read into a hash table, so no runtime filter is built from it. On the left side, it has no
+/// row estimate, so the join sides are not swapped, and the runtime filter would restrict this table only.
 bool isJoinedByLookup(const IQueryTreeNode * table_expression)
 {
     StoragePtr storage;
@@ -325,11 +327,12 @@ private:
         const std::vector<JoinAlgorithm> join_algorithms = getSettings()[Setting::join_algorithm];
         /// A runtime filter restricts only the probe (left) side of a join. With the automatic swap of the join sides,
         /// the larger table becomes the probe side, and the window over a smaller one is small. With a fixed choice,
-        /// the target may stay on the build side. An `ie_join` listed first takes the joins with inequalities, and
-        /// builds no runtime filter.
+        /// the target may stay on the build side, as without the join order optimization, which makes the swap.
+        /// An `ie_join` listed first takes the joins with inequalities, and builds no runtime filter.
         const bool runtime_join_filters = optimization_settings.enable_join_runtime_filters
             && std::ranges::any_of(join_algorithms, QueryPlanOptimizations::supportsRuntimeFilter)
             && !optimization_settings.join_swap_table.has_value()
+            && optimization_settings.query_plan_optimize_join_order_limit > 0
             && join_algorithms.front() != JoinAlgorithm::IE_JOIN
             && !hasGlobalJoin(query_node.getJoinTreeNode());
 
@@ -564,6 +567,11 @@ private:
         std::unordered_set<const IQueryTreeNode *> joined_on_keys;
         auto reached = [&](const ColumnNode & column, const IQueryTreeNode * source)
         { return (source == target && is_key(column)) || joined_on_keys.contains(source); };
+        auto join = [&](const ColumnNode & from, const IQueryTreeNode * from_source, const IQueryTreeNode * to_source)
+        {
+            return reached(from, from_source) && to_source != target && !joined_on_keys.contains(to_source)
+                && !isJoinedByLookup(to_source) && joined_on_keys.insert(to_source).second;
+        };
         for (bool changed = true; changed;)
         {
             changed = false;
@@ -574,12 +582,11 @@ private:
                     continue;
                 const auto * lhs_source = lhs->getColumnSourceOrNull().get();
                 const auto * rhs_source = rhs->getColumnSourceOrNull().get();
-                if (!lhs_source || !rhs_source)
+                /// A runtime filter is not built for join keys without a common supertype.
+                if (!lhs_source || !rhs_source || !tryGetLeastSupertype(DataTypes{lhs->getResultType(), rhs->getResultType()}))
                     continue;
-                if (reached(*lhs, lhs_source) && rhs_source != target && !isJoinedByLookup(rhs_source))
-                    changed |= joined_on_keys.insert(rhs_source).second;
-                if (reached(*rhs, rhs_source) && lhs_source != target && !isJoinedByLookup(lhs_source))
-                    changed |= joined_on_keys.insert(lhs_source).second;
+                changed |= join(*lhs, lhs_source, rhs_source);
+                changed |= join(*rhs, rhs_source, lhs_source);
             }
         }
 

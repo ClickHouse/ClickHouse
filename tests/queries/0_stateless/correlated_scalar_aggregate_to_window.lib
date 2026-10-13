@@ -35,6 +35,8 @@ declare -A TABLES=(
         INSERT INTO ts VALUES (1, 'a'), (1, 'bcd'), (2, 'ef');"
     [jt]="CREATE TABLE jt (k Int32, w Int32) ENGINE = Join(ALL, INNER, k);
         INSERT INTO jt VALUES (1, 100), (2, 200), (4, 400);"
+    [ku]="CREATE TABLE ku (k UInt64, w Int32) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO ku VALUES (1, 100), (2, 200), (4, 400);"
 )
 
 # Creates and fills the tables named in the arguments.
@@ -52,7 +54,8 @@ SQ="(SELECT max(v) FROM t AS s WHERE s.k = u.k)"
 # Starting a client per query is too slow in sanitizer builds, so the cases are collected first and then sent
 # in two batches: the queries and their query trees, where the rewrite shows up as a window function.
 # A marker line separates the results of the cases.
-# The rewrite relies on runtime join filters and the automatic swap of the join sides, which are randomized.
+# The rewrite relies on runtime join filters and the automatic swap of the join sides (done by the join order
+# optimization), which are randomized.
 MARKER='--- next case ---'
 ITEMS=()
 QUERIES=()
@@ -93,7 +96,7 @@ function run_batch()
     local query
     for query in "${QUERIES[@]}"; do
         printf "SELECT '%s';\n%s%s%s;\n" "$MARKER" "$prefix" "$query" "$suffix"
-    done | $CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --enable_join_runtime_filters=1 --query_plan_join_swap_table=auto
+    done | $CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --enable_join_runtime_filters=1 --query_plan_join_swap_table=auto --query_plan_optimize_join_order_limit=10
 }
 
 function run_all()
