@@ -1267,9 +1267,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         break;
     }
 
+    std::unique_ptr<ReadBuffer> read_buf; /// Destroyed last: `builder` and `source` hold the input format reading it.
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
-    std::unique_ptr<ReadBuffer> read_buf;
 
     Names row_lineage_columns;
 
