@@ -269,6 +269,23 @@ static std::optional<UInt64> getBuildSideDistinctKeys(const JoinStepLogical & jo
     return hint->ht_size;
 }
 
+/// Number of key columns of the join hash table, whose distinct count `getBuildSideDistinctKeys` returns.
+/// Mirrors `addJoinPredicatesToTableJoin`: every `Equals` and `NullSafeEquals` pair between the two sides is a hash table key,
+/// while runtime filters are built only from the `Equals` pairs (see `JoinStepLogical::preCalculateKeys`).
+static size_t countHashTableKeys(const JoinStepLogical & join_step)
+{
+    size_t count = 0;
+    for (const auto & condition : join_step.getJoinOperator().expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+            ++count;
+    }
+    return count;
+}
+
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -507,6 +524,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     }
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
+    const size_t hash_table_keys_count = countHashTableKeys(*join_step);
 
     /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
     /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
@@ -556,7 +574,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     .polarity = RuntimeFilterPolarity::NotContains,
                     .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
                     .distinct_keys_hint = distinct_keys_hint,
-                    .distinct_keys_hint_matches_filter_key = true},
+                    .distinct_keys_hint_matches_filter_key = join_keys_build_side.size() == hash_table_keys_count},
                 optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                 optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
@@ -609,7 +627,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings,
                 check_left_does_not_contain,
                 distinct_keys_hint,
-                /*distinct_keys_hint_matches_filter_key=*/join_keys_build_side.size() == 1);
+                /*distinct_keys_hint_matches_filter_key=*/hash_table_keys_count == 1);
             all_filter_conditions.push_back(
                 check_left_does_not_contain ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
                                             : &filter_condition);

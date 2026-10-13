@@ -51,10 +51,11 @@ QUERY id: 0
           LIST id: 9, nodes: 2
             COLUMN id: 10, column_name: arr.size0, result_type: UInt64, source_id: 3
             CONSTANT id: 11, constant_value: UInt64_0, constant_value_type: UInt8
-      FUNCTION id: 12, function_name: empty, function_type: ordinary, result_type: Nullable(UInt8)
+      FUNCTION id: 12, function_name: equals, function_type: ordinary, result_type: Nullable(UInt8)
         ARGUMENTS
-          LIST id: 13, nodes: 1
-            COLUMN id: 14, column_name: n, result_type: Nullable(String), source_id: 3
+          LIST id: 13, nodes: 2
+            COLUMN id: 14, column_name: n.size, result_type: Nullable(UInt64), source_id: 3
+            CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_func_to_subcolumns
 
@@ -62,7 +63,7 @@ SELECT
     __table1.`arr.size0` AS `length(arr)`,
     __table1.`arr.size0` = 0 AS `empty(arr)`,
     __table1.`arr.size0` != 0 AS `notEmpty(arr)`,
-    empty(__table1.n) AS `empty(n)`
+    equals(__table1.`n.size`, 0) AS `empty(n)`
 FROM default.t_func_to_subcolumns AS __table1
 ['foo','bar']	[1,2]
 []	[]
