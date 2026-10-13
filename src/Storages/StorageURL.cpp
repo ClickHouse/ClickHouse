@@ -1074,43 +1074,36 @@ std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
 
 void StorageURLSource::writeQueryConditionCacheEntry() const
 {
-    try
-    {
-        auto buckets = input_format->getMatchedBuckets();
-        if (!buckets)
-            return;
+    auto buckets = input_format->getMatchedBuckets();
+    if (!buckets)
+        return;
 
-        const auto & [matched_row_groups, total_row_groups] = *buckets;
-        std::unordered_set<size_t> matched_set(matched_row_groups.begin(), matched_row_groups.end());
-        MarkRanges unmatched_ranges;
-        for (size_t i = 0; i < total_row_groups; ++i)
+    const auto & [matched_row_groups, total_row_groups] = *buckets;
+    std::unordered_set<size_t> matched_set(matched_row_groups.begin(), matched_row_groups.end());
+    MarkRanges unmatched_ranges;
+    for (size_t i = 0; i < total_row_groups; ++i)
+    {
+        if (!matched_set.contains(i))
         {
-            if (!matched_set.contains(i))
-            {
-                if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                    unmatched_ranges.back().end++;
-                else
-                    unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
-            }
+            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                unmatched_ranges.back().end++;
+            else
+                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
         }
-
-        if (unmatched_ranges.empty())
-            return;
-
-        if (auto query_condition_cache = getContext()->getQueryConditionCache())
-            query_condition_cache->write(
-                storage_id.uuid,
-                *current_query_condition_cache_file_key,
-                *format_filter_info->condition_hash,
-                format_filter_info->filter_actions_dag->dumpNames(),
-                unmatched_ranges,
-                total_row_groups,
-                /*has_final_mark=*/false);
     }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("StorageURLSource"), "Failed to write to query condition cache");
-    }
+
+    if (unmatched_ranges.empty())
+        return;
+
+    if (auto query_condition_cache = getContext()->getQueryConditionCache())
+        query_condition_cache->write(
+            storage_id.uuid,
+            *current_query_condition_cache_file_key,
+            *format_filter_info->condition_hash,
+            format_filter_info->filter_actions_dag->dumpNames(),
+            unmatched_ranges,
+            total_row_groups,
+            /*has_final_mark=*/false);
 }
 
 void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
