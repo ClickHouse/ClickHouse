@@ -25,6 +25,7 @@
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/TypeList.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -1087,7 +1088,8 @@ public:
                     [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        if (!(res = executeType<FromDataType>(arguments, result_type, input_rows_count)))
+                        res = executeType<FromDataType>(arguments, result_type, input_rows_count);
+                        if (!res)
                             throw Exception(
                                 ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
@@ -1096,10 +1098,8 @@ public:
                         return true;
                     }))
             {
-                if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                      || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+                res = executeDateOrDateTime(arguments, result_type, input_rows_count);
+                if (!res)
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Illegal column {} of function {}, must be Integer or DateTime.",
@@ -1109,15 +1109,25 @@ public:
         }
         else
         {
-            if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+            res = executeDateOrDateTime(arguments, result_type, input_rows_count);
+            if (!res)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column {} of function {}, must be Date or DateTime.",
                     arguments[0].column->getName(), getName());
         }
 
+        return res;
+    }
+
+    /// Tries Date, Date32, DateTime and DateTime64 in order; returns nullptr if none matches.
+    ColumnPtr executeDateOrDateTime(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        ColumnPtr res;
+        TypeListUtils::forEach(TypeList<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>{}, [&]<typename DataType>(TypeList<DataType>)
+        {
+            if (!res)
+                res = executeType<DataType>(arguments, result_type, input_rows_count);
+        });
         return res;
     }
 
