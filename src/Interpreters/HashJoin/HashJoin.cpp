@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <any>
 #include <limits>
 #include <memory>
@@ -227,15 +226,18 @@ static HashJoin::Type mergeJoinMethods(HashJoin::Type lhs, HashJoin::Type rhs)
 {
     using Type = HashJoin::Type;
 
+    /// Rank within a packing family (single-level and two-level are ranked separately); 0 = not a
+    /// packed fixed-key map. Within one join all disjuncts are the same level, so two packed types
+    /// being merged always belong to the same family.
     auto packed_rank = [](Type type) -> int
     {
         switch (type)
         {
-            case Type::keys32: return 1;
-            case Type::keys64: return 2;
-            case Type::keys128: return 3;
-            case Type::keys256: return 4;
-            default: return 0;
+            case Type::keys32: case Type::two_level_keys32:   return 1;
+            case Type::keys64: case Type::two_level_keys64:   return 2;
+            case Type::keys128: case Type::two_level_keys128: return 3;
+            case Type::keys256: case Type::two_level_keys256: return 4;
+            default:                                          return 0;
         }
     };
 
@@ -341,7 +343,7 @@ HashJoin::HashJoin(
     }
 
     /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it
-    /// can use a dictionary-aware map. Restricted to one disjunct, the serial layout and non-ASOF for now.
+    /// can use a dictionary-aware map. Restricted to a single disjunct and non-two-level maps for now.
     std::optional<Type> low_cardinality_method;
     if (table_join->oneDisjunct() && !build_layout.two_level && strictness != JoinStrictness::Asof)
     {
@@ -354,18 +356,15 @@ HashJoin::HashJoin(
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
 
-    size_t disjuncts_num = table_join->getClauses().size();
-    /// maps must exist so `initRowStore` can see the one-disjunct layout via `isRightTableRerangeEnabled`.
-    data->maps.resize(disjuncts_num);
-
     if (!table_join->isRowStoreEnabled() || !isRowStoreSupported() || data->sample_block.columns() == 0)
         data->row_store_state = RowStoreState::Disabled;
-    else
-        /// Publish the layout before any `FillingRightJoinSide` thread can call `addBlockToJoin`.
-        initRowStore(data->sample_block);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
+    size_t disjuncts_num = table_join->getClauses().size();
+    data->maps.resize(disjuncts_num);
+    /// Publish the row store layout before any `FillingRightJoinSide` thread can call `addBlockToJoin`.
+    initRowStore(data->sample_block);
     key_sizes.reserve(disjuncts_num);
 
     std::optional<Type> selected_join_method;
@@ -442,7 +441,13 @@ HashJoin::HashJoin(
     for (auto & maps : data->maps)
         dataMapInit(maps);
 
-    data->slots.setReserve(data->maps.size(), sizeHintForMaps(), table_join->maxBytesBeforeExternalJoin());
+    /// A 256-bucket map is sized from the estimate, or every bucket rehashes its way up from 256 cells. A serial map
+    /// is not: sized from the estimate, it lands on a worse load factor than the grower picks.
+    size_t size_hint = reserve_num;
+    if (!size_hint && build_layout.two_level)
+        if (const auto hint = getSizeHint(stats_collecting_params.build))
+            size_hint = hint->ht_size;
+    data->slots.setReserve(data->maps.size(), size_hint, table_join->maxBytesBeforeExternalJoin());
 
     /// `bucket_bytes` only accumulates insert deltas, so seed it with what `create` allocated.
     recomputeBucketBytes();
@@ -477,10 +482,8 @@ HashJoin::HashJoin(
         }
     }
 
-    /// Building the buckets is many small allocations. Each one is charged to the thread.
-    /// The thread only passes the total to the query once it crosses `max_untracked_memory`.
-    /// A 256-bucket layout can leave a megabyte uncharged. Flush it so the query's limit
-    /// applies, rather than reporting a join the query cannot afford as built.
+    /// Each small bucket allocation is charged to the thread, which passes the total to the query only past
+    /// `max_untracked_memory`, so a 256-bucket layout can leave a megabyte uncharged. Flush it so the query's limit applies now.
     CurrentThread::flushUntrackedMemory();
     CurrentMemoryTracker::check();
 }
@@ -618,27 +621,10 @@ HashJoin::Type HashJoin::toTwoLevelType(Type type)
     }
 }
 
-size_t HashJoin::sizeHintForMaps() const
-{
-    if (reserve_num)
-        return reserve_num;
-
-    /// Sizing a serial map from the estimate lands on a worse load factor than the grower picks.
-    if (!build_layout.two_level)
-        return 0;
-
-    /// A 256-bucket map does need it, or every bucket rehashes its way up from 256 cells.
-    if (const auto hint = getSizeHint(stats_collecting_params.build))
-        return hint->ht_size;
-
-    return 0;
-}
-
 void HashJoin::dataMapInit(MapsVariant & map)
 {
     const auto maps_kind = getMapsKind();
     joinDispatchInit(kind, strictness, map, maps_kind);
-    /// No reserve here: see `BuildSlots::setReserve`.
     joinDispatch(kind, strictness, map, maps_kind, [&](auto, auto, auto & map_) { map_.create(data->type); });
 
     if (!data)
@@ -700,23 +686,21 @@ void HashJoin::dropRightBlocksKeptForAnotherAlgorithm()
     if (!data || getMapsKind() != JoinMapsKind::Set)
         return;
 
-    auto & stored = data->workers.front();
-
     /// A nullmap holds a raw pointer into a stored block, and the non-joined stream reads the block
     /// through it. Both nullmaps are only stored for a RIGHT or FULL join, which never gets a set
     /// map, so this holds today - it is here so that the drop stays honest if that ever changes.
-    if (!stored.nullmaps.empty())
+    if (!data->workers.front().nullmaps.empty())
         return;
 
     doDebugAsserts();
-    for (auto & stored_columns : stored.columns)
+    for (auto & stored_columns : data->workers.front().columns)
     {
         data->subBytes(data->allocated_size, stored_columns.allocatedBytes());
         /// No cell refers to the block, but null the index entry anyway, so that a stale reference
         /// trips the chassert in `StoredColumnsIndex::at` rather than reading freed memory.
         data->stored_columns_index->clearEntry(stored_columns.block_no);
     }
-    stored.columns.clear();
+    data->workers.front().columns.clear();
     doDebugAsserts();
 }
 
@@ -733,7 +717,7 @@ bool HashJoin::alwaysReturnsEmptySet() const
 {
     /// A left semi join keeps only the left rows with a match, so it is empty for an empty right side too.
     const bool empty_for_empty_right = isInnerOrRight(getKind()) || (isLeft(getKind()) && getStrictness() == JoinStrictness::Semi);
-    return empty_for_empty_right && data->rows_to_join.load(std::memory_order_relaxed) == 0;
+    return empty_for_empty_right && data->rows_to_join == 0;
 }
 
 size_t HashJoin::getTotalRowCount() const
@@ -741,7 +725,6 @@ size_t HashJoin::getTotalRowCount() const
     if (!data)
         return 0;
 
-    /// Summing the buckets instead would race with concurrent inserts, and cost a pass per block.
     return data->keys_to_join.load(std::memory_order_relaxed);
 }
 
@@ -771,14 +754,9 @@ void HashJoin::doDebugAsserts() const
         return;
 
     size_t debug_allocated_size = 0;
-    size_t debug_nullmaps_allocated_size = 0;
     for (const auto & worker : data->workers)
-    {
         for (const auto & columns : worker.columns)
             debug_allocated_size += columns.allocatedBytes();
-        for (const auto & nullmap : worker.nullmaps)
-            debug_nullmaps_allocated_size += nullmap.allocatedBytes();
-    }
 
     if (data->allocated_size != debug_allocated_size)
         throw Exception(
@@ -786,6 +764,11 @@ void HashJoin::doDebugAsserts() const
             "data->allocated_size != debug_allocated_size ({} != {})",
             data->allocated_size.load(std::memory_order_relaxed),
             debug_allocated_size);
+
+    size_t debug_nullmaps_allocated_size = 0;
+    for (const auto & worker : data->workers)
+        for (const auto & nullmap : worker.nullmaps)
+            debug_nullmaps_allocated_size += nullmap.allocatedBytes();
 
     if (data->nullmaps_allocated_size != debug_nullmaps_allocated_size)
         throw Exception(
@@ -811,14 +794,6 @@ size_t HashJoin::getTotalByteCount() const
         return 0;
 
     doDebugAsserts();
-    return getTotalByteCountUnchecked();
-}
-
-size_t HashJoin::getTotalByteCountUnchecked() const
-{
-    if (!data)
-        return 0;
-
     return data->total_bytes.load(std::memory_order_relaxed);
 }
 
@@ -1019,50 +994,6 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-BuildResult HashJoin::insertClause(
-    Maps & map,
-    size_t clause_idx,
-    const ColumnRawPtrs & key_columns,
-    ConstNullMapPtr null_map,
-    const JoinCommon::JoinMask & join_mask,
-    const StoredBlock & stored_block,
-    bool flag_per_row,
-    JoinBuildContext context)
-{
-    using Methods = HashJoinMethods<KIND, STRICTNESS, Maps>;
-
-    const size_t slots = data->slots.size();
-    std::vector<ScatteredBlock::Selector> scattered;
-    std::span<const ScatteredBlock::Selector> per_slot(&stored_block.selector, 1);
-    if (slots > 1)
-    {
-        scattered = scatterBlockBySlot(data->type, map, key_columns, key_sizes[clause_idx], stored_block.selector, slots);
-        per_slot = scattered;
-    }
-
-    const BuildResult result = Methods::insertFromBlockImpl(
-        *this,
-        map,
-        clause_idx,
-        per_slot,
-        key_columns,
-        key_sizes[clause_idx],
-        stored_block.block_no,
-        null_map,
-        join_mask);
-
-    if (!result.all_values_unique)
-        all_values_unique.store(false, std::memory_order_relaxed);
-
-    /// The per-row used flags of the stored block are initialized on the first clause only:
-    /// their content does not depend on the inserts, and JoinUsedFlags expects one entry per block.
-    if (flag_per_row && clause_idx == 0)
-        used_flags->reinit<KIND, STRICTNESS, mapsKindOf<Maps>()>(context.getStream(), stored_block.block_no, stored_block.blockRows());
-
-    return result;
-}
-
 bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, JoinBuildContext context)
 {
     if (!data)
@@ -1079,15 +1010,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
       * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.
       * In that case memory consumed by stored blocks will be underestimated.
-      *
-      * Whichever build thread gets here first takes the sample; a later one would already
-      * include the blocks stored before it.
+      * The first build thread takes the sample; a later one would include the blocks stored before it.
       */
-    if (!memory_usage_before_adding_blocks.load(std::memory_order_relaxed))
-    {
-        Int64 unset = 0;
+    if (Int64 unset = 0; !memory_usage_before_adding_blocks.load(std::memory_order_relaxed))
         memory_usage_before_adding_blocks.compare_exchange_strong(unset, JoinCommon::getCurrentQueryMemoryUsage(), std::memory_order_relaxed);
-    }
 
     if (strictness == JoinStrictness::Asof)
     {
@@ -1139,9 +1065,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
-    /// A stored source column stays allocated, so the stream that produced it must fault in fresh memory for every block.
-    /// For narrow rows a parallel build stores copies instead: the copy is made here, on one of its several build streams,
-    /// and the producer can reuse the source memory. `shrinkToFit` copies every column.
+    /// A parallel build stores copies of narrow rows, made here on a build stream (`shrinkToFit` copies every column).
+    /// The producer then reuses its memory instead of faulting in fresh memory for every block.
     if ((data->slots.size() > 1 && !useZeroCopyApproach(block)) || shrink_blocks.load(std::memory_order_relaxed))
         block_to_save = block_to_save.shrinkToFit();
 
@@ -1172,9 +1097,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
         doDebugAsserts();
         /// Register the block and account for it while a local list still owns it: `splice` cannot throw,
-        /// so the worker's list, `data->allocated_size` and `data->rows_to_join` always describe the same
-        /// set of stored blocks. Same ordering as `tryRerangeRightTableDataImpl`; a list node keeps its
-        /// address across the splice.
+        /// so the worker's list, `data->allocated_size` and `data->rows_to_join` always describe the same set
+        /// of stored blocks. Same ordering as `tryRerangeRightTableDataImpl`; a list node keeps its address.
         StoredBlocksList new_block;
         new_block.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
         auto * stored_columns = &new_block.back();
@@ -1191,6 +1115,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
         /// NullMapHolder stores a raw pointer to stored_columns. If any clause stores a nullmap
         /// referencing this block we must not pop the block later
         bool nullmap_stored_for_block = false;
+
+        /// The per-row used flags of the stored block are initialized on the first clause only:
+        /// their content does not depend on the inserts, and JoinUsedFlags expects one entry per block.
+        bool per_row_flags_initialized = false;
 
         for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
         {
@@ -1251,9 +1179,35 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 maps_kind,
                 [&](auto kind_, auto strictness_, auto & map)
                 {
-                    const BuildResult result = insertClause<kind_, strictness_>(
-                        map, onexpr_idx, key_columns, null_map, join_mask_col, *stored_columns, flag_per_row, context);
+                    std::vector<ScatteredBlock::Selector> scattered;
+                    std::span<const ScatteredBlock::Selector> per_slot(&stored_columns->selector, 1);
+                    if (data->slots.size() > 1)
+                    {
+                        scattered = scatterBlockBySlot(
+                            data->type, map, key_columns, key_sizes[onexpr_idx], stored_columns->selector, data->slots.size());
+                        per_slot = scattered;
+                    }
+
+                    const BuildResult result = HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
+                        *this,
+                        map,
+                        onexpr_idx,
+                        per_slot,
+                        key_columns,
+                        key_sizes[onexpr_idx],
+                        stored_columns->block_no,
+                        null_map,
+                        join_mask_col);
                     is_inserted = result.is_inserted;
+                    if (!result.all_values_unique)
+                        all_values_unique.store(false, std::memory_order_relaxed);
+
+                    if (flag_per_row && !per_row_flags_initialized)
+                    {
+                        used_flags->reinit<kind_, strictness_, mapsKindOf<decltype(map)>()>(
+                            context.getStream(), stored_columns->block_no, stored_columns->blockRows());
+                        per_row_flags_initialized = true;
+                    }
                 });
 
             if (!flag_per_row && save_nullmap && is_inserted)
@@ -1300,7 +1254,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
             if (context.joinChecksLimits())
             {
                 total_rows = getTotalRowCount();
-                total_bytes = getTotalByteCountUnchecked();
+                total_bytes = getTotalByteCount();
                 /// total_bytes here is the pre-shrink size (shrink happens below), so this captures the
                 /// build high-water mark for free on the path where a shrink can lower it.
                 updatePeakBuildBytes(total_bytes);
@@ -1329,7 +1283,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
         {
             /// Another thread already decided to shrink; catch this worker up.
             shrinkWorkerStoredBlocks(data->workers[worker_id]);
-            total_bytes_in_join = getTotalByteCountUnchecked();
+            total_bytes_in_join = getTotalByteCount();
             return;
         }
 
@@ -1347,7 +1301,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
         if (!shrink_blocks.compare_exchange_strong(expected, true, std::memory_order_relaxed))
         {
             shrinkWorkerStoredBlocks(data->workers[worker_id]);
-            total_bytes_in_join = getTotalByteCountUnchecked();
+            total_bytes_in_join = getTotalByteCount();
             return;
         }
     }
@@ -1377,7 +1331,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
         shrinkWorkerStoredBlocks(data->workers[worker_id]);
     }
 
-    auto new_total_bytes_in_join = getTotalByteCountUnchecked();
+    auto new_total_bytes_in_join = getTotalByteCount();
     Int64 new_current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
 
     LOG_DEBUG(
@@ -1630,16 +1584,14 @@ HashJoin::~HashJoin()
         log,
         "{}Join data is being destroyed, {} bytes and {} rows in hash table",
         instance_log_id,
-        getTotalByteCountUnchecked(),
+        getTotalByteCount(),
         getTotalRowCount());
 }
 
 HashJoin::RightTableData::~RightTableData()
 {
-    /// The time to free the table follows the number of its heap allocations much more than their bytes, and starting
-    /// the pool takes a fixed time. So the pool frees only a table that owns many objects: the columns of the stored
-    /// blocks, the null maps, and the per-key lookups of the `ASOF` maps whose buckets the pool splits. The arenas are
-    /// not counted: their chunks double in size, so an arena holds only a few of them.
+    /// Freeing takes time per heap allocation more than per byte, and starting the pool takes a fixed time. So the pool
+    /// frees only a table of many objects: stored columns, null maps, `ASOF` lookups. Arena chunks double, so arenas are not counted.
     static constexpr size_t PARALLEL_DESTROY_THRESHOLD_OBJECTS = 2000;
 
     try
@@ -1658,13 +1610,10 @@ HashJoin::RightTableData::~RightTableData()
                     });
         };
 
-        size_t num_blocks = 0;
-        size_t num_nullmaps = 0;
-        for (const auto & worker : workers)
-        {
-            num_blocks += worker.columns.size();
-            num_nullmaps += worker.nullmaps.size();
-        }
+        /// A cancelled build never reached `onBuildPhaseFinish`, so its lists may still be per worker.
+        spliceWorkerLists();
+        auto & stored = workers.front();
+        const size_t num_blocks = stored.columns.size();
         size_t num_asof_buckets = 0;
         size_t num_asof_keys = 0;
         for_each_asof_map_with_bucket_buffers([&]<typename Table>(Table & map)
@@ -1673,15 +1622,11 @@ HashJoin::RightTableData::~RightTableData()
             num_asof_keys += map.size();
         });
         /// Every stored block has the columns of `sample_block`, though a row store keeps several of them in one buffer.
-        const size_t num_objects = num_blocks * sample_block.columns() + num_nullmaps + num_asof_keys;
+        const size_t num_objects = num_blocks * sample_block.columns() + stored.nullmaps.size() + num_asof_keys;
         /// The planner gives one worker to a join with the serial layout or with one thread, so its table is freed serially.
         const size_t num_threads = std::min(workers.size(), num_blocks + slots.numArenasWithMemory() + num_asof_buckets);
         if (num_threads <= 1 || num_objects < PARALLEL_DESTROY_THRESHOLD_OBJECTS)
             return;
-
-        /// A cancelled build never reached `onBuildPhaseFinish`, so its lists may still be per worker.
-        spliceWorkerLists();
-        auto & stored = workers.front();
 
         /// The jobs refer to these containers. The pool comes after them, so its destructor waits for the jobs first.
         std::vector<StoredBlocksList> sublists(std::min(num_threads, num_blocks));
@@ -1749,8 +1694,7 @@ namespace
 
 /// Whether every key in the cells that stream `bucket_idx` of `num_buckets` walks has its used flag set.
 /// A two-level map numbers the cells of bucket `b` from `bucket_cells_prefix[b] + 1`, and its zero key has offset 0.
-/// A one-bucket map is checked as a whole. So is a `PartitionedFixedHashTable`: its buckets are scattered cache lines
-/// of one flat table that keeps no count per bucket, so a stream cannot tell whether its own lines hold the unused key.
+/// A one-bucket map is checked as a whole, and so is a `PartitionedFixedHashTable`, which keeps no count per bucket.
 template <typename Map>
 bool allKeysUsed(const Map & map, const JoinStuff::JoinUsedFlags & used_flags, size_t bucket_idx, size_t num_buckets)
 {
@@ -1929,11 +1873,10 @@ private:
         {
             /// parent.data->columns is not partitioned by hash bucket, so distribute the stored
             /// right blocks across streams by their globally unique block_no instead
-            const auto & stored_blocks = parent.data->workers.front().columns;
             if (!used_position.has_value())
-                used_position = stored_blocks.begin();
+                used_position = parent.data->workers.front().columns.begin();
 
-            auto end = stored_blocks.end();
+            auto end = parent.data->workers.front().columns.end();
 
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
@@ -1958,6 +1901,7 @@ private:
             using Mapped = typename Map::mapped_type;
             using Iterator = typename Map::const_iterator;
 
+
             if (!position.has_value())
             {
                 const bool all_keys_used = allKeysUsed(map, *parent.used_flags, bucket_idx, num_buckets);
@@ -1969,36 +1913,52 @@ private:
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
 
-            /// `getBucket` is the bucket the key routes to, on both table shapes.
-            auto skip_to_next_owned_bucket = [&]() -> bool
+            /// case: two-level hash tables with parallel iteration
+            if constexpr (requires { map.iteratorAt(0); })
             {
-                while (it != end && !isBucketInRange(it.getBucket()))
+                auto skipToNextOwnedBucket = [&]() -> bool
                 {
-                    if constexpr (is_partitioned_fixed_table<Map>)
+                    while (it != end && !isBucketInRange(it.getBucket()))
                     {
-                        /// No `iteratorAt`, see the class comment of `PartitionedFixedHashTable`.
-                        ++it;
-                    }
-                    else
-                    {
+                        /// smallest bucket > current that satisfies: bucket ≡ bucket_idx (mod num_buckets)
                         size_t cur = it.getBucket();
                         size_t next = cur - (cur % num_buckets) + bucket_idx;
                         if (next <= cur)
                             next += num_buckets;
                         it = map.iteratorAt(next);
                     }
-                }
-                return it != end;
-            };
+                    return it != end;
+                };
 
-            if (!skip_to_next_owned_bucket())
-                return rows_added;
+                /// position at the first bucket owned by this stream
+                if (!skipToNextOwnedBucket())
+                    return 0;
 
-            while (it != end && rows_added < max_block_size)
-            {
-                size_t offset = map.offsetInternal(it.getPtr());
-                if (!parent.isUsed(offset))
+                while (it != end && rows_added < max_block_size)
                 {
+                    size_t offset = map.offsetInternal(it.getPtr());
+                    if (!parent.isUsed(offset))
+                        rows_added += collectNonJoinedRefWords<Mapped>(it->getMapped(), words);
+
+                    ++it;
+
+                    /// if we crossed into a bucket not owned by this stream, skip ahead
+                    if (it != end && !isBucketInRange(it.getBucket()) && !skipToNextOwnedBucket())
+                        break;
+                }
+            }
+            else
+            {
+                /// A `PartitionedFixedHashTable` has no `iteratorAt`, so the walk tests the bucket of every cell.
+                for (; it != end; ++it)
+                {
+                    if (!isBucketInRange(it.getBucket()))
+                        continue;
+
+                    size_t offset = map.offsetInternal(it.getPtr());
+                    if (parent.isUsed(offset))
+                        continue;
+
                     rows_added += collectNonJoinedRefWords<Mapped>(it->getMapped(), words);
 
                     if (rows_added >= max_block_size)
@@ -2007,11 +1967,6 @@ private:
                         break;
                     }
                 }
-
-                ++it;
-
-                if (it != end && !isBucketInRange(it.getBucket()) && !skip_to_next_owned_bucket())
-                    break;
             }
         }
 
@@ -2085,16 +2040,11 @@ bool HashJoin::supportParallelNonJoinedBlocksProcessing() const
         && JoinCommon::hasNonJoinedBlocks(*table_join) && anyClauseHasRightKeys(*table_join);
 }
 
-bool HashJoin::hasNonJoinedRows() const
-{
-    return isRightOrFull(kind) && data && data->rows_to_join.load(std::memory_order_relaxed) != 0;
-}
-
 IBlocksStreamPtr
 HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
                              size_t bucket_idx, size_t num_buckets) const
 {
-    if (!JoinCommon::hasNonJoinedBlocks(*table_join) || !hasNonJoinedRows())
+    if (!JoinCommon::hasNonJoinedBlocks(*table_join) || !isRightOrFull(kind) || !data || data->rows_to_join == 0)
         return {};
 
     if (num_buckets > 1 && !anyClauseHasRightKeys(*table_join) && bucket_idx != 0)
@@ -2171,11 +2121,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
             "Right blocks of a key-only join were asked for, but no algorithm said it would take them");
 
     LOG_TRACE(
-        log,
-        "{}Join data is being released, {} bytes and {} rows in hash table",
-        instance_log_id,
-        getTotalByteCountUnchecked(),
-        getTotalRowCount());
+        log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
     if (!data)
         return {};
@@ -2190,9 +2136,8 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         return result;
     };
 
-    StoredBlocksList right_columns;
-    for (auto & worker : data->workers)
-        right_columns.splice(right_columns.end(), worker.columns);
+    data->spliceWorkerLists();
+    StoredBlocksList right_columns = std::move(data->workers.front().columns);
     if (!restructure)
     {
         auto sample_block = std::move(data->sample_block);
@@ -2206,8 +2151,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     }
 
     data->maps.clear();
-    for (auto & worker : data->workers)
-        worker.nullmaps.clear();
+    data->workers.front().nullmaps.clear();
 
     BlocksList restored_blocks;
 
@@ -2436,7 +2380,6 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         StoredBlocksList sorted_columns;
         visit_rows_map(sorted_columns, map);
         doDebugAsserts();
-
         data->workers.front().columns.swap(sorted_columns);
         /// The replaced blocks are destroyed below; null their index entries so that any stale
         /// ref fails loudly instead of reading freed memory. All live cells were rewritten above.
@@ -3052,9 +2995,7 @@ void HashJoin::tryConvertToFixedHashMap()
     if (data->type != old_type)
     {
         reinitUsedFlags();
-        /// The new map invalidates the byte total and the prefix sums.
         recomputeBucketBytes();
-        freezeMapsForProbing();
     }
 }
 
@@ -3078,7 +3019,6 @@ void HashJoin::onBuildPhaseFinish()
     reinitUsedFlags();
 
     used_flags->finalizePerRowFlags(data->stored_columns_index->size());
-
     data->spliceWorkerLists();
 
     if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind) && data->maps.size() == 1)
@@ -3107,7 +3047,7 @@ void HashJoin::onBuildPhaseFinish()
         log,
         "{}Join data is built, {} and {} rows in hash table",
         instance_log_id,
-        ReadableSize(getTotalByteCountUnchecked()),
+        ReadableSize(getTotalByteCount()),
         getTotalRowCount());
 }
 

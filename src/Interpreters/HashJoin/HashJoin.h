@@ -882,14 +882,9 @@ private:
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
-    /// Unchecked as in without `doDebugAsserts`. That walk cannot run while build threads append.
-    size_t getTotalByteCountUnchecked() const;
-
     void recomputeBucketBytes();
 
     void dataMapInit(MapsVariant & map);
-
-    size_t sizeHintForMaps() const;
 
     void initRightBlockStructure(Block & saved_block_sample);
 
@@ -954,17 +949,6 @@ private:
     bool right_blocks_may_be_taken = false;
     bool canRemoveColumnsFromLeftBlock() const;
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    BuildResult insertClause(
-        Maps & map,
-        size_t clause_idx,
-        const ColumnRawPtrs & key_columns,
-        ConstNullMapPtr null_map,
-        const JoinCommon::JoinMask & join_mask,
-        const StoredBlock & stored_block,
-        bool flag_per_row,
-        JoinBuildContext context);
-
     void shrinkWorkerStoredBlocks(WorkerStoredData & worker);
 
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
@@ -996,7 +980,6 @@ private:
 
     void reinitUsedFlags();
 
-    bool hasNonJoinedRows() const;
     bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;
