@@ -37,7 +37,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Planner/Utils.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
@@ -4516,11 +4515,7 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     if (context->getSettingsRef()[Setting::parallel_replicas_count] > 1 && data.supportsSampling())
         return true;
 
-    if (query_info.table_expression_modifiers)
-        return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
-
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    return select.sampleSize() != nullptr;
+    return query_info.getSampleSizeRatio().has_value();
 }
 
 Pipe ReadFromMergeTree::spreadMarkRanges(
@@ -7274,9 +7269,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     bool has_input_order_info = false;
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
     {
-        UInt64 flag = 0;
-        readVarUInt(flag, ctx.in);
-        has_input_order_info = flag != 0;
+        readVarUInt(has_input_order_info, ctx.in);
         if (has_input_order_info)
         {
             readVarUInt(input_order_prefix_size, ctx.in);
