@@ -237,11 +237,13 @@ bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDr
             return true;
     }
 #endif
-    /// A table function that has not been resolved yet reports no row count, so it is refused
-    /// anyway. Do not resolve it to ask whether it is a view: that would instantiate the external
-    /// storage and start it up.
+    /// Do not resolve a table function that has not been resolved yet: that would instantiate the
+    /// external storage and start it up. Dropping or detaching it only removes the table from the
+    /// catalog and leaves the rows it would read untouched, so it holds no rows of its own.
+    /// `TRUNCATE` would resolve it and truncate the external storage, and the unknown row count
+    /// refuses that.
     if (isUnresolvedTableFunction(table))
-        return false;
+        return kind != ASTDropQuery::Kind::Truncate;
     if (table->isView())
     {
         const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
@@ -301,8 +303,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         {
             /// Check the access first: otherwise `IF EMPTY` would tell a user who may not drop
             /// the table whether it is empty. Telling a view from a table would resolve a table
-            /// function that has not been resolved yet, which `IF EMPTY` refuses anyway, so such a
-            /// table requires both grants instead. Nothing is loaded before the check: a
+            /// function that has not been resolved yet, so such a table requires both grants instead. Nothing is loaded before the check: a
             /// `lazy_load_tables` stand-in is never a view, a dictionary or a table function (see
             /// `DatabaseOrdinary::shouldLazyLoad`), and loading it would start the storage up for a
             /// user who may not touch it.
