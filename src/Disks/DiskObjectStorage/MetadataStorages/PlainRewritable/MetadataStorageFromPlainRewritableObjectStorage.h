@@ -174,7 +174,8 @@ protected:
     /// The same for a directory whose subtree the operation removes.
     void addRemovedDirectoryPath(const std::string & path);
     /// The same for a file, and also for its directory if the operation may rewrite the `prefix.path` of the directory.
-    void addAffectedFilePath(const std::string & path);
+    /// `may_remove_link` is false for the operations that cannot remove a link to the blob at this path.
+    void addAffectedFilePath(const std::string & path, bool may_remove_link = true);
 
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);

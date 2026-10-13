@@ -1231,13 +1231,14 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::addRemovedDirec
         link_removal_paths.push_back(std::move(normalized_path));
 }
 
-void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedFilePath(const std::string & path)
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedFilePath(const std::string & path, bool may_remove_link)
 {
     addAffectedPath(path);
 
-    /// Writing, unlinking or moving a file may remove a link to its blob (or to the blob of the file it replaces).
-    if (auto normalized_file_path = normalizePath(path).string(); !normalized_file_path.empty())
-        link_removal_paths.push_back(std::move(normalized_file_path));
+    /// Writing, unlinking or replacing a file may remove a link to its blob (or to the blob of the file it replaces).
+    if (may_remove_link)
+        if (auto normalized_file_path = normalizePath(path).string(); !normalized_file_path.empty())
+            link_removal_paths.push_back(std::move(normalized_file_path));
 
     /// An operation on a file of a directory in the explicit form rewrites the whole `prefix.path` of the directory, which
     /// lists all of its files, so it must exclude the operations on the other files of the directory: otherwise one of
@@ -1435,8 +1436,9 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    addAffectedFilePath(path_from);
-    addAffectedFilePath(path_to);
+    /// A hard link (or the copy that stands in for it) refuses an existing target and only adds a link to the source blob.
+    addAffectedFilePath(path_from, /*may_remove_link=*/false);
+    addAffectedFilePath(path_to, /*may_remove_link=*/false);
     checkNotReservedPath(path_to, uncommitted_state);
 
     const auto normalized_path_from = normalizePath(path_from);
@@ -1519,8 +1521,10 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(co
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
-    addAffectedFilePath(path_from);
-    addAffectedFilePath(path_to);
+    /// A move refuses an existing target and does not change the link count of the moved blob: a shared blob keeps its key
+    /// (see `isMetadataOnlyMove`), and the only link to an unshared one cannot multiply while the source path is locked.
+    addAffectedFilePath(path_from, /*may_remove_link=*/false);
+    addAffectedFilePath(path_to, /*may_remove_link=*/false);
     checkNotReservedPath(path_to, uncommitted_state);
     planFileMove(normalizePath(path_from), normalizePath(path_to));
 
@@ -1537,7 +1541,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    addAffectedFilePath(path_from);
+    /// Only the replaced target may lose a link; the source is moved as by `moveFile`.
+    addAffectedFilePath(path_from, /*may_remove_link=*/false);
     addAffectedFilePath(path_to);
     checkNotReservedPath(path_to, uncommitted_state);
     planFileMove(normalizePath(path_from), normalizePath(path_to));
