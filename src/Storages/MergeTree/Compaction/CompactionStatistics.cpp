@@ -1558,7 +1558,11 @@ UInt64 estimateNeededMemoryForMerge(
     /// (MergeTreeReaderStream::init) and the decompressed block that CompressedReadBufferFromFile::nextImpl
     /// resizes its working buffer to. A decompressed block is at most the max_compress_block_size the part
     /// was written with, priced here at the largest size the read columns resolve to under the current
-    /// settings (a part written under a larger, since lowered, setting is still bounded by the cap below).
+    /// settings. The block size a part was actually written with is not recorded in the part metadata
+    /// (only the compressed block headers inside the .bin files carry it, and reading them at selection time
+    /// would cost IO per stream), so a part written under a larger, since lowered, setting can be
+    /// under-priced here. This is a known limitation of the up-front estimate: the admission gate also
+    /// consults the actual usage of background_memory_tracker, which accounts the real buffers once allocated.
     /// The reader buffers can never hold more than the data they read through: cap the per-part estimate
     /// by the size of the columns the merge reads (see partReadBytes) - not the whole part, which also counts dead
     /// dropped columns and the projection parts priced separately below. A patch part is accounted whole:
