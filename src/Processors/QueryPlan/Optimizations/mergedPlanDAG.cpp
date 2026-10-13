@@ -311,6 +311,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     built.dag.sources.append_range(std::move(right.dag.sources));
     built.dag.filter_nodes.append_range(right.dag.filter_nodes);
     built.dag.join_condition_nodes.append_range(right.dag.join_condition_nodes);
+    built.dag.unread_join_sides.append_range(right.dag.unread_join_sides);
     built.dag.step_read_nodes.append_range(right.dag.step_read_nodes);
 
     /// Both of these move rather than copy: the stuffings are a list, so this is a relink, and the
@@ -427,6 +428,31 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
             else
                 built.dag.join_condition_nodes.push_back(it->second);
         }
+    }
+
+    /// The sides no condition reads. The sources of a value say its side: the ones of the right side are numbered after
+    /// the left ones.
+    std::array<bool, 2> side_is_read{false, false};
+    for (const auto * conditions : {&join_operator.residual_filter, &join_operator.expression})
+        for (const auto & condition : *conditions)
+            for (const auto source : built.dag.getSources(clone_mapping.at(condition.getNode())))
+                side_is_read[source < source_shift ? 0 : 1] = true;
+
+    for (size_t side = 0; side < 2; ++side)
+    {
+        if (side_is_read[side])
+            continue;
+
+        ActionsDAG::NodeRawConstPtrs side_inputs;
+        for (const auto * input : step_dag.getInputs())
+        {
+            const auto & input_sources = built.dag.getSources(clone_mapping.at(input));
+            if (input_sources.count() != 0 && (*input_sources.begin() < source_shift ? 0 : 1) == side)
+                side_inputs.push_back(clone_mapping.at(input));
+        }
+
+        if (!side_inputs.empty())
+            built.dag.unread_join_sides.push_back(std::move(side_inputs));
     }
 
     if (!outputsMatchHeader(built.dag.getOutputs(), *step->getOutputHeader()))

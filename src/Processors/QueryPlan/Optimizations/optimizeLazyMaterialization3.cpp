@@ -284,7 +284,7 @@ public:
             sort_key_nodes.insert(outputs[position]);
 
         std::vector<const ActionsDAG::Node *> kept_by_read;
-        if (!chooseLazyReads(kept_by_read))
+        if (!chooseLazyReads(kept_by_read) || !keepColumnsOfUnreadJoinSides(kept_by_read))
             return false;
 
         /// The values that cross the `LIMIT`: what the frontier says, and the columns meant for a lazy read
@@ -616,22 +616,6 @@ private:
             if (node->children.size() != 2 || !join->canRemoveUnusedColumns())
                 return false;
 
-            /// A join keeps a column of a side it reads nothing of, whichever comes first, and that could be one
-            /// that is read lazily now. A condition reading each side rules that out.
-            std::array<bool, 2> reads_side{false, false};
-            const auto & join_operator = join->getJoinOperator();
-            for (const auto * conditions : {&join_operator.expression, &join_operator.residual_filter})
-            {
-                for (const auto & condition : *conditions)
-                {
-                    const auto & condition_sources = condition.getSourceRelations();
-                    reads_side[0] |= condition_sources.test(0);
-                    reads_side[1] |= condition_sources.test(1);
-                }
-            }
-            if (!reads_side[0] || !reads_side[1])
-                return false;
-
             ++joins;
             return checkSteps(node->children.front(), joins) && checkSteps(node->children.back(), joins);
         }
@@ -737,6 +721,58 @@ private:
 
             if (!lazy.inputs.empty())
                 lazy_by_source.emplace(source, std::move(lazy));
+        }
+
+        return !lazy_by_source.empty();
+    }
+
+    /// A join keeps the first input of a side no condition of it reads when nothing else of that side is needed below the
+    /// `LIMIT`, so that input has to stay in the main read: one meant for a lazy read crosses the `LIMIT` instead. A value
+    /// computed below the join would need the columns it reads kept as well, which is not followed, so that gives up.
+    bool keepColumnsOfUnreadJoinSides(std::vector<const ActionsDAG::Node *> & kept_by_read)
+    {
+        const auto is_needed_below = [&](const ActionsDAG::Node * value)
+        {
+            const auto placed = frontier.at(value);
+            return placed.computed_below || placed.above == Placement::Above::Crossing
+                || std::ranges::find(kept_by_read, value) != kept_by_read.end();
+        };
+
+        for (const auto & side_inputs : merged.unread_join_sides)
+        {
+            if (std::ranges::any_of(side_inputs, is_needed_below))
+                continue;
+
+            /// The column of the read the kept input is, under whatever name the steps between give it.
+            const auto * kept = side_inputs.front();
+            while (kept->type == ActionsDAG::ActionType::ALIAS)
+                kept = kept->children.front();
+            const auto & kept_sources = merged.getSources(kept);
+            if (kept_sources.count() != 1)
+                return false;
+            const auto source = *kept_sources.begin();
+            if (std::ranges::find(merged.sources[source].inputs, kept) == merged.sources[source].inputs.end())
+                return false;
+
+            const auto lazy_it = lazy_by_source.find(source);
+            if (lazy_it == lazy_by_source.end())
+                continue;
+
+            auto & lazy = lazy_it->second;
+            const auto input_it = std::ranges::find(lazy.inputs, kept);
+            if (input_it == lazy.inputs.end())
+                continue;
+
+            const auto index = input_it - lazy.inputs.begin();
+            lazy.inputs.erase(input_it);
+            if (!lazy.positions.empty())
+                lazy.positions.erase(lazy.positions.begin() + index);
+            else
+                lazy.eager_names.insert(kept->result_name);
+            kept_by_read.push_back(kept);
+
+            if (lazy.inputs.empty())
+                lazy_by_source.erase(lazy_it);
         }
 
         return !lazy_by_source.empty();

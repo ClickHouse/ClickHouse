@@ -65,6 +65,11 @@ struct MergedPlanDAG
     /// Conditions the joins match rows on. A join computes them itself, so they are computed early too.
     ActionsDAG::NodeRawConstPtrs join_condition_nodes;
 
+    /// For each side of a join that no condition of it reads, the inputs of the join from that side, in the order of its
+    /// inputs. When nothing else is needed of that side, the join keeps the first of them, so that the side does not lose
+    /// every column - see `JoinStepLogical::analyzeUnneededColumns`.
+    std::vector<ActionsDAG::NodeRawConstPtrs> unread_join_sides;
+
     /// Values a step reads by name rather than through expressions of its own - the key a
     /// `BuildRuntimeFilter` step builds its filter from. The step reads them where it is, so they are
     /// computed early as well.
