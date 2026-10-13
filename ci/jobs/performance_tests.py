@@ -2893,13 +2893,6 @@ def main():
         results.append(
             Result.from_commands_run(name=CIDB_TEST_CASES_RESULT_NAME, command=commands)
         )
-        if nightly:
-            double_timeouts = sum(
-                line.startswith("double-timeout\t")
-                for raw in Path(perf_wd).glob("*-raw.tsv")
-                for line in raw.read_text().splitlines()
-            )
-            results[-1].set_info(f"double timeouts: {double_timeouts}")
         res = results[-1].is_ok()
 
     if JobStages.EXPORT_LOGS in stages and not info.is_local_run:

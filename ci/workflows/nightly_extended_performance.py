@@ -13,8 +13,8 @@ One job set `master_head`, 4 batches over the sorted test list, `calibration.xml
 `partial`: failed on the (older) reference only, measured on the tested side only.
 
 Red: any tested-side error (query, setup, missing binary, dataset or reference, test wall clock, required report or
-upload), a tested-only timeout, or a non-timeout error in a measured run on either server. Not red: reference-only
-errors in settings, setup or prewarm, reference-only timeouts, double timeouts (censored rows).
+upload), a tested-side timeout, or a non-timeout error in a measured run on either server. Not red: reference-only
+errors in settings, setup or prewarm, reference-only timeouts (censored rows).
 A failing query is reported as its own run error and skipped; the rest of its test is still measured.
 A test whose teardown did not complete stops the batch. Changes do not gate and are unconfirmed (no confirmation reruns).
 

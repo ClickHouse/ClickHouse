@@ -1067,7 +1067,7 @@ if args.queries_to_run:
 
 # Run test queries.
 profile_total_seconds = 0
-# With `--long`, a failed query is reported by a `run-error` line and skipped; the test still exits non-zero.
+# A failed query is reported by a `run-error` line and skipped; the test still exits non-zero.
 failed_queries = []
 
 
@@ -1104,8 +1104,6 @@ for query_index in queries_to_run:
     # starts out already failed for every query, so the partial
     # ("backward-incompatible") machinery excludes it from the comparison.
     query_error_on_connection = list(setup_error_on_connection)
-    # With `--long`, the censored time of each server whose prewarm timed out.
-    prewarm_timeouts = {}
     prewarm_exceptions = {}
     for conn_index, c in enumerate(all_connections):
         if query_error_on_connection[conn_index]:
@@ -1151,9 +1149,6 @@ for query_index in queries_to_run:
         except KeyboardInterrupt:
             raise
         except BaseException as e:
-            elapsed = censored_elapsed(e, args.prewarm_max_query_seconds)
-            if elapsed is not None:
-                prewarm_timeouts[conn_index] = elapsed
             # FIXME the driver reconnects on error and we lose settings, so this
             # might lead to further errors or unexpected behavior.
             query_error_on_connection[conn_index] = traceback.format_exc()
@@ -1161,12 +1156,9 @@ for query_index in queries_to_run:
             continue
 
     # Report all errors that occurred during prewarm and decide what to do next.
-    # If prewarm fails for the query on all servers -- skip the query and
-    # continue testing the next query.
-    # If prewarm fails on one of the servers, run the query on the rest of them.
+    # A failure on a tested server fails the query; a failure on the reference
+    # only runs the query on the rest of them.
     no_errors = []
-    # With `--long`, a query that fails on every server is not a regression: it is reported as skipped.
-    failed_everywhere = args.long and all(query_error_on_connection)
     for i, e in enumerate(query_error_on_connection):
         if e:
             # A tolerated (do_not_check_in_pr) setup failure is inherited by
@@ -1174,27 +1166,16 @@ for query_index in queries_to_run:
             # must not be repeated on this test's stderr, which the report stage
             # turns into Run Errors rows. An error the query produced itself is
             # still reported there.
-            if setup_error_on_connection[i] is None and not failed_everywhere:
+            if setup_error_on_connection[i] is None:
                 print(e, file=sys.stderr)
         else:
             no_errors.append(i)
 
-    # With `--long`, a failure of the tested servers fails the test, unless every server timed out.
-    if args.long:
-        if failed_everywhere and not prewarm_timeouts:
-            e = prewarm_exceptions[len(all_connections) - 1]
-            summary = (getattr(e, "message", None) or str(e)).splitlines()[0]
-            print(f"skipped\tquery {query_index} fails on every server: {tsv_escape(summary)}")
-            continue
-        if len(prewarm_timeouts) == len(all_connections):
-            print(f"double-timeout\t{query_index}")
-            for i, elapsed in prewarm_timeouts.items():
-                print(f"query\t{query_index}\t{prewarm_id}\t{i}\t{elapsed}")
-            continue
-        tested_failure = next((i for i in range(1, len(all_connections)) if query_error_on_connection[i]), None)
-        if tested_failure is not None:
-            fail_query(query_index, tested_failure, prewarm_exceptions[tested_failure])
-            continue
+    # A failure (error or timeout) of a tested server fails the test, whatever the reference did.
+    tested_failure = next((i for i in range(1, len(all_connections)) if query_error_on_connection[i]), None)
+    if tested_failure is not None:
+        fail_query(query_index, tested_failure, prewarm_exceptions[tested_failure])
+        continue
 
     # A shell-script query is a benchmark we control end to end, so -- unlike an
     # SQL query that may legitimately use a function missing from the old server
@@ -1207,8 +1188,8 @@ for query_index in queries_to_run:
     # each failing server to stdout as a `run-error` line so it survives in the
     # archived per-test raw .tsv (the per-test stderr log is not uploaded).
     # compare.sh parses raw .tsv by known leading tag and ignores the rest, so
-    # adding this tag is safe. With `--long`, the policy above already failed
-    # the test for a tested-side error; a reference-only error is `partial`.
+    # adding this tag is safe. The policy above already failed the test for a
+    # tested-side error; with `--long`, a reference-only error is `partial`.
     if not args.long and q_item["kind"] == "shell" and len(no_errors) < len(all_connections):
         failed = []
         for i, e in enumerate(query_error_on_connection):
@@ -1327,11 +1308,8 @@ for query_index in queries_to_run:
 
         if failed_run:
             break
-        if len(timeouts) == len(all_connections):
-            print(f"double-timeout\t{query_index}")
-            break
         if any(i != 0 for i in timeouts):
-            failed_run = (next(i for i in timeouts if i != 0), "asymmetric timeout: timed out on the tested server only")
+            failed_run = (next(i for i in timeouts if i != 0), "timed out on the tested server")
             break
 
         # Be careful with the counter, after this line it's the next iteration
