@@ -122,13 +122,16 @@ public:
         /// `DateTime`-returning transforms; the DSL `DateTime(tz)` type function silently
         /// falls back to the server timezone when tz == ''. The `DateTime64` / `Time64`
         /// transforms accepted an empty 2nd argument on master, so they are left untouched.
+        /// The check runs after the signature has accepted the arguments, so a 2nd argument of a
+        /// wrong type is reported by the signature, not by the timezone extractor.
+        auto result = IFunction::getReturnTypeImpl(arguments);
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} supports a 2nd argument (optional) that must be a valid time zone", this->getName());
         }
-        return IFunction::getReturnTypeImpl(arguments);
+        return result;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

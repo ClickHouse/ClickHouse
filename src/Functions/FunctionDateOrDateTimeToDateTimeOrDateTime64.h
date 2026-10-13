@@ -55,11 +55,14 @@ public:
         /// Preserve the legacy rejection of an explicitly provided empty timezone; the DSL
         /// `DateTime(tz)` / `DateTime64(scale, tz)` type functions silently fall back to the
         /// server timezone when tz == ''.
+        /// The check runs after the signature has accepted the arguments, so a 2nd argument of a
+        /// wrong type is reported by the signature, not by the timezone extractor.
+        auto result = IFunction::getReturnTypeImpl(arguments);
         if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Function {} supports a 2nd argument (optional) that must be a valid time zone",
                 this->getName());
-        return IFunction::getReturnTypeImpl(arguments);
+        return result;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
