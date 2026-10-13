@@ -3288,6 +3288,8 @@ SELECT * FROM WatchLog;
 
     When the matched table reads its data through another table (`Distributed`, `Merge`, `Buffer`, `Alias`), `_table` still contains the matched table's name, not the name of the underlying table, so such tables are pruned by the filter on `_table` the same way as any other matched table.
 
+    Known limitation: if a matched `Distributed` table reads a table that has a physical column named `_database` or `_table`, and the query reads no other real column (for example `SELECT _database FROM merge_table` or `SELECT count() FROM merge_table WHERE _table = 'xyz'`), the value of that physical column may be returned instead of the matched table's name.
+
 - `_database` — Contains the name of the database the matched table belongs to. Type: [String](/reference/data-types/string).
 
 **See Also**
