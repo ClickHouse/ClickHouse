@@ -169,12 +169,16 @@ public:
     }
 
     /// `set`, and whether `mapped` is in the cache right after it: the policy can refuse it or evict it at once.
-    /// Unlike a `contains` after `set`, nothing else can replace it in between.
-    bool setAndContains(const Key & key, const MappedPtr & mapped)
+    /// If it is, calls `on_resident` under the same lock, so nothing else can replace it before the call returns.
+    template <typename OnResident>
+    bool setAndContains(const Key & key, const MappedPtr & mapped, OnResident && on_resident)
     {
         std::lock_guard lock(mutex);
         cache_policy->set(key, mapped);
-        return cache_policy->contains(key);
+        if (!cache_policy->contains(key))
+            return false;
+        on_resident();
+        return true;
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to

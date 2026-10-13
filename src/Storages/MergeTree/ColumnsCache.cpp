@@ -424,12 +424,22 @@ size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 
 
     /// An entry can fail admission: SLRU does not keep a probationary entry that does not fit
     /// the space left by the protected segment, even when it is within the overall size limit.
-    /// In that case the eviction callback has already reset the bit. Checked together with the
-    /// insertion: a concurrent write of the same stripe can replace the entry right after it, and
-    /// the memory of an entry the cache does not hold must not be handed over to the server below.
+    /// In that case the eviction callback has already reset the bit. The entries the cache admits are the
+    /// server's from here on: their memory stops counting against the query and its user, and is released
+    /// as the server's, see `ColumnsCacheEntry::owned_by_server`. Handed over under the lock of the shard:
+    /// a concurrent write of the same stripe can replace the entry right after it, and the memory of an
+    /// entry the cache does not hold must stay the query's. A stale entry taken out below is handed over
+    /// too, the same as an entry evicted after its admission.
     std::vector<bool> resident(keys.size());
     for (size_t i = 0; i < keys.size(); ++i)
-        resident[i] = shardOf(keys[i]).setAndContains(keys[i], to_store[i]);
+    {
+        resident[i] = shardOf(keys[i]).setAndContains(keys[i], to_store[i], [&]
+        {
+            auto & entry = *to_store[i];
+            if (!entry.owned_by_server.exchange(true, std::memory_order_relaxed))
+                bytes_to_hand_over += chargedBytesOfColumn(*entry.column);
+        });
+    }
 
     if (on_entries_inserted_for_test)
         on_entries_inserted_for_test();
@@ -465,8 +475,6 @@ size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 
         return 0;
     }
 
-    /// The entries the query read are the server's from here on: their memory stops counting against the
-    /// query and its user, and is released as the server's, see `ColumnsCacheEntry::owned_by_server`.
     size_t bytes_admitted = 0;
     size_t entries_admitted = 0;
     for (size_t i = 0; i < keys.size(); ++i)
@@ -475,10 +483,6 @@ size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 
         {
             bytes_admitted += weights[i];
             ++entries_admitted;
-
-            auto & entry = *to_store[i];
-            if (!entry.owned_by_server.exchange(true, std::memory_order_relaxed))
-                bytes_to_hand_over += chargedBytesOfColumn(*entry.column);
         }
     }
     accountAdmitted(entries_admitted);
