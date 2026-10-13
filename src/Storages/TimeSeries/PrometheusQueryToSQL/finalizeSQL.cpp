@@ -301,6 +301,8 @@ namespace
                 make_intrusive<ASTIdentifier>(ColumnNames::SortGroup));
 
             builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortRank));
+            /// Rows with the same rank, like the unsorted side of `or`, are sorted by tags as other instant vectors are.
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
             builder.order_direction = 1;
         }
         else if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
