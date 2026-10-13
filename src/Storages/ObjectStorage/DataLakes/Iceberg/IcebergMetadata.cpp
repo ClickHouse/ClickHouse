@@ -14,6 +14,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -161,6 +162,19 @@ namespace
 String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
 {
     return stringifyJSON(metadata_object);
+}
+
+void checkNoUInt64(const ColumnsDescription & columns)
+{
+    for (const auto & column : columns.getAllPhysical())
+    {
+        if (anyInTypeTree(*column.type, [](const IDataType & type) { return type.getTypeId() == TypeIndex::UInt64; }))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Column {} of type {} cannot be stored in Iceberg: the widest Iceberg integer type is the signed 64-bit `long`, "
+                "which cannot represent every UInt64 value. Use Int64 or Decimal(20, 0) instead",
+                column.name, column.type->getName());
+    }
 }
 }
 
@@ -364,7 +378,13 @@ Int32 IcebergMetadata::parseTableSchema(
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
         schema_processor.updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
 
-    if (format_version == 2)
+    if (format_version > 3)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg format version {} is not supported, only versions 1, 2 and 3 are supported",
+            format_version);
+
+    if (format_version >= 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
         schema_processor.addIcebergTableSchema(schema);
@@ -982,6 +1002,9 @@ void IcebergMetadata::createInitial(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
 
+    if (columns)
+        checkNoUInt64(*columns);
+
     /// Either way the catalog writes the first metadata file, so the existence check and the prewrite move to it.
     const bool catalog_writes_metadata = catalog && (catalog->managesTableLocation() || catalog->writesInitialMetadata());
 
@@ -1023,7 +1046,7 @@ void IcebergMetadata::createInitial(
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     const auto compression_method = setMetadataCompressionCodecProperty(metadata_content_object, local_context);
-    if (compression_method != CompressionMethod::None)
+    if (metadata_content_object->has("properties"))
         metadata_content = stringifyJSON(metadata_content_object, 4);
 
     /// Use the Iceberg spec file extension (gzip -> "gz"), not the raw setting token.
