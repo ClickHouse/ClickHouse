@@ -269,7 +269,7 @@ SQLQueryPiece applyLabelManipulationFunction(
             /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, anyForEach(values) AS values
             /// FROM <vector_grid>
             /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(values)), new_group) = 0
+            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(<vector_grid>.values)), new_group) = 0
             ///
             /// Series which get the same `new_group` are merged step by step; an exception is thrown only if two of them
             /// have values at the same step, that's how Prometheus evaluates it.
