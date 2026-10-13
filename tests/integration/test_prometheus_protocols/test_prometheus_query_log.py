@@ -193,6 +193,39 @@ def test_remote_write_failure_records_http_status_in_span_log():
     )
 
 
+def test_remote_write_final_flush_failure_recorded_in_span_log():
+    """
+    A failure while finalizing the response should be recorded on the PrometheusRequestHandler span.
+    """
+    trace_id = str(uuid.uuid4())
+    traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
+    protobuf = convert_time_series_to_protobuf(
+        [({"__name__": "final_flush_span_test", "job": "test"}, {1753176720.0: 1})]
+    )
+    node.query("SYSTEM ENABLE FAILPOINT prometheus_handler_finalize_throw")
+    try:
+        response = get_response_to_remote_write(
+            node.ip_address,
+            9093,
+            "/write",
+            protobuf,
+            headers={"traceparent": traceparent},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT prometheus_handler_finalize_throw")
+    assert response.status_code == 500
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT attribute['clickhouse.http_status'], "
+        f"attribute['clickhouse.exception'] LIKE '%Injecting fault while finalizing the Prometheus response%' "
+        f"FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        "500\t1\n",
+    )
+
+
 @pytest.mark.parametrize("bad_param", ["no_such_setting_for_span_test=1", "stacktrace=wat"])
 def test_query_api_setup_failure_records_http_status_in_span_log(bad_param):
     """

@@ -12,6 +12,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -51,10 +52,16 @@ namespace Setting
     extern const SettingsUInt64 http_response_buffer_size;
 }
 
+namespace FailPoints
+{
+    extern const char prometheus_handler_finalize_throw[];
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int FAULT_INJECTED;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
@@ -199,6 +206,13 @@ protected:
                 query_scope = QueryScope::create(context);
                 handlingRequestWithContext(request, response);
             }
+
+            /// Finalize the response here, so that a failure in the final flush is recorded on the root span.
+            fiu_do_on(FailPoints::prometheus_handler_finalize_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the Prometheus response");
+            });
+            getOutputStream(response).finalize();
         }
         catch (...)
         {
