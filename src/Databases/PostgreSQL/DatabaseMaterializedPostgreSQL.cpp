@@ -748,6 +748,11 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             {
                 tryLogCurrentException(log, fmt::format(
                     "Failed to drop the nested table after a failed attach of table `{}`", table_name));
+                /// `DatabaseAtomic::dropTable` can throw after it has already detached the nested table (in
+                /// the cleanup steps that follow the metadata rename). Then the table is gone all the same,
+                /// and keeping the wrapper published would leave a dead table that can be neither read nor
+                /// detached, so roll the visible state back as for a successful drop.
+                nested_dropped = !DatabaseAtomic::isTableExist(table_name, current_context);
             }
 
             if (nested_dropped)
@@ -935,6 +940,22 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
         }
         catch (Exception & e)
         {
+            /// `DatabaseAtomic::dropTable` can throw after it has already detached the nested table (in the
+            /// cleanup steps that follow the metadata rename). Then the detach has in fact completed: the
+            /// table is out of the publication, the consumer, the persisted tables list and the catalog. Do
+            /// not try to re-add a table that is gone (it would fail and leave a dead wrapper published);
+            /// finish the detach by removing the wrapper, and report the cleanup error.
+            if (!DatabaseAtomic::isTableExist(table_name, getContext()))
+            {
+                {
+                    std::lock_guard tables_lock(tables_mutex);
+                    materialized_tables.erase(table_name);
+                }
+                e.addMessage("while cleaning up the dropped nested table of detached table `" + table_name
+                    + "`; the table is detached");
+                throw;
+            }
+
             /// The table is already out of the publication and the consumer, and the WAL that PostgreSQL
             /// sent past that point no longer carries its changes, so merely re-registering the consumer
             /// state would lose data. Re-add through `addTableToReplication`: it reloads the surviving
@@ -1090,7 +1111,21 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
     /// nested tables' Keeper trees behind for the delay window would let a prompt CREATE on the same keeper
     /// path adopt a half-dead shared tree: a ghost replica that never answers part fetches, and stale block
     /// deduplication hashes.
-    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, isCoordinated() || sync);
+    auto nested_context = StorageMaterializedPostgreSQL::makeNestedTableContext(local_context);
+    try
+    {
+        DatabaseAtomic::dropTable(nested_context, table_name, isCoordinated() || sync);
+    }
+    catch (...)
+    {
+        /// `DatabaseAtomic::dropTable` can throw after it has already detached the nested table from the
+        /// database (in the cleanup steps that follow the metadata rename). Such a drop has removed the table
+        /// all the same, so derive the flag from the actual presence of the table: otherwise
+        /// `onDropDatabaseFailed` would restart in attach mode against a table that is gone.
+        if (!DatabaseAtomic::isTableExist(table_name, nested_context))
+            nested_table_removed_during_drop = true;
+        throw;
+    }
     nested_table_removed_during_drop = true;
 }
 

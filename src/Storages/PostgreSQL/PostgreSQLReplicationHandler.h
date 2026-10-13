@@ -147,8 +147,9 @@ public:
     /// stopped by `flushAndShutdown`, but the nested table and the PostgreSQL slot/publication survived
     /// (the nested-table drop threw before `shutdownFinal` ran). Re-arm the retrying background startup
     /// path in attach mode, so replication resumes from the existing slot instead of leaving the table
-    /// mounted but dead until a server restart.
-    void restartReplicationAfterFailedDrop();
+    /// mounted but dead until a server restart. If the nested table did not survive (the drop threw after
+    /// it had already left the catalog), restart in create mode instead, which recreates it from a new snapshot.
+    void restartReplicationAfterFailedDrop(bool nested_table_survived);
 
     /// Add storage pointer to let handler know which tables it needs to keep in sync.
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);

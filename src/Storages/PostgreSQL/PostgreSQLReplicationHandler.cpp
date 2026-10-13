@@ -3041,7 +3041,7 @@ void PostgreSQLReplicationHandler::restartCoordinatedReplicationAfterFailedTeard
 }
 
 
-void PostgreSQLReplicationHandler::restartReplicationAfterFailedDrop()
+void PostgreSQLReplicationHandler::restartReplicationAfterFailedDrop(bool nested_table_survived)
 {
     chassert(!coordination_enabled);
 
@@ -3050,7 +3050,11 @@ void PostgreSQLReplicationHandler::restartReplicationAfterFailedDrop()
     /// slot/publication still exist in PostgreSQL. Resume from the slot's confirmed_flush_lsn exactly like an
     /// ATTACH does - without `is_attach`, `startSynchronization` would drop the existing slot and redo the
     /// initial snapshot, needlessly reloading everything into the surviving nested table.
-    is_attach = true;
+    ///
+    /// If the drop failed only after the nested table had already left the catalog, there is nothing to
+    /// resume into: an attach-style start would fail on the missing nested table forever. Use a create-style
+    /// start instead, which recreates the nested table and reloads it from a new snapshot.
+    is_attach = nested_table_survived;
     stop_synchronization.store(false);
     retry_startup_on_error.store(true);
     startup_task->activateAndSchedule();

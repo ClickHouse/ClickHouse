@@ -523,7 +523,10 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
             /// `startSynchronization`), so re-add this storage or the restarted handler would rebuild a
             /// consumer with no tables and silently apply nothing.
             replication_handler->addStorage(remote_table_name, this);
-            replication_handler->restartReplicationAfterFailedDrop();
+            /// The drop can throw after the nested table has already left the catalog (in the cleanup steps
+            /// that follow the metadata rename). Resuming in attach mode would then fail forever on the
+            /// missing nested table, so let the restarted handler recreate it from a fresh snapshot instead.
+            replication_handler->restartReplicationAfterFailedDrop(/* nested_table_survived */ tryGetNested() != nullptr);
         }
         throw;
     }
