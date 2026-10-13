@@ -49,7 +49,7 @@ namespace
 template <typename ContextPtr>
 SimpleObjectPool<ContextPtr> & contextPool()
 {
-    static const size_t num_pools = PerCPU::getNumCPUs();
+    static const size_t num_pools = PerCPU::getNumPossibleCPUs();
     static auto * pools = new SimpleObjectPool<ContextPtr>[num_pools];
     return pools[static_cast<size_t>(PerCPU::getCurrentCPU()) % num_pools];
 }
