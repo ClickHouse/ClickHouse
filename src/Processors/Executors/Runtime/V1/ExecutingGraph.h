@@ -232,12 +232,9 @@ private:
     /// Set when `updatePipeline` threw halfway through recording the processors an expansion
     /// added (an allocation failed, for example): the parent's ports are already connected to
     /// processors that never became nodes, so the nodes and edges no longer describe the ports and
-    /// any further expansion would trip over them. The exception has already cancelled the executor;
-    /// later expansions only bail out. Guarded by the `nodes_mutex` write lock.
+    /// any further expansion would trip over them. The exception cancels the executor, but another thread
+    /// may see the flag before that; later expansions only bail out. Guarded by the `nodes_mutex` write lock.
     bool expansion_failed = false;
-    /// The processors of the failed expansion. Ports of live nodes point at them, so they have to
-    /// stay alive as long as the graph does, although they are not part of it.
-    Processors processors_of_failed_expansion;
 
     const bool profile_processors;
     IProcessor::CancelReason cancel_reason = IProcessor::CancelReason::NotCancelled;

@@ -328,7 +328,15 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(DevectorWithMemo
     catch (...)
     {
         expansion_failed = true;
-        processors_of_failed_expansion.splice(processors_of_failed_expansion.end(), update.to_add);
+        /// The ports of the pipeline's processors point at the new processors, and the pipeline is read after the graph is gone.
+        std::lock_guard guard(processors_mutex);
+        for (auto it = update.to_add.begin(); it != update.to_add.end();)
+        {
+            auto next = std::next(it);
+            if (std::ranges::find(*processors, *it) == processors->end())
+                processors->splice(processors->end(), update.to_add, it);
+            it = next;
+        }
         throw;
     }
 }
@@ -671,7 +679,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                 std::unique_lock write_lock(nodes_mutex);
 
                 /// An earlier expansion threw halfway (see `updatePipeline`); the graph no longer describes the
-                /// ports and the executor has been cancelled with that exception. Do not touch the graph.
+                /// ports, and that exception cancels the executor, though possibly not yet. Do not touch the graph.
                 if (expansion_failed)
                     return UpdateNodeStatus::Cancelled;
 
