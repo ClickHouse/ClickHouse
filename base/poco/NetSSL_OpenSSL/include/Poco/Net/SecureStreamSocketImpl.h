@@ -170,6 +170,10 @@ namespace Net
         /// Returns true iff the peer has presented a
         /// certificate.
 
+        bool needHandshake() const;
+        /// Returns true while the handshake is still owed, so that a caller
+        /// can tell that any I/O it starts would run the handshake first.
+
         X509 * peerCertificate() const;
         /// Returns the peer's X509 certificate.
         ///

@@ -55,6 +55,7 @@
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
+    M(TemporaryFilesForSet, "Number of temporary files created for `IN` sets in external memory") \
     M(TemporaryFilesForDistinct, "Number of temporary files created for external DISTINCT") \
     M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
@@ -314,6 +315,8 @@
     M(KeeperChangelogStartupReadThreadsScheduled, "Number of queued or active jobs in the threadpool for Keeper changelog parallel startup reads.") \
     M(KeeperBlockCacheBytes, "Total size of blocks in the Keeper storage block cache, in bytes.") \
     M(KeeperBlockCacheBlocks, "Number of blocks in the Keeper storage block cache.") \
+    M(AddressToLineCacheEntries, "Number of code addresses in the cache of resolved source locations (file:line:column) used for symbolizing stack traces in system.trace_log, system.errors and system.error_log.") \
+    M(AddressToLineCacheBytes, "Approximate memory used by the cache of resolved source locations (file:line:column) used for symbolizing stack traces, in bytes.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
@@ -413,6 +416,9 @@
     M(PageCacheCells, "Total number of entries in the userspace page cache") \
     M(UncompressedCacheBytes, "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
     M(UncompressedCacheCells, "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
+    M(ColumnsCacheBytes, "Total size of columns cache in bytes. The columns cache stores deserialized columns from MergeTree tables to avoid repeated decompression and deserialization.") \
+    M(ColumnsCacheEntries, "Total number of entries in the columns cache.") \
+    M(ColumnsCacheSizeLimit, "The size limit of the columns cache in bytes currently in effect. It is lowered below the configured `columns_cache_size` while the rest of the server is short of memory, and raised back towards it once that usage subsides, see `columns_cache_free_memory_ratio`.") \
     M(IndexMarkCacheBytes, "Total size of mark cache for secondary indices in bytes") \
     M(IndexMarkCacheFiles, "Total number of mark files cached in the mark cache for secondary indices") \
     M(IndexUncompressedCacheBytes, "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
@@ -424,6 +430,10 @@
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
     M(EncryptionHeaderCacheBytes, "Total size of the encryption header cache in bytes") \
     M(EncryptionHeaderCacheEntries, "Total number of entries in the encryption header cache") \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheEntries, "Number of entries in the deduplication caches of the metric families tables of TimeSeries tables") \
+    M(TimeSeriesMetricFamiliesDeduplicationCacheBytes, "Approximate size in bytes of the deduplication caches of the metric families tables of TimeSeries tables") \
+    M(TimeSeriesTagsDeduplicationCacheEntries, "Number of entries in the deduplication caches of the tags tables of TimeSeries tables") \
+    M(TimeSeriesTagsDeduplicationCacheBytes, "Approximate size in bytes of the deduplication caches of the tags tables of TimeSeries tables") \
     M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \

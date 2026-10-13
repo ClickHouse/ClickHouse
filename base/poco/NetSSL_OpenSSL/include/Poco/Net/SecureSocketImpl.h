@@ -204,6 +204,10 @@ namespace Net
         /// This method will only work if the blocking modes of
         /// the socket are changed via the setBlocking method!
 
+        bool needHandshake() const { return _needHandshake; }
+        /// Returns true while the handshake is still owed, so that a caller
+        /// can tell that any I/O it starts would run the handshake first.
+
 
         void setBioMethod(const BIO_METHOD * method);
         /// Optionally inject a custom BIO_METHOD for the SSL transport BIO.
@@ -256,6 +260,23 @@ namespace Net
         /// not become readable or writable within the sockets
         /// receive or send timeout.
 
+        /// Whether waiting for the peer is this class's job rather than the caller's.
+        bool waitHere() const { return _drivingHandshake || _pSocket->getBlocking(); }
+
+        /// Makes the socket non-blocking for one handshake, so that OpenSSL yields instead of
+        /// reading in its own loop, and restores the mode afterwards. A socket that does its
+        /// own waiting is left alone.
+        class HandshakeDriver
+        {
+        public:
+            explicit HandshakeDriver(SecureSocketImpl & impl_);
+            ~HandshakeDriver();
+
+        private:
+            SecureSocketImpl & impl;
+            const bool drives;
+        };
+
         int handleError(int rc, int sslError, int socketError, unsigned long errorCode);
         /// Handles an SSL error by throwing an appropriate exception.
 
@@ -294,6 +315,9 @@ namespace Net
         bool _pendingWrite = false;
         /// Whether the last `SSL_write` returned `SSL_ERROR_WANT_WRITE`. OpenSSL keeps that record pending
         /// until `SSL_write` is retried, even after other operations change what `SSL_get_error` reports.
+        bool _drivingHandshake = false;
+        /// Set while completeHandshakeImpl runs the handshake on a socket it made non-blocking, so
+        /// that waiting for the peer stays this class's job rather than the caller's.
         std::string _peerHostName;
         Session::Ptr _pSession;
         const BIO_METHOD * _bioMethod = nullptr;

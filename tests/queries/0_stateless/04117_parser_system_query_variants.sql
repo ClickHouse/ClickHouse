@@ -42,6 +42,7 @@ EXPLAIN SYNTAX SYSTEM DROP CONNECTIONS CACHE;
 SELECT '--- prewarm cache variants ---';
 EXPLAIN SYNTAX SYSTEM PREWARM MARK CACHE db.t;
 EXPLAIN SYNTAX SYSTEM PREWARM PRIMARY INDEX CACHE db.t;
+EXPLAIN SYNTAX SYSTEM DROP TIME SERIES CACHES db.t;
 
 SELECT '--- merge / fetch / move / sends / ttl / cleanup start/stop ---';
 -- Global forms (SYSTEM STOP/START MERGES without a table) are not tested here
