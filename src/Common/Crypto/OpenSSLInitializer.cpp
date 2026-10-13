@@ -129,14 +129,18 @@ bool OpenSSLInitializer::isFIPSEnabled() const
 bool OpenSSLInitializer::isMD5Available() const
 {
 #if USE_SSL
-    EVP_MD * md5 = EVP_MD_fetch(nullptr, "MD5", nullptr);
-    if (!md5)
+    static const bool available = []
     {
-        ERR_clear_error();
-        return false;
-    }
-    EVP_MD_free(md5);
-    return true;
+        EVP_MD * md5 = EVP_MD_fetch(nullptr, "MD5", nullptr);
+        if (!md5)
+        {
+            ERR_clear_error();
+            return false;
+        }
+        EVP_MD_free(md5);
+        return true;
+    }();
+    return available;
 #else
     return false;
 #endif
