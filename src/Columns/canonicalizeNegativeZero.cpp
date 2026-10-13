@@ -169,8 +169,13 @@ std::optional<String> canonicalizeNegativeZeroInEncodedValue(std::string_view en
     if (!mayContainNegativeZero(*type))
         return {};
 
-    SerializationPtr serialization = type->getDefaultSerialization();
-    auto value_column = type->createColumn();
+    /// A value can be encoded with a `LowCardinality` type, e.g. in the shared variant of a `Dynamic` column.
+    /// `canonicalizeNegativeZero` does not look into `LowCardinality`, but the binary format of a value
+    /// of `LowCardinality(T)` is the binary format of a value of `T`, so the value is decoded without it.
+    /// The type is encoded back as it was.
+    DataTypePtr value_type = recursiveRemoveLowCardinality(type);
+    SerializationPtr serialization = value_type->getDefaultSerialization();
+    auto value_column = value_type->createColumn();
     serialization->deserializeBinary(*value_column, read_buffer, ColumnDynamic::getBinaryEncodedValueFormatSettings());
 
     ColumnPtr canonical_column = canonicalizeNegativeZero(*value_column);
