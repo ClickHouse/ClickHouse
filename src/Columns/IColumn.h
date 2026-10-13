@@ -1001,8 +1001,15 @@ private:
     {
         /// For Sparse, Const, and Replicated columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
         /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const and Replicated columns.
+        /// A non-native LowCardinality column (automatic LowCardinality serialization) is another representation of its nested type,
+        /// and ColumnLowCardinality accepts a full column of that type as a peer.
         /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse() || isReplicated() || rhs.isConst() || rhs.isSparse() || rhs.isReplicated())
+        auto is_representation_wrapper = [](const IColumn & column)
+        {
+            return column.isConst() || column.isSparse() || column.isReplicated()
+                || (column.lowCardinality() && !column.isNativeLowCardinality());
+        };
+        chassert((is_representation_wrapper(*this) || is_representation_wrapper(rhs))
             ? getDataType() == rhs.getDataType()
             : typeid(*this) == typeid(rhs));
     }
