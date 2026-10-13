@@ -1,6 +1,6 @@
-#include "UniqAssumedAllDistinctPolicy.h"
-#include "Statistics.h"
-#include "StatisticsAssumedAllDistinct.h"
+#include <Storages/Statistics/UniqAssumedAllDistinctPolicy.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsAssumedAllDistinct.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>

@@ -24,7 +24,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Field.h>
 #include <Storages/MergeTree/RPNBuilder.h>
