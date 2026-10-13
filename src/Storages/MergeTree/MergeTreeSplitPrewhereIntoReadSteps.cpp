@@ -261,6 +261,11 @@ bool tryBuildPrewhereSteps(
     if (!prewhere_info)
         return true;
 
+    /// Steps pass columns to each other by name, which cannot tell an input from a computed node
+    /// that reuses its name (e.g. a `Buffer` converting its destination's column).
+    if (prewhere_info->prewhere_actions.hasInputNameShadowedByComputedNode())
+        return false;
+
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
     const auto & condition_root = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
@@ -272,6 +277,18 @@ bool tryBuildPrewhereSteps(
     /// treating the inner AND as one atomic condition.
     ActionsDAG::NodeRawConstPtrs condition_nodes;
     flattenConjunction(&condition_root, condition_nodes);
+
+    /// Conditions covered by the query condition cache attribution get their own steps, unless PREWHERE was rewritten since.
+    size_t num_attributed_conditions = 0;
+    if (const auto & attribution = prewhere_info->query_condition_cache_attribution)
+    {
+        const auto & hashes = attribution->conjunct_hashes;
+        bool matches = !hashes.empty() && hashes.size() < condition_nodes.size();
+        for (size_t i = 0; matches && i < hashes.size(); ++i)
+            matches = condition_nodes[i]->getHash() == hashes[i];
+        if (matches)
+            num_attributed_conditions = hashes.size();
+    }
 
     /// 2. Collect the set of columns that are used in the condition
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
@@ -316,13 +333,19 @@ bool tryBuildPrewhereSteps(
     /// convert the column or fill it from a default expression, because that runs on the whole block
     /// before any filter, so the caller decides (see `MergeTreeReaderSettings::read_ahead_prewhere_columns`).
     std::vector<size_t> group_read_step;
-    for (const auto & node : condition_nodes)
+    size_t num_attributed_steps = 0;
+    for (size_t i = 0; i < condition_nodes.size(); ++i)
     {
+        const auto * node = condition_nodes[i];
         const auto & node_info = nodes_info[node];
+        const bool is_first_unattributed = num_attributed_conditions != 0 && i == num_attributed_conditions;
+        if (is_first_unattributed)
+            num_attributed_steps = condition_groups.size();
+
         const bool same_storage_columns = !condition_groups.empty()
             && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns;
 
-        if (same_storage_columns && !node_info.may_throw)
+        if (same_storage_columns && !node_info.may_throw && !is_first_unattributed)
         {
             condition_groups.back().push_back(node);
             continue;
@@ -452,6 +475,7 @@ bool tryBuildPrewhereSteps(
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
+                .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));
