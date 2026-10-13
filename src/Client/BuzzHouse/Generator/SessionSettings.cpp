@@ -916,6 +916,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_filesystem_read_prefetches_log", trueOrFalseSettingNoOracle},
     {"enable_function_early_short_circuit", trueOrFalseSettingNoOracle},
     {"enable_global_with_statement", trueOrFalseSettingNoOracle},
+    {"enable_group_by_top_k_dynamic_filtering", trueOrFalseSettingNoOracle},
     {"enable_group_by_top_k_optimization", trueOrFalseSettingNoOracle},
     {"enable_hdfs_pread", trueOrFalseSettingNoOracle},
     {"enable_http_compression", trueOrFalseSettingNoOracle},
@@ -2466,6 +2467,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"iceberg_metadata_staleness_ms",
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 60000)); },
+                  {},
+                  false)},
+             {"iceberg_orphan_files_min_retention_seconds",
+              CHSetting(
+                  [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 600)); },
                   {},
                   false)},
              {"iceberg_orphan_files_older_than_seconds",

@@ -161,6 +161,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN
 /// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
 /// than executed differently.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
+/// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
+/// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
+/// aggregation with its own two-level decision.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
@@ -329,6 +333,9 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 /// Version 1 of the `uniq` aggregate function state (64-bit hashes instead of 32-bit ones).
 static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
 
+/// A `-Merge` aggregate function state takes the state version of the function it merges, instead of always 0.
+static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54494;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -337,5 +344,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54493;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54494;
 }

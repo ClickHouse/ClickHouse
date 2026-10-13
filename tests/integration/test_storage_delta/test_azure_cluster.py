@@ -126,10 +126,6 @@ def test_cluster_function(started_cluster):
             f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer=1"
         )
     )
-    assert "1\taa\n"
-    "2\tbb\n"
-    "3\tcc\n"
-    "4\taa\n"
-    "5\tbb\n" == instance.query(
+    assert "1\taa\n2\tbb\n3\tcc\n4\taa\n5\tbb\n" == instance.query(
         f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer=1"
     )
