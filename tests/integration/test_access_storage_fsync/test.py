@@ -10,6 +10,8 @@ cluster = ClickHouseCluster(__file__)
 # override the storage to `<memory/>`.
 instance = cluster.add_instance("instance", stay_alive=True)
 
+ACCESS_DIR = "/var/lib/clickhouse/access"
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -69,8 +71,9 @@ def test_access_entity_writes_are_fsynced():
     )
     assert file_sync >= 1 and dir_sync >= 1, f"ALTER USER: {file_sync}, {dir_sync}"
 
+    # DROP syncs the directory twice: for need_rebuild_lists.mark and for the unlink.
     file_sync, dir_sync = _run(f"DROP USER {user}", 1)
-    assert dir_sync >= 1, f"DROP USER directory not synced: {file_sync}, {dir_sync}"
+    assert dir_sync >= 2, f"DROP USER directory not synced: {file_sync}, {dir_sync}"
 
     # With fsync_metadata = 0 the setting must be honored: no forced sync.
     instance.query(f"DROP USER IF EXISTS {user}")
@@ -95,10 +98,18 @@ def test_list_files_are_fsynced():
     instance.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
 
     # SYSTEM RELOAD USERS -> reloadAllAndRebuildLists() -> writeLists() writes all the
-    # `.list` files in-place; with fsync_metadata = 1 each one is fsync'd (file content only,
-    # no rename -> no directory sync).
+    # `.list` files in-place; with fsync_metadata = 1 each one is fsync'd. need_rebuild_lists.mark
+    # adds one more file sync, so require at least one per `.list` file.
+    num_lists = int(
+        instance.exec_in_container(
+            ["bash", "-c", f"ls {ACCESS_DIR}/*.list | wc -l"], user="root"
+        ).strip()
+    )
+    assert num_lists >= 2, f"unexpected number of .list files: {num_lists}"
     file_sync, _ = _run("SYSTEM RELOAD USERS", 1)
-    assert file_sync >= 1, f"list files not fsynced on RELOAD USERS: FileSync={file_sync}"
+    assert file_sync >= num_lists, (
+        f"list files not fsynced on RELOAD USERS: FileSync={file_sync}, lists={num_lists}"
+    )
 
     # fsync_metadata = 0 -> no forced sync.
     file_sync, _ = _run("SYSTEM RELOAD USERS", 0)
@@ -108,8 +119,6 @@ def test_list_files_are_fsynced():
 
     instance.query(f"DROP USER IF EXISTS {user}")
 
-
-ACCESS_DIR = "/var/lib/clickhouse/access"
 
 
 def _forge_stale_entity(seed, lost):
@@ -228,6 +237,10 @@ def test_deferred_list_write_preserves_session_fsync():
     instance.query(
         f"CREATE USER {user} IDENTIFIED WITH no_password",
         settings={"fsync_metadata": 1},
+    )
+    # Without the mark, only the requirement kept in memory can force the sync below.
+    instance.exec_in_container(
+        ["bash", "-c", f"rm -f {ACCESS_DIR}/need_rebuild_lists.mark"], user="root"
     )
 
     file_sync, _ = _run("SYSTEM RELOAD USERS", 0)

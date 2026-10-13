@@ -22,7 +22,6 @@
 #include <base/range.h>
 #include <filesystem>
 #include <memory>
-#include <optional>
 
 
 namespace DB
@@ -98,13 +97,11 @@ namespace
             out.sync();
         out.close();
 
-        /// Rename. The guard syncs the directory after the rename, so that the rename itself is durable.
-        {
-            std::optional<LocalDirectorySyncGuard> dir_sync_guard;
-            if (fsync)
-                dir_sync_guard.emplace(std::filesystem::path{file_path}.parent_path().string());
-            std::filesystem::rename(tmp_file_path, file_path);
-        }
+        /// Rename.
+        std::filesystem::rename(tmp_file_path, file_path);
+        /// The rename is durable only after its directory is synced.
+        if (fsync)
+            LocalDirectorySyncGuard(std::filesystem::path{file_path}.parent_path().string()).sync();
         succeeded = true;
     }
 
@@ -184,13 +181,12 @@ namespace
 
     void createNeedRebuildListsMark(const String & directory_path, bool fsync)
     {
-        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
-        if (fsync)
-            dir_sync_guard.emplace(directory_path);
         WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
         if (fsync)
             out.sync();
         out.close();
+        if (fsync)
+            LocalDirectorySyncGuard(directory_path).sync();
     }
 
 
@@ -844,12 +840,11 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
     auto file_path = getEntityFilePath(directory_path, id);
     LOG_TRACE(getLogger(), "Deleting file {} for entity with id {}", file_path, id);
 
-    /// Like a rename, the removal is durable only after the guard syncs the directory.
-    std::optional<LocalDirectorySyncGuard> dir_sync_guard;
-    if (shouldFsyncMetadata())
-        dir_sync_guard.emplace(std::filesystem::path{file_path}.parent_path().string());
     if (!std::filesystem::remove(file_path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
+    /// Like a rename, the removal is durable only after its directory is synced.
+    if (shouldFsyncMetadata())
+        LocalDirectorySyncGuard(std::filesystem::path{file_path}.parent_path().string()).sync();
 }
 
 }
