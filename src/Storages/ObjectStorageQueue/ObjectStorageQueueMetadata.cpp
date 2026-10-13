@@ -2004,12 +2004,6 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::sha
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int LOGICAL_ERROR;
-        extern const int BAD_ARGUMENTS;
-    }
-
     void ObjectStorageQueueMetadata::dropFailedFiles(const String & like_pattern)
     {
         const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
