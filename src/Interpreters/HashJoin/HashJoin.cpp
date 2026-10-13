@@ -2197,6 +2197,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         for (auto & columns : data->columns)
         {
             columns.selector = ScatteredBlock::Selector(columns.columns.at(0)->size());
+            columns.materializeNullMaps();
             new_blocks_allocated_size += columns.allocatedBytes();
         }
         data->allocated_size = new_blocks_allocated_size;
