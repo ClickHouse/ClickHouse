@@ -39,13 +39,14 @@ JemallocStats readJemallocStats()
 
 /// Adjusts only `total_memory_tracker`. On the gtest main thread `CurrentMemoryTracker` would also charge the
 /// thread's own tracker, which nothing corrects afterwards, so its skew would leak into later tests in the binary.
-/// A thread without `ThreadStatus` accounts to the global tracker directly.
+/// A thread without `ThreadStatus` accounts to the global tracker directly. The adjustment is only test bookkeeping,
+/// not a real allocation, so it must not throw `MEMORY_LIMIT_EXCEEDED` on a limit left by an earlier test.
 void adjustTotalMemoryTrackerOnly(Int64 delta)
 {
     std::thread([delta]
     {
         if (delta >= 0)
-            std::ignore = CurrentMemoryTracker::alloc(delta);
+            std::ignore = CurrentMemoryTracker::allocNoThrow(delta);
         else
             std::ignore = CurrentMemoryTracker::free(-delta);
     }).join();
