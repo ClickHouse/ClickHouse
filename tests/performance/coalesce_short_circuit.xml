@@ -26,5 +26,8 @@
     <query>SELECT sum(coalesce(nullIf(length(replaceRegexpAll(s, '[0-9]', 'x')) % 3, 0), length(replaceRegexpAll(s, '[0-9]', 'x')) + 1)) FROM coalesce_short_circuit</query>
     <query>SELECT sum(ifNull(nullIf(length(replaceRegexpAll(s, '[0-9]', 'x')) % 3, 0), length(replaceRegexpAll(s, '[0-9]', 'x')) + 1)) FROM coalesce_short_circuit</query>
 
+    <!-- The last argument is unreachable, as the second one cannot be NULL: the same as the previous queries. -->
+    <query>SELECT sum(coalesce(nullIf(length(replaceRegexpAll(s, '[0-9]', 'x')) % 3, 0), length(replaceRegexpAll(s, '[0-9]', 'x')) + 1, 0)) FROM coalesce_short_circuit</query>
+
     <drop_query>DROP TABLE IF EXISTS coalesce_short_circuit</drop_query>
 </test>

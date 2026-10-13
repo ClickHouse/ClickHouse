@@ -63,7 +63,8 @@ public:
 
     bool isShortCircuitForArgumentTypes(ShortCircuitSettings & settings, const DataTypes & arguments) const override
     {
-        /// `executeImpl` removes the constant NULL arguments, so the planning is done for the remaining (live) arguments.
+        /// `executeImpl` removes the constant NULL arguments and the arguments after the first one that cannot
+        /// contain NULL, so the planning is done for the remaining (live) arguments.
         /// The first live argument is always needed. Every other one is needed only for the rows
         /// where all the preceding arguments are NULL, so it is evaluated lazily.
         std::optional<size_t> first_live_argument;
@@ -76,6 +77,9 @@ public:
             if (!first_live_argument)
                 first_live_argument = i;
             ++number_of_live_arguments;
+
+            if (!canContainNull(*arguments[i]))
+                break;
         }
         settings.arguments_with_disabled_lazy_execution.insert(first_live_argument.value_or(0));
         /// As in `and`, the masks of the live arguments are nested: the rows needed by an argument are a subset
