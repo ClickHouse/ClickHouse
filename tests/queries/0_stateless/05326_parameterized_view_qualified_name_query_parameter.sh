@@ -27,6 +27,7 @@ JSON=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON('SELECT id FROM {view:Iden
 $CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --param_view="$VIEW" --param_value=1 -q "$JSON"
 
 # Only a table expression may carry a parameterized function name. A JSON AST can put one on a scalar
-# function, which the SQL parser never does, so the server must reject it there.
+# function, which the SQL parser never does, so the JSON reader must reject it at the boundary.
 JSON=$($CLICKHOUSE_CLIENT -q "SELECT replaceOne(parseQueryToJSON('SELECT f(1)'), '\"name\":\"f\"', '\"name\":\"\",\"query_parameter_name\":{\"type\":\"Identifier\",\"name\":\"\",\"children\":[{\"type\":\"QueryParameter\",\"name\":\"view\",\"param_type\":\"Identifier\"}]}')")
-$CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --param_view=plus -q "$JSON" 2>&1 | grep -q BAD_QUERY_PARAMETER && echo "scalar function name rejected"
+$CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --param_view=plus -q "$JSON" 2>&1 | grep -q BAD_ARGUMENTS && echo "scalar function name rejected"
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON('$JSON')" 2>&1 | grep -q BAD_ARGUMENTS && echo "scalar function name rejected by formatQueryFromJSON"

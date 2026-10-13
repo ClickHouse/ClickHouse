@@ -6,3 +6,4 @@
 SELECT *\nFROM\n(\n    SELECT *\n    FROM default.data\n    WHERE equals(id, _CAST(1, \'UInt64\'))\n) AS filtered
 1
 scalar function name rejected
+scalar function name rejected by formatQueryFromJSON

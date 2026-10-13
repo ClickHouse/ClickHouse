@@ -65,7 +65,7 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
     }
     else if (auto * function = ast->as<ASTFunction>(); function && function->query_parameter_name)
     {
-        /// Reachable only through `clickhouse_json`: the SQL parser accepts the placeholder in a table expression alone.
+        /// Both the SQL parser and the JSON reader accept the placeholder in a table expression alone; keep the invariant explicit.
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
             "Query parameter {} can name only a table function or a parameterized view in a table expression",
             function->query_parameter_name->formatForErrorMessage());
