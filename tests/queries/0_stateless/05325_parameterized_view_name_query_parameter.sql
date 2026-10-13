@@ -37,6 +37,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON(
 
 SELECT * FROM {missing_table:Identifier}(name_pattern = 'A%'); -- { serverError UNKNOWN_QUERY_PARAMETER }
 
+DESCRIBE TABLE {table:Identifier}(name_pattern = 'A%') SETTINGS describe_compact_output = 1;
+
 -- `view`, `viewIfPermitted` and `eval` have their own grammar, which a placeholder does not take over.
 SELECT * FROM {table:Identifier}(SELECT 1); -- { clientError SYNTAX_ERROR }
 SET param_table = 'view';

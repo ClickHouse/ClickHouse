@@ -74,8 +74,9 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitSetQuery(*set_query);
     else
     {
+        /// Visit the table expression itself, so a parameterized table function name resolves as it does after `FROM`.
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
-            visitChildren(describe_query->table_expression);
+            visit(describe_query->table_expression);
         else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
         {
             /// The handler's query (the AS clause) is the parameterizable interface of the handler;
