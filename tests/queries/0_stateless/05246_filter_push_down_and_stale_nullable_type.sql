@@ -16,12 +16,12 @@ CREATE TABLE t_and_type_r (number UInt64) ENGINE = MergeTree ORDER BY number;
 CREATE TABLE t_and_type_r2 (number UInt64) ENGINE = MergeTree ORDER BY number;
 -- `m` is deliberately not the join key: a predicate on the key alone can be moved to either side
 -- through the key equality, which hides whether the surviving conjunction was split again.
-CREATE TABLE t_and_type_j (number UInt64, m UInt64) ENGINE = MergeTree ORDER BY number;
+CREATE TABLE t_and_type_j (number UInt64, m UInt64, mn Nullable(UInt64)) ENGINE = MergeTree ORDER BY number;
 
 INSERT INTO t_and_type_l SELECT number, if(number = 5, NULL, number) FROM numbers(10);
 INSERT INTO t_and_type_r SELECT number FROM numbers(10);
 INSERT INTO t_and_type_r2 SELECT number FROM numbers(10);
-INSERT INTO t_and_type_j SELECT number, number FROM numbers(10);
+INSERT INTO t_and_type_j SELECT number, number, if(number = 7, NULL, number) FROM numbers(10);
 
 SET enable_parallel_replicas = 0;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0: randomized
@@ -250,8 +250,8 @@ FROM (
              query_plan_propagate_predicate_across_join = 0,
              enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
 
--- P10b: restoring a type that needs both parts rewrites two arguments of P10's condition, so read
--- its values and its type back as well.
+-- P10b: restoring a type that needs both parts rewrites P10's condition, so read its values and its
+-- type back as well.
 SELECT 'P10b plan', c, toTypeName(c), count()
 FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
 WHERE ((l.number > 0)::Bool AND l.n > 0 AND j.m > 3 AND l.number + j.m < 15) AS c
@@ -272,9 +272,9 @@ SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 0,
          enable_join_runtime_filters = 0, query_plan_merge_filters = 1;
 
 -- P11: P10's shape with a LowCardinality(Nullable(UInt8)) survivor. The declared type still needs
--- both parts, and this conjunct cannot supply the `Bool` one without dropping its NULLs, so the
--- query has to run, keep `j.m > 3` reaching PREWHERE, and report the same values and type as with
--- push-down off. Same pair of counters as P10, then the same pair of value rows as P10b.
+-- both parts, so the query has to run, keep `j.m > 3` reaching PREWHERE, and report the same values
+-- and type as with push-down off. Same pair of counters as P10, then the same pair of value rows as
+-- P10b.
 SELECT 'P11 counters',
        countIf(explain ILIKE '%Prewhere filter column:%m > 3%'),
        countIf(explain ILIKE '%Filter column:%m > 3%' AND explain NOT ILIKE '%Prewhere%')
@@ -325,9 +325,8 @@ SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 0,
          enable_join_runtime_filters = 0, query_plan_merge_filters = 1;
 
 -- P12: the declared type needs both parts again, but one surviving conjunct already reports `Bool`
--- on its own, so only the Nullable part has to be restored. It must not be restored on that same
--- conjunct, or the shortened conjunction stops reporting `Bool` and `j.m > 3` no longer reaches
--- PREWHERE once the join becomes an inner one. Same pair of counters as P10.
+-- on its own, so only the Nullable part is missing. `j.m > 3` must still reach PREWHERE once the
+-- join becomes an inner one. Same pair of counters as P10.
 SELECT 'P12 counters',
        countIf(explain ILIKE '%Prewhere filter column:%m > 3%'),
        countIf(explain ILIKE '%Filter column:%m > 3%' AND explain NOT ILIKE '%Prewhere%')
@@ -354,6 +353,54 @@ FROM (
              query_plan_merge_filter_into_join_condition = 0,
              query_plan_propagate_predicate_across_join = 0,
              enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
+
+-- P13: the declared type needs both parts, but every surviving conjunct is Nullable, so none of them
+-- reports `Bool`. `j.mn > 3` must still reach PREWHERE once the join becomes an inner one, and the
+-- values and type must match push-down off. Same pair of counters as P10, then a pair of value rows.
+SELECT 'P13 counters',
+       countIf(explain ILIKE '%Prewhere filter column:%mn > 3%'),
+       countIf(explain ILIKE '%Filter column:%mn > 3%' AND explain NOT ILIKE '%Prewhere%')
+FROM (
+    EXPLAIN actions = 1
+    SELECT c, count() FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+    WHERE ((l.number > 0)::Bool AND l.n > 0 AND j.mn > 3 AND l.n + j.m < 15) AS c
+    GROUP BY c
+    SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 1,
+             query_plan_convert_outer_join_to_inner_join = 1,
+             query_plan_merge_filter_into_join_condition = 0,
+             query_plan_propagate_predicate_across_join = 0,
+             enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
+SELECT 'P13 counters plain',
+       countIf(explain ILIKE '%Prewhere filter column:%mn > 3%'),
+       countIf(explain ILIKE '%Filter column:%mn > 3%' AND explain NOT ILIKE '%Prewhere%')
+FROM (
+    EXPLAIN actions = 1
+    SELECT c, count() FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+    WHERE ((l.number > 0)::Bool AND l.n > 0 AND j.mn > 3 AND l.n + j.m < 15) AS c
+    GROUP BY c
+    SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 0,
+             query_plan_convert_outer_join_to_inner_join = 1,
+             query_plan_merge_filter_into_join_condition = 0,
+             query_plan_propagate_predicate_across_join = 0,
+             enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
+SELECT 'P13 plan', c, toTypeName(c), count()
+FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+WHERE ((l.number > 0)::Bool AND l.n > 0 AND j.mn > 3 AND l.n + j.m < 15) AS c
+GROUP BY c ORDER BY c
+SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 1,
+         query_plan_convert_outer_join_to_inner_join = 1,
+         query_plan_merge_filter_into_join_condition = 0,
+         query_plan_propagate_predicate_across_join = 0,
+         enable_join_runtime_filters = 0, query_plan_merge_filters = 1;
+SELECT 'P13 plain', c, toTypeName(c), count()
+FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+WHERE ((l.number > 0)::Bool AND l.n > 0 AND j.mn > 3 AND l.n + j.m < 15) AS c
+GROUP BY c ORDER BY c
+SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 0,
+         query_plan_convert_outer_join_to_inner_join = 1,
+         query_plan_merge_filter_into_join_condition = 0,
+         query_plan_propagate_predicate_across_join = 0,
+         enable_join_runtime_filters = 0, query_plan_merge_filters = 1;
 
 -- N1: the Nullable conjunct is joint, so it stays and the surviving `and` is Nullable(UInt8) for
 -- real. The declared type must be left alone when it did not change.

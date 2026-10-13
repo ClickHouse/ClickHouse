@@ -29,6 +29,10 @@ P11 plan	true	Nullable(Bool)	3
 P11 plain	true	Nullable(Bool)	3
 P12 counters	1	0
 P12 counters plain	0	1
+P13 counters	1	0
+P13 counters plain	0	1
+P13 plan	true	Nullable(Bool)	2
+P13 plain	true	Nullable(Bool)	2
 N1 dist	50
 N1 plain	50
 N1b dist	1	Nullable(UInt8)	50
