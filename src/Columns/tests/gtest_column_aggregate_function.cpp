@@ -5,7 +5,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -99,8 +98,8 @@ TEST(ColumnAggregateFunction, StateFieldNameMatchesStateTypeName)
 }
 
 /// A `Field` taken from a type that kept parameters `argMin` never reads names parameters its own
-/// state type does not, and a `Map` parameter makes that name unparseable. No SQL construct produces
-/// such a name, so both places that accept one are covered here.
+/// state type does not. No SQL construct produces such a name, so both places that accept one are
+/// covered here.
 TEST(ColumnAggregateFunction, AcceptsStateNameSpellingUnreadParameters)
 {
     tryRegisterAggregateFunctions();
@@ -117,7 +116,6 @@ TEST(ColumnAggregateFunction, AcceptsStateNameSpellingUnreadParameters)
     auto decoded_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters);
     auto state_type = function->getStateType();
     ASSERT_NE(decoded_type->getName(), state_type->getName());
-    ASSERT_EQ(DataTypeFactory::instance().tryGet(decoded_type->getName()), nullptr);
 
     Field state = decoded_type->getDefault();
     auto column = state_type->createColumn();

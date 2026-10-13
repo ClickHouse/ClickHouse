@@ -1,7 +1,7 @@
 -- The sibling of the state type of a bare `argMin`: a combinator and the adapter for `Nullable`
 -- arguments are constructed with the caller's parameters, so `argMinIfState(map(1, 2))(...)` wrote
--- `AggregateFunction(argMinIf([(1, 2)]), ...)` into the table metadata - a type the parser rejects
--- on `ATTACH`, leaving the table loadable only after the metadata file is edited by hand.
+-- `AggregateFunction(argMinIf([(1, 2)]), ...)` into the table metadata, a parameter `argMin` never
+-- reads.
 
 SELECT toTypeName(argMinIfState(map(1, 2))(number, number, number > 0)) FROM numbers(1);
 SELECT toTypeName(argMinState(map(1, 2))(toNullable(number), number)) FROM numbers(1);
