@@ -135,13 +135,13 @@ Which dialect will be used to parse query.
 
 Supported values:
 - `clickhouse` (default) — standard ClickHouse SQL.
-- `kusto` — Kusto Query Language. Requires the experimental setting `allow_experimental_kusto_dialect`.
+- `kusto` — Kusto Query Language. Requires the beta setting `allow_experimental_kusto_dialect`.
 - `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `enable_logsql_dialect`.
-- `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `enable_trino_dialect`.
+- `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the beta setting `enable_trino_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -1165,7 +1165,7 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0, \
         {"24.10", true, true, "New setting"}) \
-    DECLARE(Bool, apply_string_filters_during_scan, false, R"(
+    DECLARE(Bool, apply_string_filters_during_scan, true, R"(
 Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
 
 When a `PREWHERE` condition contains a conjunct that searches for a non-empty substring in a `String` (or `Nullable(String)`) column
@@ -1174,13 +1174,15 @@ during deserialization and reads non-matching values as empty strings. This make
 is selective, because the data of non-matching values is not copied into the column. The result of the query does not change,
 because the rows with non-matching values are guaranteed to be filtered out by `PREWHERE`, and such conditions never match an empty string.
 
-The filter is disabled adaptively at runtime if it turns out to be non-selective.
+The filter is disabled adaptively at runtime if it turns out to be non-selective, or if the non-matching values
+are too short for skipping their data to pay off.
 
 Also allows the `WHERE` to `PREWHERE` optimization to move substring search conditions (`LIKE`, `position`, `startsWith`, `endsWith`)
 even when they use all queried columns (normally that is pointless, but with this setting the scan itself becomes cheaper).
 Equality with a constant string is not moved for this reason: it is still applied during the scan when it is already in `PREWHERE`.
 
-Supported for reading from `MergeTree` tables and from the `Parquet` format.
+Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
+the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
 
 Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
 (`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
@@ -1191,7 +1193,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
-        {"26.10", false, false, "New setting to push down substring search conditions on String columns from PREWHERE into the column scan."}) \
+        {"26.10", false, true, "New setting to push down substring search conditions on `String` columns from `PREWHERE` into the column scan, enabled by default. `compatibility` with versions before 26.10 disables it."}) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
 Allows you to specify how [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize), or [`TRUNCATE`](/reference/statements/truncate) queries wait for their operations to complete.
@@ -1491,6 +1493,11 @@ From what number of keys, a two-level aggregation starts. 0 - the threshold is n
     DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, R"(
 From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.
 )", 0) \
+    DECLARE(Bool, use_aggregation_memory_tracker, true, R"(
+Measure the size of the aggregation state compared with `group_by_two_level_threshold_bytes` with the memory tracker dedicated to the aggregation. When disabled, the size is measured as the growth of the memory usage of the whole query since the aggregation was created, so an aggregation with a small state can be converted to two-level.
+)", 0, \
+        {"26.10", true, true, "New setting to choose how the two-level conversion of `GROUP BY` measures the aggregation memory. The change it gates shipped in 26.7 and its memory regression is fixed in 26.9."}, \
+        {"26.9", false, true, "The two-level conversion of `GROUP BY` compares `group_by_two_level_threshold_bytes` with the memory of the aggregation state only, measured by a dedicated memory tracker (https://github.com/ClickHouse/ClickHouse/pull/107490). Before 26.7 it used the growth of the memory usage of the whole query."}) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, R"(
 Is the memory-saving mode of distributed aggregation enabled.
 )", 0) \
@@ -1632,7 +1639,7 @@ Possible values:
 
 - 1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues.
+    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues. On a read, if *every* shard was skipped before returning any data there is no partial data left to return, so the query throws `ALL_CONNECTION_TRIES_FAILED` instead of returning an empty result. This check covers reads only; `INSERT` has its own handling of a fully unavailable destination cluster.
 
 - 0 — skipping disabled.
 
@@ -1656,7 +1663,7 @@ Possible values:
 When `skip_unavailable_shards` is enabled, limits the maximum number of shards that can be silently skipped.
 If the number of unavailable shards exceeds this value, an exception is thrown instead of silently skipping.
 
-A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
+A value of 0 means no limit on the count. On a read, skipping *every* shard before any of them returned data still throws `ALL_CONNECTION_TRIES_FAILED`, because such a query has no partial result to return. This limit applies to reads only.
 )", 0, \
         {"26.3", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."}) \
     \
@@ -1664,7 +1671,7 @@ A value of 0 means no limit (default behavior — all unavailable shards can be 
 When `skip_unavailable_shards` is enabled, limits the maximum ratio (0 to 1) of shards that can be silently skipped.
 If the ratio of unavailable shards to total shards exceeds this value, an exception is thrown instead of silently skipping.
 
-A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
+A value of 0 means no limit on the ratio. On a read, skipping *every* shard before any of them returned data still throws `ALL_CONNECTION_TRIES_FAILED`, because such a query has no partial result to return. This limit applies to reads only.
 )", 0, \
         {"26.3", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."}) \
     \
@@ -3118,9 +3125,16 @@ is added so the join order optimizer can consider direct (A JOIN C) plans.
         {"26.6", false, true, "Turn on enable_join_transitive_predicates by default"}, \
         {"26.4", false, false, "New setting to infer transitive equi-join predicates for join order optimization."}) \
     \
-    DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
+    DECLARE(Bool, query_plan_join_shard_by_pk_ranges, true, R"(
+Execute a JOIN of two MergeTree tables as independent joins over primary-key ranges when the join keys contain a prefix of the primary key of both tables. Both tables are split into the same ranges by the values of that prefix (the same way `FINAL` splits parts into non-intersecting layers), so equal keys land in the same range, and each range is joined on its own thread.
+
+For `full_sorting_merge` and `parallel_full_sorting_merge`, this replaces a single-threaded merge join over both tables with one streaming merge join per range, running in parallel, which is typically several times faster and uses several times less memory.
+
+For `hash` and `parallel_hash`, each range gets its own hash table. It applies only when neither join runtime filters (`enable_join_runtime_filters`) nor spilling to disk (`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`) are in effect, since both make the join opaque to this optimization; then it usually does not speed up queries but may lower memory consumption. Ranges are assigned to threads statically, so a filter that is selective only in some part of the primary key range leaves some threads idle.
+
+Not applied to `FINAL`, `ASOF`, joins with several disjuncts in `ON`, or when reading with parallel replicas.
 )", 0, \
+        {"26.10", false, true, "Enabled by default. A `full_sorting_merge` or `parallel_full_sorting_merge` JOIN of two MergeTree tables whose keys contain a prefix of both primary keys now runs as independent merge joins over primary-key ranges in parallel, instead of a single-threaded merge join. Hash joins are affected only when neither join runtime filters nor spilling to disk are in effect."}, \
         {"25.4", false, false, "New setting"}) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
@@ -4373,7 +4387,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
  - Sides that are already sorted (a MergeTree read in order, or any pre-sorted input): an order-preserving scatter into the per-shard merges can deadlock the pipeline. The in-order read and its `read_in_order_use_virtual_row` optimization are kept instead.
  - While the initiator builds a distributed plan (`make_distributed_plan`), because the scattered sort is not serializable for remote execution. The local single-fragment plan and the per-worker fragments re-optimize with that setting disabled, so they can still be sharded.
 
- Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
+ Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) by `query_plan_join_shard_by_pk_ranges` (enabled by default).
 
 - prefer_partial_merge
 
@@ -4760,21 +4774,25 @@ If a host during a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation doesn't rec
 This value should be bigger than any reasonable time for a host to reconnect to ZooKeeper after a failure.
 Zero means unlimited.
 )", 0, \
+        {"26.10", 3600, 3600, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"24.11", 0, 3600, "New setting."}, \
         {"24.10", 0, 3600, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_max_retries_while_initializing, 20, R"(
 Max retries for [Zoo]Keeper operations during the initialization of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
+        {"26.10", 20, 20, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"24.11", 0, 20, "New setting."}, \
         {"24.10", 0, 20, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_max_retries_while_handling_error, 20, R"(
 Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
+        {"26.10", 20, 20, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"24.11", 0, 20, "New setting."}, \
         {"24.10", 0, 20, "New setting."}) \
     DECLARE(UInt64, backup_restore_finish_timeout_after_error_sec, 180, R"(
 How long the initiator should wait for other host to react to the 'error' node and stop their work on the current BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
 )", 0, \
+        {"26.10", 180, 180, "Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
         {"24.11", 0, 180, "New setting."}, \
         {"24.10", 0, 180, "New setting."}) \
     DECLARE(UInt64, backup_restore_keeper_value_max_size, 1048576, R"(
@@ -4796,6 +4814,10 @@ Approximate probability of failure for a keeper request during backup or restore
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
 )", 0, \
         {"24.7", 1000, 1000, "Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore."}) \
+    DECLARE(UInt64, backup_s3_expired_token_retry_timeout_ms, 120000, R"(
+Maximum time in milliseconds to retry an S3 request whose response identifies `ExpiredToken` during backup or restore. Retries also stop at `backup_restore_s3_retry_attempts`. Zero disables these retries. AWS S3 `HEAD` responses expose only a generic HTTP status, so this retry does not cover `HEAD` metadata requests.
+)", 0, \
+        {"26.10", 0, 120000, "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."}) \
     DECLARE(UInt64, backup_restore_s3_retry_initial_backoff_ms, 25, R"(
 Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
 )", 0, \
@@ -4947,6 +4969,18 @@ Possible values:
 - 1 — Creating several dictionaries for the data part is prohibited.
 - 0 — Creating several dictionaries for the data part is not prohibited.
 )", 0) \
+    DECLARE(Bool, exact_division_for_integers, false, R"(
+Makes `/` and `divide` return an integer when both operands are integer types, including `Int128`, `UInt128`, `Int256`, and `UInt256`.
+The quotient is truncated toward zero. The result has the width of the first operand and is signed if either operand is signed.
+Division by zero or a quotient outside the result type's range throws an exception. `Nullable` operands propagate `NULL`.
+
+By default, division of two integers returns `Float64`. This setting does not change division involving `Decimal` or floating-point operands,
+or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
+
+The choice is recorded in newly submitted SQL before expressions are stored in table metadata, views, SQL functions, or mutations.
+Existing definitions and `ATTACH` queries retain their original division semantics, independently of this setting.
+)", 0, \
+        {"26.10", false, false, "New setting to enable exact integer division for `/` and `divide`."}) \
     DECLARE(Bool, decimal_check_overflow, true, R"(
 Check overflow of decimal arithmetic/comparison operations
 )", 0) \
@@ -5719,6 +5753,15 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_min_max_from_files, true, R"(
+Enables or disables computing `min` and `max` of columns from the statistics stored in data files instead of reading the data, for queries whose only aggregate functions are `min` and `max` of table columns, without `GROUP BY` and without filters. It applies to the table function/engine `file` with the `Parquet` format (not to files inside archives), for integer (up to 64 bits), date, date-time and decimal columns whose column chunk statistics are present in every row group.
+
+Possible values:
+
+- 0 - Optimization disabled.
+- 1 - Optimization enabled.
+)", 0, \
+        {"26.10", false, true, "New setting to compute `min` / `max` from Parquet column chunk statistics."}) \
     DECLARE(Bool, use_cache_for_count_from_files, true, R"(
 Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -6164,6 +6207,7 @@ Apply TTL for old data, after ALTER MODIFY TTL query
 )", 0) \
     DECLARE(Bool, data_type_default_nullable, false, R"(
 Allows data types without explicit modifiers [NULL or NOT NULL](/reference/statements/create/table#null-or-not-null-modifiers) in column definition will be [Nullable](/reference/data-types/nullable).
+It applies to `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN` and `ALTER TABLE ... MODIFY COLUMN`.
 
 Possible values:
 
@@ -7095,6 +7139,27 @@ Possible values:
 - 1 - Enabled
 )", 0, \
         {"26.8", false, true, "New setting to gate the query condition cache for `ORDER BY ... LIMIT n` (TopK) reads; enabled by default. The gate is disabled in 26.7, so `compatibility` with an earlier version keeps it off."}) \
+    DECLARE(Bool, use_query_condition_cache_for_time_conditions, true, R"(
+Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for conditions that involve the current time, e.g. `WHERE time >= now() - INTERVAL 10 DAY`, when reading from `MergeTree` tables. Reads from files and object storage (`file`, `s3`, and similar) use the query condition cache only for deterministic conditions and are not affected by this setting.
+
+Such conditions are non-deterministic (they change with the clock), so they cannot be cached directly. Instead, a deterministic condition is derived from them by rounding the folded current-time constant onto a time grid, e.g. `WHERE time >= '2026-08-09 12:34:56'` becomes `WHERE time >= '2026-08-09 00:00:00'` (rounding down for cache reads, up for cache writes, which keeps the cache sound). The grid step is proportional to the distance between the constant and the current time (see [`query_condition_cache_time_condition_grid_factor`](#query_condition_cache_time_condition_grid_factor)), clamped to between one second and one day.
+
+If the constant is already aligned to the grid (e.g. `WHERE time >= today() - 10` or `WHERE time >= toStartOfDay(now())`), the cache is effective for the whole grid cell, e.g. until the end of the day. Otherwise, the cache is reused only for lower bounds on the time, e.g. `WHERE time >= now() - INTERVAL 10 DAY`: cache entries written during one grid cell are used during the next one. An unaligned upper bound such as `WHERE time < now()`, alone or as a part of a sliding window like `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, is not reused by later queries, because their condition is not contained in the condition of the earlier ones.
+
+This setting has no effect unless `use_query_condition_cache` is also enabled.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", false, true, "New setting to let the query condition cache serve conditions that involve the current time (e.g. `WHERE time >= now() - INTERVAL 10 DAY`) by deriving a deterministic condition with the time constant rounded onto a grid; enabled by default. previous_value=false so `compatibility` with an earlier version keeps such conditions uncached, as before."}) \
+    DECLARE(Float, query_condition_cache_time_condition_grid_factor, 1.0, R"(
+For conditions involving the current time in the [query condition cache](/concepts/features/performance/caches/query-condition-cache) of `MergeTree` tables (see [`use_query_condition_cache_for_time_conditions`](#use_query_condition_cache_for_time_conditions)): the size of the grid onto which time constants are rounded, as a fraction of the distance between the constant and the current time. For example, with the default factor 1.0, the constant in `WHERE time >= now() - INTERVAL 10 DAY` is rounded onto a one day grid (capped at one day), and the constant in `WHERE time >= now() - INTERVAL 1 HOUR` onto a one hour grid.
+
+Smaller values keep the derived condition closer to the original one (less over-reading near the boundary) at the cost of the cache key rotating more frequently. The grid step is clamped to at least one second, so a small factor makes the derived condition converge to the original one instead of disabling it. Values less than or equal to 0 disable the derivation entirely.
+)", 0, \
+        {"26.10", 1., 1., "New setting: the grid step used when deriving deterministic conditions from conditions involving the current time for the query condition cache, as a fraction of the distance between the time constant and the current time."}) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -7479,6 +7544,23 @@ Connect timeout in seconds. Now supported only for MySQL
     DECLARE(UInt64, external_storage_rw_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
+    DECLARE(Bool, external_storage_push_down_limit, true, R"(
+Allow to push the query's `LIMIT` clause down into the query sent to an external database (such as MySQL, PostgreSQL or SQLite).
+
+The push-down is not performed for the generic ODBC/JDBC bridges, because they do not expose the remote `LIMIT` syntax, and some of the supported databases do not accept a `LIMIT` clause at all.
+
+The `LIMIT` is pushed down only when it is guaranteed to be safe, i.e. when every clause that logically applies before it is copied to the external query without changes. Precisely, the query must be a plain single-table `SELECT`:
+
+- there is no `JOIN`, `ARRAY JOIN`, `SAMPLE` or `FINAL` (otherwise rows could be dropped or transformed locally, so pre-limiting is unwanted);
+- the `WHERE` clause, if any, is fully compatible and copied into the rewritten query unchanged (otherwise filtering after the remote `LIMIT` would drop some rows);
+- there is no other clause or modifier (like `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT BY`, `WITH TIES`, etc.) that may break the remote pre-limiting logic due to data reordering, aggregation or filtration;
+- an `OFFSET` is allowed: it is applied locally, so the rows it skips have to be read as well, and the limit sent to the external database is `offset + length`;
+- the `SELECT` list maps one source row to one result row, i.e. it contains no aggregate functions, window functions or `arrayJoin` (also spelled `unnest`) (they are evaluated locally over all the rows read from the external table);
+- there is no filter that is applied locally on top of the rows read from the external table, such as a row policy or `additional_table_filters` (such a filter runs before the `LIMIT`, so pre-limiting remotely could discard rows that it would have kept).
+
+This reduces the amount of data read from and sent by the external database. Disable this setting to restore the previous behavior in case of compatibility issues.
+)", 0, \
+        {"26.10", false, true, "New setting to push the query's `LIMIT` down into the query sent to an external database when it is safe. previous_value=false so `compatibility` with versions before 26.10 restores the pre-existing behavior (no push-down)."})  \
     \
     DECLARE_WITH_ALIAS(Bool, allow_correlated_subqueries, true, R"(
 Allow to execute correlated subqueries.
@@ -9433,6 +9515,19 @@ Enable automatic switching to execution with parallel replicas based on collecte
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL, \
         {"25.12", 0, 0, "New setting"}) \
+    DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
+How much of a query's read volume may be read by every replica instead of being split between them, as a
+fraction of the whole, before automatic parallel replicas declines the query.
+
+Only the read parallel replicas coordinate is split; every other read of the same subtree runs on each
+replica in full. Those reads take the same wall-clock time either way, so the cost-model comparison is blind
+to them, but the cluster performs `max_parallel_replicas` times as much work for them. This setting is the
+limit on that waste: at the default 0.5 a query whose coordinated read is less than half of what it reads
+keeps running on one node, however the time comparison turns out.
+
+Set to 1 to accept any amount of duplicated reading, which restores the behaviour of only comparing times.
+)", 0, \
+        {"26.10", 1.0, 0.5, "Automatic parallel replicas now declines a query that would repeat more than half of its reading on every replica. Previously there was no limit, which is what 1 still asks for."}) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.
@@ -9549,6 +9644,8 @@ This allows queries with `max_parallel_replicas = 1` to be directed to another h
         {"26.5", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."}) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
+
+This concerns the index analysis that selects the mark ranges a read announces, which is what the coordinator assigns from. It does not cover pruning that happens while the data is read, such as the granule pruning of `enable_join_runtime_filters_index_analysis`: a JOIN runtime filter only exists once the build side has been read, so every replica evaluates its own and prunes its own share, and no coordinator could do it for them.
 )", 0, \
         {"24.12", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, \
         {"24.10", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}) \
@@ -10330,6 +10427,10 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_ipcrypt, false, R"(
+Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable experimental IP address encryption functions."}) \
     DECLARE(Bool, enable_xgboost, false, R"(
 Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 )", EXPERIMENTAL, \
@@ -10468,6 +10569,7 @@ Maximal selectivity of the filter to use the hint built from the inverted text i
 Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
 
 The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
+A `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` or `multiSearchAnyCaseInsensitiveUTF8` call with one needle is searched as `%value%`.
 )", 0, \
         {"26.4", true, true, "New setting"}) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
@@ -10561,7 +10663,8 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
         {"25.5", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"}) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
-)", EXPERIMENTAL, \
+)", BETA, \
+        {"26.10", false, false, "The Kusto Query Language (KQL) dialect was moved to Beta."}, \
         {"25.1", true, false, "A new setting"}) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
@@ -10646,7 +10749,8 @@ dialect can be switched back.
 The dialect also aligns the query semantics with Trino: `join_use_nulls` is turned
 on, `use_variant_as_common_type` is turned off, and the query analyzer is turned on.
 An explicit `SETTINGS` clause in the query still takes precedence.
-)", EXPERIMENTAL, \
+)", BETA, \
+        {"26.10", false, false, "The `trino` dialect was moved to Beta."}, \
         {"26.9", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
@@ -10693,6 +10797,10 @@ Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
 Default age threshold in seconds for orphan file removal in Iceberg tables. Files newer than this are not considered orphans. Used when the older_than argument is omitted from the remove_orphan_files() procedure call. Default is 259200 (3 days).
 )", EXPERIMENTAL, \
         {"26.4", 259200, 259200, "New setting for default orphan file age threshold"}) \
+    DECLARE(UInt64, iceberg_orphan_files_min_retention_seconds, 86400, R"(
+Minimum age in seconds of the files that `ALTER TABLE ... EXECUTE remove_orphan_files` may delete from an Iceberg table. An `older_than` (given explicitly or derived from `iceberg_orphan_files_older_than_seconds`) that is closer to now than this is rejected: files of a write that has not committed yet are not referenced by the table metadata and would be deleted, which corrupts the table when the write commits. Keep it above the longest time a write to the table can take to commit. 0 disables the check.
+)", EXPERIMENTAL, \
+        {"26.10", 0, 86400, "New setting. `remove_orphan_files` rejects an `older_than` less than this many seconds before now, so it keeps the files of a write that started less than this long ago and has not committed yet. `compatibility` with versions before 26.10 restores the previous behavior (no minimum)."}) \
     DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
 Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL, \
@@ -10857,7 +10965,9 @@ Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
-Takes effect only when the probe side of the join is read locally. The descriptors that drive the pruning are attached to the read step while the query plan is optimized, and they are not carried over when that step is rebuilt for remote execution, so the granule pruning does not happen with parallel replicas (`enable_parallel_replicas = 1`) or with a distributed query plan (`make_distributed_plan = 1`). In those modes the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
+Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
+
+The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
 
 The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
 )", 0, \
@@ -10896,6 +11006,14 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
+    \
+    DECLARE(Bool, promql_push_down_label_matchers, true, R"(
+Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
+A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, into an operator between two vectors other than `and` and `unless`, and through a function over a range or an operator with a scalar unless its input is one metric selected by name.
+A comparison without `bool` keeps the metric name, so matchers always go through it. Other functions and the unary minus stop the matchers.
+A copied matcher turns a selector of a whole metric into a filtered one, which can be slower on a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table with an `id` clustered by metric (the default) if the matcher keeps most series of the metric. Disable the setting for such queries.
+)", PRIVATE_PREVIEW, \
+        {"26.10", false, true, "New setting to copy PromQL label matchers across binary operators."}) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL, \
@@ -12015,11 +12133,16 @@ void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
 NameToNameMap readQueryParameters(ReadBuffer & in)
 {
     NameToNameMap parameters;
+    size_t num_parameters = 0;
     while (true)
     {
-        String name = BaseSettingsHelpers::readString(in);
+        String name = BaseSettingsHelpers::readName(in);
         if (name.empty())
             break;
+
+        if (++num_parameters > MAX_SETTINGS_IN_A_SEQUENCE)
+            BaseSettingsHelpers::throwTooManySettings("query parameters");
+
         std::ignore = BaseSettingsHelpers::readFlags(in);
         String value;
         ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));

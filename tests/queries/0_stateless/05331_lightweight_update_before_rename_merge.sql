@@ -6,11 +6,14 @@
 SET enable_lightweight_update = 1;
 SET optimize_throw_if_noop = 1;
 
+-- A mutation queued behind an unfinished ALTER mutation is assigned only by the next merge-selecting round,
+-- whose interval otherwise backs off up to max_merge_selecting_sleep_ms (60 s).
+
 -- Updates before and after the rename, then a merge that does not apply patches.
 DROP TABLE IF EXISTS t_lwu_rename SYNC;
 CREATE TABLE t_lwu_rename (x UInt32, v UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lwu_rename', '1') ORDER BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_lwu_rename VALUES (1, 1), (2, 2);
 UPDATE t_lwu_rename SET v = 5 WHERE x = 1;
@@ -29,7 +32,7 @@ DROP TABLE t_lwu_rename SYNC;
 DROP TABLE IF EXISTS t_lwu_rename_altered SYNC;
 CREATE TABLE t_lwu_rename_altered (x UInt32, v UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lwu_rename_altered', '1') ORDER BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_lwu_rename_altered VALUES (1, 1);
 ALTER TABLE t_lwu_rename_altered ADD COLUMN z UInt8;
@@ -48,7 +51,7 @@ DROP TABLE t_lwu_rename_altered SYNC;
 DROP TABLE IF EXISTS t_lwu_rename_merge SYNC;
 CREATE TABLE t_lwu_rename_merge (x UInt32, v UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lwu_rename_merge', '1') ORDER BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_lwu_rename_merge VALUES (1, 1);
 UPDATE t_lwu_rename_merge SET v = 5 WHERE 1;
@@ -67,7 +70,7 @@ DROP TABLE t_lwu_rename_merge SYNC;
 DROP TABLE IF EXISTS t_lwu_rename_added SYNC;
 CREATE TABLE t_lwu_rename_added (x UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lwu_rename_added', '1') ORDER BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_lwu_rename_added VALUES (1), (2);
 ALTER TABLE t_lwu_rename_added ADD COLUMN v UInt32;
@@ -87,7 +90,7 @@ DROP TABLE t_lwu_rename_added SYNC;
 DROP TABLE IF EXISTS t_lwu_rename_stale SYNC;
 CREATE TABLE t_lwu_rename_stale (x UInt32, v UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lwu_rename_stale', '1') ORDER BY tuple()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, max_replicated_mutations_in_queue = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_lwu_rename_stale VALUES (1, 1);
 ALTER TABLE t_lwu_rename_stale ADD COLUMN z UInt8;

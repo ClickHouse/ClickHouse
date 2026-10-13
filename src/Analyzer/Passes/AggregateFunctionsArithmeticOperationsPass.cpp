@@ -10,8 +10,11 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Common/NaNUtils.h>
+
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -46,6 +49,17 @@ std::optional<Field> zeroField(const Field & value)
     }
 }
 
+/// `x * value` and `x / value` keep the order of `x` and distribute over `sum` only for a finite non-zero `value`.
+bool isFiniteNonZero(const Field & value)
+{
+    if (value.isNull())
+        return false;
+    if (value.getType() == Field::Types::Float64)
+        return isFinite(value.safeGet<Float64>()) && value.safeGet<Float64>() != 0;
+    const auto zero = zeroField(value);
+    return zero && value != *zero;
+}
+
 /** Rewrites:   sum([multiply|divide]) -> [multiply|divide](sum)
   *             [min|max|avg]([multiply|divide|plus|minus]) -> [multiply|divide|plus|minus]([min|max|avg])
   *
@@ -68,10 +82,10 @@ public:
             return;
 
         static std::unordered_map<std::string_view, std::unordered_set<std::string_view>> supported_aggregate_functions
-            = {{"sum", {"multiply", "divide"}},
-               {"min", {"multiply", "divide", "plus", "minus"}},
-               {"max", {"multiply", "divide", "plus", "minus"}},
-               {"avg", {"multiply", "divide", "plus", "minus"}}};
+            = {{"sum", {"multiply", "divide", "divideExact"}},
+               {"min", {"multiply", "divide", "divideExact", "plus", "minus"}},
+               {"max", {"multiply", "divide", "divideExact", "plus", "minus"}},
+               {"avg", {"multiply", "divide", "divideExact", "plus", "minus"}}};
 
         auto & aggregate_function_arguments_nodes = aggregate_function_node->getArguments().getNodes();
         if (aggregate_function_arguments_nodes.size() != 1)
@@ -97,6 +111,11 @@ public:
         if (!supported_aggregate_function_it->second.contains(arithmetic_function_name))
             return;
 
+        /// Exact integer division must retain per-row truncation and overflow checks.
+        if (arithmetic_function_name == "divideExact"
+            && isInteger(removeNullable(removeLowCardinality(arithmetic_function_node_typed->getResultType()))))
+            return;
+
         const auto * left_argument_constant_node = arithmetic_function_arguments_nodes[0]->as<ConstantNode>();
         const auto * right_argument_constant_node = arithmetic_function_arguments_nodes[1]->as<ConstantNode>();
 
@@ -110,9 +129,34 @@ public:
           * `a Decimal32(0)`, `sum(a / 2)` over `{1, 1}` is `0`, but `sum(a) / 2` is `1`, and `sum(a * 3)`
           * throws `DECIMAL_OVERFLOW` for a row `999999999`, but `sum(a) * 3` does not.
           */
+        /// Nor with an operand that is not an integer or a float, except a date, a time or an interval under `min` or `max`:
+        /// `min` and `max` order an `Array` or a `Tuple` lexicographically, which an element-wise operation does not preserve,
+        /// `sum` and `avg` reject an IP address, and `avg` of a date, a time or an interval is rounded to its unit.
+        const bool is_min_or_max = lower_aggregate_function_name == "min" || lower_aggregate_function_name == "max";
+        bool has_date_time_argument = false;
+        bool has_day_or_longer_interval = false;
         for (const auto & argument : arithmetic_function_arguments_nodes)
-            if (isDecimal(removeNullable(removeLowCardinality(argument->getResultType()))))
+        {
+            const auto argument_type = removeNullable(removeLowCardinality(argument->getResultType()));
+            const WhichDataType which(argument_type);
+            if (!which.isInteger() && !which.isFloat()
+                && !(is_min_or_max && (which.isInterval() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())))
                 return;
+
+            has_date_time_argument |= which.isDateTimeOrDateTime64() || which.isTime64();
+            if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(argument_type.get()))
+                has_day_or_longer_interval |= interval_type->getKind() >= IntervalKind(IntervalKind::Kind::Day);
+        }
+
+        /// A day or longer is added to a `DateTime` or a `Time64` in the calendar of its time zone, which is not monotone
+        /// across a DST change or a month end: a month before both `12-30 23:55` and `12-31 00:00` is on `11-30`.
+        if (has_date_time_argument && has_day_or_longer_interval)
+            return;
+
+        const auto * constant_node = right_argument_constant_node ? right_argument_constant_node : left_argument_constant_node;
+        if ((arithmetic_function_name == "multiply" || arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
+            && !isFiniteNonZero(constant_node->getValue()))
+            return;
 
         /** Need reverse max <-> min for:
           *
@@ -134,7 +178,7 @@ public:
         if (left_argument_constant_node && !right_argument_constant_node)
         {
             /// Do not rewrite `sum(1/n)` with `sum(1) * div(1/n)` because of lose accuracy
-            if (arithmetic_function_name == "divide")
+            if (arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
                 return;
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
@@ -160,7 +204,7 @@ public:
             const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
 
             bool need_reverse = false;
-            if (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide")
+            if (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
             {
                 const auto zero = zeroField(right_argument_constant_value_literal);
                 if (!zero)
