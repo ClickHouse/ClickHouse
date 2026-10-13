@@ -283,6 +283,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.verify_checksums = settings[Setting::input_format_parquet_verify_checksums];
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
+    format_settings.parquet.detect_variant_by_structure = settings[Setting::input_format_parquet_detect_variant_by_structure];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {
