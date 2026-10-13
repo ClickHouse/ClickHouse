@@ -861,7 +861,7 @@ private:
 template <typename Key, typename T>
 void routeFixed(RadixUniqExactState<Key> & state, size_t stream, const IColumn & column, const UInt8 * null_map)
 {
-    state.template routeValues<T>(stream, column.getRawData().data(), column.size(), null_map);
+    state.template routeValues<T>(stream, column.getRawData().data(), column.size(), null_map); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 template <>
