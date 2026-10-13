@@ -166,7 +166,8 @@ void profilingFreeSampledObject(ThreadState & thread_state, const void * ptr, si
     /// It's not correct to do equivalent asserts for unbiased bytes, because of the potential for races with
     /// `prof.reset` calls.
     --thread_context->counts.current_objects;
-    thread_context->counts.current_objects_shifted_unbiased -= profiling_shifted_unbiased_count[size_class_idx].load(std::memory_order_relaxed);
+    thread_context->counts.current_objects_shifted_unbiased
+        -= profiling_shifted_unbiased_count[size_class_idx].load(std::memory_order_relaxed);
     thread_context->counts.current_bytes -= usable_size;
     thread_context->counts.current_bytes_unbiased -= profiling_unbiased_size[size_class_idx].load(std::memory_order_relaxed);
 
