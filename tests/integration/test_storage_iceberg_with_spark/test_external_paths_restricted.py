@@ -209,3 +209,6 @@ def test_external_endpoint_is_rejected_by_remote_host_filter(started_cluster):
         f"WHERE database = 'default' AND table = '{TABLE_NAME}' AND content = 'DATA' ORDER BY file_path").split()
     assert paths, "The unreadable table was dropped from system.iceberg_files"
     assert all(p.startswith("http://not-allowed-host:") for p in paths), paths
+
+    # Permanent path rejection must not make `DatabaseCatalog` retry this drop forever.
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")

@@ -129,6 +129,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+extern const int UNACCEPTABLE_URL;
 extern const int FILE_ALREADY_EXISTS;
 extern const int FILE_DOESNT_EXIST;
 }
@@ -1768,7 +1769,7 @@ std::vector<Iceberg::ExternalFile> IcebergMetadata::collectExternalFilesToDelete
         /// Permanent path rejections and missing metadata cannot succeed on retry; rethrow only transient failures.
         if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::NOT_IMPLEMENTED
             && e.code() != ErrorCodes::SUPPORT_IS_DISABLED && e.code() != ErrorCodes::PATH_ACCESS_DENIED
-            && e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+            && e.code() != ErrorCodes::FILE_DOESNT_EXIST && e.code() != ErrorCodes::UNACCEPTABLE_URL)
             throw;
 
         LOG_ERROR(
