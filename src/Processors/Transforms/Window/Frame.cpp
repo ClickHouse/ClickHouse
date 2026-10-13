@@ -25,14 +25,14 @@ bool advanceToPartitionEnd(const Partition & partition, RowPoint & bound)
     if (!partition.bounds().fully_visible)
         return false;
 
-    bound = partition.endPoint();
+    bound = partition.bounds().end;
     return true;
 }
 
 /// The bound of a ROWS frame at a row index, cut to the partition; under ROWS every row is its own peer group.
 bool advanceToRow(const SlidingBlocks & blocks, const Partition & partition, int64_t target_row_index, RowPoint & bound)
 {
-    if (target_row_index >= partition.size())
+    if (target_row_index >= partition.bounds().end.row_index_in_partition)
         return advanceToPartitionEnd(partition, bound);
 
     const int64_t row_index = std::max<int64_t>(target_row_index, 0);
@@ -49,8 +49,8 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const Partition & partitio
     if (bound.peer_group_index_in_partition >= group)
         return true;
 
-    const RowNumber partition_end = partition.bounds().end;
-    if (partition.bounds().fully_visible && group >= partition.endPoint().peer_group_index_in_partition)
+    const RowNumber partition_end = partition.bounds().end.location;
+    if (partition.bounds().fully_visible && group >= partition.bounds().end.peer_group_index_in_partition)
         return advanceToPartitionEnd(partition, bound);
 
     while (bound.location != partition_end)
@@ -81,7 +81,7 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
     const bool offset_is_preceding = frame_preceding == (direction > 0);
     const size_t key_position = params.order_by_indices[0];
     const IColumn * current_key_column = blocks.blockAt(current.location.block).materialized_columns[key_position].get();
-    const RowNumber partition_end = partition.bounds().end;
+    const RowNumber partition_end = partition.bounds().end.location;
     while (bound.location != partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
