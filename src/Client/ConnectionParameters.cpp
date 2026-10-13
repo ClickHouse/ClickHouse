@@ -12,6 +12,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/JWTProvider.h>
 
 #include <readpassphrase/readpassphrase.h>
 
@@ -283,6 +284,17 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
 #endif
 
 }
+
+#if USE_JWT_CPP && USE_SSL
+void ConnectionParameters::refreshJWT()
+{
+    if (!jwt_provider || jwt.empty())
+        return;
+
+    if (auto current_jwt = jwt_provider->getJWT(); !current_jwt.empty())
+        jwt = std::move(current_jwt);
+}
+#endif
 
 ConnectionParameters ConnectionParameters::createForEmbedded(const String & user, const String & database)
 {

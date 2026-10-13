@@ -9,6 +9,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/SettingsChanges.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -71,6 +72,8 @@ public:
             bool has_vertical_output_suffix_ = false,
             bool inline_insert_data_ = false,
             bool allow_merge_tree_settings_ = false,
+            SettingsChanges merge_tree_settings_changes_ = {},
+            bool default_format_is_for_terminal_ = false,
             QueryProcessingStage::Enum query_processing_stage_ = QueryProcessingStage::Enum::Complete,
             ClientInfo::QueryKind query_kind_ = ClientInfo::QueryKind::INITIAL_QUERY);
 
@@ -86,6 +89,8 @@ public:
         bool has_vertical_output_suffix = false;
         bool inline_insert_data = false;
         bool allow_merge_tree_settings = false;
+        SettingsChanges merge_tree_settings_changes;
+        bool default_format_is_for_terminal = false;
         QueryProcessingStage::Enum query_processing_stage = QueryProcessingStage::Enum::Complete;
         ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
     };

@@ -365,6 +365,8 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             has_vertical_output_suffix,
             inline_insert_data,
             allow_merge_tree_settings,
+            cmd_merge_tree_settings->changes(),
+            is_interactive,
             query_processing_stage,
             query_kind);
         const auto id = background_queries.start(
@@ -613,6 +615,8 @@ bool Client::tryExecuteDetachableQuery(
         has_vertical_output_suffix,
         inline_insert_data,
         allow_merge_tree_settings,
+        cmd_merge_tree_settings->changes(),
+        is_interactive,
         query_processing_stage,
         query_kind);
 

@@ -1104,7 +1104,7 @@ try
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
-                if (is_interactive && is_default_format)
+                if ((is_interactive || default_format_is_for_terminal) && is_default_format)
                     current_format = "TabSeparated";
             }
             if (query_with_output->format_ast != nullptr)

@@ -57,6 +57,12 @@ struct ConnectionParameters
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config_, const Host & host_, const Database & database_);
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config_, const Host & host_, const Database & database_, std::optional<UInt16> port_);
 
+#if USE_JWT_CPP && USE_SSL
+    /// Replaces `jwt` with the current token of `jwt_provider`, which refreshes it when it is expired or about to expire.
+    /// For parameters copied from a login that happened a while ago, e.g. by a background job.
+    void refreshJWT();
+#endif
+
     static UInt16 getPortFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host);
 
     /// Ask to enter the user's password if password option contains this value.

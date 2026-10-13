@@ -97,6 +97,12 @@ JWTProvider::JWTProvider(
 
 std::string JWTProvider::getJWT()
 {
+    std::lock_guard lock(token_mutex);
+    return fetchJWT();
+}
+
+std::string JWTProvider::fetchJWT()
+{
     Poco::Timestamp now;
     Poco::Timestamp expiration_buffer = 15 * Poco::Timespan::SECONDS;
 

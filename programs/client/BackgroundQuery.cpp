@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
 #include <Common/QueryScope.h>
@@ -36,6 +37,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include "config.h"
 
 namespace DB
 {
@@ -382,6 +385,8 @@ public:
         bool has_vertical_output_suffix_,
         bool inline_insert_data_,
         bool allow_merge_tree_settings_,
+        const SettingsChanges & merge_tree_settings_changes_,
+        bool default_format_is_for_terminal_,
         QueryProcessingStage::Enum query_processing_stage_,
         ClientInfo::QueryKind query_kind_,
         const std::atomic_bool & cancellation_requested_,
@@ -438,6 +443,9 @@ public:
         query_kind = query_kind_;
         inline_insert_data = inline_insert_data_;
         allow_merge_tree_settings = allow_merge_tree_settings_;
+        /// The foreground applies the changed engine settings to each `CREATE TABLE`; do the same here.
+        cmd_merge_tree_settings->applyChangesLeavingDiskUnresolved(merge_tree_settings_changes_);
+        default_format_is_for_terminal = default_format_is_for_terminal_;
         /// sendQuery advertises pending external data. Even with no external
         /// tables, ClientBase must send the terminating empty Data block.
         send_external_tables = true;
@@ -535,6 +543,10 @@ private:
 
     void connect() override
     {
+#if USE_JWT_CPP && USE_SSL
+        /// The login token of the snapshot can be expired by now: the foreground refreshes its own copy.
+        connection_parameters.refreshJWT();
+#endif
         connection = Connection::createConnection(connection_parameters, client_context);
         connection_parameters.adopted_socket.reset();
 
@@ -957,6 +969,8 @@ struct BackgroundQueryManager::Impl
                 snapshot->has_vertical_output_suffix,
                 snapshot->inline_insert_data,
                 snapshot->allow_merge_tree_settings,
+                snapshot->merge_tree_settings_changes,
+                snapshot->default_format_is_for_terminal,
                 snapshot->query_processing_stage,
                 snapshot->query_kind,
                 job->cancel_requested,
@@ -1106,6 +1120,8 @@ BackgroundQueryManager::Snapshot::Snapshot(
     bool has_vertical_output_suffix_,
     bool inline_insert_data_,
     bool allow_merge_tree_settings_,
+    SettingsChanges merge_tree_settings_changes_,
+    bool default_format_is_for_terminal_,
     QueryProcessingStage::Enum query_processing_stage_,
     ClientInfo::QueryKind query_kind_)
     : context(std::move(context_))
@@ -1120,6 +1136,8 @@ BackgroundQueryManager::Snapshot::Snapshot(
     , has_vertical_output_suffix(has_vertical_output_suffix_)
     , inline_insert_data(inline_insert_data_)
     , allow_merge_tree_settings(allow_merge_tree_settings_)
+    , merge_tree_settings_changes(std::move(merge_tree_settings_changes_))
+    , default_format_is_for_terminal(default_format_is_for_terminal_)
     , query_processing_stage(query_processing_stage_)
     , query_kind(query_kind_)
 {
