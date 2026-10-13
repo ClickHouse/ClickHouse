@@ -40,15 +40,6 @@ STORAGE_CHANGE_THRESHOLD_BYTES = 1024
 ACCEPT_INCREASE_LABELS = (Labels.MEMORY, Labels.PR_PERFORMANCE)
 
 
-def get_pr_labels() -> list[str]:
-    info = Info()
-    # `Info().pr_labels` is a snapshot from the workflow start; a rerun must see labels added later.
-    return GH.get_output_with_retries(
-        f"gh pr view {info.pr_number} --repo {info.repo_name} --json labels --jq '.labels[].name'",
-        strict=True,
-    ).splitlines()
-
-
 def find_heap_profile(profiles_dir: Path, prefix: str, checkpoint: str) -> str:
     matches = glob.glob(str(profiles_dir / f"{prefix}{checkpoint}.*.heap"))
     if len(matches) != 1:
@@ -335,7 +326,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
         )
         increase = significant and change > 0
         if increase and accept_increases is None:
-            accept_increases = set(ACCEPT_INCREASE_LABELS).issubset(get_pr_labels())
+            accept_increases = set(ACCEPT_INCREASE_LABELS).issubset(Info().pr_labels) or set(ACCEPT_INCREASE_LABELS).issubset(GH.get_pr_labels())
         if increase and not accept_increases:
             status = Result.Status.FAIL
             regressions += 1
