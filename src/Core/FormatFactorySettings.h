@@ -2008,8 +2008,6 @@ When converting UTF-16 or UTF-32 input to UTF-8, replace invalid byte sequences 
 )", 0, \
         {"26.10", false, true, "New setting to control whether invalid UTF sequences are replaced with U+FFFD or throw an exception."}) \
 
-
-
 // End of FORMAT_FACTORY_SETTINGS
 
 #define OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
