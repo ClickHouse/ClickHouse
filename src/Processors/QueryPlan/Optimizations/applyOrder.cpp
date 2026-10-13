@@ -46,6 +46,25 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
+/// Whether `step` is a join that emits the rows of its probe side (`children.front()`) in their
+/// original order, with the same conditions as `findReadingStep` in `optimizeReadInOrder`.
+static bool isOrderPreservingJoinStep(const IQueryPlanStep & step)
+{
+    const IJoin * join = nullptr;
+    if (const auto * join_step = typeid_cast<const JoinStep *>(&step))
+        join = join_step->getJoin().get();
+    else if (const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(&step))
+        join = filled_join_step->getJoin().get();
+
+    if (!join)
+        return false;
+
+    const auto & table_join = join->getTableJoin();
+    auto strictness = table_join.strictness();
+    return (strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(table_join.kind())
+        && !join->hasDelayedBlocks() && join->preservesLeftBlockOrder();
+}
+
 /// Marks the reading step below `node` as preferring multiple streams, so that per-stream work
 /// installed above it (the pre-distinct transforms of distinct-in-order, the per-stream `LIMIT BY`
 /// pre-filter of `pushLimitByIntoSort`) is not collapsed into a single stream and serialized by
@@ -55,7 +74,8 @@ struct SortingProperty
 /// `optimizeDistinctInOrder`. The latter sets `prefer_multiple_streams` on the underlying
 /// `ReadFromMergeTree` itself. When distinct order is applied from sorting properties instead, the
 /// reading step does not get that signal, so we propagate it here by descending through
-/// order-preserving steps (and into every branch of a `UnionStep`) to the reading steps.
+/// order-preserving steps (into every branch of a `UnionStep`, and into the probe side of an
+/// order-preserving join) to the reading steps.
 void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
 {
     while (node)
@@ -95,6 +115,16 @@ void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
             for (auto * child : node->children)
                 preferMultipleStreamsForReadingBelow(child);
             return;
+        }
+
+        /// A `JoinStep` or a `FilledJoinStep` that keeps the order of its probe side runs one
+        /// `JoiningTransform` per probe-side stream, and `optimizeReadInOrder` reads the probe side in
+        /// order through it (see `findReadingStep`), so the per-stream work above the join depends on
+        /// the probe-side read staying parallel. Follow the probe side, which is `children.front()`.
+        if (isOrderPreservingJoinStep(*step))
+        {
+            node = node->children.front();
+            continue;
         }
 
         if (node->children.size() != 1)
