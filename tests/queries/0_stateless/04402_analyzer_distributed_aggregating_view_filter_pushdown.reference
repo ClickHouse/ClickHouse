@@ -48,6 +48,12 @@
 --- HAVING with subquery reading a table function
 2024-01-05	60002
 0	1
+--- HAVING with GLOBAL IN subquery reading a table
+2024-01-05	60002
+1	0
+--- HAVING with GLOBAL NOT IN subquery reading a table function
+9
+1	0
 --- WITH ROLLUP
 2024-01-05	60002
 --- WITH TOTALS

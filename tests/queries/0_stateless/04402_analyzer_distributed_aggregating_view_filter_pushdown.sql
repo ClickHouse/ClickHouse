@@ -158,6 +158,30 @@ FROM (
         HAVING date IN (SELECT toDate('2024-01-05') + x % 1 FROM generateRandom('x UInt8') LIMIT 1)
 );
 
+-- The set of `GLOBAL IN` is computed on the initiator and sent to every shard, so the conjunct is moved to the shard `WHERE`.
+SELECT '--- HAVING with GLOBAL IN subquery reading a table';
+SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date GLOBAL IN (SELECT date FROM t_dates_04402);
+SELECT
+    countIf(explain ILIKE '%Condition:%date in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date GLOBAL IN (SELECT date FROM t_dates_04402)
+);
+SELECT '--- HAVING with GLOBAL NOT IN subquery reading a table function';
+SELECT count() FROM (
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date
+        HAVING date GLOBAL NOT IN (SELECT toDate('2024-01-05') + number FROM numbers(1))
+);
+SELECT
+    countIf(explain ILIKE '%Condition:%date%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date
+        HAVING date GLOBAL NOT IN (SELECT toDate('2024-01-05') + number FROM numbers(1))
+);
+
 -- The predicate is not moved for ROLLUP and TOTALS, where it would change the super-aggregate rows.
 SELECT '--- WITH ROLLUP';
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date WITH ROLLUP HAVING date = '2024-01-05' ORDER BY date;

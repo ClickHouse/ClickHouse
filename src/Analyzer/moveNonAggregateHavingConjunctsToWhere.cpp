@@ -5,6 +5,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <TableFunctions/ITableFunction.h>
@@ -37,6 +38,8 @@ namespace
   * servers: if it contains a function that is not deterministic at all (like `shardNum`, `hostName` or `dictGet`),
   * or reads a table or a table function, in a subquery or as the right-hand side of `IN`. A subquery without `FROM`,
   * which reads `system.one`, is still moved.
+  * The right-hand side of the `GLOBAL IN` family is an exception: the initiator computes the set once and sends the same
+  * temporary table to every server, so it is not server-dependent.
   */
 enum class HavingConjunctMoveAction
 {
@@ -56,11 +59,18 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
             verdict = HavingConjunctMoveAction::KeepInHaving;
     };
 
-    /// The second element is true for the nodes inside a subquery.
-    std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_visit = {{node, false}};
+    struct NodeToVisit
+    {
+        QueryTreeNodePtr node;
+        bool inside_subquery = false;
+        /// False for the right-hand side of the `GLOBAL IN` family, which is the same on every server.
+        bool check_server_dependent = false;
+    };
+
+    std::vector<NodeToVisit> nodes_to_visit = {{node, false, keep_server_dependent_conjuncts}};
     while (!nodes_to_visit.empty())
     {
-        auto [current, inside_subquery] = std::move(nodes_to_visit.back());
+        auto [current, inside_subquery, check_server_dependent] = std::move(nodes_to_visit.back());
         nodes_to_visit.pop_back();
 
         auto current_type = current->getNodeType();
@@ -70,20 +80,20 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
         if (auto * constant_node = current->as<ConstantNode>())
         {
             /// A secondary server folds functions like `shardNum` into constants.
-            if (keep_server_dependent_conjuncts && !constant_node->isDeterministic())
+            if (check_server_dependent && !constant_node->isDeterministic())
                 keep_in_having();
         }
         else if (auto * table_function_node = current->as<TableFunctionNode>())
         {
             const auto & table_function = table_function_node->getTableFunction();
-            if (keep_server_dependent_conjuncts || !table_function || !table_function->isDeterministicInScopeOfQuery())
+            if (check_server_dependent || !table_function || !table_function->isDeterministicInScopeOfQuery())
                 keep_in_having();
         }
         else if (auto * table_node = current->as<TableNode>())
         {
             const auto & storage_id = table_node->getStorageID();
             bool is_system_one = storage_id.database_name == "system" && storage_id.table_name == "one";
-            if (keep_server_dependent_conjuncts && !is_system_one)
+            if (check_server_dependent && !is_system_one)
                 keep_in_having();
         }
         else if (auto * function_node = current->as<FunctionNode>())
@@ -96,7 +106,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                     if (function_base
                         && (function_base->isStateful()
                             || !function_base->isDeterministicInScopeOfQuery()
-                            || (keep_server_dependent_conjuncts && !function_base->isDeterministic())))
+                            || (check_server_dependent && !function_base->isDeterministic())))
                         keep_in_having();
                 }
             }
@@ -113,7 +123,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                             return HavingConjunctMoveAction::AbortRewrite;
 
                         if (!function_base->isDeterministicInScopeOfQuery()
-                            || (keep_server_dependent_conjuncts && !function_base->isDeterministic()))
+                            || (check_server_dependent && !function_base->isDeterministic()))
                             keep_in_having();
                     }
                 }
@@ -132,9 +142,19 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
             }
         }
 
+        const auto * current_function = current->as<FunctionNode>();
+        if (current_function && isNameOfGlobalInFunction(current_function->getFunctionName()))
+        {
+            const auto & arguments = current_function->getArguments().getNodes();
+            for (size_t i = 0; i < arguments.size(); ++i)
+                if (arguments[i])
+                    nodes_to_visit.push_back({arguments[i], inside_subquery, check_server_dependent && i != 1});
+            continue;
+        }
+
         for (const auto & child : current->getChildren())
             if (child)
-                nodes_to_visit.emplace_back(child, inside_subquery);
+                nodes_to_visit.push_back({child, inside_subquery, check_server_dependent});
     }
 
     return verdict;

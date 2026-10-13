@@ -19,6 +19,7 @@ class QueryNode;
   * With `keep_server_dependent_conjuncts`, conjuncts whose result may differ between servers also stay in `HAVING`:
   * the ones with functions like `shardNum` or `dictGet`, or reading a table or a table function. This is needed when
   * the query runs on a shard, while `HAVING` would be executed on the initiator.
+  * The right-hand side of `GLOBAL IN` is not considered server-dependent, because the initiator sends the same set to every server.
   * If any conjunct contains a window function or a stateful function, nothing is moved.
   * Nothing is moved for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` and `GROUPING SETS`, because
   * there the result of `HAVING` depends on the super-aggregate rows or on the totals.
