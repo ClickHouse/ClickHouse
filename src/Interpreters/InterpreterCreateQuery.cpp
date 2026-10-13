@@ -2276,10 +2276,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (create.is_ordinary_view || create.is_materialized_view
             || create.is_dictionary || create.attach || create.is_clone_as
-            || create.replace_table || create.replace_view)
+            || create.replace_table || create.replace_view || create.as_table_function)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "DataLakeCatalog supports only plain CREATE TABLE; "
-                "views, dictionaries, ATTACH, CLONE AS, and REPLACE TABLE are not allowed");
+                "views, dictionaries, ATTACH, CLONE AS, REPLACE TABLE, and AS table function are not allowed");
 
         if (engine_user_specified)
             database->validateCreateTableEngine(*create.storage);

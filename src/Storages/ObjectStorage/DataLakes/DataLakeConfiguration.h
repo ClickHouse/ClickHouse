@@ -376,6 +376,7 @@ public:
 
     void drop(bool delete_data) override
     {
+        /// With `delete_data`, `StorageObjectStorage::prepareForDrop` has loaded the metadata.
         if (auto metadata = tryGetMetadata())
             metadata->drop(delete_data);
     }

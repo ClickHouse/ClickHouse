@@ -52,14 +52,17 @@ extern const int LOGICAL_ERROR;
 }
 
 
-void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, ContextPtr context)
+void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Strings & default_databases)
 {
     /// `RENAME` / `EXCHANGE TABLE` is `ASTRenameQuery`, which does not derive from `ASTQueryWithTableAndOutput`;
     /// queries with no target table (`CREATE DATABASE`, `SYSTEM`, ...) contribute none.
     std::vector<String> target_databases;
     const auto add_target_database = [&](String name)
     {
-        target_databases.push_back(name.empty() ? context->getCurrentDatabase() : std::move(name));
+        if (name.empty())
+            target_databases.insert(target_databases.end(), default_databases.begin(), default_databases.end());
+        else
+            target_databases.push_back(std::move(name));
     };
 
     if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get());
@@ -131,9 +134,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed execution is not supported for such DDL queries");
     }
-
-    /// Initiator-side guard; workers re-check in `DDLWorker::tryExecuteQuery`.
-    checkQueryDatabasesSupportOnClusterDDL(query_ptr, context);
 
     if (!context->getSettingsRef()[Setting::allow_distributed_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Distributed DDL queries are prohibited for the user");
@@ -236,6 +236,11 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     AddDefaultDatabaseVisitor visitor(context, current_database, !use_local_default_database);
     visitor.visitDDL(query_ptr);
+
+    /// Initiator-side guard; workers re-check in `DDLWorker::tryExecuteQuery`. A table name still bare after the
+    /// rewrite above is resolved on each host against its `default_database` from the cluster definition, so it is
+    /// checked against those databases rather than against the initiator's current one.
+    checkQueryDatabasesSupportOnClusterDDL(query_ptr, access_check_default_databases);
 
     /// Check access rights, assume that all servers have the same users config
     context->checkAccess(access_to_check);

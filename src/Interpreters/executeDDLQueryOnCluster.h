@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Core/Types.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -29,8 +30,9 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type);
 /// Throws if DDL against this database's tables does not support `ON CLUSTER`.
 void checkDatabaseSupportsOnClusterDDL(const DatabasePtr & database);
 
-/// Same, for every database the query targets.
-void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, ContextPtr context);
+/// Same, for every database the query targets. A bare table name is checked against each of
+/// `default_databases`, the databases the hosts resolve it to.
+void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Strings & default_databases);
 
 struct DDLQueryOnClusterParams
 {

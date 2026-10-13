@@ -66,6 +66,7 @@ namespace DB::ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int NOT_IMPLEMENTED;
     extern const int S3_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace DB::FailPoints
@@ -795,10 +796,29 @@ bool GlueCatalog::createTable(
         catch (const DB::Exception & e)
         {
             /// The write is guarded by `If-None-Match: *`, so S3 answers `PreconditionFailed` once the
-            /// initial metadata file is there - someone else created this table first.
-            if (if_not_exists && e.code() == DB::ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-                return false;
-            throw;
+            /// initial metadata file is there.
+            if (e.code() != DB::ErrorCodes::S3_ERROR || !e.message().contains("PreconditionFailed"))
+                throw;
+
+            /// Someone else created this table first.
+            if (existsTable(namespace_name, table_name))
+            {
+                if (if_not_exists)
+                    return false;
+                throw DB::Exception(
+                    DB::ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog", namespace_name, table_name);
+            }
+
+            /// Not a table but a dirty location. Not `TABLE_ALREADY_EXISTS`, which `IF NOT EXISTS` turns into a no-op.
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "The Glue catalog has no table {}.{} registered, but the Iceberg metadata file s3://{}/{} is already present, "
+                "so creating the table there would clash with it. This is usually left behind by a previous `DROP TABLE`, "
+                "which keeps the data and metadata in place: remove the leftover files, or create the table at a different location",
+                namespace_name,
+                table_name,
+                bucket_name,
+                metadata_filename);
         }
 
         written_metadata_storage = object_storage;

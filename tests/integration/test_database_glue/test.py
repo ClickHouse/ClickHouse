@@ -1021,6 +1021,37 @@ def test_native_create_gzip_metadata(started_cluster):
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
 
 
+def test_native_create_if_not_exists_over_leftover_metadata(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_leftover_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    settings = {
+        "allow_experimental_database_glue_catalog": 1,
+        "allow_database_glue_catalog": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
+        settings=settings,
+    )
+    # The Glue catalog keeps the metadata file at the table location after DROP.
+    drop_clickhouse_glue_table(node, root_namespace, table_name)
+
+    catalog = load_catalog_impl(started_cluster)
+    assert len(catalog.list_tables(root_namespace)) == 0
+
+    err = node.query_and_get_error(
+        f"CREATE TABLE IF NOT EXISTS {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
+        settings=settings,
+    )
+    assert "left behind by a previous `DROP TABLE`" in err, err
+    assert len(catalog.list_tables(root_namespace)) == 0
+
+
 def test_create_table_engine_backend_mismatch_rejected(started_cluster):
     node = started_cluster.instances["node1"]
 

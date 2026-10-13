@@ -1003,7 +1003,13 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::prepareForDrop(ContextPtr query_context)
 {
-    delete_data_on_drop = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
+    const bool delete_data = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
+    /// `drop` runs in the background, where the metadata of a table that has not been accessed since the server
+    /// started is still unloaded and `configuration->drop` would find nothing to delete: load it now, with the
+    /// query context at hand. A catalog table is purged by the catalog instead.
+    if (delete_data && !catalog && configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, query_context);
+    delete_data_on_drop = delete_data;
 }
 
 void StorageObjectStorage::drop()

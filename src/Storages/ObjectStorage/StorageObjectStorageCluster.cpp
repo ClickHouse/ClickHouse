@@ -300,7 +300,11 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
 
 void StorageObjectStorageCluster::prepareForDrop(ContextPtr query_context)
 {
-    delete_data_on_drop = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
+    const bool delete_data = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
+    /// See `StorageObjectStorage::prepareForDrop`.
+    if (delete_data && !catalog && configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, query_context);
+    delete_data_on_drop = delete_data;
 }
 
 void StorageObjectStorageCluster::drop()

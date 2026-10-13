@@ -2413,6 +2413,7 @@ def test_create_non_table_rejected(started_cluster):
         f"CREATE MATERIALIZED VIEW {CATALOG_NAME}.`ns.mv` ENGINE = Memory AS SELECT 1",
         f"ATTACH TABLE {CATALOG_NAME}.`ns.attached` (x Int32) ENGINE = Memory",
         f"CREATE OR REPLACE TABLE {CATALOG_NAME}.`ns.replaced` (x Int32)",
+        f"CREATE TABLE {CATALOG_NAME}.`ns.from_table_function` AS numbers(10)",
     ]:
         err = node.query_and_get_error(ddl, settings={"allow_database_iceberg": 1})
         assert "supports only plain CREATE TABLE" in err

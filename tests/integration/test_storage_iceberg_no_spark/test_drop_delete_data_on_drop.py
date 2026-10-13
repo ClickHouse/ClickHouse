@@ -60,3 +60,31 @@ def test_drop_honours_query_level_delete_data_on_drop(
         )
     else:
         assert _files_left(started_cluster_iceberg_no_spark, storage_type, table_name) > 0
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_drop_deletes_data_of_table_not_read_since_attach(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = f"test_delete_data_on_drop_after_attach_{storage_type}_{get_uuid_str()}"
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(x String, y Int64)",
+    )
+    instance.query(f"INSERT INTO {table_name} VALUES ('123', 1)")
+    assert _files_left(started_cluster_iceberg_no_spark, storage_type, table_name) > 0
+
+    # A re-attached table loads its metadata lazily, so nothing has read it before the DROP.
+    instance.query(f"DETACH TABLE {table_name}")
+    instance.query(f"ATTACH TABLE {table_name}")
+    instance.query(
+        f"DROP TABLE {table_name} SYNC",
+        settings={"data_lake_delete_data_on_drop": 1},
+    )
+
+    assert _files_left(started_cluster_iceberg_no_spark, storage_type, table_name) == 0
