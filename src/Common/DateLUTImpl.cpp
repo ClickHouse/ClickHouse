@@ -159,7 +159,7 @@ bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
     return !::getTimeZone(time_zone_name).empty();
 }
 
-DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut is fully assigned below
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
@@ -362,19 +362,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         years_months_lut[year_months_lut_index] = first_day_of_last_month;
     }
 
-    /// Fill saturated LUT.
-    {
-        ssize_t day = DATE_LUT_SIZE - 1;
-        for (; day >= 0; --day)
-        {
-            if (lut[day].date >= 0)
-                lut_saturated[day] = lut[day];
-            else
-                break;
-        }
-        for (; day >= 0; --day)
-            lut_saturated[day] = lut_saturated[day + 1];
-    }
+    first_non_negative_date = std::partition_point(lut, lut + DATE_LUT_SIZE, [](const Values & values) { return values.date < 0; })->date;
 }
 
 DateLUTImpl::~DateLUTImpl() = default;
