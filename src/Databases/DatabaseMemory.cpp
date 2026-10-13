@@ -180,8 +180,12 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     /// Unqualified names in the stored definition are resolved against the database that owns the table
     /// (as on the metadata loading path), not against the current database of the session that issued
     /// the `ALTER`, so that a metadata-only `ALTER` does not move the dependencies of the table.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, table_id.database_name);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, table_id.database_name);
+    /// Temporary objects belong to no database, so their names are resolved against the current database
+    /// of the session, as on the `CREATE` path (`getDatabaseForUnqualifiedNames` in `InterpreterCreateQuery`).
+    const bool is_temporary_database = getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+    const String database_for_unqualified_names = is_temporary_database ? local_context->getCurrentDatabase() : table_id.database_name;
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, database_for_unqualified_names);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, database_for_unqualified_names);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
 
     {
@@ -194,7 +198,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     /// (e.g. `MODIFY COMMENT`) on a temporary view would make permanent source tables report the
     /// session-local `_temporary_and_external_tables._tmp_<uuid>` object in `system.tables.dependencies_*`.
     /// This mirrors the guard on the `CREATE` path in `InterpreterCreateQuery`.
-    auto plain_view_dependencies = getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE ? TableNamesSet{} : ref_dependencies.plain_view_dependencies;
+    auto plain_view_dependencies = is_temporary_database ? TableNamesSet{} : ref_dependencies.plain_view_dependencies;
 
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{}, plain_view_dependencies);
 }
