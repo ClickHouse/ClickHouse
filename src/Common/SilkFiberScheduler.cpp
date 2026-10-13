@@ -50,7 +50,9 @@ struct FiberContext
         try
         {
             DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
-            return self->task();
+            /// Destroy the captures before returning: silk sets the future first and frees the fiber later.
+            auto task = std::move(self->task);
+            return task();
         }
         catch (...)
         {
