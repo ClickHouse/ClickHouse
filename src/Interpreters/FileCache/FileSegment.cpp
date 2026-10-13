@@ -307,6 +307,18 @@ String FileSegment::getOrSetDownloader()
     return current_downloader;
 }
 
+bool FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
+{
+    auto lk = lock();
+
+    if (download_state != State::PARTIALLY_DOWNLOADED || !getDownloaderUnlocked(lk).empty())
+        return false;
+
+    getOrCreateDownloadDataUnlocked(lk).downloader_id = getCallerId();
+    setDownloadState(State::DOWNLOADING, lk);
+    return true;
+}
+
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
 {
     chassert(isDownloaderUnlocked(lock));
@@ -1488,7 +1500,30 @@ void FileSegment::increasePriority()
         auto it = getQueueIterator();
         if (it)
         {
-            if (!cache->tryIncreasePriority(*this))
+            /// A move between priority queues must not run concurrently with a space reservation for
+            /// this segment. A completed segment never reserves again. A partially downloaded one is
+            /// safe while we hold its downloader role, because only the downloader reserves.
+            /// Only an entry of the SLRU probationary queue can move, so take the role only for it.
+            const bool is_completed = isCompleted();
+            const bool holds_downloader = !is_completed
+                && it->getNestedOrThis()->getType() == QueueEntryType::SLRU_Probationary
+                && tryTakeDownloaderOfPartiallyDownloaded();
+
+            bool increased = false;
+            try
+            {
+                increased = cache->tryIncreasePriority(*it, is_completed || holds_downloader);
+            }
+            catch (...)
+            {
+                if (holds_downloader)
+                    resetDownloader();
+                throw;
+            }
+            if (holds_downloader)
+                resetDownloader();
+
+            if (!increased)
                 ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
             /// Used only for system.filesystem_cache.

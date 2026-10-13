@@ -278,6 +278,9 @@ private:
     const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
+    /// Takes the downloader role of a `PARTIALLY_DOWNLOADED` segment that has no downloader.
+    /// Only the downloader reserves space, so no reservation runs until `resetDownloader`.
+    bool tryTakeDownloaderOfPartiallyDownloaded();
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
