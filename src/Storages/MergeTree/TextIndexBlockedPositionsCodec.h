@@ -14,7 +14,7 @@ namespace DB
 /// Blocked candidate-driven positions codec (the text index positions layout).
 ///
 /// One token's positions as per-document lists, chunked into blocks of BLOCK_DOCS consecutive
-/// posting ranks. No doc ids and no freq lane in the stream: block b covers postings entries
+/// posting ranks. No doc ids in the stream: block b covers postings entries
 /// [b*BLOCK_DOCS, (b+1)*BLOCK_DOCS), so a posting cursor's rank addresses a document directly and a
 /// phrase query fetches only the blocks covering its candidate rows.
 ///
@@ -25,9 +25,8 @@ namespace DB
 ///     num_blocks x payload, back to back
 ///
 /// Block payload (docs_in_block = min(BLOCK_DOCS, num_docs - b*BLOCK_DOCS)):
-///     [VarUInt: num_exceptions]
-///     num_exceptions x [VarUInt: local_rank][VarUInt: freq]   (ascending local_rank; freq >= 2;
-///                                                              a document's freq defaults to 1)
+///     [VarUInt: freq_bytes]                        (0 when every document has one position)
+///     [PFor: docs_in_block x (freq - 1)]           (freq_bytes long)
 ///     [PFor: total_positions UInt32 values]        (total_positions = docs_in_block + sum(freq - 1);
 ///                                                   within-document deltas in posting order, the
 ///                                                   first position of each document absolute)
@@ -60,6 +59,7 @@ public:
         PaddedPODArray<char> payload;
         PaddedPODArray<UInt64> doc_offsets;
         PaddedPODArray<UInt32> values;
+        PaddedPODArray<UInt32> freqs;
     };
 
     /// Streams one token's position lists in posting order; full blocks are compressed as they fill.
@@ -81,9 +81,12 @@ public:
         /// Deltas of the open block's finished documents, then the open document's raw positions.
         PaddedPODArray<UInt32, 64> values;
         size_t open_document_begin = 0;
-        /// (local rank, frequency) of the open block's documents with more than one position.
-        PODArray<UInt32, 16> exceptions;
+        /// One per document of the open block.
+        PODArray<UInt32, 64> frequencies_minus_one;
+        bool has_frequency_run = false;
         size_t docs_in_block = 0;
+        /// Frequency run of the open block, encoded before its size is written.
+        PaddedPODArray<UInt8> runs;
         /// Payloads of the sealed blocks.
         PaddedPODArray<UInt8> staged;
         PODArray<UInt64, 16> block_bytes;
