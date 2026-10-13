@@ -5,14 +5,18 @@
 DROP TABLE IF EXISTS t_packed_spill;
 DROP TABLE IF EXISTS t_packed_spill_reference;
 
+-- The index granularity is fixed: with a small randomized one, the parts have many granules,
+-- and their merges and mutations are too slow in debug builds with the thread fuzzer.
 CREATE TABLE t_packed_spill (id UInt64, s String, a Array(UInt64), PROJECTION p_by_s (SELECT id, s ORDER BY s))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_full_part_storage = '100G', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi',
+    min_bytes_for_full_part_storage = '100G', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     max_bytes_to_buffer_for_packed_part = 65536;
 
 CREATE TABLE t_packed_spill_reference (id UInt64, s String, a Array(UInt64))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_full_part_storage = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi',
+    min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_packed_spill SELECT number, toString(number * 7919 % 100003), range(number % 10) FROM numbers(200000)
 SETTINGS async_insert = 0, log_comment = '05366_insert';

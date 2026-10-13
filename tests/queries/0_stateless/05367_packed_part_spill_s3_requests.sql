@@ -8,14 +8,18 @@
 DROP TABLE IF EXISTS t_packed_s3_spill;
 DROP TABLE IF EXISTS t_packed_s3_no_spill;
 
+-- The index granularity is fixed: with a small randomized one, the parts have many granules,
+-- and their merges and mutations are too slow in debug builds with the thread fuzzer.
 CREATE TABLE t_packed_s3_spill (id UInt64, s String, a Array(UInt64))
 ENGINE = MergeTree ORDER BY id
-SETTINGS storage_policy = 's3_no_cache', min_bytes_for_full_part_storage = '1T', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS storage_policy = 's3_no_cache', index_granularity = 8192, index_granularity_bytes = '10Mi',
+    min_bytes_for_full_part_storage = '1T', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     max_bytes_to_buffer_for_packed_part = 65536;
 
 CREATE TABLE t_packed_s3_no_spill (id UInt64, s String, a Array(UInt64))
 ENGINE = MergeTree ORDER BY id
-SETTINGS storage_policy = 's3_no_cache', min_bytes_for_full_part_storage = '1T', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS storage_policy = 's3_no_cache', index_granularity = 8192, index_granularity_bytes = '10Mi',
+    min_bytes_for_full_part_storage = '1T', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     max_bytes_to_buffer_for_packed_part = 0;
 
 SYSTEM STOP MERGES t_packed_s3_spill;
