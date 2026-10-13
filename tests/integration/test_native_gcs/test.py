@@ -567,7 +567,7 @@ def test_iceberg_on_a_native_gcs_disk(started_cluster):
 
     node.query("DROP TABLE IF EXISTS gcs_iceberg SYNC")
     node.query(
-        "CREATE TABLE gcs_iceberg (a UInt64, b String) "
+        "CREATE TABLE gcs_iceberg (a Int64, b String) "
         "ENGINE = Iceberg(path = 'table1/', format = Parquet) "
         "SETTINGS disk = 'gcs_iceberg_disk', iceberg_use_version_hint = 1"
     )
@@ -643,7 +643,7 @@ def test_iceberg_on_a_native_gcs_disk_keeps_the_access_token(started_cluster):
 
     node.query("DROP TABLE IF EXISTS gcs_iceberg_adc SYNC")
     node.query(
-        "CREATE TABLE gcs_iceberg_adc (a UInt64) "
+        "CREATE TABLE gcs_iceberg_adc (a Int64) "
         "ENGINE = Iceberg(path = 'table1/', format = Parquet) "
         "SETTINGS disk = 'gcs_iceberg_adc_disk'"
     )
