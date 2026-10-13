@@ -29,7 +29,9 @@ was unavailable.
 
 Relatedness never rests on a record this triage could have written itself: only
 an open issue opened before the tested change, and not filed by triage of a PR
-run, counts as proof that the failure is older (`independent_occurrences`).
+run, counts as proof that the failure is older (`independent_occurrences`). A
+fingerprint found only in closed issues is a fixed bug that came back, which the
+PR may have reintroduced, so it keeps a PR run red (`fixed_occurrences`).
 
 PRs authored by an agent that already triages its own failures are skipped
 (`SELF_TRIAGING_AUTHORS`); their post-merge runs are not.
@@ -51,6 +53,7 @@ import time
 import traceback
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 from ci.jobs.scripts.agent import (
     AGENT_MODEL,
@@ -197,7 +200,7 @@ NO_FINGERPRINT_NOTE = """\
 """
 
 
-def _occurrences_note(fingerprint, occurrences, change, weight):
+def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint):
     if not fingerprint:
         return NO_FINGERPRINT_NOTE
     if occurrences is None:
@@ -206,12 +209,22 @@ def _occurrences_note(fingerprint, occurrences, change, weight):
   its fingerprint may have been written by this same triage, so it is not
   evidence: do not look for one here. Judge from the code and the logs alone.
 """
-    if occurrences:
-        urls = "".join(f"  - {url}\n" for url in occurrences)
+    if occurrences.older:
+        urls = "".join(f"  - {url}\n" for url in occurrences.older)
         return (
             f"- Known occurrences: these open issues carry this failure's fingerprint\n"
             f"  and were filed before this {change}, not by triage of a PR run, so the\n"
             f"  failure predates the {change}. That {weight}:\n{urls}"
+        )
+    if occurrences.fixed:
+        urls = "".join(f"  - {url}\n" for url in occurrences.fixed)
+        return (
+            f"- This failure's fingerprint is only in closed issues: a bug that was\n"
+            f"  fixed before is back, and this {change} may be what reintroduced it.\n"
+            f"  A closed issue is not evidence that the failure predates the {change}.\n"
+            f"  {regression_hint}\n{urls}"
+            f"  Any other issue carrying the fingerprint was written by this same\n"
+            f"  triage, so do not look for one here.\n"
         )
     return f"""\
 - No open issue with this failure's fingerprint was filed before this {change},
@@ -225,7 +238,11 @@ def _occurrences_note(fingerprint, occurrences, change, weight):
 def _relatedness_task(info, repo_name, pr_mode, fingerprint, occurrences):
     if pr_mode:
         occurrences = _occurrences_note(
-            fingerprint, occurrences, "PR", "is strong evidence for `unrelated`"
+            fingerprint,
+            occurrences,
+            "PR",
+            "is strong evidence for `unrelated`",
+            "Check first whether the PR touches the code of the fix in these issues:",
         )
         return f"""\
 ## Task 1 - relatedness
@@ -244,7 +261,11 @@ in master:
   decides - never guess `unrelated` to make CI green.
 """
     occurrences = _occurrences_note(
-        fingerprint, occurrences, "commit", "means verdict `unrelated`"
+        fingerprint,
+        occurrences,
+        "commit",
+        "means verdict `unrelated`",
+        "Look for the culprit among recent commits that touch the code of the fix:",
     )
     return f"""\
 ## Task 1 - attribution
@@ -384,7 +405,12 @@ def _build_prompt(
         change_line = f"- Commit: {info.commit_url} (sha `{info.sha}`)"
     tested_change = info.pr_url if pr_mode else info.commit_url
     found_in = report_url or tested_change
-    if pr_mode and fingerprint:
+    if pr_mode and fingerprint and occurrences and occurrences.regression:
+        outcome_note = (
+            "The job stays red whatever your verdict: a fixed bug that came back\n"
+            "needs a human to rule out this PR."
+        )
+    elif pr_mode and fingerprint:
         outcome_note = (
             "The job downgrades to green only for verdict `unrelated` with a valid\n"
             "`issue_url`."
@@ -592,6 +618,33 @@ def _parse_github_time(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+class Occurrences(NamedTuple):
+    """What GitHub knew about a fingerprint before the tested change."""
+
+    older: list  # `independent_occurrences`
+    fixed: list  # `fixed_occurrences`
+
+    @property
+    def regression(self):
+        """A fixed bug is back and nothing shows it was back before the change."""
+        return bool(self.fixed) and not self.older
+
+
+def fixed_occurrences(issues, fingerprint):
+    """URLs of the closed issues with this fingerprint: the bug was fixed once.
+
+    A closed issue says nothing about whether the failure predates the change;
+    the change may be what brought it back.
+    """
+    marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
+    return sorted(
+        issue["url"]
+        for issue in issues
+        if (issue.get("state") or "").upper() == "CLOSED"
+        and marker in (issue.get("body") or "")
+    )
+
+
 def independent_occurrences(issues, fingerprint, cutoff):
     """URLs of the open issues that prove the failure predates the tested change.
 
@@ -615,7 +668,7 @@ def independent_occurrences(issues, fingerprint, cutoff):
 
 
 def _prior_occurrences(info, repo_name, pr_mode, fingerprint):
-    """`independent_occurrences` from GitHub, or None when they cannot be read.
+    """`Occurrences` from GitHub, or None when they cannot be read.
 
     The cutoff is when the change came to exist: the PR's opening, or the
     tested commit for a post-merge run.
@@ -637,14 +690,16 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint):
             fingerprint,
             "--repo",
             repo_name,
-            "--state",
-            "open",
             "--limit",
             "30",
             "--json",
             "url,state,createdAt,body",
         )
-        return independent_occurrences(json.loads(output or "[]"), fingerprint, cutoff)
+        issues = json.loads(output or "[]")
+        return Occurrences(
+            independent_occurrences(issues, fingerprint, cutoff),
+            fixed_occurrences(issues, fingerprint),
+        )
     except Exception as e:  # noqa: BLE001 - no lookup means no evidence, never more
         print(f"WARNING: AI fuzz triage: cannot look up prior occurrences: {e}")
         return None
@@ -709,7 +764,13 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
 
 
 def _apply_verdict(
-    result, verdict, pr_mode, fingerprint="", uncovered=(), repo_name=""
+    result,
+    verdict,
+    pr_mode,
+    fingerprint="",
+    uncovered=(),
+    repo_name="",
+    regression=False,
 ):
     kind = verdict["verdict"]
     reasoning = (verdict.get("reasoning") or "").strip()[:1200]
@@ -750,6 +811,16 @@ def _apply_verdict(
             f"AI triage: verdict was `unrelated`, but {names} is not covered by "
             f"the issue's fingerprint (no stack trace ID, or a different bug) - "
             f"keeping the job red (fail-close)"
+        )
+        if issue_url:
+            lines.append(f"AI triage: related tracking issue: {issue_url}{issue_note}")
+    elif pr_mode and kind == "unrelated" and regression:
+        # The new issue Task 3 files for the regression would vouch for the very
+        # verdict in doubt.
+        lines.append(
+            "AI triage: verdict was `unrelated`, but this failure's fingerprint is "
+            "only in closed issues: a fixed bug came back, and this PR may have "
+            "reintroduced it - keeping the job red (fail-close)"
         )
         if issue_url:
             lines.append(f"AI triage: related tracking issue: {issue_url}{issue_note}")
@@ -894,7 +965,7 @@ def triage_and_apply(
         occurrences = (
             _prior_occurrences(info, repo_name, pr_mode, fingerprint)
             if fingerprint
-            else []
+            else Occurrences([], [])
         )
         print(f"AI fuzz triage: prior occurrences {occurrences}")
         prompt = _build_prompt(
@@ -909,7 +980,15 @@ def triage_and_apply(
         )
         timeout_sec = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
         verdict = _run_agent(prompt, timeout_sec)
-        _apply_verdict(result, verdict, pr_mode, fingerprint, uncovered, repo_name)
+        _apply_verdict(
+            result,
+            verdict,
+            pr_mode,
+            fingerprint,
+            uncovered,
+            repo_name,
+            regression=bool(occurrences and occurrences.regression),
+        )
     except Exception as e:  # noqa: BLE001 - triage must never break the job
         print(f"WARNING: AI fuzz triage unavailable: {e}")
         traceback.print_exc()
