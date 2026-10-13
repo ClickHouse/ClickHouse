@@ -10,6 +10,7 @@ CONFIG_PATH = "/etc/clickhouse-server/config.d/memory.xml"
 STARTUP_VALUE = 8 * 1024 * 1024
 UINT64_MAX = 18446744073709551615
 INT64_MAX = 9223372036854775807
+MIN_MACHINE_MEMORY = 1024 * 1024 * 1024
 
 
 @pytest.fixture(scope="module")
@@ -81,6 +82,11 @@ def test_oversized_value_is_clamped_on_reload(start_cluster):
             ).strip()
         )
         assert clamped <= os_memory_total
+
+        # A real lower bound, so that a reload clamping to a small fallback (e.g. `1` or the
+        # startup value) cannot pass: every machine running this test has well over 1 GiB of
+        # memory, both physically and in the cgroup limits of the container.
+        assert clamped >= MIN_MACHINE_MEMORY
 
         # Removing the override restores the startup value.
         reload_with(STARTUP_VALUE)

@@ -45,7 +45,9 @@ DEFAULT_MAX_SERVER_MEMORY_USAGE=$(${CLICKHOUSE_LOCAL} --query "SELECT getServerS
 FAILING_LIMIT=$((DEFAULT_MAX_SERVER_MEMORY_USAGE / 2))
 FAILING_RESERVATION=$DEFAULT_MAX_SERVER_MEMORY_USAGE
 SUCCESSFUL_RESERVATION=$((DEFAULT_MAX_SERVER_MEMORY_USAGE / 4))
-NESTED_RESERVATION=$((DEFAULT_MAX_SERVER_MEMORY_USAGE / 2))
+# Slightly more than a half: `MemoryTracker` rejects only `will_be > hard_limit`, so two
+# reservations of exactly a half could still land on the limit and be accepted.
+NESTED_RESERVATION=$((DEFAULT_MAX_SERVER_MEMORY_USAGE / 2 + DEFAULT_MAX_SERVER_MEMORY_USAGE / 16))
 
 cat > "$CONFIG_FILE" <<EOF
 <clickhouse>
@@ -83,8 +85,8 @@ ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
 
 # A materialized CTE runs its inner `PushingPipelineExecutor` from an outer
 # pipeline worker. Derive the two thresholds from `clickhouse-local`'s effective
-# hard limit: one half fits under the full hard limit,
-# whereas two reservations on that physical worker do not. The nested executor
+# hard limit: one reservation of slightly more than a half fits under the full
+# hard limit, whereas two reservations on that physical worker do not. The nested executor
 # must therefore reuse the outer reservation. This remains valid when a CI
 # runner has a small cgroup memory limit.
 cat > "$CONFIG_FILE" <<EOF
