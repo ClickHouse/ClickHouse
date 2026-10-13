@@ -59,3 +59,7 @@ SELECT stringBytesEntropy(unhex(concat(
 SELECT stringBytesUniq(s) FROM (SELECT arrayJoin(['Hello', 'World', 'ClickHouse']) AS s);
 SELECT stringBytesEntropy(s) FROM (SELECT arrayJoin(['Hello', 'World', 'ClickHouse']) AS s);
 SELECT arrayJoin(['Hello', 'World', 'Foo', 'Bar', 'ClickHouse']) AS str, stringBytesUniq(str), stringBytesEntropy(str);
+
+SELECT count(), countIf(stringBytesUniq(s) != length(arrayDistinct(arrayMap(i -> substring(s, i, 1), range(1, length(s) + 1)))))
+FROM (SELECT substring(repeat(reinterpretAsString(cityHash64(intDiv(number, 3))), 8), 1 + number % 7, number % 70) AS s FROM numbers(30000))
+SETTINGS max_block_size = 1000;
