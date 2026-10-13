@@ -2023,6 +2023,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         }
 
         ColumnNodePtrWithHashSet empty_correlated_columns;
+        auto is_input_column_name = [&input_columns_set](const String & name) { return input_columns_set.contains(name); };
 
         /// Remember the boundary between filters and other expressions in all_asts.
         const size_t num_filters = stage.filters.size();
@@ -2063,7 +2064,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// This is important for on-fly mutation application where
             /// getReadTaskColumns uses getNames() to track which columns
             /// are already available from previous prewhere steps.
-            PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns, false);
+            PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns, false, is_input_column_name);
             auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions->dag, filter_node);
             correlated_subtrees.assertEmpty("in mutation filter");
             chassert(expression_nodes.size() == 1);
@@ -2124,7 +2125,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
             auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
             update_actions->dag = ActionsDAG(available_columns_for_step);
-            PlannerActionsVisitor update_visitor(planner_context, empty_correlated_columns, false);
+            PlannerActionsVisitor update_visitor(planner_context, empty_correlated_columns, false, is_input_column_name);
             auto [update_expression_nodes, update_correlated_subtrees] = update_visitor.visit(update_actions->dag, update_tree);
             update_correlated_subtrees.assertEmpty("in mutation update");
 
