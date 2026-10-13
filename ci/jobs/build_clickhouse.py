@@ -298,6 +298,26 @@ def verify_compact_symbols_ninja_rules(smoke_build_dir):
             "The `.clickhouse.symbols` section is not added by an `objcopy` command"
         )
 
+    # When cross-compiling (e.g. `amd_release` on ARM runners), the tool is built
+    # for the host by the native build during CMake configuration, so the target
+    # has no Ninja dependency on it.
+    compact_symbols_executable = (
+        compact_symbols_command.strip().split(maxsplit=1)[0].strip('"')
+    )
+    # The command refers to the normalized build path, which may differ from
+    # `smoke_build_dir`, so match the path relative to the build directory.
+    native_compact_symbols_relative = "native/utils/compact-symbols/compact-symbols"
+    native_compact_symbols = os.path.join(
+        smoke_build_dir, native_compact_symbols_relative
+    )
+    if compact_symbols_executable.endswith(f"/{native_compact_symbols_relative}"):
+        if not os.access(native_compact_symbols, os.X_OK):
+            raise RuntimeError(
+                f"The native `compact-symbols` tool was not built at {native_compact_symbols}"
+            )
+        print("Verified compact-symbols packaging commands and native tool")
+        return
+
     clickhouse_query = Shell.get_output_or_raise(
         f"ninja -C {smoke_build_dir} -t query programs/clickhouse"
     )
