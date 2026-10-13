@@ -207,9 +207,9 @@ private:
         std::shared_ptr<SharedState> state;
 
         /// The data of the file is its ranges in temporary files followed by its chunks, in order.
-        std::vector<RangeInTemporaryFile> ranges_in_temporary_files;
+        VectorWithMemoryTracking<RangeInTemporaryFile> ranges_in_temporary_files;
         /// All chunks except the last one are filled entirely.
-        std::vector<Memory<>> chunks;
+        VectorWithMemoryTracking<Memory<>> chunks;
         size_t next_chunk_size = INITIAL_CHUNK_SIZE;
 
         /// The fields below are set when the file is finalized.
@@ -255,7 +255,7 @@ private:
     std::shared_ptr<SharedState> state;
     SpillSettings spill_settings;
     /// Temporary files with the data moved out of memory, one per each call of @spill.
-    std::vector<PackedFilesTemporaryFilePtr> temporary_files;
+    VectorWithMemoryTracking<PackedFilesTemporaryFilePtr> temporary_files;
 
     /// Map from the name of file to its content.
     MapWithMemoryTracking<String, std::shared_ptr<Data>> written_files;

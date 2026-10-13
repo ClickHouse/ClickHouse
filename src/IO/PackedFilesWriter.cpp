@@ -328,7 +328,7 @@ void PackedFilesWriter::spill()
         size_t bytes;
     };
 
-    std::vector<Candidate> candidates;
+    VectorWithMemoryTracking<Candidate> candidates;
     for (const auto & [_, data] : written_files)
     {
         const size_t num_chunks = data->getNumSpillableChunks();
