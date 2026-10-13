@@ -320,20 +320,36 @@ public:
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
+    /// A throw-mode group limit is enforced against the merged totals for every run: the
+    /// baseline producers' checks cannot see the merged cardinality (their tables are
+    /// checked one by one), and the adaptive producers' checks cannot see the staged keys
+    /// at all, so this is where the limit catches what they miss. The dropping modes keep
+    /// the merge untouched: their contract is decided at the producers, and stopping the
+    /// merge here would drop already-aggregated groups. `AdaptiveBucketMergingSource` checks
+    /// its buckets here too.
+    static void checkMergedGroupLimit(const AggregatingTransformParams & params, SharedData & shared_data, size_t full_group_count)
+    {
+        if (params.params.max_rows_to_group_by != 0 && params.params.group_by_overflow_mode == OverflowMode::THROW
+            && !shared_data.is_cancelled.load(std::memory_order_seq_cst))
+        {
+            bool no_more_keys = false;
+            const size_t total = shared_data.two_level_merged_groups.fetch_add(full_group_count) + full_group_count;
+            params.aggregator.checkLimits(total, no_more_keys);
+        }
+    }
+
     ConvertingAggregatedToChunksWithMergingSource(
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         Arena * arena_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSessionPtr adaptive_session_)
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , arena(arena_)
         , updater(std::move(updater_))
-        , adaptive_session(std::move(adaptive_session_))
     {
     }
 
@@ -352,9 +368,6 @@ public:
 protected:
     Chunk generate() override
     {
-        if (adaptive_session)
-            return generateAdaptive();
-
         UInt32 bucket_num = shared_data->next_bucket_to_merge.fetch_add(1);
 
         if (bucket_num >= NUM_BUCKETS)
@@ -371,79 +384,96 @@ protected:
             *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
 
-        checkMergedGroupLimit(full_group_count);
+        checkMergedGroupLimit(*params, *shared_data, full_group_count);
         shared_data->is_bucket_processed[bucket_num] = true;
 
         return chunk;
     }
 
 private:
-    /// The adaptive merge converts a bucket into one chunk per merge unit (see
-    /// `Aggregator::mergeAndConvertAdaptiveBucket`). They are handed out one per call, and the next
-    /// bucket is claimed once the previous one's chunks are gone; the downstream transform forwards
-    /// them as they come, since the adaptive output order is free.
-    Chunk generateAdaptive()
-    {
-        while (adaptive_chunks.empty())
-        {
-            const UInt32 claim = shared_data->next_bucket_to_merge.fetch_add(1);
-            if (claim >= NUM_BUCKETS)
-            {
-                data.reset();
-                return {};
-            }
-            const UInt32 bucket_num = adaptive_session->bucketToMerge(claim);
-
-            size_t full_group_count = 0;
-            auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
-                *data,
-                *adaptive_session,
-                adaptive_task,
-                params->final,
-                bucket_num,
-                shared_data->is_cancelled,
-                updater,
-                &full_group_count);
-            if (shared_data->is_cancelled.load(std::memory_order_seq_cst))
-                return {};
-
-            checkMergedGroupLimit(full_group_count);
-            shared_data->is_bucket_processed[bucket_num] = true;
-
-            for (auto & agg_chunk : agg_chunks)
-                adaptive_chunks.push_back(convertToChunk(std::move(agg_chunk)));
-        }
-
-        Chunk chunk = std::move(adaptive_chunks.front());
-        adaptive_chunks.pop_front();
-        return chunk;
-    }
-
-    /// A throw-mode group limit is enforced against the merged totals for every run: the
-    /// baseline producers' checks cannot see the merged cardinality (their tables are
-    /// checked one by one), and the adaptive producers' checks cannot see the staged keys
-    /// at all, so this is where the limit catches what they miss. The dropping modes keep
-    /// the merge untouched: their contract is decided at the producers, and stopping the
-    /// merge here would drop already-aggregated groups.
-    void checkMergedGroupLimit(size_t full_group_count)
-    {
-        if (params->params.max_rows_to_group_by != 0 && params->params.group_by_overflow_mode == OverflowMode::THROW
-            && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
-        {
-            bool no_more_keys = false;
-            const size_t total = shared_data->two_level_merged_groups.fetch_add(full_group_count) + full_group_count;
-            params->aggregator.checkLimits(total, no_more_keys);
-        }
-    }
-
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     Arena * arena;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-    AdaptiveAggregationSessionPtr adaptive_session;
-    std::deque<Chunk> adaptive_chunks;
-    AdaptiveMergeTask adaptive_task;
+};
+
+/// Worker of the adaptive bucket merge: claims the buckets in the order of the session, which takes the heaviest first
+/// under the top-K pruning, and converts each into one chunk per merge unit (see
+/// `Aggregator::mergeAndConvertAdaptiveBucket`). The chunks are handed out one per call, and the next bucket is claimed
+/// once the previous one's chunks are gone; the downstream transform forwards them as they come, since the adaptive
+/// output order is free. The task keeps the table of the bucket merged last, which the next bucket takes over.
+class AdaptiveBucketMergingSource final : public ISource
+{
+public:
+    using SharedDataPtr = ConvertingAggregatedToChunksWithMergingSource::SharedDataPtr;
+
+    AdaptiveBucketMergingSource(
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        SharedDataPtr shared_data_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        AdaptiveAggregationSessionPtr session_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(std::move(params_))
+        , data(std::move(data_))
+        , shared_data(std::move(shared_data_))
+        , updater(std::move(updater_))
+        , session(std::move(session_))
+    {
+    }
+
+    String getName() const override { return "AdaptiveBucketMergingSource"; }
+
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// Like the classic bucket merge, `ConvertingAggregatedToChunksTransform` expects to receive data from all
+        /// sources, so a partial result does not stop the processor.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+
+protected:
+    Chunk generate() override
+    {
+        while (chunks.empty())
+        {
+            const UInt32 claim = shared_data->next_bucket_to_merge.fetch_add(1);
+            if (claim >= ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS)
+            {
+                data.reset();
+                return {};
+            }
+            const UInt32 bucket_num = session->bucketToMerge(claim);
+
+            size_t full_group_count = 0;
+            auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
+                *data, *session, task, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
+            if (shared_data->is_cancelled.load(std::memory_order_seq_cst))
+                return {};
+
+            ConvertingAggregatedToChunksWithMergingSource::checkMergedGroupLimit(*params, *shared_data, full_group_count);
+            shared_data->is_bucket_processed[bucket_num] = true;
+
+            for (auto & agg_chunk : agg_chunks)
+                chunks.push_back(convertToChunk(std::move(agg_chunk)));
+        }
+
+        Chunk chunk = std::move(chunks.front());
+        chunks.pop_front();
+        return chunk;
+    }
+
+private:
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataVariantsPtr data;
+    SharedDataPtr shared_data;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    AdaptiveAggregationSessionPtr session;
+    std::deque<Chunk> chunks;
+    AdaptiveMergeTask task;
 };
 
 /// Worker of the parallel single-level merge: atomically takes the next hash partition, merges it out of
@@ -1203,11 +1233,16 @@ private:
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            /// Select Arena to avoid race conditions; the adaptive sources pick their arena
-            /// per bucket instead.
-            Arena * arena = adaptive_session ? nullptr : first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(
-                params, data, shared_data, arena, updater, adaptive_session);
+            /// The adaptive workers pick their arena per bucket.
+            if (adaptive_session)
+            {
+                processors.emplace_back(std::make_shared<AdaptiveBucketMergingSource>(params, data, shared_data, updater, adaptive_session));
+                continue;
+            }
+
+            /// Select Arena to avoid race conditions
+            Arena * arena = first->aggregates_pools.at(thread).get();
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena, updater);
 
             processors.emplace_back(std::move(source));
         }
