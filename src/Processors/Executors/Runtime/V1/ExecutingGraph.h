@@ -163,15 +163,25 @@ private:
     using ProcessorsMap = UnorderedMapWithMemoryTracking<const IProcessor *, Node *>;
     ProcessorsMap processors_map;
 
-    /// Node lifetimes are protected by `nodes_mutex`; membership changes also take this mutex.
-    std::mutex spillables_mutex;
-    UnorderedMapWithMemoryTracking<ISpillable *, absl::InlinedVector<Node *, 2>> spillable_owners;
-    MemoryReservation * memory_reservation = nullptr;
-    std::shared_ptr<MemorySpillScheduler> memory_spill_scheduler;
+    struct SpillState
+    {
+        SpillState(Nodes & nodes_, MemoryReservation * memory_reservation_);
+        ~SpillState();
 
-    void registerSpillables(Node & node);
-    void unregisterSpillables(Node & node);
-    bool scheduleSpill(Node & node, ISpillable * spillable, Queue & queue);
+        void detachSpillables();
+        void registerSpillables(Node & node);
+        void unregisterSpillables(Node & node);
+        bool scheduleSpill(Node & node, ISpillable * spillable, Queue & queue);
+        /// Caller holds the graph's `nodes_mutex` to keep candidate nodes alive.
+        void scheduleSpills(Queue & queue);
+
+        Nodes & nodes;
+        /// Node lifetimes are protected by `nodes_mutex`; membership changes also take this mutex.
+        std::mutex spillables_mutex;
+        UnorderedMapWithMemoryTracking<ISpillable *, absl::InlinedVector<Node *, 2>> spillable_owners;
+        MemoryReservation * memory_reservation = nullptr;
+        std::shared_ptr<MemorySpillScheduler> memory_spill_scheduler;
+    };
 
     /// Append a processor to the graph's processors list, create its Node, assign a stable id,
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
@@ -231,6 +241,10 @@ private:
 
     const bool profile_processors;
     IProcessor::CancelReason cancel_reason = IProcessor::CancelReason::NotCancelled;
+
+    /// Declared last so spillables are detached before `nodes` and their processors are destroyed,
+    /// including when graph construction fails.
+    SpillState spill_state;
 };
 
 }

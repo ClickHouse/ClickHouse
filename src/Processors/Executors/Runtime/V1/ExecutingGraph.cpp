@@ -55,40 +55,49 @@ String describeProcessor(const IProcessor * processor)
 
 ExecutingGraph::ExecutingGraph(
     std::shared_ptr<Processors> processors_, bool profile_processors_, MemoryReservation * memory_reservation_)
-    : memory_reservation(memory_reservation_)
-    , processors(std::move(processors_))
+    : processors(std::move(processors_))
     , profile_processors(profile_processors_)
+    , spill_state(nodes, memory_reservation_)
+{
+    /// Create nodes for every processor and register their spillable components.
+    for (auto it = processors->begin(); it != processors->end(); ++it)
+        addNode(it);
+
+    /// Create edges.
+    for (auto & node : nodes)
+        addEdges(node);
+}
+
+ExecutingGraph::~ExecutingGraph() = default;
+
+void ExecutingGraph::detachSpillables()
+{
+    spill_state.detachSpillables();
+}
+
+void ExecutingGraph::scheduleSpills(Queue & queue)
+{
+    std::shared_lock nodes_lock(nodes_mutex);
+    spill_state.scheduleSpills(queue);
+}
+
+ExecutingGraph::SpillState::SpillState(Nodes & nodes_, MemoryReservation * memory_reservation_)
+    : nodes(nodes_)
+    , memory_reservation(memory_reservation_)
 {
     if (!memory_reservation)
     {
         if (auto group = CurrentThread::getGroup())
             memory_spill_scheduler = group->memory_spill_scheduler;
     }
-
-    try
-    {
-        /// Create nodes for every processor and register their spillable components.
-        for (auto it = processors->begin(); it != processors->end(); ++it)
-            addNode(it);
-
-        /// Create edges.
-        for (auto & node : nodes)
-            addEdges(node);
-    }
-    catch (...)
-    {
-        /// The graph's destructor does not run if construction fails.
-        detachSpillables();
-        throw;
-    }
 }
 
-ExecutingGraph::~ExecutingGraph()
+ExecutingGraph::SpillState::~SpillState()
 {
     detachSpillables();
 }
 
-void ExecutingGraph::detachSpillables()
+void ExecutingGraph::SpillState::detachSpillables()
 {
     for (auto & node : nodes)
         if (!node.registered_spillables.empty())
@@ -98,7 +107,7 @@ void ExecutingGraph::detachSpillables()
     memory_spill_scheduler.reset();
 }
 
-void ExecutingGraph::registerSpillables(Node & node)
+void ExecutingGraph::SpillState::registerSpillables(Node & node)
 {
     if (!memory_reservation && !memory_spill_scheduler)
         return;
@@ -120,7 +129,7 @@ void ExecutingGraph::registerSpillables(Node & node)
     }
 }
 
-void ExecutingGraph::unregisterSpillables(Node & node)
+void ExecutingGraph::SpillState::unregisterSpillables(Node & node)
 {
     std::lock_guard lock(spillables_mutex);
     while (!node.registered_spillables.empty())
@@ -141,7 +150,7 @@ void ExecutingGraph::unregisterSpillables(Node & node)
     }
 }
 
-bool ExecutingGraph::scheduleSpill(Node & node, ISpillable * spillable, Queue & queue)
+bool ExecutingGraph::SpillState::scheduleSpill(Node & node, ISpillable * spillable, Queue & queue)
 {
     /// Caller owns `status_mutex`. The owning status excludes both `prepare` and `work`.
     if (!memory_reservation || node.status != ExecStatus::Idle
@@ -153,11 +162,10 @@ bool ExecutingGraph::scheduleSpill(Node & node, ISpillable * spillable, Queue & 
     return true;
 }
 
-void ExecutingGraph::scheduleSpills(Queue & queue)
+void ExecutingGraph::SpillState::scheduleSpills(Queue & queue)
 {
     chassert(memory_reservation);
 
-    std::shared_lock nodes_lock(nodes_mutex);
     struct Candidate
     {
         ISpillable * spillable;
@@ -200,7 +208,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
 
-    registerSpillables(new_node);
+    spill_state.registerSpillables(new_node);
     return new_node;
 }
 
@@ -583,11 +591,11 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                     case IProcessor::Status::PortFull:
                     {
                         node.status = ExecutingGraph::ExecStatus::Idle;
-                        if (memory_reservation)
+                        if (spill_state.memory_reservation)
                         {
                             /// A request may have arrived while this node was owned by normal execution.
                             for (auto * spillable : processor.getSpillables())
-                                if (scheduleSpill(node, spillable, queue))
+                                if (spill_state.scheduleSpill(node, spillable, queue))
                                     break;
                         }
                         break;
@@ -596,7 +604,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                     {
                         node.status = ExecutingGraph::ExecStatus::Finished;
                         if (last_status != IProcessor::Status::Finished)
-                            unregisterSpillables(node);
+                            spill_state.unregisterSpillables(node);
                         accountFinishedProcessorInGroup(*node.processor_iter);
                         break;
                     }
