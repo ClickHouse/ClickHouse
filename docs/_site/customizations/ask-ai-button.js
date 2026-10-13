@@ -157,7 +157,10 @@
     var row = document.createElement('div');
     row.id = ROW_ID;
     row.appendChild(makeButton(BTN_ID, 'Ask AI <small>· docs assistant</small><kbd>⌘I</kbd>', 'sidebar', ''));
-    host.appendChild(row);
+    // Keep the assistant directly after search, above the product selector.
+    var searchRow = searchBar;
+    while (searchRow.parentNode !== host) searchRow = searchRow.parentNode;
+    host.insertBefore(row, searchRow.nextSibling);
     return true;
   }
 
