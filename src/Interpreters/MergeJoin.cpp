@@ -549,6 +549,29 @@ void copyRightRangeContiguous(const Columns & columns_to_add, MutableColumns & c
     }
 }
 
+/// The bytes `copyRightRangeContiguous` would append for the right rows
+/// [start, start + rows_to_add), measured WITHOUT copying anything: the gather budget of the
+/// order-preserving probe is a hard bound, so a range which would cross it is never copied.
+size_t byteSizeOfRightRange(const Columns & columns_to_add, const MutableColumns & columns, size_t start, size_t rows_to_add)
+{
+    size_t bytes = 0;
+    for (size_t i = 0; i < columns_to_add.size(); ++i)
+    {
+        const auto & src_column = columns_to_add[i];
+
+        /// A nullable destination over a non-nullable source grows its null map too.
+        if (typeid_cast<const ColumnNullable *>(columns[i].get()) && !isColumnNullable(*src_column))
+            bytes += rows_to_add * sizeof(UInt8);
+
+        if (src_column->valuesHaveFixedSize())
+            bytes += rows_to_add * src_column->sizeOfValueIfFixed();
+        else
+            for (size_t row = start; row < start + rows_to_add; ++row)
+                bytes += src_column->byteSizeAt(row);
+    }
+    return bytes;
+}
+
 void joinEqualsAnyLeft(const Columns & columns_to_add, MutableColumns & right_columns, const MergeJoinEqualRange & range)
 {
     copyRightRange(columns_to_add, right_columns, range.right_start, range.left_length);
@@ -1087,11 +1110,12 @@ std::shared_ptr<MergeJoin::OrderedProbeState> MergeJoin::matchInOrder(const Bloc
     /// External mode: gather the output columns of the matched right rows while the block is
     /// loaded for the matching anyway, so `emitInOrder` does not have to load right blocks at
     /// all - its access order follows the original left rows and can hop between blocks
-    /// arbitrarily, thrashing the block cache. Capped by `gather_max_bytes` (checked per block,
-    /// so one block may overshoot): past the cap the runs keep their block references and the
-    /// emission falls back to the block cache - a capacity fallback that changes where the right
-    /// rows are read from, never where they are emitted.
+    /// arbitrarily, thrashing the block cache. `gather_max_bytes` is a hard bound, enforced per
+    /// run by measuring before copying: the spilled right blocks are capped by rows, not bytes,
+    /// so a block-granular check would let a single wide block overshoot the budget we switched
+    /// to the external join to respect.
     const bool gather_matched_rows = !is_in_memory && gather_max_bytes > 0;
+    bool gather_budget_exhausted = false;
     MutableColumns gathered_columns;
     size_t gathered_rows = 0;
     size_t gathered_bytes = 0;
@@ -1144,21 +1168,30 @@ std::shared_ptr<MergeJoin::OrderedProbeState> MergeJoin::matchInOrder(const Bloc
         /// Gather this block's matched rows (see above) and re-point the runs into the gathered
         /// storage. The recorded right ranges of one block are ascending and disjoint, and the
         /// left rows of one run share one range, so every matched row is copied exactly once.
-        if (gather_matched_rows && gathered_bytes < gather_max_bytes && runs.size() > block_runs_begin)
+        if (gather_matched_rows && !gather_budget_exhausted && runs.size() > block_runs_begin)
         {
             auto source_columns = extractColumnsByNames(*right_block_info.block, right_columns_to_add);
             for (size_t run_index = block_runs_begin; run_index < runs.size(); ++run_index)
             {
                 auto & run = runs[run_index];
+
+                /// Gathering stops at the first run that would cross the budget: it and all
+                /// later runs keep their block references and the emission falls back to the
+                /// block cache - a capacity fallback that changes where the right rows are
+                /// read from, never where they are emitted.
+                const size_t run_bytes = byteSizeOfRightRange(source_columns, gathered_columns, run.right_start, run.right_length);
+                if (gathered_bytes + run_bytes > gather_max_bytes)
+                {
+                    gather_budget_exhausted = true;
+                    break;
+                }
+
                 copyRightRangeContiguous(source_columns, gathered_columns, run.right_start, run.right_length);
+                gathered_bytes += run_bytes;
                 run.right_block = OrderedProbeState::gathered_block;
                 run.right_start = gathered_rows;
                 gathered_rows += run.right_length;
             }
-
-            gathered_bytes = 0;
-            for (const auto & column : gathered_columns)
-                gathered_bytes += column->byteSize();
         }
     }
 

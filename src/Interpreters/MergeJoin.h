@@ -184,8 +184,11 @@ private:
     mutable std::unique_ptr<Cache> cached_right_blocks;
     /// Byte cap of the per-left-block gather buffer of the order-preserving probe, set by
     /// `mergeFlushedRightBlocks` to half of the probe memory limit (whose full value sizes
-    /// `cached_right_blocks`). Each probe stream has its own buffer, so the peak is one cap of
-    /// shrunk data per stream - transiently about twice that while the gathered columns grow.
+    /// `cached_right_blocks`). A hard bound: every match run is measured before it is copied,
+    /// and a run that would cross the cap stops the gathering (the spilled right blocks are
+    /// row-capped, so a block-granular check could overshoot by one arbitrarily wide block).
+    /// Each probe stream has its own buffer, so the peak is one cap of shrunk data per
+    /// stream - transiently about twice that while the gathered columns grow.
     size_t gather_max_bytes = 0;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
     std::unique_ptr<SortedBlocksWriter> disk_writer;
