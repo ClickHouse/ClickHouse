@@ -14,17 +14,27 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されています。
 
-<div id="enable_index_granularity_compression">
-  ## enable_index_granularity_compression
-</div>
+## enable_adaptive_codec_selection {#enable_adaptive_codec_selection}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、マージとミューテーションでは、デフォルトのコーデック (`CODEC` 句がない、または `CODEC(Default)`) を使用するカラムごとに、block 単位でコーデックが選択されます。
+候補は、テーブルのデフォルトコーデック (`default_compression_codec` 設定を参照) 、`NONE`、およびカラム型に適した特殊用途のコーデックです。
+出力サイズが最小のものが選択されます。そのため、圧縮率がデフォルトより悪化することはなく、圧縮できない block は生データのまま保存されます。
+デフォルトコーデックに暗号化 (例: `AES_128_GCM_SIV`) が含まれるカラムはアダプティブ選択の対象にならないため、暗号化は常に適用されます。
+block ごとのコーデックは、[`mergeTreeCodecBlockCounts`](/ja/reference/functions/table-functions/index) テーブル関数で確認できます。
+
+## enable_index_granularity_compression {#enable_index_granularity_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 可能な場合、索引粒度の値をメモリ内で圧縮します
 
-<div id="enable_max_bytes_limit_for_min_age_to_force_merge">
-  ## enable_max_bytes_limit_for_min_age_to_force_merge
-</div>
+## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -39,9 +49,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * `true`
 * `false`
 
-<div id="enable_mixed_granularity_parts">
-  ## enable_mixed_granularity_parts
-</div>
+## enable_mixed_granularity_parts {#enable_mixed_granularity_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,9 +61,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 大きな行を持つテーブルがある場合は、そのテーブルでこの設定を有効にすることで、
 `SELECT` クエリの効率を向上させることができます。
 
-<div id="enable_replacing_merge_with_cleanup_for_min_age_to_force_merge">
-  ## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
-</div>
+## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge {#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge}
 
 <ExperimentalBadge />
 
@@ -73,17 +79,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * `true`
 * `false`
 
-<div id="enable_the_endpoint_id_with_zookeeper_name_prefix">
-  ## enable_the_endpoint_id_with_zookeeper_name_prefix
-</div>
+## enable_the_endpoint_id_with_zookeeper_name_prefix {#enable_the_endpoint_id_with_zookeeper_name_prefix}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ReplicatedMergeTree テーブルで、ZooKeeper 名のプレフィックス付き endpoint ID を有効にします。
 
-<div id="enable_vertical_merge_algorithm">
-  ## enable_vertical_merge_algorithm
-</div>
+## enable_vertical_merge_algorithm {#enable_vertical_merge_algorithm}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
