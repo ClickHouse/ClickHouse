@@ -74,13 +74,22 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     if (query_child)
         set(query, query_child);
 
-    /// `ParserProjectionDeclaration` produces `index` with `ParserNotEmptyExpressionList(false)`.
-    /// A JSON list can still contain a raw query or another parser-impossible child; projection
-    /// indexes later use its elements as expressions. Reparse this slot and use the parser's tree,
-    /// while leaving the declaration's `WITH SETTINGS` state untouched.
-    auto index_child = r.readParserExpressionListChild("index", /* allow_alias_without_as_keyword = */ false);
+    /// `index` is produced by the parser only as a non-empty `ASTExpressionList`
+    /// (`ParserProjectionDeclaration` uses `ParserNotEmptyExpressionList`). With `TYPE commit_order`,
+    /// `ProjectionIndexCommitOrder::fillProjectionDescription` clones `index` straight into the
+    /// projection SELECT slot, and `ASTProjectionSelectQuery::cloneToASTSelect` throws a logical
+    /// error unless that slot is an `ASTExpressionList` — so reject any other shape at the boundary.
+    auto index_child = r.readExpressionChild("index");
     if (index_child)
+    {
+        if (!index_child->as<ASTExpressionList>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected node type for key 'index' during AST JSON deserialization");
+        if (index_child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ProjectionDeclaration` INDEX must be a non-empty expression list during AST JSON deserialization");
         set(index, index_child);
+    }
 
     /// `projection_type` and `with_settings` are typed members (`ASTFunction *` / `ASTSetQuery *`);
     /// restoring them through the generic child path would let a wrong node type reach `IAST::set`
@@ -95,9 +104,14 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
 
     /// `ProjectionDescription` reads each element with `as<ASTColumnDeclaration &>`, so reject any other
     /// shape here rather than let it surface as an internal cast error.
-    auto columns_child = r.readCommaSeparatedExpressionListChild("columns", /* require_nonempty = */ true);
+    auto columns_child = r.readChild("columns");
     if (columns_child)
     {
+        const auto * column_list = columns_child->as<ASTExpressionList>();
+        if (!column_list || column_list->getSeparator() != ',' || column_list->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ProjectionDeclaration` columns must be a non-empty comma-separated list "
+                "during AST JSON deserialization");
         for (const auto & child : columns_child->children)
         {
             if (!child->as<ASTColumnDeclaration>())
