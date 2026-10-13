@@ -261,7 +261,9 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 if (index > 0)
                 {
                     local_begin = index - 1;
-                    if (local_begin + length < end - begin)
+                    /// Compare against the remaining size instead of adding, as `length` is user-controlled
+                    /// and `local_begin + length` can wrap around.
+                    if (local_begin < end - begin && length < end - begin - local_begin)
                         local_end = local_begin + length;
                     else
                         local_end = end - begin;
@@ -277,7 +279,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                     if (offset_from_end <= size)
                     {
                         local_begin = size - offset_from_end;
-                        if (local_begin + length < size)
+                        if (length < size - local_begin)
                             local_end = local_begin + length;
                         else
                             local_end = size;

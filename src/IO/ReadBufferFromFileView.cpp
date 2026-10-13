@@ -112,7 +112,7 @@ off_t ReadBufferFromFileView::seek(off_t off, int whence)
     const off_t view_size = static_cast<off_t>(right_bound - left_bound);
     if (off < -base || off > view_size - base)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
-            "Seek position ({}) is out of bound. Available range: [0, {}]", base + off, view_size);
+            "Seek offset ({}) from position ({}) is out of bound. Available range: [0, {}]", off, base, view_size);
 
     size_t new_pos = left_bound + static_cast<size_t>(base + off);
 
