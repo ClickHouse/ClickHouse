@@ -525,6 +525,53 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         node.query("DROP DATABASE IF EXISTS rest_client_db")
 
 
+def test_clickhouse_client_creates_table(started_cluster):
+    """A pathless CREATE TABLE lets the embedded catalog choose the location and write the first metadata file."""
+    ns = f"client_create_{uuid.uuid4().hex[:8]}"
+    db = "rest_client_create_db"
+    node.query(f"""
+        DROP DATABASE IF EXISTS {db};
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE {db}
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+        """)
+
+    def create_query(table, if_not_exists=False):
+        clause = "IF NOT EXISTS " if if_not_exists else ""
+        return f"CREATE TABLE {clause}{db}.`{ns}.{table}` (id Int64, name String) ENGINE = IcebergS3"
+
+    create_settings = {"allow_experimental_database_iceberg": 1}
+
+    try:
+        # The client creates the namespace on the way.
+        node.query(create_query("events"), settings=create_settings)
+        assert [ns] in list_namespaces()
+
+        result = catalog_request("GET", tables_url(ns, "events")).json()
+        location = result["metadata"]["location"]
+        table_uuid = result["metadata"]["table-uuid"]
+        assert location == f"{BASE_LOCATION}/{ns}/events-{table_uuid}"
+        assert result["metadata-location"] == f"{location}/metadata/v1-{table_uuid}.metadata.json"
+
+        node.query(create_query("events", if_not_exists=True), settings=create_settings)
+        error = node.query_and_get_error(create_query("events"), settings=create_settings)
+        assert "already exists" in error, error
+
+        # The server does not implement UpdateTable yet, so the table stays empty.
+        assert node.query(f"SELECT count() FROM {db}.`{ns}.events`") == "0\n"
+
+        # The codec setting reaches the catalog as a table property, so the catalog writes a gzip file.
+        node.query(create_query("zipped"), settings={**create_settings, "iceberg_metadata_compression_method": "gzip"})
+        result = catalog_request("GET", tables_url(ns, "zipped")).json()
+        assert result["metadata"]["properties"] == {"write.metadata.compression-codec": "gzip"}
+        assert result["metadata-location"].endswith(".gz.metadata.json")
+        assert node.query(f"SELECT count() FROM {db}.`{ns}.zipped`") == "0\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
 def test_keeper_layout(started_cluster):
     ns = f"layout-{uuid.uuid4().hex[:8]}"
     create_namespace([ns, "eu-west"], properties={"owner": "asya"})
