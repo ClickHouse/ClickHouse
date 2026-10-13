@@ -358,3 +358,55 @@ def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     )
 
     assert select_cluster == ''
+
+
+def test_cluster_table_function_bucket_split_by_split_offsets(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "s3"
+    TABLE_NAME = "test_iceberg_cluster_split_offsets_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id BIGINT, s STRING)
+        USING iceberg
+        TBLPROPERTIES ('format-version'='2', 'write.parquet.row-group-size-bytes'='65536')
+        """
+    )
+    spark.range(200000).selectExpr("id", "cast(id AS STRING) AS s").coalesce(1).writeTo(TABLE_NAME).append()
+
+    split_offsets = spark.sql(f"SELECT split_offsets FROM {TABLE_NAME}.files").collect()
+    assert len(split_offsets) == 1
+    assert len(split_offsets[0].split_offsets) > 1
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
+    )
+    table_function_expr_cluster = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True, run_on_cluster=True
+    )
+
+    check_query = "SELECT count(), sum(id), sum(length(s)), min(id), max(id) FROM {}"
+    expected = instance.query(check_query.format(table_function_expr))
+    assert expected == "200000\t19999900000\t1088890\t0\t199999\n"
+
+    for batch_size in [0, 1048576]:
+        assert (
+            instance.query(
+                check_query.format(table_function_expr_cluster),
+                settings={
+                    "cluster_table_function_split_granularity": "bucket",
+                    "cluster_table_function_buckets_batch_size": batch_size,
+                },
+            )
+            == expected
+        )
+
+    assert instance.contains_in_log(f"{TABLE_NAME}/data/.*\\.parquet_b[0-9]*_[0-9]*")
