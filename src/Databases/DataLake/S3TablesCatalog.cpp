@@ -242,13 +242,13 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     const auto state_snapshot = state.get();
     const std::string endpoint
         = (base_url / state_snapshot->config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
-        + "?purgeRequested=True";
+        + "?purgeRequested=true";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
-        LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=True)", namespace_name, table_name);
+        LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=true)", namespace_name, table_name);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -326,7 +326,7 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
         .create(credentials);
 }
 
-void S3TablesCatalog::sendRequest(
+String S3TablesCatalog::sendRequest(
     const CatalogState & /* catalog_state */,
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
@@ -374,6 +374,7 @@ void S3TablesCatalog::sendRequest(
         readJSONObjectPossiblyInvalid(response_str, *wb);
     else
         wb->ignoreAll();
+    return response_str;
 }
 
 }
