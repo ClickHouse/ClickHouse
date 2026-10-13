@@ -90,6 +90,7 @@ namespace ErrorCodes
     extern const int CANNOT_KILL;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_CLOSE_FILE;
 }
 
 }
@@ -857,7 +858,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 if (tty_fd >= 0)
                 {
                     password_from_terminal = true;
-                    close(tty_fd);
+                    if (0 != close(tty_fd))
+                        throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close /dev/tty");
                 }
                 else if (errno != ENXIO && errno != ENOENT)
                     throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open /dev/tty to ask the password for the default user");
