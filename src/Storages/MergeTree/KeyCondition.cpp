@@ -5224,7 +5224,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
             /// empty/notEmpty produce a meaningful range only for String key columns.
-            if ((func_name == "empty" || func_name == "notEmpty") && !isString(*key_expr_type))
+            /// For Nullable(String) they are the same as the comparisons with an empty string,
+            /// which are analyzed with the same ranges.
+            if ((func_name == "empty" || func_name == "notEmpty") && !isString(removeNullable(key_expr_type)))
                 return false;
 
             /// The `isNull`/`isNotNull` atoms ignore the monotonic-functions chain (nulls are kept), so
