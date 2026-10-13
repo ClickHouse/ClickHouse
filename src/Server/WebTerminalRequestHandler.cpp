@@ -742,12 +742,16 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     socket.setReceiveTimeout(receive_timeout);
 
     /// Close the session after `idle_connection_timeout` seconds without any traffic in either
-    /// direction, as `TCPHandler` does for idle native protocol connections. Output from the
-    /// embedded client (e.g. progress of a long-running query) counts as activity.
+    /// direction while the embedded client waits at the prompt, as `TCPHandler` does for native
+    /// protocol connections waiting for the next query. A running query is never interrupted by
+    /// this timeout, even if it produces no output.
     Stopwatch idle_time;
 
     while (running && !server.isCancelled() && !client_runner->hasFinished())
     {
+        if (!client_runner->isWaitingForQueryInput())
+            idle_time.restart();
+
         if (idle_time.elapsedSeconds() > static_cast<double>(idle_connection_timeout))
         {
             LOG_DEBUG(log, "Closing idle WebSocket connection");

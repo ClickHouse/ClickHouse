@@ -77,6 +77,14 @@ def read_frame(sock):
     return opcode, recv_exact(sock, length)
 
 
+def send_text(sock, text):
+    payload = text.encode()
+    assert len(payload) < 126
+    mask = os.urandom(4)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    sock.sendall(bytes([0x82, 0x80 | len(payload)]) + mask + masked)
+
+
 def read_until_close(sock):
     """Skip the terminal output and return the code and reason of the close frame."""
     while True:
@@ -100,6 +108,21 @@ first.close()
 idle = open_session(user_idle)
 print("idle session:", *read_until_close(idle))
 idle.close()
+
+# A query running longer than `idle_connection_timeout` is not interrupted,
+# and the session is closed after it becomes idle at the prompt again.
+query = open_session(user_idle)
+send_text(query, "SELECT concat('query_', 'finished'), sleep(2) FORMAT TSV\r")
+output = b""
+while b"query_finished" not in output:
+    opcode, payload = read_frame(query)
+    if opcode == 0x08:
+        print("query session: closed during the query", struct.unpack(">H", payload[:2])[0], payload[2:].decode())
+        sys.exit(1)
+    output += payload
+print("query session: finished")
+print("query session:", *read_until_close(query))
+query.close()
 PYEOF
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${USER_LIMITED}, ${USER_IDLE}; DROP SETTINGS PROFILE ${PROFILE_LIMITED}"
