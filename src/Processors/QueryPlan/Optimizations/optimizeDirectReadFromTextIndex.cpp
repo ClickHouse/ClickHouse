@@ -429,8 +429,9 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
             {
                 ASTs captured_values;
+                /// A captured value may itself refer to a column captured by an enclosing lambda.
                 for (const auto * child : node.children)
-                    captured_values.push_back(convertNodeToAST(*child));
+                    captured_values.push_back(convertNodeToAST(*child, captured));
 
                 return convertCapturedLambdaToAST(function_capture->getCapture(), function_capture->getAcionsDAG(), captured_values);
             }
