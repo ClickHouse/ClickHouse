@@ -3,6 +3,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <base/types.h>
@@ -34,6 +35,18 @@ namespace QueryPlanOptimizations
 /// single-argument function of it (which cannot increase the distinct count). Statistics for a
 /// duplicated output name are dropped because the name-keyed result cannot identify either position.
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
+
+/// Tighten equi-join key NDVs to their minimum, respecting which side each join kind preserves.
+/// Anti joins and full joins leave both inputs unchanged.
+void updateJoinKeyDistinctCounts(
+    ColumnStats & left_stats,
+    ColumnStats & right_stats,
+    JoinKind kind,
+    JoinStrictness strictness);
+
+/// Converts a row or distinct-value estimate to `UInt64`. Estimates can exceed the `UInt64` range (a cross
+/// product of large inputs), so the result saturates at the maximum; NaN and non-positive values give 0.
+UInt64 toUInt64Saturating(Float64 estimate);
 
 }
 

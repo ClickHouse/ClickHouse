@@ -1,0 +1,12 @@
+<clickhouse>
+    <remote_servers>
+        <reloadable>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </reloadable>
+    </remote_servers>
+</clickhouse>

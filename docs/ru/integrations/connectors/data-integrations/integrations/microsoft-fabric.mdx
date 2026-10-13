@@ -15,9 +15,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 <ClickHouseSupportedBadge />
 
-<div id="overview">
-  ## Обзор
-</div>
+## Обзор {#overview}
 
 Рабочая нагрузка ClickHouse для Microsoft Fabric — это слой ускорения для OneLake. Она интегрирует ClickHouse — самую быструю аналитическую базу данных с открытым исходным кодом — непосредственно в ваше рабочее пространство Fabric в качестве нативной рабочей нагрузки.
 
@@ -35,9 +33,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Рабочая нагрузка доступна в центре рабочих нагрузок Microsoft Fabric. Подробнее о безопасности, конфиденциальности и соответствии требованиям см. в [аттестации поставщика](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
 
-<div id="provisioning">
-  ## Подготовка
-</div>
+## Подготовка {#provisioning}
 
 Чтобы создать элемент ClickHouse:
 
@@ -53,9 +49,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Сервисы подготавливаются в регионе Azure ClickHouse Cloud, ближайшем к региону емкости Fabric. См. [поддерживаемые регионы](/ru/products/cloud/reference/supported-regions). Сведения о хранении и обработке данных см. в [разделе аттестации о размещении данных](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
 
-<div id="clickhouse-cloud-trial">
-  ## Пробная версия ClickHouse Cloud
-</div>
+## Пробная версия ClickHouse Cloud {#clickhouse-cloud-trial}
 
 Создание первого элемента ClickHouse автоматически запускает пробный период. Пробная организация и выделенный сервис создаются для вашей учетной записи Microsoft Entra.
 
@@ -67,9 +61,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 По окончании пробного периода или при исчерпании кредитов перейдите на платную организацию через [предложение ClickHouse Cloud в Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
 
-<div id="syncing-data-from-onelake">
-  ## Синхронизация данных из OneLake
-</div>
+## Синхронизация данных из OneLake {#syncing-data-from-onelake}
 
 Процесс Sync позволяет переносить таблицы OneLake в ClickHouse:
 
@@ -94,24 +86,18 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
   В рамках публичной предварительной версии поддерживается только копирование снимка на определённый момент времени. В будущих релизах планируется добавить другие варианты репликации.
 </Note>
 
-<div id="powered-by-clickpipes">
-  ### На основе ClickPipes
-</div>
+### На основе ClickPipes {#powered-by-clickpipes}
 
 Каждая синхронизированная таблица обслуживается [ClickPipe](/ru/integrations/clickpipes/home) — управляемым сервисом ингестии ClickHouse Cloud:
 
 1. Рабочая нагрузка считывает таблицу напрямую из OneLake, используя ваши авторизованные учётные данные.
 2. ClickPipe передаёт данные в таблицу вашего сервиса ClickHouse, сопоставляя типы данных OneLake с типами ClickHouse.
 
-<div id="cost">
-  ### Стоимость
-</div>
+### Стоимость {#cost}
 
 В период публичной предварительной версии Microsoft Fabric синхронизация данных из OneLake в ClickHouse бесплатна. Тарификация начнётся, когда рабочая нагрузка Fabric станет общедоступной. Информация о ценах будет опубликована, когда рабочая нагрузка достигнет стадии GA.
 
-<div id="sql-console-and-saved-queries">
-  ## Консоль SQL и сохранённые запросы
-</div>
+## Консоль SQL и сохранённые запросы {#sql-console-and-saved-queries}
 
 Встроенная консоль SQL позволяет выполнять запросы к данным ClickHouse, не покидая Fabric.
 
@@ -119,21 +105,15 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
   ![Встроенная консоль ClickHouse SQL с запросом к синхронизированной таблице NYC taxi](/images/integrations/tools/data-integration/microsoft-fabric/fabric-05-sql-console.webp)
 </Frame>
 
-<div id="saved-queries">
-  ### Сохранённые запросы
-</div>
+### Сохранённые запросы {#saved-queries}
 
-Сохраните любой запрос, присвоив ему имя, чтобы использовать его позже. Сохранённые запросы хранятся вместе с элементом, поэтому все пользователи рабочего пространства работают с одним и тем же набором запросов.
+Сохраните любой запрос, присвоив ему имя, чтобы использовать его позже. В публичной предварительной версии сохранённые запросы доступны только их владельцу; общий доступ к сохранённым запросам для совместной работы запланирован в дорожной карте.
 
-<div id="go-further-with-clickhouse-sql">
-  ### Расширьте возможности с ClickHouse SQL
-</div>
+### Расширьте возможности с ClickHouse SQL {#go-further-with-clickhouse-sql}
 
 ClickHouse предлагает гораздо больше, чем быстрые SELECT-запросы: materialized view, предварительно вычисляющие результаты по мере поступления данных, полнотекстовый поиск, приближённые агрегации и сотни специализированных функций. Чтобы подробнее узнать обо всех возможностях ClickHouse, ознакомьтесь с [лучшими практиками ClickHouse](/ru/concepts/best-practices/index), [materialized view](/ru/concepts/features/materialized-views/index) и [примерами сценариев использования](/ru/guides/use-cases/index).
 
-<div id="connecting-your-data">
-  ## Подключение данных
-</div>
+## Подключение данных {#connecting-your-data}
 
 Экран **Подключение** содержит готовые инструкции для копирования и вставки для всех способов подключения к вашему сервису.
 
@@ -147,13 +127,9 @@ ClickHouse предлагает гораздо больше, чем быстры
 
 Доступ через MCP включается отдельно для каждого сервиса и предоставляется только для чтения. При его включении становится доступна контролируемая конечная точка, к которой агенты могут обращаться с SQL-запросами. Они получают такие же ответы менее чем за секунду, как в консоли, не задействуя мощности Fabric. Инструкции по настройке см. в разделе [включение удалённого MCP-сервера](/ru/products/cloud/features/ai-ml/remote-mcp#enabling), а список доступных инструментов — в [справочнике MCP-сервера ClickHouse](/ru/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
-<div id="administration-and-management">
-  ## Администрирование и управление
-</div>
+## Администрирование и управление {#administration-and-management}
 
-<div id="open-in-clickhouse-cloud">
-  ### Открытие в ClickHouse Cloud
-</div>
+### Открытие в ClickHouse Cloud {#open-in-clickhouse-cloud}
 
 Нажмите **Open in ClickHouse Cloud**, чтобы открыть полную консоль ClickHouse Cloud с входом через свою учетную запись Microsoft. Из рабочей нагрузки Fabric можно синхронизировать данные с ClickHouse и выполнять любые SQL-операторы, но для административных задач необходимо перейти в консоль Cloud, чтобы управлять сервисом.
 
@@ -161,15 +137,11 @@ ClickHouse предлагает гораздо больше, чем быстры
   ![Настройки сервиса в консоли ClickHouse Cloud, открытые из рабочей нагрузки](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
 </Frame>
 
-<div id="scaling">
-  ### Масштабирование
-</div>
+### Масштабирование {#scaling}
 
 Сервисы масштабируются по вертикали и горизонтали в заданных пределах. Настройте минимальный и максимальный размеры реплики в консоли Cloud, в разделе **Настройки**. Для предсказуемых рабочих нагрузок, чувствительных к задержкам, зафиксируйте минимальный размер реплики, чтобы сервис оставался готовым к работе. Подробнее см. в разделе [автоматическое масштабирование](/ru/products/cloud/features/autoscaling/overview).
 
-<div id="idling">
-  ### Простой
-</div>
+### Простой {#idling}
 
 При простое вычислительные ресурсы приостанавливаются, когда сервис не получает запросов, и автоматически возобновляют работу при поступлении следующего запроса после короткой задержки запуска. Пробные сервисы создаются с включенным режимом простоя.
 
@@ -178,21 +150,15 @@ ClickHouse предлагает гораздо больше, чем быстры
 
 Настройте простой в консоли Cloud на странице **Настройки**. Полное описание см. в разделе [автоматический простой](/ru/products/cloud/features/autoscaling/idling).
 
-<div id="monitoring-the-service">
-  ### Мониторинг сервиса
-</div>
+### Мониторинг сервиса {#monitoring-the-service}
 
 Состояние сервиса, производительность запросов и использование ресурсов отслеживаются в консоли ClickHouse Cloud. Подробнее о встроенных возможностях мониторинга и вариантах интеграции см. в разделе [«Мониторинг ClickHouse Cloud»](/ru/guides/use-cases/observability/cloud-monitoring). Информацию о состоянии платформы в целом и истории инцидентов см. на [status.clickhouse.com](https://status.clickhouse.com).
 
-<div id="monitoring-clickpipes">
-  ### Мониторинг ClickPipes
-</div>
+### Мониторинг ClickPipes {#monitoring-clickpipes}
 
 Каждая синхронизация из OneLake выполняется в виде ClickPipe. Отслеживайте ход синхронизации, пропускную способность и ошибки на [странице ClickPipes](/ru/integrations/clickpipes/monitoring) в консоли ClickHouse Cloud.
 
-<div id="mapping-to-clickhouse-cloud">
-  ## Сопоставление с ClickHouse Cloud
-</div>
+## Сопоставление с ClickHouse Cloud {#mapping-to-clickhouse-cloud}
 
 Рабочая нагрузка использует [ClickHouse Cloud](https://clickhouse.com/cloud), работающий в Azure. Три сопоставления определяют связь между понятиями Fabric и ClickHouse:
 
@@ -208,118 +174,206 @@ ClickHouse предлагает гораздо больше, чем быстры
 
 **Пользователи.** Когда участник рабочего пространства Fabric впервые открывает элемент ClickHouse, в организации ClickHouse Cloud, сопоставленной с этим рабочим пространством, автоматически предоставляется пользователь ClickHouse.
 
-<div id="support">
-  ## Поддержка
-</div>
+## Поддержка {#support}
 
 Поддержку рабочей нагрузки ClickHouse предоставляет компания ClickHouse. Полная информация, включая уровни серьёзности и время ответа, доступна в [программе поддержки ClickHouse](https://clickhouse.com/support/program). Там же или непосредственно в консоли ClickHouse Cloud можно создать обращение. Статус платформы и историю инцидентов см. на [status.clickhouse.com](https://status.clickhouse.com).
 
-<div id="azure-marketplace">
-  ## Azure Marketplace
-</div>
+## Azure Marketplace {#azure-marketplace}
 
 Рабочая нагрузка монетизируется через [предложение ClickHouse Cloud в Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud):
 
 * По окончании пробного периода процесс обновления рабочей нагрузки проведёт вас через оформление покупки на маркетплейсе для вашей организации. После этого оплата за использование будет производиться по модели pay-as-you-go через ваш аккаунт Azure. Подробнее см. в разделе [Оплата Azure Marketplace PAYG](/ru/products/cloud/reference/billing/marketplace/azure-marketplace-payg).
 * Для оформления покупки на маркетплейсе требуется разрешение на выставление счетов для организации ClickHouse, которым обладают администраторы рабочего пространства. Администратор организации может предоставить его другим пользователям в консоли Cloud.
 
-<div id="getting-started-tutorial">
-  ## Вводное руководство
-</div>
+## Вводное руководство {#getting-started-tutorial}
 
-В этом руководстве используются встроенные демонстрационные данные Fabric, поэтому вы можете опробовать рабочую нагрузку без собственного набора данных.
+В этом руководстве мы загрузим общедоступный набор данных в Lakehouse, синхронизируем его с ClickHouse и выполним к нему запросы.
 
-<div id="load-the-sample-data">
-  ### Загрузите образцы данных
-</div>
+### Загрузка данных о поездках такси Нью-Йорка {#load-the-nyc-taxi-data}
 
-В рабочем пространстве Fabric выберите **+ New item**, а затем **Sample lakehouse**, чтобы добавить образец **Public holidays**. Убедитесь, что таблица `publicholidays` появилась в разделе Tables.
+В этом руководстве используются общедоступные записи NYC TLC о поездках жёлтого такси — известный набор данных о посадках и высадках пассажиров и стоимости поездок. Данные за один год — это около 40 миллионов строк; они загружаются за несколько минут, и этого достаточно, чтобы увидеть, как ведёт себя рабочая нагрузка на реальных данных. Если позже понадобится более крупный набор данных, полная история с 2013 по 2026 год насчитывает около 1,1 миллиарда строк.
+
+1. Создайте Lakehouse в своём рабочем пространстве или используйте существующий
+2. Выберите **+ Новый элемент** и создайте **Notebook**
+3. Подключите Lakehouse к блокноту. Он должен быть для этого блокнота Lakehouse по умолчанию
+4. Вставьте в блокнот две ячейки, приведённые ниже, и выполните их по порядку
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+Вторая ячейка нормализует схему, поскольку в файлах TLC имена и типы столбцов меняются от года к году. Если закрепить за каждым столбцом одно имя и один тип, один и тот же код будет работать независимо от того, загружаете ли вы данные за один год или за все сразу.
+
+<Note>
+  Чтобы добавить другие годы, расширьте диапазон `YEARS` и повторно выполните обе ячейки. Первая ячейка пропускает уже загруженные файлы, а вторая заново создаёт таблицу.
+</Note>
+
+Убедитесь, что таблица `yellow_tripdata` появилась в разделе Tables в Lakehouse.
 
 <Frame>
-  ![Образец таблицы Public holidays в Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![Таблица yellow\_tripdata и её столбцы в Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
-<div id="create-a-clickhouse-item-and-sync">
-  ### Создайте элемент ClickHouse и синхронизируйте данные
-</div>
+### Создайте элемент ClickHouse и синхронизируйте данные {#create-a-clickhouse-item-and-sync}
 
 1. Создайте элемент ClickHouse в том же рабочем пространстве, как описано в разделе [подготовки](#provisioning)
-2. Откройте **Sync**, выберите свой Lakehouse и таблицу `publicholidays`
-3. Укажите сортировку по столбцам, по которым вы чаще всего фильтруете: `countryOrRegion, date`
-4. Запустите синхронизацию — данные вскоре будут загружены. Таблица такого размера синхронизируется за считаные секунды
+2. Откройте **Sync**, выберите свой Lakehouse и таблицу `yellow_tripdata`
+3. Задайте ключ сортировки `PULocationID, tpep_pickup_datetime`
+4. Запустите синхронизацию. Данные за год синхронизируются за несколько минут, а запрашивать таблицу можно сразу после того, как её статус сменится на «завершено»
 
-<div id="query-the-data">
-  ### Выполните запрос к данным
-</div>
+Такой ключ сортировки соответствует тому, как панели мониторинга и агенты фильтруют эти данные: сначала по зоне посадки, затем по времени. Поэтому такие запросы читают лишь небольшую часть таблицы, а не сканируют её целиком.
 
-Откройте консоль SQL и выполните:
+### Выполните запросы к данным {#query-the-data}
+
+Откройте консоль SQL и выполните следующие запросы:
+
+<Frame>
+  ![Три запроса из руководства во встроенной консоли SQL ClickHouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-Сохраните первый запрос под названием **Праздники по странам**, чтобы увидеть сохранённые запросы в действии.
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
 
-<div id="connect-to-mcp">
-  ### Подключение к MCP
-</div>
+Рядом со временем выполнения консоль показывает количество прочитанных строк и байтов. Количество строк берётся непосредственно из метаданных таблицы, без чтения самих данных. Два других запроса сначала фильтруют по `PULocationID` — первому столбцу ключа сортировки, поэтому ClickHouse читает только соответствующий фрагмент таблицы, а не сканирует её целиком.
 
-1. На экране **Connect** включите **MCP** для сервиса
+Сохраните вкладку под именем **Demo queries**, чтобы она появилась в разделе **Сохранённые запросы**.
+
+### Подключение к MCP {#connect-to-mcp}
+
+1. На экране **Подключение** включите **MCP** для сервиса
 2. Зарегистрируйте MCP-сервер ClickHouse в выбранном MCP-клиенте, как описано в разделе [начало работы с удалённым MCP-сервером](/ru/products/cloud/features/ai-ml/remote-mcp#getting-started)
-3. Задайте вопрос: *&quot;В какой стране больше всего государственных праздников в 2026 году и сколько из них оплачиваемые?&quot;*
+3. Задайте вопрос: *&quot;В какой зоне посадки было больше всего поездок в июне 2024 года и какой была средняя стоимость поездки?&quot;*
 
 Агент ответит, выполнив управляемый SQL-запрос только для чтения к синхронизированной таблице.
 
-<div id="known-limitations">
-  ## Известные ограничения
-</div>
+## Известные ограничения {#known-limitations}
 
 Рабочая нагрузка ClickHouse находится в публичной предварительной версии. Перечисленные ниже ограничения отражают текущее состояние и не являются окончательными; большинство из них включено в план развития.
 
-<div id="data-movement">
-  ### Перемещение данных
-</div>
+### Перемещение данных {#data-movement}
 
 * **Копии представляют собой снимки состояния на определённый момент времени.** Плановая или непрерывная репликация пока недоступна. Чтобы обновить таблицу актуальными данными из OneLake, повторно запустите синхронизацию. Изменения и удаления в исходной таблице не распространяются на копию в ClickHouse.
 * **Поддерживаются только таблицы Lakehouse.** Синхронизация считывает таблицы из Lakehouse в том же рабочем пространстве.
 * **Обратная запись в OneLake не поддерживается.** Данные передаются только в одном направлении — из OneLake в ClickHouse. Возможность записывать результаты запросов обратно в OneLake запланирована.
 
-<div id="service-management">
-  ### Управление сервисом
-</div>
+### Управление сервисом {#service-management}
 
 * **Один сервис на элемент, определяется при создании.** Нельзя привязать существующий сервис ClickHouse Cloud к элементу Fabric или подключить рабочую нагрузку к существующей организации ClickHouse Cloud.
 * **Удаление сервиса из консоли ClickHouse Cloud оставляет элемент Fabric без привязанного сервиса и возможности восстановления.** При удалении элемента Fabric удаляется и его сервис, но обратный путь сейчас не поддерживается.
 * **Конфигурация сервиса задаётся в консоли Cloud.** Масштабированием, переходом в состояние простоя и резервным копированием управляют из ClickHouse Cloud, а не в настройках элемента Fabric.
 
-<div id="access-and-identity">
-  ### Доступ и идентификация
-</div>
+### Доступ и идентификация {#access-and-identity}
 
 * **Изменения роли применяются при следующем открытии.** При каждом открытии элемента ClickHouse ваша роль в организации ClickHouse сопоставляется с ролью в рабочем пространстве Fabric. Fabric не может уведомлять ClickHouse об изменениях ролей, поэтому изменение роли в рабочем пространстве не вступает в силу немедленно.
 * **Удаление пользователя в Fabric или понижение его роли не отзывает его доступ к ClickHouse.** Поскольку роли применяются только при открытии пользователем элемента ClickHouse, пользователь, удалённый из рабочего пространства или чья роль была понижена, может сохранить существующий доступ на стороне ClickHouse Cloud. Если он больше не откроет элемент, это изменение вообще не будет передано. Чтобы немедленно и надёжно отозвать доступ, удалите пользователя из организации в консоли ClickHouse Cloud.
 * **Доступ на уровне рабочего пространства.** Все участники рабочего пространства могут использовать его элементы ClickHouse. Детализированная синхронизация разрешений OneLake для отдельных таблиц в настоящее время не поддерживается.
 * **Для SSO в консоли требуется адрес электронной почты в профиле Entra.** Пользователям ClickHouse Cloud необходим адрес электронной почты; если он не указан в вашем профиле Microsoft Entra, вход в консоль Cloud завершится ошибкой.
 
-<div id="reference">
-  ## Справочные материалы
-</div>
+## Устранение неполадок {#troubleshooting}
+
+### Не проходит проверка электронной почты при открытии элемента ClickHouse {#email-verification-fails}
+
+**Коды ошибок:** `email_not_found`, `email_domain_unverified`
+
+**Причина:** для создания пользователя ClickHouse требуется адрес электронной почты из проверенного домена в аккаунте Microsoft Entra. Аккаунты участников (member) подходят всегда, в том числе в личных или тестовых тенантах, где есть только домен `.onmicrosoft.com` по умолчанию. Эти ошибки почти всегда означают, что вы вошли под **гостевым (B2B) аккаунтом**:
+
+* `email_not_found` — в вашем гостевом профиле в этом тенанте не задан адрес электронной почты.
+* `email_domain_unverified` — ваш адрес электронной почты принадлежит вашему домашнему тенанту, который не является
+  проверенным доменом в тенанте, где вы используете Fabric.
+
+**Решение:** используйте аккаунт участника тенанта либо обратитесь к администратору Fabric, чтобы убедиться, что в вашем профиле Microsoft Entra указан адрес электронной почты в одном из проверенных доменов тенанта. См. [Managing custom domain names in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity/users/domains-manage).
+
+### Не удаётся войти в консоль ClickHouse Cloud {#cannot-sign-in-to-the-clickhouse-cloud-console}
+
+**Причина:** пользователям ClickHouse Cloud необходим адрес электронной почты. Вход из рабочей нагрузки не выполняется, если в профиле Entra не указан адрес электронной почты, а при первом входе в консоль отправляется код подтверждения, поэтому у адреса должен быть реальный почтовый ящик. У адресов по умолчанию вида `.onmicrosoft.com` почтовый ящик зачастую отсутствует. На работу внутри Fabric это не влияет; ограничение касается только **Open in ClickHouse Cloud** и оформления покупки в маркетплейсе.
+
+**Решение:** обратитесь к администратору Fabric, чтобы он добавил в ваш профиль Microsoft Entra адрес электронной почты с активным почтовым ящиком, затем повторите попытку.
+
+### Отказано в доступе при открытии элемента {#access-denied-when-opening-an-item}
+
+**Код ошибки:** `item_access_denied`
+
+**Причина:** У текущего пользователя нет доступа к элементу Fabric, либо недавнее изменение роли в рабочем пространстве ещё не вступило в силу.
+
+**Решение:** Убедитесь, что вы состоите в рабочем пространстве с нужной ролью. Изменения ролей вступают в силу при следующем открытии элемента ClickHouse.
+
+## Справочные материалы {#reference}
 
 * [Аттестация поставщика](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)
 * [ClickHouse Cloud на Microsoft Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)
