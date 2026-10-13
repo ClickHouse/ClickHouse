@@ -33,6 +33,10 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 distinct_set_limit_for_enabling_bloom_filter;
+    extern const SettingsUInt64 distinct_bloom_filter_bytes;
+    extern const SettingsDouble distinct_pass_ratio_threshold_for_disabling_bloom_filter;
+    extern const SettingsDouble distinct_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
@@ -332,7 +336,11 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                     distinct_settings,
                     0,
                     result_header->getNames(),
-                    true);
+                    true,
+                    settings[Setting::distinct_set_limit_for_enabling_bloom_filter],
+                    settings[Setting::distinct_bloom_filter_bytes],
+                    settings[Setting::distinct_pass_ratio_threshold_for_disabling_bloom_filter],
+                    settings[Setting::distinct_bloom_filter_max_ratio_of_set_bits]);
                 pre_distinct_step->setStepDescription("Preliminary DISTINCT");
                 query_plan.addStep(std::move(pre_distinct_step));
             }
@@ -342,7 +350,12 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 std::move(distinct_settings),
                 0,
                 result_header->getNames(),
-                false);
+                false,
+                settings[Setting::distinct_set_limit_for_enabling_bloom_filter],
+                settings[Setting::distinct_bloom_filter_bytes],
+                settings[Setting::distinct_pass_ratio_threshold_for_disabling_bloom_filter],
+                settings[Setting::distinct_bloom_filter_max_ratio_of_set_bits]
+            );
 
             query_plan.addStep(std::move(distinct_step));
         }
