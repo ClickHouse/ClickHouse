@@ -237,3 +237,20 @@ SELECT k, uniqExactResample(0, 2, 1)(n, n % 2) AS r
 FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 1;
+
+-- ForEach forwards the deferred merge to the nested uniqExact, element by element, on the keyed merge,
+-- the state-block merge from remote shards and the merge without keys. A one-element array is a one-slot
+-- wrapper around uniqExact; arrays of different lengths make the destination grow during the merge.
+SELECT k, uniqExactForEach([n]) AS one, uniqExactForEach(if(n % 2 = 0, [n, n + 1], [n])) AS two
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 8;
+
+SELECT k, uniqExactForEach([n]) AS one
+FROM remote('127.0.0.{1,2}', view(SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000)))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, distributed_aggregation_memory_efficient = 0;
+
+SELECT uniqExactForEach([n]) AS one, uniqExactForEach(if(n % 2 = 0, [n, n + 1], [n])) AS two
+FROM (SELECT number AS n FROM numbers_mt(240000))
+SETTINGS max_threads = 4;
