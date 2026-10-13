@@ -128,7 +128,7 @@ DataTypePtr AggregateFunctionTuple::getStateType() const
         if (auto nested_version = nested_state->getVersionIfExplicit())
             version = std::max(version.value_or(0), *nested_version);
     }
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
+    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, getStateParameters(), version);
 }
 
 void AggregateFunctionTuple::create(AggregateDataPtr __restrict place) const

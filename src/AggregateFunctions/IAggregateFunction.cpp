@@ -28,7 +28,7 @@ DataTypePtr IAggregateFunction::getStateTypeWithVersionOf(const IAggregateFuncti
     const DataTypePtr nested_state_type = nested.getStateType();
     if (const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(nested_state_type.get()))
         version = nested_state->getVersionIfExplicit();
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
+    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, getStateParameters(), version);
 }
 
 DataTypePtr IAggregateFunction::getNormalizedStateType() const
