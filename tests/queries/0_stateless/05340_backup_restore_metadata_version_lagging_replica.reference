@@ -1,0 +1,8 @@
+--- metadata versions of the replicas: r2 lags behind on the ALTER ---
+t_r1	1
+t_r2	0
+--- the restored table has the column added by the ALTER r2 had not applied ---
+c
+id
+--- and the metadata version that goes with it ---
+1

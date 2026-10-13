@@ -14,6 +14,8 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
@@ -887,9 +889,10 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
                 std::make_shared<BackupEntryFromMemory>(toString(metadata_version)));
     };
 
-    /// Tables whose metadata version has to be read from ZooKeeper, grouped by the ZooKeeper which holds
-    /// them, so that all the versions from one ZooKeeper can be read with a single batched request.
-    std::unordered_map<String, std::vector<QualifiedTableName>> tables_to_read_metadata_version;
+    /// The `metadata` znodes whose stat version is the metadata version of a table, grouped by the ZooKeeper
+    /// which holds them, so that all the versions from one ZooKeeper are read with a single batched request.
+    /// Each znode path is paired with the path in the backup the version is written next to.
+    std::unordered_map<String, std::vector<std::pair<String, String>>> metadata_znodes_by_zookeeper;
 
     for (auto & [table_name, table_info] : table_infos)
     {
@@ -897,7 +900,8 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         checkIsQueryCancelled();
 
         ASTPtr new_create_query = table_info.create_table_query;
-        table_info.replicated_table_zk_path = extractZooKeeperPathFromReplicatedTableDef(new_create_query->as<const ASTCreateQuery &>(), context);
+        const auto & create = new_create_query->as<const ASTCreateQuery &>();
+        table_info.replicated_table_zk_path = extractZooKeeperPathFromReplicatedTableDef(create, context);
         adjustCreateQueryForBackup(new_create_query, context->getGlobalContext());
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
@@ -907,58 +911,75 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         if (!table_info.replicated_table_zk_path)
             continue;
 
-        /// The local in-memory version may be used only if this host puts no data of this table into the
-        /// backup. Otherwise it can be too low: parts written into this host's data path can come from
-        /// another replica which is ahead of this one (see `IBackupCoordination::addReplicatedDataPath`),
-        /// and only ZooKeeper knows the version those parts were written with. It also cannot be used when
-        /// the table is known from a `Replicated` database but has not been created on this host yet
-        /// (`storage == nullptr`), nor for any table of a `Replicated` database: its definition is taken
-        /// from the database's ZooKeeper snapshot (see `DatabaseReplicated::getTablesForBackup`), which can
-        /// be ahead of the local table if this replica lags behind on `ALTER_METADATA`. All of those cases
-        /// already require a ZooKeeper connection, so reading the version from ZooKeeper there adds no new
-        /// dependency - unlike a `structure_only` backup of a table in an ordinary database, which used to
-        /// need no ZooKeeper at all and must keep working while ZooKeeper is unavailable.
-        bool will_backup_data = !backup_settings.structure_only && table_info.should_backup_data;
-        bool definition_from_zookeeper = table_info.database && table_info.database->getEngineName() == "Replicated";
-        if (table_info.storage && !will_backup_data && !definition_from_zookeeper)
+        /// The version always comes from ZooKeeper, because so does the definition whenever ZooKeeper is reachable:
+        /// `StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup` adjusts the definition of a table
+        /// of an ordinary database from the `columns` and `metadata` znodes, and `DatabaseReplicated::getTablesForBackup`
+        /// takes it from the database's ZooKeeper snapshot. A replica lagging behind on `ALTER_METADATA` would otherwise
+        /// pair that newer definition with its older in-memory version. The in-memory version is also too low when
+        /// this host backs up parts written by a replica ahead of it (see `IBackupCoordination::addReplicatedDataPath`),
+        /// and there is none for a table of a `Replicated` database which has not been created on this host yet.
+        ///
+        /// RESTORE applies the saved version to the `ReplicatedMergeTree` table it is saved next to, so it is saved
+        /// for such tables only. The inner tables of a materialized view or of a `TimeSeries` table are not in the
+        /// backup as tables of their own and need no version: a restored part takes the version of the table it is
+        /// restored into (see `MergeTreeData::restorePartFromBackup`), so it is never newer than that table.
+        String zookeeper_name;
+        String metadata_znode_path;
+        if (table_info.storage)
         {
-            auto metadata_snapshot = table_info.storage->getInMemoryMetadataPtr(context, false);
-            add_metadata_version_entry(metadata_path_in_backup, metadata_snapshot->getMetadataVersion());
+            /// The storage knows the path the table was created with. The path from the definition is expanded
+            /// again now and can differ from it, e.g. when the database has been renamed since.
+            auto replicated_storage = castStorage<StorageReplicatedMergeTree>(table_info.storage, DeferredTable::Load);
+            if (!replicated_storage)
+                continue;
+            zookeeper_name = replicated_storage->getZooKeeperName();
+            metadata_znode_path = fs::path(replicated_storage->getZooKeeperPath()) / "metadata";
         }
         else
         {
-            tables_to_read_metadata_version[zkutil::extractZooKeeperName(*table_info.replicated_table_zk_path)].push_back(table_name);
+            /// The table exists on other replicas of its `Replicated` database but has not been created on this host
+            /// yet, so the path from its definition is all there is.
+            if (create.is_materialized_view)
+                continue;
+            zookeeper_name = zkutil::extractZooKeeperName(*table_info.replicated_table_zk_path);
+            metadata_znode_path
+                = fs::path(zkutil::extractZooKeeperPath(*table_info.replicated_table_zk_path, /* check_starts_with_slash= */ false)) / "metadata";
         }
+        metadata_znodes_by_zookeeper[zookeeper_name].emplace_back(metadata_znode_path, metadata_path_in_backup);
     }
 
     /// The table's metadata version equals the ZooKeeper stat version of its `metadata` znode.
-    for (const auto & [zookeeper_name, table_names] : tables_to_read_metadata_version)
+    for (const auto & [zookeeper_name, metadata_znodes] : metadata_znodes_by_zookeeper)
     {
         checkIsQueryCancelled();
 
         auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::makeBackupEntriesForTablesDefs");
-        auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 
         Strings metadata_znode_paths;
-        metadata_znode_paths.reserve(table_names.size());
-        for (const auto & table_name : table_names)
-        {
-            const String & table_zk_path = *table_infos.at(table_name).replicated_table_zk_path;
-            metadata_znode_paths.emplace_back(
-                fs::path(zkutil::extractZooKeeperPath(table_zk_path, /* check_starts_with_slash= */ false)) / "metadata");
-        }
+        metadata_znode_paths.reserve(metadata_znodes.size());
+        for (const auto & metadata_znode : metadata_znodes)
+            metadata_znode_paths.push_back(metadata_znode.first);
 
-        auto responses = zookeeper->exists(metadata_znode_paths);
-        for (size_t i = 0; i != table_names.size(); ++i)
+        std::vector<Int32> metadata_versions(metadata_znode_paths.size());
+        ZooKeeperRetriesControl retries_ctl("getReplicatedTablesMetadataVersions", log, zookeeper_retries_info);
+        retries_ctl.retryLoop([&]
         {
-            /// The `metadata` znode must exist for a live replicated table. Any error (including a connection loss
-            /// reported per path by the batched `exists`) fails the backup: silently omitting the version would
-            /// make RESTORE assume version 0, which is the bug this file is meant to prevent.
-            const auto & response = responses[i];
-            if (response.error != Coordination::Error::ZOK)
-                throw zkutil::KeeperException::fromPath(response.error, metadata_znode_paths[i]);
-            add_metadata_version_entry(table_infos.at(table_names[i]).metadata_path_in_backup, response.stat.version);
-        }
+            auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+            auto responses = zookeeper->exists(metadata_znode_paths);
+            for (size_t i = 0; i != metadata_znode_paths.size(); ++i)
+            {
+                /// The `metadata` znode must exist for a live replicated table. Any error fails the backup (a connection
+                /// loss reported per path by the batched `exists` is retried first): silently omitting the version
+                /// would make RESTORE assume version 0, which is the bug this file is meant to prevent.
+                const auto & response = responses[i];
+                if (response.error != Coordination::Error::ZOK)
+                    throw zkutil::KeeperException::fromPath(response.error, metadata_znode_paths[i]);
+                metadata_versions[i] = response.stat.version;
+            }
+        });
+
+        for (size_t i = 0; i != metadata_znodes.size(); ++i)
+            add_metadata_version_entry(metadata_znodes[i].second, metadata_versions[i]);
     }
 }
 
