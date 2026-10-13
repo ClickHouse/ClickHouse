@@ -2048,7 +2048,7 @@ namespace DB
         std::vector<std::string> paths;
         const auto read_batch = [&]
         {
-            const auto response = zk_client->tryGet(paths);
+            auto response = zk_client->tryGet(paths);
             for (size_t i = 0; i < response.size(); ++i)
             {
                 if (response[i].error != Coordination::Error::ZOK)
