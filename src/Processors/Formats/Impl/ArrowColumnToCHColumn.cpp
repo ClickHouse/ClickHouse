@@ -2471,7 +2471,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 tuple_column = ColumnTuple::create(arrow_column->length());
             else
                 tuple_column = ColumnTuple::create(std::move(tuple_elements));
-            auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));
+            /// Arrow allows empty and repeated struct field names, which a named `Tuple` cannot have.
+            /// Such a struct is read as an unnamed `Tuple`, and its fields are matched by position.
+            auto tuple_type = DataTypeTuple::hasValidElementNames(tuple_names)
+                ? std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names))
+                : std::make_shared<DataTypeTuple>(std::move(tuple_types));
             return {tuple_column, tuple_type, column_name};
         }
         case arrow::Type::DICTIONARY:

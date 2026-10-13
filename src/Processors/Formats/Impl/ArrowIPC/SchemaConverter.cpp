@@ -1150,7 +1150,12 @@ DataTypePtr fieldToCHType(
                 elems.push_back(fieldToCHType(child, settings, child.nullable, allow_null_type));
                 names.push_back(child.name);
             }
-            result = std::make_shared<DataTypeTuple>(elems, names);
+            /// Arrow allows empty and repeated struct field names, which a named `Tuple` cannot have.
+            /// Such a struct is read as an unnamed `Tuple`, and its fields are matched by position.
+            if (DataTypeTuple::hasValidElementNames(names))
+                result = std::make_shared<DataTypeTuple>(elems, names);
+            else
+                result = std::make_shared<DataTypeTuple>(elems);
             break;
         }
         case TypeKind::Map:
