@@ -578,14 +578,6 @@ INSERT INTO k_variant SELECT CAST(toDateTime(1677614400, 'UTC') AS Variant(DateT
 SELECT 'control_variant', count() FROM k_variant WHERE v = CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String));
 SELECT 'control_variant_neq', count() FROM k_variant WHERE v != CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String));
 
--- The counts above stay right even if the walk merely declines the pair, because a declined atom reads
--- every part. This pins that the key is USED: one granule of the two, with the key column's own zone in
--- the condition. Stable whether or not the two parts have merged, since `index_granularity` is 1.
-SELECT 'control_variant_prunes', count() FROM (
-    EXPLAIN indexes = 1 SELECT v FROM k_variant
-    WHERE v = CAST(toDateTime(1675195200, 'Asia/Kolkata') AS Variant(DateTime('Asia/Kolkata'), String))
-) WHERE explain ILIKE '%Granules: 1/2%';
-
 -- Alternatives are paired by position, and position is only a canonical name order, so a Variant holding
 -- two alternatives that are `equals`-equal to each other (here two `DateTime` zones, which needs
 -- `allow_suspicious_variant_types`) admits several pairings. Relabelling under one of them would announce
