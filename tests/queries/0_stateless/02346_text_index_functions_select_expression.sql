@@ -102,6 +102,10 @@ SELECT '-- SELECT-list position: preprocessor applied';
 
 SELECT countIf(hasAnyTokens(s, 'hello')) FROM tab;
 
+SELECT '-- SELECT-list position is unaffected by a sibling WHERE that uses the index';
+
+SELECT countIf(hasAnyTokens(s, 'hello')) FROM tab WHERE hasAnyTokens(s, 'world') SETTINGS use_skip_indexes = 1;
+
 SELECT '-- WHERE is consistent across use_skip_indexes';
 
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 0;

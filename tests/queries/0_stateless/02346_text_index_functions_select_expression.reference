@@ -24,6 +24,8 @@ Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
 preprocessor is applied on the row-scan path too
 -- SELECT-list position: preprocessor applied
 10
+-- SELECT-list position is unaffected by a sibling WHERE that uses the index
+10
 -- WHERE is consistent across use_skip_indexes
 10
 10

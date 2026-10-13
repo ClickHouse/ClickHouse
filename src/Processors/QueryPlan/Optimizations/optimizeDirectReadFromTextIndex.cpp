@@ -1055,10 +1055,33 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
 static bool applyTextIndexInject(
     ReadFromMergeTree & read_from_merge_tree_step,
     ActionsDAG & dag,
-    const TextIndexReadInfos & text_index_infos)
+    const TextIndexReadInfos & text_index_infos,
+    const NameToNameMap & source_columns)
 {
+    /// Match inputs renamed by a step below (e.g. `__table1.s`) by their scan column name, then restore the header names.
+    NameSet node_names;
+    for (const auto & node : dag.getNodes())
+        node_names.insert(node.result_name);
+
+    std::unordered_map<const ActionsDAG::Node *, String> renamed_inputs;
+    for (const auto * input : dag.getInputs())
+    {
+        auto it = source_columns.find(input->result_name);
+        if (it == source_columns.end() || node_names.contains(it->second))
+            continue;
+
+        renamed_inputs.emplace(input, input->result_name);
+        const_cast<ActionsDAG::Node &>(*input).result_name = it->second;
+    }
+
     TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false);
-    return replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{}).has_value();
+    bool is_rewritten = replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{}).has_value();
+
+    for (const auto * input : dag.getInputs())
+        if (auto it = renamed_inputs.find(input); it != renamed_inputs.end())
+            const_cast<ActionsDAG::Node &>(*input).result_name = it->second;
+
+    return is_rewritten;
 }
 
 static bool processAndOptimizeTextIndexFunctionsInPrewhere(
@@ -1160,6 +1183,28 @@ void processAndOptimizeTextIndexFunctions(
             ++walk_begin; /// the merged-away step is detached now, the filter sits directly above the scan
     }
 
+    /// The scan column that each output of the steps walked so far is an alias of, e.g. `__table1.s` -> `s`.
+    NameToNameMap source_columns;
+    auto update_source_columns = [&](const ActionsDAG & dag)
+    {
+        NameToNameMap updated;
+        for (const auto * output : dag.getOutputs())
+        {
+            const auto * node = output;
+            while (node->type == ActionsDAG::ActionType::ALIAS)
+                node = node->children.front();
+
+            if (node->type != ActionsDAG::ActionType::INPUT)
+                continue;
+
+            auto it = source_columns.find(node->result_name);
+            const String & source = it == source_columns.end() ? node->result_name : it->second;
+            if (source != output->result_name)
+                updated.emplace(output->result_name, source);
+        }
+        source_columns = std::move(updated);
+    };
+
     /// Walk the steps above the scan; traverse row-preserving pass-throughs (liftUpFunctions may hoist a projection above a sort) and stop where the column set changes (aggregation, join).
     for (auto it = walk_begin; it != stack.rend(); ++it)
     {
@@ -1191,6 +1236,7 @@ void processAndOptimizeTextIndexFunctions(
             const auto * result_filter_node = processAndOptimizeTextIndexDAG(
                 *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed);
 
+            update_source_columns(filter_dag);
             if (!result_filter_node)
                 continue;
 
@@ -1202,7 +1248,9 @@ void processAndOptimizeTextIndexFunctions(
 
         /// Inject-only rewrite: a merged postprocessor DAG reads only the indexed column, so inputs and output names are unchanged -- reuse the step's input header.
         ActionsDAG & dag = filter_step ? filter_step->getExpression() : expression_step->getExpression();
-        if (!applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos))
+        bool is_rewritten = applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos, source_columns);
+        update_source_columns(dag);
+        if (!is_rewritten)
             continue;
 
         const SharedHeader & input_header = step->getInputHeaders().front();
