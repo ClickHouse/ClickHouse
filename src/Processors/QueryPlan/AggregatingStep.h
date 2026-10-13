@@ -65,6 +65,8 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void describeActions(FormatSettings &) const override;
@@ -98,6 +100,7 @@ public:
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
+    void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
     /// `prefix_columns` is the number of leading columns of the group-by sort description
@@ -165,10 +168,7 @@ public:
     void setShouldProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
 
-    bool supportsDataflowStatisticsCollection() const override
-    {
-        return grouping_sets_params.empty();
-    }
+    bool supportsDataflowStatisticsCollection() const override;
 
 private:
     void updateOutputHeader() override;
@@ -224,8 +224,9 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    const Aggregator::Params & getParams() const { return params; }
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
+    const Aggregator::Params & getParams() const { return params; }
 
 private:
     void updateOutputHeader() override;
