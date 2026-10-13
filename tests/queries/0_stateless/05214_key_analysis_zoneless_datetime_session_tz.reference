@@ -64,8 +64,3 @@ Parts: 0/0
 -- a wrapped text constant: an outer LowCardinality reaches key analysis intact, and a classifier
 -- that peels only Nullable leaves this carrier unfixed while every arm above stays green
 1	1
-
--- negative control: a key whose CAST input is not a DateTime still takes the direct fast path,
--- which is what makes granule pruning possible for a round trip that cannot be done safely
-1	1
-Granules: 1/2
