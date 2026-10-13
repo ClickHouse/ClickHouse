@@ -2546,7 +2546,8 @@
       if (existing) existing.remove();
       return;
     }
-    if (existing && existing.dataset.path === path && existing.previousElementSibling === title) return;
+    var heading = title.closest('#ch-page-ask-row') || title;
+    if (existing && existing.dataset.path === path && existing.previousElementSibling === heading) return;
     if (existing) existing.remove();
     var row = document.createElement('nav');
     row.id = 'ch-product-availability';
@@ -2559,7 +2560,7 @@
       if (variant[1] === path) link.setAttribute('aria-current', 'page');
       row.appendChild(link);
     });
-    title.after(row);
+    heading.after(row);
   }
   function start() {
     render();

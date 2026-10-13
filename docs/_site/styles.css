@@ -3683,6 +3683,16 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 td:has(> .integration-table-logo) {
     white-space: nowrap;
 }
+/* Availability belongs below the title, including the title's AI action. */
+div:has(> #ch-product-availability) {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+}
+
+div:has(> #ch-product-availability) > #ch-page-ask-row {
+    width: 100%;
+}
+
 #ch-product-availability {
   display: flex;
   flex-wrap: wrap;
