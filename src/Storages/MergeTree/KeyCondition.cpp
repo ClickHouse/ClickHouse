@@ -2339,6 +2339,15 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     return true;
 }
 
+/// Whether `type` holds a `Dynamic`, a `Variant` or a `JSON` anywhere, i.e. whether a value of it carries
+/// a type of its own that hashing and comparison look at before the value. `hasDynamicSubcolumns` is not
+/// the question: a `Map` answers it to expose its `key_*` subcolumns, but its values carry no type of
+/// their own and are hashed and compared as the nested `Array`.
+static bool typeHasValueCarriers(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); });
+}
+
 /// Returns true if a deterministic sub-DAG can be extracted to compute one of the key columns
 /// from a single key subexpression (`expr_name`), without depending on any other inputs.
 /// Assumes `expr_name` matches a key subexpression name (checked by the caller).
@@ -2431,6 +2440,15 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
         if (sub.hasNonDeterministic() || sub.hasStatefulFunctions() || sub.hasArrayJoin())
             continue;
 
+        /// A comparison with a `Dynamic`, `Variant` or `JSON` value runs per stored type and converts the
+        /// other operand to it, so `d = '2024-1-5'` matches a stored `Date` `2024-01-05`, and
+        /// `d = toDate('2024-01-05')` matches a stored `DateTime` `2024-01-05 00:00:00`. A key transform
+        /// renders each value from its own type instead - `CAST(d, 'String')` gives `'2024-01-05'` and
+        /// `'2024-01-05 00:00:00'` - so no single transformed constant stands for all the values the
+        /// comparison matches.
+        if (typeHasValueCarriers(*required.front().type))
+            return false;
+
         out_key_column_num = it->second;
         out_key_column_type = sample_block.getByName(key_node.result_name).type;
 
@@ -2487,24 +2505,6 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
         type = removeNullable(type);
     }
     return true;
-}
-
-
-/// Whether a value of the type can be of different types: `Dynamic`, `Variant` or `JSON`, also inside a
-/// container. A comparison with such a value runs per stored type and converts the other operand to it, so
-/// `d = '2024-1-5'` matches a stored `Date` `2024-01-05`, and `d = toDate('2024-01-05')` matches a stored
-/// `DateTime` `2024-01-05 00:00:00`. A key transform renders each value from its own type instead -
-/// `CAST(d, 'String')` gives `'2024-01-05'` and `'2024-01-05 00:00:00'` - so no single transformed constant
-/// stands for all the values the comparison matches.
-static bool canHoldValuesOfDifferentTypes(const DataTypePtr & type)
-{
-    return anyInTypeTree(
-        *type,
-        [](const IDataType & t)
-        {
-            const WhichDataType which(t);
-            return which.isDynamic() || which.isVariant() || which.isObject();
-        });
 }
 
 
@@ -2652,8 +2652,7 @@ static bool castColumnWithoutNulls(
 
 /// Converts `in_column` to the type the transform DAG consumes and writes it to `out_column`/`out_type`,
 /// so the value the transform will see is observable before the transform runs.
-/// Returns false when the conversion cannot be applied accurately to every value in `in_column`, or when
-/// the transformed value cannot stand for the values the comparison matches.
+/// Returns false when the conversion cannot be applied accurately to every value in `in_column`.
 static bool convertColumnForDeterministicDag(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
@@ -2663,9 +2662,6 @@ static bool convertColumnForDeterministicDag(
     bool & out_cast_is_exact)
 {
     out_cast_is_exact = true;
-
-    if (canHoldValuesOfDifferentTypes(dag.input_type))
-        return false;
 
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
@@ -2741,7 +2737,6 @@ static bool executeDeterministicDag(
 /// - A required type conversion cannot be applied accurately for all values (casts that would produce NULLs).
 /// - Executing the DAG throws for some value from `in_column`.
 /// - The output contains NULLs (Nullable output is allowed only if it contains no NULLs; it is then unwrapped).
-/// - The DAG reads a `Dynamic`, `Variant` or `JSON` value, see `canHoldValuesOfDifferentTypes`.
 ///
 /// If `in_type` differs from `dag.input_type`, `in_column` is cast to `dag.input_type` (without introducing
 /// NULLs) before the DAG is executed.
@@ -3178,15 +3173,6 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     {
         get_key_tuple_position_mapping(arg, 0);
     }
-}
-
-/// Whether `type` holds a `Dynamic`, a `Variant` or a `JSON` anywhere, i.e. whether a value of it carries
-/// a type of its own that hashing and comparison look at before the value. `hasDynamicSubcolumns` is not
-/// the question: a `Map` answers it to expose its `key_*` subcolumns, but its values carry no type of
-/// their own and are hashed and compared as the nested `Array`.
-static bool typeHasValueCarriers(const IDataType & type)
-{
-    return anyInTypeTree(type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); });
 }
 
 static bool tryPrepareSetColumnsForIndex(
