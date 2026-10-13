@@ -22,6 +22,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -598,6 +599,7 @@ CSN TransactionManager::finalizeCommittedTransaction(MergeTreeTransaction * txn,
 {
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {
@@ -635,6 +637,7 @@ void TransactionManager::rollbackTransaction(const MergeTreeTransactionPtr & txn
 {
     auto component_guard = Coordination::setCurrentComponent("TransactionManager::rollbackTransaction");
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     /// During unwinding from a destructor, the in-flight exception is not handled yet, so its code is unknown.
     LOG_TRACE(log, "Rolling back transaction {}{}", txn->tid,
               !std::uncaught_exceptions() ? ""

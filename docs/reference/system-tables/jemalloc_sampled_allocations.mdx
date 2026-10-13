@@ -14,7 +14,7 @@ One row per live sampled allocation from the jemalloc heap profiler; reading the
 
 ## Columns {#columns}
 
-- `trace` ([Array(UInt64)](/reference/data-types/array)) — Addresses of the allocating backtrace, leaf frame first (same convention as `system.trace_log.trace`). Symbolize with `addressToSymbol` and `demangle` (requires `allow_introspection_functions`).
+- `trace` ([Array(UInt64)](/reference/data-types/array)) — Addresses of the allocating backtrace, leaf frame first (same convention as `system.trace_log.trace`). Empty if jemalloc could not unwind the stack. Symbolize with `addressToSymbol` and `demangle` (requires `allow_introspection_functions`).
 - `age_ns` ([UInt64](/reference/data-types/int-uint)) — Time in nanoseconds the allocation has been alive, relative to the moment the profile was flushed.
 - `size` ([UInt64](/reference/data-types/int-uint)) — Requested allocation size in bytes.
 - `usize` ([UInt64](/reference/data-types/int-uint)) — Usable size in bytes, i.e. the size class the request was rounded up to.
