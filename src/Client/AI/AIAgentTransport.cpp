@@ -559,15 +559,16 @@ size_t findJSONValueEnd(const String & s, size_t start)
     return String::npos;
 }
 
-/// The length of a run of at least three tildes that opens or closes a Markdown fenced code block
-/// on the line starting at `line_start` (indented by up to three spaces), or zero.
-size_t tildeFenceAt(const String & s, size_t line_start)
+/// The length of a run of at least three `fence_char` (a backtick or a tilde) that opens or closes
+/// a Markdown fenced code block on the line starting at `line_start` (indented by up to three
+/// spaces), or zero.
+size_t fenceAt(const String & s, size_t line_start, char fence_char)
 {
     size_t i = line_start;
     while (i < s.size() && i - line_start < 3 && s[i] == ' ')
         ++i;
     size_t run = 0;
-    while (i + run < s.size() && s[i + run] == '~')
+    while (i + run < s.size() && s[i + run] == fence_char)
         ++run;
     return run >= 3 ? run : 0;
 }
@@ -599,43 +600,60 @@ bool restOfLineIsBlank(const String & s, size_t pos)
     return true;
 }
 
-/// The position of the next `open_tag` at or after `pos` that is outside of Markdown code - a code
-/// span or a fenced code block opened and closed by a run of backticks of the same length, or a
-/// fenced code block opened by a line starting with three or more tildes and closed by a line of at
-/// least as many tildes, or an indented code block - or `npos`. A tool call block inside code is an
-/// example of the syntax the model shows, e.g. when asked how the protocol looks, and must not be
-/// executed: the read-only and schema tools run without a confirmation. Code that is never closed extends to the end of the
-/// response, so a stray backtick or tilde fence can only make a call be shown instead of executed,
-/// never the other way around.
+/// The position of the next `open_tag` at or after `pos` that is outside of Markdown code - a fenced
+/// code block opened by a line starting with three or more backticks or tildes and closed only by a
+/// line holding nothing but a fence of the same character at least as long, a code span opened and
+/// closed by a run of backticks of the same length, or an indented code block - or `npos`. A tool
+/// call block inside code is an example of the syntax the model shows, e.g. when asked how the
+/// protocol looks, and must not be executed: the read-only and schema tools run without a
+/// confirmation. Code that is never closed extends to the end of the response, so a stray backtick
+/// or fence can only make a call be shown instead of executed, never the other way around. For the
+/// same reason a line starting with three backticks always opens a fenced block, even when
+/// CommonMark would read it as a code span.
 size_t findToolCallOutsideCode(const String & s, size_t pos, std::string_view open_tag)
 {
     size_t code_backticks = 0;
-    size_t code_tildes = 0;
+    char fence_char = 0;
+    size_t fence_length = 0;
     size_t i = pos;
     while (i < s.size())
     {
         bool line_start = i == 0 || s[i - 1] == '\n';
         if (line_start && code_backticks == 0)
         {
-            if (size_t run = tildeFenceAt(s, i))
+            bool skip_line = false;
+            if (fence_length == 0)
             {
-                if (code_tildes == 0)
-                    code_tildes = run;
-                else if (run >= code_tildes && restOfLineIsBlank(s, s.find('~', i) + run))
-                    code_tildes = 0;
-                size_t line_end = s.find('\n', i);
-                i = line_end == String::npos ? s.size() : line_end + 1;
-                continue;
-            }
-            if (code_tildes == 0 && isIndentedCodeLine(s, i))
-            {
+                for (char c : {'`', '~'})
+                {
+                    if (size_t run = fenceAt(s, i, c))
+                    {
+                        fence_char = c;
+                        fence_length = run;
+                        skip_line = true;
+                        break;
+                    }
+                }
                 /// Backticks inside an indented code block are literal, so the whole line is skipped.
+                if (!skip_line && isIndentedCodeLine(s, i))
+                    skip_line = true;
+            }
+            else if (size_t run = fenceAt(s, i, fence_char);
+                     run >= fence_length && restOfLineIsBlank(s, s.find(fence_char, i) + run))
+            {
+                fence_length = 0;
+                skip_line = true;
+            }
+
+            if (skip_line)
+            {
                 size_t line_end = s.find('\n', i);
                 i = line_end == String::npos ? s.size() : line_end + 1;
                 continue;
             }
         }
-        if (code_tildes != 0)
+        /// Inside a fenced block only a closing fence line matters, and it starts a line.
+        if (fence_length != 0)
         {
             ++i;
             continue;

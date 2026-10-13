@@ -90,6 +90,29 @@ TEST(AIAgentProtocol, ToolCallInCodeIsNotExecuted)
     EXPECT_EQ(step.tool_calls[0].tool_name, "b");
     EXPECT_NE(step.text.find("run_readonly_query"), String::npos);
 
+    /// A backtick fence, likewise, is closed only by a line holding nothing but a fence at least as
+    /// long: a run of backticks in the middle of a line of the block, or a shorter fence, is literal.
+    step = AIServerFunctionTransport::parseResponse(
+        "````text\n"
+        "literal ``` inside the block\n"
+        "```\n"
+        "``` not a closing fence\n"
+        "<tool_call>{\"name\": \"run_readonly_query\", \"arguments\": {\"query\": \"SELECT 1\"}}</tool_call>\n"
+        "  ````\n"
+        "<tool_call>{\"name\": \"b\", \"arguments\": {}}</tool_call>",
+        counter);
+    ASSERT_EQ(step.tool_calls.size(), 1u);
+    EXPECT_EQ(step.tool_calls[0].tool_name, "b");
+    EXPECT_NE(step.text.find("run_readonly_query"), String::npos);
+
+    step = AIServerFunctionTransport::parseResponse(
+        "```text\n"
+        "literal ``` inside the fence\n"
+        "<tool_call>{\"name\": \"run_readonly_query\", \"arguments\": {\"query\": \"SELECT 1\"}}</tool_call>\n"
+        "```\n",
+        counter);
+    EXPECT_TRUE(step.tool_calls.empty());
+
     /// An unclosed tilde fence extends to the end.
     step = AIServerFunctionTransport::parseResponse("~~~\n<tool_call>{\"name\": \"a\", \"arguments\": {}}</tool_call>", counter);
     EXPECT_TRUE(step.tool_calls.empty());
