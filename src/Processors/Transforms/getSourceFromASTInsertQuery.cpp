@@ -314,6 +314,7 @@ String getInsertDataSchemaMismatchDescription(
     BoolValueIntoNumericColumn format_bool_value_into_numeric = BoolValueIntoNumericColumn::AllNumeric;
     bool format_stores_typed_numeric_values = false;
     bool format_always_skips_unknown_fields = false;
+    bool format_allows_missing_named_columns = true;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -353,6 +354,7 @@ String getInsertDataSchemaMismatchDescription(
         format_bool_value_into_numeric = schema_reader->readsBoolValueIntoNumericColumn();
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
         format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
+        format_allows_missing_named_columns = schema_reader->allowsMissingNamedColumns();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -1337,7 +1339,9 @@ String getInsertDataSchemaMismatchDescription(
         /// Named formats may legitimately omit columns — they are filled with defaults — and reorder
         /// them, so do not require the counts to be equal: only the columns actually present in the input
         /// have to be type-compatible with their destination. A column missing from the input is not a
-        /// structure mismatch.
+        /// structure mismatch, unless the parser rejects missing columns (`Parquet` / `Arrow` / `ORC`
+        /// with `input_format_*_allow_missing_columns` disabled).
+        std::vector<bool> expected_present(expected.size(), false);
         size_t inferred_index = 0;
         for (const auto & column : inferred)
         {
@@ -1376,7 +1380,12 @@ String getInsertDataSchemaMismatchDescription(
                 corresponds = false;
                 break;
             }
+            expected_present[position] = true;
         }
+
+        if (corresponds && !format_allows_missing_named_columns
+            && std::find(expected_present.begin(), expected_present.end(), false) != expected_present.end())
+            corresponds = false;
     }
     else
     {

@@ -36,6 +36,8 @@ public:
     /// The data carries named columns that the parser maps onto the destination by name.
     bool mapsColumnsByName() const override { return true; }
 
+    bool allowsMissingNamedColumns() const override { return format_settings.arrow.allow_missing_columns; }
+
     bool usesCaseInsensitiveColumnMatching() const override { return format_settings.arrow.case_insensitive_column_matching; }
 
 private:

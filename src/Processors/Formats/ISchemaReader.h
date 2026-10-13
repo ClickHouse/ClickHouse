@@ -271,6 +271,15 @@ public:
     /// mismatch for such a format even when `input_format_skip_unknown_fields` = 0.
     virtual bool alwaysSkipsUnknownFields() const { return false; }
 
+    /// True when a parser that maps columns by name (see `mapsColumnsByName`) fills destination
+    /// columns absent from the input with defaults. This holds for most by-name formats, but the
+    /// columnar `Parquet`, `Arrow` and `ORC` readers throw `THERE_IS_NO_COLUMN` for a missing column
+    /// unless `input_format_parquet_allow_missing_columns` / `input_format_arrow_allow_missing_columns` /
+    /// `input_format_orc_allow_missing_columns` is enabled. A caller comparing an inferred schema
+    /// against an expected one uses this to know that a destination column missing from the data is
+    /// a structure mismatch for such a format.
+    virtual bool allowsMissingNamedColumns() const { return true; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
