@@ -3071,13 +3071,13 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (mode == TTLMode::GROUP_BY)
     {
-        ttl_element->group_by_key = std::move(group_by_key->children);
+        ttl_element->setGroupByKey(std::move(group_by_key));
         if (group_by_assignments)
-            ttl_element->group_by_assignments = std::move(group_by_assignments->children);
+            ttl_element->setGroupByAssignments(std::move(group_by_assignments));
     }
 
     if (mode == TTLMode::RECOMPRESS)
-        ttl_element->recompression_codec = recompression_codec;
+        ttl_element->setRecompressionCodec(std::move(recompression_codec));
 
     node = ttl_element;
     return true;
