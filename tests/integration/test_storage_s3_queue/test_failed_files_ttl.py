@@ -913,6 +913,192 @@ def test_ordered_mode_rejects_mismatched_tracked_files_limit(started_cluster):
     node.query(f"DROP TABLE {table_name}")
 
 
+
+def test_terminal_failure_clears_stale_retriable_marker(started_cluster):
+    """A terminal mid-file failure must remove an existing .retriable marker."""
+    node = started_cluster.instances["instance"]
+    table = f"test_terminal_cleanup_{uuid.uuid4().hex[:8]}"
+    dst = f"{table}_dst"
+    keeper_path = f"/clickhouse/test_{table}"
+    files_path = f"{table}_data"
+    zk = started_cluster.get_kazoo_client("zoo1")
+    failpoint = "object_storage_queue_fail_in_the_middle_of_file"
+    sleep_failpoint = "object_storage_queue_sleep_in_generate"
+
+    fmt = "column1 String, column2 String"
+    create_table(
+        started_cluster, node, table, "unordered", files_path,
+        format=fmt,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 100,
+            "failed_files_ttl_sec": 0,
+            "polling_min_timeout_ms": 1000,
+            "polling_max_timeout_ms": 1000,
+        },
+    )
+
+    failed_path = f"{keeper_path}/failed"
+    marker = None
+    try:
+        put_s3_file_content(
+            started_cluster,
+            f"{files_path}/terminal_cleanup.csv",
+            ("a" * 200 + "," + "b" * 200 + "\n").encode() * 200000,
+        )
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        create_mv(node, table, dst, format=fmt)
+
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            children = zk.get_children(failed_path)
+            markers = [name for name in children if name.endswith(".retriable")]
+            if markers:
+                marker = markers[0]
+                break
+            time.sleep(0.2)
+        assert marker, "No .retriable marker appeared after the initial failure"
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {sleep_failpoint}")
+        deadline = time.monotonic() + 60
+        processing_started = False
+        while time.monotonic() < deadline:
+            result = node.query(
+                "SELECT count() FROM system.s3queue_metadata_cache "
+                f"WHERE zookeeper_path ILIKE '%{table}%' "
+                "AND status = 'Processing' AND rows_processed > 0"
+            ).strip()
+            if result.isdigit() and int(result) > 0:
+                processing_started = True
+                break
+            time.sleep(0.2)
+        assert processing_started, "Retry did not start processing rows"
+
+        node.query(
+            f"ALTER TABLE {table} MODIFY SETTING s3queue_loading_retries = 0"
+        )
+
+        marker_hash = marker.removesuffix(".retriable")
+        terminal_path = f"{failed_path}/{marker_hash}"
+        marker_path = f"{failed_path}/{marker}"
+
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if zk.exists(terminal_path) and not zk.exists(marker_path):
+                break
+            time.sleep(0.2)
+
+        assert zk.exists(terminal_path), "Terminal /failed node was not created"
+        assert not zk.exists(marker_path), "Stale .retriable marker was not removed"
+    finally:
+        for fp in (sleep_failpoint, failpoint):
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+            except Exception:
+                pass
+        for obj in (f"{table}_mv", dst, table):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {obj}")
+            except Exception:
+                pass
+
+
+def test_processing_path_blocks_retriable_terminalization(started_cluster):
+    """An existing processing node must prevent premature marker terminalization."""
+    node = started_cluster.instances["instance"]
+    table = f"test_processing_guard_{uuid.uuid4().hex[:8]}"
+    dst = f"{table}_dst"
+    keeper_path = f"/clickhouse/test_{table}"
+    files_path = f"{table}_data"
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    create_table(
+        started_cluster, node, table, "unordered", files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 100,
+            "failed_files_ttl_sec": 0,
+            "polling_min_timeout_ms": 1000,
+            "polling_max_timeout_ms": 1000,
+        },
+    )
+
+    failed_path = f"{keeper_path}/failed"
+    processing_path = f"{keeper_path}/processing"
+    planted_processing_path = None
+
+    try:
+        put_s3_file_content(
+            started_cluster,
+            f"{files_path}/processing_guard.csv",
+            b"not,valid,data\n",
+        )
+        create_mv(node, table, dst)
+
+        deadline = time.monotonic() + 60
+        marker = None
+        while time.monotonic() < deadline:
+            children = zk.get_children(failed_path)
+            markers = [name for name in children if name.endswith(".retriable")]
+            if markers:
+                marker = markers[0]
+                break
+            time.sleep(0.2)
+        assert marker, "No .retriable marker appeared"
+
+        marker_hash = marker.removesuffix(".retriable")
+        marker_path = f"{failed_path}/{marker}"
+        terminal_path = f"{failed_path}/{marker_hash}"
+        planted_processing_path = f"{processing_path}/{marker_hash}"
+
+        if not zk.exists(planted_processing_path):
+            zk.create(
+                planted_processing_path,
+                b"test-processing-owner",
+                makepath=True,
+            )
+
+        node.query(
+            f"ALTER TABLE {table} MODIFY SETTING s3queue_loading_retries = 0"
+        )
+
+        # Keep the processing node present across multiple polling cycles.
+        time.sleep(3)
+        assert zk.exists(marker_path), (
+            ".retriable marker was removed while processing node existed"
+        )
+        assert not zk.exists(terminal_path), (
+            "Terminal failed node was created while processing node existed"
+        )
+
+        zk.delete(planted_processing_path)
+        planted_processing_path = None
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if zk.exists(terminal_path) and not zk.exists(marker_path):
+                break
+            time.sleep(0.2)
+
+        assert zk.exists(terminal_path), (
+            "Marker did not become terminal after processing node was removed"
+        )
+        assert not zk.exists(marker_path), (
+            ".retriable marker remained after processing node was removed"
+        )
+    finally:
+        try:
+            if planted_processing_path and zk.exists(planted_processing_path):
+                zk.delete(planted_processing_path)
+        except Exception:
+            pass
+        for obj in (f"{table}_mv", dst, table):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {obj}")
+            except Exception:
+                pass
+
+
 def test_lowering_loading_retries_is_honored_same_process_hot_cache(started_cluster):
     """Test that lowering `s3queue_loading_retries` mid-retry is honored immediately
     in the SAME process, without a restart - i.e. when the in-memory FileStatus cache
