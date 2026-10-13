@@ -3040,7 +3040,12 @@ void HashJoin::tryConvertToFixedHashMap()
         data->maps.front());
 
     if (data->type != old_type)
+    {
         reinitUsedFlags();
+        /// The new map invalidates the byte total and the prefix sums.
+        recomputeBucketBytes();
+        freezeMapsForProbing();
+    }
 }
 
 bool HashJoin::isRowStoreSupported() const
@@ -3112,9 +3117,5 @@ void HashJoin::runPostBuildPhase()
     tryRerangeRightTableData();
     tryConvertToFixedHashMap();
     publishSharedRuntimeFilters();
-
-    /// The steps above may have replaced whole maps, invalidating the byte total and prefix sums.
-    recomputeBucketBytes();
-    freezeMapsForProbing();
 }
 }

@@ -515,15 +515,11 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 JoinResultPtr GraceHashJoin::joinBlock(Block block)
 {
-    if (!post_build_phase_ran.load(std::memory_order_acquire) && getNumBuckets() <= 1)
+    /// Check if hash join post build optimizations could be performed.
+    if (hash_join && getNumBuckets() <= 1)
     {
         std::lock_guard lock(hash_join_mutex);
-        /// Re-checked under the lock: several probe threads can pass the check above before the first one finishes.
-        if (hash_join && !post_build_phase_ran.load(std::memory_order_relaxed))
-        {
-            hash_join->runPostBuildPhase();
-            post_build_phase_ran.store(true, std::memory_order_release);
-        }
+        hash_join->runPostBuildPhase();
     }
 
     if (block.rows() == 0)
