@@ -68,6 +68,16 @@ ASTPtr makeEqualityCondition(const std::string & field, ASTPtr constant)
     return makeASTFunction("has", std::move(field_elements), std::move(constant));
 }
 
+/** The negation of a condition, for `$ne`, `$nin` and `$not`: Mongo defines them to match a
+  * document that does not have the field at all. An absent field is a `NULL` here, and so is a
+  * comparison with it, which a plain `not` keeps `NULL` - filtering the document out. A condition
+  * that does not hold for the document because it has no value is taken as not holding.
+  */
+ASTPtr makeNegatedCondition(ASTPtr condition)
+{
+    return makeASTFunction("not", makeASTFunction("ifNull", std::move(condition), make_intrusive<ASTLiteral>(Field(UInt64(0)))));
+}
+
 /** One `<field>: {<operator>: <argument>}` condition of a filter.
   *
   * `document` is the whole operator document, which `$regex` needs because its `$options` are a
@@ -100,7 +110,7 @@ ASTPtr parseFieldOperator(
         if (name == "$eq")
             return makeEqualityCondition(field, constant);
         if (name == "$ne")
-            return makeASTFunction("not", makeEqualityCondition(field, constant));
+            return makeNegatedCondition(makeEqualityCondition(field, constant));
         return makeASTFunction(it->second, identifier(), constant);
     }
 
@@ -137,7 +147,7 @@ ASTPtr parseFieldOperator(
           */
         auto field_elements = makeASTFunction("flatten", makeASTFunction("array", identifier()));
         auto condition = makeASTFunction("hasAny", array, std::move(field_elements));
-        return name == "$in" ? condition : makeASTFunction("not", condition);
+        return name == "$in" ? condition : makeNegatedCondition(condition);
     }
 
     if (name == "$not")
@@ -145,7 +155,7 @@ ASTPtr parseFieldOperator(
         ASTPtr negated;
         if (!MongoIdentityFunction(copyValue(argument, metadata->getAllocator()), metadata, field).parseImpl(negated))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot translate the argument of '$not'");
-        return makeASTFunction("not", negated);
+        return makeNegatedCondition(negated);
     }
 
     if (name == "$exists")
@@ -403,7 +413,7 @@ bool IMongoLogicalFunction::parseImpl(ASTPtr & node)
     }
 
     if (isNegated())
-        node = makeASTFunction("not", node);
+        node = makeNegatedCondition(node);
     return true;
 }
 
