@@ -1,10 +1,12 @@
 -- the projection scan obeys the read limits of the subquery that reads the table, as the read does
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would give the projection its own skip indexes,
+-- and `EXPLAIN WHATIF` does not estimate such projections, so the tables opt out
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_scope;
 CREATE TABLE t_scope (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi';
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_scope SELECT number, number % 100, number FROM numbers(1000);
 
 CREATE HYPOTHETICAL PROJECTION p_b ON t_scope (SELECT a, b, v ORDER BY b);
