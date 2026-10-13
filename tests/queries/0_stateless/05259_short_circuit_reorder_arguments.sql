@@ -71,6 +71,13 @@ SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_ev
 SELECT count() FROM numbers(100) WHERE sleepEachRow(0.001) = 0 AND number % 100 = 5
 SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10,
     log_comment = '05259_sleep_where';
+-- The same for a function with observable side effects in the body of a lambda.
+SELECT sum(arrayExists(x -> sleepEachRow(0.001) = 0, [number]) AND number % 100 = 5) FROM numbers(100)
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10,
+    log_comment = '05259_sleep_lambda_select';
+SELECT count() FROM numbers(100) WHERE arrayExists(x -> sleepEachRow(0.001) = 0, [number]) AND number % 100 = 5
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10,
+    log_comment = '05259_sleep_lambda_where';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['SleepFunctionMicroseconds']
