@@ -225,9 +225,12 @@ std::unique_ptr<ReadBufferFromFileBase> GCSObjectStorage::readObject( /// NOLINT
     bool use_external_buffer,
     bool restrict_seek) const
 {
-    /// `bytes_size` may be the UnknownSize sentinel (e.g. object of unknown length); map it to nullopt.
+    /// `UnknownSize` is the only sentinel for "the size was never determined"; `0` is the known size of an
+    /// empty object. Dropping it would make `ReadBufferFromGCS::tryGetFileSize` ask the current generation
+    /// with a live `GetObjectMetadata` request, so a wrapper that sizes itself by `getFileSize`
+    /// (`CachedInMemoryReadBufferFromFile`) would see the size of another generation than the listed one.
     std::optional<size_t> file_size;
-    if (object.bytes_size && object.bytes_size != StoredObject::UnknownSize)
+    if (object.bytes_size != StoredObject::UnknownSize)
         file_size = object.bytes_size;
 
     /// A non-empty etag means the caller pinned the read to the object version it saw at LIST/HEAD
