@@ -630,6 +630,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// Empty for a classic parallel-replicas local plan, which is still unoptimized here and gets its
     /// descriptors from its own optimization; carries them for a plan-based fragment, which does not.
     parallel_replicas_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*this);
+    /// The soft limit of an accepted read-in-order request, as in `clone`.
+    parallel_replicas_step->query_task_size_limit = query_task_size_limit;
     return parallel_replicas_step;
 }
 
@@ -4961,6 +4963,9 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// optimization that attaches these descriptors does not run there and cannot put them back. They also matter for
     /// `mayPruneRangesOnDataRead`, which the read-in-order PK-selectivity guard consults.
     cloned_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*this);
+    /// The soft limit of an accepted read-in-order request: the clone inherits `input_order_info`
+    /// through `query_info`, and without the limit its first task would over-read again.
+    cloned_step->query_task_size_limit = query_task_size_limit;
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }

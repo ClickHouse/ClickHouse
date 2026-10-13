@@ -323,6 +323,11 @@ public:
     const IndexReadTasks & getIndexReadTasks() const { return index_read_tasks; }
     void setIndexReadTasks(IndexReadTasks index_read_tasks_) { index_read_tasks = std::move(index_read_tasks_); }
 
+    /// The soft limit set by `requestReadingInOrder` (see `query_task_size_limit`). The constructor does not derive it
+    /// from `query_info.input_order_info`, so another step built from this step's `query_info` must copy it explicitly.
+    UInt64 getQueryTaskSizeLimit() const { return query_task_size_limit; }
+    void setQueryTaskSizeLimit(UInt64 query_task_size_limit_) { query_task_size_limit = query_task_size_limit_; }
+
     /// True if a coordinator-side snapshot boundary is pinned (e.g. select_sequential_consistency).
     /// Such a read cannot be distributed: a worker reads from its own snapshot and cannot reproduce it.
     bool hasPinnedBlockNumbers() const { return max_block_numbers_to_read != nullptr; }

@@ -240,6 +240,10 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
     if (const IndexReadTasks & index_read_tasks = reading_step->getIndexReadTasks(); !index_read_tasks.empty())
         non_final_reading->setIndexReadTasks(index_read_tasks); // Pass by value
 
+    /// The synthetic step inherits `input_order_info` from `query_info`, but not the soft limit `requestReadingInOrder`
+    /// derived from the query's `LIMIT`; without it the first task over-reads and defeats the early exit.
+    non_final_reading->setQueryTaskSizeLimit(reading_step->getQueryTaskSizeLimit());
+
     if (filter_step)
         non_final_reading->addFilter(filter_step->getExpression().clone(), filter_step->getFilterColumnName());
     non_final_reading->SourceStepWithFilterBase::applyFilters();
