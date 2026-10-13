@@ -52,6 +52,14 @@ SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
 SELECT count(), sum(r.key) FROM (SELECT number FROM numbers_mt() WHERE number < 5) AS l
 RIGHT JOIN t_numbers_join AS r ON l.number = r.key;
 
+-- `generate_series` reads through the same step, with the column named `generate_series` and a step.
+SELECT 'generate_series with a step is shipped too';
+SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
+    EXPLAIN SELECT count(), sum(r.key) FROM generate_series(0, 18, 2) AS l
+    RIGHT JOIN t_numbers_join AS r ON l.generate_series = r.key);
+SELECT count(), sum(r.key), sum(l.generate_series) FROM generate_series(0, 18, 2) AS l
+RIGHT JOIN t_numbers_join AS r ON l.generate_series = r.key;
+
 -- The domain is large and the filter selects one value out of it: with the filter shipped the
 -- replicas generate a handful of rows, without it they would generate the whole domain.
 SELECT 'the shipped filter still prunes the domain';

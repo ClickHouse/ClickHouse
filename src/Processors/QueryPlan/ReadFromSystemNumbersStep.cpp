@@ -26,6 +26,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 
@@ -470,8 +475,6 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
 {
     const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
 
-    writeStringBinary(numbers_storage.column_name, ctx.out);
-
     UInt8 flags = 0;
     if (numbers_storage.multithreaded)
         flags |= 1;
@@ -510,8 +513,12 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
 {
-    String column_name;
-    readStringBinary(column_name, ctx.in);
+    /// The column is `number`, or `generate_series` for `generate_series(...)`. The step outputs exactly
+    /// that one column, and the output header is serialized with every step, so the name is taken from it.
+    if (ctx.output_header->columns() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ReadFromSystemNumbers step must have exactly one output column, got {}", ctx.output_header->columns());
+    const String column_name = ctx.output_header->getByPosition(0).name;
 
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);

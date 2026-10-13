@@ -13,6 +13,9 @@ an unbounded read is shipped too
 an unbounded multithreaded read is shipped too
 1
 10	45
+generate_series with a step is shipped too
+1
+10	45	20
 the shipped filter still prunes the domain
 10
 1
