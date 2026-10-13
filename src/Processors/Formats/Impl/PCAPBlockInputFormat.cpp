@@ -274,6 +274,9 @@ void writeIPv6(const Tins::IPv6Address & addr, IPv6 & out)
         buf[i++] = byte;
 }
 
+/// The size of the Ethernet II and IEEE 802.3 headers.
+constexpr UInt32 ethernet_header_size = 14;
+
 /// Dissects an IEEE 802.3 frame: the 14-byte header ends with the length of the frame data
 /// instead of an EtherType, and the data starts with an LLC header. When both SAPs are 0xAA and
 /// the control field is 0x03 (unnumbered information), a SNAP header follows, and the protocol
@@ -281,7 +284,7 @@ void writeIPv6(const Tins::IPv6Address & addr, IPv6 & out)
 /// plain LLC, so the layers are assembled here.
 Tins::PDU * dissectDot3(const uint8_t * data, UInt32 caplen, UInt16 length)
 {
-    static constexpr UInt32 header_size = 14;
+    static constexpr UInt32 header_size = ethernet_header_size;
     auto dot3 = std::make_unique<Tins::Dot3>(data, header_size);
 
     /// The bytes past the length are the padding of a short frame or a trailer, not LLC data.
@@ -306,9 +309,9 @@ Tins::PDU * dissectDot3(const uint8_t * data, UInt32 caplen, UInt16 length)
 /// only one. `libtins` also takes every `DLT_EN10MB` frame for Ethernet II, so the IEEE 802.3
 /// frames, whose type field is a length of at most 1500, are dispatched here as well. The frames
 /// of all the other link types are kept as a single raw PDU.
-Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
+Tins::PDU * dissectFrameLayers(int dlt, const uint8_t * data, UInt32 caplen)
 {
-    if (dlt == DLT_EN10MB && caplen >= 14)
+    if (dlt == DLT_EN10MB && caplen >= ethernet_header_size)
     {
         const UInt16 type_or_length = static_cast<UInt16>((data[12] << 8) | data[13]);
         if (type_or_length <= 1500)
@@ -324,6 +327,34 @@ Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
         return new Tins::RawPDU(data, caplen);
     }
     return Tins::Internals::pdu_from_dlt_flag(dlt, data, caplen, /*rawpdu_on_no_match=*/ true);
+}
+
+/// Dissects a captured frame like `dissectFrameLayers`, but also when the snapshot length of the
+/// capture cut it before the end of a header that `libtins` requires to be complete, such as the
+/// `IPv4` or `IPv6` header or a VLAN tag (`IP` itself handles a cut transport header). `libtins`
+/// reports such a frame with `malformed_packet`; it is a valid record of the capture, so it is
+/// dissected up to the complete Ethernet header, if there is one, and the rest is kept raw.
+Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
+{
+    try
+    {
+        return dissectFrameLayers(dlt, data, caplen);
+    }
+    catch (const Tins::malformed_packet &)
+    {
+        if (dlt != DLT_EN10MB || caplen < ethernet_header_size)
+            return new Tins::RawPDU(data, caplen);
+
+        const UInt16 type_or_length = static_cast<UInt16>((data[12] << 8) | data[13]);
+        std::unique_ptr<Tins::PDU> link_layer;
+        if (type_or_length <= 1500)
+            link_layer = std::make_unique<Tins::Dot3>(data, ethernet_header_size);
+        else
+            link_layer = std::make_unique<Tins::EthernetII>(data, ethernet_header_size);
+        if (caplen > ethernet_header_size)
+            link_layer->inner_pdu(new Tins::RawPDU(data + ethernet_header_size, caplen - ethernet_header_size));
+        return link_layer.release();
+    }
 }
 
 /// Byte offset of `target` inside the frame that starts with `root`: the sum of the header
