@@ -43,9 +43,8 @@ UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) 
 namespace
 {
 
-/// Creating a `ZSTD` context for every block is expensive: at level 3 it allocates about 650 KiB and zeroes a large part of it,
-/// which is comparable to compressing a 64 KiB block of incompressible data. A context keeps no state that affects the next
-/// block once it is reset, so the contexts are shared by all queries and tables through process-wide per-CPU pools.
+/// A new `ZSTD` context allocates about 650 KiB at level 3 and zeroes a large part of it. A context keeps no state that affects
+/// the next block once it is reset, so the contexts are shared by all queries and tables through process-wide per-CPU pools.
 template <typename ContextPtr>
 SimpleObjectPool<ContextPtr> & contextPool()
 {
@@ -59,9 +58,9 @@ SimpleObjectPool<ContextPtr> & contextPool()
 UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     static std::atomic<size_t> num_contexts = 0;
-    /// Pooled contexts outlive queries, so they are accounted only in the global memory tracker, and returning one to its
-    /// pool happens in a destructor, which must not throw `MEMORY_LIMIT_EXCEEDED`.
+    /// Pooled contexts outlive queries, so they are accounted only in the global memory tracker.
     MemoryTrackerBlockerInThread blocker;
+    /// Returning a context to its pool happens in a destructor, which must not throw `MEMORY_LIMIT_EXCEEDED`.
     LockMemoryExceptionInThread lock(VariableContext::Global);
     auto holder = contextPool<ZstdCCtxPtr>().get([]
     {
