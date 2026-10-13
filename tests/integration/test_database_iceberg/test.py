@@ -1175,7 +1175,11 @@ def test_remove_orphan_files_with_catalog(started_cluster):
     node.query(
         f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files("
         f"older_than = '{time.strftime('%Y-%m-%d %H:%M:%S')}');",
-        settings={"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 1},
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        },
     )
 
     assert data_files() == data_before, (
