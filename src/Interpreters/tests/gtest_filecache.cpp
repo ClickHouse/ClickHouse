@@ -4833,6 +4833,12 @@ TEST_F(FileCacheTest, EfficiencyCacheWriterCountsOnlyAnotherFill)
     EXPECT_EQ(active(), G);
     EXPECT_EQ(b.read(ByteRange{0, 3 * G}).totalBytes(), 3 * G);
     EXPECT_EQ(active(), 3 * G);
+
+    /// After another writer, a new fill of A does not cover the bytes of B.
+    fill(a, 3 * G, G);
+    cache->getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    EXPECT_EQ(a.read(ByteRange{2 * G, 2 * G}).totalBytes(), 2 * G);
+    EXPECT_EQ(active(), G);
 }
 
 TEST_F(FileCacheTest, EfficiencyShrinkWithinWindow)

@@ -307,10 +307,10 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
     if (!written_ok)
         return 0;
 
-    if (own_fill.size == 0)
+    if (own_fill.size == 0 || own_fill.end() != write_offset)
         own_fill = ByteRange{write_offset, contiguous};
     else
-        own_fill.size = write_offset + contiguous - own_fill.offset;
+        own_fill.size += contiguous;
 
     LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
         contiguous, seg_range.left, seg_range.right, write_offset);
