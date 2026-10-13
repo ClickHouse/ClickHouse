@@ -14865,8 +14865,9 @@ StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_con
     }();
 
     /// Let's return copy of storage metadata to catch lifetime bugs where reference to underlying metadata field was stored without pointer to metadata.
+    /// The column ASTs are shared, the metadata and column descriptions are still distinct objects.
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    return std::make_shared<StorageInMemoryMetadata>(*base);
+    return std::make_shared<StorageInMemoryMetadata>(base->copySharingColumnASTs());
 #else
     return base;
 #endif

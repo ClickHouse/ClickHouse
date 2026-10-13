@@ -83,3 +83,29 @@ columns format version: 1
         });
     }
 }
+
+TEST_F(ColumnsDescriptionTest, CopySharingASTs)
+{
+    constexpr auto columns_text = "columns format version: 1\n"
+                                  "3 columns:\n"
+                                  "`a` UInt32\n"
+                                  "`b` UInt64\tDEFAULT\ta + 1\n"
+                                  "`c` UInt64\tALIAS\ta * 2\n";
+
+    tryRegisterFunctions();
+
+    const auto columns = ColumnsDescription::parse(columns_text);
+    const auto shared = columns.copySharingASTs();
+    const ColumnsDescription cloned(columns); /// NOLINT(performance-unnecessary-copy-initialization)
+
+    ASSERT_EQ(shared, columns);
+    ASSERT_EQ(cloned, columns);
+
+    for (const auto * name : {"b", "c"})
+    {
+        const auto * expression = columns.get(name).default_desc.expression.get();
+        ASSERT_NE(expression, nullptr);
+        ASSERT_EQ(shared.get(name).default_desc.expression.get(), expression);
+        ASSERT_NE(cloned.get(name).default_desc.expression.get(), expression);
+    }
+}

@@ -97,6 +97,9 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
+    /// A copy whose column ASTs are shared with this one and must not be modified.
+    StorageInMemoryMetadata copySharingColumnASTs() const;
+
     /// NOTE: Thread unsafe part. You should not modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
     /// object. See example in IStorage.
@@ -352,6 +355,9 @@ struct StorageInMemoryMetadata
     void dropImplicitIndicesForVirtualColumns();
 
     static std::shared_ptr<StorageInMemoryMetadata> clone(std::shared_ptr<const StorageInMemoryMetadata> from);
+
+private:
+    StorageInMemoryMetadata(const StorageInMemoryMetadata & other, ColumnsDescription columns_);
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

@@ -111,6 +111,11 @@ struct ColumnDescription
     ColumnDescription(ColumnDescription && other) { *this = std::move(other); } /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     ColumnDescription & operator=(ColumnDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
+    struct ShareASTsTag {};
+    /// A copy that shares the default expression, codec and TTL ASTs with `other` instead of cloning them.
+    /// The shared ASTs must not be modified.
+    ColumnDescription(const ColumnDescription & other, ShareASTsTag) { assign(other, /*clone_asts=*/ false); }
+
     ColumnDescription(String name_, DataTypePtr type_);
     ColumnDescription(String name_, DataTypePtr type_, String comment_);
     ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_);
@@ -120,6 +125,9 @@ struct ColumnDescription
 
     void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
+
+private:
+    void assign(const ColumnDescription & other, bool clone_asts);
 };
 
 
@@ -137,6 +145,9 @@ public:
         : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)), get_cache(std::move(other.get_cache)) {}
     ColumnsDescription & operator=(const ColumnsDescription & other);
     ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
+
+    /// A copy whose columns share their ASTs with this one (see `ColumnDescription::ShareASTsTag`).
+    ColumnsDescription copySharingASTs() const;
 
     static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 

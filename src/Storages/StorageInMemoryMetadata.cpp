@@ -46,7 +46,17 @@ namespace ErrorCodes
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
-    : columns(other.columns)
+    : StorageInMemoryMetadata(other, other.columns)
+{
+}
+
+StorageInMemoryMetadata StorageInMemoryMetadata::copySharingColumnASTs() const
+{
+    return StorageInMemoryMetadata(*this, columns.copySharingASTs());
+}
+
+StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other, ColumnsDescription columns_)
+    : columns(std::move(columns_))
     , virtuals(other.virtuals)
     , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
     , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)

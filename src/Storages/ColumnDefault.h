@@ -33,9 +33,15 @@ struct ColumnDefault
     ColumnDefault(ColumnDefault && other) noexcept { *this = std::move(other); }
     ColumnDefault & operator=(ColumnDefault && other) noexcept;
 
+    /// A copy that shares `expression` with `other` instead of cloning it. The shared AST must not be modified.
+    static ColumnDefault copySharingExpression(const ColumnDefault & other);
+
     ColumnDefaultKind kind = ColumnDefaultKind::Default;
     ASTPtr expression;
     bool ephemeral_default = false;
+
+private:
+    void assign(const ColumnDefault & other, bool clone_expression);
 };
 
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs);
