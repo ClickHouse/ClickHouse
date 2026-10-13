@@ -1,7 +1,5 @@
 #include <Interpreters/SpillingHashJoin.h>
 
-#include <utility>
-
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>

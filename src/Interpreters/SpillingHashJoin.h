@@ -21,23 +21,19 @@ struct HashJoinBuildLayout;
 
 /// An IJoin wrapper that automatically switches to GraceHashJoin to spill to disk when memory limits are exceeded.
 ///
-/// The build phase feeds one in-memory HashJoin, which decides for itself whether it accepts blocks
-/// from several threads at once.
+/// Blocks are fed into a HashJoin, possibly from multiple threads concurrently.
+/// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock, while
+/// switchToGraceHashJoin takes an exclusive lock.
+/// If the data exceeds max_bytes_before_external_join, a GraceHashJoin is created and HashJoin workers are converted via
+/// addBlockToJoin calls possibly from multiple threads.
+/// If all blocks fit in memory, the HashJoin is promoted to chosen_join with zero rework.
 ///
-/// If the data exceeds max_bytes_before_external_join, the stored blocks are extracted and drained
-/// into a new GraceHashJoin. If they all fit in memory, the in-memory join becomes chosen_join with
-/// no rework at all.
-///
-/// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition.
-/// `addBlockToJoin` takes a shared lock; `switchToGraceHashJoin` takes an exclusive lock.
-/// That way no block can land in a join that is being drained.
-///
-/// `hasDelayedBlocks` always returns true so that the pipeline includes the delayed-block
-/// transforms needed by `GraceHashJoin`. When `HashJoin` is used, `getDelayedBlocks` returns
-/// nullptr and the delayed transforms finish instantly.
-/// Because `hasDelayedBlocks` returns true, the read-in-order-through-join optimisation
-/// in `optimizeReadInOrder.cpp` does not propagate through `SpillingHashJoin` (same as
-/// `GraceHashJoin`). Spilling may reorder rows.
+/// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
+/// transforms needed by GraceHashJoin. When HashJoin is used,
+/// getDelayedBlocks returns nullptr and the delayed transforms finish instantly.
+/// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
+/// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
+/// GraceHashJoin), since spilling may reorder rows.
 class SpillingHashJoin final : public IJoin
 {
 public:

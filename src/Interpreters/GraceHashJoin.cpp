@@ -1,5 +1,4 @@
 #include <Compression/CompressedWriteBuffer.h>
-#include <deque>
 #include <Formats/NativeWriter.h>
 #include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
@@ -889,19 +888,11 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
-    /// The join gets `max_threads` workers although the inserts here are serialized, because each fill stream
-    /// finds its worker by its own id.
-    ///
-    /// The serial layout is deliberate. 256 buckets of empty buffers would count against
-    /// `max_bytes_before_external_join` and would not shrink as Grace adds file buckets.
-    /// A small remainder could then rehash past `grace_hash_join_max_buckets`.
-    auto join = std::make_shared<HashJoin>(
-        table_join,
-        right_sample_block,
-        any_take_last_row,
-        reserve_num,
-        bucket_id,
-        HashJoinStatsCollectingParams{},
+    /// One bucket: 256 buckets of empty buffers would count against `max_bytes_before_external_join` and could make
+    /// Grace rehash past `grace_hash_join_max_buckets`. The inserts are serialized, but each fill stream finds its
+    /// worker by its own id, so the join gets `max_threads` workers.
+    auto join = std::make_unique<HashJoin>(
+        table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, HashJoinStatsCollectingParams{},
         HashJoinBuildLayout::oneBucket(max_threads));
     /// A bucket that outgrows memory is rebucketed, which reads its right blocks back out - and that
     /// can happen at any point, so these blocks are never dropped.
@@ -911,8 +902,6 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
 {
-    /// The cached sample block, not `hash_join`: this runs without the mutex, and a rehash
-    /// replaces `hash_join`.
     return HashJoin::prepareRightBlock(block, hash_join_sample_block);
 }
 
