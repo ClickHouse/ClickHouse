@@ -26,17 +26,21 @@
 # fastest on Neoverse-V2. strlen uses the plain strlen.S: strlen-mte.S is
 # 20-40% slower above 512 bytes and ~20% slower on mixed sizes, while
 # strlen.S matches glibc's __strlen_asimd, and ClickHouse does not enable
-# MTE. The SVE str*/memchr variants are deliberately not used: on 128-bit-SVE
-# cores (Graviton4) they are up to 3x slower than the NEON/MTE ones.
+# MTE. The SVE str*/memchr variants under string/aarch64/experimental are
+# deliberately not used: on 128-bit-SVE cores (Graviton4) they are up to 3x
+# slower than the NEON/MTE ones.
 #
-# memcpy/memmove are the exception and are selected at runtime, see
-# memcpy_dispatch.c. The AdvSIMD memcpy alone was 12-17% slower than glibc's
+# memcpy/memmove and strchr are the exception and are selected at runtime,
+# see dispatch.c. The AdvSIMD memcpy alone was 12-17% slower than glibc's
 # ifunc-selected __memcpy_sve on Graviton 3/4 (isValidUTF8, upperUTF8,
 # Parquet/ORC reads in the perf suite); memcpy-sve.S, which uses SVE only for
 # the small-copy tail, is on par with it. SVE is not in the aarch64 baseline,
 # so both variants are built and a trampoline picks one on first call. It is
 # a function pointer rather than an ifunc because a static musl binary cannot
-# process IRELATIVE relocations.
+# process IRELATIVE relocations. The same trampoline prefers the MOPS variants
+# (memcpy-mops.S, memmove-mops.S: the Armv8.8 cpyf*/cpy* instructions, as
+# glibc does) on cores that have them, and the SVE2 strchr (strchr-sve2.S,
+# built on the `match` instruction) over the MTE one where SVE2 is present.
 #
 # On x86_64 llvm-libc's implementations (built with AVX2/FMA) are
 # competitive, so this library is not built there. It is not built under
@@ -51,14 +55,17 @@ endif()
 set(AOR_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/optimized-routines")
 
 set(SRCS
-    "${CMAKE_CURRENT_SOURCE_DIR}/memcpy_dispatch.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dispatch.c"
     "${AOR_SOURCE_DIR}/string/aarch64/memcpy-advsimd.S"
     "${AOR_SOURCE_DIR}/string/aarch64/memcpy-sve.S"
+    "${AOR_SOURCE_DIR}/string/aarch64/memcpy-mops.S"
+    "${AOR_SOURCE_DIR}/string/aarch64/memmove-mops.S"
     "${AOR_SOURCE_DIR}/string/aarch64/memcmp.S"
     "${AOR_SOURCE_DIR}/string/aarch64/memchr-mte.S"
     "${AOR_SOURCE_DIR}/string/aarch64/strlen.S"
     "${AOR_SOURCE_DIR}/string/aarch64/strcmp.S"
     "${AOR_SOURCE_DIR}/string/aarch64/strchr-mte.S"
+    "${AOR_SOURCE_DIR}/string/aarch64/strchr-sve2.S"
     "${AOR_SOURCE_DIR}/string/aarch64/strnlen.S"
 )
 
@@ -66,9 +73,9 @@ add_library(aor ${SRCS})
 set_target_properties(aor PROPERTIES FOLDER "contrib/optimized-routines-cmake")
 
 # AOR asm entry points carry internal names (__memcmp_aarch64, ...); rename
-# them to the public symbols during preprocessing of the .S files. The two
-# memcpy variants keep their internal names: the public memcpy/memmove are
-# the trampolines in memcpy_dispatch.c.
+# them to the public symbols during preprocessing of the .S files. The
+# memcpy/memmove and strchr variants keep their internal names: the public
+# memcpy/memmove/strchr are the trampolines in dispatch.c.
 set_source_files_properties("${AOR_SOURCE_DIR}/string/aarch64/memcmp.S"
     PROPERTIES COMPILE_DEFINITIONS "__memcmp_aarch64=memcmp")
 set_source_files_properties("${AOR_SOURCE_DIR}/string/aarch64/memchr-mte.S"
@@ -77,8 +84,6 @@ set_source_files_properties("${AOR_SOURCE_DIR}/string/aarch64/strlen.S"
     PROPERTIES COMPILE_DEFINITIONS "__strlen_aarch64=strlen")
 set_source_files_properties("${AOR_SOURCE_DIR}/string/aarch64/strcmp.S"
     PROPERTIES COMPILE_DEFINITIONS "__strcmp_aarch64=strcmp")
-set_source_files_properties("${AOR_SOURCE_DIR}/string/aarch64/strchr-mte.S"
-    PROPERTIES COMPILE_DEFINITIONS "__strchr_aarch64_mte=strchr")
 set_source_files_properties("${AOR_SOURCE_DIR}/string/aarch64/strnlen.S"
     PROPERTIES COMPILE_DEFINITIONS "__strnlen_aarch64=strnlen")
 
