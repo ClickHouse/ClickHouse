@@ -165,9 +165,15 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 }
             }
 
-            auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
             size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
-            auto file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
+            std::vector<FileBucketInfoPtr> file_bucket_infos;
+            if (auto file_size = last_object_info->getFileSizeHint())
+                file_bucket_infos = splitter->splitByByteRanges(bucket_size, *file_size, last_object_info->getSplitOffsetsHint());
+            if (file_bucket_infos.empty())
+            {
+                auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
+                file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
+            }
             for (const auto & file_bucket : file_bucket_infos)
             {
                 auto copy_object_info = *last_object_info;
