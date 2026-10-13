@@ -14,8 +14,8 @@
 #include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
 #include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
-#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/RequestQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/WorkloadSettings.h>
@@ -41,30 +41,50 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 {
     using NodePtr = TimeSharedNodePtr;
 
+    // The `scheduler` setting reorders requests by per-query identity, which is only meaningful for
+    // `IOByte` and `CPUNanosecond` leaves; other time-shared leaves (e.g. `QuerySlot` admission)
+    // always run `fifo` regardless of the workload `scheduler` setting.
+    static SchedulerAlgorithm schedulerFor(const WorkloadSettings & settings_, CostUnit unit)
+    {
+        if (unit == CostUnit::IOByte || unit == CostUnit::CPUNanosecond)
+            return parseSchedulerAlgorithm(settings_.scheduler);
+        return SchedulerAlgorithm::Fifo;
+    }
+
     static NodePtr makeQueue(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
-        NodePtr result = std::make_shared<FifoQueue>(
+        // The time-shared leaf is always a `RequestQueue`; the workload `scheduler` setting selects
+        // the scheduling algorithm it runs (default `fifo` reproduces the historical behaviour).
+        NodePtr result = std::make_shared<RequestQueue>(
             event_queue_,
             SchedulerNodeInfo{},
+            schedulerFor(settings_, unit),
+            unit,
             settings_.getQueueLimit(unit));
-        result->basename = "fifo";
+        result->basename = "queue";
         result->workload = workload;
         return result;
     }
 
     static ResourceLink getLink(const NodePtr & node)
     {
-        return ResourceLink{.queue = &static_cast<FifoQueue &>(*node)};
+        // Expose the queue through the `ISchedulerQueue` interface (independent of the algorithm).
+        return ResourceLink{.queue = &static_cast<ISchedulerQueue &>(*node)};
     }
 
     static void updateQueue(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
-        static_cast<FifoQueue &>(*node).updateQueueLimit(settings_.getQueueLimit(unit));
+        // In-place update: the leaf node stays; its queue limit is updated and, if the `scheduler`
+        // setting changed, `setScheduler` swaps the algorithm and migrates pending requests. No
+        // hierarchy rebuild, `ResourceLink` unchanged.
+        auto & queue = static_cast<RequestQueue &>(*node);
+        queue.updateQueueLimit(settings_.getQueueLimit(unit));
+        queue.setScheduler(schedulerFor(settings_, unit));
     }
 
     static void purgeQueue(const NodePtr & node)
     {
-        static_cast<FifoQueue &>(*node).purgeQueue();
+        static_cast<ISchedulerQueue &>(*node).purgeQueue();
     }
 
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority priority)
@@ -140,7 +160,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 
     static constexpr bool addRawPointerThrottler = false; // ThrottlerConstraint does not call `request->addConstraint()`
     static constexpr bool addRawPointerSemaphore = true; // SemaphoreConstraint may be stored as a raw pointer in ResourceRequest
-    static constexpr bool addRawPointerQueue = true; // ResourceLink holds raw pointer to FifoQueue - so we need to enforce destruction order here
+    static constexpr bool addRawPointerQueue = true; // ResourceLink holds raw pointer to the leaf queue - so we need to enforce destruction order here
 };
 
 template <>
@@ -441,7 +461,7 @@ protected:
     /// Handles degenerate case of zero children (a fifo queue) or delegate to `ChildrenBranch`.
     struct QueueOrChildrenBranch
     {
-        NodePtr queue; /// FifoQueue or AllocationQueue node is used if there are no children
+        NodePtr queue; /// RequestQueue or AllocationQueue node is used if there are no children
         ChildrenBranch branch; /// Used if there is at least one child
         WorkloadSettings settings;
         CostUnit unit = CostUnit::IOByte;
