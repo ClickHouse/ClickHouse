@@ -1355,6 +1355,22 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
     ```
     )", 0) \
+    DECLARE(Bool, interserver_tables_status_allow_unauthenticated, false, R"(
+    Answer an interserver `TablesStatusRequest` with the actual table status even when the
+    connection has not yet authenticated a query with the cluster `<secret>`.
+
+    By default such a request, which a node sends while establishing a connection to a replica,
+    gets a response that reports every requested table as present, not replicated and writable,
+    independently of the actual state of the tables, so a peer that does not know the secret
+    cannot learn which tables exist, whether they are replicated, their replication delay or
+    whether they are read-only. The cost is that until a connection has run its first query,
+    `max_replica_delay_for_distributed_queries`, `distributed_insert_skip_read_only_replicas` and
+    skipping a replica that does not have the table do not apply to it. Connections that have
+    already authenticated a query get the actual status.
+
+    Enabling this restores the previous behavior, and with it the disclosure of the table status
+    to any peer that can connect to the native port.
+    )", 0) \
     DECLARE(String, interserver_http_host, "", R"(
     The hostname that can be used by other servers to access this server.
 

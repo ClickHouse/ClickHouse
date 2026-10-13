@@ -130,6 +130,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
     extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
+    extern const ServerSettingsBool interserver_tables_status_allow_unauthenticated;
 }
 
 namespace FailPoints
@@ -1532,8 +1533,22 @@ void TCPHandler::processTablesStatusRequest()
     request.read(*in, client_tcp_protocol_version);
 
     ContextPtr context_to_resolve_table_names;
+    /// An interserver connection is not authenticated until its first `Query`, but this request arrives
+    /// before it. Until then, report every table as present, not replicated and writable, so that nothing
+    /// is disclosed and the initiator still proceeds to the `Query`.
+    bool hide_table_status = false;
     if (is_interserver_mode)
     {
+        if (!is_interserver_authenticated
+            && !server.context()->getServerSettings()[ServerSetting::interserver_tables_status_allow_unauthenticated])
+        {
+            LOG_DEBUG(LogFrequencyLimiter(log, 10),
+                "Answering an unauthenticated interserver TablesStatusRequest without the table status. "
+                "Replica staleness, readonly state and table existence are not taken into account until "
+                "a query on this connection has authenticated with the cluster secret.");
+            hide_table_status = true;
+        }
+
         /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
@@ -1551,6 +1566,12 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
+        if (hide_table_status)
+        {
+            response.table_states_by_id.emplace(table_name, TableStatus{});
+            continue;
+        }
+
         auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
         if (!table)
