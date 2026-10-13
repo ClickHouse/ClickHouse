@@ -27,7 +27,7 @@ SELECT * FROM t_mt_source SETTINGS parallel_replicas_prefer_local_replica = 0;
 SELECT count() FROM t_rmt_target;
 SELECT * FROM t_rmt_target EXCEPT SELECT * FROM t_mt_source;
 
-SELECT '-- max_execution_time_leaf only in the SELECT';
+SELECT '-- max_execution_time_leaf = 0 in the INSERT, 100 in the SELECT';
 TRUNCATE TABLE t_rmt_target;
 INSERT INTO t_rmt_target SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 300, max_execution_time_leaf = 0, log_comment = '05394_leaf_timeout'
 SELECT * FROM t_mt_source SETTINGS max_execution_time_leaf = 100;
@@ -45,7 +45,7 @@ SELECT * FROM t_rmt_target EXCEPT SELECT * FROM t_mt_source;
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, count() FROM system.query_log
 WHERE (current_database = currentDatabase() OR has(databases, currentDatabase())) AND type = 'QueryFinish' AND query_kind = 'Insert'
-    AND log_comment IN ('05394_prefer_local', '05394_leaf_timeout', '05394_control') AND event_date >= yesterday() AND event_time >= now() - 600
+    AND log_comment IN ('05394_local_plan', '05394_prefer_local', '05394_leaf_timeout', '05394_control') AND event_date >= yesterday() AND event_time >= now() - 600
 GROUP BY log_comment ORDER BY log_comment;
 
 DROP TABLE t_mt_source;
