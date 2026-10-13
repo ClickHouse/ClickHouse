@@ -50,6 +50,7 @@ orphan_metadata_files()
 {
     sleep 2
     ${CH} --allow_iceberg_remove_orphan_files 1 --iceberg_orphan_files_older_than_seconds 0 \
+        --iceberg_orphan_files_min_retention_seconds 0 \
         -q "ALTER TABLE $1 EXECUTE remove_orphan_files(dry_run = 1)" | grep -F deleted_metadata_files_count
 }
 
