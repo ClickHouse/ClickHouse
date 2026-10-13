@@ -33,6 +33,9 @@ constexpr size_t adaptive_bypass_sample_rows = 65'536;
 constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
 /// Lookahead of the append-position prefetch into the producer's partitions (see `appendDelayedRecords`).
 constexpr size_t adaptive_append_prefetch_distance = 8;
+/// The staged records of this many consecutive buckets share allocation blocks, so their memory is released as the
+/// merge tasks advance through the bucket order, while the grouping holds when the pruning reorders the buckets.
+constexpr size_t adaptive_staging_block_buckets = 16;
 /// Partition-count combining starts with a bounded trial of nonconsecutive misses in each block.
 constexpr size_t adaptive_count_combining_sample_records = 1024;
 /// Combining continues only if at least one lookup in this many reuses a missed key's count descriptor.
@@ -177,7 +180,8 @@ struct AdaptiveAggregationSession
 
 /// The working memory of one adaptive merge task, kept across the buckets it merges so their units do not allocate
 /// it again: the places and the source places of a unit's merge, the record pointers and ranges of a partition, and
-/// for a count-first unit the best groups by their counts and the records of those groups.
+/// for a count-first unit the hashes of its best groups, the counts an ascending selection keeps, and the records of
+/// its best groups.
 struct AdaptiveMergeScratch
 {
     PaddedPODArray<AggregateDataPtr> places;

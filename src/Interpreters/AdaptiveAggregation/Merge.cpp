@@ -807,12 +807,13 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         std::swap(dest_method.data.impls[bucket], dest_method.data.impls[previous_bucket]);
 
     using Table = std::decay_t<decltype(dest_method.data.impls[0])>;
+    static_assert(std::decay_t<decltype(dest_method.data)>::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     auto & table = dest_method.data.impls[bucket];
     Arena * arena = dest.adaptive_merge_bucket_arenas[bucket].get();
 
     const AdaptivePartitionLayout layout = session.layout;
     const size_t partitions_per_bucket = layout.partitionsPerBucket();
-    const size_t first_partition = static_cast<size_t>(bucket) * partitions_per_bucket;
+    const size_t first_partition = layout.firstPartition(bucket);
 
     /// The spilled records of the bucket stay in memory until the bucket is done: the units' tables point into them.
     const auto spilled = readSpilledBucket(session, bucket);
@@ -846,7 +847,12 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         size_t hash;
     };
     std::vector<std::vector<SourceCell>> unit_cells(units);
-    const auto unit_of = [&](size_t hash) { return (layout.partitionOf(hash) & (partitions_per_bucket - 1)) >> unit_shift; };
+    const auto unit_of = [&](size_t hash)
+    {
+        const size_t partition = layout.partitionOf(hash);
+        chassert(layout.bucketOf(partition) == static_cast<size_t>(bucket));
+        return layout.subOf(partition) >> unit_shift;
+    };
     for (size_t i = 1; i < data.size(); ++i)
     {
         auto & source = getDataVariant<Method>(*data[i]).data.impls[bucket];
@@ -982,7 +988,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 }
                 for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
                 {
-                    collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
+                    collectPartitionRecords(session, spilled, partition, layout.subOf(partition), scratch.ranges);
                     pruned_records += drainAdaptivePartition<Method>(
                         counting_table,
                         arena,
@@ -1083,7 +1089,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 merge_source_states();
                 for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
                 {
-                    collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
+                    collectPartitionRecords(session, spilled, partition, layout.subOf(partition), scratch.ranges);
                     auto & best_records = scratch.best_records;
                     best_records.clear();
                     forEachArgumentRecord<Key>(
@@ -1155,7 +1161,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
 
             for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
             {
-                collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
+                collectPartitionRecords(session, spilled, partition, layout.subOf(partition), scratch.ranges);
                 pruned_records += drainAdaptivePartition<Method>(table, arena, scratch.ranges, alive_bins, places, scratch.records);
             }
             unit_groups = table.size();

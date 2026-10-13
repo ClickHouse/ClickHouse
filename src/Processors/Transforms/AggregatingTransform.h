@@ -108,9 +108,6 @@ struct ManyAggregatedData
 
     /// The number of producers that have to reach the finish barrier in
     /// `AggregatingTransform::initGenerate`, fixed at construction time.
-    /// `variants.size()` cannot be used instead: the last finisher appends the adaptive
-    /// aggregation's early-drain routing table to `variants`, and reading the size of a vector
-    /// that is concurrently grown is a data race.
     const size_t num_producers;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see

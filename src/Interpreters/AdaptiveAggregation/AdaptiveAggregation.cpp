@@ -82,10 +82,9 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     /// A table that was written to disk freezes again with the records and the bins it already has.
     if (!adaptive.partitions)
     {
-        /// Share allocation blocks across 16 consecutive buckets, so their memory is released as merge tasks
-        /// advance through the bucket order, while retaining the same grouping when pruning reorders buckets.
         const auto & layout = adaptive.session->layout;
-        adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(layout.numPartitions(), 16 * layout.partitionsPerBucket());
+        adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(
+            layout.numPartitions(), adaptive_staging_block_buckets * layout.partitionsPerBucket());
         adaptive.session->frozen_producers.fetch_add(1, std::memory_order_relaxed);
     }
     if (adaptive.session->top_k_pruning && !adaptive.count_bins)
@@ -222,7 +221,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
     for (size_t i = 0; i < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++i)
     {
         const size_t bucket = (first_bucket + i) % ADAPTIVE_AGGREGATION_NUM_BUCKETS;
-        const size_t first_partition = bucket * partitions_per_bucket;
+        const size_t first_partition = shared.layout.firstPartition(bucket);
 
         bool has_records = false;
         for (size_t sub = 0; sub < partitions_per_bucket; ++sub)

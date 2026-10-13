@@ -5,14 +5,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A count-first unit of an adaptive aggregation that feeds `ORDER BY count() DESC LIMIT n` keeps its best
-# groups while it counts. A group whose grown count exceeds the smallest count of the best replaces the group
-# with that count, and an evicted group enters again once its count exceeds the new smallest one. A group's
-# entry is found through its count in the counting table and confirmed by its key, so every key method takes
-# its own path: numbers, packed strings, strings in every submap of the legacy string table, serialized keys
-# and wide fixed keys.
+# groups while it counts. It finds a group's entry through its count in the counting table and confirms it by
+# the key, so every key method takes its own path: numbers, packed strings, strings in every submap of the
+# legacy string table, serialized keys and wide fixed keys.
 #
 # Half of the rows go to a head of 3000 keys with about 50 rows each, so many groups tie around the top and
-# keep entering and leaving the best. The other half are unique keys, which keep the aggregation frozen. A
+# replace each other among the best. The other half are unique keys, which keep the aggregation frozen. A
 # freeze threshold above the head keeps most head keys in the frozen tables as source cells; a small one
 # stages most of their rows as records. Every cell compares the top with the top of the feature off: the
 # counts as a multiset, which ties cannot reorder, and every returned row against the row of its key in the

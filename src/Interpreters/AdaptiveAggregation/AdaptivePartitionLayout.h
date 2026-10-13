@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bit>
+
 #include <base/types.h>
 
 namespace DB
@@ -10,11 +12,11 @@ namespace DB
 inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 
 /// How the staged records of a session are partitioned. A partition is a sub-range of a two-level bucket:
-/// `partition = (bucket << sub_bits) | sub`, where `bucket` is hash bits 24..31, as for the two-level tables, and
-/// `sub` the next `sub_bits` bits below them. The bits are free: the 32-bit hashes of the two-level methods use
-/// 24..31 for the bucket and the low bits for the slot inside a bucket's table, which keeps a partition's table
-/// well spread up to 2^20 cells. Since the partitions nest in the buckets, every bucket-level contract of the
-/// merge holds unchanged.
+/// `partition = (bucket << sub_bits) | sub`, where `bucket` is the hash bits 24..31 the two-level tables take it
+/// from (`TwoLevelHashTable::getBucketFromHash`), and `sub` the next `sub_bits` bits below them. The bits are free:
+/// the 32-bit hashes of the two-level methods use 24..31 for the bucket and the low bits for the slot inside a
+/// bucket's table, which keeps a partition's table well spread up to 2^20 cells. Since the partitions nest in the
+/// buckets, every bucket-level contract of the merge holds unchanged.
 class AdaptivePartitionLayout
 {
 public:
@@ -32,10 +34,21 @@ public:
     size_t numPartitions() const { return partition_mask + 1; }
     size_t partitionOf(UInt64 hash) const { return (hash >> partition_shift) & partition_mask; }
 
+    /// The partitions of a bucket are consecutive: they start at `firstPartition(bucket)`, and `subOf` is a
+    /// partition's place among them.
+    size_t firstPartition(size_t bucket) const { return bucket * partitionsPerBucket(); }
+    size_t subOf(size_t partition) const { return partition & (partitionsPerBucket() - 1); }
+    size_t bucketOf(size_t partition) const { return partition / partitionsPerBucket(); }
+
 private:
+    /// The two-level tables take the bucket from the top `bucket_bits` of the low 32 bits of the hash. The kernels
+    /// assert that their tables have `ADAPTIVE_AGGREGATION_NUM_BUCKETS` buckets, and the merge that every source
+    /// cell of a bucket falls into that bucket's partitions.
+    static constexpr size_t bucket_bits = std::countr_zero(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+
     explicit AdaptivePartitionLayout(UInt8 sub_bits)
         : partition_mask(static_cast<UInt32>((ADAPTIVE_AGGREGATION_NUM_BUCKETS << sub_bits) - 1))
-        , partition_shift(24 - sub_bits)
+        , partition_shift(static_cast<UInt8>(32 - bucket_bits - sub_bits))
     {
     }
 

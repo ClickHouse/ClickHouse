@@ -34,56 +34,33 @@ namespace ErrorCodes
 
 namespace
 {
-    /// How far past a key's bytes a reader may touch. The overflow-tolerant small copy and
-    /// compare primitives access up to 15 bytes past the end, which is only legal for bytes
-    /// living in padded containers (column chars, arenas, the chunks of staged records); an
-    /// exact-size allocation forbids them.
-    enum class ReadablePadding
+    /// Copies a string-like key of the block into a staged record. A state that exposes its padded column buffers is
+    /// read directly, with the overflow-tolerant small copy those buffers allow: it reads and writes up to 15 bytes past
+    /// the end, and the records are appended in increasing byte order with every chunk ending in unused padding, so the
+    /// scribble lands in space the next append overwrites or that no record uses. Another state's key holder may own the
+    /// bytes in an exact-size allocation or roll its scratch-arena allocation back on discard, so its bytes are copied
+    /// exactly, while the holder is alive.
+    template <typename State>
+    void ALWAYS_INLINE copyStagedKeyBytes(State & state, size_t row, size_t size, DB::Arena & scratch, char * staged)
     {
-        Exact,
-        AtLeast15Bytes,
-    };
-
-    struct KeyBytesRef
-    {
-        std::string_view bytes;
-        ReadablePadding padding;
-    };
-
-    /// Runs `callback` on a string-like key's bytes while their owner is alive. A generic hashing state's
-    /// key holder may own the bytes itself in an exact-size allocation or roll its scratch-arena allocation
-    /// back on discard, so a pointer must not outlive the holder. States that expose their padded column
-    /// buffers skip the holder entirely. The padding in the reference tells the callback which comparison
-    /// and copy primitives are legal.
-    template <typename State, typename Callback>
-    void ALWAYS_INLINE withStagedKeyBytes(State & state, size_t row, size_t size, DB::Arena & scratch, Callback && callback)
-    {
+        if (!size)
+            return;
         if constexpr (requires { state.getKeyBytes(row); })
         {
             const char * data = state.getKeyBytes(row).data();
-            callback(KeyBytesRef{std::string_view(data, size), ReadablePadding::AtLeast15Bytes});
+            if (size <= 64)
+                memcpySmallAllowReadWriteOverflow15(staged, data, size);
+            else
+                memcpy(staged, data, size);
         }
         else
         {
             auto && key_holder = state.getKeyHolder(row, scratch);
             const auto key = static_cast<std::string_view>(keyHolderGetKey(key_holder));
-            callback(KeyBytesRef{key, ReadablePadding::Exact});
+            chassert(key.size() == size);
+            memcpy(staged, key.data(), size);
             keyHolderDiscardKey(key_holder);
         }
-    }
-
-    /// Copy candidate bytes into a staged record, honoring the source's padding. The
-    /// overflow-tolerant branch also writes up to 15 bytes past the destination; records are
-    /// appended in increasing byte order and every chunk ends in unused padding, so the scribble
-    /// lands in space the next append overwrites or that no record uses.
-    void ALWAYS_INLINE copyStagedKeyBytes(char * staged, const KeyBytesRef & key)
-    {
-        if (key.bytes.empty())
-            return;
-        if (key.padding == ReadablePadding::AtLeast15Bytes && key.bytes.size() <= 64)
-            memcpySmallAllowReadWriteOverflow15(staged, key.bytes.data(), key.bytes.size());
-        else
-            memcpy(staged, key.bytes.data(), key.bytes.size());
     }
 
     /// Records the key of a staged miss for the append: the size of a string-like key, whose bytes the append copies
@@ -158,6 +135,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     bool all_keys_are_const) const
 {
     using RecordKey = AdaptiveRecordKey<SharedMethod>;
+    static_assert(SharedMethod::Data::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
 
     Arena scratch_pool;
 
@@ -233,6 +211,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     bool all_keys_are_const) const
 {
     using RecordKey = AdaptiveRecordKey<SharedMethod>;
+    static_assert(SharedMethod::Data::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
 
     Arena scratch_pool;
 
@@ -363,6 +342,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
                 const RecordKey staged_key = key;
 
+                /// Without combining, the previous record is always the last descriptor. Spelling it so keeps
+                /// `first_record` and `last_record` out of the loop of the keys that never combine.
                 bool run_continues = (can_combine_partition_counts
                     ? adaptive.miss_hashes.size() != first_record : !adaptive.miss_hashes.empty())
                     && (combine_partition_counts ? adaptive.miss_hashes[last_record] : adaptive.miss_hashes.back()) == hash;
@@ -583,8 +564,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     const auto write_key = [&](size_t record, size_t key_size, char * to)
     {
         if constexpr (adaptive_key_stages_bytes<RecordKey>)
-            withStagedKeyBytes(
-                local_find_state, key_row_of(record), key_size, scratch_pool, [&](const KeyBytesRef & key) { copyStagedKeyBytes(to, key); });
+            copyStagedKeyBytes(local_find_state, key_row_of(record), key_size, scratch_pool, to);
         else
             memcpy(to, staged_keys + record * sizeof(RecordKey), sizeof(RecordKey));
     };
