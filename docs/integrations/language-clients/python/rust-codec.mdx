@@ -13,21 +13,35 @@ The codec is experimental and opt in. The Python codec remains the default.
 
 ## Installation {#installation}
 
-The compiled codec ships as a separate wheel named `clickhouse-connect-core`, which provides the `_ch_core` extension module. For evaluation, install the codec and PyArrow together:
+The compiled codec ships as a separate wheel named `clickhouse-connect-core`, which provides the `_ch_core` extension module. Install the codec with the integrations your application uses:
 
 ```bash
-pip install "clickhouse-connect[rust,arrow]"
+pip install "clickhouse-connect[rust]"         # Python rows and Native inserts
+pip install "clickhouse-connect[rust,numpy]"   # NumPy results
+pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-In 1.8, every Rust path that produces NumPy or Pandas output requires PyArrow. This includes `query_np`, `query_df`, their streaming variants, and `query(..., use_numpy=True)`. Without PyArrow, `native_codec="rust"` logs a warning and runs those queries with the Python codec. `native_codec="rust_strict"` raises `NotSupportedError` instead.
+Core wheels are published for CPython 3.10 through 3.14 and free-threaded CPython 3.14t on Linux, macOS, and Windows. On free-threaded Python, importing the core extension doesn't re-enable the GIL.
 
-The `rust` extra alone stays lean for applications that use standard Python row results, row or column block streams, and inserts without requesting NumPy or Pandas output. Those paths do not require PyArrow:
+Ordinary Rust NumPy and Pandas output doesn't require PyArrow or any other Arrow package. This includes `query_np`, `query_df`, their streaming variants, and `query(..., use_numpy=True)`. NumPy queries don't require Pandas. Add the `async` extra for the async client.
+
+PyArrow is still required for Arrow methods and Arrow-backed Pandas storage. Install the `arrow` extra for those features:
 
 ```bash
-pip install "clickhouse-connect[rust]"
+pip install "clickhouse-connect[rust,pandas,arrow]"
 ```
 
-The codec, its packaging, and its dependency set are experimental. A smaller Arrow interoperability dependency is being evaluated for a future release.
+Extended Pandas string output follows Pandas' `mode.string_storage` option. When PyArrow is installed, strings use the existing Arrow conversion, with full UTF-8 validation, for either storage backend. Without PyArrow, the driver uses the Rust object conversion and Pandas' default storage uses Python strings. Explicitly requesting Arrow string storage without PyArrow raises a dependency error. Invalid UTF-8 keeps the existing hex rendering with either storage backend.
+
+The codec, its packaging, and its dependency set are experimental. Direct buffer conversion now handles non-nullable 8-64-bit integers, Float32/64, Boolean, BFloat16, Interval, Date, Date32, DateTime, and DateTime64 columns. Scalar Time and Time64 columns, including nullable values, also use direct buffers, as do nullable BFloat16 and extended Pandas nullable integer, float, and Interval output. BFloat16 retains float32 output and its existing Pandas Float32 missing-value policy. Interval values remain signed counts in their declared unit. Temporal conversion retains declared units and existing timezone rules. Nullable SimpleAggregateFunction aliases of Time64 now return correct durations and NaT for NULL values. Nullable scalar DateTime64(9) columns also use buffers to preserve nanoseconds in NumPy and Pandas output. Other nullable dates and timestamps retain their object conversion paths.
+
+Arrays of Time/Time64, including nested arrays and nullable leaves, and LowCardinality(Time), including nullable values, also use direct buffers. Their nesting, duration units, and null representations stay unchanged. LowCardinality(Time64) remains unsupported by the Rust core.
+
+For nullable scalar DateTime64(9), `query_df` and `query_df_stream` preserve all nine fractional digits, including through SimpleAggregateFunction aliases. On Pandas 3, datetime columns in default output now use nanosecond units instead of microseconds. Existing object dtype inference for all-NULL blocks stays unchanged. If a named timezone would put a value outside Pandas' nanosecond range, that column keeps its previous object conversion and range behavior.
+
+For these columns, `query_np` and `query_np_stream` object fields now contain `numpy.datetime64` cells instead of Python `datetime` cells, with `None` for SQL NULL. Named-zone values use UTC ticks without timezone metadata, matching the Python codec. This preserves nanoseconds without requiring Pandas. Use `query_df` if you need timezone-aware timestamps. Other nullable temporal NumPy cell types stay unchanged.
+
+Scalar DateTime64 NumPy and Pandas queries reject precisions other than 0, 3, 6, and 9 with `ProgrammingError`, including nullable columns and SimpleAggregateFunction aliases.
 
 If a Rust codec is selected and the compiled module is not installed, client creation raises a `NotSupportedError` naming this install command.
 
@@ -59,7 +73,11 @@ The Rust codec is most useful for large DataFrame results with text, container, 
 
 Small results and network-bound queries may see little change. Flat numeric results already use efficient bulk paths in the Python codec, so they may also see less benefit.
 
-Buffered `query()` calls on very wide or all-numeric results can currently be slower and use more peak memory with the Rust codec. Prefer `query_df`, `query_row_block_stream`, or `query_column_block_stream` for those workloads. Streaming keeps memory bounded.
+Direct buffers avoid intermediate Arrow arrays for supported types. Final NumPy and Pandas result assembly can still allocate and copy, so this doesn't make every query result zero-copy.
+
+Without PyArrow, Rust string conversion builds Python string objects from each decoded block. At default block sizes, peak memory for large String results is close to the Python codec. Very large blocks, such as a single block holding a million rows, keep the whole decoded block alive while its strings are built and can use more peak memory than the Python codec. For large Pandas `StringDtype` results, install the `arrow` extra and use Arrow string storage. Pandas 3 selects Arrow storage by default when PyArrow is installed. Pandas 2 needs `pd.options.mode.string_storage = "pyarrow"`.
+
+Buffered `query()` calls on very wide or all-numeric results can currently be slower and use more peak memory with the Rust codec. Prefer `query_df`, `query_row_block_stream`, or `query_column_block_stream` for those workloads. For NumPy and Pandas, `query_np_stream` and `query_df_stream` can also reduce peak memory. Process and release each block instead of collecting the stream. Memory use still depends on the size of each block, so streaming a single large block doesn't provide the same benefit.
 
 Benchmark your own workload before adopting the codec. Use `native_codec="rust_strict"` while measuring so an unsupported option or missing dependency raises instead of silently routing the query to Python.
 
@@ -75,7 +93,7 @@ Malformed Native payloads detected by the Rust codec raise `DataError`.
 
 ## Versioning {#versioning}
 
-`clickhouse-connect-core` versions independently of `clickhouse-connect`. The driver declares a compatible range through the `rust` extra, and the module exports a binding API version that the driver checks when a Rust codec is selected. If the installed wheel is too old for the driver, client creation raises a `NotSupportedError` naming the upgrade command:
+`clickhouse-connect-core` versions independently of `clickhouse-connect`. The `rust` extra requires `clickhouse-connect-core>=0.2.1,<0.3`. The driver checks both the binding API version and the column-buffer capability when a Rust codec is selected. The published core 0.2.0 wheel lacks the column-buffer capability. If the installed wheel is incompatible, client creation raises a `NotSupportedError` for both `rust` and `rust_strict`, with this upgrade command:
 
 ```bash
 pip install --upgrade clickhouse-connect-core
@@ -95,4 +113,5 @@ The Rust codec targets cell for cell parity with the Python codec. The following
 - `rust_strict` rejects query options the Rust path does not implement, such as custom per-query `query_formats`, rather than silently changing behavior.
 - Rust insert conversion and validation errors can raise `DataError` where the Python codec raises `ValueError`, and the message text can differ. Examples include invalid `Time` and `Time64` values, IPv6 addresses, QBit dimensions, `FixedString` lengths, `Float64` strings, and attempts to insert elements into a `Tuple()` column.
 - The Rust encoder rejects `b""` for `FixedString(N)` and numeric strings such as `"2"` for integer columns. The Python codec zero-fills an empty `FixedString` value and coerces numeric strings.
-- The Rust codec decodes some `Dynamic` shared-variant values to their Python types when the Python codec leaves the value as raw bytes. For example, a stored `Date` can return as `datetime.date` from Rust and as a binary value from Python.
+- The Rust codec decodes some `Dynamic` shared-variant values to their Python types when the Python codec leaves the value as raw bytes. For example, a stored `Decimal` can return as `decimal.Decimal` from Rust and as a binary value from Python.
+- For `Date` values in `Dynamic` shared storage, `query_np` and `query_df` return `datetime.date` cells with the Rust codec and `numpy.datetime64` cells with the Python codec. Both codecs return `datetime.date` from `query`.

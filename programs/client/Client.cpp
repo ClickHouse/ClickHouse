@@ -35,6 +35,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/SecretArguments.h>
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
@@ -410,6 +411,8 @@ try
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
+    /// The engines are not registered, so the secrets of their arguments are shown.
+    setSecretArgumentsFinder(&NoSecretArgumentsFinder::instance());
 
     processConfig();
     adjustSettings(client_context);
@@ -552,20 +555,17 @@ void Client::login()
     std::string host = hosts_and_ports.empty()
         ? getClientConfiguration().getString("host", "localhost")
         : hosts_and_ports.front().host;
-    std::string auth_url = getClientConfiguration().getString("oauth-url", "");
-    std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
-    std::string audience = getClientConfiguration().getString("oauth-audience", "");
+    JWTProviderOptions options;
+    options.auth_url = getClientConfiguration().getString("oauth-url", "");
+    options.client_id = getClientConfiguration().getString("oauth-client-id", "");
+    options.client_secret = getClientConfiguration().getString("oauth-client-secret", "");
+    options.audience = getClientConfiguration().getString("oauth-audience", "");
+    options.scope = getClientConfiguration().getString("oauth-scope", "");
+    options.device_authorization_endpoint = getClientConfiguration().getString("oauth-device-uri", "");
+    options.token_endpoint = getClientConfiguration().getString("oauth-token-uri", "");
+    options.client_auth_method = getClientConfiguration().getString("oauth-client-auth", "");
 
-    if ((auth_url.empty() || client_id.empty()) && !isCloudEndpoint(host))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not retrieve authentication endpoints for host '{}'. Please specify --oauth-url and --oauth-client-id if you are "
-            "not using ClickHouse Cloud.",
-            host);
-    }
-
-    jwt_provider = createJwtProvider(auth_url, client_id, audience, host, output_stream, error_stream);
+    jwt_provider = createJwtProvider(std::move(options), host, output_stream, error_stream);
     if (jwt_provider)
     {
         std::string jwt = jwt_provider->getJWT();
@@ -1071,18 +1071,17 @@ void Client::connect()
         prompt = prompt_escaped;
     }
 
-    /// Substitute placeholders in the form of {name}:
+    /// Substitute placeholders in the form of {name}.
+    /// The {display_name} placeholder is kept: it is substituted in getPrompt on every
+    /// call, because the current dialect is rendered next to the display name.
     const std::map<String, String> prompt_substitutions{
         {"host", connection_parameters.host},
         {"port", toString(connection_parameters.port)},
         {"user", connection_parameters.user},
-        {"display_name", server_display_name},
     };
 
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt, "{" + key + "}", value);
-
-    prompt = appendSmileyIfNeeded(prompt);
 }
 
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
@@ -1187,10 +1186,15 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
         ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
 #if USE_JWT_CPP && USE_SSL
-        ("login", po::bool_switch(), "Use OAuth 2.0 to login")
-        ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
+        ("login", po::bool_switch(), "Use OAuth 2.0 device authorization grant to login")
+        ("oauth-url", po::value<std::string>(), "OAuth / OIDC issuer base URL (used for endpoint discovery)")
         ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
-        ("oauth-audience", po::value<std::string>(), "The audience for the OAuth 2.0 token")
+        ("oauth-client-secret", po::value<std::string>(), "Optional client secret for confidential OAuth clients")
+        ("oauth-client-auth", po::value<std::string>(), "Confidential client auth method: basic (default) or post")
+        ("oauth-audience", po::value<std::string>(), "Optional audience parameter for the device authorization request (Auth0-style)")
+        ("oauth-scope", po::value<std::string>(), "OAuth scope for the device authorization request")
+        ("oauth-device-uri", po::value<std::string>(), "Explicit device authorization endpoint (skips discovery when set with --oauth-token-uri)")
+        ("oauth-token-uri", po::value<std::string>(), "Explicit token endpoint (skips discovery when set with --oauth-device-uri)")
 #endif
         ("max_client_network_bandwidth",
             po::value<int>(),
@@ -1374,8 +1378,18 @@ void Client::processOptions(
         config().setString("oauth-url", options["oauth-url"].as<std::string>());
     if (options.contains("oauth-client-id"))
         config().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+    if (options.contains("oauth-client-secret"))
+        config().setString("oauth-client-secret", options["oauth-client-secret"].as<std::string>());
+    if (options.contains("oauth-client-auth"))
+        config().setString("oauth-client-auth", options["oauth-client-auth"].as<std::string>());
     if (options.contains("oauth-audience"))
         config().setString("oauth-audience", options["oauth-audience"].as<std::string>());
+    if (options.contains("oauth-scope"))
+        config().setString("oauth-scope", options["oauth-scope"].as<std::string>());
+    if (options.contains("oauth-device-uri"))
+        config().setString("oauth-device-uri", options["oauth-device-uri"].as<std::string>());
+    if (options.contains("oauth-token-uri"))
+        config().setString("oauth-token-uri", options["oauth-token-uri"].as<std::string>());
 #endif
     if (options.contains("accept-invalid-certificate"))
     {
@@ -1411,7 +1425,8 @@ void Client::processOptions(
         }
     }
 
-    if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
+    create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>();
+    if (create_query_fuzzer_runs)
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
