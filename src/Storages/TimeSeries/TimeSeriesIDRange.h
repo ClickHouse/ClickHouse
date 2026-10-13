@@ -6,6 +6,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <optional>
+#include <vector>
 
 
 namespace DB
@@ -21,19 +22,28 @@ struct TimeSeriesIDRange
     ASTPtr first_component; /// hash(metric_name) as a constant expression, for example sipHash64('my_metric').
     ASTPtr min_second_component; /// The minimum and the maximum of the type of the second component.
     ASTPtr max_second_component;
-
-    /// `<id> >= tuple(<first_component>, <min_S>) AND <id> <= tuple(<first_component>, <max_S>)`
-    ASTPtr makeIDInRangeCondition(const ASTPtr & id) const;
-
-    /// `tupleElement(<id>, 1) != <first_component>`: the identifier is outside the range.
-    ASTPtr makeIDOutOfRangeCondition(const ASTPtr & id) const;
 };
 
-/// Makes the range of the identifiers of the metric selected by the matchers if the time series of the metric are known to occupy
-/// one range (see TimeSeriesIDRange): the matchers must contain exactly one equality matcher on `__name__` with a non-empty value,
-/// the id generator must be `tuple(<expression of the metric name only>, <anything>)`,
+using TimeSeriesIDRanges = std::vector<TimeSeriesIDRange>;
+
+/// Makes the ranges of the identifiers of the metrics selected by the matchers, one range per metric (see TimeSeriesIDRange):
+/// the matchers must contain exactly one equality matcher or one regex matcher of literal alternatives on `__name__`,
+/// with non-empty metric names, the id generator must be `tuple(<expression of the metric name only>, <anything>)`,
 /// and the id type must be a two-component tuple whose second component has a type with known bounds.
-std::optional<TimeSeriesIDRange> tryGetTimeSeriesIDRange(
+/// Returns nullopt if any of these conditions doesn't hold, otherwise at least one range.
+std::optional<TimeSeriesIDRanges> tryGetTimeSeriesIDRanges(
     const PrometheusQueryTree::MatcherList & matchers, const ASTPtr & id_generator, const DataTypePtr & id_type);
+
+/// `<id> >= tuple(<first_component>, <min_S>) AND <id> <= tuple(<first_component>, <max_S>)`
+ASTPtr makeIDInRangeCondition(const ASTPtr & id, const TimeSeriesIDRange & range);
+
+/// `<id is in ranges[0]> OR <id is in ranges[1]> OR ...` (see makeIDInRangeCondition). `ranges` must not be empty.
+ASTPtr makeIDInRangesCondition(const ASTPtr & id, const TimeSeriesIDRanges & ranges);
+
+/// `tupleElement(<id>, 1) != <first_component>`: the identifier is outside the range.
+ASTPtr makeIDOutOfRangeCondition(const ASTPtr & id, const TimeSeriesIDRange & range);
+
+/// `tupleElement(<id>, 1) NOT IN (<first components of the ranges>)`: the identifier is outside all the ranges. `ranges` must not be empty.
+ASTPtr makeIDOutOfRangesCondition(const ASTPtr & id, const TimeSeriesIDRanges & ranges);
 
 }

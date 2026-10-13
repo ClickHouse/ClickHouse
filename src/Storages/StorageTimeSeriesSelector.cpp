@@ -35,6 +35,7 @@
 #include <Storages/TimeSeries/TimeSeriesIDRange.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/tryGetLiteralAlternatives.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -341,46 +342,6 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
-    /// Returns the terms of a regex like `a|b` or `(a|b)|(?:c)` if every term is a plain literal.
-    /// A group is allowed only as a whole term, so `(a|b)c` is not a list.
-    std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex)
-    {
-        Strings terms(1);
-        size_t depth = 0;
-        bool term_ended = false;
-        for (size_t pos = 0; pos < regex.size(); ++pos)
-        {
-            char c = regex[pos];
-            if (c == '|')
-            {
-                terms.emplace_back();
-                term_ended = false;
-            }
-            else if (c == '(')
-            {
-                if (term_ended || !terms.back().empty())
-                    return {};
-                if (regex.substr(pos + 1).starts_with("?:"))
-                    pos += 2;
-                ++depth;
-            }
-            else if (c == ')')
-            {
-                if (depth == 0)
-                    return {};
-                --depth;
-                term_ended = true;
-            }
-            else if (term_ended || std::string_view("\\.^$?*+[]{}").contains(c))
-                return {};
-            else
-                terms.back() += c;
-        }
-        if (depth != 0)
-            return {};
-        return terms;
-    }
-
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
@@ -504,25 +465,25 @@ namespace
     ///
     ///     SELECT ... FROM tags_table
     ///     LEFT JOIN (SELECT id, 1 AS matched FROM time_ranges_table
-    ///                WHERE max_time >= <min_time> AND min_time <= <max_time> [AND <metric_id_range>]) AS time_ranges_subquery USING (id)
-    ///     WHERE <conditions of the query> AND (time_ranges_subquery.matched = 1 [OR tupleElement(id, 1) != <first component of metric_id_range>])
+    ///                WHERE max_time >= <min_time> AND min_time <= <max_time> [AND <id is in one of metric_id_ranges>]) AS time_ranges_subquery USING (id)
+    ///     WHERE <conditions of the query> AND (time_ranges_subquery.matched = 1 [OR <id is outside all of metric_id_ranges>])
     ///
     /// The join is a merge join over both tables read in the order of `id` (see StorageTimeSeriesSelector::applySettingsForSelectIDsQuery):
     /// no set is built, the reading stops as soon as the query has enough rows, and the expressions of the SELECT list see only
     /// the time series passing the filter (`timeSeriesStoreTags` registers the tags of the time series it's applied to).
-    /// With `metric_id_range` the time ranges table is read by its primary key over the range of the metric, and the time series
-    /// with identifiers outside the range (written with another id generator) are kept without filtering by time.
+    /// With `metric_id_ranges` the time ranges table is read by its primary key over the ranges of the selected metrics, and the time series
+    /// with identifiers outside the ranges (written with another id generator) are kept without filtering by time.
     void addTimeRangesTableJoin(
         ASTSelectQuery & select_query,
         const StorageID & time_ranges_table_id,
         ASTs time_range_conditions,
-        const TimeSeriesIDRange * metric_id_range)
+        const std::optional<TimeSeriesIDRanges> & metric_id_ranges)
     {
         const char * subquery_alias = "time_ranges_subquery";
         const char * matched_column = "matched";
         ASTPtr id = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID);
 
-        /// SELECT id, 1 AS matched FROM time_ranges_table WHERE <time_range_conditions> [AND <metric_id_range>]
+        /// SELECT id, 1 AS matched FROM time_ranges_table WHERE <time_range_conditions> [AND <id is in one of metric_id_ranges>]
         auto subquery_select = make_intrusive<ASTSelectQuery>();
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
@@ -531,8 +492,8 @@ namespace
             select_list_exp->children.back()->setAlias(matched_column);
             subquery_select->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
             subquery_select->setExpression(ASTSelectQuery::Expression::TABLES, makeTablesInSelectQuery(make_intrusive<ASTTableIdentifier>(time_ranges_table_id)));
-            if (metric_id_range)
-                time_range_conditions.push_back(metric_id_range->makeIDInRangeCondition(id));
+            if (metric_id_ranges)
+                time_range_conditions.push_back(makeIDInRangesCondition(id, *metric_id_ranges));
             subquery_select->setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalAnd(std::move(time_range_conditions)));
         }
 
@@ -559,12 +520,12 @@ namespace
             select_query.tables()->children.push_back(std::move(element));
         }
 
-        /// WHERE ... AND (time_ranges_subquery.matched = 1 [OR tupleElement(id, 1) != <first component>])
+        /// WHERE ... AND (time_ranges_subquery.matched = 1 [OR <id is outside all of metric_id_ranges>])
         {
             ASTPtr condition = makeASTFunction(
                 "equals", make_intrusive<ASTIdentifier>(std::vector<String>{subquery_alias, matched_column}), make_intrusive<ASTLiteral>(UInt64{1}));
-            if (metric_id_range)
-                condition = makeASTForLogicalOr({std::move(condition), metric_id_range->makeIDOutOfRangeCondition(id)});
+            if (metric_id_ranges)
+                condition = makeASTForLogicalOr({std::move(condition), makeIDOutOfRangesCondition(id, *metric_id_ranges)});
             if (select_query.where())
                 condition = makeASTForLogicalAnd({select_query.where(), std::move(condition)});
             select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(condition));
@@ -579,13 +540,13 @@ namespace
         ASTSelectQuery & select_query,
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
-        const TimeSeriesIDRange * metric_id_range,
+        const std::optional<TimeSeriesIDRanges> & metric_id_ranges,
         const DataTypePtr & table_timestamp_type)
     {
         if (!time_ranges_table_id || time_range_to_filter_ids.containsAllTimestamps())
             return;
 
-        addTimeRangesTableJoin(select_query, time_ranges_table_id, makeTimeRangeConditions(time_range_to_filter_ids, table_timestamp_type), metric_id_range);
+        addTimeRangesTableJoin(select_query, time_ranges_table_id, makeTimeRangeConditions(time_range_to_filter_ids, table_timestamp_type), metric_id_ranges);
     }
 
     /// Makes the WHERE clause of a query selecting identifiers from the tags table.
@@ -639,7 +600,7 @@ namespace
         const std::unordered_map<String, String> & column_name_by_tag_name,
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
-        const TimeSeriesIDRange * metric_id_range,
+        const std::optional<TimeSeriesIDRanges> & metric_id_ranges,
         const DataTypePtr & table_timestamp_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -687,7 +648,7 @@ namespace
         }
 
         /// If there is a time ranges table: LEFT JOIN it and keep the time series with a matching time range (see addTimeRangesTableJoin).
-        applyTimeRangeFilterToSelectIDsQuery(*select_query, time_ranges_table_id, time_range_to_filter_ids, metric_id_range, table_timestamp_type);
+        applyTimeRangeFilterToSelectIDsQuery(*select_query, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges, table_timestamp_type);
 
         return wrapIntoSelectWithUnionQuery(std::move(select_query));
     }
@@ -907,13 +868,14 @@ namespace
     /// and the `id IN <set>` condition is kept in the WHERE for exact row-level filtering. Any rows a hash collision could add
     /// to the range are still rejected row-by-row.
     ///
-    /// Returns nullptr (= emit today's SQL) unless BOTH of the following hold:
-    /// 1. The samples table physically stores `id` with exactly the type `metric_id_range` is made for.
-    /// 2. A probe query on the tags table (and the time ranges table if any) finds NO time-eligible series of the metric that either
+    /// Returns nullptr (= emit today's SQL) unless ALL of the following hold:
+    /// 1. The matchers select exactly one metric (`metric_id_ranges` has one range).
+    /// 2. The samples table physically stores `id` with exactly the type the range is made for.
+    /// 3. A probe query on the tags table (and the time ranges table if any) finds NO time-eligible series of the metric that either
     ///    fails the matchers other than the one on `__name__` (the selector does not select the whole metric) or has an id outside
     ///    the range (rows written before an `ALTER ... MODIFY SETTING id_generator`).
     ASTPtr tryMakeWholeMetricIDRangeConditions(
-        const TimeSeriesIDRange & metric_id_range,
+        const std::optional<TimeSeriesIDRanges> & metric_id_ranges,
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
         const StorageID & samples_table_id,
@@ -926,13 +888,18 @@ namespace
         const ContextPtr & context,
         const LoggerPtr & log)
     {
-        /// 1. The samples table stores `id` physically with exactly this type: the range conditions
+        /// 1. One metric: the range conditions and the probe below are made for the series of one metric.
+        if (!metric_id_ranges || (metric_id_ranges->size() != 1))
+            return {};
+        const TimeSeriesIDRange & metric_id_range = metric_id_ranges->front();
+
+        /// 2. The samples table stores `id` physically with exactly this type: the range conditions
         /// compare the raw column (bypassing the identity-cast alias of the SELECT list).
         auto samples_table_id_column = samples_table_columns.tryGetPhysical(TimeSeriesColumnNames::ID);
         if (!samples_table_id_column || (samples_table_id_column->type->getName() != table_id_type->getName()))
             return {};
 
-        /// 2. The probe: find one time-eligible series of the metric that contradicts the range emission,
+        /// 3. The probe: find one time-eligible series of the metric that contradicts the range emission,
         /// i.e. fails the remaining matchers or does not hash into the range.
         ///
         ///     SELECT 1 FROM (
@@ -954,13 +921,15 @@ namespace
             ASTs other_matcher_conditions;
             for (const auto & matcher : matchers)
             {
-                if ((matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ) && (matcher.label_name == TimeSeriesTagNames::MetricName))
+                /// The range exists, so there is exactly one matcher selecting the metric by name: an equality or a regex of one literal.
+                if ((matcher.label_name == TimeSeriesTagNames::MetricName)
+                    && ((matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ) || (matcher.matcher_type == PrometheusQueryTree::MatcherType::RE)))
                     name_matcher_only.push_back(matcher);
                 else
                     other_matcher_conditions.push_back(matcherToAST(matcher, column_name_by_tag_name));
             }
 
-            ASTPtr counterexample = metric_id_range.makeIDOutOfRangeCondition(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            ASTPtr counterexample = makeIDOutOfRangeCondition(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), metric_id_range);
             if (!other_matcher_conditions.empty())
             {
                 counterexample = makeASTForLogicalOr(
@@ -980,7 +949,7 @@ namespace
                 probe_select_ids->setExpression(ASTSelectQuery::Expression::TABLES, makeTablesInSelectQuery(make_intrusive<ASTTableIdentifier>(tags_table_id)));
                 probe_select_ids->setExpression(ASTSelectQuery::Expression::WHERE, std::move(probe_where));
             }
-            applyTimeRangeFilterToSelectIDsQuery(*probe_select_ids, time_ranges_table_id, time_range_to_filter_ids, &metric_id_range, table_timestamp_type);
+            applyTimeRangeFilterToSelectIDsQuery(*probe_select_ids, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges, table_timestamp_type);
 
             /// SELECT 1 FROM (<probe_select_ids>) LIMIT 1
             auto probe_select = make_intrusive<ASTSelectQuery>();
@@ -1026,7 +995,7 @@ namespace
         /// evaluated per row: the `id IN <set>` condition the caller keeps is the exact filter, and on this path every id of that set
         /// is inside the range (that is what the probe establishes).
         ASTPtr qualified_id = make_intrusive<ASTIdentifier>(std::vector<String>{samples_table_id.database_name, samples_table_id.table_name, TimeSeriesColumnNames::ID});
-        return makeASTFunction("indexHint", metric_id_range.makeIDInRangeCondition(qualified_id));
+        return makeASTFunction("indexHint", makeIDInRangeCondition(qualified_id, metric_id_range));
     }
 }
 
@@ -1067,11 +1036,11 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
     else
     {
         auto tags_table_metadata = time_series_storage.getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
-        const auto metric_id_range = tryGetTimeSeriesIDRange(
+        const auto metric_id_ranges = tryGetTimeSeriesIDRanges(
             matchers, getIDGenerator(time_series_settings, tags_table_metadata->getColumns(), table_id_type), table_id_type);
         select_query = makeSelectQueryFromTagsTable(
             tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), time_ranges_table_id, time_range_to_filter_ids,
-            metric_id_range ? &*metric_id_range : nullptr, table_timestamp_type);
+            metric_id_ranges, table_timestamp_type);
     }
 
     /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
@@ -1148,30 +1117,26 @@ void StorageTimeSeriesSelector::readImpl(
     if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem"))
         modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", UInt64{4 * 1024 * 1024});
 
-    const auto metric_id_range = tryGetTimeSeriesIDRange(
+    const auto metric_id_ranges = tryGetTimeSeriesIDRanges(
         matchers, getIDGenerator(*time_series_settings, tags_table_metadata->getColumns(), config.table_id_type), config.table_id_type);
 
-    ASTPtr whole_metric_id_range_condition;
-    if (metric_id_range)
-    {
-        whole_metric_id_range_condition = tryMakeWholeMetricIDRangeConditions(
-            *metric_id_range,
-            matchers,
-            column_name_by_tag_name,
-            samples_table_id,
-            samples_table_metadata->getColumns(),
-            tags_table_id,
-            time_ranges_table_id,
-            time_range_to_filter_ids,
-            config.table_id_type,
-            config.table_timestamp_type,
-            interpreter_context,
-            log);
-    }
+    ASTPtr whole_metric_id_range_condition = tryMakeWholeMetricIDRangeConditions(
+        metric_id_ranges,
+        matchers,
+        column_name_by_tag_name,
+        samples_table_id,
+        samples_table_metadata->getColumns(),
+        tags_table_id,
+        time_ranges_table_id,
+        time_range_to_filter_ids,
+        config.table_id_type,
+        config.table_timestamp_type,
+        interpreter_context,
+        log);
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids,
-        metric_id_range ? &*metric_id_range : nullptr, config.table_timestamp_type);
+        tags_table_id, matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges,
+        config.table_timestamp_type);
 
     if (whole_metric_id_range_condition)
     {
