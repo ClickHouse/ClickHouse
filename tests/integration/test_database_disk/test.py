@@ -170,20 +170,19 @@ def test_copy_of_temporary_table_under_unrelated_name(started_cluster):
     db_dir = os.path.dirname(tmp_path)
     copy_metadata_file(tmp_path, f"{db_dir}/u.sql")
 
-    # Not a leftover of a move of the temporary table, so it is still a UUID collision.
-    node_pr.start_clickhouse(expected_to_fail=True)
-    assert node_pr.contains_in_log(
-        f"Mapping for table with UUID={tmp_uuid} already exists",
-        filename="clickhouse-server.err.log",
-    )
-
-    run_disks_query(f"remove {db_dir}/u.sql")
+    # Not a leftover of a move of the temporary table, but `u` has its UUID, so its file is still removed.
     node_pr.start_clickhouse()
 
     assert (
         node_pr.query(
-            f"SELECT name FROM system.tables WHERE database = '{db}' ORDER BY name"
+            f"SELECT name, toString(uuid) = '{tmp_uuid}' FROM system.tables "
+            f"WHERE database = '{db}' ORDER BY name"
         )
-        == f"{tmp_name}\nt\n"
+        == "t\t0\nu\t1\n"
+    )
+    assert node_pr.query(f"SELECT count() FROM {db}.u") == "100\n"
+    assert tmp_name not in run_disks_query(f"ls {db_dir}")
+    assert node_pr.contains_in_log(
+        f"Metadata file {tmp_path} refers to the same table (UUID {tmp_uuid}) as {db_dir}/u.sql"
     )
     node_pr.query(f"DROP DATABASE {db} SYNC")

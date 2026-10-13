@@ -324,7 +324,7 @@ class JobConfigs:
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
-        runs_on=RunnerLabels.AMD_LARGE,
+        runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
@@ -720,6 +720,8 @@ class JobConfigs:
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
+                # The parameter sets below choose which package flavour each job installs.
+                "./ci/defs/job_configs.py",
             ],
         ),
         timeout=1800,
@@ -729,23 +731,58 @@ class JobConfigs:
         pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
+        # One job per package flavour: praktika downloads every required artifact up
+        # front, and the three together take more disk than a runner has left beside the
+        # container installing one of them. `CH_*` is needed only where a binary test runs.
         Job.ParamSet(
-            parameter="amd_release",
+            parameter="amd_release, deb",
             runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="amd_release, rpm",
+            runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-tgz",
+            requires=[
                 ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="amd_release, tgz",
+            runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-rpm",
+            requires=[
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
         ),
         Job.ParamSet(
-            parameter="arm_release",
+            parameter="arm_release, deb",
             runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, rpm",
+            runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-tgz",
+            requires=[
                 ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, tgz",
+            runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-rpm",
+            requires=[
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
         ),
@@ -759,6 +796,7 @@ class JobConfigs:
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
+                "./ci/defs/job_configs.py",
             ],
         ),
         timeout=1800,
@@ -767,23 +805,55 @@ class JobConfigs:
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_release",
+            parameter="amd_release, deb",
             runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
-                ArtifactNames.RPM_AMD_RELEASE,
-                ArtifactNames.TGZ_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
             ],
         ),
         Job.ParamSet(
-            parameter="arm_release",
+            parameter="amd_release, rpm",
+            runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-tgz",
+            requires=[
+                ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="amd_release, tgz",
+            runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-rpm",
+            requires=[
+                ArtifactNames.TGZ_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, deb",
             runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
-                ArtifactNames.RPM_ARM_RELEASE,
-                ArtifactNames.TGZ_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, rpm",
+            runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-tgz",
+            requires=[
+                ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, tgz",
+            runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-rpm",
+            requires=[
+                ArtifactNames.TGZ_ARM_RELEASE,
             ],
         ),
     )
