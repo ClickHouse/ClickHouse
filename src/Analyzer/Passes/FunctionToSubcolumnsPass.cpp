@@ -317,12 +317,23 @@ bool canOptimizeToExpectedSubcolumn(
     return subcolumnDescendsFromColumn(storage_snapshot, ctx.column.name, *resolved, info->substreams_path);
 }
 
+/// The type of the `size` subcolumn of a String or Nullable(String) column.
+/// For Nullable(String) it is Nullable(UInt64) with NULL in the rows where the column is NULL,
+/// which is the same as the result of `length`, `empty` and `notEmpty` for these rows.
+DataTypePtr getStringSizesSubcolumnType(const ColumnContext & ctx)
+{
+    DataTypePtr type = std::make_shared<DataTypeUInt64>();
+    if (ctx.column.type->isNullable())
+        return makeNullable(type);
+    return type;
+}
+
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
-    /// `argument` is String.
+    /// `argument` is String or Nullable(String).
 
-    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx)};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
@@ -334,9 +345,9 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
 {
     /// Replace `empty(argument)` with `equals(argument.size, 0)` if positive.
     /// Replace `notEmpty(argument)` with `notEquals(argument.size, 0)` if not positive.
-    /// `argument` is String.
+    /// `argument` is String or Nullable(String).
 
-    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx)};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
@@ -904,6 +915,27 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             if (isTuple(removeNullable(ctx.column.type)))
                 optimizeElementToSubcolumn<DataTypeTuple>(node, function_node, ctx);
+        },
+    },
+    {
+        {TypeIndex::Nullable, "length"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            if (isString(removeNullable(ctx.column.type)))
+                optimizeFunctionStringLength(node, function_node, ctx);
+        },
+    },
+    {
+        {TypeIndex::Nullable, "empty"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            if (isString(removeNullable(ctx.column.type)))
+                optimizeFunctionStringEmpty<true>(node, function_node, ctx);
+        },
+    },
+    {
+        {TypeIndex::Nullable, "notEmpty"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            if (isString(removeNullable(ctx.column.type)))
+                optimizeFunctionStringEmpty<false>(node, function_node, ctx);
         },
     },
     {
