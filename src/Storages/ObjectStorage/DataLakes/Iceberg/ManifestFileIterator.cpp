@@ -560,6 +560,13 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                     || type_id == DB::TypeIndex::Variant)
                     continue;
 
+                if (DB::removeNullable(column_type)->getTypeId() == DB::TypeIndex::UUID)
+                {
+                    if (auto point = deserializeUUIDPointFromBinaryRepr(left_str, right_str))
+                        hyperrectangles.emplace(column_id, DB::Range(*point));
+                    continue;
+                }
+
                 auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);
                 auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
                 if (!left || !right)
