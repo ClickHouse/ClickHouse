@@ -3490,6 +3490,14 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             /// default is off. Both `ATTACH` attempts would then fail and leave the table detached. Reattaching
             /// restores an existing table rather than introducing a new use of the feature, so allow it here.
             internal_context->setSetting("enable_full_text_index", Field(true));
+            /// The same holds for a column of an `AggregateFunction` type over a `timeSeries*` function: its
+            /// type is rejected while re-parsing the definition unless `enable_time_series_aggregate_functions`
+            /// is set.
+            internal_context->setSetting("enable_time_series_aggregate_functions", Field(true));
+            /// A `DateTime` column without an explicit time zone takes the time zone of the context that
+            /// loads the table's definition, i.e. `session_timezone` if it is set. Keep the outer query's
+            /// one, so that the reattached table interprets its values the same way as before the reattach.
+            internal_context->setSetting("session_timezone", context->getSettingsRef().get("session_timezone"));
             internal_context->setProcessListElement(context->getProcessListElementSafe());
             return internal_context;
         };
