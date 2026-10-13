@@ -410,10 +410,28 @@ public:
             return false;
 
         /// The candidate parameters are chosen from the first page of the column chunk, as the
-        /// specification suggests, and searched for again only if a page doesn't compress with them.
-        if (candidates.empty())
-            findCandidates(values, num_values);
+        /// specification suggests. If a page doesn't compress with them, it is tried again with the
+        /// candidates chosen from this page, and those are kept for the next pages.
+        if (!candidates.empty() && tryEncodePage(values, num_values, out))
+            return true;
+        findCandidates(values, num_values);
+        if (tryEncodePage(values, num_values, out))
+            return true;
+        candidates.clear();
+        return false;
+    }
 
+private:
+    std::vector<ExponentAndFactor> candidates;
+
+    PaddedPODArray<Signed> encoded;
+    PaddedPODArray<UInt8> is_exception;
+    PaddedPODArray<UInt16> exception_positions;
+    PaddedPODArray<T> sample;
+
+    /// Encodes the page with the current candidates. Returns false if it's bigger than `PLAIN`.
+    bool tryEncodePage(const T * values, size_t num_values, PaddedPODArray<char> & out)
+    {
         const size_t num_vectors = (num_values + ALP_ENCODER_VECTOR_SIZE - 1) / ALP_ENCODER_VECTOR_SIZE;
         const size_t plain_size = num_values * sizeof(T);
 
@@ -429,10 +447,7 @@ public:
         {
             /// `plain_size` is below 2^31, so the offsets fit.
             if (out.size() > plain_size)
-            {
-                candidates.clear();
                 return false;
-            }
             unalignedStoreLittleEndian<UInt32>(
                 out.data() + ALP_PAGE_HEADER_SIZE + vector_idx * 4, static_cast<UInt32>(out.size() - ALP_PAGE_HEADER_SIZE));
 
@@ -441,21 +456,8 @@ public:
             encodeVector(values + begin, n, chooseParameters(values + begin, n), out);
         }
 
-        if (out.size() > plain_size)
-        {
-            candidates.clear();
-            return false;
-        }
-        return true;
+        return out.size() <= plain_size;
     }
-
-private:
-    std::vector<ExponentAndFactor> candidates;
-
-    PaddedPODArray<Signed> encoded;
-    PaddedPODArray<UInt8> is_exception;
-    PaddedPODArray<UInt16> exception_positions;
-    PaddedPODArray<T> sample;
 
     /// Takes up to `max_samples` values spread over [values, values + n): one value from each of
     /// the consecutive blocks of `stride` values, at a pseudo-random position inside the block.
@@ -467,12 +469,14 @@ private:
         const size_t stride = std::max<size_t>(1, (n + max_samples - 1) / max_samples);
         sample.clear();
         for (size_t block_idx = 0, begin = 0; begin < n; ++block_idx, begin += stride)
-        {
-            const size_t block_size = std::min(stride, n - begin);
-            /// Fibonacci hashing of the block number: deterministic and well spread.
-            const size_t offset = ((block_idx * 0x9E3779B97F4A7C15ULL) >> 32) % block_size;
-            sample.push_back(values[begin + offset]);
-        }
+            sample.push_back(values[begin + offsetInBlock(block_idx, std::min(stride, n - begin))]);
+    }
+
+    /// A pseudo-random position inside the block number `block_idx` of `block_size` elements.
+    /// Fibonacci hashing of the block number: deterministic and well spread.
+    static size_t offsetInBlock(size_t block_idx, size_t block_size)
+    {
+        return ((block_idx * 0x9E3779B97F4A7C15ULL) >> 32) % block_size;
     }
 
     /// Encodes one value as the specification describes, then decodes it back. The result is an
@@ -537,9 +541,13 @@ private:
         UInt32 wins[Traits::max_exponent + 1][Traits::max_exponent + 1] = {};
 
         const size_t num_vectors = (num_values + ALP_ENCODER_VECTOR_SIZE - 1) / ALP_ENCODER_VECTOR_SIZE;
+        /// One vector from each of the consecutive blocks of `vector_stride` vectors, at a pseudo-random
+        /// position inside the block, for the same reason as the values in `takeSample`: with a fixed
+        /// position the sampled vectors would alias with the data that alternates between vectors.
         const size_t vector_stride = std::max<size_t>(1, (num_vectors + SAMPLE_VECTORS - 1) / SAMPLE_VECTORS);
-        for (size_t vector_idx = 0; vector_idx < num_vectors; vector_idx += vector_stride)
+        for (size_t block_idx = 0, block_begin = 0; block_begin < num_vectors; ++block_idx, block_begin += vector_stride)
         {
+            const size_t vector_idx = block_begin + offsetInBlock(block_idx, std::min(vector_stride, num_vectors - block_begin));
             const size_t begin = vector_idx * ALP_ENCODER_VECTOR_SIZE;
             takeSample(values + begin, std::min(ALP_ENCODER_VECTOR_SIZE, num_values - begin), SAMPLES_PER_VECTOR_FOR_CANDIDATES);
 
@@ -551,8 +559,13 @@ private:
                 {
                     const ExponentAndFactor params{exponent, factor};
                     auto size = estimateSize(params, /*require_two_encodable=*/ true);
-                    /// On ties, prefer the bigger exponent and factor, as in the paper.
-                    if (size && (!best || *size <= best_size))
+                    /// On ties, prefer the smaller exponent and factor (unlike the paper). The ties are
+                    /// mostly between the combinations with the same difference of the exponent and
+                    /// the factor, which give the same integers, and the extra multiplications by the
+                    /// inexact powers of ten only add the rounding errors. For example, for `Float32`
+                    /// values with a step of 0.25, (2, 0) makes no exceptions, but (6, 4) makes them
+                    /// for 5% of the values, which a sample of a vector may not contain.
+                    if (size && (!best || *size < best_size))
                     {
                         best = params;
                         best_size = *size;
@@ -574,9 +587,10 @@ private:
                 if (wins[exponent][factor])
                     found.push_back({{exponent, factor}, wins[exponent][factor]});
 
+        /// The most wins first, on ties the smaller exponent and factor first.
         std::sort(found.begin(), found.end(), [](const Candidate & a, const Candidate & b)
         {
-            return std::tuple(a.wins, a.params.exponent, a.params.factor) > std::tuple(b.wins, b.params.exponent, b.params.factor);
+            return std::tuple(a.wins, b.params.exponent, b.params.factor) > std::tuple(b.wins, a.params.exponent, a.params.factor);
         });
         for (size_t i = 0; i < found.size() && i < MAX_CANDIDATES; ++i)
             candidates.push_back(found[i].params);

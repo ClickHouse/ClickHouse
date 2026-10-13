@@ -27,8 +27,9 @@ INSERT INTO FUNCTION file('${P}_alp.parquet') SELECT * FROM src SETTINGS
 
 SELECT arrayMap(c -> (tupleElement(c, 'path'), tupleElement(c, 'encodings')), columns) FROM file('${P}_alp.parquet', ParquetMetadata);
 
--- Less than a half of PLAIN: no vector is mostly exceptions.
-SELECT arrayMap(c -> (tupleElement(c, 'path'), tupleElement(c, 'total_compressed_size') * 2 < 100000 * if(tupleElement(c, 'path') LIKE 'f%', 4, 8)), columns) FROM file('${P}_alp.parquet', ParquetMetadata);
+-- Less than 0.6 of PLAIN: no vector is mostly exceptions. The values need 15 bits per vector, and
+-- the rest is the overhead, which is bigger with the smaller pages for the small randomized blocks.
+SELECT arrayMap(c -> (tupleElement(c, 'path'), tupleElement(c, 'total_compressed_size') * 5 < 100000 * 3 * if(tupleElement(c, 'path') LIKE 'f%', 4, 8)), columns) FROM file('${P}_alp.parquet', ParquetMetadata);
 
 SELECT
     (SELECT sum(cityHash64(reinterpretAsUInt64(d_quarter), reinterpretAsUInt32(f_quarter), reinterpretAsUInt64(d_eighth), reinterpretAsUInt64(d_cents))) FROM src)
