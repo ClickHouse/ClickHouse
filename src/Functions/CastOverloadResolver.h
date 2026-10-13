@@ -28,7 +28,14 @@ struct CastDiagnostic
     std::string column_to;
 };
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context);
+/// With nulls_from_source_only, a Nullable `to` holds only the NULLs of `from`: any other value converts as for the non-Nullable type.
+FunctionBasePtr createInternalCast(
+    ColumnWithTypeAndName from,
+    DataTypePtr to,
+    CastType cast_type,
+    std::optional<CastDiagnostic> diagnostic,
+    ContextPtr context,
+    bool nulls_from_source_only = false);
 
 /// Whether CastType::accurateOrNull accepts this target. Failure is reported by wrapping the target in
 /// Nullable, so the target itself must be able to be inside Nullable; a nested type is also accepted
