@@ -31,3 +31,7 @@ $CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --param
 JSON=$($CLICKHOUSE_CLIENT -q "SELECT replaceOne(parseQueryToJSON('SELECT f(1)'), '\"name\":\"f\"', '\"name\":\"\",\"query_parameter_name\":{\"type\":\"Identifier\",\"name\":\"\",\"children\":[{\"type\":\"QueryParameter\",\"name\":\"view\",\"param_type\":\"Identifier\"}]}')")
 $CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --param_view=plus -q "$JSON" 2>&1 | grep -q BAD_ARGUMENTS && echo "scalar function name rejected"
 $CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON('$JSON')" 2>&1 | grep -q BAD_ARGUMENTS && echo "scalar function name rejected by formatQueryFromJSON"
+
+# The SQL parser accepts only `{name:Identifier}` inside an identifier, so the JSON reader must reject any other type.
+JSON=$($CLICKHOUSE_CLIENT -q "SELECT replaceOne(parseQueryToJSON('SELECT id FROM {view:Identifier}(id = 1)'), '\"param_type\":\"Identifier\"', '\"param_type\":\"String\"')")
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON('$JSON')" 2>&1 | grep -q BAD_ARGUMENTS && echo "non-Identifier parameter type rejected"

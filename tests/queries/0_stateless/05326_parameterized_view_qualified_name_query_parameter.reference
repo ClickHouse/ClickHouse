@@ -7,3 +7,4 @@ SELECT *\nFROM\n(\n    SELECT *\n    FROM default.data\n    WHERE equals(id, _CA
 1
 scalar function name rejected
 scalar function name rejected by formatQueryFromJSON
+non-Identifier parameter type rejected
