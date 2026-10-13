@@ -12,7 +12,42 @@ import { Image } from "/snippets/components/Image.jsx";
 
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
-<Update label="2026-09-22">
+<Update label="Oct 5, 2026">
+
+This week's release simplifies billing for customers with multiple ClickHouse Cloud organizations, extends ClickPipes serialization support for Kafka and Kinesis, and introduces an experimental native TCP option for .NET developers. You can now manage prepaid credits across organizations in the console or retrieve balances programmatically; streaming ClickPipes support common Avro and Protobuf workflows; and the .NET driver offers a faster, lower-allocation native client.
+
+## New features {#2026-10-05-new-features}
+
+### Transfer prepaid credits between organizations {#transfer-prepaid-credits-between-organizations}
+
+Customers with multiple organizations can now move prepaid credits between them in the console, without opening a support ticket. A single view shows prepaid credits across all of your organizations, so you can track consumption and plan renewals. This requires Org Admin, Billing Admin, or a custom role with billing permissions on each organization involved. Credits can be split across tiers but not between Cloud and BYOC organizations or across different cloud marketplaces. See the [self-service prepaid credit management documentation](/products/cloud/reference/billing/self-service-prepaid-credit-management).
+
+## API {#2026-10-05-api}
+
+### New API endpoint for organization credit balances {#new-api-endpoint-for-organization-credit-balances}
+
+The new `GET /v1/organizations/{organizationId}/creditBalances` endpoint in the ClickHouse Cloud OpenAPI returns an organization's active credit balances, including prepaid and trial credits. Use it to monitor credit consumption from your own tooling. See the [self-service prepaid credit management documentation](/products/cloud/reference/billing/self-service-prepaid-credit-management).
+
+## ClickPipes {#2026-10-05-clickpipes}
+
+### Avro and Protobuf support for Kinesis ClickPipes {#avro-and-protobuf-support-for-kinesis-clickpipes}
+
+Kinesis ClickPipes now support **Avro** and **Protobuf** in addition to JSON. Schemas can come from the **AWS Glue Schema Registry** or from an uploaded schema file. Kafka and Kinesis ClickPipes now support the same common serialization formats, and the feature is available in the UI, OpenAPI, and Terraform. See the [Kinesis ClickPipes documentation](/integrations/clickpipes/kinesis/).
+
+### Protobuf schema file uploads for Kafka ClickPipes {#protobuf-schema-file-uploads-for-kafka-clickpipes}
+
+Kafka ClickPipes now accept Protobuf schemas uploaded as `.proto` files or file descriptor sets (`.desc`). If you don't use a schema registry, you can now provide a standalone schema for deserialization. See the [Kafka ClickPipes documentation](/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic).
+
+## Integrations {#2026-10-05-integrations}
+
+### .NET driver v1.5.0 adds a native TCP client {#net-driver-v150-adds-a-native-tcp-client}
+
+The ClickHouse .NET driver v1.5.0 adds a new native TCP client alongside the existing HTTP client. It supports connection pooling, sessions, TLS, LZ4/ZSTD compression, query parameters, and OpenTelemetry tracing. In benchmarks on ClickHouse Cloud, reads were up to 2x faster, concurrent inserts up to 2x faster, and memory allocation dropped by orders of magnitude. The TCP API is experimental and may change; continue using the HTTP client for `ADO.NET`, ORMs, and raw formats such as CSV or Parquet. See the [TCP client documentation](/integrations/language-clients/csharp/tcp) and [NuGet package](https://www.nuget.org/packages/ClickHouse.Driver/1.5.0).
+
+</Update>
+
+
+<Update label="Sep 22, 2026">
 
 This week's updates expand ClickHouse Cloud's compliance footprint into new APAC regions, add public-beta replica-aware routing, and introduce new capabilities for metrics, compute, and dbt. HIPAA- and PCI-regulated cells are now available in AWS Seoul and Sydney; eligible customers can evaluate Prometheus-compatible metrics workloads and On-Demand Compute; and ClickHouse is available through dbt Core v2 and dbt Platform.
 
@@ -45,7 +80,7 @@ You can now run dbt against ClickHouse on the new Rust-based Core v2 engine with
 </Update>
 
 
-<Update label="2026-09-08">
+<Update label="Sep 8, 2026">
 
 This week brings production-ready security and data integration improvements to ClickHouse Cloud. JWT authentication is now generally available for Enterprise services, and the MySQL CDC connector for ClickPipes has graduated to GA with faster snapshots, safer defaults, and better observability.
 
@@ -60,7 +95,7 @@ The MySQL CDC connector for ClickPipes is now production-ready. This release add
 </Update>
 
 
-<Update label="2026-08-31">
+<Update label="Aug 31, 2026">
 
 This week expands ClickHouse Cloud's global reach with new AWS regions in Taipei and Malaysia, adds Global Access support for Private Service Connect, and makes it easier for SAML users to move between organizations.
 
@@ -79,7 +114,7 @@ SAML users who belong to multiple SAML organizations can now switch between them
 </Update>
 
 
-<Update label="August 17, 2026">
+<Update label="Aug 17, 2026">
 
 This week's updates bring broader platform reach and better operational visibility. Managed Postgres is now available on GCP for selected design partners, ClickStack resources can be managed through the official Terraform provider, and new billing notifications give customers early warning before credits expire or service is interrupted. We also shipped improved tracing for ClickHouse Agents and a smoother SAML sign-in experience.
 
@@ -106,7 +141,7 @@ When a user attempts to sign in with Google or Microsoft while SAML is configure
 </Update>
 
 
-<Update label="July 13, 2026">
+<Update label="Jul 13, 2026">
 
 This week's updates include sticky replica routing over plain HTTPS, custom billing period start dates, and new initial-load controls for object storage ClickPipes.
 
@@ -121,7 +156,7 @@ Object storage [ClickPipes](/integrations/clickpipes/home) (S3, GCS, and Azure B
 
 </Update>
 
-<Update label="June 30, 2026">
+<Update label="Jun 30, 2026">
 
 This week's updates include new observability features for Postgres and ClickHouse internals, expanded ClickPipes controls including Kafka exactly-once delivery, and several platform additions: Azure Marketplace BYOC, the official Airflow provider, and ClickHouse Agents updates.
 
@@ -148,7 +183,7 @@ Billing now includes a self-service credit history table, a prepaid summary show
 
 </Update>
 
-<Update label="June 3, 2026">
+<Update label="Jun 3, 2026">
 
 Open House 2026 week brought a wave of launches centered on running ClickHouse where your data lives and bringing agentic, AI-assisted workflows into the platform.
 
@@ -278,7 +313,7 @@ ClickHouse Cloud now supports a new public region: GCP London (europe-west2). Se
 
 </Update>
 
-<Update label="April 25, 2026">
+<Update label="Apr 25, 2026">
 
 ### Index sharding (private preview)
 Index sharding is now available in private preview. This feature distributes the index analysis phase across multiple replicas, reducing per-replica memory usage and improving query performance through distributed parallelization. This is especially beneficial for tables with heavy secondary indexes such as vector search and full-text search. Read the [blog post](https://clickhouse.com/blog/index-sharding-clickhouse-cloud-petabyte-scale-indexing) for more details.
@@ -288,7 +323,7 @@ ClickPipes resources in the ClickHouse [Terraform provider](https://registry.ter
 
 </Update>
 
-<Update label="April 17, 2026">
+<Update label="Apr 17, 2026">
 
 ### Refunds visible in billing UI
 Customers can now see all refunds directly in the Cloud console billing UI. Refunds appear once processed; credit card refunds may take additional time to show on statements depending on the bank.
@@ -301,7 +336,7 @@ ClickPipes is now available in all AWS regions (public and private) supported by
 
 </Update>
 
-<Update label="April 10, 2026">
+<Update label="Apr 10, 2026">
 
 ### Centralized marketplace billing
 Customers can now consolidate billing across organizations through a single cloud marketplace subscription (AWS, Azure, and GCP). Key updates include:
@@ -321,7 +356,7 @@ curl https://clickhouse.com/cli | sh
 
 </Update>
 
-<Update label="April 3, 2026">
+<Update label="Apr 3, 2026">
 
 - **Smarter auto-scaling with two-window recommender:** ClickHouse Cloud now uses a dual-lookback-window approach to vertical auto-scaling, replacing the previous single 30-hour window with a combined 3-hour "small window" and 30-hour "large window." This reduces scale-down latency from up to 30 hours to as little as 3 hours, lowering infrastructure costs for variable workloads without sacrificing scale-up responsiveness. Read the [blog post](https://clickhouse.com/blog/smarter-auto-scaling) for more details.
 - **Monitoring in the Cloud console:** New overview and infrastructure dashboards provide better visibility into the behavior of ClickHouse servers. Admin users now receive email notifications for common issues when using ClickHouse Cloud. Read the [blog post](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities) for more details.
@@ -332,7 +367,7 @@ curl https://clickhouse.com/cli | sh
 
 </Update>
 
-<Update label="March 20, 2026">
+<Update label="Mar 20, 2026">
 
 - **Custom date range for Usage Breakdown:** You can now view your usage costs across all billing dimensions on the usage breakdown screen using a custom date range.
   Select a start and end date (inclusive) to filter costs by a specific period and download the results as a CSV.
@@ -340,13 +375,13 @@ curl https://clickhouse.com/cli | sh
 
 </Update>
 
-<Update label="February 20, 2026">
+<Update label="Feb 20, 2026">
 
 - **ClickPipes:** Reverse private endpoints in an inactive state will now be automatically removed after a defined grace period. This ensures unused or misconfigured endpoints are not persisted indefinitely in the backend. See the automatic clean up [documentation](/integrations/clickpipes/networking/aws-privatelink#automatic-cleanup) for more details.
 
 </Update>
 
-<Update label="February 13, 2026">
+<Update label="Feb 13, 2026">
 
 - [BigQuery Connector](/integrations/clickpipes/bigquery/overview) is now in Private Preview. Read this [blogpost](https://clickhouse.com/blog/bigquery-clickpipe-private-preview) for more details and join the [waitlist](https://clickhouse.com/cloud/clickpipes/bigquery-connector) for access.
 - We are pleased to announce support for PCI deployments for Google Cloud. Regions supported: 
@@ -359,13 +394,13 @@ curl https://clickhouse.com/cli | sh
 
 </Update>
 
-<Update label="January 23, 2026">
+<Update label="Jan 23, 2026">
 
 - ClickPipes is now available in AWS `eu-west-1`. For new ClickHouse Cloud services created from January 20 in that region, the matching region will be used for ClickPipes. For older services, ClickPipes defaults to `eu-central-1`. See the [documentation](/integrations/clickpipes/networking/static-ips) for more details.
 
 </Update>
 
-<Update label="January 16, 2026">
+<Update label="Jan 16, 2026">
 
 - **Service-level usage cost filtering via API:** Our API now supports filtering your organization's usage costs by specific service tags, making it easier to analyze spend at a more granular level.
 - **Data Catalog integration:** You can now connect an external data catalog as a data source. ClickHouse Cloud supports AWS Glue and Unity Catalog (with more coming soon). Once connected, the catalog appears as a database, allowing you to read Iceberg tables directly—without duplicating data. For access, contact support to request access.

@@ -62,6 +62,17 @@ public:
     void setEstimatedBuildRows(std::optional<UInt64> estimated_build_rows_) { estimated_build_rows = estimated_build_rows_; }
     std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
 
+    /// Make the built filter record its key values/range (see track_key_range). Called by plan
+    /// optimizations whose pruning consumes them, e.g. markSealGatedReading.
+    void enableKeyRangeTracking() { build_options.track_key_range = true; }
+
+    /// Whether the completed filter is guaranteed to convert into a positive primary-key
+    /// predicate (see buildRuntimeRangePredicate): positive containment semantics
+    /// (an ANTI-join NOT-contains filter can never prune positively) and a key type whose
+    /// [min, max] envelope survives an exact-set overflow. Gating a read on a seal that
+    /// fails this could only delay the probe side and then scan it unpruned.
+    bool canSealPrunePrimaryKey() const;
+
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;

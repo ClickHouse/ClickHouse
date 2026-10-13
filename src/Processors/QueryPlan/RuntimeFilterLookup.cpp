@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -30,6 +31,7 @@
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FailPoint.h>
 #include <Common/MergeLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -53,6 +55,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char runtime_filter_skip_finish_insert[];
 }
 
 namespace detail
@@ -177,6 +184,11 @@ static constexpr size_t HASH_BATCH_SIZE = 1024;
 
 bool detail::RuntimeFilterIndexAnalysis::supportsDataType(const DataTypePtr & data_type)
 {
+    return runtimeFilterKeySupportsMinMaxRange(data_type);
+}
+
+bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & data_type)
+{
     if (!data_type)
         return false;
 
@@ -250,11 +262,7 @@ namespace
 /// float can appear on a path discovered while reading, which is not among the type's static children.
 bool equalsCanDisagreeWithHashTable(const IDataType & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & nested) { result |= isFloat(nested) || isObject(nested); };
-    check(type);
-    type.forEachChild(check);
-    return result;
+    return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
 }
 
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
@@ -1017,6 +1025,9 @@ public:
             filter->merge(*runtime_filter); /// Add all new keys to an existing filter.
             LOG_TRACE(getLogger("RuntimeFilter"), "Merged a partial into runtime filter '{}' under key '{}'", display_name, key);
         }
+        /// The registration above already makes the filter findable by the probe side, so skipping
+        /// the call below holds it in the registered-but-unfinished state that is otherwise transient.
+        fiu_do_on(FailPoints::runtime_filter_skip_finish_insert, { return; });
         filter->finishInsert();
     }
 

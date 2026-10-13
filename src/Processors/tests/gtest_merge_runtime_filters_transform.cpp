@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/ISource.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -262,7 +262,7 @@ struct TestPipeline
     void execute(size_t num_threads = 4)
     {
         QueryStatusPtr element;
-        PipelineExecutor executor(processors, element);
+        Runtime::V1::PipelineExecutor executor(processors, element);
         executor.execute(num_threads, false);
     }
 
@@ -271,7 +271,7 @@ struct TestPipeline
     bool executeUntilRegistered()
     {
         QueryStatusPtr element;
-        PipelineExecutor executor(processors, element);
+        Runtime::V1::PipelineExecutor executor(processors, element);
         std::atomic<bool> registered = false;
         std::thread watcher(
             [&]
@@ -283,7 +283,7 @@ struct TestPipeline
                     else
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
-                executor.cancel();
+                executor.cancel(IProcessor::CancelReason::CancelledByUser);
             });
         try
         {
@@ -301,12 +301,12 @@ struct TestPipeline
     void executeAndCancel(const std::shared_ptr<Gate> & cancel_after, const std::shared_ptr<Gate> & release_after_cancel)
     {
         QueryStatusPtr element;
-        PipelineExecutor executor(processors, element);
+        Runtime::V1::PipelineExecutor executor(processors, element);
         std::thread canceller(
             [&]
             {
                 cancel_after->wait();
-                executor.cancel();
+                executor.cancel(IProcessor::CancelReason::CancelledByUser);
                 release_after_cancel->openGate();
             });
         try
@@ -615,7 +615,7 @@ std::vector<String> runForward(Processors sources, UInt64 max_received_state_byt
     processors->emplace_back(std::move(sink));
 
     QueryStatusPtr element;
-    PipelineExecutor executor(processors, element);
+    Runtime::V1::PipelineExecutor executor(processors, element);
     executor.execute(1, false);
     return blobs;
 }
