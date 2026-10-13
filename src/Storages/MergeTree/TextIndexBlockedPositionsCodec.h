@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 
 #include <algorithm>
+#include <array>
 #include <span>
 #include <vector>
 
@@ -37,6 +38,8 @@ class TextIndexBlockedPositionsCodec
 public:
     /// Posting ranks per block; baked into the format (changing it needs a version bump).
     static constexpr size_t BLOCK_DOCS = 128;
+    /// Fits `MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS` documents with one UInt32 position each plus 6 bytes of headers.
+    static constexpr size_t MAX_EMBEDDED_BYTES = 32;
 
     /// Parsed per-token directory; block_offsets are absolute in the .pos stream (seek-ready).
     struct Directory
@@ -44,6 +47,9 @@ public:
         UInt64 num_docs = 0;
         /// block_offsets[b] .. block_offsets[b + 1] is block b's payload; size numBlocks() + 1.
         std::vector<UInt64> block_offsets;
+        /// Embedded stream; `block_offsets` are relative to it.
+        std::array<char, MAX_EMBEDDED_BYTES> embedded{};
+        size_t embedded_size = 0;
 
         size_t numBlocks() const { return block_offsets.empty() ? 0 : block_offsets.size() - 1; }
         size_t docsInBlock(size_t block_idx) const
