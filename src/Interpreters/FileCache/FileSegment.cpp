@@ -307,16 +307,16 @@ String FileSegment::getOrSetDownloader()
     return current_downloader;
 }
 
-bool FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
+scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
 {
     auto lk = lock();
 
     if (download_state != State::PARTIALLY_DOWNLOADED || !getDownloaderUnlocked(lk).empty())
-        return false;
+        return {};
 
     getOrCreateDownloadDataUnlocked(lk).downloader_id = getCallerId();
     setDownloadState(State::DOWNLOADING, lk);
-    return true;
+    return [this] { resetDownloader(); };
 }
 
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
@@ -1503,27 +1503,10 @@ void FileSegment::increasePriority()
             /// A move between priority queues must not run concurrently with a space reservation for
             /// this segment. A completed segment never reserves again. A partially downloaded one is
             /// safe while we hold its downloader role, because only the downloader reserves.
-            /// Only an entry of the SLRU probationary queue can move, so take the role only for it.
             const bool is_completed = isCompleted();
-            const bool holds_downloader = !is_completed
-                && it->getNestedOrThis()->getType() == QueueEntryType::SLRU_Probationary
-                && tryTakeDownloaderOfPartiallyDownloaded();
+            const auto downloader_guard = is_completed ? scope_guard{} : tryTakeDownloaderOfPartiallyDownloaded();
 
-            bool increased = false;
-            try
-            {
-                increased = cache->tryIncreasePriority(*it, is_completed || holds_downloader);
-            }
-            catch (...)
-            {
-                if (holds_downloader)
-                    resetDownloader();
-                throw;
-            }
-            if (holds_downloader)
-                resetDownloader();
-
-            if (!increased)
+            if (!cache->tryIncreasePriority(*it, is_completed || downloader_guard))
                 ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
             /// Used only for system.filesystem_cache.
