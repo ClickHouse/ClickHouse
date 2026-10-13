@@ -22,7 +22,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <map>
+#include <mutex>
 #include <filesystem>
 #include <ranges>
 #include <thread>
@@ -2486,6 +2488,170 @@ TEST_F(MetadataPlainRewritableDiskTest, UnlinkKeepsSharedBlob)
         "./UnlinkKeepsSharedBlob/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
         "./UnlinkKeepsSharedBlob/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
     }));
+}
+
+/// Two transactions remove different links to the same blob. Each of them sees the other link in its own uncommitted
+/// state, but the one that commits last must see the blob with a single link and remove it (through the marker of a
+/// blob removal), otherwise the blob loses its last link only when the changes are published and leaks.
+TEST_F(MetadataPlainRewritableDiskTest, ConcurrentUnlinkOfDifferentLinksToSharedBlob)
+{
+    for (const bool a_first : {true, false})
+    {
+        const std::string test = a_first ? "ConcurrentUnlinkOfDifferentLinksToSharedBlobAB" : "ConcurrentUnlinkOfDifferentLinksToSharedBlobBA";
+        SCOPED_TRACE(test);
+
+        auto metadata = getMetadataStorage(test);
+        auto object_storage = getObjectStorage(test);
+
+        {
+            auto tx = metadata->createTransaction();
+            tx->createDirectory("A");
+            tx->createDirectory("B");
+            size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "shared");
+            tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size)});
+            tx->createHardLink("A/f1", "B/f1");
+            tx->commit(DB::NoCommitOptions{});
+        }
+
+        const auto shared_remote_path = metadata->getStorageObjects("A/f1").front().remote_path;
+        EXPECT_EQ(metadata->getHardlinkCount("A/f1"), 1);
+
+        auto tx_a = metadata->createTransaction();
+        tx_a->unlinkFile("A/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
+        auto tx_b = metadata->createTransaction();
+        tx_b->unlinkFile("B/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
+
+        auto & first = a_first ? tx_a : tx_b;
+        auto & second = a_first ? tx_b : tx_a;
+
+        first->commit(DB::NoCommitOptions{});
+        EXPECT_TRUE(first->getSubmittedForRemovalBlobs().empty());
+        EXPECT_TRUE(object_storage->exists(StoredObject(shared_remote_path)));
+
+        second->commit(DB::NoCommitOptions{});
+        ASSERT_EQ(second->getSubmittedForRemovalBlobs().size(), 1u);
+        EXPECT_EQ(second->getSubmittedForRemovalBlobs().front().remote_path, shared_remote_path);
+
+        EXPECT_FALSE(metadata->existsFile("A/f1"));
+        EXPECT_FALSE(metadata->existsFile("B/f1"));
+        EXPECT_FALSE(object_storage->exists(StoredObject(shared_remote_path)));
+
+        metadata = restartMetadataStorage(test);
+        EXPECT_TRUE(metadata->existsDirectory("A"));
+        EXPECT_TRUE(metadata->existsDirectory("B"));
+        EXPECT_FALSE(metadata->existsFile("A/f1"));
+        EXPECT_FALSE(metadata->existsFile("B/f1"));
+
+        /// Only the metadata of the two directories is left: neither the blob nor a marker.
+        const auto blobs = listAllBlobs(test);
+        EXPECT_EQ(blobs.size(), 2u);
+        for (const auto & blob : blobs)
+            EXPECT_EQ(fs::path(blob).filename(), "prefix.path") << blob;
+    }
+}
+
+/// The same with the commits running at the same time: the first commit is held while it writes to object storage until the
+/// second one writes too. The locks on the keys of shared blobs keep the second commit waiting until the first one is
+/// published, so it sees the blob with a single link. Without them, both commits see two links and nobody removes the blob.
+/// The role of the current thread in `ParallelUnlinkOfDifferentLinksToSharedBlob`: 1 for the held commit, 2 for the other one.
+static thread_local int holding_storage_role = 0;
+
+TEST_F(MetadataPlainRewritableDiskTest, ParallelUnlinkOfDifferentLinksToSharedBlob)
+{
+    class HoldingStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool second_wrote = false;
+        bool held = false;
+
+        std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
+            const StoredObject & object,
+            WriteMode mode,
+            std::optional<ObjectAttributes> attributes,
+            size_t buf_size,
+            const WriteSettings & write_settings) override
+        {
+            if (holding_storage_role == 1)
+            {
+                std::unique_lock lock(mutex);
+                if (!held)
+                {
+                    held = true;
+                    cv.notify_all();
+                    /// The second commit is expected to be blocked by the lock, so this wait normally times out.
+                    cv.wait_for(lock, std::chrono::seconds(2), [&] { return second_wrote; });
+                }
+            }
+            else if (holding_storage_role == 2)
+            {
+                std::lock_guard lock(mutex);
+                second_wrote = true;
+                cv.notify_all();
+            }
+            return LocalObjectStorage::writeObject(object, mode, std::move(attributes), buf_size, write_settings);
+        }
+    };
+
+    const std::string test = "ParallelUnlinkOfDifferentLinksToSharedBlob";
+    getMetadataStorage(test);
+    auto object_storage = std::make_shared<HoldingStorage>(LocalObjectStorageSettings("holding", getObjectStorage(test)->getCommonKeyPrefix(), false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled);
+    SCOPE_EXIT({ metadata->shutdown(); });
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "shared");
+        tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size)});
+        tx->createHardLink("A/f1", "B/f1");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto shared_remote_path = metadata->getStorageObjects("A/f1").front().remote_path;
+
+    auto tx_a = metadata->createTransaction();
+    tx_a->unlinkFile("A/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
+    auto tx_b = metadata->createTransaction();
+    tx_b->unlinkFile("B/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
+
+    std::thread thread_a([&]
+    {
+        holding_storage_role = 1;
+        tx_a->commit(DB::NoCommitOptions{});
+    });
+
+    /// Start the second commit only when the first one is held inside of its commit.
+    {
+        std::unique_lock lock(object_storage->mutex);
+        object_storage->cv.wait(lock, [&] { return object_storage->held; });
+    }
+
+    std::thread thread_b([&]
+    {
+        holding_storage_role = 2;
+        tx_b->commit(DB::NoCommitOptions{});
+    });
+
+    thread_a.join();
+    thread_b.join();
+
+    EXPECT_TRUE(tx_a->getSubmittedForRemovalBlobs().empty());
+    ASSERT_EQ(tx_b->getSubmittedForRemovalBlobs().size(), 1u);
+    EXPECT_EQ(tx_b->getSubmittedForRemovalBlobs().front().remote_path, shared_remote_path);
+    EXPECT_FALSE(object_storage->exists(StoredObject(shared_remote_path)));
+
+    auto reloaded = restartMetadataStorage(test);
+    EXPECT_FALSE(reloaded->existsFile("A/f1"));
+    EXPECT_FALSE(reloaded->existsFile("B/f1"));
+    const auto blobs = listAllBlobs(test);
+    EXPECT_EQ(blobs.size(), 2u);
+    for (const auto & blob : blobs)
+        EXPECT_EQ(fs::path(blob).filename(), "prefix.path") << blob;
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, ExplicitDirectoryUsesRandomBlobNames)
