@@ -736,11 +736,11 @@ public:
 /// reuse a cached node in a later query.
 const DateLUTImpl & getTimeZoneToParseIn(const TimezoneMixin & type_time_zone, const FormatSettings & format_settings)
 {
-    if (type_time_zone.hasExplicitTimeZone())
-        return type_time_zone.getTimeZone();
+    /// Settings built by hand, as in internal casts, carry no zone; the type's own then stands.
+    if (!type_time_zone.hasExplicitTimeZone() && format_settings.session_time_zone)
+        return *format_settings.session_time_zone;
 
-    /// Only default-constructed settings leave the zone unset, and no parser uses those.
-    return format_settings.session_time_zone ? *format_settings.session_time_zone : DateLUT::instance("UTC");
+    return type_time_zone.getTimeZone();
 }
 
 template <typename JSONParser>
@@ -2651,13 +2651,13 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     SerializationPtr dynamic_serialization;
+    const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
-    /// Inference has no declared zone to honour, so the reading session's is the whole answer. Taken
-    /// from the settings per use, so that a node built by one query can be reused by the next.
+    /// Settings that carry no zone keep the one captured when the node was built.
     const DateLUTImpl & timeZoneForSchemaInference(const FormatSettings & format_settings) const
     {
-        return format_settings.session_time_zone ? *format_settings.session_time_zone : utc_time_zone_for_schema_inference;
+        return format_settings.session_time_zone ? *format_settings.session_time_zone : time_zone_for_schema_inference;
     }
 
     enum class JSONElementType

@@ -42,8 +42,8 @@ struct FormatSettings
     bool is_writing_to_terminal = false;
     bool try_infer_variant = false;
 
-    /// The zone to read a date/time that declares none in, filled by `getFormatSettings`. Null means
-    /// UTC, so default-constructed settings do not depend on whichever session is current.
+    /// The zone to read a date/time that declares none in, filled by `getFormatSettings`. Null in
+    /// settings built by hand, which then keep the zone of the parsed type.
     const DateLUTImpl * session_time_zone = nullptr;
 
     bool seekable_read = true;

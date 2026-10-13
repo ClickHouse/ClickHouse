@@ -35,5 +35,13 @@ INSERT INTO t_json_datetime_parse_explicit SELECT '{"ts": "1970-01-01 09:00:00"}
 
 SELECT 'declared zone', arraySort(groupArray(toUnixTimestamp(j.ts))) FROM t_json_datetime_parse_explicit;
 
+-- Internal casts and query parameters parse with settings that carry no zone, so the type's own zone
+-- applies, which for a type built by the query is the session's.
+SET session_timezone = 'Asia/Tokyo';
+SELECT 'values', toUnixTimestamp(j.ts) FROM values('j JSON(ts DateTime)', '{"ts": "1970-01-01 09:00:00"}');
+SET param_p = '{"ts": "1970-01-01 09:00:00"}';
+SELECT 'query parameter', toUnixTimestamp(j.ts) FROM (SELECT {p:JSON(ts DateTime)} AS j);
+SELECT 'query parameter inferred', toUnixTimestamp(j.ts.:DateTime) FROM (SELECT {p:JSON} AS j);
+
 DROP TABLE t_json_datetime_parse;
 DROP TABLE t_json_datetime_parse_explicit;
