@@ -1314,11 +1314,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (MergeJoin::isSupported(table_join))
             return std::make_shared<JoinSwitcher>(
-                table_join,
-                right_table_expression_header,
-                params.join_any_take_last_row,
-                stats_collecting_params,
-                build_layout);
+                table_join, right_table_expression_header, params.join_any_take_last_row, stats_collecting_params);
         return HashJoin::create(
             table_join, right_table_expression_header, params.join_any_take_last_row, stats_collecting_params, build_layout);
     }
