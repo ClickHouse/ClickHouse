@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int CANNOT_CLOSE_FILE;
+    extern const int REQUIRED_PASSWORD;
 }
 
 }
@@ -884,13 +885,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 const char * confirmation = read_password("Repeat the password: ", confirmation_buf, sizeof(confirmation_buf), tty_flags);
                 if (!confirmation)
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read the confirmation of the password for the default user");
-                /// An empty confirmation (as on Ctrl+D) cancels setting up the password.
+                /// An empty confirmation (Enter or Ctrl+D) fails the installation instead of leaving the default user
+                /// without a password: an automated installation that answers only the first prompt must not succeed.
+                /// Asking again would loop forever if the answer is always empty.
                 if (!*confirmation)
-                {
-                    password.clear();
-                    fmt::print("The password is not confirmed.\n");
-                    break;
-                }
+                    throw Exception(ErrorCodes::REQUIRED_PASSWORD,
+                        "The password for the default user is not confirmed. Run the installation again; "
+                        "to set up no password, leave the first prompt empty");
                 if (password == confirmation)
                     break;
 
