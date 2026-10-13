@@ -378,8 +378,7 @@ def main():
         os.environ["CLICKHOUSE_DISKS_FILES"] = f"{temp_dir}/var/lib/clickhouse/disks"
         os.makedirs(os.environ["CLICKHOUSE_DISKS_FILES"], exist_ok=True)
 
-        # Fast test runs lightweight SQL tests that are not CPU-bound,
-        # so we can use more parallelism than the default cpu_count/2.
+        # The fast tests are not CPU-bound, so use more parallelism than the default cpu_count/2.
         nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
 
         fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --timeout 60 --jobs {nproc_fast}"
