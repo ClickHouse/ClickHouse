@@ -38,9 +38,12 @@ public:
     static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
+    void onCancel() noexcept override;
     void transform(Chunk & chunk) override;
 
 private:
+    void transformImpl(Chunk & chunk);
+
     using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn *>;
     void transformRange(
         const Columns & input_fill_columns,

@@ -66,6 +66,8 @@ public:
     String getName() const override { return "ConvertingTransform"; }
 
 protected:
+    void onCancel() noexcept override;
+
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {

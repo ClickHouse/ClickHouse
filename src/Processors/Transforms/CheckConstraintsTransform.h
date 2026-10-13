@@ -31,6 +31,7 @@ public:
 
     String getName() const override { return "CheckConstraintsTransform"; }
 
+    void onCancel() noexcept override;
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {
