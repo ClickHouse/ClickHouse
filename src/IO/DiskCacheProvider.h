@@ -90,7 +90,7 @@ private:
     bool modified = false;
     /// Whether this writer served data that a concurrent writer appended; the destructor then counts a hit.
     bool read_data_from_concurrent_writers = false;
-    /// In the temporary-cache mode: whether this writer filled the segment from its start.
+    /// Whether this writer filled the segment from its start; a drop candidate in the temporary-cache mode.
     bool filled_from_start = false;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };

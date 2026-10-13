@@ -333,8 +333,7 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
     if (!written_ok)
         return 0;
 
-    if (cache_settings.cache_temporarily && !modified && write_offset == seg_range.left)
-        filled_from_start = true;
+    filled_from_start |= write_offset == seg_range.left;
     modified = true;
     LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
         contiguous, seg_range.left, seg_range.right, write_offset);
@@ -358,7 +357,7 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 
 std::function<void()> DiskCacheWriter::takeDropAfterPass()
 {
-    if (!filled_from_start || !segment_holder)
+    if (!cache_settings.cache_temporarily || !filled_from_start || !segment_holder)
         return {};
     filled_from_start = false;
     return [weak_segment = std::weak_ptr<FileSegment>(segment_holder->getSingleFileSegment()), logger = log]() noexcept
