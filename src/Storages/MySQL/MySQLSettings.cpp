@@ -26,7 +26,7 @@ namespace ErrorCodes
     DECLARE(UInt64, connection_pool_size, 16, "Size of connection pool (if all connections are in use, the query will wait until some connection will be freed).", 0) \
     DECLARE(UInt64, connection_max_tries, 3, "Number of retries for pool with failover", 0) \
     DECLARE(UInt64, connection_wait_timeout, 5, "Timeout (in seconds) for waiting for free connection (in case of there is already connection_pool_size active connections), 0 - do not wait.", 0) \
-    DECLARE(Bool, connection_auto_close, true, "Auto-close connection after each `SELECT`, i.e. disable connection reuse for reads. `INSERT` keeps its connection open for reuse.", 0) \
+    DECLARE(Bool, connection_auto_close, true, "Auto-close connection after query execution, i.e. disable connection reuse.", 0) \
     DECLARE(UInt64, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, "Connect timeout (in seconds)", 0) \
     DECLARE(UInt64, read_write_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "Read/write timeout (in seconds)", 0) \
     DECLARE(Bool, enable_compression, false, "Enable MySQL protocol compression (MYSQL_OPT_COMPRESS).", 0) \

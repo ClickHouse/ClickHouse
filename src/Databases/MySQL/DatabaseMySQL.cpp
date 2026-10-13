@@ -936,7 +936,7 @@ SETTINGS enable_compression = 1;
 
 ### `connection_auto_close` {#connection-auto-close}
 
-Closes the connection after each `SELECT` from a table of the database, i.e. disables connection reuse for reads. When set to `0`, each table of the database keeps its connections in its own pool for the next `SELECT`. `INSERT` keeps its connection open for reuse with either value.
+Allows to automatically close the connection after query execution, i.e. disable connection reuse. When set to `0`, each table of the database keeps its connections in its own pool for the next query.
 
 Default value: `1`.
 

@@ -842,7 +842,7 @@ Default settings are not very efficient, since they do not even reuse connection
 
 ### `connection_auto_close` {#connection-auto-close}
 
-Allows to automatically close the connection after each `SELECT`, i.e. disable connection reuse for reads. `INSERT` keeps its connection open for reuse with either value.
+Allows to automatically close the connection after query execution, i.e. disable connection reuse.
 
 Possible values:
 
