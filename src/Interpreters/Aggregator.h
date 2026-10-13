@@ -689,9 +689,18 @@ private:
     /// - There's no need to allocate and maintain full aggregation state.
     bool is_simple_count = false;
 
-    /// Whether the aggregate `Params::bucket_top_k` ranks the groups by is `count`, whose state is the count itself.
-    /// Otherwise it is `uniqExact` or `uniqExactIf`, whose count `finalizeBucketTopKRank` reads.
-    bool bucket_top_k_ranks_by_count_state = false;
+    /// How a group's rank by the aggregate of `Params::bucket_top_k` is read: the inline count of an aggregation by a
+    /// lone `count`, the state of a `count` among other aggregates, which is the count itself, or the result of
+    /// `uniqExact` or `uniqExactIf`, which `finalizeBucketTopKRank` reads from its state.
+    enum class BucketTopKRank : UInt8
+    {
+        InlineCount,
+        CountState,
+        FinalizedResult,
+    };
+
+    /// Set when `Params::bucket_top_k` is.
+    BucketTopKRank bucket_top_k_rank = BucketTopKRank::InlineCount;
 
     LoggerPtr log = getLogger("Aggregator");
 
@@ -1321,11 +1330,13 @@ private:
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
 
-    /// The bucket-local Top-K conversion when the rank count is the result of `uniqExact` or `uniqExactIf` rather than a
-    /// `count` state.
-    template <typename Method>
+    /// The bucket-local Top-K conversion for a count rank, read as the inline count or as the count state, or for a
+    /// rank finalized from a `uniqExact` or `uniqExactIf` state (see `bucket_top_k_rank`). The two count readings
+    /// differ only in branches outside the scan loops, so they share an instantiation: a third one per method would
+    /// grow the binary for no faster scan.
+    template <bool finalized_rank, typename Method>
     requires MapAggregationMethod<Method>
-    AggregatedChunk convertOneBucketToChunkTopKByFinalizedRank(
+    AggregatedChunk convertOneBucketToChunkTopKImpl(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const;
 
     /// The rank count of the group with state `place` when `Params::bucket_top_k` ranks by `uniqExact` or

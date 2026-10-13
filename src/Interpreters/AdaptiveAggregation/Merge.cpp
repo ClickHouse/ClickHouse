@@ -840,11 +840,15 @@ void Aggregator::executeStagedArgumentRecords(
 
 ALWAYS_INLINE UInt64 Aggregator::adaptiveRankCount(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const
 {
-    if (is_simple_count)
-        return getInlineCountState(mapped);
-    if (bucket_top_k_ranks_by_count_state)
-        return getCountState(mapped + offsets_of_aggregate_states[params.bucket_top_k_rank_index]);
-    return finalizeBucketTopKRank(mapped, *scratch, arena);
+    switch (bucket_top_k_rank)
+    {
+        case BucketTopKRank::InlineCount:
+            return getInlineCountState(mapped);
+        case BucketTopKRank::CountState:
+            return getCountState(mapped + offsets_of_aggregate_states[params.bucket_top_k_rank_index]);
+        case BucketTopKRank::FinalizedResult:
+            return finalizeBucketTopKRank(mapped, *scratch, arena);
+    }
 }
 
 size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & variants, AdaptiveTopKCountBins * bins) const
@@ -875,7 +879,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
         /// is at most the sum of those of the cells and records merged into it, so the bins bound it as they bound a row
         /// count.
         ColumnUInt64::MutablePtr scratch;
-        if (bins && !is_simple_count && !bucket_top_k_ranks_by_count_state)
+        if (bins && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
             scratch = ColumnUInt64::create();
         const auto add = [&](auto & table)
         {
@@ -913,7 +917,7 @@ void NO_INLINE Aggregator::addMergeCountedTablesToBounds(
         {
             if (!pruning.isMergeCounted(*data[i]))
                 continue;
-            if (!scratch && !is_simple_count && !bucket_top_k_ranks_by_count_state)
+            if (!scratch && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
                 scratch = ColumnUInt64::create();
             forEachMappedCellWithHash(
                 getDataVariant<Method>(*data[i]).data.impls[bucket],
@@ -1035,8 +1039,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     /// conversion, so the other aggregate states of the rest of the groups would be built for nothing: a count-first
     /// unit counts its groups first and builds the states of its best groups only (see below). A merge that collects
     /// the statistics needs every group converted.
-    const bool count_first = MapAggregationMethod<Method> && final && params.bucket_top_k && bucket_top_k_ranks_by_count_state
-        && !is_simple_count && !updater;
+    const bool count_first = MapAggregationMethod<Method> && final && params.bucket_top_k
+        && bucket_top_k_rank == BucketTopKRank::CountState && !updater;
     /// With a descending order, a count-first unit keeps its best groups up to date while it counts them. An ascending
     /// order cannot be kept this way, so a pass over the counted groups selects them.
     std::optional<GrowingCountTopK<typename Table::key_type>> top_k;
