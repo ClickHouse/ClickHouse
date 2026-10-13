@@ -277,6 +277,17 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
     return res;
 }
 
+bool ConstraintsDescription::hasForbiddenSubquery(const ASTPtr & constraint, const ContextPtr & context)
+{
+    const auto * constraint_ptr = constraint ? constraint->as<ASTConstraintDeclaration>() : nullptr;
+    if (!constraint_ptr || constraint_ptr->type != ASTConstraintDeclaration::Type::CHECK)
+        return false;
+
+    ASTPtr expanded_expr = constraint_ptr->expr->clone();
+    UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
+    return containsForbiddenSubquery(expanded_expr);
+}
+
 void ConstraintsDescription::validateNoSubqueries(const ASTs & constraints_, const ContextPtr & context)
 {
     for (const auto & constraint : constraints_)

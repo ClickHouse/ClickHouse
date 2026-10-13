@@ -866,7 +866,9 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
     if (constraints)
         for (const auto & constraint : constraints->children)
         {
-            if (validate_expressions)
+            /// A grandfathered `CHECK` constraint with a subquery (fresh definitions reject it before this point)
+            /// is not analyzed: `TreeRewriter` would execute its scalar subqueries.
+            if (validate_expressions && !ConstraintsDescription::hasForbiddenSubquery(constraint, local_context))
             {
                 auto clone = constraint->clone();
                 TreeRewriter(local_context).analyze(clone, column_names_and_types);

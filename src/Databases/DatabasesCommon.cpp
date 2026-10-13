@@ -142,7 +142,9 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     }
     if (columns.constraints)
     {
-        InterpreterCreateQuery::getConstraintsDescription(columns.constraints, columns_desc, context);
+        /// Re-resolve the existing constraints against the resulting columns, so that e.g. dropping a column
+        /// referenced by a constraint is rejected. Grandfathered constraints with a subquery are skipped.
+        InterpreterCreateQuery::getConstraintsDescription(columns.constraints, columns_desc, context, /* validate_expressions = */ true);
     }
     if (columns.projections)
     {

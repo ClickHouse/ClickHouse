@@ -66,6 +66,9 @@ public:
     /// the constraint actions are compiled, see `getExpressions`.
     static void validateNoSubqueries(const ASTs & constraints_, const ContextPtr & context);
 
+    /// Whether `constraint` is a `CHECK` constraint that `validateNoSubqueries` would reject.
+    static bool hasForbiddenSubquery(const ASTPtr & constraint, const ContextPtr & context);
+
     /// Rejects a constraint expression that changes the number of rows. `CheckConstraintsTransform` reads
     /// the constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked
     /// against another row's value, or - when the column ends up shorter than the block - past the end of
