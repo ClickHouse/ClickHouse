@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
 #include <Core/Joins.h>
@@ -40,6 +41,7 @@ using namespace DB::QueryPlanOptimizations;
 namespace ProfileEvents
 {
 extern const Event AutomaticParallelReplicasProbePlansBuilt;
+extern const Event AutomaticParallelReplicasDecidedWithoutBuildingPlan;
 extern const Event AutoParallelReplicasOptimizationMicroseconds;
 extern const Event AutoParallelReplicasPlanBuildMicroseconds;
 extern const Event AutoParallelReplicasSkippedDueToSettings;
@@ -245,6 +247,120 @@ String explainWithHashes(const QueryPlan & plan, const std::unordered_map<const 
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
 /// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
 /// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
+/// The cost model's two estimates. Factored out so the decision taken from cached statistics before a
+/// parallel-replicas plan exists and the decision taken after one is built cannot drift apart: they are
+/// the same comparison over the same inputs.
+struct ReplicasCostEstimate
+{
+    size_t local = 0;
+    size_t replicas = 0;
+    size_t effective_max_reading_threads = 0;
+    size_t output_replicas_divisor = 1;
+
+    bool replicasWin() const { return local > replicas; }
+};
+
+ReplicasCostEstimate estimateReplicasCost(
+    const RuntimeDataflowStatistics & stats,
+    const IQueryPlanStep * boundary_step,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    ReplicasCostEstimate estimate;
+    const auto max_threads = optimization_settings.max_threads;
+    // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
+    // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
+    estimate.effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
+        ? stats.input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
+        : SIZE_MAX;
+    const auto num_replicas = optimization_settings.max_parallel_replicas;
+    /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
+    /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a
+    /// bounded top-N per replica instead makes every replica ship the whole `output_bytes`:
+    /// `LIMIT n`, `LIMIT -n` (the last `n` rows) and a `Sorting` carrying a limit. Dividing
+    /// those underestimates the parallel-replicas plan by a factor of `num_replicas`.
+    const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
+    const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
+        || typeid_cast<const NegativeLimitStep *>(boundary_step)
+        || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
+    estimate.output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
+    estimate.local = stats.input_bytes / std::min<size_t>(max_threads, estimate.effective_max_reading_threads);
+    estimate.replicas = (stats.input_bytes / std::min<size_t>(max_threads * num_replicas, estimate.effective_max_reading_threads))
+        + stats.output_bytes / estimate.output_replicas_divisor;
+    return estimate;
+}
+
+void logReplicasCostFormula(
+    const RuntimeDataflowStatistics & stats,
+    const ReplicasCostEstimate & estimate,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    const auto max_threads = optimization_settings.max_threads;
+    const auto num_replicas = optimization_settings.max_parallel_replicas;
+    LOG_TRACE(
+        getLogger("AutoParallelReplicas"),
+        "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
+        stats.input_bytes,
+        std::min<size_t>(max_threads, estimate.effective_max_reading_threads),
+        stats.input_bytes,
+        std::min<size_t>(max_threads * num_replicas, estimate.effective_max_reading_threads),
+        stats.output_bytes,
+        estimate.output_replicas_divisor,
+        estimate.local,
+        estimate.replicas);
+}
+
+/// The node of this plan that answers to `wanted_hash`, normalized the way the statistics were recorded
+/// against it. Shared by the hash match against a built parallel-replicas plan and by the decision taken
+/// from cached statistics before any such plan exists. Returns nullptr when no node has the hash.
+QueryPlan::Node * findBoundaryNodeForHash(
+    QueryPlan::Node & single_replica_plan_root,
+    const std::unordered_map<const QueryPlan::Node *, UInt64> & nopr_node_hashes,
+    UInt64 wanted_hash)
+{
+    /// A step that contributes nothing to the key adopts its child's key (see
+    /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
+    /// of that chain - the hash map's order is unspecified, so walk the plan for a stable answer -
+    /// and then walk down to its bottom, which is the node that actually produces the numbers the
+    /// chain shares. A wrapper above it measures something else: an `Aggregating` with a rename over
+    /// it is such a chain, and the aggregation records the partial states the replicas ship where
+    /// the rename above it already sees finalized values.
+    QueryPlan::Node * matched_node = nullptr;
+    Stack traversal_stack;
+    const auto key_of = [&](const QueryPlan::Node & node) -> std::optional<UInt64>
+    {
+        if (auto hash_it = nopr_node_hashes.find(&node); hash_it != nopr_node_hashes.end())
+            return hash_it->second;
+        return {};
+    };
+    traverseQueryPlan(
+        traversal_stack,
+        single_replica_plan_root,
+        [&](auto & frame_node)
+        {
+            if (!matched_node && key_of(frame_node) == wanted_hash)
+                matched_node = &frame_node;
+        });
+
+    if (matched_node)
+    {
+        QueryPlan::Node * above = nullptr;
+        while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == wanted_hash)
+        {
+            above = matched_node;
+            matched_node = matched_node->children.front();
+        }
+
+        /// The reading step records input bytes only, so where the chain bottoms out in one, take
+        /// the wrapper just above it instead - it does record output bytes. This mirrors
+        /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read with no
+        /// wrapper above it is returned as it is, so the caller's fail-close for it stays reachable.
+        if (matched_node->children.empty() && above)
+            matched_node = above;
+    }
+
+    return matched_node;
+}
+
 std::pair<QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
     const QueryPlan & parallel_replicas_plan,
@@ -254,47 +370,7 @@ std::pair<QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
     {
         auto nopr_node_hashes = calculateHashTableCacheKeys(*single_replica_plan.getRootNode());
-
-        /// A step that contributes nothing to the key adopts its child's key (see
-        /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
-        /// of that chain - the hash map's order is unspecified, so walk the plan for a stable answer -
-        /// and then walk down to its bottom, which is the node that actually produces the numbers the
-        /// chain shares. A wrapper above it measures something else: an `Aggregating` with a rename over
-        /// it is such a chain, and the aggregation records the partial states the replicas ship where
-        /// the rename above it already sees finalized values.
-        QueryPlan::Node * matched_node = nullptr;
-        Stack traversal_stack;
-        const auto key_of = [&](const QueryPlan::Node & node) -> std::optional<UInt64>
-        {
-            if (auto hash_it = nopr_node_hashes.find(&node); hash_it != nopr_node_hashes.end())
-                return hash_it->second;
-            return {};
-        };
-        traverseQueryPlan(
-            traversal_stack,
-            *single_replica_plan.getRootNode(),
-            [&](auto & frame_node)
-            {
-                if (!matched_node && key_of(frame_node) == it->second)
-                    matched_node = &frame_node;
-            });
-
-        if (matched_node)
-        {
-            QueryPlan::Node * above = nullptr;
-            while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == it->second)
-            {
-                above = matched_node;
-                matched_node = matched_node->children.front();
-            }
-
-            /// The reading step records input bytes only, so where the chain bottoms out in one, take
-            /// the wrapper just above it instead - it does record output bytes. This mirrors
-            /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read with no
-            /// wrapper above it is returned as it is, so the caller's fail-close for it stays reachable.
-            if (matched_node->children.empty() && above)
-                matched_node = above;
-        }
+        QueryPlan::Node * matched_node = findBoundaryNodeForHash(*single_replica_plan.getRootNode(), nopr_node_hashes, it->second);
 
         if (!matched_node)
         {
@@ -734,6 +810,141 @@ void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
 namespace QueryPlanOptimizations
 {
 
+/// The key under which an execution remembers its boundary: the single-replica plan's root hash, with the settings
+/// that can move where the replicas' half ends without changing that plan. None with
+/// `automatic_parallel_replicas_remember_boundary` off, so that every query builds the replicas plan and nothing is
+/// remembered.
+static std::optional<UInt64> rememberedBoundaryKey(
+    const QueryPlan::Node & root,
+    const std::unordered_map<const QueryPlan::Node *, UInt64> & nopr_node_hashes,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.automatic_parallel_replicas_remember_boundary)
+        return std::nullopt;
+    const auto root_hash_it = nopr_node_hashes.find(&root);
+    if (root_hash_it == nopr_node_hashes.end())
+        return std::nullopt;
+    SipHash hash;
+    hash.update(root_hash_it->second);
+    hash.update(optimization_settings.parallel_replicas_boundary_settings_hash);
+    return hash.get64();
+}
+
+/// Decide against parallel replicas from what an earlier execution remembered, without building a replicas plan.
+/// Building it is the expensive half of this optimization, and on a query the model declines it is built only to be
+/// discarded. Returns true when it declined.
+///
+/// Only a decline is taken here. Everything else - no statistics yet, drift, a verdict to parallelize, a read that
+/// cannot be identified - is left to the full path, which builds the replicas plan, matches the boundary itself, and
+/// is the only one that adopts or collects, so a cached boundary can never make a plan run at a wrong node.
+///
+/// The drift check needs the read the replicas coordinate, and only the replicas plan knows which one that is: in a
+/// join a walk of this plan alone lands on whichever side the planner put first, and in a self-join it cannot tell the
+/// two reads of one table apart. So the matching that built the entry remembered the read by its table expression's
+/// name, and it is looked up by that name here. The root key ignores those names, so a plan that shares the key may
+/// name its reads differently; when the name does not resolve to exactly one read, build the plan.
+static bool declineFromRememberedBoundary(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Node & root,
+    const std::unordered_map<const QueryPlan::Node *, UInt64> & nopr_node_hashes,
+    std::optional<UInt64> root_key)
+{
+    /// Mode 2 collects statistics on purpose, so it always goes through the replicas plan.
+    if (optimization_settings.automatic_parallel_replicas_mode == 2 || !root_key)
+        return false;
+
+    auto & stats_cache = getRuntimeDataflowStatisticsCache();
+    const auto remembered = stats_cache.getBoundary(*root_key);
+    if (!remembered)
+        return false;
+
+    QueryPlan::Node * boundary = findBoundaryNodeForHash(root, nopr_node_hashes, remembered->boundary_hash);
+    if (!boundary)
+        return false;
+
+    ReadFromMergeTree * coordinated_read = nullptr;
+    size_t reads_with_that_name = 0;
+    std::vector<const QueryPlan::Node *> to_visit{boundary};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+        if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            const auto & table_expression = read->getQueryInfo().table_expression;
+            if (table_expression && table_expression->getAlias() == remembered->coordinated_read_table_expression
+                && read->getStorageID().getFullNameNotQuoted() == remembered->coordinated_read_table)
+            {
+                coordinated_read = read;
+                ++reads_with_that_name;
+            }
+        }
+        for (const auto * child : node->children)
+            to_visit.push_back(child);
+    }
+    if (reads_with_that_name != 1)
+    {
+        LOG_TRACE(
+            getLogger("AutoParallelReplicas"),
+            "The remembered coordinated read {} of {} matches {} reads of this plan, building the plan with parallel replicas",
+            remembered->coordinated_read_table_expression,
+            remembered->coordinated_read_table,
+            reads_with_that_name);
+        return false;
+    }
+
+    /// The same checks as the full path, for the same reasons; when one fails, the full path reaches it again and
+    /// accounts for it.
+    if (boundary->step.get() == coordinated_read)
+        return false;
+    const auto analysis = coordinated_read->getAnalyzedResult() ? coordinated_read->getAnalyzedResult() : coordinated_read->selectRangesToRead();
+    if (!analysis || analysis->readFromProjection())
+        return false;
+    const auto rows_to_read = analysis->selected_rows;
+    if (!rows_to_read)
+        return false;
+
+    const auto stats = stats_cache.getStats(remembered->boundary_hash);
+    if (!stats)
+        return false;
+    /// Drifted data is recollected, and collecting happens only through the replicas plan.
+    if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
+        return false;
+
+    const auto estimate = estimateReplicasCost(*stats, boundary->step.get(), optimization_settings);
+    const auto total_read_bytes = stats->input_bytes + stats->duplicated_bytes;
+    const double duplicated_read_ratio
+        = total_read_bytes ? static_cast<double>(stats->duplicated_bytes) / static_cast<double>(total_read_bytes) : 0.0;
+    const bool too_much_duplicated
+        = duplicated_read_ratio > static_cast<double>(optimization_settings.automatic_parallel_replicas_max_duplicated_read_ratio);
+    const bool below_min_bytes_per_replica = optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
+        && stats->input_bytes / optimization_settings.max_parallel_replicas
+            < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
+    if (estimate.replicasWin() && !too_much_duplicated && !below_min_bytes_per_replica)
+        return false;
+
+    /// A decision taken here is still a decision of the cost model, so it is accounted exactly as the full path
+    /// accounts the same outcome: otherwise the queries declined without a plan would vanish from the funnel that
+    /// `AutoParallelReplicasCostModelEvaluated` and the rejection events describe.
+    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
+    ProfileEvents::increment(
+        ProfileEvents::AutoParallelReplicasBytesPerReplica, stats->input_bytes / optimization_settings.max_parallel_replicas);
+    if (!estimate.replicasWin())
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
+    else if (too_much_duplicated)
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByDuplicatedReads);
+    else
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByThreshold);
+
+    logReplicasCostFormula(*stats, estimate, optimization_settings);
+    LOG_TRACE(
+        getLogger("AutoParallelReplicas"),
+        "Parallel replicas are not used: decided from the statistics of {}, so no plan with parallel replicas was built",
+        boundary->step->getName());
+    ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
+    return true;
+}
+
 void considerEnablingParallelReplicas(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan & query_plan)
 {
@@ -923,6 +1134,14 @@ void considerEnablingParallelReplicas(
         }
     }
 
+    /// The expensive half of this optimization is building a plan with parallel replicas, and on a plan
+    /// the model declines it is built only to be discarded. When the statistics already describe this
+    /// shape, the decision needs none of it, so take it first and leave before building anything.
+    const auto nopr_node_hashes = calculateHashTableCacheKeys(root);
+    const auto root_key = rememberedBoundaryKey(root, nopr_node_hashes, optimization_settings);
+    if (declineFromRememberedBoundary(optimization_settings, root, nopr_node_hashes, root_key))
+        return;
+
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
     ///
@@ -1003,6 +1222,21 @@ void considerEnablingParallelReplicas(
 
     auto * coordinated_read_in_replicas_plan = reads.in_replicas_plan;
     auto * source_reading_step = reads.to_instrument;
+
+    /// Remember what the replicas plan named, so that a later execution of this plan can decline without building
+    /// one; see `declineFromRememberedBoundary`.
+    if (root_key)
+    {
+        if (const auto & table_expression = source_reading_step->getQueryInfo().table_expression;
+            table_expression && !table_expression->getAlias().empty())
+        {
+            getRuntimeDataflowStatisticsCache().setBoundary(
+                *root_key,
+                {.boundary_hash = single_replica_plan_node_hash,
+                 .coordinated_read_table_expression = table_expression->getAlias(),
+                 .coordinated_read_table = source_reading_step->getStorageID().getFullNameNotQuoted()});
+        }
+    }
 
     if (reads.several_lazy_reads)
         LOG_TRACE(getLogger("AutoParallelReplicas"), "More than one lazy reading step, not collecting their statistics");
@@ -1086,27 +1320,11 @@ void considerEnablingParallelReplicas(
 
         if (apply_plan_with_parallel_replicas)
         {
-            const auto max_threads = optimization_settings.max_threads;
-            // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
-            // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
-            const auto effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
-                ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
-                : SIZE_MAX;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
-            /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
-            /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a
-            /// bounded top-N per replica instead makes every replica ship the whole `output_bytes`:
-            /// `LIMIT n`, `LIMIT -n` (the last `n` rows) and a `Sorting` carrying a limit. Dividing
-            /// those underestimates the parallel-replicas plan by a factor of `num_replicas`.
-            const auto * boundary_step = corresponding_node_in_single_replica_plan->step.get();
-            const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
-            const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
-                || typeid_cast<const NegativeLimitStep *>(boundary_step)
-                || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
-            const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
-            const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
-            const auto replicas_plan_cost_estimation
-                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / output_replicas_divisor;
+            const auto estimate
+                = estimateReplicasCost(*stats, corresponding_node_in_single_replica_plan->step.get(), optimization_settings);
+            const auto local_plan_cost_estimation = estimate.local;
+            const auto replicas_plan_cost_estimation = estimate.replicas;
             ProfileEvents::increment(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
             /// Unconditionally, before the decision. Recording it only when the threshold turns a
             /// query away would show only which queries a lower threshold would let through, never
@@ -1114,17 +1332,7 @@ void considerEnablingParallelReplicas(
             /// the ones being applied here.
             ProfileEvents::increment(
                 ProfileEvents::AutoParallelReplicasBytesPerReplica, stats->input_bytes / num_replicas);
-            LOG_TRACE(
-                getLogger("AutoParallelReplicas"),
-                "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
-                stats->input_bytes,
-                std::min<size_t>(max_threads, effective_max_reading_threads),
-                stats->input_bytes,
-                std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads),
-                stats->output_bytes,
-                output_replicas_divisor,
-                local_plan_cost_estimation,
-                replicas_plan_cost_estimation);
+            logReplicasCostFormula(*stats, estimate, optimization_settings);
             /// Winning on time is necessary but not sufficient. Only the coordinated read is split; every
             /// other read of the subtree runs on each replica in full, so the cluster does
             /// `num_replicas` times that work for no change in wall-clock time - the comparison above
