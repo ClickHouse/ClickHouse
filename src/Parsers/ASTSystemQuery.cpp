@@ -234,6 +234,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << ' ';
             print_database_table();
+            if (!like_pattern.empty())
+                ostr << " LIKE " << quoteString(like_pattern);
             break;
         }
         case Type::RESET_FILELOG:
@@ -762,6 +764,8 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeString("schema_cache_format", schema_cache_format);
     if (!queue_path.empty())
         w.writeString("queue_path", queue_path);
+    if (!like_pattern.empty())
+        w.writeString("like_pattern", like_pattern);
     if (filelog_file)
         w.writeString("filelog_file", *filelog_file);
     if (filelog_offset)
@@ -955,6 +959,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     schema_cache_storage = r.getString("schema_cache_storage");
     schema_cache_format = r.getString("schema_cache_format");
     queue_path = r.getString("queue_path");
+    like_pattern = r.getString("like_pattern");
     if (r.has("filelog_file"))
         filelog_file = r.getString("filelog_file");
     if (r.has("filelog_offset"))

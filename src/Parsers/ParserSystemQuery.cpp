@@ -397,6 +397,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
                 return false;
+
+            if (ParserKeyword{Keyword::LIKE}.ignore(pos, expected))
+            {
+                ASTPtr pattern_ast;
+                if (!ParserStringLiteral{}.parse(pos, pattern_ast, expected))
+                    return false;
+                res->like_pattern = pattern_ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
             break;
         }
         case Type::ALLOCATE_MEMORY:

@@ -224,6 +224,9 @@ public:
 
     String queue_path;
 
+    /// Optional `LIKE 'pattern'` filter for SYSTEM DROP S3QUEUE FAILED FILES.
+    String like_pattern;
+
     String fail_point_name;
 
     enum class FailPointAction

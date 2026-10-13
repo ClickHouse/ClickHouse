@@ -2094,13 +2094,13 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 
-void StorageObjectStorageQueue::dropFailedFiles()
+void StorageObjectStorageQueue::dropFailedFiles(const String & like_pattern)
 {
     auto metadata = tryGetFilesMetadata();
     if (!metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table does not have metadata initialized");
 
-    metadata->dropFailedFiles();
+    metadata->dropFailedFiles(like_pattern);
 }
 
 void StorageObjectStorageQueue::waitForPathToBeProcessed(

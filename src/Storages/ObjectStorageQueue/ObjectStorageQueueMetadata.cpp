@@ -23,6 +23,8 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/randomSeed.h>
+#include <Common/likePatternToRegexp.h>
+#include <re2/re2.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DDLTask.h>
 #include <shared_mutex>
@@ -2005,9 +2007,10 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int LOGICAL_ERROR;
+        extern const int BAD_ARGUMENTS;
     }
 
-    void ObjectStorageQueueMetadata::dropFailedFiles()
+    void ObjectStorageQueueMetadata::dropFailedFiles(const String & like_pattern)
     {
         const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
         const auto zk_client = getZooKeeper();
@@ -2019,7 +2022,91 @@ namespace DB
         if (!ephemeral_node)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cleanup is already being executed by another node");
 
-        /// 0 TTL means drop all failed files immediately
-        cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", 0, 0);
+        std::unique_ptr<re2::RE2> matcher;
+        if (!like_pattern.empty())
+        {
+            /// In hive partitioning NodeMetadata::file_path is not set, so it cannot be matched.
+            if (partitioning_mode == ObjectStorageQueuePartitioningMode::HIVE)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "LIKE filter is not supported with hive partitioning");
+
+            re2::RE2::Options options;
+            options.set_dot_nl(true);
+            matcher = std::make_unique<re2::RE2>(likePatternToRegexp(like_pattern), options);
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid LIKE pattern '{}': {}", like_pattern, matcher->error());
+        }
+
+        const std::string failed_path = zookeeper_path / "failed";
+        Strings nodes;
+        const auto list_code = zk_client->tryGetChildren(failed_path, nodes);
+        if (list_code == Coordination::Error::ZNONODE)
+            return;
+        if (list_code != Coordination::Error::ZOK)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(list_code));
+
+        /// Snapshot generations before deleting, so a file that re-fails meanwhile keeps its cache entry.
+        std::unordered_map<std::string, uint64_t> generations_snapshot;
+        for (const auto & entry : local_file_statuses.dump())
+            generations_snapshot[entry.mapped->path] = entry.mapped->generation.load();
+
+        /// Pairs of (keeper node path, file path) selected for removal.
+        std::vector<std::pair<std::string, std::string>> to_remove;
+        std::vector<std::string> paths;
+        const auto read_batch = [&]
+        {
+            const auto response = zk_client->tryGet(paths);
+            for (size_t i = 0; i < response.size(); ++i)
+            {
+                if (response[i].error != Coordination::Error::ZOK)
+                    continue; /// Already removed.
+
+                const auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[i].data);
+                if (matcher && !re2::RE2::FullMatch(metadata.file_path, *matcher))
+                    continue;
+                to_remove.emplace_back(paths[i], metadata.file_path);
+            }
+            paths.clear();
+        };
+
+        for (const auto & node : nodes)
+        {
+            /// Only terminal failed nodes are dropped; `.retriable` nodes hold the retry counter.
+            if (node.ends_with(".retriable"))
+                continue;
+
+            paths.push_back(fs::path(failed_path) / node);
+            if (paths.size() == keeper_multiread_batch_size)
+                read_batch();
+        }
+        if (!paths.empty())
+            read_batch();
+
+        size_t removed = 0;
+        for (const auto & [node_path, file_path] : to_remove)
+        {
+            const auto code = zk_client->tryRemove(node_path);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            {
+                LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", node_path, code);
+                continue;
+            }
+            ++removed;
+
+            using KeyType = UInt128;
+            using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+            local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                {
+                    if (status->path == file_path)
+                    {
+                        auto it = generations_snapshot.find(file_path);
+                        return it != generations_snapshot.end() && status->generation.load() == it->second;
+                    }
+                    return false;
+                }));
+        }
+
+        LOG_TRACE(log, "Dropped {} failed file nodes (LIKE filter: '{}')", removed, like_pattern);
+        reconcileFailedFilesCache();
     }
 }

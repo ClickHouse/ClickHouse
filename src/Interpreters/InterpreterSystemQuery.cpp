@@ -1118,7 +1118,7 @@ BlockIO InterpreterSystemQuery::execute()
             flushObjectStorageQueue(query);
             break;
         case Type::DROP_S3QUEUE_FAILED_FILES:
-            dropS3QueueFailedFiles();
+            dropS3QueueFailedFiles(query);
             break;
         case Type::RESET_FILELOG:
             resetFileLog(query);
@@ -2631,7 +2631,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
-void InterpreterSystemQuery::dropS3QueueFailedFiles()
+void InterpreterSystemQuery::dropS3QueueFailedFiles(ASTSystemQuery & query)
 {
     auto context = getContext();
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
@@ -2640,7 +2640,7 @@ void InterpreterSystemQuery::dropS3QueueFailedFiles()
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
 
-    queue->dropFailedFiles();
+    queue->dropFailedFiles(query.like_pattern);
 }
 
 void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
