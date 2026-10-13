@@ -10,3 +10,7 @@ SELECT count() > 0 FROM system.changelog WHERE notEmpty(authors) AND notEmpty(pu
 SELECT count() > 0 FROM system.changelog WHERE version >= (26, 1, 0);
 SELECT uniqExact(version) >= 1 FROM system.changelog;
 SELECT version = tuple(version.major, version.minor, version.patch) FROM system.changelog LIMIT 1;
+
+-- Author citations with several linked names or a plain-text name are split into authors.
+SELECT countIf(match(description, '\\]\\(https://github\\.com/[^/)]+\\) (and|with) \\[')) FROM system.changelog;
+SELECT count() > 0 FROM system.changelog WHERE has(authors, 'Copilot');

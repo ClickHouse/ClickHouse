@@ -23,7 +23,13 @@ release_re = re.compile(
 category_re = re.compile(r'^#### +(.*?) *$')
 entry_re = re.compile(r'^\* +(.*)$')
 pull_request_re = re.compile(r' ?\[#(\d+)\]\(https://github\.com/ClickHouse/ClickHouse/pull/\d+\)')
-author_re = re.compile(r' ?\(\[([^\]#][^\]]*)\]\(https://github\.com/[^)]*\)\)')
+# An author link; a name may hold one level of brackets, e.g. [Denny [DBA at Innervate]](...).
+author_link = r'\[(?:[^\[\]#]|\[[^\[\]]*\])(?:[^\[\]]|\[[^\[\]]*\])*\]\(https://github\.com/[^)]*\)'
+author_name_re = re.compile(r'\[((?:[^\[\]]|\[[^\[\]]*\])+)\]\(https://github\.com/')
+# The citation after a pull request: author links joined by commas, "and" or "with".
+author_re = re.compile(r' ?\((' + author_link + r'(?:(?:,|, and| and| with) ' + author_link + r')*)\)')
+# A citation without a link, e.g. "(Copilot)", right after a pull request link.
+plain_author_re = re.compile(r'(/pull/\d+\)) \(([A-Za-z][\w .-]*)\)')
 
 epoch = datetime.date(1970, 1, 1)
 
@@ -40,11 +46,14 @@ def flush_entry(text):
         if m.group(1) not in pull_requests:
             pull_requests.append(m.group(1))
     authors = []
-    for m in author_re.finditer(text):
-        author = m.group(1).strip()
+    names = [n.group(1) for m in author_re.finditer(text) for n in author_name_re.finditer(m.group(1))]
+    names += [m.group(2) for m in plain_author_re.finditer(text)]
+    for name in names:
+        author = name.strip()
         if author and author not in authors:
             authors.append(author)
-    description = pull_request_re.sub('', text)
+    description = plain_author_re.sub(r'\1', text)
+    description = pull_request_re.sub('', description)
     description = author_re.sub('', description)
     description = re.sub(r' {2,}', ' ', description)
     while '. .' in description:
