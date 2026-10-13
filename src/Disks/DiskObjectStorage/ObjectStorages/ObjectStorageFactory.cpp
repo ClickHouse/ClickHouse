@@ -314,7 +314,7 @@ static void registerGCSObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
-        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
     {
         /// `getGCSClient` checks the endpoint against `remote_url_allow_hosts` for every disk.
         auto settings = GCSObjectStorageSettings::loadFromConfig(config, config_prefix, context);
