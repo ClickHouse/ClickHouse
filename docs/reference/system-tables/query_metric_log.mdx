@@ -1573,6 +1573,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ParquetReadRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups read from parquet data
 - `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data
 - `ProfileEvent_ParquetTopKSkippedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
+- `ProfileEvent_ParquetReadMinMaxFromStatistics` ([UInt64](/reference/data-types/int-uint)) — The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)
 - `ProfileEvent_ParquetReadPages` ([UInt64](/reference/data-types/int-uint)) — The total number of Parquet data pages read
 - `ProfileEvent_ParquetPrunedPages` ([UInt64](/reference/data-types/int-uint)) — The total number of pages pruned from parquet data via column index
 - `ProfileEvent_ParquetDecodingTasks` ([UInt64](/reference/data-types/int-uint)) — Tasks issued by parquet reader
@@ -1637,6 +1638,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AIAPICalls` ([UInt64](/reference/data-types/int-uint)) — Number of HTTP requests dispatched to AI providers.
 - `ProfileEvent_AIRowsProcessed` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received an AI result.
 - `ProfileEvent_AIRowsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received a default value due to quota or error.
+- `ProfileEvent_YTsaurusLookupThrottled` ([UInt64](/reference/data-types/int-uint)) — Number of lookup requests to YTsaurus that were throttled
 - `ProfileEvent_StatelessWorkerRequested` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers requested by queries for distributed query execution.
 - `ProfileEvent_StatelessWorkerProvided` ([UInt64](/reference/data-types/int-uint)) — Number of stateless workers provided to queries for distributed query execution.
 - `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time queries spent waiting for stateless workers to be provisioned.
