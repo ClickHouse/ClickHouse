@@ -2762,10 +2762,11 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
-    /// Only plain local files have version tokens. The TopK key is kept to tables with a UUID.
+    /// Only plain local files have version tokens. A table without a UUID (the `file` table function, or a
+    /// `File` table in a database without UUIDs) keeps its entries under a synthetic `table_id`
+    /// (see `QueryConditionCache::getTableIdForFileEntries`), which partitions the TopK entries as well.
     /// With distributed processing the files arrive from the initiator at run time.
-    if (storage->use_table_fd || storage->archive_info || storage->distributed_processing
-        || storage->getStorageID().uuid == UUIDHelpers::Nil)
+    if (storage->use_table_fd || storage->archive_info || storage->distributed_processing)
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
