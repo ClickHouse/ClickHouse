@@ -3242,9 +3242,13 @@ void MergeTreeData::startStatisticsCache()
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
     if (refresh_stats_task)
+    {
+        refresh_stats_cancelled = true;
         refresh_stats_task->deactivate();
+    }
     if (refresh_statistics_seconds)
     {
+        refresh_stats_cancelled = false;
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool()->createTask(
             getStorageID(), "MergeTreeData::refreshStatistics",
@@ -3398,6 +3402,8 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
+        if (refresh_stats_cancelled)
+            return;
         auto parts_lock = readLockParts();
         auto stats = data_part->loadStatistics();
         estimator_builder.markDataPart(data_part);
@@ -3434,7 +3440,10 @@ MergeTreeData::~MergeTreeData()
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
         if (refresh_stats_task)
+        {
+            refresh_stats_cancelled = true;
             refresh_stats_task->deactivate();
+        }
     }
     catch (...)
     {
