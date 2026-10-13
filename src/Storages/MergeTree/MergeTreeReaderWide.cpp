@@ -431,6 +431,9 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
     for (auto & [_, cache] : caches)
         cache.clear();
 
+    /// The next call continuing this range starts where this slice ended.
+    fixed_size_lazy_row += fixed_size_lazy_rows_to_read;
+
     return read_rows;
 }
 
