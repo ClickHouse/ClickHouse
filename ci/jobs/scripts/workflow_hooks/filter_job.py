@@ -339,6 +339,32 @@ def _matches_digest_path(path, patterns):
     return False
 
 
+CONTRIB_TSAN_INTEGRATION_JOBS = [
+    j.name for j in JobConfigs.integration_test_contrib_tsan_pr_jobs
+]
+
+
+def _submodule_paths():
+    """The submodule paths from `.gitmodules`. Read at run time: the file is in the checkout."""
+    output = Shell.get_output_or_raise(
+        "git config -f .gitmodules --get-regexp '^submodule\\..*\\.path$'",
+        verbose=True,
+    )
+    paths = {line.split(maxsplit=1)[1] for line in output.splitlines() if " " in line}
+    # The repository always has submodules: an empty set means the read failed, and would
+    # silently skip the jobs in every PR.
+    assert paths, "No submodule paths read from .gitmodules"
+    return paths
+
+
+def _has_submodule_changes(changed_files):
+    """True if the PR changes the commit a submodule points to (a gitlink, which shows up
+    as a changed file at the submodule path), or changes `.gitmodules` itself: the paths are
+    read from the head revision, so a removed submodule is only visible there."""
+    paths = {f.removeprefix("./") for f in changed_files}
+    return ".gitmodules" in paths or bool(paths & _submodule_paths())
+
+
 def _has_stress_or_fuzzer_changes(changed_files):
     return any(
         _matches_digest_path(f.removeprefix("./"), _STRESS_AND_FUZZER_PATHS)
@@ -430,6 +456,28 @@ def _has_fuzzer_target_changes(changed_files):
         "/fuzzers/" in f or f.removeprefix("./").startswith("tests/fuzz/")
         for f in changed_files
     )
+
+
+# A small PR that changes any product code still runs one stress test. A few lines of
+# `src/` can break an invariant that only concurrent load reaches, and nothing else in a
+# small PR exercises data races under load. Example: https://github.com/ClickHouse/ClickHouse/pull/125033
+# (60 lines) skipped all stress tests, and its exception `Cannot call function ... columns
+# were captured` was first seen on master, also by `Stress test (amd_tsan)`. An untargeted
+# AST fuzzer is not added: the targeted AST fuzzers already run on small PRs and caught
+# this exception at a higher rate per run (about 1.4% vs 0.8% in PR CI after the merge).
+# `Stress test (amd_tsan)` reuses a build that the PR workflow makes anyway. A PR that
+# changes only tests, docs or CI scripts has no product code lines and keeps skipping it.
+SMALL_PR_PRODUCT_CODE_JOBS = (f"{JobNames.STRESS} (amd_tsan)",)
+
+assert set(SMALL_PR_PRODUCT_CODE_JOBS) <= {
+    j.name for j in JobConfigs.stress_test_jobs
+}, "SMALL_PR_PRODUCT_CODE_JOBS names a job that does not exist"
+
+
+def _changes_product_code(info):
+    """True if the PR changes at least one line of product code, see `_is_small_pr`."""
+    product_changed_lines = info.get_kv_data("product_changed_lines")
+    return not isinstance(product_changed_lines, int) or product_changed_lines > 0
 
 
 def _is_small_pr(info):
@@ -630,6 +678,17 @@ def should_skip_job(job_name):
     if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
         return True, "Skipped, only documentation changed"
 
+    # The full TSan integration run is only for the PRs that bump a submodule, see
+    # `JobConfigs.integration_test_contrib_tsan_pr_jobs`. Other PRs get the targeted selection.
+    # The other workflows run the same jobs on every commit, so only the PR workflow is gated.
+    if (
+        job_name in CONTRIB_TSAN_INTEGRATION_JOBS
+        and _info_cache.pr_number > 0
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and not _has_submodule_changes(changed_files)
+    ):
+        return True, "Skipped, no submodule (gitlink) changes"
+
     # Run Keeper Stress jobs only when there are changes in src/Coordination,
     # tests/stress/keeper, or ci/jobs/keeper_stress_job.py
     if job_name == KEEPER_STRESS_PR_NAME:
@@ -644,7 +703,8 @@ def should_skip_job(job_name):
     # of these jobs takes up to 1-3 hours and they rarely catch anything a change
     # of this size introduces;
     # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
-    # master once more. Bypass: the `ci-force-all` label.
+    # master once more. Bypass: the `ci-force-all` label. A PR that changes product
+    # code keeps `SMALL_PR_PRODUCT_CODE_JOBS`.
     # The builds that only the skipped stress tests use go with them, except with the
     # `ci-build` label, which asks for the whole build matrix. A change under `cmake/` or
     # `base/glibc-compatibility/` is never small: like the uncounted build inputs, one line
@@ -661,6 +721,7 @@ def should_skip_job(job_name):
             )
         )
         and _is_small_pr(_info_cache)
+        and not (job_name in SMALL_PR_PRODUCT_CODE_JOBS and _changes_product_code(_info_cache))
         and not _has_uncounted_build_changes(changed_files)
         and not _has_stress_or_fuzzer_changes(changed_files)
         and not _has_arch_sensitive_changes(changed_files)
@@ -787,8 +848,8 @@ def should_skip_job(job_name):
     #
     # Pull requests run the family only with the `ci-coverage` label; by default they run the same
     # test configurations on the `arm_binary` build instead (`COVERAGE_REPLACEMENT_JOBS`), which
-    # finds the same failures several times cheaper. Master itself is unaffected (pr_number gate):
-    # its coverage runs must always publish a complete llvm_coverage.info for later PRs to compare against.
+    # finds the same failures several times cheaper. Outside pull requests (pr_number gate) the family is
+    # never skipped here: master does not run it, it runs in the scheduled coverage workflow.
     if (
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name

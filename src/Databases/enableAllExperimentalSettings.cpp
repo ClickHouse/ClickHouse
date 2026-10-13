@@ -16,6 +16,7 @@ const std::vector<std::string> & allExperimentalSettingNames()
         "allow_experimental_nlp_functions",
         "allow_fuzz_query_functions",
         "allow_experimental_hash_functions",
+        "enable_ipcrypt",
         "allow_experimental_vector_similarity_index",
         "allow_experimental_text_index_lazy_apply",
         "allow_experimental_window_functions",

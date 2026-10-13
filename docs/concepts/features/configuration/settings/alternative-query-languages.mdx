@@ -7,6 +7,7 @@ keywords: ['alternative query languages', 'query dialects', 'MySQL dialect', 'Po
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Besides standard SQL, ClickHouse supports various alternative query languages for querying data.
@@ -53,7 +54,7 @@ Under the hood, ClickHouse uses transpilation from PRQL to SQL to run PRQL queri
 
 ## Kusto query language (KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 To enable KQL:
 
@@ -108,7 +109,7 @@ See the [LogsQL dialect guide](/guides/clickhouse/logsql) for the supported subs
 
 ## Trino SQL {#trino-sql}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 To enable the Trino dialect:
 
