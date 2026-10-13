@@ -13,9 +13,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `Parquet` row subgroup, a hash join probe block - lease a pooled instance instead of building a new one
 # for every block. `AdaptiveShortCircuitEagerExecutions` counts the actions which the static short-circuit
 # schedule would have executed lazily and the heuristic decided to execute eagerly instead, so it can only
-# be non-zero if the profile of the earlier blocks was preserved.
+# be non-zero if the profile of the earlier blocks was preserved. Parallel replicas are disabled: they split
+# the rows between the replicas, so every adaptive instance would see only a few rounds of rows.
 
-SETTINGS="SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 1, max_block_size = 8192, max_threads = 1"
+SETTINGS="SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 1, max_block_size = 8192, max_threads = 1, enable_parallel_replicas = 0"
 
 function check_profile_is_preserved()
 {
@@ -27,7 +28,7 @@ function check_profile_is_preserved()
     local adaptive_result
     local static_result
     adaptive_result=$(${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "$query $SETTINGS")
-    static_result=$(${CLICKHOUSE_CLIENT} --query "$query SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 0, max_block_size = 8192, max_threads = 1")
+    static_result=$(${CLICKHOUSE_CLIENT} --query "$query SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 0, max_block_size = 8192, max_threads = 1, enable_parallel_replicas = 0")
 
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} --query "
