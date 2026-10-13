@@ -1015,9 +1015,11 @@ def main():
             if tests and not any(re.search(t, test_file) for t in tests):
                 return False
             is_sequential_test = Targeting.is_sequential_functional_test(test_file)
-            if "--no-sequential" in runner_options and is_sequential_test:
+            # Compare whole options: `--no-parallel` is a prefix of `--no-parallel-replicas`.
+            runner_option_list = runner_options.split()
+            if "--no-sequential" in runner_option_list and is_sequential_test:
                 return False
-            if "--no-parallel" in runner_options and not is_sequential_test:
+            if "--no-parallel" in runner_option_list and not is_sequential_test:
                 return False
             if (
                 batch_num
