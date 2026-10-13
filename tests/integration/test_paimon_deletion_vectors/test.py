@@ -78,6 +78,26 @@ def upload(node, name):
     return table_dir
 
 
+UPDATED = [(1, "APPEND"), (2, "APPEND"), (3, "COMPACT")]
+
+
+def assert_snapshot_layout(spark, name, snapshots, deletion_vectors):
+    """Checks (id, commit kind) of every snapshot and the row count of each deletion vectors index file of the latest one."""
+    layout = [
+        (row.snapshot_id, row.commit_kind)
+        for row in spark.sql(
+            f"SELECT snapshot_id, commit_kind FROM paimon.default.`{name}$snapshots` ORDER BY snapshot_id"
+        ).collect()
+    ]
+    indexes = [
+        row.row_count
+        for row in spark.sql(
+            f"SELECT row_count FROM paimon.default.`{name}$table_indexes` WHERE index_type = 'DELETION_VECTORS'"
+        ).collect()
+    ]
+    assert (layout, indexes) == (snapshots, deletion_vectors), (layout, indexes)
+
+
 FULL_COMPACTION_HINT = "A full compaction of the table in Paimon"
 
 
@@ -100,6 +120,7 @@ def test_full_scan(started_cluster):
     name = create_table(spark, "dv")
     update(spark, name)
     table_dir = upload(node, name)
+    assert_snapshot_layout(spark, name, UPDATED, [1])
 
     query = f"SELECT * FROM paimonLocal('{table_dir}') ORDER BY id, val"
     assert_refused(node, query)
@@ -127,6 +148,11 @@ def test_deletion_vectors_turned_off(started_cluster):
     )
     spark.sql(f"INSERT INTO paimon.default.{name} VALUES (3, 'three')")
     table_dir = upload(node, name)
+    assert_snapshot_layout(spark, name, UPDATED + [(4, "APPEND")], [1])
+    options = spark.sql(
+        f"SELECT value FROM paimon.default.`{name}$options` WHERE key = 'deletion-vectors.enabled'"
+    ).collect()
+    assert [row.value for row in options] == ["false"], options
 
     assert_refused(node, f"SELECT * FROM paimonLocal('{table_dir}') ORDER BY id, val")
 
@@ -141,6 +167,7 @@ def test_full_compaction(started_cluster):
         f"CALL paimon.sys.compact(table => 'default.{name}', compact_strategy => 'full')"
     )
     table_dir = upload(node, name)
+    assert_snapshot_layout(spark, name, UPDATED + [(4, "COMPACT")], [0])
 
     query = f"SELECT * FROM paimonLocal('{table_dir}') ORDER BY id, val"
     cached = {"use_paimon_metadata_files_cache": 1}
@@ -175,11 +202,13 @@ def test_table_engine_read_modes(started_cluster):
 
     resumed = f"{name}_resumed"
     create_engine_table(resumed)
+    assert_snapshot_layout(spark, name, [(1, "APPEND")], [])
     assert node.query(f"SELECT count() FROM {resumed}") == "2\n"
     assert committed_snapshot(resumed) == "1\n"
 
     update(spark, name)
     upload(node, name)
+    assert_snapshot_layout(spark, name, UPDATED, [1])
 
     # The incremental read moves past the COMPACT snapshot 3 that added the deletion vector.
     assert_refused(node, f"SELECT count() FROM {resumed}", hint=cursor_hint(resumed))
@@ -204,6 +233,7 @@ def test_table_engine_read_modes(started_cluster):
         f"CALL paimon.sys.compact(table => 'default.{name}', compact_strategy => 'full')"
     )
     upload(node, name)
+    assert_snapshot_layout(spark, name, UPDATED + [(4, "COMPACT")], [])
     assert_refused(node, f"SELECT count() FROM {resumed}", hint=cursor_hint(resumed))
     assert committed_snapshot(resumed) == "1\n"
 
@@ -215,6 +245,7 @@ def test_table_engine_read_modes(started_cluster):
     zk.stop()
     spark.sql(f"INSERT INTO paimon.default.{name} VALUES (5, 'five')")
     upload(node, name)
+    assert_snapshot_layout(spark, name, UPDATED + [(4, "COMPACT"), (5, "APPEND")], [])
     assert node.query(f"SELECT * FROM {resumed}") == "5\tfive\n"
     assert committed_snapshot(resumed) == f"{compaction + 1}\n"
 
