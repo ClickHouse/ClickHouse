@@ -23,6 +23,11 @@ bool MergeTreeReaderIndex::canSkipAnyMark() const
     return index_read_result && index_read_result->canSkipAnyMark();
 }
 
+bool MergeTreeReaderIndex::canSkipAnyMarkBesidesTopKPrimaryKey() const
+{
+    return index_read_result && index_read_result->canSkipAnyMarkBesidesTopKPrimaryKey();
+}
+
 MergeTreeReaderIndex::MergeTreeReaderIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexReadResultPtr index_read_result_,
@@ -34,6 +39,7 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(
           {},
           main_reader_->storage_snapshot,
           main_reader_->storage_settings,
+          nullptr,
           nullptr,
           nullptr,
           main_reader_->all_mark_ranges,
@@ -49,6 +55,7 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(
 
 size_t MergeTreeReaderIndex::readRows(
     size_t from_mark,
+    size_t /* current_range_last_mark */,
     bool continue_reading,
     size_t max_rows_to_read,
     MutableColumns & res_columns)

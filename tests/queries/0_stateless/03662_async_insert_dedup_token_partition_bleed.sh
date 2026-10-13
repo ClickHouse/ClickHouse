@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-shared-merge-tree
 # no-fasttest: needs the async insert queue to coalesce several tokens into one flush.
+# no-shared-merge-tree: the RMT->SMT engine replacer rewrites the echoed engine label; SMT is covered by 04613_async_insert_dedup_token_partition_bleed_smt.sh.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/111031
 # When several async-insert entries with distinct insert_deduplication_token values are

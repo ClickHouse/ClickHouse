@@ -257,6 +257,7 @@ public:
 
     static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }
+    static const char * getDefaultTTL() { return ""; }
     /// Additional engine SETTINGS added to the default table definition (when no custom engine is configured).
     static const char * getDefaultEngineSettings() { return ""; }
     static consteval size_t getDefaultMaxSize() { return 1048576; }
