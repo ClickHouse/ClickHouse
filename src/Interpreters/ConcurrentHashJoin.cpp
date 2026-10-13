@@ -309,7 +309,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
     }
 }
 
-bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
+bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, size_t /* num_rows */, JoinBuildContext context)
 {
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
@@ -368,7 +368,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 }
 
                 auto [block, selector] = std::move(dispatched_block).detachData();
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits, block_row_store);
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), context.joinChecksLimits(), block_row_store);
 
                 std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
 
@@ -386,7 +386,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             std::this_thread::yield();
     }
 
-    if (check_limits && table_join->sizeLimits().hasLimits())
+    if (context.joinChecksLimits() && table_join->sizeLimits().hasLimits())
         return table_join->sizeLimits().check(post_join_total_rows, post_join_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
@@ -647,11 +647,8 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     {
         const auto & hash_join = hash_joins[i];
         std::lock_guard lock(hash_join->mutex);
-        if (hash_join->data->hasNonJoinedRows())
-        {
-            if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-                streams.push_back(std::move(s));
-        }
+        if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+            streams.push_back(std::move(s));
     }
     if (streams.empty())
         return {};

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -81,6 +82,10 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             header, sort_description, fill_description, std::move(interpolate_description),
             use_with_fill_by_sorting_prefix, settings.process_list_element);
     });
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void FillingStep::describeActions(FormatSettings & settings) const

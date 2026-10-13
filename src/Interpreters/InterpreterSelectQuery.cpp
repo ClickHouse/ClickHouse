@@ -186,6 +186,7 @@ namespace Setting
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsBool optimize_uniq_to_count;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
@@ -2734,9 +2735,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     std::optional<UInt64> num_rows;
+    if (processing_stage == QueryProcessingStage::FetchColumns)
+        num_rows = getTrivialCount(settings[Setting::allow_experimental_parallel_reading_from_replicas]);
 
     /// Optimization for trivial query like SELECT count() FROM table.
-    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings[Setting::allow_experimental_parallel_reading_from_replicas])))
+    if (num_rows)
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
@@ -2988,7 +2991,8 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]};
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        settings[Setting::use_aggregation_memory_tracker]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
