@@ -492,9 +492,11 @@ void collectSymbolsFromELF(
 {
     String object_name;
     String build_id;
+    bool is_main_executable = false;
 
 #if defined (USE_MUSL)
     object_name = "/proc/self/exe";
+    is_main_executable = true;
     build_id = Elf(object_name).getBuildID();
     self_build_id = build_id;
 #else
@@ -510,6 +512,7 @@ void collectSymbolsFromELF(
     if (object_name.empty())
     {
         object_name = "/proc/self/exe";
+        is_main_executable = true;
 
         if (build_id.empty())
             build_id = Elf(object_name).getBuildID();
@@ -603,7 +606,10 @@ void collectSymbolsFromELF(
 
     const size_t initial_symbol_count = symbols.size();
     searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
-    if (symbols.size() == initial_symbol_count)
+    /// `.gnu_debugdata` is produced by our own `SYMBOL_SECTIONS=gnu_debugdata` packaging mode.
+    /// Read it only for the main executable, so that stripped system libraries shipping MiniDebugInfo
+    /// are not decompressed and kept in memory.
+    if (is_main_executable && symbols.size() == initial_symbol_count)
         searchAndCollectSymbolsFromGNUDebugData(objects.back(), symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
