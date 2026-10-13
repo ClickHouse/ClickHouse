@@ -1569,3 +1569,43 @@ def test_system_drop_failed_files_like_filter(started_cluster):
                 node.query(f"DROP TABLE IF EXISTS {obj}")
             except Exception:
                 pass
+
+
+def test_system_drop_failed_files_requires_access(started_cluster):
+    node = started_cluster.instances["instance"]
+    table = f"test_drop_acl_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table}"
+    files_path = f"{table}_data"
+    user_no_grant = f"no_grant_{uuid.uuid4().hex[:8]}"
+    user_granted = f"granted_{uuid.uuid4().hex[:8]}"
+
+    create_table(
+        started_cluster, node, table, "unordered", files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    try:
+        node.query(f"CREATE USER {user_no_grant}")
+        node.query(f"GRANT SELECT ON default.{table} TO {user_no_grant}")
+        node.query(f"CREATE USER {user_granted}")
+        node.query(
+            f"GRANT SYSTEM FLUSH OBJECT STORAGE QUEUE ON default.{table} TO {user_granted}"
+        )
+
+        # No grant: must be denied.
+        error = node.query_and_get_error(
+            f"SYSTEM DROP S3QUEUE FAILED FILES default.{table}", user=user_no_grant
+        )
+        assert "ACCESS_DENIED" in error, error
+
+        # With the grant: must succeed (nothing failed, so it is a no-op).
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table}", user=user_granted)
+    finally:
+        for u in (user_no_grant, user_granted):
+            try:
+                node.query(f"DROP USER IF EXISTS {u}")
+            except Exception:
+                pass
+        try:
+            node.query(f"DROP TABLE IF EXISTS {table}")
+        except Exception:
+            pass
