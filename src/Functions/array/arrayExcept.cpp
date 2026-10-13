@@ -424,7 +424,6 @@ The operation maintains these properties:
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayExcept>(documentation);
-    factory.registerAlias("array_except", "arrayExcept", FunctionFactory::Case::Insensitive);
 }
 
 }

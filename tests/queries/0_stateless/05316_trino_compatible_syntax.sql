@@ -43,7 +43,7 @@ SELECT day_of_month(toDate('2024-02-29')), day_of_week(toDate('2024-02-29')), da
     week_of_year(toDate('2021-01-01')), year_of_week(toDate('2021-01-01')), last_day_of_month(toDate('2024-02-10'));
 SELECT current_timezone() = timezone();
 SELECT format_datetime(toDateTime('2024-02-29 13:14:15', 'UTC'), 'yyyy-MM-dd HH:mm:ss');
-SELECT array_distinct(ARRAY[1, 2, 1]), arraySort(array_union(ARRAY[1, 2], ARRAY[2, 3])), array_except(ARRAY[1, 2, 3], ARRAY[2]);
+SELECT array_distinct(ARRAY[1, 2, 1]), arraySort(array_union(ARRAY[1, 2], ARRAY[2, 3]));
 SELECT array_max(ARRAY[1, 3, 2]), array_min(ARRAY[1, 3, 2]), array_position(ARRAY[5, 6], 6);
 SELECT slice(ARRAY[1, 2, 3, 4], 2, 2), zip(ARRAY[1, 2], ARRAY['a']);
 SELECT map_keys(map('a', 1, 'b', 2)), map_values(map('a', 1, 'b', 2));
