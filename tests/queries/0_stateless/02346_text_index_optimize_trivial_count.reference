@@ -36,6 +36,11 @@ Inject trivial count optimization from the text index into the query plan
 741
 -- does not fire: not a bare count()
 0
+-- does not fire for a constant GROUP BY key: an empty set returns no row
+750
+-- fires again with empty_result_for_aggregation_by_constant_keys_on_empty_set = 0, which expects a row
+1
+0
 Read limits: an over-limit or concurrency-capped query falls back to the reader
 -- fires without a limit
 1

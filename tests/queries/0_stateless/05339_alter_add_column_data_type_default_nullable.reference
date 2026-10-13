@@ -1,0 +1,22 @@
+i	Int32
+k	Nullable(Int32)
+k_null	Nullable(Int32)
+k_not_null	Int32
+k_nullable	Nullable(Int32)
+k_default	Nullable(Int32)
+k_default_null	Nullable(Int32)
+s	Nullable(String)
+u	Nullable(UInt8)
+a	Array(Int32)
+1	\N	\N	0	\N	7	\N	\N	\N	[]
+2	\N	\N	0	\N	7	\N	\N	\N	[]
+k	Nullable(Int64)
+a	Array(Int32)
+k_off	Nullable(Int64)
+k_off_not_null	Int64
+1	\N
+2	\N
+3	30
+i	Int32
+t	Nullable(Tuple(s AggregateFunction(quantileDeterministic, UInt64, UInt64)))
+u	Nullable(Tuple(s AggregateFunction(quantileDeterministic, UInt64, UInt64)))
