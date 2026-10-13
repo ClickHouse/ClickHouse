@@ -599,9 +599,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
              && object_info->getObjectMetadata()->size_bytes == 0
              && object_info->getObjectMetadata()->is_size_known);
 
+    std::unique_ptr<ReadBuffer> read_buf; /// Destroyed last: `builder` and `source` hold the input format reading it.
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
-    std::unique_ptr<ReadBuffer> read_buf;
 
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {

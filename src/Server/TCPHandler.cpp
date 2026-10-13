@@ -25,6 +25,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
@@ -129,6 +130,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
     extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
+    extern const ServerSettingsBool interserver_tables_status_allow_unauthenticated;
 }
 
 namespace FailPoints
@@ -1531,8 +1533,22 @@ void TCPHandler::processTablesStatusRequest()
     request.read(*in, client_tcp_protocol_version);
 
     ContextPtr context_to_resolve_table_names;
+    /// An interserver connection is not authenticated until its first `Query`, but this request arrives
+    /// before it. Until then, report every table as present, not replicated and writable, so that nothing
+    /// is disclosed and the initiator still proceeds to the `Query`.
+    bool hide_table_status = false;
     if (is_interserver_mode)
     {
+        if (!is_interserver_authenticated
+            && !server.context()->getServerSettings()[ServerSetting::interserver_tables_status_allow_unauthenticated])
+        {
+            LOG_DEBUG(LogFrequencyLimiter(log, 10),
+                "Answering an unauthenticated interserver TablesStatusRequest without the table status. "
+                "Replica staleness, readonly state and table existence are not taken into account until "
+                "a query on this connection has authenticated with the cluster secret.");
+            hide_table_status = true;
+        }
+
         /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
@@ -1550,13 +1566,20 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
+        if (hide_table_status)
+        {
+            response.table_states_by_id.emplace(table_name, TableStatus{});
+            continue;
+        }
+
         auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
         if (!table)
             continue;
 
         TableStatus status;
-        if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        /// The initiator asks about this table by name, so a lazily loaded replica is loaded to report its delay.
+        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get())
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
@@ -1884,6 +1907,16 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 /// Applied before authentication to prevent unauthenticated clients
 /// from consuming excessive memory. See #52501.
 static constexpr size_t MAX_HELLO_STRING_SIZE = 64 * 1024;
+
+/** The externally granted roles are a serialized list of role names. Both the size of the list and
+  * the number of names in it come from the peer, and in interserver mode they are read before the
+  * secret hash of the query is checked, so bound them.
+  */
+static constexpr size_t MAX_EXTRA_ROLES_SIZE = 1024 * 1024;
+/// Only read on the interserver path, which is compiled out without SSL.
+[[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLES = 65536;
+/// A role name is an identifier, and it is resized to its declared size before its value arrives.
+[[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLE_NAME_SIZE = 64 * 1024;
 
 void TCPHandler::receiveHello()
 {
@@ -2259,7 +2292,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     // TODO: check if having `is_interserver_mode` doesn't break interoperability with the CH-client.
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
     {
-        readStringBinary(received_extra_roles, *in);
+        readStringBinary(received_extra_roles, *in, MAX_EXTRA_ROLES_SIZE);
     }
 
     /// Interserver secret.
@@ -2355,7 +2388,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             {
                 ReadBufferFromString buffer(received_extra_roles);
 
-                readVectorBinary(external_roles, buffer);
+                readVectorBinary(external_roles, buffer, MAX_EXTRA_ROLES, MAX_EXTRA_ROLE_NAME_SIZE);
                 LOG_DEBUG(log, "Parsed extra roles [{}]", fmt::join(external_roles, ", "));
             }
 
@@ -2482,7 +2515,7 @@ void TCPHandler::processUnexpectedQuery()
     UInt64 skip_uint_64;
     String skip_string;
 
-    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
 
     ClientInfo skip_client_info;
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -2492,6 +2525,10 @@ void TCPHandler::processUnexpectedQuery()
     auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                       : SettingsWriteFormat::BINARY;
     skip_settings.read(*in, settings_format);
+
+    /// The same layout as in `processQuery`: the externally granted roles precede the interserver hash.
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+        readStringBinary(skip_string, *in, MAX_EXTRA_ROLES_SIZE);
 
     std::string skip_hash;
     bool interserver_secret = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET;

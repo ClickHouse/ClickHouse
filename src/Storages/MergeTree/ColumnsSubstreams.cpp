@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -212,8 +213,7 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
     size_t num_columns;
     DB::readText(num_columns, buf);
     assertString(" columns:\n", buf);
-    columns_substreams.reserve(num_columns);
-    column_position_to_substream_positions.resize(num_columns);
+    /// Counts are untrusted file content: containers grow as entries are parsed.
     for (size_t i = 0; i != num_columns; ++i)
     {
         size_t num_substreams;
@@ -223,15 +223,28 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
         readBackQuotedStringWithSQLStyle(column, buf);
         assertString(":\n", buf);
 
-        std::vector<String> substreams(num_substreams);
+        if (num_substreams == 0)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has no substreams", column);
+
+        std::vector<String> substreams;
+        std::unordered_map<String, size_t> substream_positions;
         for (size_t j = 0; j != num_substreams; ++j)
         {
             assertChar('\t', buf);
-            readString(substreams[j], buf);
+            String substream;
+            readString(substream, buf);
             assertChar('\n', buf);
-            column_position_to_substream_positions[i][substreams[j]] = total_substreams++;
+
+            if (substream.empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has an empty substream", column);
+
+            if (!substream_positions.emplace(substream, total_substreams + substreams.size()).second)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has duplicate substream {}", column, substream);
+            substreams.emplace_back(std::move(substream));
         }
 
+        total_substreams += substreams.size();
+        column_position_to_substream_positions.emplace_back(std::move(substream_positions));
         columns_substreams.emplace_back(std::move(column), std::move(substreams));
     }
 }
@@ -243,15 +256,15 @@ String ColumnsSubstreams::toString() const
     return buf.str();
 }
 
-void ColumnsSubstreams::validateColumns(const std::vector<String> & columns) const
+void ColumnsSubstreams::validateColumns(const std::vector<String> & columns, int error_code) const
 {
     if (columns.size() != columns_substreams.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid columns substreams: expected {} columns, got {}", columns.size(), columns_substreams.size());
+        throw Exception(error_code, "Invalid columns substreams: expected {} columns, got {}", columns.size(), columns_substreams.size());
 
     for (size_t i = 0; i != columns_substreams.size(); ++i)
     {
         if (columns_substreams[i].first != columns[i])
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column at position {} in columns substreams: expected {}, got {}", i, columns[i], columns_substreams[i].first);
+            throw Exception(error_code, "Unexpected column at position {} in columns substreams: expected {}, got {}", i, columns[i], columns_substreams[i].first);
     }
 }
 

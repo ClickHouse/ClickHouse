@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
 
@@ -65,7 +66,7 @@ void TableFunctionMergeTreeProjection::parseArguments(const ASTPtr & ast_functio
 
 ColumnsDescription TableFunctionMergeTreeProjection::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
 
     if (!metadata_snapshot->getProjections().has(projection_name))
@@ -85,7 +86,7 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool /* is_insert_query */) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
 
