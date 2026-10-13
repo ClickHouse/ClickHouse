@@ -504,8 +504,13 @@ void collectNamedTables(const IAST & ast, std::vector<AIQueryTableReference> & r
         /// `ASTTableExpression`, it is a pair of identifier children of the statement itself, and
         /// the traversal below sees them as bare identifiers it cannot tell from a column.
         /// `EXISTS DATABASE` and `SHOW CREATE DATABASE` leave `table` unset and name no table.
+        /// The definition of a database shows the parameters of its engine (a local path of
+        /// `Filesystem`, the address of `Remote` or of a catalog), so `SHOW CREATE DATABASE` names
+        /// the database itself, like `SHOW TABLES FROM db` does, for its engine to be checked.
         if (with_table->table)
             add(with_table->getDatabase(), with_table->getTable());
+        else if (ast.as<ASTShowCreateDatabaseQuery>())
+            add(with_table->getDatabase(), "");
     }
     else if (const auto * show_columns = ast.as<ASTShowColumnsQuery>())
     {

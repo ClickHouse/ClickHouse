@@ -362,10 +362,11 @@ TEST(AIQueryValidation, CollectsNamedTablesOfStatementTargets)
     EXPECT_EQ(collect("SHOW INDEXES FROM t FROM db"), std::vector<String>{"db.t"});
     EXPECT_EQ(collect("SHOW INDEXES FROM db.t"), std::vector<String>{"db.t"});
 
-    /// The database-only spellings name no table, and reading a database definition reaches
-    /// nothing outside of the server.
+    /// The database-only spellings name no table. `EXISTS DATABASE` reveals nothing of the
+    /// database, but the definition shown by `SHOW CREATE DATABASE` holds the parameters of its
+    /// engine, so the database is collected for its engine to be checked.
     EXPECT_EQ(collect("EXISTS DATABASE db"), std::vector<String>{});
-    EXPECT_EQ(collect("SHOW CREATE DATABASE db"), std::vector<String>{});
+    EXPECT_EQ(collect("SHOW CREATE DATABASE db"), std::vector<String>{"db."});
 }
 
 TEST(AIQueryValidation, CollectsTheDatabaseOfShowTables)
