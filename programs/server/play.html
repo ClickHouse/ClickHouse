@@ -10921,16 +10921,19 @@ let host_handed_server = null;
 /// origin always accepts, and a target at any other origin accepts only when this page itself is
 /// served from a trusted host.
 ///
-/// On a trusted host being accepted is not enough: the credentials in the fields may be a login the
-/// browser autofilled for this page's origin, while the server may be one named by a foreign `?url=`
-/// link. Posting them to that server would bypass the rule the rest of this page follows for such a
-/// target (see `isOwnServerTarget`). So the connection goes to a cross-origin server only when it is
-/// the one the trusted host itself handed over (`host_handed_server`), whose credentials came with it.
+/// Being accepted is not enough: the credentials in the fields may be a login the browser autofilled
+/// for this page's origin, while the server may be one named by a foreign `?url=` link. Posting them
+/// to that server would bypass the rule the rest of this page follows for such a target (see
+/// `isOwnServerTarget`). This holds at this page's origin too: on a path-routed proxy
+/// `https://proxy.example/b/` shares the origin of a page served from `https://proxy.example/a/play`,
+/// yet it is a different server whose login must not be interchangeable with the one of `/a/`. So
+/// the connection is handed over only to the endpoint this page was served from, or to the server
+/// the trusted host itself handed over (`host_handed_server`), whose credentials came with it. Any
+/// other target falls back to the new-tab path, where the user logs in by hand.
 function pageAcceptsHandover(target_origin) {
-    if (target_origin === window.location.origin) return true;
-    return TRUSTED_HOST_ORIGINS.includes(window.location.origin)
-        && host_handed_server !== null
-        && sameServerAddress(url_elem.value, host_handed_server);
+    const handed_server = host_handed_server !== null && sameServerAddress(url_elem.value, host_handed_server);
+    if (target_origin === window.location.origin) return isOwnServerTarget(url_elem.value) || handed_server;
+    return TRUSTED_HOST_ORIGINS.includes(window.location.origin) && handed_server;
 }
 
 /// Adopt a connection handed over by the host page.

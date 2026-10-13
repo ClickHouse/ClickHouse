@@ -1882,6 +1882,65 @@ async function main() {
             opened);
     }
 
+    /// Contract: on a path-routed proxy, another backend behind the same origin is a different server.
+    /// Its docs page and terminal accept a handover from this page's origin, but the login in the fields
+    /// may be the one the browser autofilled for `/a/`, so a `?url=` link naming `/b/` must not get it:
+    /// the Documentation button opens no relay and the terminal is not embedded. The page's own
+    /// endpoint keeps the inline handover.
+    {
+        const opened = [];
+        const r = await runScenario(js, {
+            href: 'https://proxy.example/a/play?url=https%3A%2F%2Fproxy.example%2Fb%2F',
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            fetch: async () => ({
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({}),
+            }),
+            open: (href, target) => { opened.push({ href, target }); return null; },
+        });
+        const terminal_icon = r.sandbox.document.getElementById('terminal-icon');
+        const terminal_panel = r.sandbox.document.getElementById('terminal-panel');
+        const embedded = () => terminal_panel.children.filter(c => c.tagName === 'IFRAME').map(c => c.src);
+        const plain_click = () => {
+            const ev = new Event('click', { cancelable: true });
+            terminal_icon.dispatchEvent(ev);
+            return ev;
+        };
+        const docs_click = () => {
+            const ev = new Event('click', { cancelable: true });
+            ev.button = 0;
+            r.sandbox.document.getElementById('docs-icon').dispatchEvent(ev);
+        };
+        const relays = () => opened.filter(o => o.href.includes('docs_relay='));
+        vm.runInContext("user_elem.value = 'alice'; password_elem.value = 'autofilled';", r.sandbox);
+        await sleep(50);
+        docs_click();
+        check('path-routed-handover', 'a plain click on Documentation opens no relay for another backend of the same origin',
+            relays().length === 0, opened);
+        const click = plain_click();
+        check('path-routed-handover', 'a plain click does not embed the terminal of another backend of the same origin',
+            !click.defaultPrevented && embedded().length === 0 && !terminal_panel.classList.contains('active'),
+            { defaultPrevented: click.defaultPrevented, embedded: embedded() });
+
+        vm.runInContext("url_elem.value = 'https://proxy.example/a/'; url_elem.dispatchEvent(new Event('input'));", r.sandbox);
+        vm.runInContext("user_elem.value = 'alice'; password_elem.value = 'autofilled';", r.sandbox);
+        await sleep(50);
+        docs_click();
+        check('path-routed-handover', 'a plain click on Documentation relays to the docs of the own endpoint',
+            relays().length === 1 && !relays()[0].href.includes('autofilled'), opened);
+        const own_click = plain_click();
+        check('path-routed-handover', 'a plain click embeds the terminal of the own endpoint',
+            own_click.defaultPrevented && embedded().length === 1 && embedded()[0].startsWith('https://proxy.example/a/webterminal')
+                && terminal_panel.classList.contains('active'),
+            { defaultPrevented: own_click.defaultPrevented, embedded: embedded() });
+    }
+
     /// Contract: a docs relay window (`/play?docs_relay=...`, opened by the Documentation button) is not
     /// a playground. It shares the `clickhouse-play` `IndexedDB` with the real `/play` tab but never sees
     /// that tab's live state, so it must neither open the workspace database nor persist into it, and

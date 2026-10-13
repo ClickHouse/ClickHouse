@@ -99,6 +99,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "proxied-endpoint",
         "cross-origin-terminal",
         "trusted-host-terminal",
+        "path-routed-handover",
         "docs-relay-no-playground",
         "docs-relay-trusted-host",
         "docs-relay-untrusted-sender",
