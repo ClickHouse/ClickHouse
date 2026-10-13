@@ -1502,6 +1502,9 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, the write-through cache write is skipped (the data is still written to object storage), so it neither blocks waiting for a slot nor creates an unbounded number of threads. Writes of temporary data do not use background threads and are not affected by the limit.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
     DECLARE(Bool, enable_read_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow reading from distributed cache. This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_read_through_distributed_cache` setting.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_warmer_max_file_segment_size, 32_MiB, R"(Only has an effect in ClickHouse Cloud. The size of the ranges in which the cache warmer reads a fetched part into the distributed cache when the disk of the part has no local filesystem cache (with a local cache the warmer uses its `max_file_segment_size`).)", 0) \
+    DECLARE(UInt64, distributed_cache_warmer_max_bytes_in_queue, 100_GiB, R"(Only has an effect in ClickHouse Cloud. The maximum total size of the ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_size`). Zero means unlimited.)", 0) \
+    DECLARE(UInt64, distributed_cache_warmer_max_segments_in_queue, 100000, R"(Only has an effect in ClickHouse Cloud. The maximum number of ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_elements`). Zero means unlimited.)", 0) \
     DECLARE(Bool, enable_write_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache). This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_write_through_distributed_cache` setting.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
@@ -2058,7 +2061,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
     DECLARE(String, openssl_client_cipher_suites, "", R"(Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `<cipherList>` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.)", 0, "openSSL.client.cipherSuites") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
-    DECLARE(Bool, openssl_client_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
+    DECLARE(Bool, openssl_client_extended_verification, true, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
     DECLARE(Bool, openssl_client_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1") \
     DECLARE(Bool, openssl_client_required_tls_v1_1, false, R"(Require a TLSv1.1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_1") \
     DECLARE(Bool, openssl_client_required_tls_v1_2, false, R"(Require a TLSv1.2 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_2") \
@@ -2278,7 +2281,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "filesystem_caches",
         "custom_cached_disks_base_directory",
         "custom_local_disks_base_directory",
-        "system_tables",
 
         /// Dictionaries and functions
         "dictionaries_config",

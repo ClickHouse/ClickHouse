@@ -1165,7 +1165,7 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0, \
         {"24.10", true, true, "New setting"}) \
-    DECLARE(Bool, apply_string_filters_during_scan, true, R"(
+    DECLARE(Bool, apply_string_filters_during_scan, false, R"(
 Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
 
 When a `PREWHERE` condition contains a conjunct that searches for a non-empty substring in a `String` (or `Nullable(String)`) column
@@ -1174,15 +1174,13 @@ during deserialization and reads non-matching values as empty strings. This make
 is selective, because the data of non-matching values is not copied into the column. The result of the query does not change,
 because the rows with non-matching values are guaranteed to be filtered out by `PREWHERE`, and such conditions never match an empty string.
 
-The filter is disabled adaptively at runtime if it turns out to be non-selective, or if the non-matching values
-are too short for skipping their data to pay off.
+The filter is disabled adaptively at runtime if it turns out to be non-selective.
 
 Also allows the `WHERE` to `PREWHERE` optimization to move substring search conditions (`LIKE`, `position`, `startsWith`, `endsWith`)
 even when they use all queried columns (normally that is pointless, but with this setting the scan itself becomes cheaper).
 Equality with a constant string is not moved for this reason: it is still applied during the scan when it is already in `PREWHERE`.
 
-Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
-the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
+Supported for reading from `MergeTree` tables and from the `Parquet` format.
 
 Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
 (`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
@@ -1193,7 +1191,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
-        {"26.10", false, true, "New setting to push down substring search conditions on `String` columns from `PREWHERE` into the column scan, enabled by default. `compatibility` with versions before 26.10 disables it."}) \
+        {"26.10", false, false, "New setting to push down substring search conditions on String columns from PREWHERE into the column scan."}) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
 Allows you to specify how [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize), or [`TRUNCATE`](/reference/statements/truncate) queries wait for their operations to complete.
@@ -8312,7 +8310,7 @@ Hard lower limit on the task size (even when the number of granules is low and t
 )", 0, \
         {"24.10", 8, 8, "New setting"}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request. A part is read with a single buffer when it contains both fewer granules than this threshold and fewer granules than the number of columns being read, because in that case the single buffer reader issues fewer read requests than the multibuffer reader.
+Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
     \
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
@@ -10406,10 +10404,6 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, enable_ipcrypt, false, R"(
-Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
-)", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to enable experimental IP address encryption functions."}) \
     DECLARE(Bool, enable_xgboost, false, R"(
 Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 )", EXPERIMENTAL, \
@@ -10752,6 +10746,10 @@ Allow to execute `insert` queries into iceberg.
         {"25.7", false, false, "New setting."}) \
     DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
 Allow to clean up old data files during Iceberg compaction.
+
+The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
+way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
+of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
 )", EXPERIMENTAL, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
@@ -10776,10 +10774,6 @@ Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
 Default age threshold in seconds for orphan file removal in Iceberg tables. Files newer than this are not considered orphans. Used when the older_than argument is omitted from the remove_orphan_files() procedure call. Default is 259200 (3 days).
 )", EXPERIMENTAL, \
         {"26.4", 259200, 259200, "New setting for default orphan file age threshold"}) \
-    DECLARE(UInt64, iceberg_orphan_files_min_retention_seconds, 86400, R"(
-Minimum age in seconds of the files that `ALTER TABLE ... EXECUTE remove_orphan_files` may delete from an Iceberg table. An `older_than` (given explicitly or derived from `iceberg_orphan_files_older_than_seconds`) that is closer to now than this is rejected: files of a write that has not committed yet are not referenced by the table metadata and would be deleted, which corrupts the table when the write commits. Keep it above the longest time a write to the table can take to commit. 0 disables the check.
-)", EXPERIMENTAL, \
-        {"26.10", 0, 86400, "New setting. `remove_orphan_files` rejects an `older_than` less than this many seconds before now, so it keeps the files of a write that started less than this long ago and has not committed yet. `compatibility` with versions before 26.10 restores the previous behavior (no minimum)."}) \
     DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
 Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL, \

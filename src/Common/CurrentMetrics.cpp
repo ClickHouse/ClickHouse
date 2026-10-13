@@ -233,6 +233,8 @@
     M(IcebergCompactionMerge, "Number of executing background Iceberg compaction merges.") \
     M(IcebergCompactionSourceFiles, "Number of input source files (data files and position delete files) participating in currently executing Iceberg compaction merges.") \
     M(IcebergCompactionCleanupTasks, "Number of background tasks for removing data files superseded by Iceberg compaction, which are scheduled or still retained by Iceberg tables.") \
+    M(ObjectStorageSharedLeases, "Number of keys, such as Iceberg snapshots being read, currently leased in object storage by the queries of this server.") \
+    M(ObjectStorageExclusiveLeases, "Number of exclusive leases, such as the compaction of an Iceberg table, currently held in object storage by this server.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
