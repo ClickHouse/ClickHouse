@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
@@ -102,13 +103,16 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
                     auto * memory_tracker = process_list_element->getMemoryTracker();
                     const auto & logger = getLogger("Scheduler");
 
-                    LOG_TRACE(logger, "Spilling {}, of {} (tracked {})",
-                        formatReadableSizeWithBinarySuffix(spill_request),
+                    /// Round up the spill target, but cancel or settle only the original scheduler claim.
+                    const auto spill_bytes = std::max(spill_request, reservation->getMinBytesToSpill());
+                    LOG_TRACE(logger, "Spilling {}, of {} (tracked {}, claimed {})",
+                        formatReadableSizeWithBinarySuffix(spill_bytes),
                         formatReadableSizeWithBinarySuffix(spillable_bytes),
-                        formatReadableSizeWithBinarySuffix(memory_tracker->get()));
+                        formatReadableSizeWithBinarySuffix(memory_tracker->get()),
+                        formatReadableSizeWithBinarySuffix(spill_request));
 
                     Stopwatch watch;
-                    const size_t spilled = spillable->spill(spill_request);
+                    const size_t spilled = spillable->spill(spill_bytes);
                     reservation->syncWithMemoryTracker(memory_tracker);
                     const auto new_spillable_memory_bytes = reservation->finishSpill(spillable, std::exchange(spill_request, 0));
 

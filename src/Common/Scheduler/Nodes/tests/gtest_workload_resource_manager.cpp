@@ -2844,7 +2844,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillsIdleProcessors)
             thread_status.emplace();
         auto status = std::make_shared<QueryStatus>(
             Context::getGlobalContextInstance(), "", 0, ClientInfo{}, std::nullopt, QueryPriorities::Handle{}, nullptr,
-            std::make_unique<MemoryReservation>(classifier->get("memory"), "idle_spillers", 300, 1),
+            std::make_unique<MemoryReservation>(classifier->get("memory"), "idle_spillers", 300, 100),
             std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0),
             IAST::QueryKind::Select, Settings{}, 0, false);
         auto * reservation = status->getMemoryReservation();
@@ -2882,7 +2882,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillsIdleProcessors)
         }
         t.executeFromScheduler("memory", [&]
         {
-            EXPECT_EQ(reservation->queue.requestSpill(*reservation, 200), 200);
+            /// The second spill must target 100 bytes but settle only the remaining 50-byte claim.
+            EXPECT_EQ(reservation->queue.requestSpill(*reservation, 150), 150);
         });
         if (gate->pause_before_poll)
             FailPointInjection::disableFailPoint("polling_queue_before_try_poll");
