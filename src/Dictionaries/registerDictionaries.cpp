@@ -35,6 +35,7 @@ void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
 void registerDictionaryNaiveBayes(DictionaryFactory & factory);
+void registerDictionaryXGBoost(DictionaryFactory & factory);
 
 
 void registerDictionaries();
@@ -71,6 +72,7 @@ void registerDictionaries()
         registerDictionaryPolygon(factory);
         registerDictionaryDirect(factory);
         registerDictionaryNaiveBayes(factory);
+        registerDictionaryXGBoost(factory);
     }
 }
 

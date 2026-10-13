@@ -18,6 +18,7 @@ enum class MetricGroupKey : UInt8
     Left,
     Right,
     HashTable,
+    Memory,
     Buffer,
     Spill,
     Build,
@@ -52,6 +53,7 @@ enum class MetricKey : UInt8
 
     UniqueKeys,
     Memory,
+    Bytes,
     Buckets,
     Rehashes,
 
