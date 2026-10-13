@@ -71,10 +71,11 @@ ALTER TABLE t_sibling_rebuilt ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SE
 ALTER TABLE t_sibling_rebuilt UPDATE e = e + 1 WHERE 1, MATERIALIZE INDEX idx_new
     SETTINGS mutations_sync = 2, alter_sync = 2;
 SYSTEM STOP MERGES t_sibling_rebuilt;
--- Both commands share one mutation id, so the pipeline saw them as one command set. Two ids would
+-- `system.mutations` has a row per command, so both the `UPDATE` row and the `MATERIALIZE INDEX` row
+-- are selected, and they must share one mutation id: the pipeline saw them as one command set. Two ids would
 -- mean two separate mutations and the case would silently stop covering the shape.
-SELECT uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
-    AND table = 't_sibling_rebuilt' AND command LIKE '%idx_new%';
+SELECT count() = 2 AND uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_rebuilt' AND (command LIKE 'UPDATE %' OR command LIKE '%idx_new%');
 SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_rebuilt' AND active AND column = 'c';
 -- Both indices hold files: a materialization that silently did nothing cannot pass.
 SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_sibling_rebuilt';

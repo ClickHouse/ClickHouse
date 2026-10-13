@@ -33,10 +33,11 @@ ALTER TABLE t_sibling_ttl_rebuilt ADD INDEX idx_new c TYPE set(100) GRANULARITY 
 ALTER TABLE t_sibling_ttl_rebuilt UPDATE d = toDateTime('2100-01-01 00:00:00') WHERE 1, MATERIALIZE INDEX idx_new
     SETTINGS mutations_sync = 2, alter_sync = 2;
 SYSTEM STOP MERGES t_sibling_ttl_rebuilt;
--- Both commands share one mutation id, so the pipeline saw them as one command set. Two ids would
+-- `system.mutations` has a row per command, so both the `UPDATE` row and the `MATERIALIZE INDEX` row
+-- are selected, and they must share one mutation id: the pipeline saw them as one command set. Two ids would
 -- mean two separate mutations and the case would silently stop covering the shape.
-SELECT uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
-    AND table = 't_sibling_ttl_rebuilt' AND command LIKE '%idx_new%';
+SELECT count() = 2 AND uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_ttl_rebuilt' AND (command LIKE 'UPDATE %' OR command LIKE '%idx_new%');
 SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_ttl_rebuilt' AND active AND column = 'c';
 -- g keeps its values, so idx_old was rebuilt from data rather than emptied.
 SELECT count() = 64 FROM t_sibling_ttl_rebuilt WHERE g != '';
