@@ -1879,6 +1879,62 @@ def test_fast_path_slot_not_hoarded_at_secondary_limit(started_cluster):
         node.query(f"DROP USER IF EXISTS {other_user}")
 
 
+def test_all_users_limit_waits_for_queue_max_wait_ms(started_cluster):
+    """
+    `max_concurrent_queries_for_all_users` keeps its legacy contract with the
+    admission queue enabled: a query that takes a free admission slot and finds the
+    all-users limit full of genuinely running queries waits for up to
+    `queue_max_wait_ms` instead of failing fast (unlike the per-user and per-kind
+    limits, where a parked query would hoard a slot that other users or query kinds
+    could use).
+
+    Scenario (server config: max_concurrent_queries = 2):
+    1. A runs a long query — 1 of 2 global slots used.
+    2. B (`max_concurrent_queries_for_all_users = 1`, `queue_max_wait_ms = 60000`)
+       takes the free slot on the fast path and hits the full all-users limit.
+    3. A is killed after B has been waiting for a while; B must then run.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    a_id = f"allusers_a_{prefix}"
+    b_id = f"allusers_b_{prefix}"
+    pool = Pool(2)
+    try:
+        pool.apply_async(
+            node.query,
+            ("SELECT sleep(30) FORMAT Null",),
+            {
+                "query_id": a_id,
+                "settings": {"function_sleep_max_microseconds_per_block": 0},
+            },
+        )
+        wait_for_query_start(node, a_id)
+
+        b_future = pool.apply_async(
+            node.query,
+            ("SELECT 1 FORMAT Null",),
+            {
+                "query_id": b_id,
+                "settings": {
+                    "max_concurrent_queries_for_all_users": 1,
+                    "queue_max_wait_ms": 60000,
+                },
+            },
+        )
+        # Let B reach the all-users limit. With fast-fail it would already be rejected.
+        time.sleep(2)
+        assert not b_future.ready(), (
+            f"B finished before the blocker was released: {b_future.get()}"
+        )
+
+        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC")
+        # Raises if B was rejected with `TOO_MANY_SIMULTANEOUS_QUERIES`.
+        b_future.get(timeout=60)
+    finally:
+        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC")
+        pool.close()
+        pool.join()
+
+
 def test_zero_to_finite_reload_enforces_limit(started_cluster):
     """
     Regression test for a runtime `max_concurrent_queries` reload from `0`

@@ -606,13 +606,23 @@ ProcessList::EntryPtr ProcessList::insert(
                 const size_t limit = settings[Setting::max_concurrent_queries_for_all_users];
                 auto under_limit = [&] { return non_internal_processes < limit; };
 
-                /// See the comment at `passes_secondary_limit` above: when we hold an admission slot,
-                /// wait out in-flight early-release teardowns (a finishing query that already freed
-                /// its slot still counts toward `non_internal_processes` until its destructor runs),
-                /// but only while draining them can clear the limit, then reject. This is the global
-                /// limit, so any teardown is relevant — use `admission_pending_teardowns`. Without a
-                /// slot (admission queue disabled), keep the legacy `queue_max_wait_ms`-bounded wait.
-                auto drain_can_clear = [&] { return non_internal_processes < limit + admission_pending_teardowns; };
+                /// Unlike the per-user and per-kind limits, this one keeps its legacy contract even when we
+                /// hold an admission slot: with an explicit `queue_max_wait_ms` the query waits for the
+                /// running count to drop under the limit for the rest of the shared admission budget
+                /// (`admission_deadline`), not only for the in-flight early-release teardowns. The
+                /// slot-hoarding argument for fast-failing does not apply here: every query subject to
+                /// this limit is blocked until `non_internal_processes < limit` anyway, so the slot we
+                /// hold cannot be used by another such query. With `queue_max_wait_ms = 0` the legacy
+                /// path rejects immediately, so we only wait out in-flight early-release teardowns (a
+                /// finishing query that already freed its slot still counts toward
+                /// `non_internal_processes` until its destructor runs), while draining them can clear the
+                /// limit. This is the global limit, so any teardown is relevant — use
+                /// `admission_pending_teardowns`. Without a slot (admission queue disabled), keep the
+                /// legacy `queue_max_wait_ms`-bounded wait.
+                auto drain_can_clear = [&]
+                {
+                    return queue_max_wait_ms != 0 || non_internal_processes < limit + admission_pending_teardowns;
+                };
                 if (got_admission_slot
                     ? !passes_secondary_limit(under_limit, drain_can_clear)
                     : (!queue_max_wait_ms
