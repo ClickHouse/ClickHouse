@@ -1,5 +1,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -72,6 +73,11 @@ bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet 
     }
     else
     {
+        /// The extracted predicate runs in addition to the filter above the JOIN, so a per-row draw such as
+        /// `rand` happens twice and only a row passing both survives; a lambda body is a separate DAG.
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
+            return false;
+
         for (const auto * child : node.children)
         {
             if (!onlyDependsOnAvailableColumns(*child, available_columns))

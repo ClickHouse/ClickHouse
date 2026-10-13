@@ -17,7 +17,7 @@ permissions: write-all
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -28,13 +28,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
           cat > ./ci/tmp/workflow_inputs.json << 'EOF'
           ${{ toJson(inputs) }}
           EOF
@@ -53,7 +52,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "OptimizeClickHouse" --ci --timestamp
 
   dockers_build_amd:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, amd-tiny]
     needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
@@ -65,13 +64,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
           cat > ./ci/tmp/workflow_inputs.json << 'EOF'
           ${{ toJson(inputs) }}
           EOF
@@ -90,7 +88,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "OptimizeClickHouse" --ci --timestamp
 
   dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
@@ -102,13 +100,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
           cat > ./ci/tmp/workflow_inputs.json << 'EOF'
           ${{ toJson(inputs) }}
           EOF
@@ -140,13 +137,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
           cat > ./ci/tmp/workflow_inputs.json << 'EOF'
           ${{ toJson(inputs) }}
           EOF
@@ -178,13 +174,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
           cat > ./ci/tmp/workflow_inputs.json << 'EOF'
           ${{ toJson(inputs) }}
           EOF
@@ -203,7 +198,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Collect ClickHouse Profiles (PGO, BOLT) (aarch64)' --workflow "OptimizeClickHouse" --ci --timestamp
 
   finish_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs: [collect_clickhouse_profiles_pgo_bolt_aarch64, collect_clickhouse_profiles_pgo_bolt_amd64, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ always() }}
     name: "Finish Workflow"
@@ -215,13 +210,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
           cat > ./ci/tmp/workflow_inputs.json << 'EOF'
           ${{ toJson(inputs) }}
           EOF

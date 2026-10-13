@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 #include <Access/AccessChangesNotifier.h>
 #include <Access/MultipleAccessStorage.h>
@@ -137,6 +138,9 @@ public:
     /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
 
+    /// The profile every user gets, named by `default_profile` in the server configuration.
+    std::optional<UUID> getDefaultProfileId() const;
+
     /// Sets prefixes which should be used for custom settings.
     /// This function also enables custom prefixes to be used.
     void setCustomSettingsPrefixes(const Strings & prefixes);
@@ -262,6 +266,15 @@ public:
 
     std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
 
+    /// Inserts into a specific nested access storage while applying the same validation as a regular insert.
+    std::vector<UUID> insertInto(
+        const String & storage_name,
+        const std::vector<AccessEntityPtr> & entities,
+        bool replace_if_exists = false,
+        bool throw_if_exists = true);
+
+    void moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name);
+
     const ExternalAuthenticators & getExternalAuthenticators() const;
 
     /// Gets manager of notifications.
@@ -273,16 +286,43 @@ public:
     void setAllowTierSettings(UInt32 value);
     UInt32 getAllowTierSettings() const;
     bool getAllowExperimentalTierSettings() const;
+    bool getAllowPrivatePreviewTierSettings() const;
     bool getAllowBetaTierSettings() const;
 
 private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
+    class RestoreAccessStorage;
 
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
+    /// Inserts into `storage`, or into the storage a regular insert picks when it is null.
+    bool insertImpl(
+        const StoragePtr & storage,
+        const UUID & id,
+        const AccessEntityPtr & entity,
+        bool replace_if_exists,
+        bool throw_if_exists,
+        UUID * conflicting_id);
+    bool insertUnlocked(
+        const StoragePtr & storage,
+        const UUID & id,
+        const AccessEntityPtr & entity,
+        bool replace_if_exists,
+        bool throw_if_exists,
+        UUID * conflicting_id) TSA_REQUIRES(access_entities_mutex);
+    bool isShadowedInsertionUnlocked(const IAccessStorage & destination, const IAccessEntity & entity) const
+        TSA_REQUIRES(access_entities_mutex);
+    bool checkNameCollisionInOtherStorage(
+        IAccessStorage & storage, const AccessEntityPtr & entity, bool throw_if_exists, UUID * conflicting_id) const;
+    void checkFeatureTierForMoveUnlocked(
+        const std::vector<UUID> & ids,
+        const String & source_storage_name,
+        const String & destination_storage_name) TSA_REQUIRES(access_entities_mutex);
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
+
+    mutable std::mutex access_entities_mutex;
 
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
@@ -308,6 +348,7 @@ private:
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
     std::atomic_bool allow_experimental_tier_settings = true;
+    std::atomic_bool allow_private_preview_tier_settings = true;
     std::atomic_bool allow_beta_tier_settings = true;
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;

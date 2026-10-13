@@ -1,0 +1,9 @@
+1
+SELECT ifNull(sum(((x AS a1) IN [y] AS c3) = true), 0)
+1
+1
+1
+1
+1
+1
+1

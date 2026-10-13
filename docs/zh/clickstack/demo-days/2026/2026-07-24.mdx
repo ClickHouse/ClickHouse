@@ -1,0 +1,70 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-24
+title: '演示日 - 2026-07-24'
+sidebarTitle: '2026-07-24'
+description: '2026-07-24 的 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="metrics-experience-improvements">
+  ## 指标体验改进
+</div>
+
+*演示者：[ @alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/rukel6KVmPY" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+本批改进基于一位正从 Datadog 迁移的客户反馈，优化了指标和仪表盘的创建体验。他们有一套经过深思熟虑的指标工作流。我们尚未采纳他们的所有反馈，但大部分集中在图表，以及如何分析屏幕上同时显示数百个时间序列的仪表盘。
+
+有一项改动与指标无关，尽管同样源自这次交流：现在，创建仪表盘时，仪表盘卡片会吸附到可见网格。拖动或调整卡片大小时，网格会显示在其后方，并高亮当前位置周围的单元。此前，卡片会落在何处，或者移动它是否会挤开其他卡片，都不够明确。网格让这两点一目了然。它采用与布局引擎相同的几何规则，因此辅助线会与卡片的最终位置一致，包括右侧和底部边缘。
+
+指标方面的改动聚焦于系列数量较多的图表，这在按多个维度分组时很常见。以前将鼠标悬停在图表上时，会显示该时间戳对应的所有系列。对于包含 300 个系列的图表，工具提示可能比图表本身还高，而且光标下的系列往往不是你需要的那个。
+
+现在，包含超过 10 个系列的图表仅显示最接近光标的系列。该系列会绘制在最上层，其他系列则会变暗。包含 10 个或更少系列的图表会保留完整且已排序的工具提示，因此其行为没有变化。图例更加紧凑，也可以完全隐藏。显示时，它还可用作选择和快速搜索控件，方便快速定位特定系列。
+
+最大的改动在于全屏模式，人们通常会在发现需要调查的异常后进入该模式。现在，只需单击工具栏图标即可进入全屏，无需再从更多菜单中查找。打开后，图例会切换为更实用的布局，提供摘要信息和搜索框。按系列名称中的子串筛选，可将 300 个系列缩减为你关心的少数几个，便于悬停查看和比较。
+
+沟通后有一点调整。单系列和多系列工具提示之间的选择将支持配置，而不再依赖固定阈值。当系列数量不多时，比较多个系列在同一时间点的绝对值很有用，因此用户应能选择适合该图表的行为。
+
+**相关 PR：** [#2715](https://github.com/hyperdxio/hyperdx/pull/2715) feat(dashboard)：在拖动或调整卡片大小时显示吸附网格，[#2722](https://github.com/hyperdxio/hyperdx/pull/2722) 改进密集图表的时间图表悬停效果，[#2720](https://github.com/hyperdxio/hyperdx/pull/2720) feat(dashboard)：将卡片全屏功能移至顶级工具栏图标，[#2719](https://github.com/hyperdxio/hyperdx/pull/2719) fix(dashboard)：在线条渲染上限之外绘制独立的时间图表系列，[#2776](https://github.com/hyperdxio/hyperdx/pull/2776) 可配置的时间图表显示设置 (图例、工具提示、线条样式)
+
+<div id="trace-viewer-improvements">
+  ## Trace 查看器改进
+</div>
+
+*[@karl-power](https://github.com/karl-power) 演示*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kmparH3U7Jc" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+重新设计的 trace 查看器进行了两项小修复，均直接源自对新布局的反馈。
+
+span 详情面板最近移到了瀑布图右侧，但并非所有人都喜欢这一位置。面板关闭按钮旁新增了一个控件，可在右侧 (仍为默认位置) 和底部之间切换面板位置。当面板位于底部时，您可以将其拖动到适合自己的高度。
+
+同一反馈讨论还发现了一个换行 bug。启用换行后，缺少自然断点的长 attribute 值仍会被截断。例如，不包含空格、连字符或破折号的 `url.path`。现在，attribute 值可在任意字符边界处换行，从而完整显示。
+
+**相关 PR：** [#2693](https://github.com/hyperdxio/hyperdx/pull/2693) feat(traces): break-word attribute wrapping + layout toggle
+
+<div id="mcp-server-and-eval-improvements">
+  ## MCP 服务器与评估改进
+</div>
+
+*演示者：[ @brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2NXRdBZcKMw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这里最小的改动或许会对采用率产生最大的影响。此前，在 ClickHouse Cloud 中启用 MCP 服务器的入口很难找到：用户需要先按照应用内说明操作，再找到对应的控制平面设置。现在，该按钮会直接打开相关模态框，您可以在其中启用服务器。
+
+Brandon 在[近期工作](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals)的基础上，继续改进我们的 MCP 评估框架。评估框架现在可以使用与被评估模型不同的提供商和模型。此前，完整评估必须使用 Anthropic 模型，这意味着模型可能会为自己的输出评分。现在，您可以提供 OpenAI key 和带提供商前缀的评判模型规范，通过 OpenAI 进行评分。
+
+对不同评判模型的比较揭示了一些有用差异。有些会严格得多地执行评分标准：如果一次运行未使用某个特定 key，便会判定失败；另一些则会接受足够接近的答案。我们还修复了在这项工作中发现的过期评分 bug。现在，使用不同的评判模型重新评估一个批次时，会运行新的评判模型，而不会返回之前的结果。
+
+Brandon 还新增了 `clickstack_emerging_signals` MCP 工具。这源于他询问 MCP 服务器，在服务健康检查场景中需要什么才能获得更高分。它是一个双窗口模式新颖性检测器，可从基线窗口和当前窗口中挖掘日志和事件模式，然后比较两组模式。它会报告新出现、频率显著增加或已消失的模式。
+
+这与现有工具不同：事件模式描述单个窗口中的常见内容，而 Event deltas 则显示哪些属性发生了变化。新工具可将服务健康检查得分提高约 10 分。
+
+在收到通过 skill 设置摄取的请求后，MCP 还新增了 source 和 webhook CRUD 工具。智能体现在可以创建、更新和删除 source 及 webhook，而不仅仅是读取它们。
+
+目前正在推进为每个拉取请求在 CI 中运行评估，以取代当前手动将分数粘贴到 PR 描述中的流程。S3 种子数据填充已可正常工作。剩余阻碍是向 GitHub Action 授予 bucket 访问权限。该问题解决后，评估结果应该会更快生成。
+
+**相关 PR：** [#2710](https://github.com/hyperdxio/hyperdx/pull/2710) feat(evals)：独立评判提供商/模型 + 修复更换评判模型时跳过过期评分的问题，[#2701](https://github.com/hyperdxio/hyperdx/pull/2701) feat(mcp)：添加 clickstack&#95;emerging&#95;signals 工具，[#2702](https://github.com/hyperdxio/hyperdx/pull/2702) feat(mcp)：source 与 webhook CRUD 工具，[#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals)：M1 CI 框架，在 GitHub Actions 中端到端运行 MCP 评估，[#2674](https://github.com/hyperdxio/hyperdx/pull/2674) feat(evals)：M2 Parquet 快照快速种子填充

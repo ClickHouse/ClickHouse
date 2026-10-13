@@ -1,0 +1,7 @@
+the soft cancellation was delivered to the retrying source
+the error of the interrupted read was caught before it was handled
+the hard cancellation upgrade was delivered while the error was held
+the error of the interrupted read was suppressed after the upgrade
+nothing was discarded as a partial result
+the query failed
+the query did not fail with the stale error of the interrupted read

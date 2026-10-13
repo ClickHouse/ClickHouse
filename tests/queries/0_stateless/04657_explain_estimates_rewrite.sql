@@ -1,3 +1,6 @@
+-- `EXPLAIN ESTIMATE` must report the part, row and mark counts that `system.parts` reports for the
+-- same table, with the final mark of the part excluded.
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16;

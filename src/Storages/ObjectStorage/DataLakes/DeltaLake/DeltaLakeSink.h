@@ -53,8 +53,12 @@ private:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     const SharedHeader sample_block;
+    /// `sample_block` with each column's type replaced by the Delta write-schema type, so the data files
+    /// are written to match the Delta log (e.g. a declared `UInt8` column is stored as `short`).
+    const SharedHeader write_header;
     const size_t data_file_max_rows;
     const size_t data_file_max_bytes;
+    const bool accurate_write_cast;
     const String write_format;
     const String write_compression_method;
 

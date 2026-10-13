@@ -57,6 +57,14 @@ Works for Simple and StochasticSimple merge selectors
 Controls the exponent value used in formulae building lowering curve. Lowering exponent will
 lower merge widths which will trigger increase in write amplification. The reverse is also true.
 
+## merge_selector_min_age_to_disable_right_tail_heuristic {#merge_selector_min_age_to_disable_right_tail_heuristic}
+<SettingsInfoBlock type="UInt64" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+If greater than zero and `merge_selector_enable_heuristic_to_remove_small_parts_at_right` is enabled,
+disables that heuristic for ranges where every part is at least this many seconds old. `0` disables this check.
+Works for Simple and StochasticSimple merge selectors.
+
 ## merge_selector_window_size {#merge_selector_window_size}
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

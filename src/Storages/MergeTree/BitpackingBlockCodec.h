@@ -18,8 +18,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static constexpr size_t BLOCK_SIZE = 128;
-
 namespace impl
 {
 
@@ -33,10 +31,12 @@ static constexpr bool has_simdcomp = true;
 template<>
 struct BitpackingBlockCodecImpl<true>
 {
+    static constexpr size_t BLOCK_SIZE = 128;
+
     static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
     {
         /// Type cast is required by simdcomp function signature (expects int).
-        /// This conversion is safe because count never exceeds 128 (BLOCK_SIZE) in current usage.
+        /// This conversion is safe because count never exceeds BLOCK_SIZE in current usage.
         return static_cast<size_t>(simdpack_compressedbytes(static_cast<int>(count), bits));
     }
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
@@ -86,6 +86,9 @@ static constexpr bool has_simdcomp = false;
 template<>
 struct BitpackingBlockCodecImpl<false>
 {
+    /// Must match simdcomp's `SIMDBlockSize`: full blocks and the tail are laid out differently.
+    static constexpr size_t BLOCK_SIZE = 128;
+
     /// Non-SSE version: equivalent to SIMDComp maxbits_length.
     /// It OR-reduces all values to compute required bit width.
     [[maybe_unused]] static uint32_t maxbitsLength(const std::span<uint32_t> & in) noexcept
@@ -374,7 +377,7 @@ struct BitpackingBlockCodecImpl<false>
         return p;
     }
 
-    /// Pack a tail segment (0 < tail < COMPRESSED_BLOCK_SIZE) into the SIMDComp-compatible
+    /// Pack a tail segment (0 < tail < BLOCK_SIZE) into the SIMDComp-compatible
     /// horizontal 4-lane bitpacked byte stream.
     ///
     /// This is used for the final partial block when the total number of input integers is
@@ -503,7 +506,7 @@ struct BitpackingBlockCodecImpl<false>
         return p;
     }
 
-    /// Unpack (decode) a tail segment (0 < tail < COMPRESSED_BLOCK_SIZE) from a
+    /// Unpack (decode) a tail segment (0 < tail < BLOCK_SIZE) from a
     /// SIMDComp-compatible horizontal 4-lane bitpacked *byte stream*.
     ///
     /// This is the counterpart of packTail<Bits>(). It decodes the last partial block

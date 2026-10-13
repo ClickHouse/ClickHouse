@@ -21,6 +21,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 using namespace Parquet;
 
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
@@ -46,6 +51,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
     options.output_string_as_string = format_settings.parquet.output_string_as_string;
     options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
+    options.output_wide_integer_as_decimal = format_settings.parquet.output_wide_integer_as_decimal;
     options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
     options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
     options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
@@ -197,8 +203,60 @@ void ParquetBlockOutputFormat::finalizeImpl()
         writeFileHeader(file_state, out);
     }
     Block header = materializeBlock(getPort(PortKind::Main).getHeader());
+    collectColumnSizesOnDisk(header);
     writeFileFooter(file_state, schema, options, out, header);
     chassert(out.count() - base_offset == file_state.offset);
+}
+
+static size_t countSchemaLeaves(const SchemaElements & schema, size_t & index)
+{
+    if (index >= schema.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet schema of {} elements is truncated", schema.size());
+
+    const auto & element = schema[index];
+    ++index;
+
+    if (!element.__isset.num_children || element.num_children == 0)
+        return 1;
+
+    size_t leaves = 0;
+    for (Int32 i = 0; i < element.num_children; ++i)
+        leaves += countSchemaLeaves(schema, index);
+    return leaves;
+}
+
+void ParquetBlockOutputFormat::collectColumnSizesOnDisk(const Block & header)
+{
+    std::vector<size_t> leaves_per_column;
+    leaves_per_column.reserve(header.columns());
+    size_t schema_index = 1;
+    size_t num_leaves = 0;
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        leaves_per_column.push_back(countSchemaLeaves(schema, schema_index));
+        num_leaves += leaves_per_column.back();
+    }
+
+    column_sizes_on_disk.clear();
+    for (const auto & row_group : file_state.completed_row_groups)
+    {
+        const auto & column_chunks = row_group.row_group.columns;
+        if (column_chunks.size() != num_leaves)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Parquet row group has {} column chunks while the schema has {} leaf columns",
+                column_chunks.size(),
+                num_leaves);
+
+        size_t leaf_index = 0;
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            size_t column_size = 0;
+            for (size_t j = 0; j < leaves_per_column[i]; ++j, ++leaf_index)
+                column_size += static_cast<size_t>(column_chunks[leaf_index].meta_data.total_compressed_size);
+            column_sizes_on_disk[header.getByPosition(i).name] += column_size;
+        }
+    }
 }
 
 void ParquetBlockOutputFormat::resetFormatterImpl()
@@ -215,6 +273,7 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     task_queue.clear();
     row_groups.clear();
     file_state = {};
+    column_sizes_on_disk.clear();
     staging_chunks.clear();
     staging_rows = 0;
     staging_bytes = 0;

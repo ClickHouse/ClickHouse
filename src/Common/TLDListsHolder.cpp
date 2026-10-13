@@ -4,7 +4,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <string_view>
-#include <unordered_set>
 
 namespace DB
 {
@@ -15,29 +14,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-constexpr size_t StringHashTablePadRequirement = 8;
-
 /// TLDList
 TLDList::TLDList(size_t size)
     : tld_container(size)
     , memory_pool(std::make_unique<Arena>())
 {
-    /// StringHashTable requires padded to 8 bytes key,
-    /// and Arena (memory_pool here) does satisfies this,
-    /// since it has padding with 15 bytes at the right.
-    ///
-    /// However, StringHashTable may reference -1 byte of the key,
-    /// so left padding is also required:
-    memory_pool->alignedAlloc(StringHashTablePadRequirement, StringHashTablePadRequirement);
 }
+
 void TLDList::insert(const String & host, TLDType type)
 {
     std::string_view owned_host{memory_pool->insert(host.data(), host.size()), host.size()};
-    tld_container[owned_host] = type;
+    tld_container.insertIfNotPresent(PackedStringRef::build(owned_host.data(), owned_host.size(), PackedStringRefHash{}), type);
 }
+
 TLDType TLDList::lookup(std::string_view host) const
 {
-    if (auto it = tld_container.find(host); it != nullptr)
+    auto key = PackedStringRef::build(host.data(), host.size(), PackedStringRefHash{});
+    if (const auto * it = tld_container.find(key); it != nullptr)
         return it->getMapped();
     return TLDType::TLD_NONE;
 }

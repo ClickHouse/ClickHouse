@@ -112,6 +112,34 @@ UInt64 MergeTreeDataPartChecksums::getTotalSizeUncompressedOnDisk() const
     return res;
 }
 
+namespace
+{
+
+/// File names in checksums.txt are used verbatim to build paths inside the part directory
+/// (e.g. when checking sizes or removing the part), so they must not escape it.
+void assertFileNameIsRelativeAndContained(const String & name)
+{
+    if (name.empty())
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Empty file name in checksums of data part");
+
+    if (name.starts_with('/'))
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Absolute file name '{}' in checksums of data part", name);
+
+    /// A NUL byte would be kept inside a single path component here, but the local disk layer
+    /// passes the joined path to C APIs which truncate at the first NUL, so "..\0/x" would act as "..".
+    if (name.contains('\0'))
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "File name '{}' in checksums of data part contains a NUL byte", name);
+
+    for (const auto & component : std::filesystem::path(name))
+    {
+        if (component == "." || component == "..")
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
+                "File name '{}' in checksums of data part contains '{}' path component", name, component.string());
+    }
+}
+
+}
+
 bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)
 {
     switch (format_version)
@@ -155,6 +183,7 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
         Checksum sum;
 
         readString(name, in);
+        assertFileNameIsRelativeAndContained(name);
         assertString("\n\tsize: ", in);
         readText(sum.file_size, in);
         assertString("\n\thash: ", in);
@@ -192,6 +221,7 @@ bool MergeTreeDataPartChecksums::readV3(ReadBuffer & in)
         Checksum sum;
 
         readStringBinary(name, in);
+        assertFileNameIsRelativeAndContained(name);
         readVarUInt(sum.file_size, in);
         readBinaryLittleEndian(sum.file_hash, in);
         readBinaryLittleEndian(sum.is_compressed, in);

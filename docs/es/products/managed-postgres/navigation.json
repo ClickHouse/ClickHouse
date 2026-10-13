@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Características",
+      "group": "Funcionalidades",
       "pages": [
         "es/products/managed-postgres/connection",
         "es/products/managed-postgres/settings",
@@ -19,24 +19,27 @@
         "es/products/managed-postgres/high-availability",
         "es/products/managed-postgres/read-replicas",
         "es/products/managed-postgres/backup-and-restore",
+        "es/products/managed-postgres/branching",
         "es/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
           "pages": [
+            "es/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "es/products/managed-postgres/extensions/pg_clickhouse/reference",
             "es/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "es/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
+        },
+        {
+          "group": "pg_chdb",
+          "pages": [
+            "es/products/managed-postgres/extensions/chdb/introduction",
+            "es/products/managed-postgres/extensions/chdb/chdb",
+            "es/products/managed-postgres/extensions/chdb/chdb_hook"
+          ]
         },
         "es/products/managed-postgres/upgrades",
         "es/products/managed-postgres/openapi",
         "es/products/managed-postgres/terraform"
-      ]
-    },
-    {
-      "group": "Benchmarks",
-      "pages": [
-        "es/products/managed-postgres/benchmarks"
       ]
     },
     {
@@ -46,21 +49,22 @@
       ]
     },
     {
-      "group": "Integración de ClickHouse",
+      "group": "Integración con ClickHouse",
       "pages": [
-        "es/products/managed-postgres/clickhouse-integration"
+        "es/products/managed-postgres/sync-to-clickhouse/clickpipes",
+        "es/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
       "group": "Migraciones",
       "pages": [
         "es/products/managed-postgres/migrations/overview",
-        "es/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "es/products/managed-postgres/migrations/logical-replication",
-        "es/products/managed-postgres/migrations/peerdb",
         "es/products/managed-postgres/migrations/clickpipes",
         "es/products/managed-postgres/migrations/data-validation",
-        "es/products/managed-postgres/migrations/clickhouse-cloud",
+        "es/products/managed-postgres/migrations/logical-replication",
+        "es/products/managed-postgres/migrations/neon",
+        "es/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "es/products/managed-postgres/migrations/peerdb",
         "es/products/managed-postgres/migrations/faq"
       ]
     },
@@ -71,16 +75,17 @@
         "es/products/managed-postgres/monitoring/dashboard",
         "es/products/managed-postgres/monitoring/metrics",
         "es/products/managed-postgres/monitoring/prometheus",
-        "es/products/managed-postgres/monitoring/query-insights"
+        "es/products/managed-postgres/monitoring/query-insights",
+        "es/products/managed-postgres/monitoring/notifications"
       ]
     },
     {
-      "group": "FAQ",
+      "group": "Preguntas frecuentes",
       "pages": [
         "es/products/managed-postgres/faq"
       ]
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }

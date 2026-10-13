@@ -387,6 +387,7 @@ public:
             }
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
+            /// column_function->replicate(offsets) =expands every captured column so each outer row's capture value appears once per array element.
             auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
             auto & replicated_column_function = typeid_cast<ColumnFunction &>(*replicated_column_function_ptr);
             replicated_column_function.appendArguments(arrays);

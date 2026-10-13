@@ -25,8 +25,8 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
+    extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
-    extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
@@ -34,6 +34,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
     extern const Event FilesystemCacheBackgroundDownloadQueuePush;
+    extern const Event FilesystemCacheReserveAheadRetries;
 }
 
 namespace CurrentMetrics
@@ -55,6 +56,7 @@ namespace FailPoints
 {
     extern const char cache_filesystem_failure[];
     extern const char cache_filesystem_failure_non_errno[];
+    extern const char file_segment_pause_before_write[];
 }
 
 String toString(FileSegmentKind kind)
@@ -174,7 +176,6 @@ String FileSegment::tryGetPath() const
 
 FileSegmentGuard::Lock FileSegment::lock() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentLockMicroseconds);
     return segment_guard.lock();
 }
 
@@ -416,6 +417,9 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 
 void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 {
+    /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
+    FailPointInjection::pauseFailPoint(FailPoints::file_segment_pause_before_write);
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
     auto file_segment_path = getPath();
     DownloadState * download = nullptr;
@@ -574,7 +578,7 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
     chassert(getCurrentWriteOffset() == offset_in_file + size);
 }
 
-FileSegment::State FileSegment::wait(size_t offset)
+FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
 {
     OpenTelemetry::SpanHolder span("FileSegment::wait");
     span.addAttribute("clickhouse.key", key().toString());
@@ -596,6 +600,9 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
+        std::unique_lock<std::mutex> cv_lk(*lk.mutex(), std::adopt_lock);
+        SCOPE_EXIT({ cv_lk.release(); });
+
         /// Wait for the download in short slices so that cancellation of the waiting query
         /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
         /// is observed promptly. The condition variable is only notified on download progress, so a
@@ -610,14 +617,19 @@ FileSegment::State FileSegment::wait(size_t offset)
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset();
         };
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
         while (true)
         {
             if (query_status)
                 query_status->throwIfKilled();
-            if (cv.wait_for(lk, std::chrono::seconds(1), downloaded))
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline)
+            {
+                ProfileEvents::increment(ProfileEvents::FileSegmentWaitTimeouts);
                 break;
-            if (std::chrono::steady_clock::now() >= deadline)
+            }
+            const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
+            if (cv.wait_for(cv_lk, slice, downloaded))
                 break;
         }
     }
@@ -657,7 +669,8 @@ bool FileSegment::reserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint)
+    std::optional<size_t> reserve_hint,
+    FileCacheReserveAhead * reserve_ahead)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -697,29 +710,18 @@ bool FileSegment::reserve(
 
     const size_t minimum_reserve_size = size_to_reserve;
 
-    if (!is_unbound)
+    if (!is_unbound && reserve_ahead)
     {
-        const auto reserve_granularity = cache->getReserveGranularity();
-        if (reserve_granularity && reserve_granularity > size_to_reserve)
+        /// Don't reserve ahead past the segment end or the end of the read.
+        size_t segment_reserve_limit = range().size() - reserved_size;
+        if (reserve_hint)
         {
-            size_to_reserve = reserved_size + reserve_granularity > range().size()
-                ? range().size() - reserved_size
-                : reserve_granularity;
-
-            /// `reserve_hint` is measured from the current download offset, so the read ends at
-            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
-            const size_t read_horizon = current_downloaded_size + reserve_hint;
-            if (reserve_hint
-                && read_horizon > reserved_size
-                && read_horizon < reserved_size + size_to_reserve)
-                size_to_reserve = read_horizon - reserved_size;
+            const size_t read_horizon = current_downloaded_size + *reserve_hint;
+            segment_reserve_limit = std::min(segment_reserve_limit, read_horizon > reserved_size ? read_horizon - reserved_size : 0);
         }
-    }
 
-    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
-    /// must never reserve less than the current write needs, otherwise the write would exceed the
-    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
-    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
+        size_to_reserve = reserve_ahead->getReserveSize(size_to_reserve, segment_reserve_limit, cache->getReserveGranularity());
+    }
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
@@ -731,9 +733,22 @@ bool FileSegment::reserve(
     FileCacheReserveStat dummy_stat;
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
+    reserve_stat->not_enough_space = false;
 
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+
+    if (!reserved && reserve_ahead)
+        reserve_ahead->reset();
+
+    /// Reserve-ahead is best-effort: retry with the exact size if it did not fit.
+    if (!reserved && size_to_reserve > minimum_reserve_size && reserve_stat->not_enough_space)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAheadRetries);
+        *reserve_stat = FileCacheReserveStat{};
+        reserved = cache->tryReserve(
+            *this, minimum_reserve_size, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+    }
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -873,6 +888,16 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
         }
         download_data->remote_file_reader.reset();
     }
+}
+
+void FileSegment::notifyDownloadProgress()
+{
+    /// Keep the downloader role and the DOWNLOADING state; only wake waiters so a reader
+    /// streaming the committed prefix re-checks `offset < getCurrentWriteOffset()` and proceeds.
+    auto lk = lock();
+    assertNotDetachedUnlocked(lk);
+    assertIsDownloaderUnlocked("notifyDownloadProgress", lk);
+    cv.notify_all();
 }
 
 void FileSegment::completePartAndResetDownloader()
@@ -1532,6 +1557,18 @@ void FileSegmentsHolder::reset()
         }
     }
     file_segments.clear();
+}
+
+FileSegmentsHolderSharedPtr FileSegmentsHolder::popHolder()
+{
+    chassert(!file_segments.empty());
+    /// Move the first segment into its own holder WITHOUT touching the hold gauge: this holder
+    /// already counts it, so the splice just transfers ownership. The new holder completes the
+    /// segment (and decrements the gauge) on destruction.
+    auto result = std::make_shared<FileSegmentsHolder>();
+    result->file_segments.splice(result->file_segments.begin(), file_segments, file_segments.begin());
+    chassert(result->file_segments.size() == 1);
+    return result;
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()

@@ -494,11 +494,31 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             break;
         }
 
-        /// Parquet doesn't have logical types for these.
-        case TypeIndex::UInt128: fixed_string(16); break;
-        case TypeIndex::UInt256: fixed_string(32); break;
-        case TypeIndex::Int128:  fixed_string(16); break;
-        case TypeIndex::Int256:  fixed_string(32); break;
+        case TypeIndex::UInt128:
+            if (options.output_wide_integer_as_decimal)
+                decimal(17, 39, 0);
+            else
+                fixed_string(16);
+            break;
+        case TypeIndex::UInt256:
+            if (options.output_wide_integer_as_decimal)
+                decimal(33, 78, 0);
+            else
+                fixed_string(32);
+            break;
+        case TypeIndex::Int128:
+            if (options.output_wide_integer_as_decimal)
+                decimal(17, 39, 0);
+            else
+                fixed_string(16);
+            break;
+        case TypeIndex::Int256:
+            if (options.output_wide_integer_as_decimal)
+                decimal(33, 77, 0);
+            else
+                fixed_string(32);
+            break;
+        /// Parquet doesn't have a logical type for `IPv6`.
         case TypeIndex::IPv6:    fixed_string(16); break;
 
         case TypeIndex::Decimal32:  decimal(4, getDecimalPrecision(*type), getDecimalScale(*type)); break;

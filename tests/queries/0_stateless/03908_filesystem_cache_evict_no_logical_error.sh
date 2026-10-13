@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, no-random-settings
+# Tags: no-parallel, no-fasttest, no-random-settings, no-async-insert
 # no-parallel: the failpoint below is server-global.
 # no-fasttest: requires a cache disk.
 # no-random-settings: randomized buffer sizes change how much data spans file segments.
+# no-async-insert: the queue flush owns the write, so its `ProfileEvents` land on another `query_id`.
 
 # Regression for a LOGICAL_ERROR (server abort in debug/sanitizer builds) when the
 # file_cache_dynamic_resize_fail_to_evict failpoint fired during ordinary space

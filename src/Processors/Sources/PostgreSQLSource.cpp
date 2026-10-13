@@ -16,8 +16,16 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
+#include <Common/ErrnoException.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
+
+#include <libpq-fe.h>
+
+#include <array>
+#include <cerrno>
+#include <sys/socket.h>
+#include <unistd.h>
 
 
 namespace DB
@@ -25,7 +33,33 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
+    extern const int POSTGRESQL_CONNECTION_FAILURE;
     extern const int TOO_MANY_COLUMNS;
+}
+
+void PostgreSQLCancelDeleter::operator()(pg_cancel * cancel) const noexcept
+{
+    PQfreeCancel(cancel);
+}
+
+namespace
+{
+
+/// pqxx hands the libpq connection only to its large-object API.
+struct LibpqConnection : pqxx::largeobject
+{
+    using pqxx::largeobject::raw_connection;
+};
+
+std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> makeCancelHandle(const pqxx::dbtransaction & tx)
+{
+    std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> handle(PQgetCancel(LibpqConnection::raw_connection(tx)));
+    if (!handle)
+        throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Cannot prepare the cancellation of the PostgreSQL query");
+    return handle;
+}
+
 }
 
 template<typename T>
@@ -74,28 +108,94 @@ void PostgreSQLSource<T>::init(const Block & sample_block)
 }
 
 
+/// Finalizes the state of the source: cancels the query still running on the connection, closes the
+/// COPY stream and marks the connection broken. A null argument means there is nothing of that kind
+/// to finalize. Must be called with tx_mutex released, since the calls below block.
+template<typename T>
+void PostgreSQLSource<T>::finalize(pg_cancel * cancel, pqxx::stream_from * stream_to_close) noexcept
+{
+    try
+    {
+        if (cancel)
+        {
+            std::array<char, 256> error{};
+            if (!PQcancel(cancel, error.data(), static_cast<int>(error.size())))
+                LOG_ERROR(getLogger("PostgreSQLSource"), "Cannot cancel the query on the PostgreSQL server: {}", error.data());
+        }
+
+        /// Closing it here keeps the exception out of the transaction's pending error, where it
+        /// would hide the message.
+        if (stream_to_close)
+            stream_to_close->close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    if (connection_holder)
+        connection_holder->setBroken();
+}
+
 template<typename T>
 void PostgreSQLSource<T>::onStart()
 {
-    if (is_completed.load())
+    if (stop_requested.load())
         return;
 
     if (!tx)
     {
+        /// Construct outside tx_mutex: the transaction constructor issues BEGIN, i.e. network I/O.
+        std::shared_ptr<T> new_tx;
         try
         {
             auto & conn = connection_holder->get();
-            tx = std::make_shared<T>(conn);
+            new_tx = std::make_shared<T>(conn);
         }
         catch (const pqxx::broken_connection &)
         {
             connection_holder->update();
-            tx = std::make_shared<T>(connection_holder->get());
+            new_tx = std::make_shared<T>(connection_holder->get());
         }
+        catch (...)
+        {
+            /// BEGIN failed on a connection we already took out of the pool - do not hand it back
+            /// for reuse. The destructor cannot do this: there is no transaction for it to see.
+            connection_holder->setBroken();
+            throw;
+        }
+
+        auto cancel = makeCancelHandle(*new_tx);
+
+        /// Our own handle on the socket, taken on the owning thread before the read starts. Refuse to
+        /// start rather than run a read that could not be interrupted.
+        int fd = ::dup(new_tx->conn().sock());
+        if (fd < 0)
+            throw ErrnoException(
+                ErrorCodes::CANNOT_OPEN_FILE, "Cannot duplicate the socket of the PostgreSQL connection");
+
+        std::lock_guard lock(tx_mutex);
+        tx = std::move(new_tx);
+        interrupt_fd = fd;
+        cancel_handle = std::move(cancel);
     }
+    else
+    {
+        auto cancel = makeCancelHandle(*tx);
+        std::lock_guard lock(tx_mutex);
+        cancel_handle = std::move(cancel);
+    }
+
+    /// A cancel during the constructor found `tx` null and could only ask us to stop. Do not open
+    /// the COPY then - the destructor tears the transaction down.
+    if (stop_requested.load())
+        return;
 
     LOG_TEST(getLogger("PostgreSQLSource"), "Stream data from database");
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
+
+    /// No recheck for a cancel racing the line above: it may have interrupted nothing, and the
+    /// destructor cancels the stream that exists by then.
 }
 
 template<typename T>
@@ -103,20 +203,33 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 {
     if (!started.load())
     {
-        onStart();
+        try
+        {
+            onStart();
+        }
+        catch (const pqxx::failure &)
+        {
+            /// A start that onCancel() interrupted fails instead of returning. Report the cancellation.
+            if (!stop_requested.load())
+                throw;
+        }
         started.store(true);
     }
 
     auto status = ISource::prepare();
-    if (status == Status::Finished)
+    if (status == Status::Finished && !stop_requested.load() && !teardown_started.exchange(true))
     {
+        /// Only a finish that was not cancelled commits here and claims the teardown. After a
+        /// cancel it is left to the destructor: the cancelling thread may be taking the
+        /// connection down under it.
         if (stream)
             stream->close();
 
         if (tx && auto_commit)
             tx->commit();
 
-        is_completed.store(true);
+        stop_requested.store(true);
+        finalized.store(true);
     }
 
     return status;
@@ -128,7 +241,7 @@ Chunk PostgreSQLSource<T>::generate()
     LOG_TEST(getLogger("PostgreSQLSource"), "Generate a chunk from stream");
 
     /// Check if source was cancelled or completed
-    if (is_completed.load() || isCancelled())
+    if (stop_requested.load() || isCancelled())
         return {};
 
     /// Check if pqxx::stream_from is finished
@@ -138,9 +251,20 @@ Chunk PostgreSQLSource<T>::generate()
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
 
-    while (!isCancelled() && !is_completed.load())
+    while (!isCancelled() && !stop_requested.load())
     {
-        const std::vector<pqxx::zview> * row{stream->read_row()};
+        const std::vector<pqxx::zview> * row{nullptr};
+        try
+        {
+            row = stream->read_row();
+        }
+        catch (const pqxx::failure &)
+        {
+            /// An interrupted read fails here instead of returning. Report the cancellation.
+            if (stop_requested.load())
+                break;
+            throw;
+        }
 
         /// row is nullptr if pqxx::stream_from is finished
         if (!row)
@@ -193,60 +317,71 @@ Chunk PostgreSQLSource<T>::generate()
 template<typename T>
 void PostgreSQLSource<T>::onCancel() noexcept
 {
-    /// Use atomic flag to prevent double-cancellation
-    if (is_completed.exchange(true))
-        return;
+    /// A signal, not a claim on the teardown: this runs while onStart() may still be creating `tx`
+    /// and `stream`, so it cannot finish the job, and taking the claim here would leave nobody to.
+    stop_requested.store(true);
 
-    /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
-    if (!started.load() && tx && tx->conn().is_open())
-    {
-        try
-        {
-            tx->conn().cancel_query();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-        if (connection_holder)
-            connection_holder->setBroken();
-    }
-}
-
-template<typename T>
-PostgreSQLSource<T>::~PostgreSQLSource()
-{
-    /// Use atomic flag to prevent double cleanup
-    if (is_completed.exchange(true))
-        return;
-
+    /// Outer try/catch: this function is noexcept, and locking tx_mutex may throw.
     try
     {
-        if (stream)
+        /// Snapshot under the lock, then use it with the lock released: the calls below block.
+        pg_cancel * cancel = nullptr;
+        int fd = -1;
         {
-            /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
-                 * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
-                 * copy query is not cancelled, we wait until it finishes.
-                 */
-            tx->conn().cancel_query();
+            std::lock_guard lock(tx_mutex);
+            cancel = cancel_handle.get();
+            fd = interrupt_fd;
+        }
 
-            /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
-                 * exception is added into transaction pending error and we can potentially ignore exception message.
-                 */
-            stream->close();
+        if (!cancel)
+            return;
+
+        /// The connection is ours to discard. Ask the server to cancel, then take the transport away, which wakes the
+        /// read whether or not the server obliged.
+        if (connection_holder)
+        {
+            /// A finish already under way has nothing left to wake, and its COMMIT must not be broken.
+            if (teardown_started.exchange(true))
+                return;
+
+            finalize(cancel, nullptr);
+
+            /// `shutdown` and not `close` keeps the descriptor valid for the thread still reading it.
+            ::shutdown(fd, SHUT_RDWR);
+            connection_holder->setBroken();
+            LOG_DEBUG(getLogger("PostgreSQLSource"), "Shut the connection down to interrupt the read");
+        }
+        /// A connection handed in with the transaction stays in use by its owner, so it is not ours to take
+        /// away. Ask the server instead, which only helps while the COPY is starting.
+        else if (!started.load())
+        {
+            finalize(cancel, nullptr);
         }
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+template<typename T>
+PostgreSQLSource<T>::~PostgreSQLSource()
+{
+    /// The teardown owner for every path but a clean finish, which prepare() claims. Without
+    /// cancelling the COPY the ROLLBACK issued during transaction abort waits for it. With no
+    /// transaction nothing reached the connection, so it stays healthy and is left in the pool.
+    /// A connection already cancelled and taken down has nothing left to cancel, and the attempt would block.
+    if (!finalized.exchange(true) && tx)
+        finalize((stream && !teardown_started.load()) ? cancel_handle.get() : nullptr, stream.get());
 
     stream.reset();
     tx.reset();
 
-    if (connection_holder)
-        connection_holder->setBroken();
+    if (interrupt_fd >= 0)
+    {
+        [[maybe_unused]] int err = ::close(interrupt_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 template

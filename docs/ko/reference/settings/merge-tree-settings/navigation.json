@@ -5,7 +5,7 @@
     "ko/reference/settings/merge-tree-settings/add-minmax",
     "ko/reference/settings/merge-tree-settings/allow",
     "ko/reference/settings/merge-tree-settings/allow-experimental",
-    "ko/reference/settings/merge-tree-settings/always",
+    "ko/reference/settings/merge-tree-settings/always-fetch",
     "ko/reference/settings/merge-tree-settings/async",
     "ko/reference/settings/merge-tree-settings/cache-populated-by-fetch",
     "ko/reference/settings/merge-tree-settings/check",

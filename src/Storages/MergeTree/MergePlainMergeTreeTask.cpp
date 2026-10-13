@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
@@ -192,10 +192,13 @@ void MergePlainMergeTreeTask::finish()
     if (auto txn_ = txn_holder.getTransaction())
     {
         /// Explicitly commit the transaction if we own it (it's a background merge, not OPTIMIZE)
-        TransactionLog::instance().commitTransaction(txn_, /* throw_on_unknown_status */ false);
+        TransactionManager::instance().commitTransaction(txn_, /* throw_on_unknown_status */ false);
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
+
+    /// While still under the merge's tracker, which its writer buffers were charged to; before `finalize`, as in `cancel`.
+    merge_task.reset();
 
     merge_mutate_entry->finalize();
 }

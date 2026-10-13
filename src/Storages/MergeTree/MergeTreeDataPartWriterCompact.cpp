@@ -88,17 +88,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        const auto & subtype = substream_path.back().data.type;
-        CompressionCodecPtr compression_codec;
-
-        /// If we can use special codec than just get it
-        if (ISerialization::isSpecialCompressionAllowed(substream_path))
-        {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
-        }
-        else /// otherwise return only generic codecs and don't use info about data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
         UInt64 codec_id = compression_codec->getHash();
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
@@ -122,11 +112,6 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
         }
 
-        /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
-        /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
-        /// above (`isSpecialCompressionAllowed` == false), which drops it. So every stream that carries a
-        /// lossy codec is a genuine float data stream that must keep it - in particular each element of a
-        /// pure-float `Tuple`.
         compressed_streams.emplace(stream_name, it->second);
     };
 
@@ -135,6 +120,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.object_serialization_version = settings.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    enumerate_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     enumerate_settings.max_buckets_in_map = settings.max_buckets_in_map;
     enumerate_settings.map_buckets_strategy = settings.map_buckets_strategy;
     enumerate_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -232,6 +218,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     serialize_settings.object_serialization_version = settings.object_serialization_version;
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -388,10 +375,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
+            auto serialize_settings = getSerializationSettings();
+            serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),
-                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
+                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, std::move(serialize_settings));
 
             if (settings.compress_per_column_in_compact_parts)
             {

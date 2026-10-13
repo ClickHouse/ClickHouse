@@ -63,6 +63,24 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
 
             auto result_column = res_column.column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
+            /// A constraint is checked row by row: the result is scanned for the first value that is not
+            /// 1, and the block's own columns are then read at that index to report the offending row. So
+            /// the result has to have exactly as many values as the block has rows. `arrayJoin` is the one
+            /// thing that breaks this, and it is rejected when a constraint is declared - but a constraint
+            /// stored before that check existed still loads, so the size is verified here rather than
+            /// trusted, and a read past the end of a block column is reported instead of performed.
+            if (result_column->size() != chunk.getNumRows())
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Constraint {} for table {} returned {} values for a block of {} rows. Expression: ({}). "
+                    "An expression that changes the number of rows, such as `arrayJoin`, cannot be checked "
+                    "as a constraint; drop the constraint to be able to insert into the table",
+                    backQuote(constraint_ptr->name),
+                    table_id.getNameForLogs(),
+                    result_column->size(),
+                    chunk.getNumRows(),
+                    constraint_ptr->expr->formatForErrorMessage());
+
             if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
             {
                 const auto & nested_column = column_nullable->getNestedColumnPtr();

@@ -1,0 +1,14 @@
+control: the filter is installed
+1
+stateful expression below the aggregation
+0
+0	99900	1000
+1	99901	1000
+2	99902	1000
+block-dependent WHERE
+0
+0	1000
+2	1000
+4	1000
+block-dependent PREWHERE
+0

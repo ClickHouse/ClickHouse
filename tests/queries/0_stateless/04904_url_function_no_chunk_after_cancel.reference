@@ -1,0 +1,3 @@
+the query succeeded
+the cancellation was delivered after the chunk was pulled
+the cancelled chunk was not emitted

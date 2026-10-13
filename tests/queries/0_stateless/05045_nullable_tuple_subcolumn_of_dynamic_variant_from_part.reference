@@ -1,0 +1,15 @@
+Nullable(Tuple(a UInt32, b String))
+1	(1,'s')
+2	\N
+1	1
+2	\N
+1	0
+2	1
+1	(1,'s')
+2	\N
+1	(1,'s')
+2	\N
+1	(NULL,'s')
+2	\N
+1	(1,'s')
+2	\N

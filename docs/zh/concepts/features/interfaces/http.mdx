@@ -36,7 +36,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-&quot;Ok.&quot; 是 [`http_server_default_response`](/zh/reference/settings/server-settings/settings#http_server_default_response) 中定义的默认值，可按需更改。
+&quot;Ok.&quot; 是 [`http_server_default_response`](/zh/reference/settings/server-settings/settings/http#http_server_default_response) 中定义的默认值，可按需更改。
 
 另请参见：[HTTP 响应代码注意事项](#http_response_codes_caveats)。
 
@@ -201,7 +201,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-您可以使用 `default_format` URL 参数或 `X-ClickHouse-Format` 请求头，将默认格式指定为 `TabSeparated` 以外的格式。
+您可以使用 `default_format` URL 参数，将默认格式指定为 `TabSeparated` 以外的格式。`X-ClickHouse-Format` 请求头可显式指定响应格式：它是 `output_format` 设置的别名，因此也会覆盖查询中的 `FORMAT` 子句。它绝不会改变 `INSERT` 请求正文的解析方式——请使用 `input_format` 或 `format` 指定输入格式。
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -219,6 +219,150 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 
 7
 ```
+
+<div id="tables-as-files">
+  ## 通过 URL 路径访问表并构造查询
+</div>
+
+适用于 ClickHouse 26.8 及更高版本。
+
+HTTP 接口可将 URL 路径解析为数据库、表、输出格式和压缩方法。随后可通过 URL 参数控制结果，因此简单的读取请求无需使用 SQL。这些功能默认处于禁用状态，必须显式启用。
+
+<div id="enabling-path-routing">
+  ### 启用路径路由
+</div>
+
+路径解析由两个层级的设置控制：
+
+1. 启用服务器级配置项 `http_allow_path_requests`，允许 HTTP 接口将路径形式的请求路由至查询处理程序：
+
+```xml
+<clickhouse>
+    <http_allow_path_requests>1</http_allow_path_requests>
+</clickhouse>
+```
+
+2. 启用所需的用户级设置：
+
+| 设置                                                  | 效果                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------- |
+| `http_allow_table_as_file`                          | 将最后一个路径组件解析为 `table`、`table.format` 或 `table.format.compression`。 |
+| `http_allow_database_as_path`                       | 将开头的 `/database/` 路径组件解析为当前数据库。                                   |
+| `http_allow_filters_as_path`                        | 将 Hive 风格的 `/name=value/` 路径组件解析为 `WHERE` 过滤器。                    |
+| `http_allow_filters_as_unrecognized_url_parameters` | 将无法识别的 URL 参数解析为 `WHERE` 过滤器。                                     |
+
+<Note>
+  路由发生在身份验证之前，因此不能依赖用户级设置。当 `http_allow_path_requests` 被禁用时，未知路径会在身份验证前返回 `404`。完成路由和身份验证后，用户级设置将决定如何解析路径，从而可选择性地为某个用户、角色或 profile 启用此功能。
+</Note>
+
+<div id="table-as-file-examples">
+  ### 将表作为文件访问
+</div>
+
+启用 `http_allow_table_as_file` 后，对 `/table.format.compression` 的请求会被处理为 `SELECT * FROM table`。启用 `http_allow_database_as_path` 后，可使用 `/database/table.format.compression`。
+
+```bash
+# SELECT * FROM my_db.hits, formatted as CSV
+curl 'http://localhost:8123/my_db/hits.csv'
+
+# The same result, compressed with gzip
+curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
+```
+
+格式和压缩扩展名不区分大小写，因此 `hits.csv` 和 `hits.CSV` 等效。
+
+显式指定的 `format` 或 `output_format` URL 参数会覆盖路径中的格式。`default_format` 则不会：它仅在没有其他方式指定格式时提供所用格式，而路径扩展名的优先级更高。显式指定的 `compression` 参数必须与路径中的压缩方式一致；值冲突会导致异常。
+
+<div id="query-construction">
+  ### 构造查询
+</div>
+
+以下设置会将基础查询包装为派生表。它们既可相互组合，也可与现有查询结合使用。您可以通过 HTTP URL 参数、查询中的 `SETTINGS` 子句或用户 profile 提供这些设置。
+
+| 设置                                                                                                                          | 作用                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `select`                                                                                                                    | `SELECT <expression_list> FROM (…)`                                                            |
+| `filter`                                                                                                                    | 添加 `WHERE <expression>`。多个 `filter` URL 参数会通过 `AND` 组合。                                        |
+| `order`                                                                                                                     | 添加 `ORDER BY <expression_list>`。                                                               |
+| `sort`                                                                                                                      | 根据以逗号分隔的标识符或列位置列表添加 `ORDER BY`；每一项可选带有 `+` (升序) 或 `-` (降序) 前缀，例如 `sort=a,-b`。不能与 `order` 组合使用。 |
+| [`limit`](/zh/reference/settings/session-settings/other#limit) 和 [`offset`](/zh/reference/settings/session-settings/other#offset) | 添加 `LIMIT <n> OFFSET <m>`。两者都接受用于选择末尾数据的负值，以及表示行数占比的小数值。                                       |
+| `page`                                                                                                                      | 设置 `offset = limit * (page - 1)`。需要指定 `limit`，且不能与 `offset` 组合使用。                              |
+
+```bash
+# Filter my_db.hits, sort by a descending, and return the first 10 rows
+curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
+
+# Return the second page of 100 rows
+curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
+```
+
+<div id="modify-an-existing-query">
+  #### 修改现有查询
+</div>
+
+构造设置不仅适用于路径请求，也会影响您自行编写的查询。该查询会成为派生表，因此这些设置会应用于其结果，而不会合并到查询中。例如，`?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` 会按如下方式执行：
+
+```sql
+SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
+```
+
+这对于对在其他地方预先固定的查询结果进行分页、排序或缩小范围非常有用，例如已保存的 dashboard 查询、`predefined_query_handler`，或者只允许追加 URL 参数的客户端：
+
+```bash
+# Page through the result of an arbitrary query without editing the query text
+curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
+
+# Keep only some of the resulting columns and rows
+curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
+
+# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
+curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
+```
+
+这些设置会包裹查询，而非改写查询，因此可与 `FORMAT` 子句及查询中的 `ORDER BY` 配合使用，并且绝不会改变 `INSERT` 写入的行：在 `INSERT ... SELECT` 语句上指定的构造设置会影响该语句自身的 (空) 结果，而非其源 `SELECT`。如需影响源数据，请将设置放在 `SELECT` 自身的 `SETTINGS` 子句中：
+
+```sql
+-- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
+INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
+
+-- Inserts 2 rows: `limit` applies to the SELECT itself
+INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
+```
+
+<Warning>
+  `filter` 并不是访问控制机制。它会在外层子查询中添加 `WHERE` 子句，因此应用过滤器前仍可能读取和处理底层数据。要限制用户可访问的行，请使用[行策略](/zh/concepts/features/security/access-rights#row-policy-management)或 [`additional_table_filters`](/zh/reference/settings/session-settings/additional#additional_table_filters)。
+</Warning>
+
+<div id="format-and-compression-overrides">
+  ### 覆盖格式和压缩
+</div>
+
+| 设置               | 效果                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| `output_format`  | 覆盖输出格式。其优先级高于查询中的 `FORMAT` 子句、路径扩展名、`format` 和 `default_format`。也可通过 `X-ClickHouse-Format` 请求头设置。 |
+| `input_format`   | 覆盖 `INSERT` 的输入格式。其优先级高于查询中的 `FORMAT` 子句和 `format`。                                               |
+| `format`         | 除非指定了特定方向的设置，否则同时覆盖输入和输出格式。                                                                       |
+| `default_format` | 当查询不含 `FORMAT` 子句、路径中没有扩展名且未指定其他格式覆盖设置时，设置输出格式。                                                   |
+| `compression`    | 压缩响应体，例如 `compression=gz`。这与 HTTP `Content-Encoding` 和 ClickHouse 原生 `compress` 参数相互独立。          |
+
+格式设置也适用于其他协议，包括原生客户端和 `clickhouse-local`。`input_format` 和 `output_format` 分别对应 `--input-format` 和 `--output-format` 选项。`--format` 选项在 `clickhouse-local` 中映射到双向 `format` 设置；而在 `clickhouse-client` 中，它仍保留历史上的仅输出含义，并映射到 `output_format`。
+
+`compression` 专用于塑造 HTTP 响应，并在查询执行前生效。可通过 HTTP URL 参数、路径扩展名或用户 profile 提供该设置。不能在查询内的 `SETTINGS` 子句中使用。
+
+二进制和压缩的 HTTP 响应会包含 `Content-Disposition: attachment; filename=…` 请求头。文件名取自 URL 路径；如果路径未提供文件名，则使用 `result.<format>.<compression>`。
+
+<div id="implicit-table">
+  ### 在查询中使用路径表
+</div>
+
+当路径指定一个表且同时提供了 `query` 参数时，该路径表将通过 [`implicit_table_at_top_level`](/zh/reference/settings/session-settings/implicit#implicit_table_at_top_level) 隐式暴露。未包含 `FROM` 子句的 `SELECT` 会从该路径表读取数据：
+
+```bash
+# Read columns a and b from my_db.hits without a FROM clause
+curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
+```
+
+如果查询中已包含 `FROM` 子句，路径组件仅用于指定下载文件名。
 
 <div id="insert-queries">
   ## 通过 HTTP/HTTPS 执行插入查询
@@ -294,11 +438,11 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
   ## 压缩
 </div>
 
-压缩可用于在传输大量数据时减少网络流量，也可用于创建压缩后的转储文件。
+压缩可用于在传输大量数据时减少网络流量，也可用于创建会立即压缩的转储文件。
 
 传输数据时，您可以使用 ClickHouse 的内部压缩格式。压缩后的数据采用非标准格式，因此需要使用 `clickhouse-compressor` 程序来处理。该程序默认随 `clickhouse-client` 软件包一起安装。
 
-为提高数据插入效率，请使用 [`http_native_compression_disable_checksumming_on_decompress`](/zh/reference/settings/session-settings#http_native_compression_disable_checksumming_on_decompress) 设置禁用服务器端的校验和验证。
+为提高数据插入效率，请使用 [`http_native_compression_disable_checksumming_on_decompress`](/zh/reference/settings/session-settings/http#http_native_compression_disable_checksumming_on_decompress) 设置禁用服务器端的校验和验证。
 
 如果您在 URL 中指定 `compress=1`，服务器会压缩发送给您的数据。如果您在 URL 中指定 `decompress=1`，服务器会解压您通过 `POST` 方法传入的数据。
 
@@ -317,7 +461,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 要让 ClickHouse 压缩响应，请在请求中附加 `Accept-Encoding: compression_method` 请求头。
 
-您可以使用 [`http_zlib_compression_level`](/zh/reference/settings/session-settings#http_zlib_compression_level) 设置，为所有压缩方法配置数据压缩级别。
+您可以使用 [`http_zlib_compression_level`](/zh/reference/settings/session-settings/http#http_zlib_compression_level) 设置，为所有压缩方法配置数据压缩级别。
 
 <Info>
   某些 HTTP 客户端可能默认会解压来自服务器的数据 (如 `gzip` 和 `deflate`) ，因此即使您正确使用了压缩设置，也可能收到解压后的数据。
@@ -450,7 +594,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 要检查会话状态，请使用 `session_check=1` 参数。单个会话中一次只能执行一个查询。
 
-你可以在 `X-ClickHouse-Progress` 响应请求头中获取有关查询进度的信息。为此，请启用 [`send_progress_in_http_headers`](/zh/reference/settings/session-settings#send_progress_in_http_headers)。
+你可以在 `X-ClickHouse-Progress` 响应请求头中获取有关查询进度的信息。为此，请启用 [`send_progress_in_http_headers`](/zh/reference/settings/session-settings/send#send_progress_in_http_headers)。
 
 下面是一个请求头序列示例：
 
@@ -462,24 +606,24 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 可能的请求头字段如下：
 
-| 请求头字段                | 说明                                 |
-| -------------------- | ---------------------------------- |
-| `read_rows`          | 已读取的行数。                            |
-| `read_bytes`         | 已读取的数据量 (字节) 。                     |
-| `total_rows_to_read` | 待读取的总行数。                           |
-| `written_rows`       | 已写入的行数。                            |
-| `written_bytes`      | 已写入的数据量 (字节) 。                     |
-| `elapsed_ns`         | 查询运行时间 (纳秒) 。                      |
-| `memory_usage`       | 查询使用的内存 (字节) 。 (**自 v25.11 起可用**)  |
+| 请求头字段                | 说明                                |
+| -------------------- | --------------------------------- |
+| `read_rows`          | 已读取的行数。                           |
+| `read_bytes`         | 已读取的数据量 (字节) 。                    |
+| `total_rows_to_read` | 待读取的总行数。                          |
+| `written_rows`       | 已写入的行数。                           |
+| `written_bytes`      | 已写入的数据量 (字节) 。                    |
+| `elapsed_ns`         | 查询运行时间 (纳秒) 。                     |
+| `memory_usage`       | 查询使用的内存 (字节) 。 (**自 v25.11 起可用**) |
 
 如果 HTTP 连接丢失，正在运行的请求不会自动停止。解析和数据格式化都在服务器端完成，因此通过网络传输可能效率较低。
 
 以下可选参数可用：
 
-| 参数                     | 说明                                                                                                         |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `query_id` (optional)  | 可作为查询 ID 传入 (任意字符串) 。[`replace_running_query`](/zh/reference/settings/session-settings#replace_running_query) |
-| `quota_key` (optional) | 可作为配额键传入 (任意字符串) 。[&quot;Quotas&quot;](/zh/concepts/features/configuration/server-config/quotas)              |
+| 参数                     | 说明                                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `query_id` (optional)  | 可作为查询 ID 传入 (任意字符串) 。[`replace_running_query`](/zh/reference/settings/session-settings/replace-running-query#replace_running_query) |
+| `quota_key` (optional) | 可作为配额键传入 (任意字符串) 。[&quot;Quotas&quot;](/zh/concepts/features/configuration/server-config/quotas)                                    |
 
 HTTP 接口支持传递外部数据 (外部临时表) 用于查询。更多信息，请参阅[&quot;External data for query processing&quot;](/zh/reference/engines/table-engines/special/external-data)。
 
@@ -487,15 +631,15 @@ HTTP 接口支持传递外部数据 (外部临时表) 用于查询。更多信�
   ## 响应缓冲
 </div>
 
-服务端可以启用响应缓冲。为此提供了以下 URL 参数：
+服务器端可以启用响应缓冲。为此提供了以下 URL 参数：
 
 * `buffer_size`
 * `wait_end_of_query`
 
 也可以使用以下设置：
 
-* [`http_response_buffer_size`](/zh/reference/settings/session-settings#http_response_buffer_size)
-* [`http_wait_end_of_query`](/zh/reference/settings/session-settings#http_wait_end_of_query)
+* [`http_response_buffer_size`](/zh/reference/settings/session-settings/http-response#http_response_buffer_size)
+* [`http_wait_end_of_query`](/zh/reference/settings/session-settings/http#http_wait_end_of_query)
 
 `buffer_size` 用于指定在服务器内存中为结果缓冲的字节数。如果结果体大于该阈值，缓冲区中的内容会写入 HTTP 通道，其余数据将直接发送到 HTTP 通道。
 
@@ -547,7 +691,7 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 在这种情况下，`?role=my_role&role=my_other_role` 的效果类似于在执行该语句之前先执行 `SET ROLE my_role, my_other_role`。
 
 <div id="http_response_codes_caveats">
-  ## HTTP 响应状态码注意事项
+  ## HTTP 响应码注意事项
 </div>
 
 由于 HTTP 协议本身的限制，HTTP 200 响应码并不保证查询已成功。
@@ -567,13 +711,13 @@ Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while 
 
 这种行为与所使用的格式无关，无论是 `Native`、`TSV` 还是 `JSON`；错误消息总是会出现在响应流的中间。
 
-你可以通过启用 `wait_end_of_query=1` ([响应缓冲](#response-buffering)) 来缓解这个问题。在这种情况下，HTTP 请求头会延迟到整个查询处理完成后才发送。不过，这并不能彻底解决问题，因为结果仍然必须能够容纳在 [`http_response_buffer_size`](/zh/reference/settings/session-settings#http_response_buffer_size) 中，而且像 [`send_progress_in_http_headers`](/zh/reference/settings/session-settings#send_progress_in_http_headers) 这样的其他设置也可能会影响请求头的延迟发送。
+你可以通过启用 `wait_end_of_query=1` ([响应缓冲](#response-buffering)) 来缓解这个问题。在这种情况下，HTTP 请求头会延迟到整个查询处理完成后才发送。不过，这并不能彻底解决问题，因为结果仍然必须能够容纳在 [`http_response_buffer_size`](/zh/reference/settings/session-settings/http-response#http_response_buffer_size) 中，而且像 [`send_progress_in_http_headers`](/zh/reference/settings/session-settings/send#send_progress_in_http_headers) 这样的其他设置也可能会影响请求头的延迟发送。
 
 <Tip>
   要捕获所有错误，唯一的方法是在按所需格式解析 HTTP body 之前先对其进行分析。
 </Tip>
 
-当 `http_write_exception_in_output_format=0` (默认值) 时，ClickHouse 中这类异常都会采用如下所示的一致格式，而与所使用的格式无关 (例如 `Native`、`TSV`、`JSON` 等) 。这使得客户端更容易解析并提取错误消息。
+当 `http_write_exception_in_output_format=0` (默认值) 时，ClickHouse 中这类异常都会采用如下所示的一致格式，而与所使用的格式无关 (例如 `Native`、`TSV`、`JSON` 等)。这使得客户端更容易解析并提取错误消息。
 
 ```text
 \r\n
@@ -821,7 +965,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `query` 的值是 `predefined_query_handler` 的预定义查询；当 HTTP 请求匹配时，ClickHouse 会执行该查询并返回查询结果。这是必填配置项。
 
-以下示例定义了 [`max_threads`](/zh/reference/settings/session-settings#max_threads) 和 [`max_final_threads`](/zh/reference/settings/session-settings#max_final_threads) 这两个设置的值，然后查询系统表，以检查这些设置是否已成功生效。
+以下示例定义了 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 和 [`max_final_threads`](/zh/reference/settings/session-settings/max#max_final_threads) 这两个设置的值，然后查询系统表，以检查这些设置是否已成功生效。
 
 <Note>
   要保留默认的 `handlers`，例如 `query`、`play`、`ping`，请添加 `<defaults/>` 规则。
@@ -903,7 +1047,7 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
 
 ClickHouse 会从 HTTP 请求的 URL 中提取与 `query_param_name` 对应的值并执行。`query_param_name` 的默认值为 `/query`。这是一个可选配置；如果配置文件中未定义，就不会传递该参数。
 
-要试用此功能，下面的示例定义了 [`max_threads`](/zh/reference/settings/session-settings#max_threads) 和 `max_final_threads` 的值，并查询这些设置是否已成功生效。
+要试用此功能，下面的示例定义了 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 和 `max_final_threads` 的值，并查询这些设置是否已成功生效。
 
 示例：
 
@@ -1187,7 +1331,7 @@ ClickHouse 允许你配置自定义 HTTP 响应头，并将其应用于任何可
 
 通过 HTTP 执行查询时，如果部分数据已经发送，可能会发生异常。通常，异常会以纯文本形式发送给客户端。
 即使数据输出时使用了特定格式，输出结果也可能因此不再是符合该格式的有效数据。
-为避免这种情况，你可以使用设置 [`http_write_exception_in_output_format`](/zh/reference/settings/session-settings#http_write_exception_in_output_format) (默认禁用) ，该设置会指示 ClickHouse 以指定格式写出异常 (当前支持 XML 和 JSON* 格式) 。
+为避免这种情况，你可以使用设置 [`http_write_exception_in_output_format`](/zh/reference/settings/session-settings/http#http_write_exception_in_output_format) (默认禁用) ，该设置会指示 ClickHouse 以指定格式写出异常 (当前支持 XML 和 JSON* 格式) 。
 
 示例：
 

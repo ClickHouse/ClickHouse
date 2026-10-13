@@ -32,6 +32,9 @@ struct HashMethodContextSettings
     /// Threshold on the hash table's buffer size below which prefetching is skipped
     /// because the table fits into caches. Zero disables the threshold.
     size_t min_bytes_for_prefetch = 0;
+    /// Whether the aggregation is a lone `count()` with its counter kept in the hash-table mapped
+    /// slot instead of a state. Caches that copy a mapped value are invalid in that mode.
+    bool simple_count = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.
@@ -102,19 +105,28 @@ struct LastElementCache<Value, false> : public LastElementCacheBase
     bool check(const Value & rhs) const { return value == rhs; }
 };
 
-template <typename Mapped>
+template <typename Mapped, typename Value>
 class EmplaceResultImpl
 {
+    using Key = std::decay_t<decltype(std::declval<Value>().first)>;
+
     Mapped & value;
     Mapped & cached_value;
     bool inserted;
+    Key key;
 
 public:
-    EmplaceResultImpl(Mapped & value_, Mapped & cached_value_, bool inserted_)
-            : value(value_), cached_value(cached_value_), inserted(inserted_) {}
+    EmplaceResultImpl(Mapped & value_, Mapped & cached_value_, bool inserted_, Key key_ = {})
+        : value(value_)
+        , cached_value(cached_value_)
+        , inserted(inserted_)
+        , key(std::move(key_))
+    {
+    }
 
     bool isInserted() const { return inserted; }
     auto & getMapped() const { return value; }
+    const Key & getKey() const { return key; }
 
     void setMapped(const Mapped & mapped)
     {
@@ -123,14 +135,19 @@ public:
     }
 };
 
-template <>
-class EmplaceResultImpl<void>
+template <typename Value>
+class EmplaceResultImpl<void, Value>
 {
+    /// A set cell's value is the key itself.
+    using Key = std::decay_t<Value>;
+
     bool inserted;
+    Key key;
 
 public:
-    explicit EmplaceResultImpl(bool inserted_) : inserted(inserted_) {}
+    explicit EmplaceResultImpl(bool inserted_, Key key_ = {}) : inserted(inserted_), key(std::move(key_)) {}
     bool isInserted() const { return inserted; }
+    const Key & getKey() const { return key; }
 };
 
 /// FindResult optionally may contain pointer to value and offset in hashtable buffer.
@@ -183,6 +200,8 @@ template <bool need_offset>
 class FindResultImpl<void, need_offset> : public FindResultImplBase, public FindResultImplOffsetBase<need_offset>
 {
 public:
+    FindResultImpl() : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0) {}
+
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 
@@ -190,7 +209,7 @@ template <typename Derived, typename Value, typename Mapped, bool consecutive_ke
 class HashMethodBase
 {
 public:
-    using EmplaceResult = EmplaceResultImpl<Mapped>;
+    using EmplaceResult = EmplaceResultImpl<Mapped, Value>;
     using FindResult = FindResultImpl<Mapped, need_offset>;
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, nullable>;
@@ -406,22 +425,42 @@ protected:
         }
     }
 
+    /// Build results from the consecutive-keys cache without touching the hash table.
+    /// The caller must ensure the cache holds the result for the sought key: `!cache.empty`
+    /// for `getCachedFindResult`, `cache.found` for `getCachedEmplaceResult` (an emplace can
+    /// reuse the cache only when the key is known to be in the table already).
+    /// Also used by derived methods that can prove key equality with the cached entry without
+    /// calculating the key (see the raw-bytes shortcut in `HashMethodHashed`).
+    ALWAYS_INLINE EmplaceResult getCachedEmplaceResult()
+    {
+        static_assert(consecutive_keys_optimization);
+        if constexpr (has_mapped)
+            return EmplaceResult(cache.value.second, cache.value.second, false);
+        else
+            return EmplaceResult(false);
+    }
+
+    ALWAYS_INLINE FindResult getCachedFindResult()
+    {
+        static_assert(consecutive_keys_optimization);
+        if constexpr (has_mapped)
+            return FindResult(&cache.value.second, cache.found, 0);
+        else
+            return FindResult(cache.found, 0);
+    }
+
     template <bool compute_hash, typename Data, typename KeyHolder>
     ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value)
     {
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
-            {
-                if constexpr (has_mapped)
-                    return EmplaceResult(cache.value.second, cache.value.second, false);
-                else
-                    return EmplaceResult(false);
-            }
+                return getCachedEmplaceResult();
         }
 
         typename Data::LookupResult it;
         bool inserted = false;
+        auto key = keyHolderGetKey(key_holder);
 
         if constexpr (compute_hash)
             data.emplace(key_holder, it, inserted);
@@ -462,9 +501,9 @@ protected:
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(it->getMapped(), *cached, inserted);
+            return EmplaceResult(it->getMapped(), *cached, inserted, std::move(key));
         else
-            return EmplaceResult(inserted);
+            return EmplaceResult(inserted, std::move(key));
     }
 
     template <typename Data, typename Key>
@@ -476,12 +515,7 @@ protected:
             /// Now there's not place where we need this options enabled together
             static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
             if (likely(!cache.empty) && cache.check(key))
-            {
-                if constexpr (has_mapped)
-                    return FindResult(&cache.value.second, cache.found, 0);
-                else
-                    return FindResult(cache.found, 0);
-            }
+                return getCachedFindResult();
         }
 
         auto it = data.find(key);

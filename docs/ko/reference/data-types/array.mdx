@@ -52,7 +52,7 @@ SELECT [1, 2] AS x, toTypeName(x)
   ## 데이터 타입 다루기
 </div>
 
-즉석에서 배열을 생성할 때 ClickHouse는 나열된 모든 인수를 저장할 수 있는 가장 범위가 좁은 데이터 타입으로 인수 타입을 자동 지정합니다. [Nullable](/ko/reference/data-types/nullable) 또는 리터럴 [NULL](/ko/reference/settings/formats#input_format_null_as_default) 값이 하나라도 있으면 배열 요소의 타입도 [Nullable](/ko/reference/data-types/nullable)이 됩니다.
+즉석에서 배열을 생성할 때 ClickHouse는 나열된 모든 인수를 저장할 수 있는 가장 범위가 좁은 데이터 타입으로 인수 타입을 자동 지정합니다. [Nullable](/ko/reference/data-types/nullable) 또는 리터럴 [NULL](/ko/reference/settings/formats/input-format#input_format_null_as_default) 값이 하나라도 있으면 배열 요소의 타입도 [Nullable](/ko/reference/data-types/nullable)이 됩니다.
 
 ClickHouse가 데이터 타입을 결정할 수 없으면 예외를 발생시킵니다. 예를 들어 문자열과 숫자를 동시에 사용해 배열을 만들려고 할 때 이런 문제가 발생합니다(`SELECT array(1, 'a')`).
 

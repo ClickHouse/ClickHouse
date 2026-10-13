@@ -1051,7 +1051,7 @@ GROUP BY UserId
   ## Параллельная и последовательная обработка
 </div>
 
-Как показано в предыдущем примере, таблица может служить источником для нескольких materialized view. Порядок их выполнения зависит от настройки [`parallel_view_processing`](/ru/reference/settings/session-settings#parallel_view_processing).
+Как показано в предыдущем примере, таблица может служить источником для нескольких materialized view. Порядок их выполнения зависит от настройки [`parallel_view_processing`](/ru/reference/settings/session-settings/parallel#parallel_view_processing).
 
 По умолчанию эта настройка имеет значение `0` (`false`), то есть materialized view выполняются последовательно в порядке `uuid`.
 

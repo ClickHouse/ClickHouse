@@ -483,7 +483,7 @@ ORDER BY user_id ASC
   ## 로그 데이터에 쿼리 마스킹 규칙 사용
 </div>
 
-특히 로그 데이터만 마스킹하려는 ClickHouse OSS 사용자는 데이터를 마스킹하기 위해 [query masking rules](/ko/reference/settings/server-settings/settings#query_masking_rules)(로그 마스킹)를 사용할 수 있습니다.
+특히 로그 데이터만 마스킹하려는 ClickHouse OSS 사용자는 데이터를 마스킹하기 위해 [쿼리 마스킹 규칙](/ko/reference/settings/server-settings/settings/query#query_masking_rules)(로그 마스킹)를 사용할 수 있습니다.
 
 이를 위해 서버 구성에서 정규식 기반 마스킹 규칙을 정의할 수 있습니다.
 이 규칙은 쿼리와 모든 로그 메시지가 서버 로그 또는 시스템 테이블(예: `system.query_log`, `system.text_log`, `system.processes`)에 저장되기 전에 적용됩니다.
