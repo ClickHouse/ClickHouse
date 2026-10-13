@@ -51,43 +51,41 @@ class RestorerFromBackup;
  *
  * Shadowing. An own entity is shadowed when any of its claim keys is also claimed by an inherited entity of
  * the same kind: a resource by a resource claiming its name or a role, a workload by a workload of its name.
- * A shadowed entity stays stored in its layer, but it is not visible. When the inherited entity goes away,
- * the shadowed entity becomes visible again. Shadowing always hides the whole entity, never a part of it.
- * A workload shadowed by an inherited workload of the same name keeps its own children: they attach to the
- * inherited workload. A workload whose parent is not a visible workload (e.g. the parent is hidden) is
- * hidden as well, repeatedly until nothing changes, so a visible workload always has a visible parent. So
- * the visible entities are the inherited entities plus the own entities that are neither shadowed nor
- * hidden; an inherited workload is hidden only if its parent is unknown to the inner layer (see
- * "References"). `FOR` clauses do not hide entities: a visible workload may name a hidden resource in its
- * `FOR` clause, and such settings apply to no resource.
+ * A shadowed entity stays stored in its layer but is not visible; it becomes visible again when the
+ * inherited entity goes away. Shadowing always hides the whole entity, never a part of it. The children of
+ * a workload shadowed by an inherited workload of the same name attach to the inherited workload. A workload
+ * whose parent is not a visible workload (e.g. the parent is hidden) is hidden as well, transitively, so a
+ * visible workload always has a visible parent. The visible entities are the inherited entities plus the own
+ * entities that are neither shadowed nor hidden. `FOR` clauses do not hide entities: a visible workload may
+ * name a hidden resource in its `FOR` clause, and such settings apply to no resource.
  *
  * Conflict. Two own entities of one layer that share a claim key, an own entity and an inherited entity of
  * another kind with the same name, or a SQL statement whose entity shares a claim key with an inherited
- * entity. `storeEntity` rejects conflicts with an exception: it checks the new entity against all own
- * entities (hidden ones included) and inherited entities. Loading the configuration rejects conflicts between its entities
- * with an exception, so a bad configuration reload is not applied. Persisted layers (Keeper, disk) may hold
- * conflicting entities written by older versions, so loading them never fails because of a conflict: of the
- * conflicting own entities the one with the lexicographically smaller name wins, the others are hidden, and
- * an error is logged naming them. An own entity that conflicts with an inherited entity of another kind
- * (after a load of either layer) is hidden, and an error is logged naming both entities and their layers.
- * Other overlap of a loaded entity with inherited entities is not a conflict: the loaded entity is shadowed.
- * As a result, the visible entities of every layer never conflict.
+ * entity. `storeEntity` rejects conflicts with an exception, checking the new entity against all own entities
+ * (hidden ones included) and inherited entities. Loading the configuration rejects conflicts between its
+ * entities with an exception, so a bad configuration reload is not applied. Persisted layers (Keeper, disk)
+ * may hold conflicting entities written by older versions, so loading them never fails because of a
+ * conflict: among conflicting own entities the one with the lexicographically smaller name wins and the
+ * others are hidden, with an error in the log naming them. An own entity that conflicts with an inherited
+ * entity of another kind (after a load of either layer) is hidden, with an error in the log naming both
+ * entities and their layers. Any other overlap of a loaded entity with inherited entities is not a conflict:
+ * the loaded entity is shadowed. Hence the visible entities of a layer never conflict.
  *
  * Implicit entities. Entities synthesized by the implicit layer from the server configuration (see
  * `ImplicitWorkloadEntitiesConfig`): the resources `__server_cpu__` (MASTER THREAD, WORKER THREAD) and
  * `__server_memory__` (MEMORY RESERVATION) and the workload `default`. They are own entities of the
  * implicit layer, so any user entity claiming the same name or role shadows them, or hides them by a
- * conflict if it is of another kind (e.g. a user resource `default`). The names of the implicit
- * resources are reserved: user entities with these names are rejected by SQL statements and by the
- * configuration. A persisted layer (Keeper, disk) may hold such an entity written by an older version: it is
- * loaded hidden, with an error in the log, and can be dropped.
+ * conflict if it is of another kind (e.g. a user resource `default`). The names of the implicit resources
+ * are reserved: SQL statements and the configuration reject user entities with these names. A persisted
+ * layer (Keeper, disk) may hold such an entity written by an older version: it is loaded hidden, with an
+ * error in the log, and can be dropped.
  *
  * Root workload. The workload entity with the empty name `""`. It is the parent of every workload without
  * an explicit parent, and its settings are the per-resource root limits (e.g. `max_concurrent_threads =
  * 8 FOR __server_cpu__`). It has no SQL text form, since an empty identifier cannot be parsed. Only the
  * implicit layer provides it, deriving it from its visible entities; user entities with the empty name are
- * rejected. The resource manager never creates a workload node for it: it applies its settings to the root
- * node of every resource.
+ * rejected. The resource manager creates no workload node for it and applies its settings to the root node
+ * of every resource.
  *
  * Events and transactions. Subscribers of a layer receive changes of its visible entities only. Every
  * change in any layer (a SQL statement, a load or reload, a change of the implicit entities) is turned by
@@ -97,34 +95,33 @@ class RestorerFromBackup;
  * Transactions of a layer, including the initial snapshot passed to a new subscriber, are delivered one at
  * a time in the order they were produced (see `notify_mutex` in WorkloadEntityStorageBase.h). Handlers are
  * called without the layer's state lock, except on the Keeper refresh paths (the watching thread, loading,
- * and the retry of `storeEntity`), where `WorkloadEntityKeeperStorage` still holds its lock. So a handler
- * must not call back into the layer that notifies it.
+ * and the retry of `storeEntity`), where `WorkloadEntityKeeperStorage` holds its lock. Hence a handler must
+ * not call back into the layer that notifies it.
  *
  * References. A workload references its parent workload and the resources named in its `FOR` clauses.
  * A name resolves to the inherited entity first, as the user sees it, then to the own entity; an own entity
  * shadowed by name is of the same kind, so the kind of the target does not depend on shadowing. A layer
  * validates references of a new entity against its own and inherited entities, so it cannot reference
- * entities of an outer layer. In particular, persisted SQL entities cannot reference implicit entities (an
- * implicit `default` cannot have children and a `FOR` clause cannot name an implicit resource), and the
- * configuration references only its own entities. As every reference points into the same or an inner layer,
- * a parent cycle cannot go through several layers. `storeEntity` rejects an entity
- * of another kind than an existing reference to its name expects (e.g. a resource named as a parent), and
- * `removeEntity` rejects dropping an entity referenced by a visible or own entity. The cycle check of
- * `storeEntity` walks the references of both the own and the inherited entity of every name, not only of
- * visible ones, so a hidden entity cannot hide a cycle that appears once it is visible.
- * Loading the configuration rejects the whole reload, keeping the previous entities, if a parent or a `FOR`
- * target does not exist in the configuration or is of the wrong kind, or if its workloads form a parent
+ * entities of an outer layer: persisted SQL entities cannot reference implicit entities (an implicit
+ * `default` cannot have children and a `FOR` clause cannot name an implicit resource), and the
+ * configuration references only its own entities. Hence a parent cycle cannot span several layers.
+ * `storeEntity` rejects an entity of another kind than an existing reference to its name expects (e.g. a
+ * resource named as a parent), and `removeEntity` rejects dropping an entity referenced by a visible or own
+ * entity. The cycle check of `storeEntity` walks the references of both the own and the inherited entity of
+ * every name, not only of visible ones, so a hidden entity cannot hide a cycle that appears once it is
+ * visible. Loading the configuration rejects the whole reload, keeping the previous entities, if a parent or
+ * a `FOR` target is missing in the configuration or is of the wrong kind, or if its workloads form a parent
  * cycle. Loading persisted data (Keeper, disk) never fails because of references: a workload with a missing
  * or wrong-kind parent is hidden, a `FOR` clause naming no resource applies to no resource, and every
  * workload on a parent cycle is hidden with an error in the log.
  *
  * Writes, backup and restore. `storeEntity`, `removeEntity`, `backup` and `restore` are served by the SQL
  * layer: the implicit layer forwards them, and the configuration is read-only. Implicit entities cannot be
- * dropped, even while shadowed: they are defined by the server settings. A backup contains only the
- * own entities of the SQL layer, hidden ones included: configuration entities belong to the server
+ * dropped, even while shadowed: they are defined by the server settings. A backup contains only the own
+ * entities of the SQL layer, hidden ones included: configuration entities belong to the server
  * configuration, and implicit entities are synthesized from it. A restore recreates the entities of a backup
- * in the SQL layer through `storeEntity`, as SQL statements, so a backed up entity that is rejected by a SQL
- * statement now (for example a hidden one) fails the restore.
+ * in the SQL layer through `storeEntity`, as SQL statements, so a backed up entity that a SQL statement
+ * rejects at restore time (e.g. a hidden one) fails the restore.
  *
  * Source. `getEntitySource` returns the name of the layer that owns a visible entity, e.g. `implicit`,
  * `keeper`, `disk` or `configuration`. It is shown in the `source` column of `system.workloads` and

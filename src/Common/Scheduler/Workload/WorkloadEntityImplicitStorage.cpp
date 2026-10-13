@@ -185,8 +185,7 @@ bool WorkloadEntityImplicitStorage::removeEntity(
     if (getNextStorage()->removeEntity(current_context, entity_type, entity_name, /* throw_if_not_exists = */ false))
         return true;
 
-    // An implicit entity cannot be dropped even while shadowed: it stays defined by the server settings and becomes
-    // visible again when the shadowing entity goes away
+    // An implicit entity cannot be dropped, even while shadowed
     if (definesEntity(entity_name, entity_type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Workload entity '{}' cannot be dropped: it is an implicit entity defined by the server setting `{}`",

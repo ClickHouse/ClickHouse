@@ -109,13 +109,13 @@ bool resourceUnitChanged(const ASTPtr & before, const ASTPtr & after)
     return before_resource && after_resource && before_resource->unit != after_resource->unit;
 }
 
-/// Throws if `entity_name` cannot be used for a user entity (SQL, configuration, Keeper or disk).
-/// The empty name denotes the root workload; the names of implicit resources are reserved.
 bool isReservedEntityName(const String & entity_name)
 {
     return entity_name == IMPLICIT_CPU_RESOURCE_NAME || entity_name == IMPLICIT_MEMORY_RESOURCE_NAME;
 }
 
+/// Throws if `entity_name` cannot be used for a user entity (SQL, configuration, Keeper or disk).
+/// The empty name denotes the root workload; the names of implicit resources are reserved.
 void checkUserEntityName(const String & entity_name)
 {
     if (entity_name.empty())
@@ -348,8 +348,7 @@ struct EntityChange
         {
             auto type_before = getEntityType(before);
             auto type_after = getEntityType(after);
-            // If type or cost unit changed (e.g. an inherited entity of another kind hides an own one by a conflict),
-            // we have to remove an old entity and add a new one
+            // Type or cost unit changed, e.g. an inherited entity of another kind hides an own one by a conflict
             if (recreates())
                 return {{type_before, name, {}}, {type_after, name, after}};
             else
@@ -591,8 +590,7 @@ bool WorkloadEntityStorageBase::storeEntity(
         checkClaimConflicts(entity_name, create_entity_query);
         checkInboundReferences(entity_name, create_entity_query);
 
-        // References are resolved within own and inherited entities, inherited first, so entities of outer layers
-        // cannot be referenced
+        // Targets are looked up in own and inherited entities only, so entities of outer layers cannot be referenced
         forEachReference(create_entity_query,
             [this, workload] (const String & target, const String & source, ReferenceType type)
             {
@@ -838,7 +836,7 @@ void WorkloadEntityStorageBase::checkClaimConflicts(const String & entity_name, 
 
 void WorkloadEntityStorageBase::checkInboundReferences(const String & entity_name, const ASTPtr & entity) const
 {
-    // E.g. a hidden persisted workload may name a parent that does not exist yet
+    // Own entities are checked too: e.g. a hidden persisted workload may name a parent that does not exist yet
     const bool is_resource = getEntityType(entity) == WorkloadEntityType::Resource;
     for (const auto * layer_entities : {&own_entities, &inherited_entities})
     {
@@ -918,8 +916,7 @@ void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recu
             inherited_claims.emplace(std::move(key), entity_name);
     }
 
-    // Visible entities are inherited entities plus own entities that are neither shadowed nor conflicting.
-    // An inherited entity of another kind with the same name is a conflict, not shadowing.
+    // An inherited entity of another kind with the same name is a conflict, not shadowing
     std::unordered_map<String, ASTPtr> new_visible_entities = inherited_entities;
     std::unordered_set<String> new_shadowed_entities;
     for (const auto & [entity_name, entity] : own_entities)
@@ -969,8 +966,7 @@ void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recu
     }
     conflicting_entities = std::move(new_conflicting_entities);
 
-    // A workload whose parent is not a visible workload is hidden as well (until a fixpoint), so that the visible
-    // entities never have a workload without its parent.
+    // Hide workloads whose parent is not a visible workload, until a fixpoint
     std::unordered_set<String> new_orphaned_entities;
     for (bool changed = true; changed;)
     {
@@ -1033,7 +1029,6 @@ void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recu
 
     updateRoleResources();
 
-    // Notify subscribers
     unlockAndNotify(lock, tx);
 }
 
@@ -1094,7 +1089,7 @@ void WorkloadEntityStorageBase::setOwnEntities(const std::vector<std::pair<Strin
     }
 
     // Conflicts between own entities reject the load, or are resolved in `updateVisibleEntities` for persisted
-    // data written earlier. Overlap with inherited entities is resolved by shadowing.
+    // data. Overlap with inherited entities is resolved by shadowing.
     if (on_conflict == OnOwnConflict::Throw)
     {
         std::map<ClaimKey, String> own_claims;
@@ -1210,8 +1205,7 @@ std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::getAllEntities
 
 bool WorkloadEntityStorageBase::isIndirectlyReferenced(const String & target, const String & source) const
 {
-    // Walk the references of both the own and the inherited entity of every name, not only of visible ones:
-    // a hidden own entity becomes visible again later, together with its references
+    // Hidden own entities are walked too: they may become visible again, together with their references
     std::queue<String> bfs;
     std::unordered_set<String> visited;
     visited.insert(source);

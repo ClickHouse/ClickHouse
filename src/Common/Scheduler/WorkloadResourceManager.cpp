@@ -309,7 +309,6 @@ void WorkloadResourceManager::createOrUpdateWorkload(const String & workload_nam
     std::unique_lock lock{mutex};
     if (workload_name.empty())
     {
-        // The root workload entity configures the root node of every resource and has no node of its own
         root_workload_entity = ast;
         for (auto & [resource_name, resource] : resources)
             resource->updateRootSettings(getRootSettings(*resource));
@@ -508,9 +507,8 @@ void WorkloadResourceManager::Resource::updateRootSettings(const WorkloadSetting
 {
     executeInSchedulerThread([&, this]
     {
-        // The implicit root is an internal node with no explicit parent/priority, so its update never
-        // requires detach (see `updateRequiresDetach`): a `max_*` change is an in-place numeric update
-        // that creates, updates, or removes the root constraint without reparenting.
+        // The implicit root has no parent or priority to change, so the update never requires detach
+        // (see `updateRequiresDetach`)
         if (auto root = implicitRoot())
         {
             root->updateSchedulingSettings(root_settings);

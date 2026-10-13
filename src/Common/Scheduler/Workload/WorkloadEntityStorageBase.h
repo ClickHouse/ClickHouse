@@ -93,7 +93,7 @@ protected:
     enum class OnOwnConflict
     {
         Throw, /// The load is rejected (configuration)
-        Hide, /// The entity with the smaller name wins, the others are hidden (persisted data written earlier)
+        Hide, /// The entity with the smaller name wins, the others are hidden (persisted data)
     };
 
     /// Replaces own entities with loaded `new_entities` (configuration, Keeper or disk) and notifies subscribers
@@ -109,8 +109,8 @@ protected:
     /// Whether this layer owns the implicit entities, whose names are reserved for all other layers
     virtual bool ownsImplicitEntities() const { return false; }
 
-    /// Adds entities derived from the visible entities (own entities that are not shadowed plus inherited
-    /// ones) to `visible_entities`. Called with the lock held on every change of own or inherited entities.
+    /// Adds entities derived from the other visible entities (e.g. the root workload) to `visible_entities`.
+    /// Called with the lock held on every change of own or inherited entities.
     virtual void addDerivedEntities(std::unordered_map<String, ASTPtr> & /*visible_entities*/) const {}
 
     /// Inner layer of the chain, if any.
@@ -149,7 +149,7 @@ private:
     /// Throws if references of loaded `new_own_entities` are broken (see "References" in IWorkloadEntityStorage.h)
     void checkLoadedReferences(const std::unordered_map<String, ASTPtr> & new_own_entities) const;
 
-    /// Notify subscribers about changes describe by vector of events `tx`. Takes `notify_mutex` before unlocking
+    /// Notify subscribers about changes described by vector of events `tx`. Takes `notify_mutex` before unlocking
     /// `lock`, so transactions are delivered in the order they were computed.
     void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, const std::vector<Event> & tx);
 

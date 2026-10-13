@@ -2602,7 +2602,7 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByRole)
     EXPECT_TRUE(t.manager->hasResource("cfg_cpu"));
     EXPECT_EQ(t.storage.getEntitySource("cfg_cpu"), "configuration");
     EXPECT_EQ(t.storage.getEntitySource("sql_cpu"), "");
-    // Shadowing hides the whole entity: WORKER THREAD is not served by `sql_cpu` any longer
+    // Shadowing hides the whole entity: WORKER THREAD is not served by `sql_cpu` either
     EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cfg_cpu");
     EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
 
@@ -2654,7 +2654,7 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByName)
     t.loadConfig("CREATE RESOURCE res (WRITE DISK d2); CREATE WORKLOAD cfg SETTINGS max_io_requests = 1 FOR res");
     t.query("DROP RESOURCE res");
     EXPECT_EQ(t.storage.getEntitySource("res"), "configuration");
-    EXPECT_THROW(t.query("DROP RESOURCE res"), DB::Exception); // read-only now
+    EXPECT_THROW(t.query("DROP RESOURCE res"), DB::Exception); // only the configuration resource is left
     t.loadConfig("");
     EXPECT_FALSE(t.storage.has("res"));
 }
