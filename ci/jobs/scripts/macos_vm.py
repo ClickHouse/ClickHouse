@@ -119,9 +119,20 @@ class VM:
     def start(self):
         logf = open(self.home / f"{self.name}.log", "w")
         self.proc = subprocess.Popen([tart_bin(), "run", "--no-graphics", self.name], stdout=logf, stderr=subprocess.STDOUT)
-        self.ip = tart("ip", "--wait", "180", self.name, capture=True)
-        log(f"{self.name} is up at {self.ip}")
-        return self
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
+            assert self.proc.poll() is None, f"`tart run {self.name}` exited with {self.proc.returncode}:\n{self.run_log()}"
+            for resolver in ("dhcp", "arp", "agent"):
+                ip = subprocess.run([tart_bin(), "ip", "--resolver", resolver, self.name], capture_output=True, text=True)
+                if ip.returncode == 0 and ip.stdout.strip():
+                    self.ip = ip.stdout.strip()
+                    log(f"{self.name} is up at {self.ip} (resolver {resolver})")
+                    return self
+            time.sleep(5)
+        raise AssertionError(f"no IP for {self.name} after 300 s; last `tart ip`: {ip.stderr.strip()}\n{self.run_log()}")
+
+    def run_log(self):
+        return (self.home / f"{self.name}.log").read_text(errors="replace")[-4000:]
 
     def _ssh_args(self):
         return ["-i", str(self.key), "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
