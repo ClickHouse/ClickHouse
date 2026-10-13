@@ -101,8 +101,6 @@ public:
         UInt64 dimensions = params.getUInt("dimensions");
         String model(arguments[model_arg_index].column->getDataAt(0));
 
-        /// Shared with the submitted requests so each one is self-contained and nothing dangles
-        /// even if this call stops waiting for a future it handed out.
         std::shared_ptr<IAIProvider> provider = createAIProvider(
             params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
         if (!provider->supportsEmbeddings())

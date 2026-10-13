@@ -129,7 +129,7 @@ struct AIEmbeddingResponse
     UInt64 input_tokens = 0;
 
     /// Always 0: embedding endpoints produce no output tokens.
-    UInt64 output_tokens = 0;
+    const UInt64 output_tokens = 0;
 };
 
 /** Abstract interface for AI provider HTTP clients.

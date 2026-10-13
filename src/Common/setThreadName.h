@@ -9,6 +9,7 @@ namespace DB
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
     M(AGGREGATOR_POOL, "AggregatorPool") \
+    M(AI_REQUEST, "AIRequest") \
     M(ARROW_FILE, "ArrowFile") \
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
@@ -185,7 +186,6 @@ namespace DB
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
     M(DISTRIBUTED_CACHE, "DistribCache") \
     M(DISTRIBUTED_CACHE_DROP, "DropDistCache") \
-    M(AI_REQUEST, "AIRequest") \
 
 
 enum class ThreadName : uint8_t

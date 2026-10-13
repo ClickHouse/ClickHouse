@@ -10378,7 +10378,7 @@ Maximum number of texts to include in a single HTTP request made by the embeddin
     DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_thread, 8, R"(
 Maximum number of provider requests one query thread has in flight at the same time. `1` issues requests one at a time.
 
-A query running on several threads (at most `max_threads`) can have up to this many requests in flight per thread. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per thread.
+A query running on several threads (at most `max_threads`) can have up to this many requests in flight per thread. Use a [settings profile constraint](/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per thread.
 
 A value above `1` loosens two guarantees:
 
