@@ -59,15 +59,17 @@ public:
     /// Who borrowed this worker last: the user, and the roles the query ran with.
     ///
     /// A pooled region is not cleared between borrows, and a pool serves the queries of every
-    /// user: what one query left in the region, the command can read while serving the next.
-    /// Over the pipes a command only ever saw what it was sent. The borrower's identity is what
+    /// user: what one query left in the region is there while the command serves the next. The
+    /// command saw it anyway, so clearing it does not hide it from the command; it keeps a command
+    /// that is wrong - one that answers with a stale offset, or reads past its input - from handing
+    /// it to another user's query without an error. The borrower's identity is what
     /// tells "the next query" from "a query of somebody else": a borrow by a different one scrubs
     /// the region (`scrubRegionForBorrower`), a borrow by the same one does not pay for it. The
     /// identity is the user's id and the current roles, not the user's name, for the reasons the
     /// query result cache keys its entries by the same pair (`QueryResultCache::Key`): a user
     /// created under the name of a dropped one is not the dropped one, and the roles of one user
     /// can be tied to different row policies, so what a query saw under one set of roles must not
-    /// be readable by the command under another.
+    /// end up in the result of a query under another.
     struct BorrowerIdentity
     {
         std::optional<UUID> user_id;

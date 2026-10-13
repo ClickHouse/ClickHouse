@@ -55,8 +55,8 @@ namespace DB
   * as `/proc/self/fd/N`. That keeps the command's side of the protocol exactly what it was - open a
   * path, `mmap` it - and it means the region has to exist before the process is started.
   *
-  * It also means the region can only grow. `grow` extends the file with `posix_fallocate` (which
-  * both lengthens it and commits its pages, and undoes itself on failure) and replaces the server's
+  * It also means the region can only grow. `grow` extends the file with `posix_fallocate` over the
+  * new part (which both lengthens the file and commits those pages, and undoes itself on failure) and replaces the server's
   * mapping; the command, which maps the whole file on every request, sees the new size. There is
   * no `shrink`: the seal forbids it, and a pooled region therefore stays as large as the largest
   * chunk it ever held for as long as its worker lives. `shared_memory_max_size` is what a worker
@@ -140,8 +140,8 @@ public:
     size_t footprint() const { return footprint_size; }
 
     /// The length up to which the server itself has committed the file's pages: at creation and
-    /// at every growth of its own (`posix_fallocate` over the whole length). Never raised by what
-    /// the command did to the file - it can extend the file without committing a page
+    /// at every growth of its own (`posix_fallocate` from the previous such length to the new one).
+    /// Never raised by what the command did to the file - it can extend the file without committing a page
     /// (`ftruncate`), and a length only observed says nothing about the pages under it. So this
     /// is the one baseline from which the cost of the server's next `posix_fallocate` can be
     /// bounded: the pages between here and the new length, at most, whatever the command did
@@ -149,16 +149,16 @@ public:
     size_t reservedSize() const { return reserved_size; }
 
     /// What committing the file's pages up to `length` - a growth to it, or mapping it whole -
-    /// could add to the footprint, in whole pages. The footprint says how many pages the file
-    /// holds, not where: the pages between what the server itself committed (`reservedSize`) and
-    /// `length` may all be missing (a command can extend the file without committing a page),
-    /// while pages the command committed past the end are in the footprint too, and the fill adds
-    /// to them rather than uses them. How many of those there are at least is what the file holds
-    /// beyond what the server committed - as if none of the server's own pages had been freed by
-    /// the command - so the footprint after the fill is at least `length` plus those, and that
-    /// is the figure. Pages the command freed and replaced with pages past the end hide from this
-    /// (the count is the same), and by at most what the server committed - which the region was
-    /// charged for; the next re-read after the fill finds them.
+    /// could add to the footprint, in whole pages. The fill commits the pages between what the
+    /// server itself committed (`reservedSize`) and `length`, and they may all be missing (a
+    /// command can extend the file without committing a page). The footprint says how many pages
+    /// the file holds, not where: pages the command committed past the end are in it too, and the
+    /// fill may add to them rather than use them. So the file holds at most what it holds now plus
+    /// the whole range after the fill, which is the figure (whole pages, so measured from
+    /// `reservedSize` rounded up). Pages the command freed below `reservedSize` stay free, so they
+    /// only make the fill cost less, except for the one page `reservedSize` ends in when it is not
+    /// page-aligned: the fill starts inside it and commits it again if the command freed it. The
+    /// next re-read after the fill finds that page.
     size_t fillCostUpTo(size_t length) const
     {
         const size_t reserved = roundUpToPages(reserved_size);

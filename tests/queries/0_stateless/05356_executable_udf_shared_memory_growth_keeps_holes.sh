@@ -2,10 +2,12 @@
 # Tags: no-darwin
 # - no-darwin: shared-memory regions for executable UDFs are supported only on Linux
 
-# A growth of the region is bounded before it commits anything, but the bound cannot see pages the
-# command freed inside the file and replaced with as many pages past its end: the growth commits the
-# freed ones again, and the footprint ends up past `shared_memory_max_size`. The cap is checked again
-# after the growth, so the query fails rather than going on with a region past it.
+# A growth of the region commits only the pages past what the server itself last committed, not the
+# file from its start: pages the command freed inside the file stay free. The command here frees
+# every page but the first, commits as many pages past the length it then asks for, and asks for a
+# region of the cap. Committing the whole file again would refill the freed pages on top of the ones
+# past the end and take the footprint past the cap; committing only the new part keeps it at the cap,
+# so the query succeeds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,5 +26,6 @@ shm_require_base_pages
     echo "<command>shm_udf_region.py --hide-holes-then-ask 32768</command></function>"
 } | shm_functions
 
-shm_local "SELECT shm_hide_holes_then_ask(1);"
-shm_output_contains "past shared_memory_max_size (32768 bytes): its process freed pages inside the region"
+shm_local "
+    SELECT shm_hide_holes_then_ask(1);
+    SELECT size, committed <= 32768 FROM shm_regions;"

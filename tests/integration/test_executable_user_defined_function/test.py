@@ -835,7 +835,9 @@ def test_shared_memory_udf_idle_pooled_region_counts_against_the_server_limit(st
             node.query(f"SELECT {second}(1) FORMAT Null")
         assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value), str(exc.value)
         assert "total" in str(exc.value), str(exc.value)
-        # ... before it is created: refused is refused, not created and then rolled back.
+        # ... and the refusal leaves no second region behind. That the charge comes before the
+        # region is created (`acquireRegion`) is not observable from here: a region created and
+        # torn down again in between would look the same.
         assert shm_region_sizes().count(region_size) == 1
 
         # Once the first pool is dropped, its region and charge go with it, and the second region

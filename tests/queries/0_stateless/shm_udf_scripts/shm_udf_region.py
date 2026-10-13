@@ -50,8 +50,8 @@ parser.add_argument("--hide-holes", action="store_true")
 # While the file is shorter than the given number of bytes: frees every page of it but the first and
 # commits as many pages past that many bytes - the same number of pages, so a server that measures the
 # region by their count sees nothing - and asks for a region of that many bytes (`NEED_MORE_SPACE`).
-# The growth commits the freed pages again on top of the ones past the end, which no bound computed
-# before it can see.
+# The growth commits only the pages from what the server last committed to the new length, so the
+# freed pages stay free and the footprint stays within what the bound computed before it allowed.
 parser.add_argument("--hide-holes-then-ask", type=int, metavar="BYTES")
 # Answers every row with the size of the region's file, writes the answer at the very end of that file,
 # and, once, extends the file to the given size after answering - so that this request reports the

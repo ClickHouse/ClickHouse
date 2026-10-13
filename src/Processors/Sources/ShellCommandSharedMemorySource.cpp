@@ -1128,7 +1128,7 @@ namespace
             /// charged. Not the length of the file either: a file the command extended is longer
             /// than what was committed, and the growth commits the difference.
             ///
-            /// `posix_fallocate` commits every page of the file that is not committed, and the
+            /// `posix_fallocate` commits every page of that range that is not committed, and the
             /// footprint says how many pages the file holds but not where: pages the command
             /// committed past the end of the file (`refreshFootprint`) may lie inside that range -
             /// then this growth commits less, and those pages are already charged - or beyond it,
@@ -1136,10 +1136,11 @@ namespace
             /// take a page-by-page walk the file does not offer (`mincore` and `SEEK_HOLE` do not
             /// see reserved pages), so the bound is what is charged (see `QueryMemoryCharge`) - a
             /// moment of double counting for the pages the command committed just past the end,
-            /// and only those. The one thing the bound does not cover is a page the command freed
-            /// inside the file (`FALLOC_FL_PUNCH_HOLE`): the growth commits it again, and it is
-            /// charged after the fact, once the re-read finds it - the command that punched the
-            /// hole pays for it with its own query's limit.
+            /// and only those. Pages the command freed inside the file (`FALLOC_FL_PUNCH_HOLE`)
+            /// below that range stay free: the growth does not commit them again. The one page the
+            /// bound does not cover is the one `reservedSize` ends in when it is not page-aligned:
+            /// the range starts inside it, so if the command freed it, the growth commits it again,
+            /// and it is charged after the fact, once the re-read finds it.
             ///
             /// Re-read now, not taken from the last hand-over: a request that comes back asking for
             /// a larger region (`NEED_MORE_SPACE`) comes back from a command that had the region to
@@ -1311,7 +1312,7 @@ namespace
             if (settled < growth.charged)
                 query_memory_charge.uncharge(growth.charged - settled);
             /// More than the bound (a punched page that `posix_fallocate` committed again before
-            /// the remap failed, see `ensureRegionFits`): those pages are in the file, which cannot
+            /// the remap failed, or pages the command committed meanwhile, see `ensureRegionFits`): those pages are in the file, which cannot
             /// shrink, so the query pays for them as on the path where the growth succeeds.
             else if (settled > growth.charged)
                 query_memory_charge.chargeNoThrow(settled - growth.charged);
@@ -1344,10 +1345,11 @@ namespace
             }
         }
 
-        /// The bound a growth is charged and checked against (`SharedMemoryRegion::fillCostUpTo`) cannot
-        /// see pages the command freed inside the file and replaced with pages past its end: the count
-        /// is the same, and the growth commits the freed ones again. So the cap is checked once more
-        /// against the footprint after the growth - when the pages are already committed (and charged),
+        /// The bound a growth is charged and checked against (`SharedMemoryRegion::fillCostUpTo`) is
+        /// computed from a footprint read before the growth: it cannot see pages the command commits
+        /// after that read, nor a freed page in the one page `reservedSize` ends in, which the growth
+        /// commits again (see `ensureRegionFits`). So the cap is checked once more against the
+        /// footprint after the growth - when the pages are already committed (and charged),
         /// but before anything is built on them: the query fails, and the worker goes with its region,
         /// rather than the region being used past the cap for the rest of the borrow.
         void throwIfGrowthWentPastTheCap(size_t footprint_after) const
@@ -1355,8 +1357,8 @@ namespace
             if (footprint_after > shared_memory_max_footprint)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Growing the shared-memory region of an executable UDF took its footprint to {} bytes, past "
-                    "shared_memory_max_size ({} bytes): its process freed pages inside the region that the growth "
-                    "committed again; the process and its region are discarded",
+                    "shared_memory_max_size ({} bytes): its process changed the pages of the region while it was "
+                    "growing; the process and its region are discarded",
                     footprint_after, shared_memory_max_size);
         }
 
@@ -1392,8 +1394,8 @@ namespace
             /// before it is mapped. May throw the memory limit, in which case nothing has been
             /// touched yet and the worker keeps its region. And for what mapping the file whole is
             /// about to commit, at most: the growth below
-            /// `posix_fallocate`s the file up to its length, and the pages between the length the
-            /// server itself last committed and that length may all be missing - a command can
+            /// `posix_fallocate`s the file from the length the server itself last committed up to
+            /// its length, and the pages in between may all be missing - a command can
             /// extend the file without committing a page - while the footprint may consist of pages
             /// the command committed past the end, which the fill adds to rather than uses (that
             /// is what `isOverTheCap` has just ruled out going past the cap).
@@ -1414,9 +1416,8 @@ namespace
                 }
 
                 /// Settled both ways, like a growth (`ensureRegionFits`): what the fill did not need
-                /// is given back, and pages the command freed under the length and replaced past it
-                /// - which the bound cannot see, the count being the same - are charged now that
-                /// the re-read sees them.
+                /// is given back, and what the bound could not see is charged now that the re-read
+                /// sees it.
                 const size_t footprint_after = region.refreshFootprint();
                 query_memory_charge.settle(footprint + fill, footprint_after);
                 try
@@ -1473,10 +1474,13 @@ namespace
 
         /// Clears the region when this borrow belongs to a different user, or to the same user
         /// under different roles, than the previous one (`ShellCommandHolder::BorrowerIdentity`).
-        /// What a query wrote into a pooled region stays there until overwritten, and the command
-        /// serving the next query can read it - over the pipes it only ever saw what it was sent.
-        /// That boundary is where it matters, and the cost is paid only there: nothing when the
-        /// borrower is the same. The whole file and not just what the server knows it used: the
+        /// What a query wrote into a pooled region stays there until overwritten. This does not hide
+        /// anything from the command: it was sent that input and could have kept it. It guards
+        /// against a command that is merely wrong - one that answers with an offset into what the
+        /// previous request left there, or reads past its input - and would otherwise hand one
+        /// user's data to another without an error; after the scrub it finds zeros. That boundary
+        /// is where it matters, and the cost is paid only there: nothing when the borrower is the
+        /// same. The whole file and not just what the server knows it used: the
         /// command may have written anywhere in it, and only clearing everything says anything
         /// about all of it - and by now the whole file is mapped (`takeOverReusedRegion`), so the
         /// region is the file.

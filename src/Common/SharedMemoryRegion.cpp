@@ -120,8 +120,8 @@ void observeBackingUnit(size_t bytes)
     }
 }
 
-/// `posix_fallocate` of the file up to `size`. Returns the error, which `posix_fallocate` returns
-/// rather than sets in `errno`; 0 on success.
+/// `posix_fallocate` of the file from `offset` up to `size`. Returns the error, which `posix_fallocate`
+/// returns rather than sets in `errno`; 0 on success.
 ///
 /// Before Linux 6.12 `shmem_fallocate` gives up on *any* pending signal (`signal_pending`), not only
 /// a fatal one, and undoes every page it had committed - so a retry starts from the beginning, and a
@@ -133,9 +133,10 @@ void observeBackingUnit(size_t bytes)
 /// take seconds for a large region, and signals the server aims at this thread (the profiler's, the
 /// stack-trace collection of `system.stack_trace`) would wait that long - on a recent kernel, and on
 /// an old one that is not interrupted, for nothing.
-int fallocateUpTo(int fd, size_t size)
+int fallocateUpTo(int fd, size_t offset, size_t size)
 {
-    int fallocate_error = ::posix_fallocate(fd, 0, static_cast<off_t>(size));
+    const off_t length = static_cast<off_t>(size - offset);
+    int fallocate_error = ::posix_fallocate(fd, static_cast<off_t>(offset), length);
     if (fallocate_error != EINTR)
         return fallocate_error;
 
@@ -146,7 +147,7 @@ int fallocateUpTo(int fd, size_t size)
     SCOPE_EXIT({ pthread_sigmask(SIG_SETMASK, &previous_signals, nullptr); });
 
     do
-        fallocate_error = ::posix_fallocate(fd, 0, static_cast<off_t>(size));
+        fallocate_error = ::posix_fallocate(fd, static_cast<off_t>(offset), length);
     while (fallocate_error == EINTR);
     return fallocate_error;
 }
@@ -210,9 +211,9 @@ void unmapNoThrow(void * data, size_t size, const char * operation) noexcept
 /// The mount behind a `memfd` has no size limit, so the kernel does not refuse an oversized
 /// request up front: it keeps committing pages until the machine has none left. The only guard is
 /// the caller's, which charges the memory tracker for the size before asking for it.
-void reserveBackingStorage(int fd, size_t size, const char * operation)
+void reserveBackingStorage(int fd, size_t offset, size_t size, const char * operation)
 {
-    const int fallocate_error = fallocateUpTo(fd, size);
+    const int fallocate_error = fallocateUpTo(fd, offset, size);
     if (fallocate_error != 0)
         ErrnoException::throwWithErrno(
             ErrorCodes::CANNOT_ALLOCATE_MEMORY,
@@ -251,7 +252,7 @@ int createSealableProbeMemfd()
 /// page is not the machine running out of memory.
 void probeFallocate(int fd)
 {
-    const int fallocate_error = fallocateUpTo(fd, static_cast<size_t>(getPageSize()));
+    const int fallocate_error = fallocateUpTo(fd, 0, static_cast<size_t>(getPageSize()));
     if (fallocate_error != 0)
         ErrnoException::throwWithErrno(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -414,7 +415,7 @@ SharedMemoryRegion::SharedMemoryRegion(size_t size)
 
     try
     {
-        reserveBackingStorage(fd, size, "create");
+        reserveBackingStorage(fd, 0, size, "create");
 
         /// Sealed before it is handed to anyone. The seals are what makes the mapping below safe
         /// to write through for as long as the region lives.
@@ -463,12 +464,15 @@ void SharedMemoryRegion::grow(size_t new_size)
 
     /// Extends the file and commits the new pages in one call, and leaves the file untouched if it
     /// cannot. Growing is allowed by the seals - only shrinking is refused - so this is the one
-    /// thing about the file that changes after creation. Always, even when the file is already
-    /// long enough: it may have been made so by an earlier growth that then failed to map (whose
-    /// pages are committed, and this is a no-op) or by the command with a plain `ftruncate`, which
-    /// leaves a sparse tail whose pages are not - and the server is about to map and write them.
-    /// `posix_fallocate` over committed pages costs a walk, not a copy.
-    reserveBackingStorage(region_fd, new_size, "grow");
+    /// thing about the file that changes after creation. From what the server itself last
+    /// committed (`reservedSize`), even when the file is already long enough: the command may have
+    /// made it so with a plain `ftruncate`, which leaves a sparse tail whose pages are not committed
+    /// - and the server is about to map and write them. Not from the start of the file: that would
+    /// walk every page the region already has on every growth, and commit again the pages the
+    /// command freed inside it, taking the footprint past what `fillCostUpTo` bounded the growth by.
+    /// A page freed there is allocated on its next access, as it would be without a growth.
+    if (new_size > reserved_size)
+        reserveBackingStorage(region_fd, reserved_size, new_size, "grow");
     backing_size = std::max(backing_size, new_size);
     reserved_size = std::max(reserved_size, new_size);
     committed_size = std::max(committed_size, roundUpToPages(new_size));
@@ -514,7 +518,7 @@ size_t SharedMemoryRegion::releasePagesUpToLength()
 
 void SharedMemoryRegion::recommitUpToLength()
 {
-    reserveBackingStorage(region_fd, backing_size, "recommit");
+    reserveBackingStorage(region_fd, 0, backing_size, "recommit");
     reserved_size = std::max(reserved_size, backing_size);
 }
 

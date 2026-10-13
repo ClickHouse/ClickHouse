@@ -289,6 +289,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
+            .command_pipe_capacity = config.getUInt64(settings_config_prefix + ".command_pipe_capacity", 0),
             .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "log_last")),
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .is_executable_pool = false,
@@ -346,6 +347,7 @@ Setting fields:
 | `command_termination_timeout` | The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. Once the command has finished writing its output and `check_exit_code` is enabled, it is waited for until it exits, however long that takes, so that its exit code can be checked. Specified in seconds. Default value is `10`. Optional. |
 | `command_read_timeout` | Timeout for reading data from command stdout in milliseconds. Default value `10000`. Optional. |
 | `command_write_timeout` | Timeout for writing data to command stdin in milliseconds. Default value `10000`. Optional. |
+| `command_pipe_capacity` | Capacity in bytes requested for the pipes between the server and the command (`stdin`, `stdout`, `stderr`) with `F_SETPIPE_SZ`, limited by `/proc/sys/fs/pipe-max-size`. `0` keeps the kernel's default. Linux-only: has no effect elsewhere. Default value is `0`. Optional. |
 | `implicit_key` | The executable source file can return only values, and the correspondence to the requested keys is determined implicitly by the order of rows in the result. Default value is `false`. |
 | `execute_direct` | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](/reference/settings/server-settings/settings/user#user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional. |
 | `send_chunk_header` | Controls whether to send row count before sending a chunk of data to process. Default value is `false`. Optional. |
