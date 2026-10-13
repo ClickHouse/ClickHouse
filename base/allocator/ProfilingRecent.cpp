@@ -540,7 +540,7 @@ ALLOCATOR_NOINLINE void profilingRecentAllocDump(ThreadState & thread_state, Wri
     profiling_recent_alloc_mutex.unlock(&thread_state);
 
     emitter.begin();
-    uint64_t sample_interval = uint64_t(1U) << log2_profiling_sample;
+    uint64_t sample_interval = uint64_t(1U) << log2_profiling_sample.load(std::memory_order_relaxed);
     emitter.jsonKeyValue("sample_interval", EmitterType::Uint64, &sample_interval);
     emitter.jsonKeyValue("recent_alloc_max", EmitterType::Ssize, &dump_max);
     emitter.jsonArrayKeyValueBegin("recent_alloc");

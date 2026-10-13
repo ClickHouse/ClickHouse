@@ -128,7 +128,7 @@ int profilingPrefix(
 int profilingReset(
     ThreadState & thread_state, const size_t *, size_t, void * old_value, size_t * old_length_ptr, void * new_value, size_t new_length)
 {
-    size_t log2_sample = log2_profiling_sample;
+    size_t log2_sample = log2_profiling_sample.load(std::memory_order_relaxed);
 
     if (!(config::profiling && options.profiling))
         return ENOENT;
@@ -167,7 +167,7 @@ int profilingLog2Sample(
     void * new_value,
     size_t new_length)
 {
-    return readOnlyNoLockIf<size_t, [] { return config::profiling; }, [] { return log2_profiling_sample; }>(
+    return readOnlyNoLockIf<size_t, [] { return config::profiling; }, [] { return log2_profiling_sample.load(std::memory_order_relaxed); }>(
         thread_state, numeric_path, numeric_path_length, old_value, old_length_ptr, new_value, new_length);
 }
 

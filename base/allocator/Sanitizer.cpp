@@ -218,7 +218,11 @@ SanitizerBumpAlloc::alloc(ThreadState * thread_state, PageAllocator * page_alloc
         to_destroy = current_region;
         bool error = growLocked(thread_state, page_allocator, extent_hooks, guarded_size);
         if (error)
+        {
+            /// `growLocked` keeps the current region on failure. jemalloc overwrites it with NULL and leaks it.
+            to_destroy = nullptr;
             goto label_error;
+        }
     }
     else
     {
@@ -269,6 +273,10 @@ SanitizerBumpAlloc::alloc(ThreadState * thread_state, PageAllocator * page_alloc
 
 label_error:
     mutex.unlock(thread_state);
+    /// The split of the new region failed after the old one was replaced. jemalloc leaks the old region here; return
+    /// it to the retained cache instead.
+    if (to_destroy != nullptr)
+        extentRecord(thread_state, page_allocator, extent_hooks, &page_allocator->extent_cache_retained, to_destroy);
     return nullptr;
 }
 
@@ -280,10 +288,11 @@ bool SanitizerBumpAlloc::growLocked(ThreadState * thread_state, PageAllocator * 
     bool zeroed = false;
     size_t alloc_size = size > SANITIZER_BUMP_ALLOC_RETAINED_ALLOC_SIZE ? size : SANITIZER_BUMP_ALLOC_RETAINED_ALLOC_SIZE;
     ALLOCATOR_ASSERT((alloc_size & PAGE_MASK) == 0);
-    current_region = extentAllocWrapper(
+    Extent * region = extentAllocWrapper(
         thread_state, page_allocator, extent_hooks, nullptr, alloc_size, PAGE, zeroed, &committed, /* growing_retained */ true);
-    if (current_region == nullptr)
+    if (region == nullptr)
         return true;
+    current_region = region;
     return false;
 }
 

@@ -45,8 +45,8 @@ constinit Mutex * global_context_locks = nullptr;
 /// holding a tdata lock.
 constinit Mutex * thread_data_locks = nullptr;
 
-constinit size_t profiling_unbiased_size[SIZE_CLASS_NUM_SIZES] = {};
-constinit size_t profiling_shifted_unbiased_count[SIZE_CLASS_NUM_SIZES] = {};
+constinit std::atomic<size_t> profiling_unbiased_size[SIZE_CLASS_NUM_SIZES] = {};
+constinit std::atomic<size_t> profiling_shifted_unbiased_count[SIZE_CLASS_NUM_SIZES] = {};
 
 namespace
 {
@@ -544,15 +544,15 @@ void profilingUnbiasMapInit()
         /// With large size classes disabled, the unbiased calculation here is not as accurate as it was because usize
         /// now changes in a finer grain while the unbiased_sz is still calculated using the old way.
         double size = static_cast<double>(size_classes::indexToSizeUnsafe(i));
-        double rate = static_cast<double>(size_t(1) << log2_profiling_sample);
+        double rate = static_cast<double>(size_t(1) << log2_profiling_sample.load(std::memory_order_relaxed));
         double division_value = 1.0 - exp(-size / rate);
         double unbiased_size = size / division_value;
         /// The "true" right value for the unbiased count is 1.0/(1 - exp(-sz/rate)). The counts are kept as integers;
         /// to limit the rounding error, they are multiplied by the size of the smallest allocation.
         double count_shift = static_cast<double>(size_t(1) << SIZE_CLASS_LOG2_TINY_MIN);
         double shifted_unbiased_count = count_shift / division_value;
-        profiling_unbiased_size[i] = static_cast<size_t>(round(unbiased_size));
-        profiling_shifted_unbiased_count[i] = static_cast<size_t>(round(shifted_unbiased_count));
+        profiling_unbiased_size[i].store(static_cast<size_t>(round(unbiased_size)), std::memory_order_relaxed);
+        profiling_shifted_unbiased_count[i].store(static_cast<size_t>(round(shifted_unbiased_count)), std::memory_order_relaxed);
     }
 }
 
@@ -576,7 +576,7 @@ void profilingDoUnbias(uint64_t c_out_shifted_i, uint64_t s_out_i, uint64_t * re
     /// c_out is taken in a shifted form (see `profilingUnbiasMapInit`).
     double c_out = static_cast<double>(c_out_shifted_i) / static_cast<double>(size_t(1) << SIZE_CLASS_LOG2_TINY_MIN);
     double s_out = static_cast<double>(s_out_i);
-    double R = static_cast<double>(size_t(1) << log2_profiling_sample);
+    double R = static_cast<double>(size_t(1) << log2_profiling_sample.load(std::memory_order_relaxed));
 
     double x = s_out / c_out;
     double y = s_out * (1.0 - exp(-x / R));
@@ -852,7 +852,7 @@ void profilingDumpHeader(ProfilingDumpIterateArg * arg, const ProfilingCounters 
         arg->profiling_dump_write,
         arg->callback_argument,
         "heap_v2/%llu\n  t*: ",
-        static_cast<unsigned long long>(uint64_t(1U) << log2_profiling_sample));
+        static_cast<unsigned long long>(uint64_t(1U) << log2_profiling_sample.load(std::memory_order_relaxed)));
     profilingDumpPrintCounts(arg->profiling_dump_write, arg->callback_argument, count_all);
     arg->profiling_dump_write(arg->callback_argument, "\n");
 
@@ -949,7 +949,7 @@ void profilingLeakCheck(const ProfilingCounters * count_all, size_t leak_num_glo
 {
     if (count_all->current_bytes != 0)
     {
-        double sample_period = static_cast<double>(uint64_t(1) << log2_profiling_sample);
+        double sample_period = static_cast<double>(uint64_t(1) << log2_profiling_sample.load(std::memory_order_relaxed));
         double ratio = ((static_cast<double>(count_all->current_bytes)) / static_cast<double>(count_all->current_objects)) / sample_period;
         double scale_factor = 1.0 / (1.0 - exp(-ratio));
         auto current_bytes = static_cast<uint64_t>(round((static_cast<double>(count_all->current_bytes)) * scale_factor));
@@ -1258,7 +1258,7 @@ void profilingReset(ThreadState & thread_state, size_t log2_sample)
     MutexLock dump_lock(&thread_state, profiling_dump_mutex);
     MutexLock all_thread_data_lock(&thread_state, all_thread_data_mutex);
 
-    log2_profiling_sample = log2_sample;
+    log2_profiling_sample.store(log2_sample, std::memory_order_relaxed);
     profilingUnbiasMapInit();
 
     ProfilingThreadData * next = nullptr;

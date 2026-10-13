@@ -21,10 +21,10 @@ namespace jemalloc
 
 /// --- Data ----------------------------------------------------------------------------------------------------------
 
-constinit bool profiling_active_state = false;
+constinit std::atomic<bool> profiling_active_state = false;
 constinit std::atomic<bool> profiling_growth_dump_value{false};
 constinit uint64_t profiling_interval = 0;
-constinit size_t log2_profiling_sample = 0;
+constinit std::atomic<size_t> log2_profiling_sample = 0;
 constinit bool profiling_booted = false;
 
 namespace
@@ -59,7 +59,7 @@ ALLOCATOR_ALWAYS_INLINE void profilingActiveAssert()
 {
     /// If `opt.prof` is off, then `profiling_active` must always be off, regardless of whether `profiling_active_mutex` is in
     /// effect or not.
-    ALLOCATOR_ASSERT(options.profiling || !profiling_active_state);
+    ALLOCATOR_ASSERT(options.profiling || !profiling_active_state.load(std::memory_order_relaxed));
 }
 
 }
@@ -101,11 +101,12 @@ void profilingMallocSampleObject(
 
     thread_context->thread_data->lock->lock(&thread_state);
     /// We need to do these map lookups while holding the lock, to avoid the possibility of races with `prof.reset`
-    /// calls, which update the map and then acquire the lock. This actually still leaves a data race on the contents
-    /// of the unbias map; the key thing is to make sure that, if we read garbage data, the `prof.reset` call is about
-    /// to mark our tctx as expired before any dumping of our corrupted output is attempted.
-    size_t shifted_unbiased_count = profiling_shifted_unbiased_count[size_class_idx];
-    size_t unbiased_bytes = profiling_unbiased_size[size_class_idx];
+    /// calls, which update the map and then acquire the lock. This still leaves a race on the contents of the unbias map
+    /// (the entries are relaxed atomics, so it is not a data race); the key thing is to make sure that, if we read a
+    /// mix of old and new values, the `prof.reset` call is about to mark our tctx as expired before any dumping of our
+    /// inconsistent output is attempted.
+    size_t shifted_unbiased_count = profiling_shifted_unbiased_count[size_class_idx].load(std::memory_order_relaxed);
+    size_t unbiased_bytes = profiling_unbiased_size[size_class_idx].load(std::memory_order_relaxed);
     ++thread_context->counts.current_objects;
     thread_context->counts.current_objects_shifted_unbiased += shifted_unbiased_count;
     thread_context->counts.current_bytes += usable_size;
@@ -165,9 +166,9 @@ void profilingFreeSampledObject(ThreadState & thread_state, const void * ptr, si
     /// It's not correct to do equivalent asserts for unbiased bytes, because of the potential for races with
     /// `prof.reset` calls.
     --thread_context->counts.current_objects;
-    thread_context->counts.current_objects_shifted_unbiased -= profiling_shifted_unbiased_count[size_class_idx];
+    thread_context->counts.current_objects_shifted_unbiased -= profiling_shifted_unbiased_count[size_class_idx].load(std::memory_order_relaxed);
     thread_context->counts.current_bytes -= usable_size;
-    thread_context->counts.current_bytes_unbiased -= profiling_unbiased_size[size_class_idx];
+    thread_context->counts.current_bytes_unbiased -= profiling_unbiased_size[size_class_idx].load(std::memory_order_relaxed);
 
     /// `prof_try_log` is dropped together with `profiling_log`.
 
@@ -207,7 +208,8 @@ bool profilingSampleShouldSkipSlow(ThreadState & thread_state)
 /// jemalloc: prof_sample_new_event_wait
 uint64_t profilingSampleNewEventWait(ThreadState & thread_state)
 {
-    if (log2_profiling_sample == 0)
+    size_t log2_sample = log2_profiling_sample.load(std::memory_order_relaxed);
+    if (log2_sample == 0)
         return THREAD_EVENT_MIN_START_WAIT;
 
     /// Compute sample interval as a geometrically distributed random variable with mean (2^lg_prof_sample):
@@ -222,7 +224,7 @@ uint64_t profilingSampleNewEventWait(ThreadState & thread_state)
     /// add 1, since otherwise bytes_until_sample would be 0 if u is exactly 1.0.
     uint64_t r = prngLog2RangeU64(thread_state.prngState(), 53);
     double u = (r == 0U) ? 1.0 : double(static_cast<long double>(r) * (1.0L / 9007199254740992.0L));
-    return uint64_t(log(u) / log(1.0 - (1.0 / double(uint64_t(1U) << log2_profiling_sample)))) + uint64_t(1U);
+    return uint64_t(log(u) / log(1.0 - (1.0 / double(uint64_t(1U) << log2_sample)))) + uint64_t(1U);
 }
 
 /// The postponed wait time for prof sample event is computed as if we want a new wait time (i.e. as if the event
@@ -380,7 +382,7 @@ bool profilingActiveGet(ThreadState * thread_state)
 {
     profilingActiveAssert();
     MutexLock lock(thread_state, profiling_active_mutex);
-    return profiling_active_state;
+    return profiling_active_state.load(std::memory_order_relaxed);
 }
 
 /// jemalloc: prof_active_set
@@ -390,8 +392,8 @@ bool profilingActiveSet(ThreadState * thread_state, bool active)
     bool profiling_active_old;
     {
         MutexLock lock(thread_state, profiling_active_mutex);
-        profiling_active_old = profiling_active_state;
-        profiling_active_state = active;
+        profiling_active_old = profiling_active_state.load(std::memory_order_relaxed);
+        profiling_active_state.store(active, std::memory_order_relaxed);
     }
     profilingActiveAssert();
     return profiling_active_old;
@@ -571,9 +573,9 @@ bool profilingBoot2(ThreadState & thread_state, Base * base)
 
     if (options.profiling)
     {
-        log2_profiling_sample = options.log2_profiling_sample;
+        log2_profiling_sample.store(options.log2_profiling_sample, std::memory_order_relaxed);
         profilingUnbiasMapInit();
-        profiling_active_state = options.profiling_active;
+        profiling_active_state.store(options.profiling_active, std::memory_order_relaxed);
         profiling_growth_dump_value.store(options.profiling_growth_dump, std::memory_order_relaxed);
         profiling_thread_active_init = options.profiling_thread_active_init;
 

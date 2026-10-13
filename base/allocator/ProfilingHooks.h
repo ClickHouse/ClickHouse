@@ -13,6 +13,7 @@
 #include <allocator/SizeClasses.h>
 #include <allocator/ThreadState.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -24,12 +25,14 @@ class Base;
 /// --- Globals (prof.c) ---------------------------------------------------------------------------------------------
 
 /// Initialized as `opt.prof_active`, and accessed via `profilingActiveGetUnlocked` (no locking on the fast path).
+/// jemalloc uses a plain `bool`; it is atomic here (with relaxed accesses) to avoid a data race with `prof.active` writes.
 /// jemalloc: prof_active_state
-extern constinit bool profiling_active_state;
+extern constinit std::atomic<bool> profiling_active_state;
 
-/// Initialized as `opt.lg_prof_sample`, and potentially modified during profiling resets.
+/// Initialized as `opt.lg_prof_sample`, and potentially modified during profiling resets. Atomic (with relaxed
+/// accesses) because `prof.reset` writes it while the allocation paths read it without a lock.
 /// jemalloc: lg_prof_sample
-extern constinit size_t log2_profiling_sample;
+extern constinit std::atomic<size_t> log2_profiling_sample;
 
 /// Profile dump interval, measured in bytes allocated (0: disabled). jemalloc: prof_interval
 extern constinit uint64_t profiling_interval;
@@ -73,11 +76,11 @@ void profilingPostforkChild(ThreadState * thread_state);
 ALLOCATOR_ALWAYS_INLINE bool profilingActiveGetUnlocked()
 {
     /// If `opt.prof` is off, then `profiling_active` must always be off.
-    ALLOCATOR_ASSERT(options.profiling || !profiling_active_state);
+    ALLOCATOR_ASSERT(options.profiling || !profiling_active_state.load(std::memory_order_relaxed));
     /// Even if `opt.prof` is true, sampling can be temporarily disabled by setting `profiling_active` to false. No locking
     /// is used when reading `profiling_active` in the fast path, so there are no guarantees regarding how long it will take
     /// for all threads to notice state changes.
-    return profiling_active_state;
+    return profiling_active_state.load(std::memory_order_relaxed);
 }
 
 /// jemalloc: tsd_prof_sample_event_wait_get

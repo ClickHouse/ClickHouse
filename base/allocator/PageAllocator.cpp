@@ -553,6 +553,13 @@ void PageAllocator::destroy(ThreadState * thread_state)
     /// Iterate over the retained extents and destroy them. This gives the extent allocator underlying the extent hooks
     /// an opportunity to unmap all retained memory without having to keep its own metadata structures.
     ExtentHooks * extent_hooks = extentHooksGet();
+    /// The sanitizer bump allocator keeps its current region outside the caches. Return it to the retained cache, so
+    /// it is destroyed below. jemalloc leaks it (and leaves it registered in the extent map).
+    if (sanitizer_bump_alloc.current_region != nullptr)
+    {
+        extentRecord(thread_state, this, extent_hooks, &extent_cache_retained, sanitizer_bump_alloc.current_region);
+        sanitizer_bump_alloc.current_region = nullptr;
+    }
     Extent * extent;
     while ((extent = extentCacheEvict(thread_state, this, extent_hooks, &extent_cache_retained, 0)) != nullptr)
         extentDestroyWrapper(thread_state, this, extent_hooks, extent);

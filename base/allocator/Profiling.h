@@ -268,9 +268,10 @@ extern constinit Mutex profiling_dump_mutex;
 /// jemalloc: gctx_locks, tdata_locks
 extern constinit Mutex * global_context_locks;
 extern constinit Mutex * thread_data_locks;
+/// Rewritten by `prof.reset` while the allocation paths read them, so the entries are relaxed atomics.
 /// jemalloc: prof_unbiased_sz, prof_shifted_unbiased_cnt
-extern constinit size_t profiling_unbiased_size[SIZE_CLASS_NUM_SIZES];
-extern constinit size_t profiling_shifted_unbiased_count[SIZE_CLASS_NUM_SIZES];
+extern constinit std::atomic<size_t> profiling_unbiased_size[SIZE_CLASS_NUM_SIZES];
+extern constinit std::atomic<size_t> profiling_shifted_unbiased_count[SIZE_CLASS_NUM_SIZES];
 
 /// jemalloc: prof_dump_filename_mtx, prof_base (`prof_sys.c`)
 extern constinit Mutex profiling_dump_filename_mutex;

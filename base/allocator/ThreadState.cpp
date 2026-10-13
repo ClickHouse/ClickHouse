@@ -433,6 +433,10 @@ void ThreadState::cleanup(void * arg)
             [[fallthrough]];
         case thread_state_nominal:
         case thread_state_nominal_slow:
+        case thread_state_nominal_recompute:
+            /// `nominal_recompute` can be published concurrently by `threadStateForceRecompute` while the thread is in the
+            /// nominal list. jemalloc has no case for it and hits `not_reached()`; it is a nominal state, so clean it up
+            /// the same way. `stateSet` removes the thread from the nominal list.
             thread_state->doDataCleanup();
             thread_state->stateSet(thread_state_purgatory);
             ThreadStateStorage::set(thread_state);
@@ -442,7 +446,6 @@ void ThreadState::cleanup(void * arg)
             /// wouldn't cause re-creation of the tsd. This time, do nothing, and do not request another callback.
             break;
         default:
-            /// `nominal_recompute`: jemalloc hits `not_reached()` here (undefined behavior in release builds).
             ALLOCATOR_NOT_REACHED();
     }
 }
