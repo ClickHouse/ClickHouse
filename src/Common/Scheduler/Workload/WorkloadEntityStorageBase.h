@@ -109,9 +109,6 @@ protected:
     /// Whether this layer owns the implicit entities, whose names are reserved for all other layers
     virtual bool ownsImplicitEntities() const { return false; }
 
-    /// Whether an own workload may name a parent unknown to this layer: it may be defined by an outer layer
-    virtual bool allowsParentsFromOuterLayers() const { return false; }
-
     /// Adds entities derived from the visible entities (own entities that are not shadowed plus inherited
     /// ones) to `visible_entities`. Called with the lock held on every change of own or inherited entities.
     virtual void addDerivedEntities(std::unordered_map<String, ASTPtr> & /*visible_entities*/) const {}

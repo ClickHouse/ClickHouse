@@ -168,12 +168,9 @@ static void executeWorkloadEntityQuery(IWorkloadEntityStorage & storage, const S
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
 public:
-    /// `allows_parents_from_outer_layers_` makes it behave like the configuration layer
-    explicit WorkloadEntityTestStorage(
-        std::string_view name_ = "test", std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {}, bool allows_parents_from_outer_layers_ = false)
+    explicit WorkloadEntityTestStorage(std::string_view name_ = "test", std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {})
         : WorkloadEntityStorageBase(Context::getGlobalContextInstance(), std::move(next_storage_))
         , name(name_)
-        , allows_parents_from_outer_layers(allows_parents_from_outer_layers_)
     {}
 
     std::string_view getName() const override { return name; }
@@ -232,10 +229,7 @@ private:
         return OperationResult::Ok;
     }
 
-    bool allowsParentsFromOuterLayers() const override { return allows_parents_from_outer_layers; }
-
     const String name;
-    const bool allows_parents_from_outer_layers;
 };
 
 /// The storage chain of the server: implicit (outermost) -> SQL -> configuration (innermost).
@@ -257,7 +251,7 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
 
     static std::shared_ptr<WorkloadEntityImplicitStorage> makeStorageChain(WorkloadEntityTestStorage *& config, WorkloadEntityTestStorage *& sql)
     {
-        auto config_layer = std::make_unique<WorkloadEntityTestStorage>("configuration", nullptr, /* allows_parents_from_outer_layers_ = */ true);
+        auto config_layer = std::make_unique<WorkloadEntityTestStorage>("configuration", nullptr);
         config = config_layer.get();
         auto sql_layer = std::make_unique<WorkloadEntityTestStorage>("sql", std::move(config_layer));
         sql = sql_layer.get();
@@ -2949,23 +2943,33 @@ TEST(SchedulerWorkloadResourceManager, CycleCheckWalksHiddenEntities)
     EXPECT_EQ(t.storage.getEntitySource("b"), "sql");
 }
 
-// A configuration workload cannot have the implicit `default` as its parent: only an outer layer can provide a parent
-// the configuration does not have, and the SQL layer between them never provides an implicit entity
-TEST(SchedulerWorkloadResourceManager, ConfigWorkloadCannotHaveImplicitDefaultParent)
+// A configuration workload references only configuration entities: neither a SQL nor an implicit workload can be its
+// parent, and a `FOR` clause cannot name a SQL resource. Such a load is rejected and the previous state is kept. SQL
+// workloads can be children of configuration workloads.
+TEST(SchedulerWorkloadResourceManager, ConfigWorkloadReferencesOnlyConfiguration)
 {
     ResourceTest t;
     ImplicitWorkloadEntitiesConfig config;
     config.implicit_default_workload = true;
     t.setImplicitEntities(config);
-    t.loadConfig("CREATE WORKLOAD child IN default");
-    EXPECT_EQ(t.storage.getEntitySource("default"), "implicit");
-    EXPECT_FALSE(t.storage.has("child"));
+    t.query("CREATE RESOURCE io (READ DISK d)");
+    t.query("CREATE WORKLOAD sql_parent");
 
-    // An explicit `default` can be a parent
-    t.query("CREATE WORKLOAD default");
-    EXPECT_TRUE(t.storage.has("child"));
-    t.loadConfig("");
-    t.query("DROP WORKLOAD default");
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN default"), DB::Exception);
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN sql_parent"), DB::Exception);
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN missing"), DB::Exception);
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child SETTINGS max_io_requests = 1 FOR io"), DB::Exception);
+    EXPECT_FALSE(t.config_storage->has("child"));
+
+    // A reload is rejected as well, keeping the previous entities
+    t.loadConfig("CREATE WORKLOAD cfg_parent; CREATE WORKLOAD child IN cfg_parent");
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD cfg_parent; CREATE WORKLOAD child IN sql_parent"), DB::Exception);
+    EXPECT_EQ(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get("child").get())->getWorkloadParent(), "cfg_parent");
+
+    // A SQL workload can be a child of a configuration workload
+    t.query("CREATE WORKLOAD sql_child IN cfg_parent");
+    EXPECT_EQ(t.storage.getEntitySource("sql_child"), "sql");
+    EXPECT_TRUE(t.storage.has("sql_child"));
 }
 
 /// Whether the manager has a scheduler node of workload `child` below a node of workload `parent`
@@ -2979,54 +2983,6 @@ static bool hasWorkloadNodeUnder(ResourceTest & t, const String & resource, cons
             seen = true;
     });
     return seen;
-}
-
-// A configuration workload may have a parent defined via SQL: the configuration layer keeps it visible, and the SQL
-// layer, which sees both, hides it while there is no such SQL workload.
-TEST(SchedulerWorkloadResourceManager, ConfigWorkloadWithParentFromSql)
-{
-    ResourceTest t;
-    t.query("CREATE RESOURCE io (READ DISK d)");
-    t.query("CREATE WORKLOAD sql_parent");
-    t.loadConfig("CREATE WORKLOAD cfg_child IN sql_parent");
-
-    EXPECT_EQ(t.storage.getEntitySource("cfg_child"), "configuration");
-    EXPECT_EQ(t.storage.getEntitySource("sql_parent"), "sql");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "io", "sql_parent", "cfg_child"));
-    {
-        ClassifierPtr classifier = t.manager->acquire("cfg_child");
-        EXPECT_TRUE(classifier->has("io"));
-    }
-
-    // The parent cannot be dropped or retyped while the configuration workload references it
-    EXPECT_THROW(t.query("DROP WORKLOAD sql_parent"), DB::Exception);
-    EXPECT_THROW(t.query("CREATE OR REPLACE RESOURCE sql_parent (WRITE DISK d)"), DB::Exception);
-    EXPECT_TRUE(t.storage.has("sql_parent"));
-
-    t.loadConfig("");
-    t.query("DROP WORKLOAD sql_parent");
-    EXPECT_FALSE(t.storage.has("sql_parent"));
-
-    // Loaded before its parent exists, the configuration workload is hidden until the parent is created
-    t.loadConfig("CREATE WORKLOAD cfg_child IN sql_parent");
-    EXPECT_FALSE(t.storage.has("cfg_child"));
-    EXPECT_TRUE(t.config_storage->has("cfg_child"));
-    EXPECT_THROW(t.query("CREATE RESOURCE sql_parent (WRITE DISK d)"), DB::Exception); // must be a workload
-    t.query("CREATE WORKLOAD sql_parent");
-    EXPECT_TRUE(t.storage.has("cfg_child"));
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "io", "sql_parent", "cfg_child"));
-
-    // Persisted data dropping the parent hides the configuration workload, it does not fail
-    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE RESOURCE io (READ DISK d)"));
-    EXPECT_FALSE(t.storage.has("cfg_child"));
-    EXPECT_FALSE(t.storage.has("sql_parent"));
-    {
-        ClassifierPtr classifier = t.manager->acquire("cfg_child");
-        EXPECT_FALSE(classifier->has("io"));
-    }
-
-    // A SQL workload cannot name a parent unknown to the SQL layer
-    EXPECT_THROW(t.query("CREATE WORKLOAD sql_child IN missing"), DB::Exception);
 }
 
 // A configuration reload must not drop or retype an entity that the configuration had and still references, must not
@@ -3077,35 +3033,21 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadRejectsDroppingReferencedEntity
     }
 }
 
-// Only the configuration allows a parent it never had (see `ConfigWorkloadWithParentFromSql`). Persisted layers do
-// not fail a load because of references: the affected workloads are hidden, as the reference cannot be fixed there.
-TEST(SchedulerWorkloadResourceManager, ConfigLoadAllowsParentFromAnotherStorage)
+// A persisted load does not fail because of references, as they cannot be fixed there: a workload whose parent is
+// missing or is not a workload is hidden until the parent is a workload again.
+TEST(SchedulerWorkloadResourceManager, PersistedLoadHidesWorkloadsWithBrokenParent)
 {
     ResourceTest t;
-    EXPECT_NO_THROW(t.loadConfig("CREATE WORKLOAD cfg_child IN sql_parent"));
-    EXPECT_TRUE(t.config_storage->has("cfg_child"));
-    EXPECT_FALSE(t.storage.has("cfg_child"));
-
-    // The parent created later must be a workload: SQL rejects a resource, a persisted load hides the child
-    EXPECT_THROW(t.query("CREATE RESOURCE sql_parent (MASTER THREAD)"), DB::Exception);
-    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE RESOURCE sql_parent (MASTER THREAD)"));
-    EXPECT_TRUE(t.manager->hasResource("sql_parent"));
-    EXPECT_FALSE(t.storage.has("cfg_child"));
-
-    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE WORKLOAD sql_parent"));
-    EXPECT_TRUE(t.storage.has("cfg_child"));
-    EXPECT_TRUE(t.storage.has("sql_parent"));
-
-    // A persisted load dropping `sql_parent`, still referenced by `cfg_child`, hides `cfg_child`
-    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString(""));
-    EXPECT_FALSE(t.storage.has("sql_parent"));
-    EXPECT_FALSE(t.storage.has("cfg_child"));
-
-    // A persisted workload with a missing parent is hidden
-    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE WORKLOAD sql_parent; CREATE WORKLOAD sql_child IN missing"));
-    EXPECT_TRUE(t.storage.has("sql_parent"));
-    EXPECT_TRUE(t.storage.has("cfg_child"));
+    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE WORKLOAD sql_child IN missing"));
     EXPECT_FALSE(t.storage.has("sql_child"));
+
+    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE RESOURCE sql_parent (MASTER THREAD); CREATE WORKLOAD sql_child IN sql_parent"));
+    EXPECT_TRUE(t.manager->hasResource("sql_parent"));
+    EXPECT_FALSE(t.storage.has("sql_child"));
+
+    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE WORKLOAD sql_parent; CREATE WORKLOAD sql_child IN sql_parent"));
+    EXPECT_TRUE(t.storage.has("sql_parent"));
+    EXPECT_TRUE(t.storage.has("sql_child"));
 
     // The configuration still rejects dropping a parent it had while it is referenced
     t.loadConfig("CREATE WORKLOAD cfg_parent; CREATE WORKLOAD cfg_child IN cfg_parent");
@@ -3121,8 +3063,8 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadAllowsParentFromAnotherStorage)
     EXPECT_FALSE(t.storage.has("sql_child"));
 }
 
-// A persisted load never fails because of references: workloads on a parent cycle (also through several layers) are
-// hidden, and a `FOR` clause naming a missing resource applies to no resource.
+// A persisted load never fails because of references: workloads on a parent cycle are hidden, and a `FOR` clause
+// naming a missing resource applies to no resource.
 TEST(SchedulerWorkloadResourceManager, PersistedLoadHidesBrokenReferences)
 {
     ResourceTest t;
@@ -3141,13 +3083,10 @@ TEST(SchedulerWorkloadResourceManager, PersistedLoadHidesBrokenReferences)
         EXPECT_TRUE(classifier->has("io"));
     }
 
-    // A cycle through the configuration and persisted data
+    // A cycle cannot go through the configuration and persisted data: the configuration cannot name a SQL parent
     EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD x IN y"));
     EXPECT_FALSE(t.storage.has("x"));
-    t.loadConfig("CREATE WORKLOAD y IN x");
-    EXPECT_TRUE(t.config_storage->has("y"));
-    EXPECT_FALSE(t.storage.has("x"));
-    EXPECT_FALSE(t.storage.has("y"));
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD y IN x"), DB::Exception);
     t.loadConfig("CREATE WORKLOAD y");
     EXPECT_TRUE(t.storage.has("x"));
     EXPECT_TRUE(t.storage.has("y"));

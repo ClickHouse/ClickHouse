@@ -104,21 +104,19 @@ class RestorerFromBackup;
  * A name resolves to the inherited entity first, as the user sees it, then to the own entity; an own entity
  * shadowed by name is of the same kind, so the kind of the target does not depend on shadowing. A layer
  * validates references of a new entity against its own and inherited entities, so it cannot reference
- * entities of an outer layer. In particular, persisted SQL entities cannot reference implicit entities: an
- * implicit `default` cannot have children and a `FOR` clause cannot name an implicit resource. The one
- * exception is the configuration (see `allowsParentsFromOuterLayers`): its workload may name a parent unknown
- * to it, which may be a SQL workload. It stays visible in the configuration layer; the outer layer sees both
- * and hides the workload while it does not provide such a parent workload. `storeEntity` rejects an entity
+ * entities of an outer layer. In particular, persisted SQL entities cannot reference implicit entities (an
+ * implicit `default` cannot have children and a `FOR` clause cannot name an implicit resource), and the
+ * configuration references only its own entities. As every reference points into the same or an inner layer,
+ * a parent cycle cannot go through several layers. `storeEntity` rejects an entity
  * of another kind than an existing reference to its name expects (e.g. a resource named as a parent), and
  * `removeEntity` rejects dropping an entity referenced by a visible or own entity. The cycle check of
  * `storeEntity` walks the references of both the own and the inherited entity of every name, not only of
  * visible ones, so a hidden entity cannot hide a cycle that appears once it is visible.
  * Loading the configuration rejects the whole reload, keeping the previous entities, if a parent or a `FOR`
- * target it had before is dropped while still referenced, if a parent or a `FOR` target is of the wrong
- * kind, if a `FOR` target does not exist, or if its workloads form a parent cycle. Loading persisted data
- * (Keeper, disk) never fails because of references: a workload with a missing or wrong-kind parent is hidden,
- * a `FOR` clause naming no resource applies to no resource, and every own workload on a parent cycle is
- * hidden with an error in the log (a cycle may also go through workloads of several layers).
+ * target does not exist in the configuration or is of the wrong kind, or if its workloads form a parent
+ * cycle. Loading persisted data (Keeper, disk) never fails because of references: a workload with a missing
+ * or wrong-kind parent is hidden, a `FOR` clause naming no resource applies to no resource, and every
+ * workload on a parent cycle is hidden with an error in the log.
  *
  * Writes, backup and restore. `storeEntity`, `removeEntity`, `backup` and `restore` are served by the SQL
  * layer: the implicit layer forwards them, and the configuration is read-only. Implicit entities cannot be

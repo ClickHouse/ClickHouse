@@ -838,7 +838,7 @@ void WorkloadEntityStorageBase::checkClaimConflicts(const String & entity_name, 
 
 void WorkloadEntityStorageBase::checkInboundReferences(const String & entity_name, const ASTPtr & entity) const
 {
-    // E.g. a configuration workload may name a parent that is not created yet (see `allowsParentsFromOuterLayers`)
+    // E.g. a hidden persisted workload may name a parent that does not exist yet
     const bool is_resource = getEntityType(entity) == WorkloadEntityType::Resource;
     for (const auto * layer_entities : {&own_entities, &inherited_entities})
     {
@@ -866,8 +866,6 @@ void WorkloadEntityStorageBase::checkLoadedReferences(const std::unordered_map<S
             {
                 if (own_entities.contains(target))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' cannot be dropped. It is referenced by: {}", target, source);
-                if (type == ReferenceType::Parent && allowsParentsFromOuterLayers())
-                    return; // A parent this layer never had may be defined by an outer layer
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' references another workload entity '{}' that doesn't exist", source, target);
             }
             if (type == ReferenceType::Parent && typeid_cast<ASTCreateWorkloadQuery *>(target_entity.get()) == nullptr)
@@ -960,11 +958,9 @@ void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recu
     }
     shadowed_entities = std::move(new_shadowed_entities);
 
-    // Persisted data or entities of several layers together may form a parent cycle: its own workloads are hidden
+    // Persisted data may form a parent cycle: its workloads are hidden
     for (const String & entity_name : findParentCycles(new_visible_entities))
     {
-        if (inherited_entities.contains(entity_name))
-            continue; // Not own: hidden below, as its parent is hidden
         new_visible_entities.erase(entity_name);
         new_conflicting_entities.insert(entity_name);
         if (!conflicting_entities.contains(entity_name))
@@ -974,8 +970,7 @@ void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recu
     conflicting_entities = std::move(new_conflicting_entities);
 
     // A workload whose parent is not a visible workload is hidden as well (until a fixpoint), so that the visible
-    // entities never have a workload without its parent. A parent unknown to this layer is allowed if it may be
-    // defined by an outer layer; an inherited workload may name such a parent, then this layer must provide it.
+    // entities never have a workload without its parent.
     std::unordered_set<String> new_orphaned_entities;
     for (bool changed = true; changed;)
     {
@@ -992,11 +987,6 @@ void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recu
             String parent = workload->getWorkloadParent();
             auto parent_it = new_visible_entities.find(parent);
             if (parent_it != new_visible_entities.end() && typeid_cast<ASTCreateWorkloadQuery *>(parent_it->second.get()))
-            {
-                ++it;
-                continue;
-            }
-            if (allowsParentsFromOuterLayers() && !own_entities.contains(parent) && !inherited_entities.contains(parent))
             {
                 ++it;
                 continue;
