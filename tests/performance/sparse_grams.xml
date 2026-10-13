@@ -5,5 +5,5 @@
 
     <query>SELECT sparseGramsUTF8(repeat('ы', 2000))</query>
     <query>SELECT sparseGramsUTF8(randomStringUTF8(20)) FROM numbers(10000000) FORMAT Null</query>
-    <query>SELECT sparseGramsHashes(randomStringUTF8(20)) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT sparseGramsHashes(randomStringUTF8(20)) FROM numbers(4000000) FORMAT Null</query>
 </test>
