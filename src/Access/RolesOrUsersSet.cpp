@@ -1,5 +1,6 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -87,10 +88,10 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
         return access_control->getID<Role>(name);
     };
 
-    if (!ast.names.empty() && !all)
+    if (const auto all_names = ast.names ? ast.names->toStrings() : Strings{}; !all_names.empty() && !all)
     {
-        ids.reserve(ast.names.size());
-        for (const String & name : ast.names)
+        ids.reserve(all_names.size());
+        for (const String & name : all_names)
             ids.insert(name_to_id(name));
     }
 
@@ -100,10 +101,10 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
         ids.insert(*current_user_id);
     }
 
-    if (!ast.except_names.empty())
+    if (const auto all_except_names = ast.except_names ? ast.except_names->toStrings() : Strings{}; !all_except_names.empty())
     {
-        except_ids.reserve(ast.except_names.size());
-        for (const String & name : ast.except_names)
+        except_ids.reserve(all_except_names.size());
+        for (const String & name : all_except_names)
             except_ids.insert(name_to_id(name));
     }
 
@@ -126,18 +127,26 @@ boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 
     if (!ids.empty() && !all)
     {
-        ast->names.reserve(ids.size());
+        Strings names;
+        names.reserve(ids.size());
         for (const UUID & id : ids)
-            ast->names.emplace_back(::DB::toString(id));
-        ::sort(ast->names.begin(), ast->names.end());
+            names.emplace_back(::DB::toString(id));
+        ::sort(names.begin(), names.end());
+        ast->names = make_intrusive<ASTUserNamesWithHost>();
+        for (const auto & name : names)
+            ast->names->children.push_back(make_intrusive<ASTUserNameWithHost>(name));
     }
 
     if (!except_ids.empty())
     {
-        ast->except_names.reserve(except_ids.size());
+        Strings except_names;
+        except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
-            ast->except_names.emplace_back(::DB::toString(except_id));
-        ::sort(ast->except_names.begin(), ast->except_names.end());
+            except_names.emplace_back(::DB::toString(except_id));
+        ::sort(except_names.begin(), except_names.end());
+        ast->except_names = make_intrusive<ASTUserNamesWithHost>();
+        for (const auto & name : except_names)
+            ast->except_names->children.push_back(make_intrusive<ASTUserNameWithHost>(name));
     }
 
     return ast;
@@ -151,26 +160,34 @@ boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const A
 
     if (!ids.empty() && !all)
     {
-        ast->names.reserve(ids.size());
+        Strings names;
+        names.reserve(ids.size());
         for (const UUID & id : ids)
         {
             auto name = access_control.tryReadName(id);
             if (name)
-                ast->names.emplace_back(std::move(*name));
+                names.emplace_back(std::move(*name));
         }
-        ::sort(ast->names.begin(), ast->names.end());
+        ::sort(names.begin(), names.end());
+        ast->names = make_intrusive<ASTUserNamesWithHost>();
+        for (const auto & name : names)
+            ast->names->children.push_back(make_intrusive<ASTUserNameWithHost>(name));
     }
 
     if (!except_ids.empty())
     {
-        ast->except_names.reserve(except_ids.size());
+        Strings except_names;
+        except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
         {
             auto except_name = access_control.tryReadName(except_id);
             if (except_name)
-                ast->except_names.emplace_back(std::move(*except_name));
+                except_names.emplace_back(std::move(*except_name));
         }
-        ::sort(ast->except_names.begin(), ast->except_names.end());
+        ::sort(except_names.begin(), except_names.end());
+        ast->except_names = make_intrusive<ASTUserNamesWithHost>();
+        for (const auto & name : except_names)
+            ast->except_names->children.push_back(make_intrusive<ASTUserNameWithHost>(name));
     }
 
     return ast;

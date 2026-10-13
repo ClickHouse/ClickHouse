@@ -39,7 +39,6 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -292,6 +291,12 @@ bool StorageBuffer::isRemote() const
     return destination && destination->isRemote();
 }
 
+bool StorageBuffer::readRequiresAnalyzedQuery() const
+{
+    auto destination = getDestinationTable();
+    return destination && destination->readRequiresAnalyzedQuery();
+}
+
 void StorageBuffer::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -371,9 +376,6 @@ void StorageBuffer::read(
 
         if (dst_has_same_structure)
         {
-            if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot, local_context);
-
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             destination->read(
                 query_plan, column_names, destination_snapshot, query_info,
@@ -432,15 +434,77 @@ void StorageBuffer::read(
                 /// The prefix converts the whole sample block, but the filter runs inside the
                 /// destination read, where only its own columns are known to have the declared
                 /// types. Keep just the filter's outputs; the rest converts after the read as usual.
-                auto merge_converting_prefix = [&](ActionsDAG filter_dag)
+                /// Only the predicate is converted: an output that merely passes a destination
+                /// column through must keep the type the destination will actually produce.
+                auto merge_converting_prefix = [&](ActionsDAG filter_dag, String & filter_column_name, bool & remove_filter_column)
                 {
+                    /// A bare predicate ("USING f", "PREWHERE f") is the very node it carries as data,
+                    /// so one name would have to hold both types at once. An alias separates the two
+                    /// roles; a computed predicate is already distinct and needs nothing.
+                    const auto & predicate = filter_dag.findInOutputs(filter_column_name);
+                    if (predicate.type == ActionsDAG::ActionType::INPUT)
+                    {
+                        /// The destination may have a column of this name, and on SELECT * both reach
+                        /// one block, where Block::insert throws.
+                        String alias_name = "__buffer_converted_filter";
+                        for (size_t i = 0; filter_dag.tryFindInOutputs(alias_name) != nullptr
+                                        || header_after_adding_defaults.has(alias_name); ++i)
+                            alias_name = "__buffer_converted_filter_" + std::to_string(i);
+                        const auto & alias = filter_dag.addAlias(predicate, alias_name);
+
+                        /// The predicate's first occurrence becomes the alias; the node returns once as
+                        /// data where it has that role.
+                        size_t occurrences = 0;
+                        ActionsDAG::NodeRawConstPtrs new_outputs;
+                        new_outputs.reserve(filter_dag.getOutputs().size() + 1);
+                        for (const auto * output : filter_dag.getOutputs())
+                        {
+                            if (output != &predicate)
+                                new_outputs.push_back(output);
+                            else if (++occurrences == 1)
+                                new_outputs.push_back(&alias);
+                        }
+                        if (occurrences > 1 || !remove_filter_column)
+                            new_outputs.push_back(&predicate);
+                        filter_dag.getOutputs() = std::move(new_outputs);
+
+                        /// The alias is internal to the destination read, so it goes after filtering.
+                        filter_column_name = alias_name;
+                        remove_filter_column = true;
+                    }
+
                     Names filter_outputs;
+                    std::vector<size_t> passthrough_positions;
                     filter_outputs.reserve(filter_dag.getOutputs().size());
                     for (const auto * output : filter_dag.getOutputs())
+                    {
+                        if (output->type == ActionsDAG::ActionType::INPUT)
+                            passthrough_positions.push_back(filter_outputs.size());
                         filter_outputs.push_back(output->result_name);
+                    }
 
                     auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
                     merged.removeUnusedActions(filter_outputs);
+
+                    /// merge() maps the filter's inputs onto the prefix's outputs, so these inputs are
+                    /// the destination-typed columns and restoring a pass-through adds no actions.
+                    std::unordered_map<std::string_view, const ActionsDAG::Node *> destination_inputs;
+                    for (const auto * input : merged.getInputs())
+                        destination_inputs.emplace(input->result_name, input);
+
+                    auto & merged_outputs = merged.getOutputs();
+                    for (size_t position : passthrough_positions)
+                    {
+                        auto it = destination_inputs.find(filter_outputs[position]);
+                        if (it != destination_inputs.end() && merged_outputs[position]->result_name == filter_outputs[position])
+                            merged_outputs[position] = it->second;
+                    }
+
+                    /// The replaced conversions are no longer reachable, but `ExpressionActions` executes every
+                    /// node of the DAG. Drop them, so a column that only passes through is not cast to the
+                    /// `Buffer` type at all: that costs time and can throw for a value the type cannot hold.
+                    merged.removeUnusedActions(/* allow_remove_inputs = */ false);
+
                     return merged;
                 };
 
@@ -449,15 +513,22 @@ void StorageBuffer::read(
                     auto row_level_filter = std::make_shared<FilterDAGInfo>();
                     row_level_filter->column_name = src_table_query_info.row_level_filter->column_name;
                     row_level_filter->do_remove_column = src_table_query_info.row_level_filter->do_remove_column;
-                    row_level_filter->actions = merge_converting_prefix(src_table_query_info.row_level_filter->actions.clone());
+                    row_level_filter->actions = merge_converting_prefix(
+                        src_table_query_info.row_level_filter->actions.clone(),
+                        row_level_filter->column_name,
+                        row_level_filter->do_remove_column);
                     src_table_query_info.row_level_filter = std::move(row_level_filter);
                 }
 
                 if (src_table_query_info.prewhere_info)
                 {
-                    src_table_query_info.prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
-                    src_table_query_info.prewhere_info->prewhere_actions
-                        = merge_converting_prefix(std::move(src_table_query_info.prewhere_info->prewhere_actions));
+                    auto prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
+                    auto merged_prewhere = merge_converting_prefix(
+                        std::move(prewhere_info->prewhere_actions),
+                        prewhere_info->prewhere_column_name,
+                        prewhere_info->remove_prewhere_column);
+                    prewhere_info->prewhere_actions = std::move(merged_prewhere);
+                    src_table_query_info.prewhere_info = std::move(prewhere_info);
                 }
 
                 src_table_query_info.initial_storage_snapshot = storage_snapshot;
@@ -1560,6 +1631,7 @@ void registerStorageBuffer(StorageFactory & factory)
 
             auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
             columns = destination_metadata->getColumns();
+            columns.clearColumnTTLs();
         }
 
         return std::make_shared<StorageBuffer>(
@@ -1575,6 +1647,7 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id,
             static_cast<bool>(args.getLocalContext()->getSettingsRef()[Setting::insert_allow_materialized_columns]));
     },
+    SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
         .supports_schema_inference = true,

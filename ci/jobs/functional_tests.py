@@ -8,7 +8,11 @@ import zlib
 from collections.abc import Mapping
 from pathlib import Path
 
-from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
+from ci.jobs.scripts.bugfix_validation import (
+    bugfix_build_types,
+    download_master_builds,
+    find_master_builds,
+)
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.test_selection_manifest import (
@@ -19,6 +23,7 @@ from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika.cidb import CIDBTimeoutError
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -145,6 +150,16 @@ def parse_args():
     return parser.parse_args()
 
 
+# Mirror of the `--timeout` default and of `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER` in
+# `tests/clickhouse-test`, which is a script and cannot be imported. Only used to size the
+# external safety net in `run_tests`, so a drift makes that net the wrong size, nothing worse.
+CLICKHOUSE_TEST_DEFAULT_TIMEOUT = 600
+FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER = 3
+# What the run needs after the last per-test alarm fires: the workers stop, the server is
+# checked and the results are written.
+WIND_DOWN_MARGIN_SECONDS = 180
+
+
 def run_tests(
     batch_num: int,
     batch_total: int,
@@ -186,19 +201,34 @@ def run_tests(
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
-                --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} -- {Targeting.selection_args(tests)} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
     # Allow a margin over the graceful budget for the run to wind down before the
     # external hard kill engages. The last in-flight test can be deep inside its
     # own per-test alarm window when the deadline is reached: `clickhouse-test`
-    # arms that alarm as `int(args.timeout * 1.1) + 60` (720s with the default
+    # arms that alarm as `int(timeout * 1.1) + 60` (720s with the default
     # `--timeout 600`), after which it stops gracefully. The margin must exceed
     # that bound (plus the worker shutdown wind-down) so the external SIGTERM
     # fires only for a genuinely frozen process and never pre-empts the graceful
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
-    outer_timeout = global_time_limit + 900 if global_time_limit > 0 else None
+    #
+    # In a flaky check without `--no-self-parallel` (so not the targeted check) a
+    # `long` test run by the parallel workers gets
+    # `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER` times `--timeout`, so its alarm
+    # window - and with it the margin the graceful stop needs - grows by the same
+    # factor. Derived rather than written out, so the two cannot drift apart; for
+    # every other job, the targeted check included, this is the same 900s the
+    # margin has always been.
+    per_test_timeout = CLICKHOUSE_TEST_DEFAULT_TIMEOUT
+    if "--flaky-check" in extra_args and "--no-self-parallel" not in extra_args:
+        per_test_timeout *= FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER
+    outer_timeout = (
+        global_time_limit + int(per_test_timeout * 1.1) + 60 + WIND_DOWN_MARGIN_SECONDS
+        if global_time_limit > 0
+        else None
+    )
     return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 
@@ -214,6 +244,15 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "BugfixValidation": " --bugfix-validation",
     "db disk": "--remote-database-disk",
 }
+
+# Runner flags that change how a test executes rather than which tests are
+# selected. The diagnostics rerun must keep them to reproduce the failure.
+DIAGNOSTICS_MODE_RUNNER_ARGUMENTS = (
+    "--replicated-database",
+    "--s3-storage",
+    "--azure-blob-storage",
+    "--encrypted-storage",
+)
 
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
@@ -516,6 +555,8 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
+    is_no_stateful = "--no-stateful" in runner_options
+
     # The xfail inversion (and therefore the "a crash on master HEAD is a
     # reproduction" reading of a server death) only applies when the PR is
     # labelled as a bugfix; an unlabelled run of this job executes the sanity
@@ -544,11 +585,28 @@ def main():
         and not args.test
     ):
         changed_files = info.get_changed_files()
-        if changed_files and all(
-            Targeting.is_functional_test_file(f)
-            or Targeting.is_integration_test_file(f)
-            or Targeting.is_ci_job_script(f)
-            for f in changed_files
+        # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
+        # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        is_coverage_replacement_with_ci_script_changes = False
+        if info.pr_number > 0 and any(
+            Targeting.is_ci_job_script(f) for f in changed_files or []
+        ):
+            # Not at module scope: `ci.defs.job_configs` needs a bare `praktika` on `sys.path`.
+            from ci.defs.job_configs import JobConfigs
+
+            is_coverage_replacement_with_ci_script_changes = info.job_name in [
+                j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+            ]
+        if (
+            changed_files
+            and not is_coverage_replacement_with_ci_script_changes
+            and all(
+                Targeting.is_functional_test_file(f)
+                or Targeting.is_integration_test_file(f)
+                or Targeting.is_ci_job_script(f)
+                or Targeting.is_documentation_file(f)
+                for f in changed_files
+            )
         ):
             changed_functional_files = [
                 f for f in changed_files if Targeting.is_functional_test_file(f)
@@ -737,13 +795,7 @@ def main():
             build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
-            for bt, url in build_urls.items():
-                bt_path = bt_paths[bt]
-                if not info.is_local_run or not Path(bt_path).is_file():
-                    Shell.run(
-                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
-                    )
-                    Shell.run(f"chmod +x {bt_path}", verbose=True)
+            download_master_builds(build_urls, bt_paths, info.is_local_run)
         Shell.run(
             f"cp {temp_dir}/clickhouse_{build_types[0]} {temp_dir}/clickhouse",
             verbose=True,
@@ -863,7 +915,10 @@ def main():
         try:
             # Every targeted job selects on its own. The inputs are pinned to
             # `Targeting.selection_cutoff`, so all jobs of an attempt agree.
-            Shell.check("python3 -m ci.jobs.scripts.test_selection_smoke", strict=True)
+            if targeter.selection_code_changed():
+                Shell.check(
+                    "python3 -m ci.jobs.scripts.test_selection_smoke", strict=True
+                )
             tests, selection_result = targeter.get_all_relevant_tests_with_info(
                 include_changed_tests=True
             )
@@ -876,6 +931,21 @@ def main():
             )
             selection_result.files = [str(SELECTION_MANIFEST)]
             results.append(selection_result)
+        except CIDBTimeoutError as ex:
+            # CIDB is overloaded (typically while the coverage export inserts).
+            # Skip rather than fail: an ERROR here would skip every job that
+            # waits for the core blocking jobs. Not cached, so a rerun or the
+            # next commit selects again.
+            message = f"Targeted tests were not run: test selection timed out in CIDB: {ex}"
+            print(f"WARNING: {message}")
+            info.add_workflow_warning(message)
+            skipped = Result.create_from(
+                status=Result.Status.SKIPPED,
+                info=f"{message}\n{traceback.format_exc()}",
+                results=results,
+            )
+            skipped.set_comment("CIDB timeout in test selection, rerun to test")
+            skipped.complete_job(do_not_cache=True)
         except Exception as ex:
             Result.create_from(
                 status=Result.Status.ERROR,
@@ -887,6 +957,11 @@ def main():
                 info="No selected tests to run",
                 results=results,
             ).complete_job()
+
+    # A selection made by `Targeting` names whole tests, so it becomes an exact
+    # selector. A hand-written `--test` stays the free-form regex it was typed as.
+    if tests and not args.test:
+        tests = [Targeting.selection_pattern(test) for test in tests]
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
@@ -920,6 +995,16 @@ def main():
             else:
                 print("skip log export config for local run")
 
+        # Randomize the mark and uncompressed cache policy (cache_policy.xml) across LRU, SLRU
+        # and SIEVE to exercise all eviction policies. SIEVE is only implemented for the
+        # CacheBase-backed caches, so it is not applied to the filesystem cache (storage_conf,
+        # backed by FileCachePolicy). During bugfix validation the install configs are used with
+        # downloaded master-side binaries that do not have the SIEVE branch in CacheBase, so SIEVE
+        # is excluded there to avoid a server start-up failure.
+        cache_policies = ["LRU", "SLRU"] if is_bugfix_validation else ["LRU", "SLRU", "SIEVE"]
+        cache_policy = random.choice(cache_policies)
+        print(f"Using mark/uncompressed cache policy: {cache_policy}")
+
         commands = [
             "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
@@ -939,6 +1024,16 @@ def main():
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
             CH.set_random_timezone,
         ]
+
+        # The mark and uncompressed caches default to SLRU (in cache_policy.xml).
+        # Patch the replica config directories (/etc/clickhouse-server1, /etc/clickhouse-server2)
+        # too: install.sh has already copied the configs for DBReplicated jobs by this point.
+        if cache_policy != "SLRU":
+            commands.append(
+                f"sed -i -e 's|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>{cache_policy}</mark_cache_policy>|' "
+                f"-e 's|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>{cache_policy}</uncompressed_cache_policy>|' "
+                f"/etc/clickhouse-server*/config.d/cache_policy.xml"
+            )
 
         # Sanitizer builds run under heavy memory pressure: besides the server's
         # own ASan overhead, the parallel runner keeps dozens of ASan-instrumented
@@ -1010,13 +1105,38 @@ def main():
             if not (CH.start_seaweedfs(test_type="stateless") and CH.start_azurite()):
                 print("SETUP FAILURE: seaweedfs/azurite did not start")
                 return False
-            if not CH.start():
-                print("SETUP FAILURE: clickhouse-server process did not start")
-                return False
-            if not CH.wait_ready():
-                # wait_ready() already tails the server err log to stdout on
-                # timeout; the marker just names the sub-step for triage.
-                print("SETUP FAILURE: clickhouse-server not ready (wait_ready)")
+            # Only the initial setup boot is retried; the per-build-type
+            # binary-swap boot below stays fail-closed.
+            boot_attempts = 3
+            booted = False
+            for boot_attempt in range(boot_attempts):
+                if not CH.start():
+                    setup_failure = "clickhouse-server process did not start"
+                elif not CH.wait_ready():
+                    # wait_ready() already tails the server err log to stdout on
+                    # timeout; the marker just names the sub-step for triage.
+                    setup_failure = "clickhouse-server not ready (wait_ready)"
+                else:
+                    booted = True
+                    break
+                # Only a boot no tracked replica survived is retried. While one is
+                # still up, the next attempt would wipe the run directory it is
+                # using, so this fails with `wait_ready`'s diagnostics instead.
+                if any(
+                    p is not None and p.poll() is None
+                    for p in (CH.proc, CH.proc_1, CH.proc_2)
+                ):
+                    break
+                if boot_attempt + 1 < boot_attempts:
+                    print(
+                        f"SETUP WARNING: {setup_failure} "
+                        f"(attempt {boot_attempt + 1}/{boot_attempts}); restarting"
+                    )
+                    CH.stop_server()
+                    CH.clean_logs()
+                    Utils.sleep(5)
+            if not booted:
+                print(f"SETUP FAILURE: {setup_failure}")
                 return False
 
             if not CH.start_kafka():
@@ -1036,6 +1156,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    no_stateful=is_no_stateful,
                     # `args.options` (e.g. "amd_asan_ubsan, distributed plan, parallel")
                     # already carries the sanitizer name in the same format
                     # `prepare_stateful_data`'s `is_sanitizer` check expects, so the
@@ -1296,6 +1417,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            no_stateful=is_no_stateful,
                             build_type=bugfix_bt,
                             step_timeout=stateful_prep_step_timeout(info),
                         ):
@@ -1427,6 +1549,14 @@ def main():
             )
         elif failed_tests:
             memory_limit = stateless_memory_limit(Info().job_name)
+            # Rerun in the same mode as the main run. Without these flags a
+            # failure specific to `DBReplicated` or to the s3/azure/encrypted
+            # disk passes every rerun and is wrongly diagnosed as flaky.
+            diag_mode_args = "".join(
+                f" {flag}"
+                for flag in DIAGNOSTICS_MODE_RUNNER_ARGUMENTS
+                if flag in runner_options.split()
+            )
             diag_command = (
                 f"clickhouse-test --testname --check-zookeeper-session --hung-check"
                 f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
@@ -1434,6 +1564,7 @@ def main():
                 f" --diagnose-random-settings"
                 f" --random-settings-diagnostics-dir {diagnostics_dir}"
                 f" --no-random-settings --no-random-merge-tree-settings"
+                f"{diag_mode_args}"
                 f" -- {' '.join(failed_tests)}"
             )
             print(f"Running diagnostics for {len(failed_tests)} test(s)...")
@@ -1465,12 +1596,6 @@ def main():
                 label_key = diag.get("label", "")
                 if label_key in label_map:
                     test_case.set_label(label_map[label_key])
-                if label_key == "flaky" and is_llvm_coverage:
-                    # Coverage binaries are slow and prone to timing-related flakiness
-                    # (e.g. TIMEOUT_EXCEEDED on SystemLogQueue). Don't penalise them
-                    # for it — mark the test green so it doesn't block coverage jobs.
-                    # See: https://github.com/ClickHouse/ClickHouse/pull/95763
-                    test_case.set_status(Result.Status.OK)
             if diag_exit_code != 0:
                 diag_status = Result.Status.FAIL
                 diag_info = (

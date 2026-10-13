@@ -27,10 +27,12 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
@@ -200,6 +202,7 @@ ReadFromRemote::ReadFromRemote(
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     const String & cluster_name_,
+    const String & shard_scope_identity_,
     UnavailableShardTrackerPtr unavailable_shard_tracker_)
     : SourceStepWithFilterBase(std::move(header_))
     , shards(std::move(shards_))
@@ -214,6 +217,7 @@ ReadFromRemote::ReadFromRemote(
     , log(log_)
     , shard_count(shard_count_)
     , cluster_name(cluster_name_)
+    , shard_scope_identity(shard_scope_identity_)
     , unavailable_shard_tracker(std::move(unavailable_shard_tracker_))
 {
 }
@@ -310,6 +314,16 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (WhichDataType(node->result_type).isFunction()
             || (node->type == ActionsDAG::ActionType::FUNCTION
                 && typeid_cast<const FunctionCapture *>(node->function_base.get())))
+        {
+            node_to_ast[node] = nullptr;
+            stack.pop();
+            continue;
+        }
+
+        /// An `IgnoreSet` call has no set operand, so it cannot be written back as IN syntax.
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && isNameOfInFunction(node->function_base->getName())
+            && node->function_base->getName().ends_with("IgnoreSet"))
         {
             node_to_ast[node] = nullptr;
             stack.pop();
@@ -597,7 +611,11 @@ static void addFilters(
 }
 
 void ReadFromRemote::addLazyPipe(
-    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    const UnavailableShardTrackerPtr & tracker)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -651,12 +669,12 @@ void ReadFromRemote::addLazyPipe(
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
-            my_unavailable_shard_tracker = unavailable_shard_tracker, my_cluster_name = cluster_name,
+            my_unavailable_shard_tracker = tracker, my_cluster_name = cluster_name,
             query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, my_storage = storage,
+            my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
             pushed_down_filters, parallel_marshalling_threads]() mutable
@@ -706,7 +724,7 @@ void ReadFromRemote::addLazyPipe(
         // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
         if (!use_delayed_remote_source && !my_table_func_ptr)
         {
-            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, DeferredTable::Load);
             if (!replicated_storage)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
@@ -760,8 +778,7 @@ void ReadFromRemote::addLazyPipe(
         String query_string = formattedAST(query);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
-        my_scalars["_shard_num"] = Block{
-            {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+        my_scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(my_shard.shard_info.shard_num, my_shard_scope_identity);
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
@@ -785,7 +802,11 @@ void ReadFromRemote::addLazyPipe(
 }
 
 void ReadFromRemote::addPipe(
-    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    const UnavailableShardTrackerPtr & tracker)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -799,8 +820,7 @@ void ReadFromRemote::addPipe(
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
-    scalars["_shard_num"]
-        = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+    scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(shard.shard_info.shard_num, shard_scope_identity);
 
     if (context->canUseTaskBasedParallelReplicas())
     {
@@ -864,7 +884,7 @@ void ReadFromRemote::addPipe(
             remote_query_executor->setQueryPlanFallbackStage(stage);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
-            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
+            remote_query_executor->setUnavailableShardTracker(tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -896,7 +916,7 @@ void ReadFromRemote::addPipe(
         remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
-        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
+        remote_query_executor->setUnavailableShardTracker(tracker);
 
         // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
@@ -924,7 +944,10 @@ void ReadFromRemote::addPipe(
     }
 }
 
-Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header)
+Pipes ReadFromRemote::addPipes(
+    const ClusterProxy::SelectStreamFactory::Shards & used_shards,
+    const SharedHeader & out_header,
+    const UnavailableShardTrackerPtr & tracker)
 {
     Pipes pipes;
 
@@ -933,9 +956,9 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
         const size_t parallel_marshalling_threads
             = (context->getSettingsRef()[Setting::max_threads] + used_shards.size() - 1) / used_shards.size();
         if (shard.lazy)
-            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads);
+            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
         else
-            addPipe(pipes, shard, out_header, parallel_marshalling_threads);
+            addPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
     }
 
     return pipes;
@@ -943,7 +966,15 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipes pipes = addPipes(shards, output_header);
+    Pipes pipes = addPipes(shards, output_header, unavailable_shard_tracker);
+
+    /// One pipe per executor, so the built pipes are this query's complete unit count.
+    if (unavailable_shard_tracker)
+    {
+        if (pipes.size() > shards.size())
+            unavailable_shard_tracker->registerExtraUnits(pipes.size() - shards.size());
+        unavailable_shard_tracker->seal();
+    }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -1024,7 +1055,7 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
         }
     }
 
-    formatExplain(settings, addPipes(used_shards, header));
+    formatExplain(settings, addPipes(used_shards, header, /*tracker=*/nullptr));
 }
 
 void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool distributed)
@@ -1049,7 +1080,7 @@ void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool
             shard.query);
     }
 
-    formatExplain(settings, addPipes(used_shards, header));
+    formatExplain(settings, addPipes(used_shards, header, /*tracker=*/nullptr));
 }
 
 bool ReadFromRemote::hasSerializedPlan() const

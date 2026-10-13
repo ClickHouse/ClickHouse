@@ -1,0 +1,10 @@
+Tables present (internal table sorts first):
+sqlite_sequence
+sqliteX
+Default resolution reads the user table sqliteX:
+1	a
+2	b
+Failed write reports the error:
+injected failure
+No committed table is left behind after the failed write:
+0

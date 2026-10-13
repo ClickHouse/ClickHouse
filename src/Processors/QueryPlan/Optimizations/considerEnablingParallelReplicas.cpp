@@ -3,10 +3,11 @@
 #include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
@@ -52,6 +53,38 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
         || typeid_cast<const ReadFromParallelReplicasStep *>(&step);
 }
 
+/// Steps that can sit between the `Union` and the node the two plans have in common without changing
+/// what the node below computes. `FilterStep` is deliberately absent: the replicas ship what comes out
+/// of it, so looking past one instruments a node carrying more rows than they would actually send. It
+/// reports `supportsDataflowStatisticsCollection`, so it is matched on its own terms - and for a plain
+/// `SELECT ... WHERE ...` it is the only node above the read, so peeling it would leave nothing to
+/// instrument but the reading step itself.
+///
+/// The set and CTE bookkeeping steps pass their rows through by construction, in both their delayed and
+/// their resolved form. The CTE pair is listed for completeness rather than for a shape that arrives here
+/// today: the gate below refuses a plan that still carries a `DelayedMaterializingCTEsStep`, and the
+/// comment there says why that refusal stays for now.
+bool isPassthroughWrapper(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const ExpressionStep *>(&step))
+        return isPassthroughExpressionWithRenames(step);
+
+    return typeid_cast<const DelayedCreatingSetsStep *>(&step)
+        || typeid_cast<const CreatingSetsStep *>(&step)
+        || typeid_cast<const DelayedMaterializingCTEsStep *>(&step)
+        || typeid_cast<const MaterializingCTEsStep *>(&step);
+}
+
+/// Does this branch of the `Union` end in a read from the other replicas? Only the destination matters,
+/// so every step with a single child is walked through regardless of what it computes.
+bool branchReadsFromOtherReplicas(const QueryPlan::Node * node)
+{
+    while (!isReadFromOtherReplicas(*node->step) && node->children.size() == 1)
+        node = node->children.front();
+
+    return isReadFromOtherReplicas(*node->step);
+}
+
 /// Find the top node of the parallel replicas plan. E.g.:
 ///
 /// Expression ((Project names + Projection))
@@ -87,34 +120,44 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 
             for (const auto & child : frame.node->children)
             {
-                auto * node = child;
-                /// ExpressionStep can be placed on top of ReadFromRemoteParallelReplicas
-                if (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get()))
-                {
-                    chassert(!node->children.empty());
-                    node = node->children.front();
-                }
-                if (typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())
-                    || typeid_cast<const CreatingSetsStep *>(node->step.get()))
-                {
-                    chassert(!node->children.empty());
-                    node = node->children.front();
-                }
-                if (!isReadFromOtherReplicas(*node->step))
-                {
-                    if (replicas_plan_top_node)
-                    {
-                        // TODO(nickitat): support multiple read steps with parallel replicas
-                        LOG_DEBUG(getLogger("optimizeTree"), "Top node for parallel replicas plan is already found");
-                        return nullptr;
-                    }
-
-                    replicas_plan_top_node = node;
-                }
-                else
+                /// Classify this child first: is it the branch that reads from the other replicas? That
+                /// branch is never instrumented, it only has to be recognized so that the `Union` is
+                /// identified as the parallel-replicas pattern at all, so walk down to it through
+                /// anything with a single child and do not ask what those steps do. Requiring them to be
+                /// pass-through wrappers would make a branch we cannot see through look like a second
+                /// node to instrument, and the whole query would be skipped with "Top node for parallel
+                /// replicas plan is already found". `readingFromParallelReplicas` in
+                /// `optimizeReadInOrder` walks the same chain for the same reason.
+                if (branchReadsFromOtherReplicas(child))
                 {
                     found_read_from_parallel_replicas = true;
+                    continue;
                 }
+
+                /// This is the branch the initiator runs, and one of its nodes is what gets
+                /// instrumented. Look through the wrappers that can sit between the `Union` and the node
+                /// the two plans have in common. They stack in any order and any depth, so peel them in
+                /// a loop rather than one of each kind - `Expression -> CreatingSets -> Expression` used
+                /// to leave the search stranded on the second `Expression`.
+                ///
+                /// Stop above the reading step: it records only input bytes, so landing on it leaves
+                /// no estimate of what the replicas would send and the optimization is skipped
+                /// altogether. The last wrapper above it does record output bytes.
+                auto * node = child;
+                while (node->children.size() == 1 && isPassthroughWrapper(*node->step)
+                       && !node->children.front()->children.empty())
+                {
+                    node = node->children.front();
+                }
+
+                if (replicas_plan_top_node)
+                {
+                    // TODO(nickitat): support multiple read steps with parallel replicas
+                    LOG_DEBUG(getLogger("optimizeTree"), "Top node for parallel replicas plan is already found");
+                    return nullptr;
+                }
+
+                replicas_plan_top_node = node;
             }
 
             /// We found pattern
@@ -145,7 +188,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
 /// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
 /// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
-std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
+std::pair<QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
     QueryPlan::Node & parallel_replicas_plan_root,
     QueryPlan::Node & single_replica_plan_root)
@@ -155,25 +198,64 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     {
         auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
 
-        for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
+        /// A step that contributes nothing to the key adopts its child's key (see
+        /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
+        /// of that chain - the hash map's order is unspecified, so walk the plan for a stable answer -
+        /// and then walk down to its bottom, which is the node that actually produces the numbers the
+        /// chain shares. A wrapper above it measures something else: an `Aggregating` with a rename over
+        /// it is such a chain, and the aggregation records the partial states the replicas ship where
+        /// the rename above it already sees finalized values.
+        QueryPlan::Node * matched_node = nullptr;
+        Stack traversal_stack;
+        const auto key_of = [&](const QueryPlan::Node & node) -> std::optional<UInt64>
         {
-            if (nopr_hash == it->second)
+            if (auto hash_it = nopr_node_hashes.find(&node); hash_it != nopr_node_hashes.end())
+                return hash_it->second;
+            return {};
+        };
+        traverseQueryPlan(
+            traversal_stack,
+            single_replica_plan_root,
+            [&](auto & frame_node)
             {
-                if (!nopr_node->step->supportsDataflowStatisticsCollection())
-                {
-                    LOG_DEBUG(
-                        getLogger("optimizeTree"),
-                        "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
-                        nopr_node->step->getName());
-                    return std::make_pair(nullptr, 0);
-                }
+                if (!matched_node && key_of(frame_node) == it->second)
+                    matched_node = &frame_node;
+            });
 
-                LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", nopr_node->step->getName());
-                return std::make_pair(nopr_node, nopr_hash);
+        if (matched_node)
+        {
+            QueryPlan::Node * above = nullptr;
+            while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == it->second)
+            {
+                above = matched_node;
+                matched_node = matched_node->children.front();
             }
+
+            /// The reading step records input bytes only, so where the chain bottoms out in one, take
+            /// the wrapper just above it instead - it does record output bytes. This mirrors
+            /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read with no
+            /// wrapper above it is returned as it is, so the caller's fail-close for it stays reachable.
+            if (matched_node->children.empty() && above)
+                matched_node = above;
         }
-        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
-        return std::make_pair(nullptr, 0);
+
+        if (!matched_node)
+        {
+            LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
+            return std::make_pair(nullptr, 0);
+        }
+
+        if (!matched_node->step->supportsDataflowStatisticsCollection())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
+                matched_node->step->getName());
+            return std::make_pair(nullptr, 0);
+        }
+
+        LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", matched_node->step->getName());
+        return std::make_pair(matched_node, it->second);
     }
     else
     {
@@ -297,6 +379,24 @@ ReadFromMergeTree * findReadingStep(
         "Cannot find ReadFromMergeTree step in single-replica plan (found {}). Skipping optimization",
         reading_step->step->getName());
     return nullptr;
+}
+
+/// Unlike `collectReadingSteps` it also returns `LazilyReadFromMergeTree`: a lazy half reads as much as the
+/// step it belongs to, often more, and under parallel replicas every replica performs it.
+std::vector<IQueryPlanStep *> collectReadSteps(QueryPlan::Node & root)
+{
+    Stack stack;
+    std::vector<IQueryPlanStep *> read_steps;
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](auto & frame_node)
+        {
+            auto * step = frame_node.step.get();
+            if (typeid_cast<ReadFromMergeTree *>(step) || typeid_cast<LazilyReadFromMergeTree *>(step))
+                read_steps.push_back(step);
+        });
+    return read_steps;
 }
 
 std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
@@ -508,6 +608,25 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
+    /// A plan that builds a set is rooted in the `CreatingSetStep` that fills it, and that root is what
+    /// gives the plan the empty header `addPlansForSets` attaches to a `CreatingSetsStep`. Switching to
+    /// the parallel-replicas candidate replaces the root (see `replaceNodeWithPlan` below) and the
+    /// candidate is built without one, so the set plan would come back carrying the subquery's own
+    /// columns and `CreatingSetsStep` would reject it with "Creating set input must have empty header".
+    /// Leave these plans alone until the candidate can carry the set-building root over.
+    ///
+    /// Only the root matters. A `CreatingSetStep` further down belongs to a set this plan consumes
+    /// rather than builds, and the steps above it are replaced without disturbing it.
+    ///
+    /// Refusing here also saves the probe plan, which is what makes the refusal observable:
+    /// `05218_autopr_set_building_plan_is_left_alone` counts the rounds of index analysis a `GLOBAL IN`
+    /// runs, and considering the set-building plan adds one.
+    if (typeid_cast<const CreatingSetStep *>(root.step.get()))
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "The plan builds a set, its root must be preserved. Skipping optimization");
+        return;
+    }
+
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
@@ -515,6 +634,20 @@ void considerEnablingParallelReplicas(
     // since such steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
     // `BuildRuntimeFilterStep` and `*CreatingSetsStep` don't collect statistics themselves but always appear below the instrumented top node,
     // so they are allowed to pass through the check.
+    //
+    // `DelayedMaterializingCTEsStep` is transparent in the same way and is deliberately NOT allowed
+    // through, which is what keeps a query with `enable_materialized_cte` out of the optimization:
+    // `resolveMaterializingCTEs` runs after this pass (`QueryPlan::optimize`), so the placeholder is still
+    // in the plan when the gate looks at it. Letting it through buys nothing yet - the boundary is then
+    // found, but it matches nothing in the single-node plan, and the parallel-replicas build of such a
+    // query carries no remote read at all - so the query would pay for a probe plan, index analysis
+    // included, and still not be parallelized. It belongs here once matching handles a materialized CTE;
+    // `isPassthroughWrapper` above is ready for it.
+    //
+    // `MaterializingCTEStep` - the singular one, which caps a CTE's own plan - is a different matter and
+    // must not be added without extending the set-building refusal below to that root too. Such a plan is
+    // optimized like any other (`DelayedMaterializingCTEsStep::optimizePlans`) and switching it would
+    // replace the very step that fills the CTE, exactly as for `CreatingSetStep`.
     bool plan_is_simple_enough = true;
     String unsupported_steps;
     traverseQueryPlan(
@@ -525,7 +658,8 @@ void considerEnablingParallelReplicas(
             const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
                 || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
-                || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
+                || typeid_cast<const CreatingSetsStep *>(frame_node.step.get())
+                || typeid_cast<const CreatingSetStep *>(frame_node.step.get());
             if (!step_is_supported)
                 unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
             plan_is_simple_enough &= step_is_supported;
@@ -752,6 +886,33 @@ void considerEnablingParallelReplicas(
                 output_replicas_divisor,
                 local_plan_cost_estimation,
                 replicas_plan_cost_estimation);
+            /// Winning on time is necessary but not sufficient. Only the coordinated read is split; every
+            /// other read of the subtree runs on each replica in full, so the cluster does
+            /// `num_replicas` times that work for no change in wall-clock time - the comparison above
+            /// cannot see it, because the term cancels on both sides. Decline a query that would spend
+            /// more of the cluster on reading than the setting allows, however the time comparison turned
+            /// out. The ratio is deliberately independent of `num_replicas`: it asks what share of the
+            /// reading is duplicated, not how much work that adds up to, so adding replicas does not by
+            /// itself make the query less likely to be distributed.
+            const auto total_read_bytes = stats->input_bytes + stats->duplicated_bytes;
+            const double duplicated_read_ratio
+                = total_read_bytes ? static_cast<double>(stats->duplicated_bytes) / static_cast<double>(total_read_bytes) : 0.0;
+            if (local_plan_cost_estimation > replicas_plan_cost_estimation
+                && duplicated_read_ratio
+                    > static_cast<double>(optimization_settings.automatic_parallel_replicas_max_duplicated_read_ratio))
+            {
+                LOG_DEBUG(
+                    getLogger("optimizeTree"),
+                    "Parallel replicas are not used: {}x of the {} bytes read are read by every replica "
+                    "({} duplicated against {} coordinated), above the allowed ratio of {}",
+                    duplicated_read_ratio,
+                    total_read_bytes,
+                    stats->duplicated_bytes,
+                    stats->input_bytes,
+                    optimization_settings.automatic_parallel_replicas_max_duplicated_read_ratio);
+                return;
+            }
+
             if (local_plan_cost_estimation > replicas_plan_cost_estimation)
             {
                 if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
@@ -843,7 +1004,28 @@ void considerEnablingParallelReplicas(
         || optimization_settings.automatic_parallel_replicas_mode == 2 // automatic_parallel_replicas_mode == 2 enforces statistics recollection
     )
     {
-        auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_node_hash, rows_to_read);
+        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_node_hash, rows_to_read);
+        auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
+
+        /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group
+        /// by keys before sending it, while this plan, which the sample is taken from, leaves it in
+        /// hash-table order. The sample has to be priced in the replica's order, so tell the updater to
+        /// sort it.
+        ///
+        /// The decision is read off the step that will actually run on the replicas rather than
+        /// reconstructed from the settings, because the two parallel-replicas implementations turn bucket
+        /// order on under different conditions: the query-based one via the `Planner` (`WithMergeableState`
+        /// plus either `distributed_aggregation_memory_efficient` or
+        /// `enable_memory_bound_merging_of_aggregation_results`), the plan-based one in
+        /// `applyParallelReplicas` (`distributed_aggregation_memory_efficient` alone). Only the replica's
+        /// own step knows which of the two built it.
+        const auto * replicas_aggregating = typeid_cast<const AggregatingStep *>(final_node_in_replica_plan->step.get());
+        const auto * local_aggregating
+            = typeid_cast<const AggregatingStep *>(corresponding_node_in_single_replica_plan->step.get());
+        if (replicas_aggregating && local_aggregating && replicas_aggregating->memoryBoundMergingWillBeUsed()
+            && !local_aggregating->memoryBoundMergingWillBeUsed())
+            updater->setReplicasSendOutputInKeyOrder();
+
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         /// Share the updater with the lazy half of the same read so its bytes land in the same
@@ -852,6 +1034,18 @@ void considerEnablingParallelReplicas(
         /// what replicas read.
         if (lazy_reading_step)
             lazy_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+
+        auto duplicated_reads_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block, /*duplicated=*/ true);
+        for (auto * read_step : collectReadSteps(*corresponding_node_in_single_replica_plan))
+        {
+            /// The coordinated read and its own lazy half are set up above, and their bytes are `input_bytes`.
+            if (read_step == corresponding_node_in_single_replica_plan->step.get() || read_step == source_reading_step
+                || read_step == lazy_reading_step)
+                continue;
+            if (!read_step->supportsDataflowStatisticsCollection())
+                continue;
+            read_step->setRuntimeDataflowStatisticsCacheUpdater(duplicated_reads_updater);
+        }
     }
 }
 

@@ -4,7 +4,7 @@
 -- but still works for normal in-range values
 SET explain_query_plan_default = 'legacy';
 
-SET optimize_use_implicit_projections = 0, session_timezone = 'UTC', optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_use_implicit_projections = 0, session_timezone = 'UTC', optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS t_dt64_explain;
 

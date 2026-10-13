@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
 # no-parallel: the log entry below is written into ZooKeeper by hand, which needs the table's queue
 #   to itself while it is processed.
 # no-shared-merge-tree: the part's node under `replicas/<r>/parts/` that the test removes by hand
 #   is a `ReplicatedMergeTree` structure, and the entry it then watches is a `ReplicatedMergeTree`
 #   queue entry; neither exists when the engine is substituted.
+# no-replicated-database: the nodes are edited by the table's literal ZooKeeper path, which a
+#   `Replicated` database rewrites.
 
 # The companion of `05229_fetch_entry_for_local_part_missing_in_zookeeper` for the merge and mutation
 # entries, which never reach `executeLogEntry`: `MergeFromLogEntryTask` and `MutateFromLogEntryTask`
