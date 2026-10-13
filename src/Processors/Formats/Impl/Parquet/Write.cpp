@@ -24,7 +24,7 @@
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
-#include <Common/HashTable/HashSet.h>
+#include <bit>
 #include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -617,6 +617,8 @@ struct ConverterJSON
 
     const ColumnObject & column;
     DataTypePtr data_type;
+    /// Created once: for `Object` it is not a cheap accessor, and `valueSize` is called per value.
+    SerializationPtr serialization;
     PODArray<parquet::ByteArray> buf;
     std::vector<String> stash;
     const FormatSettings & format_settings;
@@ -624,29 +626,52 @@ struct ConverterJSON
     explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
         : column(assert_cast<const ColumnObject &>(*c))
         , data_type(data_type_)
+        , serialization(data_type->getDefaultSerialization())
         , format_settings(format_settings_)
     {
     }
 
-    const parquet::ByteArray * getBatch(size_t offset, size_t count)
+    size_t batch_offset = 0;
+
+    /// The values are serialized one at a time, so that a batch can be cut by bytes before all of
+    /// its values are materialized: `startBatch` prepares up to `count` values, `valueSize` serializes
+    /// the values up to the `i`-th, and `finishBatch` serializes the rest of the first `count` values.
+    void startBatch(size_t offset, size_t count)
     {
+        batch_offset = offset;
         buf.resize(count);
         stash.clear();
+        /// The strings must not move: `buf` points into them.
         stash.reserve(count);
+    }
 
-        auto serialization = data_type->getDefaultSerialization();
+    size_t valueSize(size_t i)
+    {
+        materializeUpTo(i + 1);
+        return buf[i].len;
+    }
 
-        for (size_t i = 0; i < count; ++i)
+    const parquet::ByteArray * finishBatch(size_t count)
+    {
+        materializeUpTo(count);
+        return buf.data();
+    }
+
+private:
+    void materializeUpTo(size_t count)
+    {
+        chassert(count <= buf.size());
+
+        for (size_t i = stash.size(); i < count; ++i)
         {
             WriteBufferFromOwnString wb;
-            serialization->serializeTextJSON(column, offset + i, wb, format_settings);
+            serialization->serializeTextJSON(column, batch_offset + i, wb, format_settings);
 
             stash.emplace_back(std::move(wb.str()));
             const String & s = stash.back();
 
             buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
         }
-        return buf.data();
     }
 };
 
@@ -766,6 +791,21 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
     }
 }
 
+/// The most bytes the RLE / bit-packed hybrid encoding of `size` values of `bit_width` bits can take.
+size_t maxRLESize(int bit_width, size_t size)
+{
+    using arrow::util::RleBitPackedEncoder;
+    return static_cast<size_t>(
+        RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int64_t>(size)) + RleBitPackedEncoder::MinBufferSize(bit_width));
+}
+
+/// The most bytes `encodeRepDefLevelsRLE` can write for `size` levels, including the length prefix.
+size_t maxEncodedRepDefLevelsSize(size_t size, UInt8 max_level)
+{
+    int bit_width = bitScanReverse(max_level) + 1;
+    return sizeof(Int32) + maxRLESize(bit_width, size);
+}
+
 void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, PODArray<char> & out)
 {
     using arrow::util::RleBitPackedEncoder;
@@ -856,44 +896,93 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
     addToEncodingStats(s, header);
 }
 
-void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
+/// Folds the oversized bloom filter built by `writeColumnImpl` down to the smallest size that still meets the requested
+/// false positive probability, and fills in its header. See the comment at the construction of the filter in
+/// `writeColumnImpl` for why it starts oversized.
+void foldBloomFilter(ColumnChunkIndexes & indexes, BloomFilterData && unfolded_data, const WriteOptions & options)
 {
     /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
+    const size_t num_blocks = unfolded_data.size() / 8;
 
-    if (hashes.empty())
+    if (num_blocks == 0)
         return;
 
-    static constexpr UInt32 salt[8] = {
-        0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
+    /// The number of blocks is a power of two by construction (see `writeColumnImpl`), so the filter can be halved
+    /// exactly `countr_zero(num_blocks)` times and every fold below leaves a power of two.
+    chassert(std::has_single_bit(num_blocks));
 
-    /// There appear to be undocumented requirements:
-    ///  * number of blocks must be a power of two,
-    ///  * bloom filter size must be at most 128 MiB.
-    /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
-    /// requires this.
-    double requested_num_blocks = static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256;
-    size_t num_blocks = 1;
-    while (static_cast<double>(num_blocks) < requested_num_blocks)
+    /// The false positive probability (fpp) that the bloom filter parameters ask for. A split block bloom filter sets
+    /// k = 8 bits per inserted value (one in each of the 8 words of its block), and the filter is sized to spend
+    /// c = `bits_per_value` bits per value, so its expected fpp is given by the classic bloom filter approximation
+    ///     f = (1 - e^(-k / c))^k
+    /// (the probability that a bit is still unset after inserting n values into m bits is about e^(-k * n / m), and an
+    /// absent value passes only if all k bits it checks are set), see http://tfk.mit.edu/pdf/bloom.pdf, section 2,
+    /// and https://parquet.apache.org/docs/file-format/bloomfilter/#sizing-an-sbbf.
+    const double fpp = std::pow(1 - std::exp(-8 / options.bloom_filter_bits_per_value), 8);
+
+    /// The fpp of the concrete filter follows from the fraction of set bits (the fill rate): a membership check tests
+    /// 8 bits, so an absent value passes with probability about fill_rate^8.
+    size_t total_set_bits = 0;
+    for (size_t i = 0; i < num_blocks * 8; ++i)
+        total_set_bits += std::popcount(unfolded_data[i]);
+    if (total_set_bits == 0)
+        return;
+
+    const double fill_rate = static_cast<double>(total_set_bits) / (static_cast<double>(num_blocks) * 256);
+
+    indexes.bloom_filter_data = std::move(unfolded_data);
+    BloomFilterData & data = indexes.bloom_filter_data;
+
+    /// Folding merges neighboring blocks by OR-ing them, which halves the filter and yields exactly the filter that
+    /// would have been built with half the blocks (see the merge loop below for why). Every fold increases the fill
+    /// rate and with it the fpp: OR-ing two blocks with fill rate p leaves a bit unset with probability (1 - p)^2, so
+    /// the fill rate of the merged block is 1 - (1 - p)^2. Fold as often as the fpp estimated that way stays within
+    /// the requested one. A filter sized for all values of the column chunk is at or below the requested fpp before
+    /// the first fold, so at least the unfolded filter is always kept.
+    const int max_folds = std::countr_zero(num_blocks);
+    double one_minus_fill_rate = 1.0 - fill_rate;
+    UInt32 folds = 0;
+    for (int i = 0; i < max_folds; ++i)
     {
-        if (num_blocks >= 4 * 1024 * 1024)
-            return;
-        num_blocks *= 2;
+        one_minus_fill_rate = one_minus_fill_rate * one_minus_fill_rate;
+        const double folded_fill_rate = 1.0 - one_minus_fill_rate;
+        if (std::pow(folded_fill_rate, 8) > fpp)
+            break;
+        ++folds;
     }
-    PODArray<UInt32> & data = indexes.bloom_filter_data;
-    data.reserve_exact(num_blocks * 8);
-    data.resize_fill(num_blocks * 8);
-    for (const auto & cell : hashes)
+
+    if (folds > 0)
     {
-        size_t h = cell.key;
-        size_t block_idx = ((h >> 32) * num_blocks) >> 32;
-        chassert(block_idx < num_blocks);
-        UInt32 x = UInt32(h); // overflow to take the lower 32 bits
-        for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+        /// Merge each group of 2^folds consecutive blocks into one block. A value goes to block
+        /// `((h >> 32) * num_blocks) >> 32` (see the hashing in `writeColumnImpl`), i.e. the block index is taken from
+        /// the top bits of the hash, so a filter with half the blocks puts a value into block `i / 2` where this filter
+        /// put it into block `i`: blocks `2 * i` and `2 * i + 1` together hold exactly the values that block `i` of the
+        /// smaller filter would hold, and OR-ing them gives that block bit for bit. The same holds for 2^folds
+        /// consecutive blocks after several halvings. The reader derives the block index from the number of blocks in
+        /// the file and thus finds every value where the folded filter put it.
+        /// The merge is done in place: group `i` lands in block `i`, which is at or before the first block of the
+        /// group, so no block that is still to be read is overwritten.
+        const size_t group_size = size_t(1) << folds;
+        const size_t new_num_blocks = num_blocks >> folds;
+        for (size_t i = 0; i < new_num_blocks; ++i)
         {
-            UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
-            size_t bit_idx = y >> 27;
-            data[block_idx * 8 + word_idx] |= 1u << bit_idx;
+            UInt32 * dst = &data[i * 8];
+            const UInt32 * src = &data[i * group_size * 8];
+            /// For i = 0 the destination is the first block of the group itself, so there is nothing to move
+            /// (and `memcpy` is not allowed on identical or overlapping regions).
+            if (dst != src)
+                memcpy(dst, src, 8 * sizeof(UInt32));
+            for (size_t j = 1; j < group_size; ++j)
+            {
+                const UInt32 * block = src + j * 8;
+                for (size_t w = 0; w < 8; ++w)
+                    dst[w] |= block[w];
+            }
         }
+        /// `resize` only moves the logical end; also release the capacity of the unfolded filter, because the folded
+        /// filters of completed row groups stay in memory until `flushBloomFilters`.
+        data.resize(new_num_blocks * 8);
+        data.shrink_to_fit();
     }
 
     /// Fill out the paperwork.
@@ -976,12 +1065,56 @@ void writeColumnImpl(
     PODArray<char> encoded;
     PODArray<char> compressed_maybe;
 
-    /// Hash set to deduplicate the values before calculating bloom filter size.
+    /// Bloom filter of this column chunk, if requested.
+    ///
+    /// Why the filter starts sized for all values and is folded afterwards: a bloom filter has to be sized for the
+    /// number of distinct values it will hold, which is not known when the column chunk is started. The writer used
+    /// to find it by deduplicating the hashes of all values in a hash set first, which costs a hash set the size of
+    /// the column chunk and, for unlucky value distributions, degenerates into an excessive number of collisions
+    /// (https://github.com/ClickHouse/ClickHouse/issues/105295). Instead, the filter is sized under the assumption
+    /// that all values are distinct, the largest size it can ever need, so it meets the requested false positive
+    /// probability for any data. Once all values are hashed into it, its fill rate reveals how many distinct values
+    /// it actually received, and `foldBloomFilter` halves it as long as the requested false positive probability holds.
+    /// Folding a split block bloom filter yields exactly the filter that would have been built with fewer blocks,
+    /// so nothing is lost compared to knowing the right size upfront, and the cost is a larger temporary buffer
+    /// instead of a hash set. The same approach was adopted by arrow-rs: https://github.com/apache/arrow-rs/pull/9628
+    ///
     /// Possible future optimization: if using dictionary encoding, take already-deduplicated values
     /// from the dictionary instead.
-    std::optional<HashSet<UInt64, TrivialHash>> hashes_for_bloom_filter;
+    std::optional<BloomFilterData> bloom_data;
     if (options.write_bloom_filter)
-        hashes_for_bloom_filter.emplace(); // allocates memory for initial size
+    {
+        /// There appear to be undocumented requirements:
+        ///  * number of blocks must be a power of two,
+        ///  * bloom filter size must be at most 128 MiB.
+        /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
+        /// requires this. A column chunk that would need a bigger filter gets none.
+        /// Only the entries at the maximum definition level are hashed into the filter, so size it for the number of
+        /// leaf values in the primitive column, not for `num_values`, which also counts the null and empty-array
+        /// placeholders of a repeated or nullable leaf (a sparse `Array(Nullable(T))` may have hundreds of
+        /// placeholders per value).
+        const double requested_num_blocks
+            = static_cast<double>(s.primitive_column->size()) * options.bloom_filter_bits_per_value / 256;
+        size_t num_blocks = 1;
+        bool too_many_blocks = false;
+        while (static_cast<double>(num_blocks) < requested_num_blocks)
+        {
+            if (num_blocks >= 4 * 1024 * 1024)
+            {
+                too_many_blocks = true;
+                break;
+            }
+            num_blocks *= 2;
+        }
+        if (!too_many_blocks)
+        {
+            bloom_data.emplace();
+            bloom_data->reserve_exact(num_blocks * 8);
+            /// `BloomFilterData` zeroes freshly allocated memory in the allocator, so plain `resize` is
+            /// enough here; `resize_fill` would `memset` the whole buffer on top of that.
+            bloom_data->resize(num_blocks * 8);
+        }
+    }
 
     /// Start of current page.
     size_t def_offset = 0; // index in def and rep
@@ -991,6 +1124,14 @@ void writeColumnImpl(
     auto flush_page = [&](size_t def_count, size_t data_count)
     {
         encoded.clear();
+
+        /// Unless the next value starts a record, the record is split, and pages no longer start
+        /// where the page index says they do.
+        if (pages_change_on_record_boundaries && def_offset + def_count < num_values && s.rep[def_offset + def_count] != 0)
+        {
+            s.indexes.column_index_valid = false;
+            s.indexes.offset_index_valid = false;
+        }
 
         /// Concatenate encoded rep, def, and data.
 
@@ -1128,10 +1269,168 @@ void writeColumnImpl(
         return true;
     };
 
-    auto is_dict_too_big = [&] {
+    static constexpr bool dict_uses_binary_builder
+        = std::is_same_v<ParquetDType, parquet::ByteArrayType> || std::is_same_v<ParquetDType, parquet::FLBAType>;
+    static constexpr size_t arrow_binary_builder_limit = 2147483646;
+
+    auto dict_encoded_size = [&]
+    {
         auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
-        int dict_size = dict_encoder->dict_encoded_size();
-        return static_cast<size_t>(dict_size) >= options.max_dictionary_size;
+        return static_cast<size_t>(dict_encoder->dict_encoded_size());
+    };
+
+    auto is_dict_too_big = [&]
+    {
+        return dict_encoded_size() >= options.max_dictionary_size;
+    };
+
+    auto would_overflow_dict = [&](size_t batch_byte_size)
+    {
+        if constexpr (dict_uses_binary_builder)
+            return dict_encoded_size() + batch_byte_size >= arrow_binary_builder_limit;
+        else
+            return false;
+    };
+
+    /// Fallback to non-dictionary encoding.
+    ///
+    /// Discard encoded data and start over.
+    /// This is different from what arrow does: arrow writes out the dictionary-encoded
+    /// data, then uses non-dictionary encoding for later pages.
+    /// Starting over seems better: it produces slightly smaller files (I saw 1-4%) in
+    /// exchange for slight decrease in speed (I saw < 5%). This seems like a good
+    /// trade because encoding speed is less important than decoding (as evidenced
+    /// by arrow not supporting parallel encoding, even though it's easy to support).
+    auto restart_without_dictionary = [&]
+    {
+        def_offset = 0;
+        data_offset = 0;
+        row_idx = 0;
+        dict_encoded_pages.clear();
+        use_dictionary = false;
+
+        s.indexes = {};
+        /// Everything the discarded pass accumulated is about to be accumulated again.
+        /// (no need to clear hashes_for_bloom_filter: the same values hash to the same set)
+        reset_size_statistics();
+        page_statistics.clear();
+        total_statistics.clear();
+
+#ifndef NDEBUG
+        /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
+        /// call it even though we don't need its output.
+        encoder->FlushValues();
+#endif
+
+        encoder = parquet::MakeTypedEncoder<ParquetDType>(
+            static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
+            fixed_string_descr ? &*fixed_string_descr : nullptr);
+    };
+
+    /// A batch is bounded by bytes as well as by rows. `write_batch_size` values of a wide column
+    /// otherwise carry gigabytes into a single page, which overruns both the page's own 32-bit size
+    /// and the 32-bit offsets of the builder behind the dictionary encoder, and stages the whole
+    /// column chunk in memory on the way.
+    ///
+    /// The budget only has to keep those 32-bit quantities out of reach, so it sits far above any
+    /// page a caller would ask for: a batch of 1024 values stays under it unless the values average
+    /// more than 64 KiB, and pages of ordinary data come out exactly as they did before.
+    ///
+    /// Cuts the batch at the first record boundary at or after the budget. A record is kept whole
+    /// unless it would not fit a page at all: then the batch ends before the value that would carry
+    /// the page past `max_record_bytes`, wherever that is.
+    ///
+    /// The cut is measured by what the page holds, which is more than the values: `overhead_per_value`
+    /// covers the 4-byte length prefix plain `BYTE_ARRAY` puts in front of every value, and the rep and
+    /// def levels of a nested column of narrow values can weigh as much as the values themselves. With
+    /// a dictionary, the page holds indexes, so the values are budgeted for both, as they are staged
+    /// for the dictionary as well. All of these are worst cases, which only matter for huge records.
+    static constexpr size_t max_batch_bytes = 64uz << 20;
+
+    static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
+
+    /// The converter materializes every value it is given, so a long record is handed to it in
+    /// slices of this many values. The slices of a record go into the same page, unless the page
+    /// would grow past `max_record_bytes`.
+    const size_t max_batch_values = std::max(options.write_batch_size, 64uz << 10);
+
+    auto max_levels_size = [&](size_t count)
+    {
+        size_t res = 0;
+        if (s.max_rep > 0)
+            res += maxEncodedRepDefLevelsSize(count, s.max_rep);
+        if (s.max_def > 0)
+            res += maxEncodedRepDefLevelsSize(count, s.max_def);
+        return res;
+    };
+
+    auto dictionary_entries = [&]
+    {
+        if (!use_dictionary)
+            return 0uz;
+        auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
+        return static_cast<size_t>(dict_encoder->num_entries());
+    };
+
+    /// Like `EstimatedDataEncodedSize` of a dictionary encoder, for `count` indexes into a dictionary
+    /// of up to `max_entries`: a byte of bit width and the RLE of the indexes.
+    auto max_dictionary_indexes_size = [&](size_t count, size_t max_entries)
+    {
+        if (!use_dictionary)
+            return 0uz;
+        int bit_width = std::min(32, static_cast<int>(bitScanReverse(std::max(max_entries, 1uz))) + 1);
+        return 1 + maxRLESize(bit_width, count);
+    };
+
+    struct BatchSize
+    {
+        /// What `unencoded_byte_array_data_bytes` reports.
+        size_t payload = 0;
+        /// What the plain encoding of the values writes.
+        size_t encoded = 0;
+    };
+
+    auto limit_batch_by_bytes
+        = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, size_t overhead_per_value, auto && value_size)
+    {
+        BatchSize size;
+        size_t data_idx = 0;
+        /// Every value of the batch may add an entry to the dictionary.
+        const size_t batch_dictionary_entries = dictionary_entries();
+
+        for (size_t i = 0; i < def_count; ++i)
+        {
+            const bool has_value = s.max_def == 0 || s.def[batch_def_offset + i] == s.max_def;
+            const size_t value_bytes = has_value ? value_size(data_idx) : 0;
+            const size_t values_encoded = size.encoded + (has_value ? value_bytes + overhead_per_value : 0);
+            const size_t values = data_idx + has_value;
+            const size_t page_bytes = values_encoded + max_levels_size(i + 1)
+                + max_dictionary_indexes_size(values, batch_dictionary_entries + values);
+
+            if (i > 0 && page_bytes > max_record_bytes)
+            {
+                def_count = i;
+                data_count = data_idx;
+                break;
+            }
+
+            size.payload += value_bytes;
+            size.encoded = values_encoded;
+            data_idx += has_value;
+
+            const bool record_ends = !pages_change_on_record_boundaries
+                || batch_def_offset + i + 1 == num_values
+                || s.rep[batch_def_offset + i + 1] == 0;
+
+            if (record_ends && page_bytes >= max_batch_bytes)
+            {
+                def_count = i + 1;
+                data_count = data_idx;
+                break;
+            }
+        }
+
+        return size;
     };
 
     while (def_offset < num_values)
@@ -1153,26 +1452,93 @@ void writeColumnImpl(
             if (pages_change_on_record_boundaries)
             {
                 /// Each record (table row) starts with a value with rep = 0.
-                while (next_def_offset + def_count < num_values && s.rep[next_def_offset + def_count] != 0)
+                while (next_def_offset + def_count < num_values && s.rep[next_def_offset + def_count] != 0
+                    && def_count < max_batch_values)
                 {
                     data_count += s.def[next_def_offset + def_count] == s.max_def;
                     ++def_count;
                 }
             }
 
-            /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
-            const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
+            /// Only the size of a byte array has to be known from the converted value, so the batch
+            /// of any other type is cut before it is converted.
+            const typename ParquetDType::c_type * converted = nullptr;
+
+            BatchSize batch_size;
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                if constexpr (requires { converter.startBatch(next_data_offset, data_count); })
+                {
+                    /// The converter serializes values, so only the values that make it into the
+                    /// batch are serialized.
+                    converter.startBatch(next_data_offset, data_count);
+                    batch_size = limit_batch_by_bytes(
+                        next_def_offset, def_count, data_count, sizeof(uint32_t),
+                        [&](size_t i) { return converter.valueSize(i); });
+                    converted = converter.finishBatch(data_count);
+                }
+                else
+                {
+                    converted = converter.getBatch(next_data_offset, data_count);
+                    batch_size = limit_batch_by_bytes(
+                        next_def_offset, def_count, data_count, sizeof(uint32_t),
+                        [&](size_t i) { return static_cast<size_t>(converted[i].len); });
+                }
+            }
+            else if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
+            {
+                batch_size = limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, 0, [&](size_t) { return converter.fixedStringSize(); });
+            }
+            else
+            {
+                /// Fixed-width values are written back to back (booleans are bit-packed, so this only
+                /// over-counts). A batch of `write_batch_size` of them is far below the budget, so only
+                /// a very long repeated record needs to be walked.
+                static constexpr size_t value_bytes = sizeof(typename ParquetDType::c_type);
+                if (def_count * value_bytes + max_levels_size(def_count)
+                        + max_dictionary_indexes_size(def_count, dictionary_entries() + def_count) < max_batch_bytes)
+                    batch_size = {.payload = data_count * value_bytes, .encoded = data_count * value_bytes};
+                else
+                    batch_size = limit_batch_by_bytes(
+                        next_def_offset, def_count, data_count, 0, [](size_t) { return value_bytes; });
+            }
+
+            if (next_def_offset > def_offset)
+            {
+                const size_t page_values = next_data_offset - data_offset + data_count;
+                const size_t page_values_bytes = use_dictionary
+                    ? max_dictionary_indexes_size(page_values, dictionary_entries() + data_count)
+                    : static_cast<size_t>(encoder->EstimatedDataEncodedSize()) + batch_size.encoded;
+
+                if (page_values_bytes + max_levels_size(next_def_offset - def_offset + def_count) > max_record_bytes)
+                {
+                    flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
+                    break;
+                }
+            }
+
+            if constexpr (!std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                converted = converter.getBatch(next_data_offset, data_count);
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
                 for (size_t i = 0; i < data_count; ++i)
                     page_statistics.add(converted[i]);
 
-            if (hashes_for_bloom_filter.has_value())
+            if (bloom_data.has_value())
             {
 /// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
 /// so any actual use triggers this warning.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
+                /// Hash the value into its block of the split block bloom filter: 8 bits per value, one in each
+                /// of the 8 words of the block, at positions derived from the lower 32 bits of the hash and the salt.
+                /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
+                auto & bd = *bloom_data;
+                const size_t num_blocks = bd.size() / 8;
+                static constexpr UInt32 salt[8] = {
+                    0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
+
                 for (size_t i = 0; i < data_count; ++i)
                 {
                     UInt64 h = 0;
@@ -1186,16 +1552,27 @@ void writeColumnImpl(
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
                         h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
-                    hashes_for_bloom_filter->insert(h);
+                    const size_t block_idx = ((h >> 32) * num_blocks) >> 32;
+                    chassert(block_idx < num_blocks);
+                    const UInt32 x = UInt32(h); // overflow to take the lower 32 bits
+                    for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+                    {
+                        const UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
+                        const size_t bit_idx = y >> 27;
+                        bd[block_idx * 8 + word_idx] |= 1u << bit_idx;
+                    }
                 }
 #pragma clang diagnostic pop
             }
 
-            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            if (use_dictionary && would_overflow_dict(batch_size.payload))
             {
-                for (size_t i = 0; i < data_count; ++i)
-                    s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
+                restart_without_dictionary();
+                break;
             }
+
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += batch_size.payload;
 
             encoder->Put(converted, static_cast<int>(data_count));
 
@@ -1204,43 +1581,16 @@ void writeColumnImpl(
 
             if (use_dictionary && is_dict_too_big())
             {
-                /// Fallback to non-dictionary encoding.
-                ///
-                /// Discard encoded data and start over.
-                /// This is different from what arrow does: arrow writes out the dictionary-encoded
-                /// data, then uses non-dictionary encoding for later pages.
-                /// Starting over seems better: it produces slightly smaller files (I saw 1-4%) in
-                /// exchange for slight decrease in speed (I saw < 5%). This seems like a good
-                /// trade because encoding speed is less important than decoding (as evidenced
-                /// by arrow not supporting parallel encoding, even though it's easy to support).
-
-                def_offset = 0;
-                data_offset = 0;
-                row_idx = 0;
-                dict_encoded_pages.clear();
-                use_dictionary = false;
-
-                s.indexes = {};
-                /// Everything the discarded pass accumulated is about to be accumulated again.
-                /// (no need to clear hashes_for_bloom_filter: the same values hash to the same set)
-                reset_size_statistics();
-                page_statistics.clear();
-                total_statistics.clear();
-
-#ifndef NDEBUG
-                /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
-                /// call it even though we don't need its output.
-                encoder->FlushValues();
-#endif
-
-                encoder = parquet::MakeTypedEncoder<ParquetDType>(
-                    static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
-                    fixed_string_descr ? &*fixed_string_descr : nullptr);
+                restart_without_dictionary();
                 break;
             }
 
+            /// A page ends with a record, unless the record does not fit a page at all.
+            const bool at_record_boundary = !pages_change_on_record_boundaries || next_def_offset == num_values
+                || s.rep[next_def_offset] == 0;
+            const size_t page_target = std::min(options.data_page_size, max_record_bytes);
             if (next_def_offset == num_values ||
-                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= options.data_page_size)
+                (at_record_boundary && static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= page_target))
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;
@@ -1274,8 +1624,8 @@ void writeColumnImpl(
         addToEncodingsUsed(s, encoding);
     }
 
-    if (hashes_for_bloom_filter.has_value())
-        makeBloomFilter(*hashes_for_bloom_filter, s.indexes, options);
+    if (bloom_data.has_value())
+        foldBloomFilter(s.indexes, *std::move(bloom_data), options);
 }
 
 }
@@ -1548,6 +1898,9 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
     {
         for (size_t j = 0; j < rg.column_indexes.size(); ++j)
         {
+            if (!rg.column_indexes.at(j).offset_index_valid)
+                continue;
+
             auto & column = rg.row_group.columns.at(j);
             column.__set_offset_index_offset(file.offset);
             size_t length = serializeThriftStruct(rg.column_indexes.at(j).offset_index, out);

@@ -16,6 +16,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Common/randomSeed.h>
+#include <base/scope_guard.h>
 
 #include <TableFunctions/registerTableFunctions.h>
 
@@ -49,6 +50,7 @@ public:
     static constexpr auto name = "generateRandom";
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return structure != "auto"; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     bool needStructureHint() const override { return structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
@@ -77,7 +79,12 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
     /// `SETTINGS k = v` is accepted as the last argument of a table function call, also as the only
     /// one. It is taken out of the argument list before anything else looks at the positions, so
-    /// that `generateRandom(SETTINGS null_ratio = 0.2)` still means "no structure given".
+    /// that `generateRandom(SETTINGS null_ratio = 0.2)` still means "no structure given", and put
+    /// back afterwards: `CREATE TABLE ... AS generateRandom(...)` creates the table from this AST
+    /// and stores it as the table's definition. Putting it back does not allocate, since `erase`
+    /// keeps the capacity.
+    ASTPtr settings_arg;
+    size_t settings_arg_position = 0;
     for (auto it = args.begin(); it != args.end(); ++it)
     {
         if (const auto * set_query = (*it)->as<ASTSetQuery>())
@@ -90,10 +97,17 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
             options.max_json_depth = settings[GenerateRandomSetting::max_json_depth];
             options.max_json_keys_per_object = settings[GenerateRandomSetting::max_json_keys_per_object];
 
+            settings_arg = *it;
+            settings_arg_position = it - args.begin();
             args.erase(it);
             break;
         }
     }
+    SCOPE_EXIT(
+    {
+        if (settings_arg)
+            args.insert(args.begin() + settings_arg_position, settings_arg);
+    });
 
     if (args.empty())
         return;
@@ -353,7 +367,7 @@ INSERT INTO t SELECT * FROM generateRandom() LIMIT 10;
 
 ## Related content {#related-content}
 - Blog: [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }

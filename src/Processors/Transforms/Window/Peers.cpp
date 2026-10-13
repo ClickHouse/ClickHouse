@@ -1,55 +1,68 @@
 #include <Processors/Transforms/Window/Peers.h>
 
+#include <Columns/findEqualRangeEndAssumeSorted.h>
+
 namespace DB
 {
 
 namespace
 {
 
-bool isPeerGroupStart(const SlidingBlocks & blocks, RowNumber row)
+int64_t peerGroupIndex(const SlidingBlocks & blocks, RowNumber row)
 {
-    return blocks.blockAt(row.block).index.peer_group_starts[row.row];
+    return blocks.blockAt(row.block).index.peer_group_indexes[row.row];
 }
 
-RowPoint advancePeerGroupEnd(const SlidingBlocks & blocks, const PartitionBounds & partition, RowPoint end)
+/// Moves `end` past the rows of the peer group, block by block in the stored peer group indexes, to the first row of the next group or to the partition end.
+void advancePeerGroupEnd(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, RowPoint & end)
 {
-    end.location = blocks.next(end.location);
-    end.row_index_in_partition += 1;
-    if (end.location < partition.end && isPeerGroupStart(blocks, end.location))
-        end.peer_group_index_in_partition += 1;
+    const RowNumber partition_end = partition.end.location;
+    while (end.location < partition_end)
+    {
+        const SlidingBlock & block = blocks.blockAt(end.location.block);
+        const std::vector<int64_t> & groups = block.index.peer_group_indexes;
+        const int64_t rows_end = partition_end.block == end.location.block ? partition_end.row : block.rows_count;
+        const int64_t row = groups[end.location.row] != group
+            ? end.location.row
+            : static_cast<int64_t>(findEqualRangeEndAssumeSorted(end.location.row, rows_end, 16, [&](size_t i) { return groups[i] == group; }));
 
-    return end;
+        end.row_index_in_partition += row - end.location.row;
+        if (row < rows_end)
+        {
+            end.location.row = row;
+            end.peer_group_index_in_partition = groups[row];
+            return;
+        }
+        end.location = blocks.move(end.location, row - end.location.row);
+    }
+
+    end.peer_group_index_in_partition = group + 1;
 }
 
 }
 
 void Peers::enterPartition(const SlidingBlocks & blocks, const PartitionBounds & partition)
 {
-    current_row = RowPoint{.location = partition.start};
-    peers_bounds = PeersBounds{.start = current_row, .end = advancePeerGroupEnd(blocks, partition, current_row), .fully_visible = false};
+    current_row = partition.start;
+    peers_bounds = PeersBounds{.start = current_row, .end = current_row, .fully_visible = false};
+    advancePeerGroupBounds(blocks, partition);
 }
 
 void Peers::advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition)
 {
-    /// Check if current row points to a next group.
-    if (peers_bounds.start.location != current_row.location && isPeerGroupStart(blocks, current_row.location))
-    {
-        current_row.peer_group_index_in_partition += 1;
-        peers_bounds = PeersBounds{.start = current_row, .end = advancePeerGroupEnd(blocks, partition, current_row), .fully_visible = false};
-    }
+    current_row.peer_group_index_in_partition = peerGroupIndex(blocks, current_row.location);
+    if (peers_bounds.start.peer_group_index_in_partition != current_row.peer_group_index_in_partition)
+        peers_bounds = PeersBounds{.start = current_row, .end = current_row, .fully_visible = false};
 
-    /// Advance peer group end as much as possible.
-    while (peers_bounds.end.location < partition.end && !isPeerGroupStart(blocks, peers_bounds.end.location))
-        peers_bounds.end = advancePeerGroupEnd(blocks, partition, peers_bounds.end);
-
-    peers_bounds.fully_visible = peers_bounds.end.location < partition.end || partition.fully_visible;
+    advancePeerGroupEnd(blocks, partition, current_row.peer_group_index_in_partition, peers_bounds.end);
+    peers_bounds.fully_visible = peers_bounds.end.location < partition.end.location || partition.fully_visible;
 }
 
 void Peers::advanceCurrentRow(const SlidingBlocks & blocks, const PartitionBounds & partition)
 {
     current_row.location = blocks.next(current_row.location);
     current_row.row_index_in_partition += 1;
-    if (current_row.location < partition.end)
+    if (current_row.location < partition.end.location)
         advancePeerGroupBounds(blocks, partition);
 }
 

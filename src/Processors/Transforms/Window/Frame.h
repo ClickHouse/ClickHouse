@@ -4,11 +4,9 @@
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 
-
 namespace DB
 {
 
-/// Rows-range of the frame seen so far.
 struct FrameBounds
 {
     RowPoint start;

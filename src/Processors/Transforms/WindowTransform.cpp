@@ -67,26 +67,30 @@ void checkInvariants(
     const RowPoint & current = peers.current();
     const PeersBounds & peer_group = peers.bounds();
 
-    chassert(partition.start <= peer_group.start.location);
+    chassert(partition.start.location <= peer_group.start.location);
     chassert(peer_group.start.location <= current.location);
-    chassert(current.location <= partition.end);
+    chassert(current.location <= partition.end.location);
     chassert(peer_group.start.peer_group_index_in_partition == current.peer_group_index_in_partition);
     chassert(current.peer_group_index_in_partition <= current.row_index_in_partition);
     if (peer_group.fully_visible)
     {
-        chassert(current.location < peer_group.end.location || current.location == partition.end);
-        chassert(peer_group.end.location <= partition.end);
+        chassert(current.location < peer_group.end.location || current.location == partition.end.location);
+        chassert(peer_group.end.location <= partition.end.location);
     }
 
-    chassert(partition.start <= prev_frame.start.location);
+    chassert(partition.start.location <= prev_frame.start.location);
     chassert(prev_frame.start.location <= prev_frame.end.location);
-    chassert(prev_frame.end.location <= partition.end);
+    chassert(prev_frame.end.location <= partition.end.location);
+    chassert(prev_frame.start.row_index_in_partition <= prev_frame.end.row_index_in_partition);
+    chassert(prev_frame.end.row_index_in_partition <= partition.end.row_index_in_partition);
     if (frame.fully_visible)
     {
         chassert(prev_frame.start.location <= frame.start.location);
         chassert(frame.start.location <= frame.end.location);
         chassert(prev_frame.end.location <= frame.end.location);
-        chassert(frame.end.location <= partition.end);
+        chassert(frame.end.location <= partition.end.location);
+        chassert(frame.start.row_index_in_partition <= frame.end.row_index_in_partition);
+        chassert(frame.end.row_index_in_partition <= partition.end.row_index_in_partition);
     }
 
     chassert(blocks.begin().block <= std::min(prev_frame.start.location.block, current.location.block));
@@ -159,7 +163,7 @@ WindowTransform::~WindowTransform()
 // Update the aggregation states after the frame has changed.
 void WindowTransform::updateAggregationState()
 {
-    const FrameBounds current_frame = frame.bounds();
+    const FrameBounds & current_frame = frame.bounds();
     chassert(current_frame.fully_visible);
 
     // We might have to reset aggregation state and/or add some rows to it.
@@ -167,7 +171,7 @@ void WindowTransform::updateAggregationState()
     bool reset_aggregation = false;
     RowNumber rows_to_add_start;
     RowNumber rows_to_add_end;
-    if (current_frame.start.location == prev_frame.start.location)
+    if (current_frame.start.row_index_in_partition == prev_frame.start.row_index_in_partition)
     {
         // The frame start didn't change, add the tail rows.
         reset_aggregation = false;
@@ -245,13 +249,13 @@ void WindowTransform::updateAggregationState()
 
 void WindowTransform::writeOutCurrentRow()
 {
-    chassert(peers.current().location < partition.bounds().end);
+    chassert(peers.current().location < partition.bounds().end.location);
     chassert(peers.current().location.block >= blocks.begin().block);
 
     // Whether this row's frame equals the previous row's. The first row of the partition has no
     // previous row in this partition (and thus no previous frame) to compare against.
-    const FrameBounds current_frame = frame.bounds();
-    const bool frame_unchanged = peers.current().row_index_in_partition > 0 && current_frame.start.location == prev_frame.start.location && current_frame.end.location == prev_frame.end.location;
+    const FrameBounds & current_frame = frame.bounds();
+    const bool frame_unchanged = peers.current().row_index_in_partition > 0 && current_frame.start.row_index_in_partition == prev_frame.start.row_index_in_partition && current_frame.end.row_index_in_partition == prev_frame.end.row_index_in_partition;
 
     const auto & block = blocks.blockAt(peers.current().location.block);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
@@ -314,7 +318,7 @@ void WindowTransform::computeReadyRows()
     {
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
-        const RowNumber partition_end = partition.bounds().end;
+        const RowNumber partition_end = partition.bounds().end.location;
         chassert(partition.bounds().fully_visible || partition_end == blocks.end());
         if (partition.bounds().fully_visible && partition_end == blocks.end())
         {
@@ -398,7 +402,7 @@ void WindowTransform::computeReadyRows()
 
 void WindowTransform::startNextPartition()
 {
-    const RowNumber partition_start = partition.bounds().end;
+    const RowNumber partition_start = partition.bounds().end.location;
     chassert(peers.current().location == partition_start);
 
     partition.beginAt(blocks, partition_start);
@@ -545,9 +549,9 @@ void WindowTransform::work()
 
         addInputBlock(std::move(chunk));
     }
-    else
+    else if (!partition.bounds().fully_visible)
     {
-        partition.finish(blocks.end());
+        partition.finish();
     }
 
     computeReadyRows();

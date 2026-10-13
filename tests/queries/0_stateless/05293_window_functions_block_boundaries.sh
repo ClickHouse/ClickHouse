@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: long, no-parallel-replicas
+# ntile over parallel replicas fails, see https://github.com/ClickHouse/ClickHouse/issues/112401
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
