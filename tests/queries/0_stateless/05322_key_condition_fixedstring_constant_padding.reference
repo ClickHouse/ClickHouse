@@ -34,6 +34,10 @@ SELECT count() FROM t_tuple_parts WHERE k = tuple(toFixedString('abc', 4), CAST(
 2
 SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple(toFixedString('abc', 4), toFixedString('abc', 4)) AS Tuple(b FixedString(4), a FixedString(4))));
 2
+SELECT count() FROM t_partitioned WHERE k = (CAST(toFixedString('abc', 4) AS Dynamic), toUInt8(1)) SETTINGS optimize_trivial_count_query = 0;
+3
+SELECT count() FROM t_partitioned WHERE k = CAST((toFixedString('abc', 4), toUInt8(1)) AS Dynamic) SETTINGS optimize_trivial_count_query = 0;
+3
 -- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
 1
@@ -46,6 +50,8 @@ SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CA
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Dynamic), toUInt8(1))) SETTINGS force_primary_key = 1;
 1
 SELECT count() FROM t_tuple_hashed WHERE x = (CAST('abc' AS Dynamic), toUInt8(1)) SETTINGS force_primary_key = 1;
+1
+SELECT count() FROM t_partitioned WHERE k = (CAST('abc' AS Dynamic), toUInt8(1)) SETTINGS optimize_trivial_count_query = 0, force_index_by_date = 1;
 1
 -- A `FixedString` that stays a `FixedString` keeps index analysis.
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), 'abc', toUInt8(1))) SETTINGS force_primary_key = 1;
@@ -72,3 +78,4 @@ DROP TABLE t_uint8;
 DROP TABLE t_uint8_monotonic;
 DROP TABLE t_named_tuple;
 DROP TABLE t_tuple_parts;
+DROP TABLE t_partitioned;

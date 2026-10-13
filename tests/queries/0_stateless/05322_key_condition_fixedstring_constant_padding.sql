@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS t_uint8;
 DROP TABLE IF EXISTS t_uint8_monotonic;
 DROP TABLE IF EXISTS t_named_tuple;
 DROP TABLE IF EXISTS t_tuple_parts;
+DROP TABLE IF EXISTS t_partitioned;
 
 CREATE TABLE t_monotonic (s Nullable(String))
 ENGINE = MergeTree ORDER BY assumeNotNull(s) SETTINGS index_granularity = 1, allow_nullable_key = 1;
@@ -62,6 +63,10 @@ INSERT INTO t_tuple_parts VALUES (('abc', 'abc', 1));
 INSERT INTO t_tuple_parts VALUES (('abc', 'abc\0', 1));
 INSERT INTO t_tuple_parts VALUES (('b', 'b', 2));
 
+CREATE TABLE t_partitioned (k Tuple(String, UInt8))
+ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
+INSERT INTO t_partitioned VALUES (('abc', 1)), (('abc\0', 1)), (('abc\0\0', 1)), (('b', 1));
+
 -- { echo }
 
 SELECT count() FROM t_monotonic WHERE s <= toFixedString('abc', 4);
@@ -81,6 +86,8 @@ SELECT count() FROM t_tuple_hashed WHERE x = CAST((toFixedString('abc', 4), toUI
 SELECT count() FROM t_tuple_parts WHERE k = tuple(toFixedString('abc', 4), toFixedString('abc', 4), 1);
 SELECT count() FROM t_tuple_parts WHERE k = tuple(toFixedString('abc', 4), CAST(toFixedString('abc', 4) AS Dynamic), 1);
 SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple(toFixedString('abc', 4), toFixedString('abc', 4)) AS Tuple(b FixedString(4), a FixedString(4))));
+SELECT count() FROM t_partitioned WHERE k = (CAST(toFixedString('abc', 4) AS Dynamic), toUInt8(1)) SETTINGS optimize_trivial_count_query = 0;
+SELECT count() FROM t_partitioned WHERE k = CAST((toFixedString('abc', 4), toUInt8(1)) AS Dynamic) SETTINGS optimize_trivial_count_query = 0;
 
 -- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
@@ -89,6 +96,7 @@ SELECT count() FROM t_monotonic WHERE s <= CAST('abc' AS Variant(String, FixedSt
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Variant(String, FixedString(2))), toUInt8(1))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Dynamic), toUInt8(1))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_tuple_hashed WHERE x = (CAST('abc' AS Dynamic), toUInt8(1)) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_partitioned WHERE k = (CAST('abc' AS Dynamic), toUInt8(1)) SETTINGS optimize_trivial_count_query = 0, force_index_by_date = 1;
 
 -- A `FixedString` that stays a `FixedString` keeps index analysis.
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), 'abc', toUInt8(1))) SETTINGS force_primary_key = 1;
@@ -111,3 +119,4 @@ DROP TABLE t_uint8;
 DROP TABLE t_uint8_monotonic;
 DROP TABLE t_named_tuple;
 DROP TABLE t_tuple_parts;
+DROP TABLE t_partitioned;

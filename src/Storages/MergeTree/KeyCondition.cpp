@@ -5719,18 +5719,25 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         if (!common_type)
                             return false;
 
+                        /// A `FixedString` nested in a composite constant, such as a `Tuple` element, is compared
+                        /// zero-padded with a `String` of the key, but as a single point in the range, see the `String`
+                        /// case above. This holds whether the constant is converted to the common type or already has
+                        /// it, as for a `Dynamic` element. The column is built only when the types allow it, as it can
+                        /// only narrow the check.
+                        auto const_may_drop_padding = [&](const IColumn * const_column)
+                        {
+                            return castMayDropFixedStringPadding(const_type, common_type, const_column)
+                                || castMayDropFixedStringPadding(const_type, key_expr_type_not_null, const_column);
+                        };
+                        if (const_may_drop_padding(nullptr))
+                        {
+                            const ColumnPtr const_column = createConstantColumn(const_type, const_value, original_const_column);
+                            if (!const_column || const_may_drop_padding(const_column.get()))
+                                return false;
+                        }
+
                         if (!const_type->equals(*common_type))
                         {
-                            /// A `FixedString` nested in a composite constant, such as a `Tuple` element, loses its
-                            /// padding in the conversion to a `String` and becomes a point, see the `String` case above.
-                            /// The column is built only when the types allow it, as it can only narrow the check.
-                            if (castMayDropFixedStringPadding(const_type, common_type))
-                            {
-                                const ColumnPtr const_column = createConstantColumn(const_type, const_value, original_const_column);
-                                if (!const_column || castMayDropFixedStringPadding(const_type, common_type, const_column.get()))
-                                    return false;
-                            }
-
                             // Replace direct call that throws exception with try version
                             Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                             if (converted.isNull())
