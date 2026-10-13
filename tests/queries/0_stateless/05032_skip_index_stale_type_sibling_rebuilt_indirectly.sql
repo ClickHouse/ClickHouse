@@ -37,7 +37,7 @@ SYSTEM STOP MERGES t_sibling_ttl_rebuilt;
 -- are selected, and they must share one mutation id: the pipeline saw them as one command set. Two ids would
 -- mean two separate mutations and the case would silently stop covering the shape.
 SELECT count() = 2 AND uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
-    AND table = 't_sibling_ttl_rebuilt' AND (command LIKE 'UPDATE %' OR command LIKE '%idx_new%');
+    AND table = 't_sibling_ttl_rebuilt' AND (command LIKE '%UPDATE %' OR command LIKE '%idx_new%');
 SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_ttl_rebuilt' AND active AND column = 'c';
 -- g keeps its values, so idx_old was rebuilt from data rather than emptied.
 SELECT count() = 64 FROM t_sibling_ttl_rebuilt WHERE g != '';

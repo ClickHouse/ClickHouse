@@ -47,7 +47,7 @@ SYSTEM STOP MERGES t_sibling_marker_materialized;
 -- `system.mutations` has a row per command, so both the `UPDATE` row and the `MATERIALIZE INDEX` row
 -- are selected, and they must share one mutation id: the pipeline saw them as one command set.
 SELECT count() = 2 AND uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
-    AND table = 't_sibling_marker_materialized' AND (command LIKE 'UPDATE %' OR command LIKE '%idx_new%');
+    AND table = 't_sibling_marker_materialized' AND (command LIKE '%UPDATE %' OR command LIKE '%idx_new%');
 SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase()
     AND table = 't_sibling_marker_materialized' AND active AND column = 'c';
 SELECT count() = 64 FROM t_sibling_marker_materialized WHERE e = k + 2 AND m = 0;
