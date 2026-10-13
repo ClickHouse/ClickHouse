@@ -98,7 +98,11 @@ def test_metadata_log_default_limit(started_cluster_iceberg_with_spark):
     older_than = time.strftime("%Y-%m-%d %H:%M:%S")
     result = instance.query(
         f"ALTER TABLE {table_name} EXECUTE remove_orphan_files(older_than = '{older_than}')",
-        settings={**ICEBERG_SETTINGS, "allow_iceberg_remove_orphan_files": 1},
+        settings={
+            **ICEBERG_SETTINGS,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        },
     )
     counts = dict(line.split("\t") for line in result.strip().split("\n"))
     assert counts["deleted_metadata_files_count"] == "1", counts
