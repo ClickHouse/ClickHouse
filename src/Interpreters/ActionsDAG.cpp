@@ -23,6 +23,7 @@
 #include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/SetSerialization.h>
 #include <IO/WriteBufferFromString.h>
@@ -4601,6 +4602,61 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
 
 ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const
 {
+    /// The projection evaluates the filter on rows the main read may skip, and a weakened `AND` evaluates its later
+    /// operands on more rows, so the `OR` walk is kept only if no `OR` it weakened can throw or change on re-evaluation.
+    /// Outside such an `OR` the restriction is the same as without the walk.
+    std::unordered_set<const Node *> substitutes;
+    auto restricted = restrictFilterDAGToInputsImpl(filter_node, available_inputs, /*walk_or=*/true, &substitutes);
+
+    auto is_number = [](const Node * node) { return isNativeNumber(removeLowCardinalityAndNullable(node->result_type)); };
+    auto is_total = [&](const Node & node)
+    {
+        if (node.type == ActionType::INPUT || node.type == ActionType::COLUMN || node.type == ActionType::ALIAS)
+            return true;
+        if (node.type != ActionType::FUNCTION || !node.function_base)
+            return false;
+        const auto & name = node.function_base->getName();
+        if (name == "and" || name == "or")
+            return true;
+        if (name == "equals" || name == "notEquals" || name == "less" || name == "greater" || name == "lessOrEquals"
+            || name == "greaterOrEquals")
+            return std::ranges::all_of(node.children, is_number);
+        if (name == "in" || name == "notIn")
+            return is_number(node.children.front());
+        return false;
+    };
+
+    auto is_safe = [&](const Node & or_node)
+    {
+        bool weakened = false;
+        bool total = true;
+        std::vector<const Node *> to_visit{&or_node};
+        std::unordered_set<const Node *> visited{&or_node};
+        while (!to_visit.empty())
+        {
+            const auto * node = to_visit.back();
+            to_visit.pop_back();
+            weakened |= substitutes.contains(node);
+            total &= is_total(*node);
+            for (const auto * child : node->children)
+                if (visited.insert(child).second)
+                    to_visit.push_back(child);
+        }
+        return !weakened || total;
+    };
+
+    for (const auto & node : restricted.nodes)
+        if (node.type == ActionType::FUNCTION && node.function_base && node.function_base->getName() == "or" && !is_safe(node))
+            return restrictFilterDAGToInputsImpl(filter_node, available_inputs, /*walk_or=*/false);
+    return restricted;
+}
+
+ActionsDAG ActionsDAG::restrictFilterDAGToInputsImpl(
+    const ActionsDAG::Node * filter_node,
+    const NameSet & available_inputs,
+    bool walk_or,
+    std::unordered_set<const Node *> * substitutes) const
+{
     ActionsDAG actions;
     std::unordered_map<const Node *, const Node *> copy_map;
     std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
@@ -4610,7 +4666,7 @@ ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter
       * branch condition the weakened `AND` makes the whole predicate stronger - `NOT (a AND b)` becomes
       * `NOT (a)` - and rows that do match the filter are then pruned away.
       *
-      * So collect the chain of `AND`s hanging directly off the filter, which is the only place where the
+      * So collect the `AND`s reached from the filter through `AND`s (and `OR`s with `walk_or`) only, which is where the
       * polarity is known to be positive. A node with more than one parent may also be reachable through
       * some other function, so require a single parent while descending. The substitution is recorded
       * against the child, so the child must have a single parent too.
@@ -4636,10 +4692,16 @@ ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter
             }
         }
 
-        auto is_and = [](const Node * candidate)
+        auto is_function = [](const Node * candidate, std::string_view name)
         {
             return candidate->type == ActionType::FUNCTION && candidate->function_base
-                && candidate->function_base->getName() == "and";
+                && candidate->function_base->getName() == name;
+        };
+
+        /// `OR` is monotone in each operand like `AND`, also with NULLs, so an `AND` under it keeps the polarity.
+        auto is_and_or_or = [&](const Node * candidate)
+        {
+            return is_function(candidate, "and") || (walk_or && is_function(candidate, "or"));
         };
 
         /// An alias is the same value under a new name, so it keeps the polarity of what it wraps. A filter
@@ -4651,20 +4713,20 @@ ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter
             return node;
         };
 
-        if (const auto * root = skip_aliases(filter_node); is_and(root))
+        if (const auto * root = skip_aliases(filter_node); is_and_or_or(root))
             to_visit.push(root);
 
         while (!to_visit.empty())
         {
-            const auto * and_node = to_visit.top();
+            const auto * node = to_visit.top();
             to_visit.pop();
 
-            if (!conjuncts_safe_to_drop.insert(and_node).second)
-                continue;
+            if (is_function(node, "and"))
+                conjuncts_safe_to_drop.insert(node);
 
-            for (const auto * child : and_node->children)
+            for (const auto * child : node->children)
                 if (num_parents[child] == 1)
-                    if (const auto * nested = skip_aliases(child); is_and(nested))
+                    if (const auto * nested = skip_aliases(child); is_and_or_or(nested))
                         to_visit.push(nested);
         }
     }
@@ -4704,14 +4766,20 @@ ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter
                     {
                         const auto & name = frame.node->function_base->getName();
 
-                        /// Replace non-computable child in "and" with constant true.
+                        /// Replace non-computable child in "and" with constant true. `Nullable(Nothing)` has no true value.
                         if (name == "and" && conjuncts_safe_to_drop.contains(frame.node) && num_parents[child] == 1)
                         {
-                            auto const_column = child->result_type->createColumnConst(0, 1);
-                            copy_map[child] = &actions.addColumn(std::move(const_column), child->result_type, child->result_name);
+                            Field true_value = convertFieldToType(Field(static_cast<UInt64>(1)), *child->result_type);
+                            if (!true_value.isNull())
+                            {
+                                auto const_column = child->result_type->createColumnConst(0, true_value);
+                                copy_map[child] = &actions.addColumn(std::move(const_column), child->result_type, child->result_name);
+                                if (substitutes)
+                                    substitutes->insert(copy_map[child]);
 
-                            /// Mark as now computable (since we substituted it)
-                            it->second = true;
+                                /// Mark as now computable (since we substituted it)
+                                it->second = true;
+                            }
                         }
                     }
                 }
