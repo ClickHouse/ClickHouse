@@ -1,4 +1,5 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-replicated-database
+-- Tag no-replicated-database: in a `Replicated` database the `ALTER` is executed by the DDL worker, which does not run as the initiating user, so no author is recorded.
 -- Replicated `ALTER` statements that enqueue a background mutation go through
 -- `StorageReplicatedMergeTree::alter`, not through `StorageReplicatedMergeTree::mutate`,
 -- so the `author` column has to be populated there as well.

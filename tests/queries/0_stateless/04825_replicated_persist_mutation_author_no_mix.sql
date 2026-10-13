@@ -12,10 +12,11 @@ ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_persist_author_no_mix', '
 ORDER BY id;
 
 -- Mixing `MODIFY SETTING persist_mutation_author` with a replicated command is rejected.
-ALTER TABLE t_persist_author_no_mix MODIFY COLUMN value LowCardinality(String), MODIFY SETTING persist_mutation_author = 1; -- { serverError BAD_ARGUMENTS }
+-- In a `Replicated` database such a mix is rejected earlier with `QUERY_IS_PROHIBITED`.
+ALTER TABLE t_persist_author_no_mix MODIFY COLUMN value LowCardinality(String), MODIFY SETTING persist_mutation_author = 1; -- { serverError BAD_ARGUMENTS, QUERY_IS_PROHIBITED }
 
 -- Same for `RESET SETTING`.
-ALTER TABLE t_persist_author_no_mix MODIFY COLUMN value LowCardinality(String), RESET SETTING persist_mutation_author; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_persist_author_no_mix MODIFY COLUMN value LowCardinality(String), RESET SETTING persist_mutation_author; -- { serverError BAD_ARGUMENTS, QUERY_IS_PROHIBITED }
 
 -- The rejected `ALTER` must not have applied the setting.
 SELECT engine_full LIKE '%persist_mutation_author%'

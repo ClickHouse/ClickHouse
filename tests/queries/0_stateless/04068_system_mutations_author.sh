@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-replicated-database
+# Tag no-replicated-database: in a `Replicated` database the `ALTER` is executed by the DDL worker, which does not run as the initiating user, so no author is recorded.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
