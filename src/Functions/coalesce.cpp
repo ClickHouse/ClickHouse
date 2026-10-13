@@ -61,21 +61,31 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
+    bool isShortCircuitForArgumentTypes(ShortCircuitSettings & settings, const DataTypes & arguments) const override
     {
-        /// The first argument is always needed. Every other argument is needed only for the rows
+        /// `executeImpl` removes the constant NULL arguments, so the planning is done for the remaining (live) arguments.
+        /// The first live argument is always needed. Every other one is needed only for the rows
         /// where all the preceding arguments are NULL, so it is evaluated lazily.
-        settings.arguments_with_disabled_lazy_execution.insert(0);
-        /// As in `and`, the masks of the arguments are nested: the rows needed by an argument are a subset
+        std::optional<size_t> first_live_argument;
+        size_t number_of_live_arguments = 0;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (arguments[i]->onlyNull())
+                continue;
+
+            if (!first_live_argument)
+                first_live_argument = i;
+            ++number_of_live_arguments;
+        }
+        settings.arguments_with_disabled_lazy_execution.insert(first_live_argument.value_or(0));
+        /// As in `and`, the masks of the live arguments are nested: the rows needed by an argument are a subset
         /// of the rows needed by every preceding argument. So a node that is a common descendant of several
-        /// arguments can be lazily executed as well, it is evaluated under the mask of each argument it belongs to.
+        /// lazy arguments can be lazily executed as well, it is evaluated under the mask of each argument it belongs to.
         /// E.g. in `coalesce(a, f(x), g(x))` the node `x` must not be evaluated for the rows where `a` is not NULL.
-        /// The cost is that such a node can be evaluated more than once for the same rows, e.g. in
-        /// `coalesce(NULL, f(x), g(x))`, where the leading constant NULL is removed only in `executeImpl`
-        /// and `f(x)` is evaluated for all the rows.
-        /// With two arguments `coalesce` is the same as `ifNull`, there is only one lazy argument, and nothing
+        /// A node shared with the first live argument is evaluated eagerly, once for all rows.
+        /// With two live arguments `coalesce` is the same as `ifNull`, there is only one lazy argument, and nothing
         /// is gained, so keep the same settings as in `ifNull` (as `multiIf` does for its `if` form).
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_arguments > 2);
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_live_arguments > 2);
         settings.force_enable_lazy_execution = false;
         return true;
     }
