@@ -115,7 +115,10 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
+    {
+        tryConvertWorkers(context);
         return chosen_join->addBlockToJoin(block, num_rows, context);
+    }
 
     /// Shared so build threads do not serialize, but still excludes them while it is drained.
     std::shared_lock lock(switch_mutex);
@@ -160,14 +163,12 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
         chosen_join = grace_join;
 
         state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
-
-        /// Under the lock: a build thread that got in before the state flipped is still inside
-        /// the in-memory join. Freeing here also drops the maps before the conversion peak.
-        in_memory_hash_join->releaseJoinMaps();
-
         QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
     }
 
+    /// Every insert into the in-memory join holds `switch_mutex` shared, so none runs any more, and threads
+    /// queued on the lock need not wait for the free. Freeing before the conversion lowers its peak.
+    in_memory_hash_join->releaseJoinMaps();
     tryConvertWorkers(context);
 }
 
