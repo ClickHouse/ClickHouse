@@ -424,6 +424,11 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
     if (create_function_query->or_replace)
         access_rights_elements.emplace_back(AccessType::DROP_FUNCTION);
 
+    /// Materialize `uuid_type_version` into the argument and return types before the driver is invoked and the
+    /// definition is stored or sent to other nodes, the same way as for SQL and WebAssembly functions above.
+    if (!current_context->isDDLOrOnClusterInternal())
+        applyUUIDTypeVersionInPlace(*create_function_query, current_context->getSettingsRef()[Setting::uuid_type_version]);
+
     if (!create_function_query->cluster.empty())
     {
         if (current_context->getUserDefinedSQLObjectsStorage().isReplicated())
