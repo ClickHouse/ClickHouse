@@ -14,7 +14,7 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (key UInt64, value String) ENG
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT 'cold engine', engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't';
+SELECT 'cold engine', engine FROM system.tables WHERE database = currentDatabase() || '_1' AND name = 't';
 DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE key = 1; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
@@ -29,6 +29,6 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 TRUNCATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
-SELECT 'loaded engine', engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't';
+SELECT 'loaded engine', engine FROM system.tables WHERE database = currentDatabase() || '_1' AND name = 't';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
