@@ -281,28 +281,33 @@ static void addIndexReadSteps(PrewhereExprSteps & steps, const IndexReadTasks & 
         }
     }
 
-    /// (position of the first step that uses the columns, index name) -> columns to read.
-    std::map<std::pair<size_t, String>, NamesAndTypesList> columns_to_read_by_step;
-    for (const auto & [index_name, index_task] : index_read_tasks)
+    /// Position of the first step that uses the columns -> columns to read, one element per index read task.
+    std::vector<std::vector<NamesAndTypesList>> columns_to_read_by_step(steps.size() + 1, std::vector<NamesAndTypesList>(index_read_tasks.size()));
+
+    size_t task_idx = 0;
+    for (const auto & [_, index_task] : index_read_tasks)
     {
         for (const auto & column : index_task.columns)
         {
-            auto key = std::make_pair(first_step_using_column.at(column.name), index_name);
-            columns_to_read_by_step[key].emplace_back(column.name, column.type);
+            size_t first_step_pos = first_step_using_column.at(column.name);
+            columns_to_read_by_step[first_step_pos][task_idx].emplace_back(column.name, column.type);
         }
+
+        ++task_idx;
     }
 
     PrewhereExprSteps result;
-    result.reserve(steps.size() + columns_to_read_by_step.size());
-    auto it = columns_to_read_by_step.begin();
 
     for (size_t i = 0; i <= steps.size(); ++i)
     {
-        for (; it != columns_to_read_by_step.end() && it->first.first == i; ++it)
+        for (const auto & columns : columns_to_read_by_step[i])
         {
+            if (columns.empty())
+                continue;
+
             auto index_read_step = std::make_shared<PrewhereExprStep>();
             index_read_step->type = PrewhereExprStep::None;
-            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(it->second), actions_settings);
+            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(columns), actions_settings);
             index_read_step->perform_alter_conversions = true;
             result.push_back(std::move(index_read_step));
         }
