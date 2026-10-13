@@ -116,7 +116,8 @@ struct HooksConfig
                                         /// the routing table is static, so the connection is rejected anyway.
     String on_no_backends;              /// All backends of the chosen pool are unavailable. After the command
                                         /// succeeds, the proxy waits for a backend of the pool to come up.
-    String on_first_seen_user;          /// A user name is seen for the first time. Must be idempotent: it is
+    String on_first_seen_user;          /// A user name is routed to a pool for the first time (tracked per pool,
+                                        /// run only once a backend is chosen). Must be idempotent: it is
                                         /// re-run after a failure, and after the name is evicted from the
                                         /// bounded set of seen names.
     String on_first_seen_database;      /// A database name is seen for the first time. Same as above.

@@ -270,8 +270,10 @@ The proxy runs a shell command on these events, invoked as `<command> KIND PROTO
   proxy waits up to `timeout_ms` for a backend of the pool to come up; the hook can, for example,
   start the backends.
 - `on_first_seen_user`, `on_first_seen_database` — the first time a user name or a database name is
-  seen, for example to create it on demand. Concurrent connections with the same name wait for the
-  hook. A failed hook is retried by a later connection, and the set of seen names is bounded, so the
+  routed to a pool, for example to create it on demand. The names are tracked per pool, so the same
+  name routed to different pools runs the hook for each of them. The hook runs only after a backend is
+  chosen for the connection (after `on_no_backends`, if needed), so unroutable connections do not
+  trigger it. Concurrent connections with the same name and pool wait for the hook. A failed hook is retried by a later connection, and the set of seen names is bounded, so the
   hook can run again for a name: it must be idempotent.
 
 A hook that runs longer than `timeout_ms` (60 seconds by default) is killed and counts as failed.

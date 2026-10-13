@@ -77,19 +77,22 @@ private:
 
     /// Coordination of first-seen hooks: the first connection runs the hook,
     /// concurrent connections with the same name wait for its completion.
+    /// The keys are (pool name, user or database name): the same name routed to different pools
+    /// (e.g. different tenants) is a different name for the purpose of provisioning.
     /// The value is whether the hook has completed successfully; a failed hook removes the entry,
     /// so a later connection retries it. The keys come from clients, so the maps are bounded:
     /// when one is full, the completed entries are forgotten (the hooks are required to be idempotent).
     static constexpr size_t max_seen_names = 100000;
     std::mutex first_seen_mutex;
     std::condition_variable first_seen_finished;
-    std::map<String, bool> seen_users;
-    std::map<String, bool> seen_databases;
+    using SeenKey = std::pair<String, String>;
+    std::map<SeenKey, bool> seen_users;
+    std::map<SeenKey, bool> seen_databases;
 
     LoggerPtr log;
 
-    void runFirstSeenHook(const String & command, const char * kind, const String & value,
-        std::map<String, bool> & seen, const RouteAttributes & attributes);
+    void runFirstSeenHook(const String & command, const char * kind, const String & pool_name, const String & value,
+        std::map<SeenKey, bool> & seen, const RouteAttributes & attributes);
     bool runHook(const String & command, const char * kind, const RouteAttributes & attributes);
     /// Fills `pool`, `authorized_key_matched` and `dynamic_backends_exhausted` of the decision.
     Decision resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener);

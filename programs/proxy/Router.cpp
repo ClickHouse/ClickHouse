@@ -133,15 +133,17 @@ bool Router::runHook(const String & command, const char * kind, const RouteAttri
     }
 }
 
-void Router::runFirstSeenHook(const String & command, const char * kind, const String & value,
-    std::map<String, bool> & seen, const RouteAttributes & attributes)
+void Router::runFirstSeenHook(const String & command, const char * kind, const String & pool_name, const String & value,
+    std::map<SeenKey, bool> & seen, const RouteAttributes & attributes)
 {
     if (command.empty() || value.empty())
         return;
 
+    const SeenKey key{pool_name, value};
+
     {
         std::unique_lock lock(first_seen_mutex);
-        while (seen.size() >= max_seen_names && !seen.contains(value))
+        while (seen.size() >= max_seen_names && !seen.contains(key))
         {
             std::erase_if(seen, [](const auto & entry) { return entry.second; });
             if (seen.size() < max_seen_names)
@@ -153,7 +155,7 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
             first_seen_finished.wait(lock);
         }
 
-        auto [it, inserted] = seen.emplace(value, false);
+        auto [it, inserted] = seen.emplace(key, false);
         if (!inserted)
         {
             if (it->second)
@@ -165,7 +167,7 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
             silk::FiberScheduler::ThreadModeScope thread_mode;
             first_seen_finished.wait(lock, [&]
             {
-                auto found = seen.find(value);
+                auto found = seen.find(key);
                 return found == seen.end() || found->second;
             });
             return;
@@ -177,9 +179,9 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
     {
         std::lock_guard lock(first_seen_mutex);
         if (success)
-            seen[value] = true;
+            seen[key] = true;
         else
-            seen.erase(value);
+            seen.erase(key);
     }
     first_seen_finished.notify_all();
 }
@@ -302,9 +304,6 @@ bool Router::keyIsAcceptable(const RouteAttributes & attributes)
 
 Router::Decision Router::route(const RouteAttributes & attributes, const ListenerConfig & listener)
 {
-    runFirstSeenHook(hooks.on_first_seen_user, "first_seen_user", attributes.user, seen_users, attributes);
-    runFirstSeenHook(hooks.on_first_seen_database, "first_seen_database", attributes.database, seen_databases, attributes);
-
     Decision decision = resolvePool(attributes, listener);
     if (!decision.pool)
     {
@@ -329,6 +328,14 @@ Router::Decision Router::route(const RouteAttributes & attributes, const Listene
                 break;
             silk::FiberScheduler::sleep(retry_period_ms * 1'000'000);
         }
+    }
+
+    /// Provisioning hooks run only for a connection that is actually routed to a backend,
+    /// so unroutable traffic with arbitrary names has no side effects.
+    if (backend)
+    {
+        runFirstSeenHook(hooks.on_first_seen_user, "first_seen_user", pool->name(), attributes.user, seen_users, attributes);
+        runFirstSeenHook(hooks.on_first_seen_database, "first_seen_database", pool->name(), attributes.database, seen_databases, attributes);
     }
 
     decision.backend = backend;
