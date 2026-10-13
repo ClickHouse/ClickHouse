@@ -1,7 +1,5 @@
--- A text index on an Array column builds one row from many elements. The tokens of such a row share
--- a single position sequence. The positions themselves are not observable from a query yet, because
--- hasPhrase takes a String haystack, so this pins that the index answers the token predicates
--- exactly as the same data without an index.
+-- A text index on an Array column answers the token predicates exactly as the same data without an index,
+-- and hasPhrase matches a phrase only within one element, with and without the index.
 
 SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
@@ -87,6 +85,21 @@ SELECT 'hasAnyTokens lazy, lowercased';
 SELECT arraySort(groupArray(id)) FROM tab_pp_ref WHERE hasAnyTokens(lower(arrayStringConcat(messages, ' ')), ['lazy']);
 SELECT arraySort(groupArray(id)) FROM tab_pp_idx WHERE hasAnyTokens(messages, ['lazy']);
 SELECT arraySort(groupArray(id)) FROM tab_pp_idx WHERE hasAnyTokens(messages, ['lazy']) SETTINGS use_skip_indexes = 0, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
+
+SELECT 'hasPhrase on an Array column';
+
+INSERT INTO tab_ref VALUES (6, ['hello, clickhouse', 'happy, world']), (7, ['hello world']), (8, ['clickhouse, hello', 'world, happy']);
+INSERT INTO tab_idx SELECT id, messages FROM tab_ref WHERE id >= 6;
+
+SELECT 'hasPhrase hello world';
+SELECT arraySort(groupArray(id)) FROM tab_ref WHERE hasPhrase(messages, 'hello world');
+SELECT arraySort(groupArray(id)) FROM tab_idx WHERE hasPhrase(messages, 'hello world');
+SELECT arraySort(groupArray(id)) FROM tab_idx WHERE hasPhrase(messages, 'hello world') SETTINGS use_skip_indexes = 0, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
+
+SELECT 'hasPhrase brown fox';
+SELECT arraySort(groupArray(id)) FROM tab_ref WHERE hasPhrase(messages, 'brown fox');
+SELECT arraySort(groupArray(id)) FROM tab_idx WHERE hasPhrase(messages, 'brown fox');
+SELECT arraySort(groupArray(id)) FROM tab_idx WHERE hasPhrase(messages, 'brown fox') SETTINGS use_skip_indexes = 0, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab_ref;
 DROP TABLE tab_idx;

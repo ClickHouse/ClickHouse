@@ -20,3 +20,12 @@ hasAnyTokens lazy, lowercased
 [3]
 [3]
 [3]
+hasPhrase on an Array column
+hasPhrase hello world
+[7]
+[7]
+[7]
+hasPhrase brown fox
+[2]
+[2]
+[2]
