@@ -91,6 +91,53 @@ ASTPtr makeAsterisk(const std::vector<std::string> & excluded)
     return asterisk;
 }
 
+/// Whether `path` is the field `subtree` or a field below it.
+bool isInSubtree(const std::string & path, const std::string & subtree)
+{
+    return path == subtree || (path.starts_with(subtree) && path.size() > subtree.size() && path[subtree.size()] == '.');
+}
+
+/** Whether the column `name` of the rows a select reads is a column of the rows it produces, with
+  * the same values: a `*` that does not exclude it, a subtree matcher that covers it, or the column
+  * itself. A column replaced by a computed one of the same name, or renamed, is not carried.
+  */
+bool selectListCarries(const ASTPtr & select_list, const std::string & name)
+{
+    for (const auto & child : select_list->children)
+    {
+        if (const auto * asterisk = child->as<ASTAsterisk>())
+        {
+            if (!asterisk->transformers)
+                return true;
+            bool excluded = false;
+            for (const auto & transformer : asterisk->transformers->children)
+            {
+                const auto * except = transformer->as<ASTColumnsExceptTransformer>();
+                if (!except || !except->getPattern())
+                    return false;
+                auto fields = fieldsOfSubtreePattern(*except->getPattern());
+                if (!fields)
+                    return false;
+                for (const auto & field : *fields)
+                    excluded = excluded || isInSubtree(name, field);
+            }
+            if (!excluded)
+                return true;
+        }
+        else if (auto field = fieldOfSubtreeMatcher(*child))
+        {
+            if (isInSubtree(name, *field))
+                return true;
+        }
+        else if (const auto * identifier = child->as<ASTIdentifier>())
+        {
+            if (identifier->name() == name && identifier->getAliasOrColumnName() == name)
+                return true;
+        }
+    }
+    return false;
+}
+
 /** The `SELECT` a pipeline is being translated into, and the ones already finished below it.
   *
   * A stage either fills a clause that is still free, or wraps everything built so far into a
@@ -114,16 +161,34 @@ public:
     /// depend on it are lowered through (see `MongoGroupOrder`).
     MongoGroupOrder order;
 
+    /// True when `order` was established by the `ORDER BY` of this select, so that its keys name the
+    /// columns this select produces rather than the ones it reads.
+    bool order_of_this_select = false;
+
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
     bool onlyFiltered() const { return !select_list && !group_by && !order_by && !limit && !offset; }
 
     void wrap()
     {
-        /// A select that builds documents of its own - a projection, a grouping - does not have to
-        /// carry the sort keys into them, so they are no longer fields the next stage can name.
-        if (select_list)
-            order.keys_in_scope = false;
+        /** A select that builds documents of its own - a projection, a grouping - does not have to
+          * carry the sort keys of the rows it reads into them, so they remain fields the next stage
+          * can name only when it passes them through unchanged. Keys of the `ORDER BY` of this
+          * select already name the columns it produces.
+          */
+        if (select_list && !order_of_this_select)
+        {
+            for (const auto & key : order.keys)
+            {
+                const auto * identifier = key.first->as<ASTIdentifier>();
+                if (!identifier || !selectListCarries(select_list, identifier->name()))
+                {
+                    order.keys_in_scope = false;
+                    break;
+                }
+            }
+        }
+        order_of_this_select = false;
 
         auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
         auto list_of_selects = make_intrusive<ASTExpressionList>();
@@ -451,6 +516,7 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
     /// A `$group` that follows reads its documents in this order, which is what Mongo defines the
     /// value of `$first`, `$last`, `$push`, `$firstN` and `$lastN` by.
     chain.order = std::move(order);
+    chain.order_of_this_select = true;
 }
 
 void translateCount(SelectChain & chain, const rapidjson::Value & stage)
@@ -536,6 +602,7 @@ void translateSortByCount(SelectChain & chain, const rapidjson::Value & stage)
     /// so it is left out of the order the accumulators are lowered through.
     chain.order = {};
     chain.order.keys.emplace_back(make_intrusive<ASTIdentifier>("count"), -1);
+    chain.order_of_this_select = true;
 }
 
 void translateSample(SelectChain & chain, const rapidjson::Value & stage)
