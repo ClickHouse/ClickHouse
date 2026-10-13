@@ -58,7 +58,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     DECLARE(String, storage_class_name, "", "", 0) \
     DECLARE(String, upload_checksum_algorithm, "", "", 0) \
-    DECLARE(String, delete_checksum_algorithm, "", "", 0) \
+    DECLARE(String, delete_checksum_algorithm, "", "Checksum algorithm for `DeleteObjects` requests: `MD5`, `CRC32` or `SHA256`. Empty selects automatically.", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
     DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
