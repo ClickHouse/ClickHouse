@@ -37,6 +37,11 @@ SELECT formatQueryFromJSON(parseQueryToJSON(
 
 SELECT * FROM {missing_table:Identifier}(name_pattern = 'A%'); -- { serverError UNKNOWN_QUERY_PARAMETER }
 
+-- `view`, `viewIfPermitted` and `eval` have their own grammar, which a placeholder does not take over.
+SELECT * FROM {table:Identifier}(SELECT 1); -- { clientError SYNTAX_ERROR }
+SET param_table = 'view';
+SELECT * FROM {table:Identifier}((SELECT 1)); -- { serverError BAD_ARGUMENTS }
+
 SELECT count() FROM numbers(1);
 
 DROP VIEW test_05325_active_employees;

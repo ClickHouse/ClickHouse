@@ -16,6 +16,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -49,14 +50,25 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
+    else if (auto * table_expression = ast->as<ASTTableExpression>())
+    {
+        /// Only a function-like table expression may carry a parameterized name, see `ASTFunction::query_parameter_name`.
+        auto * function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr;
+        if (function && function->query_parameter_name)
+        {
+            visit(function->query_parameter_name);
+            function->name = function->query_parameter_name->as<ASTIdentifier &>().name();
+            function->setIsCompoundName(function->name.contains('.'));
+            function->reset(function->query_parameter_name);
+        }
+        visitChildren(ast);
+    }
     else if (auto * function = ast->as<ASTFunction>(); function && function->query_parameter_name)
     {
-        visit(function->query_parameter_name);
-        const auto & resolved_name = function->query_parameter_name->as<ASTIdentifier &>();
-        function->name = resolved_name.name();
-        function->setIsCompoundName(function->name.contains('.'));
-        function->reset(function->query_parameter_name);
-        visitChildren(ast);
+        /// Reachable only through `clickhouse_json`: the SQL parser accepts the placeholder in a table expression alone.
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "Query parameter {} can name only a table function or a parameterized view in a table expression",
+            function->query_parameter_name->formatForErrorMessage());
     }
     else if (auto * set_query = ast->as<ASTSetQuery>())
         visitSetQuery(*set_query);

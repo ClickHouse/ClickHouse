@@ -41,9 +41,10 @@ public:
 
     String name;
     /// An unresolved function name containing one or more `Identifier` query parameters.
-    /// It is accepted only for a function-like table expression, so after substitution the
-    /// name may resolve to any table function or to a parameterized view. It is removed by
-    /// `ReplaceQueryParameterVisitor` before query analysis.
+    /// Only `ASTTableExpression::table_function` may carry it, so after substitution the name
+    /// resolves to a parameterized view or to a table function with ordinary argument syntax.
+    /// `view`, `viewIfPermitted` and `eval` have their own grammar and cannot be named this way.
+    /// `ReplaceQueryParameterVisitor` resolves it before query analysis and rejects it elsewhere.
     ASTPtr query_parameter_name;
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
