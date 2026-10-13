@@ -61,6 +61,7 @@ public:
         const FilesystemCacheSettings & cache_settings_,
         FileSegmentsHolderSharedPtr segment_holder_,
         ByteRange aligned_range_in_file);
+    ~DiskCacheWriter() override;
 
     ByteRange range() const override { return aligned_range; }
     size_t committed() const override;
@@ -83,6 +84,9 @@ private:
     ByteRange aligned_range;
     /// One state per writer: it owns a single append-only segment.
     FileCacheReserveAhead reserve_ahead;
+    bool wrote = false;
+    /// Whether this writer served bytes that another reader wrote; the destructor then counts a hit.
+    bool served_others = false;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 

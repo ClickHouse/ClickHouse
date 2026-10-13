@@ -304,6 +304,7 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
     if (!written_ok)
         return 0;
 
+    wrote = true;
     LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
         contiguous, seg_range.left, seg_range.right, write_offset);
     return contiguous;
@@ -319,7 +320,23 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     /// unthrottled, unanchored).
     readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         /*local_throttler=*/nullptr, /*anchors=*/nullptr);
+    if (!wrote && !result.empty())
+        served_others = true;
     return result;
+}
+
+DiskCacheWriter::~DiskCacheWriter()
+{
+    if (!served_others || !segment_holder)
+        return;
+    try
+    {
+        segment().increasePriority();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Deferred priority bump failed", LogsLevel::debug);
+    }
 }
 
 size_t DiskCacheWriter::committed() const
@@ -463,19 +480,13 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & file_segment, char * data,
 DiskCacheReader::~DiskCacheReader()
 {
     /// Deferred priority bump: if we served any bytes, raise the segment's priority so a hit next to
-    /// fresh inserts isn't aged below them. A segment still DOWNLOADING (another thread fills its
-    /// tail) is skipped; the fill itself gives it insert priority. The `segment_holder` member then
-    /// completes the segment as it is destroyed.
+    /// fresh inserts isn't aged below them. It also counts the hit while the segment still downloads.
+    /// The `segment_holder` member then completes the segment as it is destroyed.
     if (!served || !segment_holder)
         return;
     try
     {
-        FileSegment & seg = segment();
-        const auto state = seg.state();
-        if (state == FileSegmentState::DOWNLOADED
-            || state == FileSegmentState::PARTIALLY_DOWNLOADED
-            || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-            seg.increasePriority();
+        segment().increasePriority();
     }
     catch (...)
     {

@@ -57,6 +57,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BoundedReadBuffer.h>
+#include <IO/DiskCacheProvider.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -4373,4 +4374,75 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
         for (size_t t = 0; t < num_threads; ++t)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
+}
+
+namespace
+{
+
+size_t hitsOfFirstSegment(FileCache & cache, const FileCacheKey & key)
+{
+    auto holder = cache.get(key, 0, 1, /*file_segments_limit=*/0, FileCache::getCommonOrigin().user_id);
+    return holder && !holder->empty() ? holder->front().getHitsCount() : 0;
+}
+
+ChainedBuffers bytesAt(size_t offset, const String & data)
+{
+    auto block = std::make_shared<OwnedChainedBuffer>(data.size());
+    memcpy(block->data(), data.data(), data.size());
+    ChainedBuffers chain;
+    chain.append(ChainedBufferNode{std::move(block), 0, data.size(), offset});
+    return chain;
+}
+
+}
+
+TEST_F(FileCacheTest, DiskCacheProviderCountsReadsOfOtherReaders)
+{
+    /// A reader that reads bytes another reader wrote counts a hit, also while the segment still downloads,
+    /// through its hit reader or through its writer. Reads of its own bytes count nothing.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto cache = std::make_shared<FileCache>("disk_cache_provider_hits", settings);
+    cache->initialize();
+
+    const String data(1_KiB, 'x');
+    const StoredObject object("disk_cache_provider_hits_blob", "", data.size());
+    const auto key = FileCacheKey::fromPath(object.remote_path);
+    DiskCacheProvider provider(cache, FilesystemCacheSettings{});
+    auto resolve = [&] { return provider.resolve(object, 0, ByteRange{0, data.size()}); };
+
+    /// The writer fills the first half and keeps the role: the segment is still downloading.
+    auto own_cells = resolve();
+    ASSERT_EQ(own_cells.size(), 1u);
+    CacheWriter & own = *own_cells[0].writer;
+    auto role = own.takeFillRole();
+    ASSERT_TRUE(role);
+    ASSERT_EQ(own.write(bytesAt(0, data.substr(0, 512)), role), 512u);
+
+    {
+        auto other_cells = resolve();   /// a hit reader for the written half, and a writer
+        ASSERT_EQ(other_cells.size(), 2u);
+        EXPECT_EQ(other_cells[0].reader->read(ByteRange{0, 512}).totalBytes(), 512u);
+    }
+    EXPECT_EQ(hitsOfFirstSegment(*cache, key), 1u);
+    {
+        auto other_cells = resolve();
+        ASSERT_EQ(other_cells.size(), 2u);
+        EXPECT_EQ(other_cells[1].writer->read(ByteRange{0, 512}).totalBytes(), 512u);
+    }
+    EXPECT_EQ(hitsOfFirstSegment(*cache, key), 2u);
+
+    /// The writer completes the segment and reads its own bytes: no hit.
+    ASSERT_EQ(own.write(bytesAt(512, data.substr(512)), role), 512u);
+    role.reset();
+    EXPECT_EQ(own.read(ByteRange{0, data.size()}).totalBytes(), data.size());
+    own_cells.clear();
+    EXPECT_EQ(hitsOfFirstSegment(*cache, key), 2u);
 }
