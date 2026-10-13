@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-old-analyzer
+# Tags: no-parallel, no-fasttest, no-old-analyzer
 # no-parallel: the fail points hit the runtime filter merges and receive branches of every query.
+# no-fasttest: tests that run alone are kept out of the fast test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
