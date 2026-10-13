@@ -312,7 +312,10 @@ void StorageMergeTree::shutdown(bool)
         refresh_parts_task->deactivate();
 
     if (refresh_stats_task)
+    {
+        refresh_stats_cancelled = true;
         refresh_stats_task->deactivate();
+    }
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
