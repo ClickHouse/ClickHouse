@@ -31,7 +31,8 @@ Relatedness never rests on a record this triage could have written itself: only
 an open issue opened before the tested change, and not filed by triage of a PR
 run, counts as proof that the failure is older (`independent_occurrences`). A
 fingerprint found only in closed issues is a fixed bug that came back, which the
-PR may have reintroduced, so it keeps a PR run red (`fixed_occurrences`).
+PR may have reintroduced, so it keeps a PR run red (`fixed_occurrences`), and so
+does a lookup of those issues that did not complete.
 
 PRs authored by an agent that already triages its own failures are skipped
 (`SELF_TRIAGING_AUTHORS`); their post-merge runs are not.
@@ -405,7 +406,12 @@ def _build_prompt(
         change_line = f"- Commit: {info.commit_url} (sha `{info.sha}`)"
     tested_change = info.pr_url if pr_mode else info.commit_url
     found_in = report_url or tested_change
-    if pr_mode and fingerprint and occurrences and occurrences.regression:
+    if pr_mode and fingerprint and occurrences is None:
+        outcome_note = (
+            "The job stays red whatever your verdict: earlier issues with this\n"
+            "fingerprint could not be looked up, so a regression cannot be ruled out."
+        )
+    elif pr_mode and fingerprint and occurrences.regression:
         outcome_note = (
             "The job stays red whatever your verdict: a fixed bug that came back\n"
             "needs a human to rule out this PR."
@@ -771,6 +777,7 @@ def _apply_verdict(
     uncovered=(),
     repo_name="",
     regression=False,
+    occurrences_checked=False,
 ):
     kind = verdict["verdict"]
     reasoning = (verdict.get("reasoning") or "").strip()[:1200]
@@ -821,6 +828,16 @@ def _apply_verdict(
             "AI triage: verdict was `unrelated`, but this failure's fingerprint is "
             "only in closed issues: a fixed bug came back, and this PR may have "
             "reintroduced it - keeping the job red (fail-close)"
+        )
+        if issue_url:
+            lines.append(f"AI triage: related tracking issue: {issue_url}{issue_note}")
+    elif pr_mode and kind == "unrelated" and not occurrences_checked:
+        # Without the lookup a fixed bug that came back looks like a new one.
+        lines.append(
+            "AI triage: verdict was `unrelated`, but the lookup of earlier issues "
+            "with this fingerprint did not complete, so a fixed bug that came back "
+            "cannot be ruled out - keeping the job red (fail-close); re-run the job "
+            "once GitHub is reachable"
         )
         if issue_url:
             lines.append(f"AI triage: related tracking issue: {issue_url}{issue_note}")
@@ -988,6 +1005,7 @@ def triage_and_apply(
             uncovered,
             repo_name,
             regression=bool(occurrences and occurrences.regression),
+            occurrences_checked=occurrences is not None,
         )
     except Exception as e:  # noqa: BLE001 - triage must never break the job
         print(f"WARNING: AI fuzz triage unavailable: {e}")
