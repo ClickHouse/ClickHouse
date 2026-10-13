@@ -966,6 +966,7 @@ check_logs_for_critical_errors
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 collect_query_and_trace_logs
-collect_jemalloc_profiles
+# Only the upgraded server's log: the previous release's profiles were moved aside above.
+collect_jemalloc_profiles /var/log/clickhouse-server/clickhouse-server.upgrade.log
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
