@@ -4,8 +4,8 @@
 -- looks refusable but is taken:
 --
 --   * a join tree of more than one table, which leaves the rewrite no single table to put the predicate
---     against (`findRewriteTarget`) - even with read-in-order asked to reach through the join;
---   * `LIMIT BY`, one of the subquery clauses `subqueryAcceptsPushedPredicate` refuses;
+--     against (`addFilters`) - even with read-in-order asked to reach through the join;
+--   * `LIMIT BY`, one of the subquery clauses `PredicateRewriteVisitorData::rewriteSubquery` refuses;
 --   * a non-deterministic `SELECT` list, refused because the pushed copy of the condition would call the
 --     function a second time;
 --   * `untuple`, expanded to `tupleElement` before the query is shipped, so the rewrite takes it, the
