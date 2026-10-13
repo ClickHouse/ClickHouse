@@ -54,6 +54,7 @@ import tempfile
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ci.defs.defs import BASE_BRANCH
@@ -93,11 +94,14 @@ SYNTHETIC_TEST_NAMES = frozenset(
         "Check errors",
         "Server died",
         "Server liveness check failed",
+        "Test command killed by signal",
         "Unknown error",
         "Unknown job error",
         "Parse failure error",
         "Job error",
         "Timeout",
+        # Names a dmesg line the host wrote, not the test that was running.
+        "OOM in dmesg",
     }
 )
 
@@ -2491,6 +2495,21 @@ def prepare(info: Info) -> bool:
                 file=sys.stderr,
             )
             return False
+        # The unshallow turned the checkout into a partial clone, but the pack
+        # `actions/checkout` downloaded is still a regular, non-promisor pack.
+        # Once the base branch moves, the next fetch brings commits whose
+        # parent is in that pack, `index-pack` tries to repack these "local
+        # links" into a promisor pack, and `pack-objects` stops on
+        # `BUG: should_include_obj should only be called on existing objects`
+        # when the traversal reaches a tree the filter left out. All these
+        # objects came from `origin`, the promisor remote, so mark their pack
+        # as a promisor pack, as if the checkout had been a partial clone from
+        # the start.
+        pack_dir = Shell.get_output(
+            "git rev-parse --git-path objects/pack", strict=True
+        ).strip()
+        for pack in Path(pack_dir).glob("*.pack"):
+            pack.with_suffix(".promisor").touch()
     Shell.check(
         f"git fetch --no-tags --prune --no-recurse-submodules origin "
         f"+refs/heads/{BASE_BRANCH}:refs/remotes/origin/{BASE_BRANCH}",

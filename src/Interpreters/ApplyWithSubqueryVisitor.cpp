@@ -23,6 +23,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_scopes_for_with_statement;
 }
 
 namespace
@@ -66,15 +67,27 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
-    /// The CTEs this select declares itself are registered below either way: only the inherited
+    /// The elements this select declares itself are registered below either way: only the inherited
     /// ones are out of scope here.
     std::optional<Data> scope_data;
     if (data.context)
     {
         scope_data = data;
         scope_data->context = getSubqueryContext(ast, data.context);
-        if (!scope_data->context->getSettingsRef()[Setting::enable_global_with_statement])
+        const auto & scope_settings = scope_data->context->getSettingsRef();
+        /// A common table expression is reached by looking into an enclosing scope, so a select that does
+        /// not look there cannot name one. An expression alias declared with scopes disabled is instead
+        /// copied down, and a select reads that copy when it disables them too.
+        if (!scope_settings[Setting::enable_global_with_statement])
+        {
             scope_data->subqueries.clear();
+            scope_data->literals.clear();
+        }
+        if (!scope_settings[Setting::enable_scopes_for_with_statement])
+        {
+            for (const auto & [name, node] : scope_data->exported_literals)
+                scope_data->literals[name] = node;
+        }
     }
     const Data & scope = scope_data ? *scope_data : data;
 
@@ -93,7 +106,11 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 if (ast_with_elem)
                     new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
                 else
+                {
                     new_data->literals[child_alias] = child;
+                    if (new_data->context && !new_data->context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
+                        new_data->exported_literals[child_alias] = child;
+                }
             }
         }
     }

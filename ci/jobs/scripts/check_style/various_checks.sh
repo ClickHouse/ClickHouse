@@ -120,6 +120,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /generateSerialID.cpp
     -e /evalMLMethod.cpp
     -e /FunctionNaiveBayesClassifier.cpp
+    -e /FunctionPredictXGBoost.cpp
     -e /FunctionBinaryArithmetic.h
     -e /FunctionUnaryArithmetic.h
     -e /ITupleFunction.h
@@ -211,16 +212,23 @@ find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py'
 # (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
 # and interfere with other tests running concurrently.
 #
-# Known exceptions where the command is not actually executed:
+# Known exceptions where the command does not affect the shared server:
 # - 04307, 04339, 04350: the SYSTEM DROP text appears only inside SQL string literals passed to
 #   parseQueryToJSON/formatQueryFromJSON for AST round-trip and validation testing; nothing is executed.
+# - 05316, 05321: every SYSTEM DROP runs in a separate clickhouse-local process with its own configuration and
+#   filesystem cache directory, so it does not touch the shared server.
 tests_with_system_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep -liP 'system\s+drop' |
-        grep -vP '04307_ast_json_roundtrip_lossless|04339_ast_json_review_followup_hardening|04350_ast_json_parser_impossible_field_combinations' |
+        grep -vP '04307_ast_json_roundtrip_lossless|04339_ast_json_review_followup_hardening|04350_ast_json_parser_impossible_field_combinations|05316_query_cache_on_disk_drop|05321_query_cache_on_disk_drop_keeps_other_data' |
         sort -u
 ) )
 for test_case in "${tests_with_system_drop[@]}"; do
+    # `SYSTEM DROP FILESYSTEM CACHE '<name>'` affects only the named cache, not the
+    # server-wide state, so a test which drops the cache it created itself can run in
+    # parallel. Skip a test if every `SYSTEM DROP` in it drops a cache by name.
+    grep -oiP "system\s+drop(\s+filesystem\s+cache\s+'[^']+')?" "$test_case" |
+        grep -qivP "filesystem\s+cache\s+'" || continue
     grep -qP '(--|#)\s*[Tt]ags:.*no-parallel' "$test_case" || echo "Test with SYSTEM DROP should have no-parallel tag: $test_case"
 done
 

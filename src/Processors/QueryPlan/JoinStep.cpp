@@ -2,6 +2,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -19,7 +20,7 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 #include <unordered_set>
 
@@ -33,6 +34,19 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The algorithm to report in `system.query_log.used_join_algorithms`.
+std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
+{
+    if (!use_sharding)
+        return join.getAlgorithm();
+
+    const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join);
+    if (full_sorting_merge_join && full_sorting_merge_join->isParallel())
+        return toString(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+
+    return join.getAlgorithm();
+}
 
 std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
 {
@@ -156,6 +170,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
     /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
+
+    QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
+
     if (!use_sharding)
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
@@ -177,6 +194,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 max_streams,
                 this,
                 keep_left_read_in_order,
+                seal_gate,
                 &processors);
         }
     }
@@ -221,9 +239,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
+        const auto & table_join = join->getTableJoin();
+        const size_t max_rows = table_join.maxJoinedBlockRows();
+        const size_t max_bytes = table_join.maxJoinedBlockBytes();
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
-            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
+            {
+                return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(
+                    header, min_block_size_rows, min_block_size_bytes, max_rows, max_bytes));
+            });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
@@ -534,6 +558,8 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    QueryExecutionCounters::addExecutedJoin(*join);
+
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())
     {

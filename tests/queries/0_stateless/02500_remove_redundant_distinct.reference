@@ -210,6 +210,7 @@ FROM
 )
 WHERE arrayJoin(cities) IN ['Berlin', 'Bensheim']
 ORDER BY cities
+SETTINGS query_plan_fuse_filter_into_array_join = 0
 -- explain
 Expression (Project names)
   Distinct (DISTINCT)
@@ -217,11 +218,13 @@ Expression (Project names)
       Expression (Before ORDER BY)
         Distinct (Preliminary DISTINCT)
           Expression (Projection)
-            Filter ((WHERE + (Change column names to column identifiers + Project names)))
-              Distinct (DISTINCT)
-                Distinct (Preliminary DISTINCT)
-                  Expression ((Projection + Change column names to column identifiers))
-                    ReadFromSystemOne
+            Filter (WHERE)
+              ArrayJoin (ARRAY JOIN)
+                Expression ((Before ARRAY JOIN + (Change column names to column identifiers + Project names)))
+                  Distinct (DISTINCT)
+                    Distinct (Preliminary DISTINCT)
+                      Expression ((Projection + Change column names to column identifiers))
+                        ReadFromSystemOne
 -- execute
 ['Istanbul','Berlin','Bensheim']
 -- GROUP BY before DISTINCT with on the same columns => remove DISTINCT

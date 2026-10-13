@@ -130,7 +130,7 @@ Filter column: notEquals(__table1.number, 1_UInt8)
 > (analyzer) one condition of filter is pushed down before INNER JOIN
   Join
 Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))
-Filter column: and(notEquals(__table2.b, 1_UInt8), notEquals(__table2.b, 2_UInt8))
+Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))
 3	3
 > filter is pushed down before UNION
 Union

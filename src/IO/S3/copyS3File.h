@@ -38,34 +38,11 @@ std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
 /// (copyDataToS3File()).
 ///
 /// read_settings - is used for throttling in case of native copy is not possible
-///
-/// `src_etag` is the `ETag` of the generation of the source object that the caller has decided to
-/// copy (from the listing or the `HeadObject` that produced `src_size`), or empty when it is not
-/// known. The native copy carries it as `x-amz-copy-source-if-match` on the `CopyObject` and on
-/// every `UploadPartCopy`, so a source object overwritten in place after the caller looked at it is
-/// not copied as its newer generation, and a multipart copy cannot stitch two generations together:
-/// the copy throws `S3_OBJECT_CHANGED_DURING_READ` instead. The read-and-write fallback reads the
-/// source through `fallback_file_reader`, which the caller has to pin to the same generation itself
-/// (a `ReadBufferFromS3` with `expected_etag`), because the copy has no other handle on it.
-///
-/// `src_version_id` is the version of the source object to copy on a versioned bucket, or empty for
-/// the current version. The native copy addresses the source as `bucket/key?versionId=...` on the
-/// `CopyObject` and on every `UploadPartCopy`, the way the SDK documents it, so a copy of a source
-/// that a caller reads by version (`S3('...?versionId=...')`) transfers that version and not the
-/// latest one. The read-and-write fallback reads through `fallback_file_reader`, which the caller
-/// has to open at the same version itself.
-///
-/// Returns the `ETag` of the generation the copy created at `dest_key`, taken from the response to
-/// the request that created it (`CopyObject`, `PutObject` or `CompleteMultipartUpload`), or empty
-/// when the endpoint reported none. It names exactly what this copy wrote, which a `HeadObject` of
-/// the key afterwards does not: that names whatever generation is there by then.
-String copyS3File(
+void copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_size,
-    const String & src_etag,
-    const String & src_version_id,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -82,18 +59,13 @@ String copyS3File(
 /// `CopyObject` carries no byte range and would copy the entire source. A ranged copy uses multipart
 /// `UploadPartCopy` (a `CopySourceRange` per part), but S3 accepts a byte-range copy source only if the source
 /// object is greater than 5 MB, so a smaller source (or no multipart copy) reads the range through buffers.
-/// `src_etag` pins the copy to one generation of the source and `src_version_id` selects the version
-/// of the source the same way as in `copyS3File`, and the `ETag` of the created destination is
-/// returned the same way.
-String copyS3FileRange(
+void copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
     size_t src_size,
     size_t src_object_size,
-    const String & src_etag,
-    const String & src_version_id,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -109,8 +81,7 @@ String copyS3FileRange(
 /// however copyDataToS3File() is faster and spends less memory.
 /// The callback `create_read_buffer` can be called from multiple threads in parallel, so that should be thread-safe.
 /// The parameters `offset` and `size` specify a part in the source to copy.
-/// Returns the `ETag` of the created destination the same way as `copyS3File`.
-String copyDataToS3File(
+void copyDataToS3File(
     const CreateReadBuffer & create_read_buffer,
     size_t offset,
     size_t size,

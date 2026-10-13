@@ -5,14 +5,12 @@
 
 SET max_block_size = 1;
 
--- UNTIL fires in an earlier chunk than AFTER.
--- Critical regression test: the old code skipped the UNTIL check when AFTER
--- was absent from the chunk, so AFTER firing in a later chunk would produce
--- rows instead of an empty result.
+-- An `UNTIL` match in a chunk before the start has no effect on the range.
+-- The start at `number = 6` still opens after the end match at `number = 2`, selecting four rows.
 SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 2);
 
--- UNTIL fires in the chunk immediately before AFTER fires.
--- `number = 5` fires at row 5, `number = 6` fires at row 6.  Window never opens.
+-- An `UNTIL` match in the chunk immediately before the start also leaves the range open.
+-- The end at `number = 5` followed by the start at `number = 6` selects the remaining four rows.
 SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 5);
 
 -- Normal window that spans multiple chunks (AFTER at row 2, UNTIL at row 5).

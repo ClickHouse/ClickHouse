@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
 #include <base/arithmeticOverflow.h>
+#include <algorithm>
 #include <limits>
 
 namespace DB
@@ -77,18 +78,6 @@ struct BoundaryColumnView
     }
 };
 
-/// The columns at `positions` of `columns`, named and typed as in `header`.
-Block makeInputBlock(const Block & header, const Columns & columns, const std::vector<size_t> & positions)
-{
-    Block block;
-    for (size_t position : positions)
-    {
-        const auto & header_column = header.getByPosition(position);
-        block.insert(ColumnWithTypeAndName(columns[position], header_column.type, header_column.name));
-    }
-    return block;
-}
-
 }
 
 LimitRangeTransform::BoundaryEvaluation::BoundaryEvaluation(
@@ -100,28 +89,41 @@ LimitRangeTransform::BoundaryEvaluation::BoundaryEvaluation(
     : actions(std::make_shared<ExpressionActions>(std::move(conditions), actions_settings))
 {
     for (const auto & column : actions->getRequiredColumnsWithTypes())
-        input_positions.push_back(header.getPositionByName(column.name));
+    {
+        size_t position = header.getPositionByName(column.name);
+        required_column_positions.push_back(position);
+        input_header.insert(header.getByPosition(position));
+    }
 
-    /// A dry run over the empty header columns gives the positions of the boundary columns.
-    Block block = makeInputBlock(header, header.getColumns(), input_positions);
-    actions->execute(block, /*dry_run=*/true);
+    action_input_positions = actions->getInputPositions(input_header);
+    const auto & output_header = getOutputHeader();
     if (start_column_name)
-        start_position = block.getPositionByName(*start_column_name);
+        start_position = output_header.getPositionByName(*start_column_name);
     if (end_column_name)
-        end_position = block.getPositionByName(*end_column_name);
+        end_position = output_header.getPositionByName(*end_column_name);
 }
 
-void LimitRangeTransform::BoundaryEvaluation::evaluate(
-    const Block & header, const Columns & chunk_columns, size_t num_rows, ColumnPtr & start_column, ColumnPtr & end_column) const
+const Block & LimitRangeTransform::BoundaryEvaluation::getOutputHeader() const
 {
-    Block block = makeInputBlock(header, chunk_columns, input_positions);
-    /// The row count is passed explicitly: a condition without input columns evaluates over an empty block.
+    /// Every input is consumed, so the sample header gives the result layout, including shared
+    /// intermediates for a later stage, without executing stateful functions during setup.
+    return actions->getSampleBlock();
+}
+
+Columns LimitRangeTransform::BoundaryEvaluation::evaluate(const Columns & columns, size_t num_rows) const
+{
+    Columns inputs;
+    inputs.reserve(required_column_positions.size());
+    for (size_t position : required_column_positions)
+        inputs.push_back(columns[position]);
+
+    /// The row count is passed explicitly: a condition without input columns still runs for every row.
     size_t rows = num_rows;
-    actions->execute(block, rows, /*dry_run=*/false);
-    if (start_position)
-        start_column = block.getByPosition(*start_position).column;
-    if (end_position)
-        end_column = block.getByPosition(*end_position).column;
+    auto result = actions->executeOnColumns(std::move(inputs), input_header, action_input_positions, rows);
+    /// Boundary expressions cannot contain `arrayJoin`, so evaluation preserves the chunk's row count.
+    chassert(rows == num_rows);
+    chassert(result.size() == getOutputHeader().columns());
+    return result;
 }
 
 LimitRangeTransform::LimitRangeTransform(
@@ -145,14 +147,44 @@ LimitRangeTransform::LimitRangeTransform(
     }
 
     const Block & header = getInputPort().getHeader();
-    if (start_column_name || end_column_name)
-        boundary_evaluation.emplace(header, conditions.clone(), start_column_name, end_column_name, actions_settings);
+    if (start_all)
+    {
+        combined_evaluation.emplace(header, conditions.clone(), start_column_name, end_column_name, actions_settings);
+        return;
+    }
 
-    if (!start_all && end_column_name)
+    if (end_column_name)
     {
         ActionsDAG end_conditions = conditions.clone();
         end_conditions.removeUnusedActions(Names{*end_column_name});
+        /// Skipping chunks changes the values of stateful and query-scope non-deterministic functions,
+        /// including those inside lambdas. Evaluate both boundaries together until the range starts.
+        const bool evaluate_end_before_start = start_column_name && end_conditions.hasNonDeterministicOrStatefulFunctions();
+        /// `clone` retains the function objects, so the end-only stage continues their state after the start.
         end_only_evaluation.emplace(header, std::move(end_conditions), std::nullopt, end_column_name, actions_settings);
+        if (evaluate_end_before_start)
+        {
+            combined_evaluation.emplace(header, conditions.clone(), start_column_name, end_column_name, actions_settings);
+            return;
+        }
+    }
+
+    if (start_column_name && end_column_name)
+    {
+        /// Carry the raw inputs through the start stage so `UNTIL` can read its own inputs as well as
+        /// reuse shared subexpressions. Only the starting chunk needs to execute both stages.
+        const auto * start_node = &conditions.findInOutputs(*start_column_name);
+        std::unordered_set<const ActionsDAG::Node *> split_nodes(conditions.getInputs().begin(), conditions.getInputs().end());
+        auto split = conditions.splitActionsForFilter(*start_column_name, std::move(split_nodes));
+        const auto split_start_name = split.split_nodes_mapping.at(start_node)->result_name;
+        start_only_evaluation.emplace(header, std::move(split.first), split_start_name, std::nullopt, actions_settings);
+        split.second.removeUnusedActions(Names{*end_column_name});
+        end_after_start_evaluation.emplace(
+            start_only_evaluation->getOutputHeader(), std::move(split.second), std::nullopt, end_column_name, actions_settings);
+    }
+    else if (start_column_name)
+    {
+        start_only_evaluation.emplace(header, conditions.clone(), start_column_name, std::nullopt, actions_settings);
     }
 }
 
@@ -275,75 +307,59 @@ void LimitRangeTransform::transform(Chunk & chunk)
 
     ColumnPtr start_col;
     ColumnPtr end_col;
-    /// Once the single range has started only `UNTIL` matters.
-    const auto & evaluation = (start_all || !started) ? boundary_evaluation : end_only_evaluation;
-    if (evaluation)
-        evaluation->evaluate(getInputPort().getHeader(), chunk.getColumns(), num_rows, start_col, end_col);
+    if (combined_evaluation && (start_all || !started))
+    {
+        auto boundaries = combined_evaluation->evaluate(chunk.getColumns(), num_rows);
+        start_col = combined_evaluation->getStartColumn(boundaries);
+        end_col = combined_evaluation->getEndColumn(boundaries);
+    }
 
     if (start_all)
     {
+        chassert(combined_evaluation);
         transformAll(chunk, start_col, end_col);
         return;
     }
 
     rows_read += num_rows;
 
-    const BoundaryColumnView start_view(start_col);
-    const BoundaryColumnView end_view(end_col);
+    Columns start_columns;
+    if (!started && start_only_evaluation)
+    {
+        start_columns = start_only_evaluation->evaluate(chunk.getColumns(), num_rows);
+        start_col = start_only_evaluation->getStartColumn(start_columns);
+    }
 
     size_t output_start = 0;
-    size_t output_end = num_rows;
-    /// The first `UNTIL` match of the chunk, once it has been looked for.
-    std::optional<size_t> first_end;
-
-    if (!started)
+    if (!started && start_col)
     {
-        if (start_col)
+        output_start = BoundaryColumnView(start_col).findTrue(0, num_rows);
+        if (output_start == num_rows)
         {
-            const size_t first_start = start_view.findTrue(0, num_rows);
-
-            if (end_col)
-            {
-                first_end = end_view.findTrue(0, num_rows);
-                /// UNTIL fired at or before AFTER (covers: AFTER not found, UNTIL at same row,
-                /// UNTIL precedes AFTER).  The window is permanently closed.
-                if (*first_end <= first_start)
-                {
-                    if (*first_end < num_rows)
-                        setDone();
-                    chunk.clear();
-                    return;
-                }
-            }
-
-            if (first_start >= num_rows)
-            {
-                chunk.clear();
-                return;
-            }
-
-            started = true;
-            output_start = first_start;
+            chunk.clear();
+            return;
         }
-        else
+
+        if (end_after_start_evaluation)
         {
-            started = true;
+            auto end_columns = end_after_start_evaluation->evaluate(start_columns, num_rows);
+            end_col = end_after_start_evaluation->getEndColumn(end_columns);
         }
     }
-
-    if (end_col && output_end > output_start)
+    else if (end_only_evaluation)
     {
-        if (!first_end)
-            first_end = end_view.findTrue(0, num_rows);
-        if (*first_end < num_rows)
-            output_end = *first_end;
+        auto end_columns = end_only_evaluation->evaluate(chunk.getColumns(), num_rows);
+        end_col = end_only_evaluation->getEndColumn(end_columns);
     }
+    started = true;
 
-    if (output_end <= output_start)
+    /// `UNTIL` closes the range at its first match at or after the starting row.
+    /// Matches before the range opens have no effect, including those in earlier chunks.
+    size_t output_end = BoundaryColumnView(end_col).findTrue(output_start, num_rows);
+    if (output_end == output_start)
     {
-        if (end_col && output_end < num_rows)
+        if (output_end < num_rows)
             setDone();
-
         chunk.clear();
         return;
     }
