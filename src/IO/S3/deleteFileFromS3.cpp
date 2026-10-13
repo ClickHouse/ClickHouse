@@ -119,7 +119,8 @@ void deleteFilesFromS3(
 
     if (try_batch_delete)
     {
-        /// `GCS` rejects the `x-amz-checksum-*` headers and has no `DeleteObjects` anyway, so it keeps the SDK default.
+        /// Historically `GCS` has not supported `DeleteObjects`. Support was added recently, with some limitations on the call.
+        /// For now `GCS` gets no checksum header and keeps the SDK default, and ClickHouse falls back to deleting objects one by one.
         const bool use_checksum_header = !s3_client->isClientForGCS();
         const bool explicit_checksum_algorithm = S3::RequestChecksum::hasExplicitDeleteChecksumAlgorithm(request_settings);
 

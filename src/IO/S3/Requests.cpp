@@ -112,7 +112,8 @@ RequestChecksum::Algorithm RequestChecksum::getDeleteChecksumAlgorithm(
     if (is_s3express_bucket)
         return Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
 
-    /// `DeleteObjects` cannot go without a digest, and without `MD5` the SDK would silently omit the header.
+    /// Most servers reject `DeleteObjects` without a digest. If the `MD5` digest is unavailable in the crypto library
+    /// (e.g. FIPS mode), the SDK would silently omit the header, so use a flexible checksum instead.
     if (!md5_available || md5_rejected_by_server)
         return Algorithm::SHA256;
 
