@@ -4159,12 +4159,13 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         /// already covered by the projection step, producing duplicated rows.
         const bool analysis_was_cached = analyzed_result_ptr != nullptr;
 
-        /// In `check_only` mode the dry-run must leave the step exactly as it found it: some
-        /// `ReadFromMerge` children can already carry an `input_order_info` from the legacy
-        /// `query_info.order_optimizer` path in `ReadFromMerge::createChildrenPlans`. Capture
-        /// the previous order so every `check_only` return path restores it instead of
-        /// clobbering it with `nullptr`, which would leave sibling children inconsistent if a
-        /// later child rejects and the parent falls back to a full sort.
+        /// A rejection (and any `check_only` dry-run) must leave the order exactly as it was on
+        /// entry: some `ReadFromMerge` children can already carry an `input_order_info` from the
+        /// legacy `query_info.order_optimizer` path in `ReadFromMerge::createChildrenPlans`, and an
+        /// earlier aggregation- or distinct-in-order request may already have committed one.
+        /// Capture the previous order so those return paths restore it instead of clobbering it
+        /// with `nullptr`, which would leave sibling children inconsistent if a later child rejects
+        /// and the parent falls back to a full sort, or strand an in-order step above the read.
         const InputOrderInfoPtr prev_input_order_info = query_info.input_order_info;
 
         /// Set `input_order_info` before running index analysis, so that row-limit checks
@@ -4257,15 +4258,19 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
                 "(both ratios exceed threshold {:.2f})",
                 analysis_result.selected_marks_pk, analysis_result.total_marks_pk,
                 analysis_result.selected_marks, max_ratio);
-            /// In `check_only` mode this is only a probe, so restore the previous order; in a real
-            /// call the guard fired, so commit the "no read-in-order" decision by clearing it.
-            query_info.input_order_info = check_only ? prev_input_order_info : InputOrderInfoPtr{};
+            /// Roll back only the tentative order set by this call, in both `check_only` and real
+            /// calls. The step may already have been switched to an in-order read on entry by
+            /// `optimizeAggregationInOrder` or `optimizeDistinctInOrder` (which run before the later
+            /// `optimizeReadInOrder` pass); clearing the order then would leave their in-order
+            /// `AggregatingStep` / `DistinctStep` above a read that no longer advertises ordered
+            /// input. When the step was not in order on entry, this restores `nullptr`.
+            query_info.input_order_info = prev_input_order_info;
             if (!analysis_was_cached)
             {
                 /// We created the analysis result ourselves above with `input_order_info` set,
                 /// which skipped the row-limit check. Drop it so the next `getAnalysisResult`
-                /// call recomputes it with `input_order_info == nullptr`, restoring the
-                /// row-limit semantics that apply when read-in-order is disabled.
+                /// call recomputes it with the restored `input_order_info`, restoring the
+                /// row-limit semantics that apply to that order (or to no read-in-order).
                 analyzed_result_ptr.reset();
             }
             /// If the analysis was cached before we ran, it was computed with
