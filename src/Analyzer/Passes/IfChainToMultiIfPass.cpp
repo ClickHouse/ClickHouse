@@ -23,8 +23,7 @@ namespace Setting
 namespace
 {
 
-/// The `if` nodes of the query, outside of its subqueries, that are `GROUP BY` keys. Collected before the query is
-/// rewritten: rewriting a chain inside a key changes the key, and a key node can be shared with its references.
+/// The `if` nodes of the query, outside of its subqueries, that are `GROUP BY` keys, collected before any of them is rewritten.
 std::unordered_set<QueryTreeNodePtr> collectGroupByKeyIfNodes(const QueryNode & query_node)
 {
     auto is_if = [](const QueryTreeNodePtr & node)
