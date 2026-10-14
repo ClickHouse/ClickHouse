@@ -106,5 +106,5 @@ for limit in 8 32; do
     $CLICKHOUSE_CLIENT -q "SELECT count() = 1,
         (max(ProfileEvents['OverflowAny']) > 0) = ($limit = 8),
         (max(ProfileEvents['AggregationSharedKeptKeysSpillReseeds']) > 0) = ($limit = 8)
-        FROM system.query_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND type = 'QueryFinish'"
+        FROM system.query_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND type = 'QueryFinish' AND current_database = currentDatabase()"
 done
