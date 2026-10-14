@@ -153,6 +153,8 @@ The setting affects only queries with `JOIN`, where the non-leftmost side is rea
 
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 
+This concerns the index analysis that selects the mark ranges a read announces, which is what the coordinator assigns from. It does not cover pruning that happens while the data is read, such as the granule pruning of `enable_join_runtime_filters_index_analysis`: a JOIN runtime filter only exists once the build side has been read, so every replica evaluates its own and prunes its own share, and no coordinator could do it for them.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -45,6 +45,10 @@ public:
     /// just triggering procedure, not doing the kill itself.
     virtual void killAllocation(const std::exception_ptr & reason) = 0;
 
+    /// Scheduler asks this allocation to reclaim at least `additional_bytes` of its size soon
+    /// IMPORTANT: it is called from the scheduler thread and must be fast - just record the request
+    virtual void spillAllocation(ResourceCost additional_bytes) = 0;
+
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
     Int32 const eviction_score; /// Eviction priority: higher values are evicted first when the resource is under pressure (0 by default). Immutable after construction, so the scheduler thread can read it safely.
@@ -54,6 +58,9 @@ private:
     friend class AllocationLimit; // reads `fair_key` to self-kill a requester whose grow exceeds the limit
 
     ResourceCost allocated = 0; /// Currently allocated.
+    ResourceCost reclaiming = 0; /// Bytes requested for spilling but not yet settled, including requests not yet executing.
+    /// Last absolute estimate, including outstanding requests; retained even when larger than `allocated`.
+    ResourceCost reclaimable = 0;
 
     IncreaseRequest increase;
     DecreaseRequest decrease;
@@ -75,7 +82,7 @@ private:
     /// Keys for intrusive sets
     /// NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
     size_t unique_id = 0; /// Unique id for tie breaking in ordering.
-    ResourceCost fair_key = 0; /// Currently allocated plus pending increase (the fair-share component of the ordering key).
+    ResourceCost fair_key = 0; /// Currently allocated plus pending increase minus outstanding spill requests (the fair-share component of the ordering key).
 
     /// A single ordering of allocations, from most important (`begin()`) to least important (`rbegin()`):
     /// a lower `eviction_score` is more important, ties break on a smaller `fair_key`, then `unique_id`.
