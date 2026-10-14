@@ -155,6 +155,11 @@ private:
     std::atomic_bool drift_expected = false;
     /// A starting point, lowered as flagged sites get fixed.
     static constexpr Int64 drift_warn_threshold = 1024 * 1024;
+    /// What a query root freed beyond what it held, which went straight to the server total (see `free`). For example,
+    /// thread A of a query allocates a 2 MiB block that stays in its untracked memory, below `max_untracked_memory`, and
+    /// thread B frees the block and flushes: the query holds less than 2 MiB, so the rest goes here. When A flushes later,
+    /// the query is charged for a block that is already freed, which shows as drift at the end of the query but is not.
+    std::atomic<Int64> freed_beyond_held = 0;
 #endif
 
     /// `Process` trackers whose parent is this one; only a `User` tracker counts them.
