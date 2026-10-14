@@ -1,12 +1,20 @@
 #include <gtest/gtest.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
+#include <Interpreters/Context.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
+#include <Common/tests/gtest_global_context.h>
 
+#include <atomic>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace CurrentMetrics
@@ -14,6 +22,11 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
     extern const Metric ObjectStorageAzureThreadsScheduled;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 using namespace DB;
@@ -49,6 +62,8 @@ public:
             deactivate();
     }
 
+    size_t getServedPages() const { return served_pages.load(); }
+
 private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
@@ -57,6 +72,7 @@ private:
 
         Page page = pages.front();
         pages.pop_front();
+        ++served_pages;
 
         for (const auto & name : page.names)
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(name));
@@ -65,6 +81,7 @@ private:
     }
 
     std::deque<Page> pages;
+    std::atomic<size_t> served_pages{0};
 };
 
 using Pages = std::deque<ScriptedIteratorAsync::Page>;
@@ -123,4 +140,42 @@ TEST(ObjectStorageIteratorAsync, EmptyListingIsFinished)
     auto pages = [] { return Pages{{{}, false}}; };
     EXPECT_TRUE(consumeBatchWise(pages()).empty());
     EXPECT_TRUE(consumeElementWise(pages()).empty());
+}
+
+/// A stopped query must not keep following a long run of empty pages: nextBatch() follows
+/// them on the caller thread, so the caller gets no chance to check for a stop in between.
+TEST(ObjectStorageIteratorAsync, CancelledQueryStopsFollowingEmptyPages)
+{
+    Pages pages(1000, ScriptedIteratorAsync::Page{{}, true});
+    pages.push_back({{"a"}, false});
+
+    std::optional<int> error_code;
+    size_t served_pages = 0;
+
+    /// A dedicated thread, so the thread group does not depend on what other gtests left behind.
+    std::thread t([&]
+    {
+        ThreadStatus thread_status;
+        auto group = std::make_shared<ThreadGroup>(getContext().context, 0);
+        group->setQueryCancellationPredicates(
+            [] { return true; },
+            [] { throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled"); });
+        ThreadGroupSwitcher switcher(group, ThreadName::TCP_HANDLER);
+
+        ScriptedIteratorAsync it(std::move(pages));
+        try
+        {
+            it.getCurrentBatchAndScheduleNext();
+        }
+        catch (const Exception & e)
+        {
+            error_code = e.code();
+        }
+        it.deactivate();
+        served_pages = it.getServedPages();
+    });
+    t.join();
+
+    EXPECT_EQ(error_code, ErrorCodes::QUERY_WAS_CANCELLED);
+    EXPECT_LE(served_pages, 3u);
 }

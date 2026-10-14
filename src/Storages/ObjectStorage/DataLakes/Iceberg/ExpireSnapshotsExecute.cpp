@@ -375,11 +375,13 @@ void collectRetainedFiles(
         auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
         retained_manifest_list_paths.insert(manifest_list_path);
 
+        throwIfQueryCancelled(context);
         auto manifest_keys = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
 
         for (const auto & manifest_entry : manifest_keys)
         {
             retained_manifest_paths.insert(manifest_entry.manifest_file_path);
+            throwIfQueryCancelled(context);
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log,
                 manifest_entry, current_schema_id);
@@ -420,6 +422,7 @@ ExpiredFiles collectExpiredFiles(
         if (seen_expired_manifest_list_paths.contains(manifest_list_path))
             continue;
 
+        throwIfQueryCancelled(context);
         ManifestFileCacheKeys manifest_keys;
         try
         {
@@ -427,6 +430,7 @@ ExpiredFiles collectExpiredFiles(
         }
         catch (...)
         {
+            throwIfQueryCancelled(context);
             LOG_WARNING(log, "Failed to read manifest list {}, skipping", manifest_list_path);
             continue;
         }
@@ -439,6 +443,7 @@ ExpiredFiles collectExpiredFiles(
             if (seen_expired_manifest_paths.contains(manifest_entry.manifest_file_path))
                 continue;
 
+            throwIfQueryCancelled(context);
             try
             {
                 auto entries_handle = getManifestFileEntriesHandle(
@@ -466,6 +471,7 @@ ExpiredFiles collectExpiredFiles(
             }
             catch (...)
             {
+                throwIfQueryCancelled(context);
                 LOG_WARNING(log, "Failed to read manifest file {}, skipping", manifest_entry.manifest_file_path);
                 continue;
             }
@@ -633,20 +639,27 @@ void deleteExpiredFiles(
     const std::vector<Iceberg::IcebergPathFromMetadata> & files_to_delete,
     const Iceberg::IcebergPathResolver & path_resolver,
     ObjectStoragePtr object_storage,
-    LoggerPtr log)
+    const ContextPtr & context,
+    LoggerPtr log,
+    size_t & deleted_files)
 {
     for (const auto & file_path : files_to_delete)
     {
+        throwIfQueryCancelled(context);
         try
         {
             object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(file_path)));
+            ++deleted_files;
             LOG_DEBUG(log, "Deleted expired file {}", file_path);
         }
         catch (...)
         {
+            /// The request also fails when the query is stopped.
+            throwIfQueryCancelled(context);
             LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
         }
     }
+    throwIfQueryCancelled(context);
 }
 
 }
@@ -677,6 +690,7 @@ ExpireSnapshotsResult expireSnapshots(
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
+        throwIfQueryCancelled(context);
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergExpireSnapshots");
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
@@ -779,10 +793,13 @@ ExpireSnapshotsResult expireSnapshots(
             };
         }
 
+        throwIfQueryCancelled(context);
+
+        Poco::JSON::Object::Ptr committed_metadata;
         if (catalog_commits_metadata)
         {
             const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
-            auto committed_metadata = catalog->removeSnapshots(
+            committed_metadata = catalog->removeSnapshots(
                 namespace_name,
                 parsed_table_name,
                 metadata,
@@ -793,12 +810,6 @@ ExpireSnapshotsResult expireSnapshots(
                 LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
                 continue;
             }
-            /// The snapshots the committed metadata retains, not `partition.retained_snapshots`: the catalog may have
-            /// committed snapshots without a reference since `metadata` was read, e.g. staged ones, which can
-            /// reference the files of the expired snapshots.
-            expired_files = collect_expired_files(
-                committed_metadata->has(Iceberg::f_snapshots) ? committed_metadata->getArray(Iceberg::f_snapshots)
-                                                              : Poco::JSON::Array::Ptr(new Poco::JSON::Array));
         }
         else
         {
@@ -835,8 +846,29 @@ ExpireSnapshotsResult expireSnapshots(
         }
         persistent_table_components.invalidateMetadataCache();
 
-        LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.all_paths.size(), partition.expired_snapshot_ids.size());
-        deleteExpiredFiles(expired_files.all_paths, persistent_table_components.path_resolver, object_storage, log);
+        size_t deleted_files = 0;
+        try
+        {
+            /// The snapshots the committed metadata retains, not `partition.retained_snapshots`: the catalog may have
+            /// committed snapshots without a reference since `metadata` was read, e.g. staged ones, which can
+            /// reference the files of the expired snapshots.
+            if (committed_metadata)
+                expired_files = collect_expired_files(
+                    committed_metadata->has(Iceberg::f_snapshots) ? committed_metadata->getArray(Iceberg::f_snapshots)
+                                                                  : Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+
+            LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.all_paths.size(), partition.expired_snapshot_ids.size());
+            deleteExpiredFiles(
+                expired_files.all_paths, persistent_table_components.path_resolver, object_storage, context, log, deleted_files);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "expire_snapshots stopped after committing the removal of {} snapshots and deleting {} of their files; "
+                "the files it did not delete are no longer referenced, and remove_orphan_files can delete them",
+                partition.expired_snapshot_ids.size(), deleted_files);
+            throw;
+        }
         LOG_INFO(log, "Expired {} snapshots, deleted {} files", partition.expired_snapshot_ids.size(), expired_files.all_paths.size());
 
         return ExpireSnapshotsResult{
