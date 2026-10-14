@@ -230,3 +230,27 @@ def test_multi_storage_combinations(started_cluster_iceberg_with_spark, metadata
     args = get_query_args(metadata_storage, started_cluster_iceberg_with_spark, base_path)
 
     assert instance.query(f"SELECT * FROM {func}({args}) ORDER BY id") == ALL_ROWS
+
+
+def test_lazy_materialization_rereads_external_data_file(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_lazy_external_{get_uuid_str()}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    base_path = relocate_data_files_to_bucket(
+        started_cluster_iceberg_with_spark, TABLE_NAME, external_bucket(started_cluster_iceberg_with_spark))
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
+
+    # Without ETag pinning, the lazy pass probes the metadata of the data file in its own bucket.
+    query = f"SELECT value FROM {TABLE_NAME} ORDER BY id LIMIT 1"
+    settings = {
+        "enable_analyzer": 1,
+        "query_plan_optimize_lazy_materialization": 1,
+        "query_plan_optimize_lazy_materialization_for_object_storage": 1,
+        "s3_validate_etag_on_read": 0,
+    }
+    assert "LazilyReadFromObjectStorage" in instance.query(f"EXPLAIN {query}", settings=settings)
+    assert instance.query(query, settings=settings) == "alpha\n"
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")

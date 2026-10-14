@@ -15,6 +15,7 @@
 #include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/Util/MapConfiguration.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <fmt/format.h>
 #include <filesystem>
 #include <functional>
@@ -439,7 +440,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported storage scheme '{}' in path '{}'", target_scheme_normalized, path);
         }
 
-        const std::string uri_to_check = target_scheme_normalized == "file" ? local_path_for_grant_check(target_decomposed.key) : path;
+        /// Object keys are used verbatim, while the grant check percent-decodes URIs, so escape `%` to keep the checked key exact.
+        const std::string uri_to_check = target_scheme_normalized == "file"
+            ? local_path_for_grant_check(target_decomposed.key)
+            : boost::replace_all_copy(path, "%", "%25");
         if (access_check)
             access_check->granted = context->getAccess()->isGrantedWithFilter(
                 access_check->access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
@@ -564,7 +568,9 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 endpoint_to_use = make_endpoint_with_bucket();
         }
 
-        check_remote_host(endpoint_to_use);
+        if (!access_check)
+            S3::URI(endpoint_to_use, /*allow_archive_path_syntax*/ false, /*keep_presigned_query_parameters*/ true, endpoint_uri_style)
+                .checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
         check_access();
         if (access_check != nullptr)
             return std::nullopt;
@@ -642,8 +648,12 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 }
 
                 /// Use the credential generation captured in the cache key.
+                /// These are the base client's final credentials, already of the assumed role, so do not assume it again.
                 if (!access_key_id.empty())
+                {
+                    s3_settings.auth_settings.clearRoleArn();
                     s3_settings.auth_settings[S3AuthSetting::access_key_id] = access_key_id;
+                }
                 if (!secret_access_key.empty())
                     s3_settings.auth_settings[S3AuthSetting::secret_access_key] = secret_access_key;
                 if (!session_token.empty())

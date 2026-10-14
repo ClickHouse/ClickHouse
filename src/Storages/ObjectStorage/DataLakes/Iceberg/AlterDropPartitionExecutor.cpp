@@ -378,7 +378,7 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
             if (partitionEquals(parsed->partition_key_value, target_partition))
-                targets.emplace(components.path_resolver.resolve(parsed->file_path_key));
+                targets.emplace(parsed->file_path_key.serialize());
         }
     };
 
@@ -448,8 +448,8 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
             const auto & parsed_entry = *entry->parsed_entry;
-            const String storage_path = components.path_resolver.resolve(parsed_entry.file_path_key);
-            if (!targets.contains(storage_path))
+            const String & file_path = parsed_entry.file_path_key.serialize();
+            if (!targets.contains(file_path))
             {
                 ++entries_to_keep;
                 continue;
@@ -458,7 +458,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
             assert_on_ambigious_partition_key(parsed_entry);
 
             ++entries_to_remove;
-            unprocessed_target_file_paths.erase(storage_path);
+            unprocessed_target_file_paths.erase(file_path);
             switch (parsed_entry.content_type)
             {
                 case FileContentType::DATA:

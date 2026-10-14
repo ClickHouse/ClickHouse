@@ -18,6 +18,7 @@ from .external_paths_utils import (
     _external_data_files_in_the_same_bucket,
     _external_delete_files_in_another_bucket,
     _external_manifest_lists_in_another_bucket,
+    _rewrite_manifests_and_reupload,
     external_bucket,
     relocate_manifest_lists_to_bucket,
 )
@@ -232,3 +233,44 @@ def test_remove_orphan_files_ignores_deleted_external_history(started_cluster_ic
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n"
 
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+def test_drop_partition_distinguishes_external_file_with_same_key(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    TABLE_NAME = f"test_drop_partition_external_{get_uuid_str()}"
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+
+    # Separate appends keep the partitions in separate manifests.
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (tag INT, value STRING) USING iceberg "
+        f"PARTITIONED BY (identity(tag)) OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'keep')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2, 'drop')")
+
+    default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    data_files = find_files(os.path.join(host_path, "data"), ".parquet")
+    [kept_file] = [f for f in data_files if "/tag=1/" in f]
+    [dropped_file] = [f for f in data_files if "/tag=2/" in f]
+
+    # Partition 2's file goes outside the table directory, under a key ending with the path of partition 1's file.
+    external_key = f"external_data/{base_path}/{os.path.relpath(kept_file, host_path)}"
+    _rewrite_manifests_and_reupload(
+        started_cluster_iceberg_with_spark, host_path, base_path,
+        lambda p: f"s3a://{base_bucket}/{external_key}" if "/tag=2/" in p else p)
+    started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(dropped_file, external_key)
+    started_cluster_iceberg_with_spark.minio_client.remove_object(
+        base_bucket, f"{base_path}/{os.path.relpath(dropped_file, host_path)}")
+    shutil.rmtree(temp_dir)
+
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY tag") == "1\tkeep\n2\tdrop\n"
+
+    instance.query(f"ALTER TABLE {TABLE_NAME} DROP PARTITION 2", settings={"allow_insert_into_iceberg": 1})
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY tag") == "1\tkeep\n"
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")

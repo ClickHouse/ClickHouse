@@ -1,8 +1,11 @@
 
+import pytest
+
 from helpers.iceberg_utils import get_uuid_str
 from .external_paths_utils import (
     ALL_ROWS,
     _create_iceberg_s3_table,
+    _distribute_table_components,
     _rewrite_paths_to_local_uri,
     create_and_upload_table,
     external_bucket,
@@ -185,6 +188,81 @@ def test_external_local_file_grant_rejects_symlink_alias(started_cluster_iceberg
     assert "ACCESS_DENIED" in error, error
 
     instance.query(f"GRANT READ ON FILE('{path_root}/outside/.*') TO {user}")
+    assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
+
+    instance.query(f"DROP USER {user}")
+
+
+def test_percent_escape_in_external_key_is_not_decoded_for_grant(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_percent_escape_grant_{get_uuid_str()}"
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    granted_prefix = f"external_data/{TABLE_NAME}"
+    user = f"user_{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    # The object key contains a literal `%2F`, so it is outside `granted_prefix/`.
+    base_path = relocate_data_files_to_bucket(
+        started_cluster_iceberg_with_spark, TABLE_NAME, base_bucket, prefix=f"{granted_prefix}%2Fsecret")
+
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+    table_function = (f"icebergS3('{minio_url}/{base_bucket}/{base_path}/', "
+                      f"'minio', 'ClickHouse_Minio_P@ssw0rd')")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user}")
+    instance.query(f"GRANT READ ON S3('{minio_url}/{base_bucket}/{base_path}/.*') TO {user}")
+    instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/{granted_prefix}/.*') TO {user}")
+
+    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id", user=user)
+    assert "ACCESS_DENIED" in error, error
+
+    instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/external_data/.*') TO {user}")
+    assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
+
+    instance.query(f"DROP USER {user}")
+
+
+@pytest.mark.parametrize("external_component", ["manifest_list", "manifest"])
+def test_cached_external_metadata_requires_source_grant(started_cluster_iceberg_with_spark, external_component):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_cached_metadata_grant_{external_component}_{get_uuid_str()}"
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    other_bucket = external_bucket(started_cluster_iceberg_with_spark)
+    user = f"user_{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    other = f"s3:{other_bucket}"
+    base_path = _distribute_table_components(
+        started_cluster_iceberg_with_spark, TABLE_NAME,
+        metadata_storage="s3",
+        manifest_list_storage=other if external_component == "manifest_list" else "s3",
+        manifest_storage=other if external_component == "manifest" else "s3",
+        data_storage="s3")
+
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+    table_function = (f"icebergS3('{minio_url}/{base_bucket}/{base_path}/', "
+                      f"'minio', 'ClickHouse_Minio_P@ssw0rd')")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user}")
+    instance.query(f"GRANT READ ON S3('{minio_url}/{base_bucket}/{base_path}/.*') TO {user}")
+    instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/{base_path}/.*') TO {user}")
+
+    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id", user=user)
+    assert "ACCESS_DENIED" in error, error
+
+    # A privileged query puts the external metadata into the shared cache.
+    assert instance.query(f"SELECT * FROM {table_function} ORDER BY id") == ALL_ROWS
+
+    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id", user=user)
+    assert "ACCESS_DENIED" in error, error
+
+    instance.query(f"GRANT READ ON S3('s3a://{other_bucket}/{base_path}/.*') TO {user}")
     assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
 
     instance.query(f"DROP USER {user}")
