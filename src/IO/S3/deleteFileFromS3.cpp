@@ -201,8 +201,8 @@ void deleteFilesFromS3(
                     checksum_algorithm = S3::RequestChecksum::Algorithm::SHA256;
                     outcome = send_delete_objects();
 
-                    /// Remember the switch only once the server has accepted `SHA256`. Otherwise it is not the digest that
-                    /// is at fault, and the original error is logged here because the retry's error is the one handled below.
+                    /// Remember the switch only once the server has accepted `SHA256`. Otherwise the digest may not be the
+                    /// cause, and the original error is logged here because the retry's error is the one handled below.
                     if (outcome.IsSuccess())
                     {
                         if (s3_capabilities.setDeleteMD5Rejected())
@@ -212,8 +212,9 @@ void deleteFilesFromS3(
                     }
                     else
                     {
-                        LOG_WARNING(log, "DeleteObjects with Content-MD5 was rejected: {} ({}), and the retry with a SHA256 "
-                                    "checksum failed too: {}", error_message, error_name, outcome.GetError().GetMessage());
+                        LOG_INFO(log, "DeleteObjects failed with Content-MD5: {} ({}), and the retry with a SHA256 checksum "
+                                 "failed too: {}. The server may not support DeleteObjects, or may reject both digests",
+                                 error_message, error_name, outcome.GetError().GetMessage());
                     }
                 }
             }
