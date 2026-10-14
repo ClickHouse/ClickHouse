@@ -837,12 +837,37 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             }
             else
             {
-                /// date64: milliseconds since the epoch, maps to DateTime (UInt32 seconds).
+                /// date64 (ms since epoch) -> DateTime (UInt32 seconds); out-of-range values throw or
+                /// saturate (`date_time_overflow_behavior`) instead of silently wrapping mod 2^32.
                 auto & data = assert_cast<ColumnUInt32 &>(*column).getData();
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const Int64 *>(values.ptr);
+                constexpr Int64 max_seconds = std::numeric_limits<UInt32>::max();
+                const bool saturate = settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
                 for (size_t i = 0; i < rows; ++i)
-                    data[i] = isInvisible(invisible_rows, i) ? 0 : static_cast<UInt32>(src[i] / 1000);
+                {
+                    /// The bytes of an invisible slot (see `InvisibleRowsMask`) are undefined per the
+                    /// Arrow spec, so they must not be range-checked; decode them as the type default.
+                    if (isInvisible(invisible_rows, i))
+                    {
+                        data[i] = 0;
+                        continue;
+                    }
+                    /// Any negative value is before the epoch (its floored second is <= -1), so the
+                    /// range check needs no floor division that could overflow near Int64 minimum.
+                    Int64 seconds = src[i] / 1000;
+                    if (src[i] < 0 || seconds > max_seconds)
+                    {
+                        if (saturate)
+                            seconds = src[i] < 0 ? 0 : max_seconds;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Arrow IPC date64 value {} ms is out of the allowed DateTime range [0, {}]",
+                                src[i], max_seconds * 1000);
+                    }
+                    data[i] = static_cast<UInt32>(seconds);
+                }
             }
             break;
         }
@@ -1441,7 +1466,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
         const int tid = child_idx < type.union_type_ids.size()
             ? type.union_type_ids[child_idx] : static_cast<int>(child_idx);
 
-        if (child.type.kind == TypeKind::Null)
+        /// An Arrow `null`-typed child is the ClickHouse NULL placeholder: it contributes no Variant
+        /// element. A plain one carries a FieldNode but no buffers. A dictionary-encoded one is an index
+        /// array instead, so it has the layout of any other dictionary field and goes through the regular
+        /// decode below — its node, buffers and indexes get the usual validation — and is then discarded.
+        const bool null_placeholder = child.type.kind == TypeKind::Null;
+        if (null_placeholder && !child.dictionary)
         {
             nextNode(); /// consume the placeholder node; the null type has no buffers
             type_id_to_local[tid] = -1;
@@ -1480,6 +1510,13 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             : decodeField(
                 child, /*allow_low_cardinality=*/false, /*target_hint=*/nullptr, /*path=*/{}, /*list_depth=*/0,
                 &child_invisible, &child_null_map);
+        /// The decoded values of a dictionary-encoded null child are all null; only its cursor walk and
+        /// index validation matter, and `Nothing` is not a Variant element type.
+        if (null_placeholder)
+        {
+            type_id_to_local[tid] = -1;
+            continue;
+        }
         DataTypePtr child_type = fieldToCHType(child, settings, /*make_nullable=*/false, /*allow_null_type=*/true);
         /// The decoded null map survives even when a complex child cannot retain its outer wrapper.
         /// A nullable dictionary result also includes nulls contributed by dictionary entries.
@@ -1712,7 +1749,8 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
             consume_buffer(rows, sizeof(Int32), "union offsets");
         for (const ArrowField & child : type.children)
         {
-            if (child.type.kind == TypeKind::Null)
+            /// A dictionary-encoded null child is an index array, not the zero-buffer placeholder.
+            if (child.type.kind == TypeKind::Null && !child.dictionary)
                 nextNode();
             else
             {
