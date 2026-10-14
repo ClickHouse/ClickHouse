@@ -353,8 +353,9 @@ namespace
     /// The low `count_bits` bits hold the count. The high bits belong to the top and are zero in the word of a new
     /// group: there the top keeps the index of the group's entry plus one, so it finds the entry of an updated group
     /// without a search. A group evicted from the top keeps its stale index, so the entry an index names is checked by
-    /// the full key: a hash does not identify a group. Keys are kept as given, so memory that a key views must outlive
-    /// the updates.
+    /// the full key: a hash does not identify a group. A key comes in a key holder (see `keyHolderGetKey`), and a new
+    /// entry keeps it made persistent, so a key that views memory gone before the updates end comes in a holder that
+    /// copies it.
     template <typename Key>
     class GrowingCountTopK
     {
@@ -388,14 +389,15 @@ namespace
             min_count = 0;
         }
 
-        /// Takes the word of a group whose count grew.
-        void ALWAYS_INLINE update(UInt64 & word, const Key & key, UInt64 hash)
+        /// Takes the word of a group whose count grew, with the group's key in a key holder.
+        template <typename KeyHolder>
+        void ALWAYS_INLINE update(UInt64 & word, KeyHolder && key_holder, UInt64 hash)
         {
             const UInt64 count = word & count_mask;
             /// Until the top is full, `min_count` is zero, so every count enters, being positive.
             chassert(count > 0);
             if (count > min_count)
-                enter(word, count, key, hash);
+                enter(word, count, key_holder, hash);
         }
 
         /// The groups with the `limit` largest counts so far, or all of them while there are fewer, in no particular
@@ -403,12 +405,13 @@ namespace
         const std::vector<Group> & getGroups() const { return groups; }
 
     private:
-        NO_INLINE void enter(UInt64 & word, UInt64 count, const Key & key, UInt64 hash)
+        template <typename KeyHolder>
+        NO_INLINE void enter(UInt64 & word, UInt64 count, KeyHolder & key_holder, UInt64 hash)
         {
             /// The high bits of the word name the group's entry by its index plus one, or no entry by zero.
             const UInt64 entry = word >> count_bits;
             chassert(entry <= groups.size());
-            if (entry && groups[entry - 1].key == key)
+            if (entry && groups[entry - 1].key == keyHolderGetKey(key_holder))
             {
                 /// A grown count can only move its index away from the root of the min-heap.
                 groups[entry - 1].count = count;
@@ -416,6 +419,8 @@ namespace
             }
             else
             {
+                keyHolderPersistKey(key_holder);
+                const Key & key = keyHolderGetKey(key_holder);
                 UInt32 index = 0;
                 if (heap.size() < limit)
                 {
