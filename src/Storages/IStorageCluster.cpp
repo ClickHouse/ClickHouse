@@ -22,6 +22,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -81,7 +82,17 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordere
     if (node.type == ActionsDAG::ActionType::COLUMN)
     {
         const auto * column_set = node.column ? checkAndGetColumn<ColumnSet>(&node.column->getDataColumn()) : nullptr;
-        return !column_set || typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
+        if (!column_set)
+            return true;
+        const auto & future_set = column_set->getData();
+        if (typeid_cast<const FutureSetFromTuple *>(future_set.get()))
+            return true;
+        if (typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+        {
+            auto set = future_set->get();
+            return set && set->hasExplicitSetElements() && !set->isTruncated();
+        }
+        return false;
     }
     for (const auto * child : node.children)
         if (!isSerializableFilterNode(*child, replica_columns))
@@ -120,7 +131,7 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 
     pushed_down_filter.clear();
     const auto * select = query_to_send->as<ASTSelectQuery>();
-    if (filter_actions_dag && !filter_actions_dag->getOutputs().empty() && select && select->select())
+    if (storage->isObjectStorage() && filter_actions_dag && !filter_actions_dag->getOutputs().empty() && select && select->select())
     {
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
         const auto & select_expressions = select->select()->children;
