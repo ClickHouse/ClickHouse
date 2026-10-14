@@ -57,6 +57,11 @@ CREATE TABLE t_idx (a UInt8, b UInt8, `equals(a, b)` UInt8) ENGINE = MergeTree O
 INSERT INTO t_idx VALUES (1, 1, 0), (1, 2, 0), (3, 3, 1), (4, 5, 1), (6, 6, 2);
 SELECT ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_idx, `equals(a, b)` = 0 AND a = b);
 
+CREATE TABLE t_lam (a UInt8, arr Array(UInt8), `x UInt8 -> equals(x, a)` UInt8, d UInt8 DEFAULT arrayExists(x -> x = a, arr))
+    ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_lam (a, arr, `x UInt8 -> equals(x, a)`) VALUES (1, [1, 2], 7), (3, [1, 2], 7);
+SELECT a, d, `x UInt8 -> equals(x, a)` FROM t_lam ORDER BY a;
+
 -- { echoOff }
 
 DROP TABLE t_merge;
@@ -70,3 +75,4 @@ DROP TABLE t_def;
 DROP TABLE t_inf1;
 DROP TABLE t_inf2;
 DROP TABLE t_idx;
+DROP TABLE t_lam;

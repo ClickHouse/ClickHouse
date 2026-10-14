@@ -379,14 +379,7 @@ public:
                     buffer << ')';
                 }
 
-                result = buffer.str();
-                if (is_input_column_name && is_input_column_name(result))
-                {
-                    String prefix = "__FUNCTION";
-                    for (size_t i = 1; is_input_column_name(prefix + "." + result); ++i)
-                        prefix = "__FUNCTION" + std::to_string(i);
-                    result = prefix + "." + result;
-                }
+                result = nameApartFromInputColumns(buffer.str());
                 break;
             }
             case QueryTreeNodeType::LAMBDA:
@@ -442,6 +435,17 @@ public:
         node_to_name.emplace(node, result);
 
         return result;
+    }
+
+    String nameApartFromInputColumns(String name) const
+    {
+        if (!is_input_column_name || !is_input_column_name(name))
+            return name;
+
+        String prefix = "__FUNCTION";
+        for (size_t i = 1; is_input_column_name(prefix + "." + name); ++i)
+            prefix = "__FUNCTION" + std::to_string(i);
+        return prefix + "." + name;
     }
 
     static String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
@@ -1125,7 +1129,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     /// it itself when it rebuilds the lambda from the serialized plan.
     auto compile_lambda_expression = planner_context->mayBeSerializedForRemoteExecution() ? CompileExpressions::no : CompileExpressions::yes;
     auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), compile_lambda_expression);
-    auto lambda_node_name = calculateActionNodeName(node, *planner_context);
+    auto lambda_node_name = action_node_name_helper.nameApartFromInputColumns(calculateActionNodeName(node, *planner_context));
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
 
