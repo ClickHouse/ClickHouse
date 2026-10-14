@@ -1,0 +1,42 @@
+<test>
+    <!-- Two-level GROUP BY with only 13 keys: the preallocated buckets of the table must not switch the prefetch on. -->
+    <settings>
+        <max_threads>8</max_threads>
+        <group_by_two_level_threshold_bytes>1</group_by_two_level_threshold_bytes>
+    </settings>
+
+    <create_query>
+        CREATE TABLE group_by_two_level_few_keys
+        (
+            lc LowCardinality(Nullable(String)),
+            s Nullable(String),
+            a UInt64,
+            b UInt64,
+            c UInt64
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+    <fill_query>
+        INSERT INTO group_by_two_level_few_keys
+        SELECT v, v, intHash32(intDiv(number, 16)) % 13, 7, 11
+        FROM
+        (
+            SELECT
+                number,
+                multiIf(
+                    intHash32(intDiv(number, 16)) % 100 &lt; 40, 'category_value_01_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    intHash32(intDiv(number, 16)) % 100 &lt; 70, 'category_value_02_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                    intHash32(intDiv(number, 16)) % 100 &lt; 95, 'category_value_03_cccccccccccccccccccccccccccccccccccccccc',
+                    intHash32(intDiv(number, 16)) % 100 &lt; 97, NULL,
+                    concat('category_value_', toString((intHash32(number) % 9) + 4), '_dddddddddddddddddddddddddddddddddddddddd')) AS v
+            FROM numbers_mt(300000000)
+        )
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE group_by_two_level_few_keys FINAL</fill_query>
+
+    <query>SELECT lc FROM group_by_two_level_few_keys GROUP BY lc FORMAT Null</query>
+    <query>SELECT s FROM group_by_two_level_few_keys GROUP BY s FORMAT Null</query>
+    <query>SELECT a, b, c, count() FROM group_by_two_level_few_keys GROUP BY a, b, c FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS group_by_two_level_few_keys</drop_query>
+</test>
