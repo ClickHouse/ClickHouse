@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
@@ -263,8 +264,6 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
             list.heap_size = list.entries.size();
         }
 
-        ProfileEvents::increment(ProfileEvents::AggregationThresholdTopKMerges);
-
         /// Peek the partial values of every cell (the inline count already collected them).
         if (!is_simple_count)
         {
@@ -278,6 +277,58 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                     list.values_uint = assert_cast<const ColumnUInt64 &>(*list.values_column).getData().data();
             }
         }
+
+        /// The summing walk over a dominant table with leftovers elsewhere converges only if the
+        /// leftovers are small next to the winners. Bound the pops before paying for the heaps:
+        /// the k best merged values are at least the k-th best partial value `v_k` of the dominant
+        /// table, and the heads of the other lists never exceed the sum `s` of their maximums, so
+        /// once every cell above `v_k - s` is popped, the sum of the heads cannot beat the worst
+        /// candidate (an estimate only for a wrapping `sum`; a wrong one costs speed, not results).
+        /// When the leftovers are tied with the winners (e.g. disjoint keys with a count
+        /// of one everywhere), this bound covers the whole bucket and the walk would only trip the
+        /// pop budget after half of it, so decline right away and count towards the verdict.
+        if (additive_descending && lists.size() > 1)
+        {
+            size_t dominant = 0;
+            for (size_t i = 1; i < lists.size(); ++i)
+                if (lists[i].heap_size > lists[dominant].heap_size)
+                    dominant = i;
+
+            UInt64 others_max_sum = 0;
+            for (size_t i = 0; i < lists.size(); ++i)
+            {
+                if (i == dominant)
+                    continue;
+                const UInt64 * values = lists[i].values_uint;
+                others_max_sum = saturatingAdd(others_max_sum, *std::max_element(values, values + lists[i].heap_size));
+            }
+
+            const List & dominant_list = lists[dominant];
+            UInt64 kth_value = 0;
+            if (dominant_list.heap_size >= k)
+            {
+                PaddedPODArray<UInt64> dominant_values(dominant_list.values_uint, dominant_list.values_uint + dominant_list.heap_size);
+                std::nth_element(dominant_values.begin(), dominant_values.begin() + (k - 1), dominant_values.end(), std::greater<UInt64>());
+                kth_value = dominant_values[k - 1];
+            }
+            const UInt64 stop_value = kth_value > others_max_sum ? kth_value - others_max_sum : 0;
+
+            size_t max_pops = 0;
+            for (const List & list : lists)
+                max_pops += std::count_if(
+                    list.values_uint, list.values_uint + list.heap_size, [stop_value](UInt64 value) { return value > stop_value; });
+
+            /// A pop costs a heap sift and a random access into every table, several times the
+            /// per-cell cost of the ordinary merge.
+            if (max_pops * 8 > total_cells)
+            {
+                if (threshold_top_k_verdict)
+                    threshold_top_k_verdict->fetch_add(1, std::memory_order_relaxed);
+                return std::nullopt;
+            }
+        }
+
+        ProfileEvents::increment(ProfileEvents::AggregationThresholdTopKMerges);
 
         /// `better(a, b)`: a ranks strictly before b in the requested order. The generic
         /// comparison ranks NaNs consistently with the min/max merge itself, which ignores a NaN

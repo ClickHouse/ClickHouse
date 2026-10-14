@@ -44,5 +44,60 @@
     <query tag="uniform_count_riders">SELECT number AS k, count() AS c, max(number) FROM numbers_mt(20000000) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS query_plan_aggregation_bucket_top_k = 1</query>
     <query tag="uniform_count_riders_baseline">SELECT number AS k, count() AS c, max(number) FROM numbers_mt(20000000) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS query_plan_aggregation_bucket_top_k = 0</query>
 
+    <!-- A dominant table (one single-stream input of distinct keys) with stray leftovers in the
+         other per-thread tables (fifteen small inputs of disjoint keys), all counts tied at one:
+         the summing bound cannot converge, and the precheck must decline it before the heap
+         setup. The baseline keeps the conversion-stage selection and bypasses only the threshold
+         merge through a nonbinding throw-mode group limit. -->
+    <query tag="dominant_tied_leftovers">
+        SELECT k, count() AS c, max(u) FROM
+        (
+            SELECT number AS k, number % 7 AS u FROM numbers(10000000)
+            UNION ALL SELECT 100000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 200000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 300000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 400000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 500000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 600000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 700000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 800000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 900000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1000000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1100000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1200000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1300000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1400000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1500000000 + number, number % 7 FROM numbers(1000)
+        )
+        GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null
+        SETTINGS max_threads = 16, enable_adaptive_aggregator = 0, group_by_two_level_threshold = 1,
+            group_by_two_level_threshold_bytes = 1, query_plan_aggregation_bucket_top_k = 1
+    </query>
+    <query tag="dominant_tied_leftovers_baseline">
+        SELECT k, count() AS c, max(u) FROM
+        (
+            SELECT number AS k, number % 7 AS u FROM numbers(10000000)
+            UNION ALL SELECT 100000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 200000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 300000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 400000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 500000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 600000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 700000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 800000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 900000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1000000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1100000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1200000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1300000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1400000000 + number, number % 7 FROM numbers(1000)
+            UNION ALL SELECT 1500000000 + number, number % 7 FROM numbers(1000)
+        )
+        GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null
+        SETTINGS max_threads = 16, enable_adaptive_aggregator = 0, group_by_two_level_threshold = 1,
+            group_by_two_level_threshold_bytes = 1, query_plan_aggregation_bucket_top_k = 1,
+            max_rows_to_group_by = 1000000000, group_by_overflow_mode = 'throw'
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS threshold_top_k_hot</drop_query>
 </test>
