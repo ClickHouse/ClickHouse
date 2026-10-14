@@ -195,7 +195,11 @@ public:
 
         std::lock_guard lock(task_filter->mutex);
         if (task_filter->filter)
+        {
             task_filter->filter->mergeFrom(*partial);
+            /// The processor lives until the task ends, so keep no copy of a merged state.
+            partial.reset();
+        }
         else
             task_filter->filter = std::move(partial);
 
