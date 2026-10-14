@@ -78,6 +78,18 @@ const SecretArgumentsSpec * FunctionFactory::tryGetSecretArgumentsSpec(const std
     return it == secret_arguments.end() ? nullptr : &it->second;
 }
 
+void FunctionFactory::registerNamedArguments(const std::string & name, FunctionNamedArguments named_arguments_)
+{
+    named_arguments_.validate(name);
+    named_arguments.emplace(name, std::move(named_arguments_));
+}
+
+const FunctionNamedArguments * FunctionFactory::tryGetNamedArguments(const std::string & name) const
+{
+    auto it = named_arguments.find(getCanonicalNameIfAny(getAliasToOrName(name)));
+    return it == named_arguments.end() ? nullptr : &it->second;
+}
+
 FunctionOverloadResolverPtr FunctionFactory::getImpl(
     const std::string & name,
     ContextPtr context) const
