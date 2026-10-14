@@ -558,6 +558,7 @@ set_property(SOURCE
     Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
     Processors/Transforms/Window/Partition.cpp  # window functions
+    Processors/Transforms/Window/Frame.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
     WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
@@ -608,14 +609,16 @@ if (TARGET ch_contrib::llvm)
 endif ()
 
 # Otherwise it will slow down stack traces printing too much.
+set (SYMBOLIZER_SOURCES
+        Common/Elf.cpp
+        Common/Dwarf.cpp
+        Common/MachO.cpp
+        Common/SymbolIndex.cpp
+        Common/ThreadFuzzer.cpp)
 if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
-    set_source_files_properties(
-            Common/Elf.cpp
-            Common/Dwarf.cpp
-            Common/MachO.cpp
-            Common/SymbolIndex.cpp
-            Common/ThreadFuzzer.cpp
-            PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
+    set_source_files_properties(${SYMBOLIZER_SOURCES} PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
+elseif (WITH_COVERAGE)
+    set_property(SOURCE ${SYMBOLIZER_SOURCES} APPEND PROPERTY COMPILE_OPTIONS ${WITHOUT_COVERAGE_FLAGS_LIST})
 endif()
 
 target_link_libraries (clickhouse_common_io
