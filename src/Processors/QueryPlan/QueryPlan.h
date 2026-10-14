@@ -365,14 +365,16 @@ struct ExchangeDescription
     };
 
     String name;
-    /// Number of the exchange, the N of `exchange_N`; the producer stage has the same id. Not sent to workers.
+    /// Id of the producer stage: the N of `exchange_N`, or the id of the `main` stage for `final_result`.
+    /// Not sent to workers.
     UInt32 id = 0;
     Kind kind = Kind::Persisted;
     size_t source_bucket_count = 0;
     size_t destination_bucket_count = 0;
 
     /// Name of the logical exchange step this exchange was cut from (`ShuffleExchange`, `ScatterExchange`,
-    /// `BroadcastExchange`, `GatherExchange`). Kept for `EXPLAIN`; not sent to workers.
+    /// `BroadcastExchange`, `GatherExchange`). Kept for `EXPLAIN`; not sent to workers. Empty for `final_result`,
+    /// which is not cut from a logical exchange step.
     String exchange_step_name;
     /// Hash keys of a shuffle or scatter exchange; empty for `any` distribution, broadcast and gather.
     Names keys;

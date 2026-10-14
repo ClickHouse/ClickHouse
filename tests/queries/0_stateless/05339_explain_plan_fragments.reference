@@ -34,7 +34,7 @@ Exchanges:
   exchange_3: gather, pipelined, Fragment 3 -> Fragment 4, buckets 3 -> 1
 Dependencies:
   Fragment 4 <- Fragment 3 (exchange_3, streaming)
-  Fragment 3 <- Fragment 2 (exchange_2, streaming)
+  Fragment 3 <- Fragment 2 (exchange_2, blocking: hash aggregation)
   Fragment 2 <- Fragment 0 (exchange_0, streaming)
   Fragment 2 <- Fragment 1 (exchange_1, blocking: build side of JoinLogical)
 Levels: [0, 1] -> [2] -> [3] -> [4]
@@ -68,8 +68,8 @@ Exchanges:
   exchange_1: broadcast, pipelined, Fragment 1 -> Fragment 2, buckets 1 -> 3
   exchange_2: gather, pipelined, Fragment 2 -> Fragment 3, buckets 3 -> 1
 Dependencies:
-  Fragment 3 <- Fragment 2 (exchange_2, blocking: merge of aggregation states)
-  Fragment 2 <- Fragment 0 (exchange_0, streaming)
+  Fragment 3 <- Fragment 2 (exchange_2, streaming)
+  Fragment 2 <- Fragment 0 (exchange_0, blocking: hash aggregation)
   Fragment 2 <- Fragment 1 (exchange_1, blocking: build side of JoinLogical)
 Levels: [0, 1] -> [2] -> [3]
 -- aggregation
@@ -93,7 +93,7 @@ Exchanges:
   exchange_1: gather, pipelined, Fragment 1 -> Fragment 2, buckets 3 -> 1
 Dependencies:
   Fragment 2 <- Fragment 1 (exchange_1, streaming)
-  Fragment 1 <- Fragment 0 (exchange_0, streaming)
+  Fragment 1 <- Fragment 0 (exchange_0, blocking: hash aggregation)
 Levels: [0] -> [1] -> [2]
 -- order by
 Fragment 1 (main, initiator, tasks=1)

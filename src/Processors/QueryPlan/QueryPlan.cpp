@@ -979,10 +979,14 @@ DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimization
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
+    auto & main_stage = distributed_plan.stages["main"];
+
+    /// The main stage produces the final result, so the exchange takes its id. It is not cut from
+    /// a logical exchange step, so `exchange_step_name` stays empty.
     cut.final_result_exchange = ExchangeDescription
     {
         .name = "final_result",
-        .id = 0,
+        .id = main_stage.id,
         .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
         .source_bucket_count = 1,
         .destination_bucket_count = 1,
@@ -994,7 +998,6 @@ DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimization
     auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
 
     /// Add a step that writes the result of the main stage to the file
-    auto & main_stage = distributed_plan.stages["main"];
     if (!main_stage.query_plan_fragment.isCompleted())
     {
         main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(cut.result_header, final_result_exchange.name));

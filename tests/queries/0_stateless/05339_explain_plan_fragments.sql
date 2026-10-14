@@ -14,6 +14,8 @@ SET explain_query_plan_default = 'legacy';
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
+-- Whether a `MergingAggregated` or an `Aggregating` blocks its input depends on how it merges and on aggregation in order.
+SET distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation_in_order = 0;
 
 SET
     make_distributed_plan = 1,

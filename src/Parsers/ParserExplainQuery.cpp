@@ -857,7 +857,7 @@ With `fragments` = 1, a query that is executed by stateless workers (`make_distr
 The fragments are followed by three sections:
 
 - `Exchanges` — how the data is transferred between two fragments: by the hash of the keys (`hash(...)`), to every task of the consumer (`broadcast`), into one task (`gather`, with `sorted by` when the sort order is kept) or without regard to the values (`any`); whether it is sent over the network while it is produced (`pipelined`) or written to temporary files first (`materialised`); and the number of source and destination buckets.
-- `Dependencies` — for every fragment, the fragments it reads from. A `streaming` dependency is processed as the rows arrive; a `blocking` dependency must be finished before the consumer produces output, for example the build side of a join, a merge of aggregation states, or a full sort. The reason is printed next to it.
+- `Dependencies` — for every fragment, the fragments it reads from. A `streaming` dependency is processed as the rows arrive; a `blocking` dependency must be finished before the consumer produces output, because a step on the way from the exchange to the output of the fragment needs all of its input first: the build side of a join, a hash aggregation, a merge of aggregation states that does not merge bucket by bucket, or a full sort. A materialised exchange is always blocking. The reason is printed next to it.
 - `Levels` — fragment ids grouped by their depth, from the fragments without dependencies to the initiator. The fragments of one level do not depend on each other.
 
 When the query is not distributed, the plan is printed as without `fragments`. If the query could not be distributed and fell back to local execution, the reason is printed after the plan as `Not distributed: <reason>`.
@@ -902,8 +902,8 @@ Exchanges:
   exchange_1: broadcast, pipelined, Fragment 1 -> Fragment 2, buckets 1 -> 3
   exchange_2: gather, pipelined, Fragment 2 -> Fragment 3, buckets 3 -> 1
 Dependencies:
-  Fragment 3 <- Fragment 2 (exchange_2, blocking: merge of aggregation states)
-  Fragment 2 <- Fragment 0 (exchange_0, streaming)
+  Fragment 3 <- Fragment 2 (exchange_2, streaming)
+  Fragment 2 <- Fragment 0 (exchange_0, blocking: hash aggregation)
   Fragment 2 <- Fragment 1 (exchange_1, blocking: build side of JoinLogical)
 Levels: [0, 1] -> [2] -> [3]
 ```

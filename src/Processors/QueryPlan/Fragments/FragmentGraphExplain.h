@@ -12,7 +12,7 @@ struct FragmentGraph;
 /// Text output of `EXPLAIN PLAN fragments = 1`.
 ///
 /// A graph with one fragment and no exchanges prints exactly what `QueryPlan::explainPlan` prints for the
-/// plan of the fragment, followed by an empty line and `Not distributed: <reason>` when the graph has a
+/// plan of the fragment, followed by an empty line and `Not distributed: <reason>` when the fragment has a
 /// `fallback_reason`.
 ///
 /// Otherwise every fragment is printed as a header line `Fragment <id> (<stage name>, <role>, tasks=<N>)`,

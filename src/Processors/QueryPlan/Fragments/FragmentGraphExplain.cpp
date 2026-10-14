@@ -54,6 +54,8 @@ String formatKind(const FragmentExchange & exchange)
             return "gather";
         case FragmentExchange::Kind::Any:
             return "any";
+        case FragmentExchange::Kind::SetValues:
+            return "set values";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.name);
 }
@@ -103,14 +105,12 @@ void explainFragmentGraph(
     /// The plan was not cut: print it as `EXPLAIN` without `fragments` does.
     if (graph.fragments.size() == 1 && graph.exchanges.empty())
     {
-        getPlan(graph.fragments.front()).explainPlan(buf, options, 0, max_step_description_length);
-        if (graph.fallback_reason)
-            buf << "\nNot distributed: " << *graph.fallback_reason << '\n';
+        const auto & fragment = graph.fragments.front();
+        getPlan(fragment).explainPlan(buf, options, 0, max_step_description_length);
+        if (fragment.fallback_reason)
+            buf << "\nNot distributed: " << *fragment.fallback_reason << '\n';
         return;
     }
-
-    if (graph.fallback_reason)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A fragment graph with {} fragments has a fallback reason", graph.fragments.size());
 
     const auto print_order = getPrintOrder(graph);
 
@@ -134,25 +134,22 @@ void explainFragmentGraph(
         }
     }
 
-    bool has_dependencies = false;
-    for (const auto & fragment : graph.fragments)
-        has_dependencies |= !fragment.depends_on.empty();
-
-    if (has_dependencies)
+    if (!graph.exchanges.empty())
     {
         buf << "Dependencies:\n";
         for (const auto * fragment : print_order)
         {
-            for (const auto & dependency : fragment->depends_on)
+            for (UInt32 child : fragment->children)
             {
-                buf << fmt::format("  Fragment {} <- Fragment {} ({}, ", fragment->id, dependency.producer, graph.getExchange(dependency.exchange).name);
-                switch (dependency.type)
+                const auto & exchange = graph.getExchange(child);
+                buf << fmt::format("  Fragment {} <- Fragment {} ({}, ", fragment->id, exchange.from, exchange.name);
+                switch (exchange.type)
                 {
-                    case FragmentDependency::Type::Streaming:
+                    case FragmentExchange::Type::Streaming:
                         buf << "streaming";
                         break;
-                    case FragmentDependency::Type::Blocking:
-                        buf << "blocking: " << dependency.reason;
+                    case FragmentExchange::Type::Blocking:
+                        buf << "blocking: " << exchange.reason;
                         break;
                 }
                 buf << ")\n";
@@ -160,12 +157,13 @@ void explainFragmentGraph(
         }
     }
 
+    const auto levels = computeLevels(graph);
     buf << "Levels: ";
-    for (size_t i = 0; i < graph.levels.size(); ++i)
+    for (size_t i = 0; i < levels.size(); ++i)
     {
         if (i != 0)
             buf << " -> ";
-        buf << fmt::format("[{}]", fmt::join(graph.levels[i], ", "));
+        buf << fmt::format("[{}]", fmt::join(levels[i], ", "));
     }
     buf << '\n';
 }

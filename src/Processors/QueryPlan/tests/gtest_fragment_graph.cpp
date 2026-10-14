@@ -4,12 +4,15 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Aggregator.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Common/Exception.h>
 
 using namespace DB;
@@ -17,7 +20,7 @@ using namespace DB;
 namespace
 {
 
-using Blocking = FragmentDependency::Type;
+using Blocking = FragmentExchange::Type;
 
 /// Without an explicit role, fragment 0 is the initiator: the hand-built graphs of the algorithm tests use
 /// the sink as fragment 0. Real plans number the initiator last, which the dump tests reproduce.
@@ -31,8 +34,8 @@ QueryFragment makeFragment(UInt32 id, size_t tasks = 1, std::optional<QueryFragm
     return fragment;
 }
 
-/// Adds an exchange `exchange_<producer>` from `producer` to `consumer` and the matching dependency.
-void connect(FragmentGraph & graph, UInt32 producer, UInt32 consumer, FragmentDependency::Type type)
+/// Adds an exchange `exchange_<producer>` from `producer` to `consumer` and makes it a child of `consumer`.
+void connect(FragmentGraph & graph, UInt32 producer, UInt32 consumer, FragmentExchange::Type type)
 {
     FragmentExchange exchange;
     exchange.id = producer;
@@ -42,6 +45,7 @@ void connect(FragmentGraph & graph, UInt32 producer, UInt32 consumer, FragmentDe
     exchange.kind = FragmentExchange::Kind::Gather;
     exchange.source_buckets = 1;
     exchange.destination_buckets = 1;
+    exchange.type = type;
     graph.exchanges.push_back(exchange);
     std::sort(graph.exchanges.begin(), graph.exchanges.end(), [](const auto & l, const auto & r) { return l.id < r.id; });
 
@@ -49,9 +53,8 @@ void connect(FragmentGraph & graph, UInt32 producer, UInt32 consumer, FragmentDe
     {
         if (fragment.id == consumer)
         {
-            fragment.depends_on.push_back(FragmentDependency{.producer = producer, .exchange = producer, .type = type, .reason = {}});
-            std::sort(fragment.depends_on.begin(), fragment.depends_on.end(),
-                [](const auto & l, const auto & r) { return l.producer < r.producer; });
+            fragment.children.push_back(producer);
+            std::sort(fragment.children.begin(), fragment.children.end());
             return;
         }
     }
@@ -73,6 +76,22 @@ FragmentGraph makeGraph(std::initializer_list<UInt32> ids)
     return graph;
 }
 
+#ifndef DEBUG_OR_SANITIZER_BUILD
+/// Expects `validateFragmentGraph` to throw an exception whose message contains `expected_message`.
+void expectInvalid(const FragmentGraph & graph, const String & expected_message)
+{
+    try
+    {
+        validateFragmentGraph(graph);
+        FAIL() << "expected an exception containing: " << expected_message;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_NE(e.message().find(expected_message), String::npos) << e.message();
+    }
+}
+#endif
+
 }
 
 TEST(FragmentGraph, LevelsOfDiamond)
@@ -82,13 +101,7 @@ TEST(FragmentGraph, LevelsOfDiamond)
     connect(graph, 2, 3, Blocking::Streaming);
     connect(graph, 3, 0, Blocking::Streaming);
 
-    computeLevels(graph);
-
-    EXPECT_EQ(graph.getFragment(0).level, 2u);
-    EXPECT_EQ(graph.getFragment(1).level, 0u);
-    EXPECT_EQ(graph.getFragment(2).level, 0u);
-    EXPECT_EQ(graph.getFragment(3).level, 1u);
-    EXPECT_EQ(graph.levels, (std::vector<std::vector<UInt32>>{{1, 2}, {3}, {0}}));
+    EXPECT_EQ(computeLevels(graph), (std::vector<std::vector<UInt32>>{{1, 2}, {3}, {0}}));
 }
 
 TEST(FragmentGraph, LevelsOfChain)
@@ -98,9 +111,7 @@ TEST(FragmentGraph, LevelsOfChain)
     connect(graph, 2, 3, Blocking::Blocking);
     connect(graph, 3, 0, Blocking::Streaming);
 
-    computeLevels(graph);
-
-    EXPECT_EQ(graph.levels, (std::vector<std::vector<UInt32>>{{1}, {2}, {3}, {0}}));
+    EXPECT_EQ(computeLevels(graph), (std::vector<std::vector<UInt32>>{{1}, {2}, {3}, {0}}));
 }
 
 TEST(FragmentGraph, LevelsOfUnevenBranches)
@@ -111,33 +122,109 @@ TEST(FragmentGraph, LevelsOfUnevenBranches)
     connect(graph, 2, 0, Blocking::Streaming);
     connect(graph, 3, 0, Blocking::Streaming);
 
-    computeLevels(graph);
-
-    EXPECT_EQ(graph.levels, (std::vector<std::vector<UInt32>>{{1, 3}, {2}, {0}}));
+    EXPECT_EQ(computeLevels(graph), (std::vector<std::vector<UInt32>>{{1, 3}, {2}, {0}}));
 }
 
+/// `LOGICAL_ERROR` aborts instead of throwing in debug and sanitizer builds.
+#ifndef DEBUG_OR_SANITIZER_BUILD
 TEST(FragmentGraph, CycleThrows)
 {
     auto graph = makeGraph({0, 1, 2});
     connect(graph, 1, 2, Blocking::Streaming);
     connect(graph, 2, 1, Blocking::Streaming);
-    graph.fragments[0].depends_on.push_back(FragmentDependency{.producer = 2, .exchange = 2, .type = Blocking::Streaming, .reason = {}});
-
-    EXPECT_THROW(computeLevels(graph), Exception);
+    expectInvalid(graph, "The fragment graph has a cycle");
 }
 
-TEST(FragmentGraph, MissingInitiatorThrows)
+TEST(FragmentGraph, TwoRootsThrows)
 {
-    auto graph = makeGraph({1});
-    EXPECT_THROW(computeLevels(graph), Exception);
+    /// F1 feeds F0, and F2 is consumed by nobody: two roots.
+    auto graph = makeGraph({0, 1, 2});
+    connect(graph, 1, 0, Blocking::Streaming);
+    expectInvalid(graph, "The fragment graph has 2 root fragments, expected one");
 }
 
-TEST(FragmentGraph, UnknownProducerThrows)
+TEST(FragmentGraph, WorkerRootThrows)
 {
-    auto graph = makeGraph({0});
-    graph.fragments[0].depends_on.push_back(FragmentDependency{.producer = 7, .exchange = 7, .type = Blocking::Streaming, .reason = {}});
-    EXPECT_THROW(computeLevels(graph), Exception);
+    FragmentGraph graph;
+    graph.fragments = {makeFragment(0, 1, QueryFragment::Role::Worker), makeFragment(1, 1, QueryFragment::Role::Worker)};
+    connect(graph, 0, 1, Blocking::Streaming);
+    expectInvalid(graph, "The root fragment F1 must have the initiator role");
 }
+#endif
+
+TEST(FragmentGraph, LevelsWithSetFragment)
+{
+    /// F0 (set source) -> F1 (fills the set on the initiator) -> F2 (reads the set) -> F3 (main).
+    FragmentGraph graph;
+    graph.fragments = {
+        makeFragment(0, 8, QueryFragment::Role::Worker),
+        makeFragment(1, 1, QueryFragment::Role::Initiator),
+        makeFragment(2, 8, QueryFragment::Role::Worker),
+        makeFragment(3, 1, QueryFragment::Role::Initiator)};
+    graph.fragments[1].location = QueryFragment::ExecutionLocation::SingleNode;
+    graph.fragments[1].description = "k IN (SELECT k FROM small)";
+    connect(graph, 0, 1, Blocking::Streaming);
+    connect(graph, 1, 2, Blocking::Blocking);
+    connect(graph, 2, 3, Blocking::Streaming);
+    graph.exchanges[1].kind = FragmentExchange::Kind::SetValues;
+    graph.exchanges[1].reason = "set must be complete";
+
+    EXPECT_EQ(computeLevels(graph), (std::vector<std::vector<UInt32>>{{0}, {1}, {2}, {3}}));
+
+    EXPECT_EQ(dumpFragmentGraph(graph),
+        "query fragments: 4\n"
+        "  F0 stage_0  worker     distributed  tasks=8\n"
+        "  F1 main     initiator  single node  tasks=1  needs F0 via exchange_0 (streaming)  description: k IN (SELECT k FROM small)\n"
+        "  F2 stage_2  worker     distributed  tasks=8  needs F1 via exchange_1 (blocking: set must be complete)\n"
+        "  F3 main     initiator  distributed  tasks=1  needs F2 via exchange_2 (streaming)\n"
+        "exchanges: 3\n"
+        "  exchange_0  F0 -> F1  gather      pipelined  1 -> 1\n"
+        "  exchange_1  F1 -> F2  set values  pipelined  1 -> 1\n"
+        "  exchange_2  F2 -> F3  gather      pipelined  1 -> 1\n"
+        "levels: [F0] [F1] [F2] [F3]\n");
+}
+
+#ifndef DEBUG_OR_SANITIZER_BUILD
+TEST(FragmentGraph, InconsistentExchangesThrow)
+{
+    {
+        /// The exchange comes from a fragment that is not in the graph.
+        auto graph = makeGraph({0, 7});
+        connect(graph, 7, 0, Blocking::Streaming);
+        graph.fragments.pop_back();
+        expectInvalid(graph, "Fragment 0 reads exchange exchange_7 from unknown fragment 7");
+    }
+    {
+        /// A child that is not an exchange of the graph.
+        auto graph = makeGraph({0});
+        graph.fragments[0].children = {7};
+        expectInvalid(graph, "Fragment 0 reads unknown exchange 7");
+    }
+    {
+        /// A child that goes to another fragment.
+        auto graph = makeGraph({0, 1, 2});
+        connect(graph, 1, 0, Blocking::Streaming);
+        connect(graph, 2, 1, Blocking::Streaming);
+        graph.fragments[0].children = {1, 2};
+        graph.fragments[1].children = {};
+        expectInvalid(graph, "Fragment 0 reads exchange exchange_2, which goes to fragment 1");
+    }
+    {
+        /// An exchange that no fragment reads.
+        auto graph = makeGraph({0, 1});
+        connect(graph, 1, 0, Blocking::Streaming);
+        graph.fragments[0].children = {};
+        expectInvalid(graph, "The fragment graph has 1 exchanges, but its fragments read 0");
+    }
+    {
+        /// An exchange read twice.
+        auto graph = makeGraph({0, 1});
+        connect(graph, 1, 0, Blocking::Streaming);
+        graph.fragments[0].children = {1, 1};
+        expectInvalid(graph, "Exchange exchange_1 is read more than once");
+    }
+}
+#endif
 
 TEST(FragmentGraph, ClassifyDependency)
 {
@@ -151,13 +238,15 @@ TEST(FragmentGraph, ClassifyDependency)
         bool build_side;
         SortingStep::Type sorting_type;
         Mode mode;
-        FragmentDependency::Type expected;
+        FragmentExchange::Type expected;
         String expected_reason;
     };
 
     const std::vector<Case> cases = {
-        {Kind::Other, "Aggregating", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Streaming, ""},
-        {Kind::Other, "Aggregating", false, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
+        {Kind::Other, "Union", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Streaming, ""},
+        {Kind::Other, "Union", false, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
+        {Kind::Aggregating, "Aggregating", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Blocking, "hash aggregation"},
+        {Kind::Aggregating, "Aggregating", false, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
         {Kind::Join, "JoinLogical", true, SortingStep::Type::Full, Mode::Pipelined, Blocking::Blocking, "build side of JoinLogical"},
         {Kind::Join, "Join", true, SortingStep::Type::Full, Mode::Pipelined, Blocking::Blocking, "build side of Join"},
         {Kind::Join, "JoinLogical", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Streaming, ""},
@@ -183,8 +272,50 @@ TEST(FragmentGraph, ClassifyDependency)
         consumer.sorting_type = c.sorting_type;
 
         String reason = "stale";
-        EXPECT_EQ(classifyDependency(consumer, c.mode, reason), c.expected) << "case " << i;
+        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::Gather, c.mode, reason), c.expected) << "case " << i;
         EXPECT_EQ(reason, c.expected_reason) << "case " << i;
+    }
+
+    /// A `MergingAggregated` that merges bucket by bucket streams, unless the exchange is materialised.
+    for (Mode mode : {Mode::Pipelined, Mode::Materialised})
+    {
+        ConsumerStepInfo consumer;
+        consumer.kind = Kind::MergingAggregated;
+        consumer.step_name = "MergingAggregated";
+        consumer.merges_bucket_by_bucket = true;
+
+        String reason = "stale";
+        const bool materialised = mode == Mode::Materialised;
+        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::Gather, mode, reason),
+            materialised ? Blocking::Blocking : Blocking::Streaming);
+        EXPECT_EQ(reason, materialised ? "materialised exchange" : "");
+    }
+
+    /// An aggregation in order streams, unless the exchange is materialised.
+    for (Mode mode : {Mode::Pipelined, Mode::Materialised})
+    {
+        ConsumerStepInfo consumer;
+        consumer.kind = Kind::Aggregating;
+        consumer.step_name = "Aggregating";
+        consumer.aggregation_in_order = true;
+
+        String reason = "stale";
+        const bool materialised = mode == Mode::Materialised;
+        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::Gather, mode, reason),
+            materialised ? Blocking::Blocking : Blocking::Streaming);
+        EXPECT_EQ(reason, materialised ? "materialised exchange" : "");
+    }
+
+    /// A `SetValues` exchange is blocking regardless of the mode and of a streaming consumer.
+    for (Mode mode : {Mode::Pipelined, Mode::Materialised})
+    {
+        ConsumerStepInfo consumer;
+        consumer.kind = Kind::Other;
+        consumer.step_name = "Filter";
+
+        String reason = "stale";
+        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::SetValues, mode, reason), Blocking::Blocking);
+        EXPECT_EQ(reason, "set must be complete");
     }
 }
 
@@ -197,10 +328,8 @@ TEST(FragmentGraph, Dump)
         makeFragment(1, 8, QueryFragment::Role::Worker),
         makeFragment(2, 1, QueryFragment::Role::Initiator)};
 
-    graph.fragments[1].depends_on.push_back(
-        FragmentDependency{.producer = 0, .exchange = 0, .type = Blocking::Blocking, .reason = "build side of JoinLogical"});
-    graph.fragments[2].depends_on.push_back(
-        FragmentDependency{.producer = 1, .exchange = 1, .type = Blocking::Blocking, .reason = "merge of aggregation states"});
+    graph.fragments[1].children = {0};
+    graph.fragments[2].children = {1};
 
     FragmentExchange broadcast;
     broadcast.id = 0;
@@ -210,6 +339,8 @@ TEST(FragmentGraph, Dump)
     broadcast.kind = FragmentExchange::Kind::Broadcast;
     broadcast.source_buckets = 1;
     broadcast.destination_buckets = 8;
+    broadcast.type = Blocking::Blocking;
+    broadcast.reason = "build side of JoinLogical";
 
     FragmentExchange gather;
     gather.id = 1;
@@ -219,17 +350,17 @@ TEST(FragmentGraph, Dump)
     gather.kind = FragmentExchange::Kind::Gather;
     gather.source_buckets = 8;
     gather.destination_buckets = 1;
-    gather.estimated_rows = 5000;
+    gather.type = Blocking::Blocking;
+    gather.reason = "merge of aggregation states";
+    gather.statistics.estimated_rows = 5000;
 
     graph.exchanges = {broadcast, gather};
 
-    computeLevels(graph);
-
     EXPECT_EQ(dumpFragmentGraph(graph),
         "query fragments: 3\n"
-        "  F0 stage_0  worker     tasks=1  level 0\n"
-        "  F1 stage_1  worker     tasks=8  level 1  needs F0 via exchange_0 (blocking: build side of JoinLogical)\n"
-        "  F2 main     initiator  tasks=1  level 2  needs F1 via exchange_1 (blocking: merge of aggregation states)\n"
+        "  F0 stage_0  worker     distributed  tasks=1\n"
+        "  F1 stage_1  worker     distributed  tasks=8  needs F0 via exchange_0 (blocking: build side of JoinLogical)\n"
+        "  F2 main     initiator  distributed  tasks=1  needs F1 via exchange_1 (blocking: merge of aggregation states)\n"
         "exchanges: 2\n"
         "  exchange_0  F0 -> F1  broadcast  pipelined  1 -> 8\n"
         "  exchange_1  F1 -> F2  gather     pipelined  8 -> 1  ~5000 rows\n"
@@ -243,29 +374,34 @@ TEST(FragmentGraph, DumpExchangeKinds)
         makeFragment(0, 1, QueryFragment::Role::Worker),
         makeFragment(1, 1, QueryFragment::Role::Worker),
         makeFragment(2, 1, QueryFragment::Role::Worker),
-        makeFragment(3, 1, QueryFragment::Role::Initiator)};
-    connect(graph, 0, 3, Blocking::Streaming);
-    connect(graph, 1, 3, Blocking::Streaming);
-    connect(graph, 2, 3, Blocking::Streaming);
+        makeFragment(3, 1, QueryFragment::Role::Worker),
+        makeFragment(4, 1, QueryFragment::Role::Initiator)};
+    connect(graph, 0, 4, Blocking::Streaming);
+    connect(graph, 1, 4, Blocking::Streaming);
+    connect(graph, 2, 4, Blocking::Streaming);
+    connect(graph, 3, 4, Blocking::Blocking);
     graph.exchanges[0].kind = FragmentExchange::Kind::Hash;
     graph.exchanges[0].keys = {"a", "b"};
     graph.exchanges[1].kind = FragmentExchange::Kind::Any;
     graph.exchanges[1].mode = FragmentExchange::Mode::Materialised;
     graph.exchanges[2].merge_sort = makeSortDescription("k");
-
-    computeLevels(graph);
+    graph.exchanges[3].kind = FragmentExchange::Kind::SetValues;
+    graph.exchanges[3].reason = "set must be complete";
 
     EXPECT_EQ(dumpFragmentGraph(graph),
-        "query fragments: 4\n"
-        "  F0 stage_0  worker     tasks=1  level 0\n"
-        "  F1 stage_1  worker     tasks=1  level 0\n"
-        "  F2 stage_2  worker     tasks=1  level 0\n"
-        "  F3 main     initiator  tasks=1  level 1  needs F0 via exchange_0 (streaming), F1 via exchange_1 (streaming), F2 via exchange_2 (streaming)\n"
-        "exchanges: 3\n"
-        "  exchange_0  F0 -> F3  hash(a, b)            pipelined     1 -> 1\n"
-        "  exchange_1  F1 -> F3  any                   materialised  1 -> 1\n"
-        "  exchange_2  F2 -> F3  gather(merge: k ASC)  pipelined     1 -> 1\n"
-        "levels: [F0, F1, F2] [F3]\n");
+        "query fragments: 5\n"
+        "  F0 stage_0  worker     distributed  tasks=1\n"
+        "  F1 stage_1  worker     distributed  tasks=1\n"
+        "  F2 stage_2  worker     distributed  tasks=1\n"
+        "  F3 stage_3  worker     distributed  tasks=1\n"
+        "  F4 main     initiator  distributed  tasks=1  needs F0 via exchange_0 (streaming), F1 via exchange_1 (streaming), "
+        "F2 via exchange_2 (streaming), F3 via exchange_3 (blocking: set must be complete)\n"
+        "exchanges: 4\n"
+        "  exchange_0  F0 -> F4  hash(a, b)            pipelined     1 -> 1\n"
+        "  exchange_1  F1 -> F4  any                   materialised  1 -> 1\n"
+        "  exchange_2  F2 -> F4  gather(merge: k ASC)  pipelined     1 -> 1\n"
+        "  exchange_3  F3 -> F4  set values            pipelined     1 -> 1\n"
+        "levels: [F0, F1, F2, F3] [F4]\n");
 }
 
 TEST(FragmentGraph, BuildFromDistributedPlan)
@@ -313,15 +449,16 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     ASSERT_EQ(graph.fragments.size(), 2u);
     const auto & initiator = graph.getFragment(1);
     EXPECT_EQ(initiator.role, QueryFragment::Role::Initiator);
+    EXPECT_EQ(initiator.location, QueryFragment::ExecutionLocation::Distributed);
+    EXPECT_FALSE(initiator.description.has_value());
     EXPECT_EQ(initiator.summary, (std::vector<String>{"Sorting"}));
-    ASSERT_EQ(initiator.depends_on.size(), 1u);
-    EXPECT_EQ(initiator.depends_on[0].producer, 0u);
-    EXPECT_EQ(initiator.depends_on[0].exchange, 0u);
-    EXPECT_EQ(initiator.depends_on[0].type, Blocking::Blocking);
-    EXPECT_EQ(initiator.depends_on[0].reason, "full sort");
+    EXPECT_EQ(initiator.children, (std::vector<UInt32>{0}));
 
     const auto & worker = graph.getFragment(0);
     EXPECT_EQ(worker.role, QueryFragment::Role::Worker);
+    EXPECT_EQ(worker.location, QueryFragment::ExecutionLocation::Distributed);
+    EXPECT_FALSE(worker.description.has_value());
+    EXPECT_TRUE(worker.children.empty());
     EXPECT_EQ(worker.tasks, 2u);
     EXPECT_EQ(worker.summary, (std::vector<String>{"ReadNothing"}));
 
@@ -331,19 +468,142 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     EXPECT_EQ(exchange.mode, FragmentExchange::Mode::Pipelined);
     EXPECT_EQ(exchange.source_buckets, 2u);
     EXPECT_EQ(exchange.destination_buckets, 4u);
-
+    EXPECT_EQ(exchange.from, 0u);
+    EXPECT_EQ(exchange.to, 1u);
+    EXPECT_EQ(exchange.type, Blocking::Blocking);
+    EXPECT_EQ(exchange.reason, "full sort");
 
     /// A materialised exchange is blocking regardless of the consumer.
     distributed_plan.exchange_descriptions["exchange_0"].kind = ExchangeDescription::Kind::Persisted;
     auto materialised_graph = buildFragmentGraph(distributed_plan);
-    EXPECT_EQ(materialised_graph.getFragment(1).depends_on[0].reason, "materialised exchange");
+    EXPECT_EQ(materialised_graph.getExchange(0).reason, "materialised exchange");
 
     /// A dependency without a matching receive step is an inconsistent plan.
     distributed_plan.stage_depends_on["main"] = {{"stage_0", "exchange_7"}};
     distributed_plan.exchange_descriptions["exchange_7"] = description;
     distributed_plan.exchange_descriptions["exchange_7"].name = "exchange_7";
     distributed_plan.exchange_descriptions["exchange_7"].id = 7;
+#ifndef DEBUG_OR_SANITIZER_BUILD
     EXPECT_THROW(buildFragmentGraph(distributed_plan), Exception);
+#endif
+}
+
+namespace
+{
+
+/// A worker stage `stage_0` shuffling into `main`, whose plan `build_main` makes from the receive step of the exchange.
+DistributedQueryPlan makeTwoStagePlan(const SharedHeader & header, const std::function<void(QueryPlan &)> & build_main)
+{
+    DistributedQueryPlan distributed_plan;
+
+    auto & worker = distributed_plan.stages["stage_0"];
+    worker.id = 0;
+    worker.query_plan_fragment.addStep(std::make_unique<ReadNothingStep>(header));
+    worker.query_plan_fragment.addStep(std::make_unique<ShuffleSendStep>(header, "exchange_0", Names{"k"}, 2));
+    worker.tasks.resize(2);
+
+    auto & main = distributed_plan.stages["main"];
+    main.id = 1;
+    main.query_plan_fragment.addStep(std::make_unique<ShuffleReceiveStep>(header, "exchange_0", Strings{"0", "1"}));
+    build_main(main.query_plan_fragment);
+    main.tasks.resize(1);
+
+    distributed_plan.stage_depends_on["stage_0"] = {};
+    distributed_plan.stage_depends_on["main"] = {{"stage_0", "exchange_0"}};
+
+    ExchangeDescription description;
+    description.name = "exchange_0";
+    description.id = 0;
+    description.kind = ExchangeDescription::Kind::Streaming;
+    description.source_bucket_count = 2;
+    description.destination_bucket_count = 2;
+    description.exchange_step_name = "ShuffleExchange";
+    description.keys = {"k"};
+    distributed_plan.exchange_descriptions[description.name] = description;
+
+    return distributed_plan;
+}
+
+std::unique_ptr<AggregatingStep> makeAggregatingStep(const SharedHeader & header, SortDescription sort_description_for_merging)
+{
+    Aggregator::Params params(
+        Names{"k"},
+        AggregateDescriptions{},
+        /*overflow_row=*/false,
+        /*max_threads=*/1,
+        /*max_block_size=*/65536,
+        /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
+        /*serialize_string_with_zero_byte=*/false,
+        /*enable_packed_string_keys=*/true);
+    return std::make_unique<AggregatingStep>(
+        header,
+        std::move(params),
+        GroupingSetsParamsList{},
+        /*final=*/true,
+        /*max_block_size=*/65536,
+        /*aggregation_in_order_max_block_bytes=*/0,
+        /*merge_threads=*/1,
+        /*temporary_data_merge_threads=*/1,
+        /*storage_has_evenly_distributed_read=*/false,
+        /*group_by_use_nulls=*/false,
+        std::move(sort_description_for_merging),
+        /*group_by_sort_description=*/SortDescription{},
+        /*should_produce_results_in_order_of_bucket_number=*/false,
+        /*memory_bound_merging_of_aggregation_results_enabled=*/false,
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
+}
+
+}
+
+/// The consumer of a receive step is the first step on the way to the output of the fragment which needs all of
+/// its input, not the first step above the receive step.
+TEST(FragmentGraph, BuildFindsBlockingConsumer)
+{
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "k")});
+
+    auto dependency_of = [&](const std::function<void(QueryPlan &)> & build_main)
+    {
+        auto distributed_plan = makeTwoStagePlan(header, build_main);
+        auto graph = buildFragmentGraph(distributed_plan);
+        EXPECT_EQ(graph.getFragment(1).children, (std::vector<UInt32>{0}));
+        const auto & exchange = graph.getExchange(0);
+        return std::make_pair(exchange.type, exchange.reason);
+    };
+
+    auto union_with_another_input = [&](QueryPlan & plan)
+    {
+        std::vector<std::unique_ptr<QueryPlan>> inputs;
+        inputs.push_back(std::make_unique<QueryPlan>(std::move(plan)));
+        inputs.push_back(std::make_unique<QueryPlan>());
+        inputs.back()->addStep(std::make_unique<ReadNothingStep>(header));
+        plan = QueryPlan();
+        plan.unitePlans(std::make_unique<UnionStep>(SharedHeaders{header, header}), std::move(inputs));
+    };
+
+    /// A hash aggregation emits rows only after all its input.
+    EXPECT_EQ(dependency_of([&](QueryPlan & plan) { plan.addStep(makeAggregatingStep(header, {})); }),
+        std::make_pair(Blocking::Blocking, String("hash aggregation")));
+
+    /// An aggregation in order emits a key once it is complete.
+    EXPECT_EQ(dependency_of([&](QueryPlan & plan) { plan.addStep(makeAggregatingStep(header, makeSortDescription("k"))); }),
+        std::make_pair(Blocking::Streaming, String()));
+
+    /// A `Union` streams, the full sort above it does not.
+    EXPECT_EQ(dependency_of([&](QueryPlan & plan)
+        {
+            union_with_another_input(plan);
+            plan.addStep(std::make_unique<SortingStep>(header, makeSortDescription("k"), 0, SortingStep::Settings(65536)));
+        }),
+        std::make_pair(Blocking::Blocking, String("full sort")));
+
+    /// Nothing up to the output of the fragment needs the whole input.
+    EXPECT_EQ(dependency_of([&](QueryPlan & plan)
+        {
+            union_with_another_input(plan);
+            plan.addStep(std::make_unique<ExpressionStep>(header, ActionsDAG(header->getColumnsWithTypeAndName())));
+        }),
+        std::make_pair(Blocking::Streaming, String()));
 }
 
 TEST(FragmentGraph, BuildSingleFragment)
@@ -357,10 +617,12 @@ TEST(FragmentGraph, BuildSingleFragment)
 
     ASSERT_EQ(graph.fragments.size(), 1u);
     EXPECT_EQ(graph.fragments[0].plan, &plan);
+    EXPECT_EQ(graph.fragments[0].location, QueryFragment::ExecutionLocation::SingleNode);
+    EXPECT_EQ(graph.fragments[0].fallback_reason, "no exchanges");
+    EXPECT_EQ(graph.fragments[0].tasks, 1u);
     EXPECT_EQ(dumpFragmentGraph(graph),
-        "fallback: no exchanges\n"
         "query fragments: 1\n"
-        "  F0 main  initiator  tasks=1  level 0\n"
+        "  F0 main  initiator  single node  tasks=1  not distributed: no exchanges\n"
         "exchanges: 0\n"
         "levels: [F0]\n");
 }
