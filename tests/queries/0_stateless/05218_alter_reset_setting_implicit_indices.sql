@@ -1,6 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: `ALTER`s of replicated and non-replicated types cannot be mixed in one query
-
 -- Dropping a setting the implicit minmax indices depend on has to rebuild them, in every spelling.
 
 DROP TABLE IF EXISTS t_reset_implicit_indices;

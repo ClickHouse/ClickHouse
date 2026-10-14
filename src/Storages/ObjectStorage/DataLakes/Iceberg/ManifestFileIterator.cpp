@@ -535,12 +535,6 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
         parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
 
-    /// Decode the partition values once, against the schema of the manifest that wrote them, so that
-    /// pruning, identity-column projection, delete matching, compaction and `system.iceberg_files` all
-    /// see the same value regardless of how this particular manifest encoded it.
-    entry->normalized_partition_key_value = normalizePartitionKeyValue(
-        parsed_entry->partition_key_value, *common_partition_specification, *schema_processor_ptr, manifest_schema_id);
-
     if (parsed_entry->parsed_first_row_id.has_value())
         entry->first_row_id = parsed_entry->parsed_first_row_id;
     else if (!entry_first_row_ids.empty())
@@ -578,11 +572,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
                 if (!left || !right)
                 {
-                    /// A bound that does not decode is wider than the storage of its type, a decimal
-                    /// bound beyond the precision of its type on the inner side of the range, or
-                    /// narrower than the column is now, which is what Iceberg leaves behind for a
-                    /// promoted column. The last is well formed, so this stays out of the warning
-                    /// log.
+                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
+                    /// form can still be a value the column holds, so this is not on its own a malformed
+                    /// manifest and stays out of the warning log.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "

@@ -154,7 +154,6 @@ public:
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);
-            onOutputChunk(state.output_chunk);
         }
 
         if (status.required_source >= 0)
@@ -178,9 +177,6 @@ public:
     }
 
 protected:
-    /// Is called for every chunk the merge produces, before it is pushed to the output.
-    virtual void onOutputChunk(const Chunk & /*chunk*/) {}
-
     /// Call `consume` with empty chunk when there is no more data.
     bool empty_chunk_on_finish = false;
 
