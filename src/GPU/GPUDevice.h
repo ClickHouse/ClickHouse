@@ -8,8 +8,6 @@
 #include <GPU/GPUResources.cuh>
 #include <GPU/GPUTypes.cuh>
 
-#include <Common/Exception.h>
-
 #include <cuda_runtime_api.h>
 
 #include <boost/noncopyable.hpp>
@@ -17,11 +15,6 @@
 namespace DB
 {
 struct ServerSettings;
-}
-
-namespace DB::ErrorCodes
-{
-    extern const int GPU_ERROR;
 }
 
 namespace DB::GPU
