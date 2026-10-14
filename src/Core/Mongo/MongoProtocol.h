@@ -179,8 +179,15 @@ public:
       */
     void executeStreaming(const String & query, const std::function<void(std::string_view)> & on_row);
 
-    /// An empty `username` means the default session user of the endpoint.
+    /// An empty `username` means the default session user of the endpoint. A failure leaves the
+    /// session in a state no further command may run in, so it also asks for the connection to be
+    /// closed (see `shouldCloseConnection`).
     void authenticate(const String & username, const String & password);
+
+    /// Whether the connection has to be closed after the reply to the current message: an
+    /// authentication that failed half-way - a session limit reached after the password was
+    /// accepted - must not leave behind a session that later commands would run in.
+    bool shouldCloseConnection() const { return close_connection; }
 
     /// The name of the user this connection has authenticated as, or an empty string before a
     /// successful `saslStart`.
@@ -201,6 +208,7 @@ private:
     String default_session_user;
     pcg64_fast gen;
     std::uniform_int_distribution<Int32> dis;
+    bool close_connection = false;
 };
 
 }

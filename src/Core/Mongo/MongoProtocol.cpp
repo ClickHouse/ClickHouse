@@ -326,6 +326,16 @@ void QueryExecutor::authenticate(const String & username, const String & passwor
     /// If the resolved name is empty too (explicitly configured to prohibit connections without
     /// a user name), the login is refused and recorded as a failure, like on the other endpoints.
     const String & user_name = username.empty() ? default_session_user : username;
+
+    /** `Session::makeSessionContext` installs the session context before it counts the session
+      * against `max_sessions_for_user`, so when the limit is reached the session is left
+      * authenticated, with a context, but untracked - and without the settings the authentication
+      * server sent, which are applied after that. A command that followed would run in it. So any
+      * failure here closes the connection once the error is answered, the way the other stateful
+      * protocols end a connection whose login failed.
+      */
+    close_connection = true;
+
     if (user_name.empty())
     {
         auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name in the 'PLAIN' authentication payload");
@@ -339,6 +349,8 @@ void QueryExecutor::authenticate(const String & username, const String & passwor
     /// `max_sessions_for_user` and what applies the settings the authentication server sent.
     /// Without it every command would build its query context straight from the global one.
     session->makeSessionContext();
+
+    close_connection = false;
 }
 
 ParserLimits QueryExecutor::getParserLimits() const
