@@ -5,6 +5,7 @@
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/QueryExecutionCounters.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -81,6 +82,13 @@ void JoinSwitcher::onBuildPhaseFinish()
 
 bool JoinSwitcher::switchJoin(JoinBuildContext context)
 {
+    LOG_DEBUG(
+        getLogger("JoinSwitcher"),
+        "Memory limit reached with {} ({} bytes, {} rows), switching to PartialMergeJoin",
+        join->getName(),
+        join->getTotalByteCount(),
+        join->getTotalRowCount());
+
     BlocksList right_blocks = use_partitioned_join ? assert_cast<PartitionedHashJoin *>(join.get())->releaseJoinedBlocks(true)
                                                    : assert_cast<HashJoin *>(join.get())->releaseJoinedBlocks(true);
 

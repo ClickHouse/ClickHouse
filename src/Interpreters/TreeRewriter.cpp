@@ -646,7 +646,7 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
 
 bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, ContextPtr context)
 {
-    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
+    if (!analyzed_join.isHashFamilyEnabled())
         return false;
 
     if (analyzed_join.strictness() == JoinStrictness::Asof)
