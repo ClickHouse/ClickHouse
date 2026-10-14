@@ -81,6 +81,27 @@ check_if_not_detached "WITH 't_reattach_fn_join' AS name SELECT count() FROM t_r
 check_last_query_did_not_detach t_reattach_fn_join
 check_if_not_detached "WITH 'd_reattach_fn' AS name SELECT count() FROM t_reattach_fn_src WHERE dictGet(name, 'v', a) = 1" t_reattach_fn_src
 
+# `CREATE FUNCTION` only validates and stores its body, so a table the body names is never read by the
+# statement and must not be reattached - neither when the statement succeeds, nor when it is rejected
+# because the user, who may read and reattach that table, lacks `CREATE FUNCTION`.
+echo "stored function body"
+FN_NAME="f_reattach_fn_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT, DROP TABLE, CREATE TABLE ON ${CLICKHOUSE_DATABASE}.t_reattach_fn_join TO ${ACC_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON Join TO ${ACC_USER}"
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${ACC_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "CREATE FUNCTION ${FN_NAME} AS x -> joinGet('${CLICKHOUSE_DATABASE}.t_reattach_fn_join', 'v', x)" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+else
+    check_last_query_did_not_detach t_reattach_fn_join
+fi
+check_if_not_detached "CREATE FUNCTION ${FN_NAME} AS x -> joinGet('${CLICKHOUSE_DATABASE}.t_reattach_fn_join', 'v', x)" t_reattach_fn_join
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS ${FN_NAME}"
+
 ${CLICKHOUSE_CLIENT} -q "
     DROP USER IF EXISTS ${ACC_USER};
     DROP DICTIONARY IF EXISTS d_reattach_fn;
