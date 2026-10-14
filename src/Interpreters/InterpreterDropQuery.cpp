@@ -189,14 +189,6 @@ static void loadRowCountTargets(const StoragePtr & table, const ContextPtr & con
             loadRowCountTargets(resolveStorageProxyLoading(target), context, depth + 1);
 }
 
-/// Whether `table` is a table function (`CREATE TABLE t AS url(...)`) that has not been resolved
-/// yet. Resolving it creates the external storage and starts it up.
-static bool isUnresolvedTableFunction(const StoragePtr & table)
-{
-    const auto * proxy = typeid_cast<const StorageTableFunctionProxy *>(table.get());
-    return proxy && !proxy->tryGetNested();
-}
-
 /// `IF EMPTY` must not drop a table whose contents it cannot vouch for. The row count a storage
 /// derives from its metadata is exact whenever it is reported, but many storages cannot report
 /// one, and some deliberately withhold it when their metadata is self-contradictory (see
@@ -237,17 +229,21 @@ bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDr
             return true;
     }
 #endif
-    /// Dropping or detaching a table function only removes the table from the catalog and leaves
-    /// the rows it reads untouched, whether it has been resolved or not, so it holds no rows of its
-    /// own. Do not resolve a table function that has not been resolved yet: that would instantiate
-    /// the external storage and start it up. `TRUNCATE` would resolve it and truncate the external
-    /// storage, and the unknown row count refuses that.
-    if (typeid_cast<const StorageTableFunctionProxy *>(table.get()))
+    /// A table function (`CREATE TABLE t AS url(...)`) that has not been resolved yet has no
+    /// storage behind it, so dropping or detaching it only removes the table from the catalog and
+    /// holds no rows of its own. Do not resolve it: that would instantiate the external storage and
+    /// start it up. `TRUNCATE` would resolve it and truncate the external storage, and the unknown
+    /// row count refuses that. Detaching a resolved table function also leaves the rows it reads
+    /// untouched, but dropping it forwards the drop to the resolved storage, which may delete the
+    /// data (an Iceberg table with `iceberg_delete_data_on_drop`), so it is judged as that storage.
+    if (const auto * table_function = typeid_cast<const StorageTableFunctionProxy *>(table.get()))
     {
-        if (kind != ASTDropQuery::Kind::Truncate)
+        const StoragePtr nested = table_function->tryGetNested();
+        if (!nested)
+            return kind != ASTDropQuery::Kind::Truncate;
+        if (kind == ASTDropQuery::Kind::Detach)
             return true;
-        if (isUnresolvedTableFunction(table))
-            return false;
+        return isTableEmpty(nested, kind);
     }
     if (table->isView())
     {
