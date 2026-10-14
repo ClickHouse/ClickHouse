@@ -130,8 +130,7 @@ void appendFromDevice(PinnedBuffer & buffer, const char * device_bytes, size_t b
 
     checkCuda(
         cudaMemcpyAsync(growBy(buffer, bytes), device_bytes, bytes, cudaMemcpyDeviceToHost, stream),
-        "Cannot copy {} bytes back from the device",
-        bytes);
+        "Cannot copy bytes back from the device");
 }
 
 
@@ -174,15 +173,13 @@ void DeviceBuffer::reserve(size_t bytes)
     void * fresh = nullptr;
     checkCuda(
         cudaMallocFromPoolAsync(&fresh, grown.capacity, GPUResources::get().memory_pool, stream),
-        "Cannot allocate {} bytes on the device",
-        grown.capacity);
+        "Cannot allocate device memory");
     grown.memory = static_cast<char *>(fresh);
 
     if (used != 0)
         checkCuda(
             cudaMemcpyAsync(grown.memory, memory, used, cudaMemcpyDeviceToDevice, stream),
-            "Cannot move {} bytes within the device",
-            used);
+            "Cannot move bytes within the device");
     grown.used = used;
 
     *this = std::move(grown);
@@ -195,8 +192,7 @@ void DeviceBuffer::append(std::string_view host_bytes)
 
     checkCuda(
         cudaMemcpyAsync(grow(host_bytes.size()), host_bytes.data(), host_bytes.size(), cudaMemcpyHostToDevice, stream),
-        "Cannot send {} bytes to the device",
-        host_bytes.size());
+        "Cannot send bytes to the device");
 }
 
 char * DeviceBuffer::grow(size_t bytes)

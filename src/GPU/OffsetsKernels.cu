@@ -66,8 +66,8 @@ __host__ CoveredRows rowsCoveredBy(const uint64_t * offsets, size_t num_rows, ui
         CoveredRows covered{.rows = static_cast<size_t>(past - ends)};
         checkCuda(
             cudaMemcpyAsync(&covered.bytes, offsets + covered.rows, sizeof(uint64_t), cudaMemcpyDeviceToHost, stream.value()),
-            "cannot copy an offset back");
-        checkCuda(cudaStreamSynchronize(stream.value()), "cannot wait for an offset to come back");
+            "Cannot copy an offset back");
+        checkCuda(cudaStreamSynchronize(stream.value()), "Cannot wait for an offset to come back");
         return covered;
     });
 }

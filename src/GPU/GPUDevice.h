@@ -14,12 +14,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <fmt/format.h>
-
-#include <exception>
-#include <string>
-#include <utility>
-
 namespace DB
 {
 struct ServerSettings;
@@ -37,16 +31,6 @@ namespace DB::GPU
 inline void clearDeviceError()
 {
     cudaGetLastError();
-}
-
-template <typename... Args>
-void checkCuda(cudaError_t status, fmt::format_string<Args...> what, Args &&... args)
-{
-    if (status != cudaSuccess)
-    {
-        clearDeviceError();
-        throw Exception(ErrorCodes::GPU_ERROR, "{}: {}", fmt::format(what, std::forward<Args>(args)...), cudaGetErrorString(status));
-    }
 }
 
 void synchronizeStream(rmm::cuda_stream_view stream);

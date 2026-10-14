@@ -34,8 +34,6 @@ __host__ auto guarded(const std::string & doing, Body && body)
     }
 }
 
-__host__ void checkCuda(cudaError_t status, const std::string & message);
-
 __host__ cudf::data_type cudfTypeOf(GPUElementType element_type);
 
 __host__ cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type);

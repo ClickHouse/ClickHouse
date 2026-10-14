@@ -16,12 +16,6 @@
 namespace DB::GPU
 {
 
-__host__ void checkCuda(cudaError_t status, const std::string & message)
-{
-    if (status != cudaSuccess)
-        throwGPUError((message + ": " + cudaGetErrorString(status)).c_str());
-}
-
 __host__ void setCudfMemoryPool(cudaMemPool_t pool)
 {
     guarded("making cuDF allocate from the device's memory pool", [&]
@@ -173,7 +167,7 @@ __host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view
                 [&] { return cudf::cast(offsets, cudf::data_type{cudf::type_id::INT64}, stream); });
             offsets = widened_offsets->view();
             /// cuDF returns once the cast is queued, and the offsets may be read on another stream or by the host.
-            checkCuda(cudaStreamSynchronize(stream.value()), "cannot wait for the offsets of a strings column to be widened");
+            checkCuda(cudaStreamSynchronize(stream.value()), "Cannot wait for the offsets of a strings column to be widened");
             break;
         default:
             throwGPUError(

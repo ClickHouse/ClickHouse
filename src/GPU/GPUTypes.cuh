@@ -2,6 +2,8 @@
 
 #include <rmm/cuda_stream_view.hpp>
 
+#include <cuda_runtime_api.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -10,6 +12,14 @@ namespace DB::GPU
 {
 
 [[noreturn]] __host__ void throwGPUError(const char * message);
+
+[[noreturn]] __host__ void throwCudaError(cudaError_t status, const char * message);
+
+__host__ inline void checkCuda(cudaError_t status, const char * message)
+{
+    if (status != cudaSuccess)
+        throwCudaError(status, message);
+}
 
 __host__ bool isClickHouseException(const std::exception & exception);
 

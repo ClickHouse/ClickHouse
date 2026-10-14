@@ -50,8 +50,7 @@ void DeviceFixedColumnBuffer::dropFront(size_t num_rows)
     spare.clear();
     checkCuda(
         cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, stream),
-        "Cannot move {} bytes to the front of a device column",
-        tail);
+        "Cannot move bytes to the front of a device column");
     std::swap(values, spare);
 }
 
@@ -87,8 +86,7 @@ void DeviceVariableColumnBuffer::appendSizes(const char * device_sizes, size_t b
     /// After the rest of the size the last call ended with, which also puts the sizes where they are aligned.
     checkCuda(
         cudaMemcpyAsync(pending_sizes.grow(bytes), device_sizes, bytes, cudaMemcpyDeviceToDevice, stream),
-        "Cannot gather {} bytes of the sizes of a column of values of varying width",
-        bytes);
+        "Cannot gather the sizes of a column of values of varying width");
 
     const size_t count = pending_sizes.size() / sizeof(uint64_t);
     if (count == 0)
@@ -108,8 +106,7 @@ void DeviceVariableColumnBuffer::appendSizes(const char * device_sizes, size_t b
     spare.clear();
     checkCuda(
         cudaMemcpyAsync(spare.grow(tail), pending_sizes.data() + count * sizeof(uint64_t), tail, cudaMemcpyDeviceToDevice, stream),
-        "Cannot keep {} bytes of a size of a column of values of varying width",
-        tail);
+        "Cannot keep a partial size of a column of values of varying width");
     std::swap(pending_sizes, spare);
 }
 
@@ -145,8 +142,7 @@ void DeviceVariableColumnBuffer::dropFront(size_t num_rows)
     if (kept_chars != 0)
         checkCuda(
             cudaMemcpyAsync(spare.grow(kept_chars), chars.data() + dropped_bytes, kept_chars, cudaMemcpyDeviceToDevice, stream),
-            "Cannot move {} bytes to the front of a device column",
-            kept_chars);
+            "Cannot move bytes to the front of a device column");
     std::swap(chars, spare);
 
     settled_rows -= num_rows;

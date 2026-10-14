@@ -29,6 +29,12 @@ void throwGPUError(const char * message)
     throw Exception(ErrorCodes::GPU_ERROR, "{}", std::string_view(message));
 }
 
+void throwCudaError(cudaError_t status, const char * message)
+{
+    clearDeviceError();
+    throw Exception(ErrorCodes::GPU_ERROR, "{}: {}", std::string_view(message), cudaGetErrorString(status));
+}
+
 bool isClickHouseException(const std::exception & exception)
 {
     return dynamic_cast<const Exception *>(&exception) != nullptr;
