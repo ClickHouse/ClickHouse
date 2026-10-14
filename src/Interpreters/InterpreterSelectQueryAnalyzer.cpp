@@ -184,14 +184,8 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
 {
     /// Every early return is logged, and says which kind of reason it is: the caller counts the two kinds
     /// apart, and relies on the log for the specific reason.
-    if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
-    {
-        LOG_TRACE(
-            logger,
-            "Setting 'enable_parallel_replicas' is disabled. Skipping building query plan with parallel "
-            "replicas.");
-        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
-    }
+    /// With `enable_parallel_replicas` disabled, `buildContext` has turned the optimization off, so it never asks.
+    chassert(ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]);
     if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");

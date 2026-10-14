@@ -37,7 +37,8 @@ SELECT key % 10 AS k, max(payload) FROM t_autopr_min_bytes PREWHERE flag = 1 GRO
 SETTINGS automatic_parallel_replicas_min_bytes_per_replica = 1000000000000, log_comment = 'autopr_min_bytes_skipped_early';
 
 -- Rejected by the threshold: the early estimate clears 500 KB per replica, the bytes actually read do not.
--- Twice: the first run only collects statistics, the second is the one the cost model decides.
+-- Twice: the first run only collects statistics, the second is the one the cost model decides. It decides at
+-- the boundary the first run remembered, so it builds no plan and still says why it declined.
 SELECT key % 10 AS k, max(payload) FROM t_autopr_min_bytes PREWHERE flag = 1 GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_min_bytes_per_replica = 500000, log_comment = 'autopr_min_bytes_collect';
 SELECT key % 10 AS k, max(payload) FROM t_autopr_min_bytes PREWHERE flag = 1 GROUP BY k FORMAT Null
