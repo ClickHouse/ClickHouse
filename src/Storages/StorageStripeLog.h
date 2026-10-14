@@ -4,8 +4,7 @@
 #include <shared_mutex>
 
 #include <Core/Defines.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
-#include <Storages/VirtualColumnsDescription.h>
+#include <Storages/IStorage.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
@@ -21,7 +20,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public StorageWithCommonVirtualColumns, public WithMutableContext
+class StorageStripeLog final : public IStorage, public WithMutableContext
 {
 friend class StripeLogSource;
 friend class StripeLogSink;
@@ -41,8 +40,6 @@ public:
 
     String getName() const override { return "StripeLog"; }
 
-    using StorageWithCommonVirtualColumns::read;
-
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -61,14 +58,11 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr local_context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
-
-    static VirtualColumnsDescription createVirtuals();
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -84,10 +78,6 @@ private:
 
     /// Saves the index file.
     void saveIndices(const WriteLock &);
-
-    /// Saves the index file and the file sizes as one unit: either both are committed, or neither is
-    /// and the number of saved indices is left describing the index file as it stands.
-    void saveIndicesAndFileSizes(const WriteLock &);
 
     /// Removes all unsaved indices.
     void removeUnsavedIndices(const WriteLock &);
