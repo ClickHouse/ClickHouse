@@ -2,6 +2,8 @@
 
 DROP TABLE IF EXISTS t_projection_codec_alias_aggregate_binding;
 DROP TABLE IF EXISTS t_projection_codec_alias_filtered_binding;
+DROP TABLE IF EXISTS t_projection_codec_star_alias_binding;
+DROP TABLE IF EXISTS t_projection_codec_star_alias_bad;
 DROP TABLE IF EXISTS t_projection_codec_order_match_binding;
 DROP TABLE IF EXISTS t_projection_codec_hidden_order_binding;
 
@@ -39,6 +41,33 @@ WHERE database = currentDatabase() AND table = 't_projection_codec_alias_filtere
 DETACH TABLE t_projection_codec_alias_filtered_binding;
 ATTACH TABLE t_projection_codec_alias_filtered_binding;
 
+-- `SELECT *` omits table `ALIAS` columns by default, but still exposes ordinary columns.
+CREATE TABLE t_projection_codec_star_alias_binding
+(
+    k UInt64,
+    v UInt64,
+    av UInt64 ALIAS v + toUInt8(1),
+    PROJECTION p (v CODEC(ZSTD)) AS (SELECT * ORDER BY k)
+)
+ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_projection_codec_star_alias_binding VALUES (1, 2);
+SELECT count() = 1 FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_projection_codec_star_alias_binding'
+    AND name = 'p' AND active AND column = 'v';
+DETACH TABLE t_projection_codec_star_alias_binding;
+ATTACH TABLE t_projection_codec_star_alias_binding;
+
+CREATE TABLE t_projection_codec_star_alias_bad
+(
+    k UInt64,
+    v UInt64,
+    av UInt64 ALIAS v + toUInt8(1),
+    PROJECTION p (av CODEC(ZSTD)) AS (SELECT * ORDER BY k)
+)
+ENGINE = MergeTree ORDER BY k; -- { serverError THERE_IS_NO_COLUMN }
+SELECT count() FROM system.tables
+WHERE database = currentDatabase() AND name = 't_projection_codec_star_alias_bad';
+
 -- Expanding `ORDER BY` to multiple columns must not hide a visible `SELECT` output.
 CREATE TABLE t_projection_codec_order_match_binding
 (
@@ -73,5 +102,6 @@ SELECT count() FROM system.tables
 WHERE database = currentDatabase() AND name = 't_projection_codec_hidden_order_binding';
 
 DROP TABLE t_projection_codec_order_match_binding;
+DROP TABLE t_projection_codec_star_alias_binding;
 DROP TABLE t_projection_codec_alias_filtered_binding;
 DROP TABLE t_projection_codec_alias_aggregate_binding;

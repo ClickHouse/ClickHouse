@@ -800,13 +800,20 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     Names resolved_output_names;
     size_t analyzed_output_count = 0;
     {
-        /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
-        /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
-        /// (which may fail when session settings like allow_nonconst_timezone_arguments are unavailable,
-        /// e.g. during ATTACH TABLE), while still allowing the projection query to reference any column
-        /// including table-level ALIAS columns by name.
-        StoragePtr analyzer_storage
-            = createProjectionQuerySource(ColumnsDescription(columns.getAll()), MergeTreeData::createVirtuals(partition_key));
+        /// Keep column kinds so `SELECT *` and matchers expand the same columns as the legacy
+        /// interpreter. Omit their default expressions so the Analyzer can resolve a table
+        /// `ALIAS` by name without evaluating its definition during `ATTACH TABLE`.
+        ColumnsDescription analyzer_columns(columns.getAll());
+        for (const auto & source_column : columns)
+        {
+            const auto kind = source_column.default_desc.kind;
+            if (kind != ColumnDefaultKind::Default)
+                analyzer_columns.modify(source_column.name, [kind](ColumnDescription & analyzer_column)
+                {
+                    analyzer_column.default_desc.kind = kind;
+                });
+        }
+        StoragePtr analyzer_storage = createProjectionQuerySource(analyzer_columns, MergeTreeData::createVirtuals(partition_key));
 
         auto query_tree = buildProjectionQueryTree(result.query_ast, analyzer_storage, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
