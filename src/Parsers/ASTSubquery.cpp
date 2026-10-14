@@ -115,12 +115,14 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
 void ASTSubquery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// `recursive_with` is never set without `cte_name`, and an unnamed subquery derives its column name from
+    /// this hash, so it is hashed only here. Length-prefixed, so the name cannot run into the bytes after it.
     if (!cte_name.empty())
+    {
+        hash_state.update(cte_name.size());
         hash_state.update(cte_name);
-    /// Guarded: `appendColumnNameImpl` derives `__subquery_<hash>` from this hash for every unnamed subquery,
-    /// so hashing a field that is always false there would rename columns across unrelated queries.
-    if (recursive_with)
         hash_state.update(recursive_with);
+    }
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
