@@ -45,14 +45,6 @@ StorageAlias::StorageAlias(
     , target_database(target_database_)
     , target_table(target_table_)
 {
-    StorageID target_id(target_database, target_table);
-    if (table_id_ == target_id)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
-
-    // Disallow target is also an alias
-    auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, context_);
-    if (target_storage && target_storage->getName() == "Alias")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
@@ -504,6 +496,22 @@ void registerStorageAlias(StorageFactory & factory)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Storage Alias does not support explicit column definitions");
+        }
+
+        /// The restrictions below read the catalog, so they may only judge freshly supplied input:
+        /// an already accepted definition must stay loadable, because a rejection while loading
+        /// metadata fails the whole load rather than the one table.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (fresh_user_definition)
+        {
+            StorageID target_id(target_database, target_table);
+            if (args.table_id == target_id)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
+
+            auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, local_context);
+            if (target_storage && target_storage->getName() == "Alias")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
         }
 
         return std::make_shared<StorageAlias>(
