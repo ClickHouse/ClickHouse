@@ -282,13 +282,10 @@ static bool isMetadataAlterCommand(const ASTAlterCommand & command)
         case ASTAlterCommand::MODIFY_COLUMN:
         case ASTAlterCommand::COMMENT_COLUMN:
         case ASTAlterCommand::RENAME_COLUMN:
-        case ASTAlterCommand::MATERIALIZE_COLUMN:
         case ASTAlterCommand::MODIFY_ORDER_BY:
         case ASTAlterCommand::MODIFY_PROJECTION:
         case ASTAlterCommand::MODIFY_SAMPLE_BY:
         case ASTAlterCommand::MODIFY_TTL:
-        case ASTAlterCommand::REWRITE_PARTS:
-        case ASTAlterCommand::MATERIALIZE_TTL:
         case ASTAlterCommand::MODIFY_SETTING:
         case ASTAlterCommand::RESET_SETTING:
         case ASTAlterCommand::MODIFY_REFRESH:
@@ -296,33 +293,37 @@ static bool isMetadataAlterCommand(const ASTAlterCommand & command)
         case ASTAlterCommand::REMOVE_SAMPLE_BY:
         case ASTAlterCommand::ADD_INDEX:
         case ASTAlterCommand::DROP_INDEX:
-        case ASTAlterCommand::MATERIALIZE_INDEX:
         case ASTAlterCommand::ADD_CONSTRAINT:
         case ASTAlterCommand::DROP_CONSTRAINT:
         case ASTAlterCommand::MODIFY_CONSTRAINT:
         case ASTAlterCommand::ADD_PROJECTION:
         case ASTAlterCommand::DROP_PROJECTION:
-        case ASTAlterCommand::MATERIALIZE_PROJECTION:
         case ASTAlterCommand::ADD_STATISTICS:
         case ASTAlterCommand::DROP_STATISTICS:
         case ASTAlterCommand::MODIFY_STATISTICS:
-        case ASTAlterCommand::MATERIALIZE_STATISTICS:
         case ASTAlterCommand::DROP_PARTITION:
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         case ASTAlterCommand::FORGET_PARTITION:
         case ASTAlterCommand::ATTACH_PARTITION:
         case ASTAlterCommand::UNFREEZE_PARTITION:
         case ASTAlterCommand::UNFREEZE_ALL:
-        case ASTAlterCommand::DELETE:
-        case ASTAlterCommand::UPDATE:
-        case ASTAlterCommand::APPLY_DELETED_MASK:
-        case ASTAlterCommand::APPLY_PATCHES:
         case ASTAlterCommand::MODIFY_DATABASE_SETTING:
         case ASTAlterCommand::MODIFY_DATABASE_COMMENT:
         case ASTAlterCommand::MODIFY_COMMENT:
         case ASTAlterCommand::MODIFY_SQL_SECURITY:
         case ASTAlterCommand::UNLOCK_SNAPSHOT:
             return true;
+        /// Mutations: some engines (e.g. `Memory`, `Join`, `EmbeddedRocksDB`, `KeeperMap`) run them in the query.
+        case ASTAlterCommand::MATERIALIZE_COLUMN:
+        case ASTAlterCommand::REWRITE_PARTS:
+        case ASTAlterCommand::MATERIALIZE_TTL:
+        case ASTAlterCommand::MATERIALIZE_INDEX:
+        case ASTAlterCommand::MATERIALIZE_PROJECTION:
+        case ASTAlterCommand::MATERIALIZE_STATISTICS:
+        case ASTAlterCommand::DELETE:
+        case ASTAlterCommand::UPDATE:
+        case ASTAlterCommand::APPLY_DELETED_MASK:
+        case ASTAlterCommand::APPLY_PATCHES:
         /// Copy parts (`REPLACE_PARTITION` is also `ATTACH PARTITION ... FROM`) or run synchronously. The new
         /// `SELECT` of `MODIFY QUERY` is analyzed, which may read the sources it selects from, also through views.
         case ASTAlterCommand::MODIFY_QUERY:
