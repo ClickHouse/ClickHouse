@@ -65,6 +65,16 @@ a	b	c
 1	5
 a	b
 1	5
+-- PASTE JOIN treats the name of a CTE like an alias
+10	0
+11	1
+a	cte.a
+10	0
+11	1
+0
+1
+a	c2.a
+1	2
 -- PASTE JOIN does not validate the duplicate column names of a subquery behind ARRAY JOIN, so it still requires an alias
 y
 1

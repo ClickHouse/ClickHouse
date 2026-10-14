@@ -116,6 +116,12 @@ SELECT * FROM (SELECT 1 AS number) PASTE JOIN (SELECT 5 AS number UNION ALL SELE
 SELECT number, v.number FROM (SELECT 1 AS number) PASTE JOIN view(SELECT 5 AS number) AS v;
 SELECT * FROM (SELECT 1 AS a) PASTE JOIN view(SELECT 5 AS b) FORMAT TSVWithNames;
 
+SELECT '-- PASTE JOIN treats the name of a CTE like an alias';
+WITH cte AS (SELECT number AS a FROM numbers(2)) SELECT a, cte.a FROM (SELECT number + 10 AS a FROM numbers(2)) PASTE JOIN cte;
+WITH cte AS (SELECT number AS a FROM numbers(2)) SELECT * FROM (SELECT number + 10 AS a FROM numbers(2)) PASTE JOIN cte FORMAT TSVWithNames;
+WITH cte AS (SELECT number AS a FROM numbers(2)) SELECT cte.a FROM cte PASTE JOIN (SELECT number + 10 AS a FROM numbers(2));
+WITH c1 AS (SELECT 1 AS a), c2 AS (SELECT 2 AS a) SELECT * FROM c1 PASTE JOIN c2 FORMAT TSVWithNames;
+
 SELECT '-- PASTE JOIN does not validate the duplicate column names of a subquery behind ARRAY JOIN, so it still requires an alias';
 SELECT x FROM (SELECT [1] AS arr) ARRAY JOIN arr AS x PASTE JOIN (SELECT 0 AS x); -- { serverError ALIAS_REQUIRED }
 SELECT * FROM (SELECT [1] AS arr, 1 AS y) ARRAY JOIN arr PASTE JOIN (SELECT 0 AS y); -- { serverError ALIAS_REQUIRED }

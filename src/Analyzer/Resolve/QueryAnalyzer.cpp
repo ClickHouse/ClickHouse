@@ -6132,11 +6132,15 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode &
         return;
 
     /// An inlined view is a table by name and takes no part in this check, as it does not without inlining.
+    /// A CTE is named as well: its name qualifies its columns just like an alias.
     auto as_unnamed_subquery = [&](const QueryTreeNodePtr & table_expression_node) -> QueryNode *
     {
         if (getInlinedViewName(table_expression_node.get()))
             return nullptr;
-        return table_expression_node->as<QueryNode>();
+        auto * query_node = table_expression_node->as<QueryNode>();
+        if (query_node && !query_node->getCTEName().empty())
+            return nullptr;
+        return query_node;
     };
 
     auto * left_node = as_unnamed_subquery(join_node.getLeftTableExpressionNode());
