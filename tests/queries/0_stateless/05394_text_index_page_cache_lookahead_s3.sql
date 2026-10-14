@@ -1,5 +1,6 @@
--- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-distributed-cache
+-- Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-distributed-cache
 -- no-fasttest: needs an S3 disk.
+-- no-parallel: drops the page cache, and a page cache drop in another test would change the counts checked here.
 -- no-random-settings, no-random-merge-tree-settings: pins page_cache_block_size and the text index's own block sizes.
 -- no-distributed-cache: with the distributed cache, the page cache is used only with use_page_cache_with_distributed_cache, and reads do not use the disk connections checked here.
 
