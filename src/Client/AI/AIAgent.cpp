@@ -100,6 +100,32 @@ String summarizeToolResult(const ai::ToolResult & result)
     return result.result.dump();
 }
 
+/// Escapes the bytes that are not valid UTF-8 in every string of the value, keys included - see
+/// `escapeInvalidUTF8`. A tool result can carry the values of a `String` column as they are.
+void escapeInvalidUTF8InJson(ai::JsonValue & value)
+{
+    if (value.is_string())
+    {
+        auto & text = value.get_ref<std::string &>();
+        text = escapeInvalidUTF8(text);
+    }
+    else if (value.is_array())
+    {
+        for (auto & element : value)
+            escapeInvalidUTF8InJson(element);
+    }
+    else if (value.is_object())
+    {
+        ai::JsonValue escaped = ai::JsonValue::object();
+        for (auto & [key, element] : value.items())
+        {
+            escapeInvalidUTF8InJson(element);
+            escaped[escapeInvalidUTF8(key)] = std::move(element);
+        }
+        value = std::move(escaped);
+    }
+}
+
 /// The approximate byte contribution of one message to the prompt.
 size_t messageBytes(const ai::Message & message)
 {
@@ -176,7 +202,7 @@ void AIAgent::pushUserMessage(const String & text)
         else
             messages.push_back(ai::Message::assistant("(no response was produced for this message)"));
     }
-    messages.push_back(ai::Message::user(text));
+    messages.push_back(ai::Message::user(escapeInvalidUTF8(text)));
 }
 
 void AIAgent::chat(const String & user_text)
@@ -276,9 +302,12 @@ void AIAgent::chat(const String & user_text)
             display.showToolResult(toolSucceeded(result), summarizeToolResult(result));
 
             if (result.is_success())
+            {
+                escapeInvalidUTF8InJson(result.result);
                 result_parts.emplace_back(call.id, truncateOversizedToolResult(std::move(result.result)), false);
+            }
             else
-                result_parts.emplace_back(call.id, ai::JsonValue{{"error", result.error_message()}}, true);
+                result_parts.emplace_back(call.id, ai::JsonValue{{"error", escapeInvalidUTF8(result.error_message())}}, true);
         }
         messages.push_back(ai::Message::tool_results(result_parts));
         /// The history is trimmed whenever it grows, not once per turn: every step of one turn

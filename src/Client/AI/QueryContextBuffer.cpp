@@ -18,10 +18,12 @@ namespace
 
 String truncateForContext(const String & text, size_t max_bytes)
 {
-    if (text.size() <= max_bytes)
-        return text;
-    /// The result goes into the prompt of the model, so the cut must not split a UTF-8 sequence.
-    String truncated = text;
+    /// The result goes into the prompt of the model, which is serialized as JSON, so it must be valid
+    /// UTF-8: a value of a `String` column can hold arbitrary bytes, and so can a query or an error.
+    String truncated = escapeInvalidUTF8(text);
+    if (truncated.size() <= max_bytes)
+        return truncated;
+    /// For the same reason the cut must not split a UTF-8 sequence.
     truncateToUTF8Boundary(truncated, max_bytes);
     return truncated + "…";
 }
