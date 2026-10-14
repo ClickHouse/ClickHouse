@@ -1,5 +1,6 @@
 #include <Parsers/Mongo/ParserMongoUpdateQuery.h>
 
+#include <set>
 #include <string_view>
 #include <unordered_set>
 
@@ -185,14 +186,35 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
         else if (name == "$push" || name == "$addToSet")
         {
             auto values = parseAppendedValues(it->value, name);
-            ASTPtr result = field();
-            for (auto & value : values)
+            ASTPtr result;
+            if (name == "$push")
             {
-                auto appended = makeASTFunction("arrayPushBack", result, value);
-                /// `$addToSet` appends only what the array does not hold yet.
-                result = name == "$push"
-                    ? appended
-                    : makeASTFunction("if", makeASTFunction("has", result->clone(), value->clone()), result->clone(), appended);
+                result = field();
+                for (auto & value : values)
+                    result = makeASTFunction("arrayPushBack", result, value);
+            }
+            else
+            {
+                /** `$addToSet` appends each value the array does not hold yet, and a value repeated in
+                  * its `$each` only once; what the array already holds stays as it is, duplicates
+                  * included. Once the repeated candidates are dropped, a candidate can only be held
+                  * by the original array - never by what this same operator appends before it - so
+                  * each one is tested against the field itself, and the expression grows with the
+                  * number of candidates rather than doubling with each of them. The candidates are
+                  * constants, and equal ones are the same tree.
+                  */
+                auto concatenated = makeASTFunction("arrayConcat", field());
+                std::set<std::pair<UInt64, UInt64>> seen;
+                for (auto & value : values)
+                {
+                    const auto hash = value->getTreeHash(/* ignore_aliases = */ true);
+                    if (!seen.emplace(hash.low64, hash.high64).second)
+                        continue;
+                    auto is_held = makeASTFunction("has", field(), value->clone());
+                    concatenated->arguments->children.push_back(
+                        makeASTFunction("if", std::move(is_held), makeASTFunction("array"), makeASTFunction("array", value)));
+                }
+                result = std::move(concatenated);
             }
             assignments.push_back(makeAssignment(column, std::move(result)));
         }
