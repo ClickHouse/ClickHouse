@@ -1,0 +1,33 @@
+<clickhouse>
+    <!--
+        Negative case: a custom HTTP protocol endpoint whose `<handlers>` value names a handler prefix
+        that does NOT exist. The endpoint points at `custom_missing.handlers`, but the `<custom_missing>`
+        section carries a mistyped `<handlerss>` child, so `custom_missing.handlers` is absent.
+        `createHTTPHandlerFactory` sees `!config.has("custom_missing.handlers")` and falls back to the
+        default `http_handlers`, never reading `<custom_missing>`. The unknown-key validator must
+        therefore NOT exempt the top-level `<custom_missing>`: it is a genuine unknown key (a typo), so
+        the node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <protocols>
+        <alt_http_missing>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8128</port>
+            <handlers>custom_missing.handlers</handlers>
+        </alt_http_missing>
+    </protocols>
+
+    <custom_missing>
+        <handlerss>
+            <rule>
+                <methods>GET</methods>
+                <url>/my_missing_endpoint</url>
+                <handler>
+                    <type>static</type>
+                    <response_content>Never read</response_content>
+                </handler>
+            </rule>
+            <defaults/>
+        </handlerss>
+    </custom_missing>
+</clickhouse>

@@ -10,13 +10,15 @@ doc_type: 'reference'
 في الإصدار `24.3` من ClickHouse، كان المحلّل مفعّلًا افتراضيًا.
 يمكنك الاطّلاع على مزيد من التفاصيل حول كيفية عمله [هنا](/ar/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
-اعتبارًا من الإصدار `26.9` أصبح المحلّل إلزاميًا: فالإعداد `enable_analyzer` أصبح مهملًا، وأي محاولة لضبطه على `0` تُرفض، ولم يعد تحليل الاستعلامات الذي كان ClickHouse يستخدمه قبل `24.3` مدعومًا. توضّح حالات عدم التوافق المذكورة أدناه أوجه اختلاف ذلك التحليل الأقدم، بما يتيح تحديث أي استعلام كُتب من أجله؛ ولمعاينة سلوكه، شغّل الاستعلام على إصدار من ClickHouse أقدم من `26.9`.
-
-## حالات عدم التوافق المعروفة {#known-incompatibilities}
+<div id="known-incompatibilities">
+  ## حالات عدم التوافق المعروفة
+</div>
 
 على الرغم من إصلاح عدد كبير من الأخطاء وإضافة تحسينات جديدة، فإنه يقدّم أيضًا بعض التغييرات غير المتوافقة مع الإصدارات السابقة في سلوك ClickHouse. يُرجى قراءة التغييرات التالية لمعرفة كيفية إعادة كتابة استعلاماتك لتناسب المحلّل.
 
-### لم تعد الاستعلامات غير الصالحة تُحسَّن {#invalid-queries-are-no-longer-optimized}
+<div id="invalid-queries-are-no-longer-optimized">
+  ### لم تعد الاستعلامات غير الصالحة تُحسَّن
+</div>
 
 كانت البنية التحتية السابقة لتخطيط الاستعلامات تطبّق تحسينات على مستوى AST قبل خطوة التحقّق من صحة الاستعلام.
 وكانت هذه التحسينات قادرة على إعادة كتابة الاستعلام الأوّلي بحيث يصبح صالحًا وقابلًا للتنفيذ.
@@ -25,7 +27,9 @@ doc_type: 'reference'
 وهذا يعني أن الاستعلامات غير الصالحة التي كان يمكن تنفيذها سابقًا لم تعد مدعومة.
 وفي مثل هذه الحالات، يجب تصحيح الاستعلام يدويًا.
 
-#### المثال 1 {#example-1}
+<div id="example-1">
+  #### المثال 1
+</div>
 
 يستخدم الاستعلام التالي العمود `number` في قائمة الإسقاط، مع أن المتاح بعد التجميع هو `toString(number)` فقط.
 في المحلّل القديم، كان `GROUP BY toString(number)` يُحسَّن إلى `GROUP BY number,`، مما يجعل الاستعلام صالحًا.
@@ -36,7 +40,9 @@ FROM numbers(1)
 GROUP BY toString(number)
 ```
 
-#### المثال 2 {#example-2}
+<div id="example-2">
+  #### المثال 2
+</div>
 
 تحدث المشكلة نفسها في هذا الاستعلام. يُستخدَم العمود `number` بعد التجميع مع مفتاح آخر.
 كان محلّل الاستعلام السابق يُصحّح هذا الاستعلام بنقل عامل التصفية `number > 5` من عبارة `HAVING` إلى عبارة `WHERE`.
@@ -63,7 +69,9 @@ GROUP BY n
 
 لتسهيل الترحيل، يمكن لمحلّل الاستعلام تكرار إعادة الكتابة القديمة من `HAVING` إلى `WHERE` للمقترنات غير التجميعية المتصلة بـ AND. فعِّل `analyzer_compatibility_allow_non_aggregate_in_having = 1` لتمكين هذا السلوك. هذا الإعداد متاح منذ ClickHouse `26.7`. يُتجاهل هذا الإعداد مع `WITH CUBE` و`WITH ROLLUP` و`WITH TOTALS` و`GROUPING SETS`. تبقى المقترنات التي تحتوي على دوال تجميعية أو `grouping` أو دوال غير حتمية في `HAVING`؛ وإذا احتوى أي مقترن على دالة نافذة أو دالة ذات حالة (مثل `rowNumberInBlock`)، فستُعطَّل إعادة الكتابة لعبارة `HAVING` بالكامل، بما يطابق السلوك القديم.
 
-### `CREATE VIEW` مع استعلام غير صالح {#create-view-with-invalid-query}
+<div id="create-view-with-invalid-query">
+  ### `CREATE VIEW` مع استعلام غير صالح
+</div>
 
 يجري المحلِّل دائمًا التحقّق من الأنواع.
 في السابق، كان من الممكن إنشاء `VIEW` باستعلام `SELECT` غير صالح.
@@ -71,7 +79,9 @@ GROUP BY n
 
 لم يعد إنشاء `VIEW` بهذه الطريقة ممكنًا.
 
-#### مثال {#example-view}
+<div id="example-view">
+  #### مثال
+</div>
 
 ```sql
 CREATE TABLE source (data String)
@@ -83,9 +93,13 @@ AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
 FROM source;
 ```
 
-### أوجه عدم التوافق المعروفة لعبارة `JOIN` {#known-incompatibilities-of-the-join-clause}
+<div id="known-incompatibilities-of-the-join-clause">
+  ### أوجه عدم التوافق المعروفة لعبارة `JOIN`
+</div>
 
-#### `JOIN` باستخدام عمود من إسقاط {#join-using-column-from-projection}
+<div id="join-using-column-from-projection">
+  #### `JOIN` باستخدام عمود من إسقاط
+</div>
 
 لا يمكن افتراضيًا استخدام اسم مستعار من قائمة `SELECT` كمفتاح `JOIN USING`.
 
@@ -105,7 +119,9 @@ USING (b);
 وعندما تكون قيمة الإعداد `false`، يكون شرط الـ join افتراضيًا `t1.b = t2.b`، وسيُرجع الاستعلام `2, 'one'`.
 إذا لم يكن `b` موجودًا في `t1`، فسيفشل الاستعلام مع ظهور خطأ.
 
-#### تغيّرات في السلوك مع `JOIN USING` والأعمدة `ALIAS`/`MATERIALIZED` {#changes-in-behavior-with-join-using-and-aliasmaterialized-columns}
+<div id="changes-in-behavior-with-join-using-and-aliasmaterialized-columns">
+  #### تغيّرات في السلوك مع `JOIN USING` والأعمدة `ALIAS`/`MATERIALIZED`
+</div>
 
 في المُحلِّل، يؤدي استخدام `*` في استعلام `JOIN USING` يتضمن أعمدة `ALIAS` أو `MATERIALIZED` إلى إدراج هذه الأعمدة في مجموعة النتائج افتراضيًا.
 
@@ -128,7 +144,9 @@ FULL JOIN t2 USING (payload);
 
 ولضمان الحصول على نتائج متسقة ومتوقعة، خاصةً عند ترحيل الاستعلامات القديمة إلى المحلل، يُنصح بتحديد الأعمدة صراحةً في عبارة `SELECT` بدلًا من استخدام `*`.
 
-#### التعامل مع معدِّلات النوع للأعمدة في بند `USING` {#handling-of-type-modifiers-for-columns-in-using-clause}
+<div id="handling-of-type-modifiers-for-columns-in-using-clause">
+  #### التعامل مع معدِّلات النوع للأعمدة في بند `USING`
+</div>
 
 في المحلّل، جرى توحيد قواعد تحديد النوع الأعلى المشترك للأعمدة المحددة في بند `USING` لإعطاء نتائج أكثر قابلية للتنبؤ،
 خصوصًا عند التعامل مع معدِّلات النوع مثل `LowCardinality` و`Nullable`.
@@ -147,7 +165,9 @@ USING (id);
 
 في هذا الاستعلام، يُحدَّد النوع الأعلى المشترك لـ `id` على أنه `String`، مع إسقاط المُعدِّل `LowCardinality` من `t1`.
 
-### تغييرات على أسماء أعمدة الإسقاط {#projection-column-names-changes}
+<div id="projection-column-names-changes">
+  ### تغييرات على أسماء أعمدة الإسقاط
+</div>
 
 أثناء حساب أسماء الإسقاطات، لا يجري استبدال الأسماء المستعارة.
 
@@ -155,26 +175,27 @@ USING (id);
 SELECT
     1 + 1 AS x,
     x + 1
+SETTINGS enable_analyzer = 0
 FORMAT PrettyCompact
-```
 
-قبل الإصدار `24.3` كان العمود الثاني يُسمّى باسم الاسم المستعار المُستبدل:
-
-```text
    ┌─x─┬─plus(plus(1, 1), 1)─┐
 1. │ 2 │                   3 │
    └───┴─────────────────────┘
-```
 
-يُبقي الـ محلّل الاسم المستعار في الاسم:
+SELECT
+    1 + 1 AS x,
+    x + 1
+SETTINGS enable_analyzer = 1
+FORMAT PrettyCompact
 
-```text
    ┌─x─┬─plus(x, 1)─┐
 1. │ 2 │          3 │
    └───┴────────────┘
 ```
 
-### أنواع وسائط الدالة غير المتوافقة {#incompatible-function-arguments-types}
+<div id="incompatible-function-arguments-types">
+  ### أنواع وسائط الدالة غير المتوافقة
+</div>
 
 في المحلّل، يحدث استنتاج الأنواع أثناء تحليل الاستعلام الأوّلي.
 ويعني هذا التغيير أن عمليات التحقق من الأنواع تُجرى قبل التقييم المختصر؛ لذلك، يجب أن تمتلك وسائط الدالة `if` دائمًا نوعًا أعلى مشتركًا.
@@ -185,26 +206,41 @@ FORMAT PrettyCompact
 SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 ```
 
-### العناقيد غير المتجانسة {#heterogeneous-clusters}
+<div id="heterogeneous-clusters">
+  ### العناقيد غير المتجانسة
+</div>
 
-يُحدِث المُحلِّل تغييرًا كبيرًا في بروتوكول الاتصال بين الخوادم داخل العنقود. لذلك، يتعذّر تشغيل الاستعلامات الموزعة على خوادم لا تتفق على ما إذا كان المُحلِّل مُستخدمًا — وهذا يعني، في عنقود من خوادم أقدم من `26.9`، خوادم تستخدم قيماً مختلفة للإعداد `enable_analyzer`.
+يُحدِث المُحلِّل تغييرًا كبيرًا في بروتوكول الاتصال بين الخوادم داخل العنقود. لذلك، يتعذّر تشغيل الاستعلامات الموزعة على خوادم تستخدم قيماً مختلفة للإعداد `enable_analyzer`.
 
-لم يعد لدى الخادم من الإصدار `26.10` أو أحدث أي آلية أخرى لتحليل الاستعلام، لذا فهو يتجاهل القيمة التي يرسلها المُنشئ الأقدم ويحلّل الاستعلام بالمُحلِّل في كل الأحوال. ولا يُسمّي التحليلان أعمدة النتيجة بالطريقة نفسها، كما أن المُنشئ يُطابق الكتلة التي يُعيدها الـ shard بحسب اسم الـ column، ولذلك قد يفشل مثل هذا الاستعلام لدى المُنشئ بالخطأ `NOT_FOUND_COLUMN_IN_BLOCK` — مثلاً عندما يحدّد دالة مكتوبة بحالة أحرف غير قياسية (`hostname()`)، فيحوّلها المُحلِّل إلى اسمها القياسي (`hostName()`). لذلك يجب على أي عنقود ما يزال يعمل بتحليل الاستعلام الأقدم ضبط `enable_analyzer = 1` على كل خادم قبل ترقية أي منها إلى `26.10`.
+<div id="mutations-are-interpreted-by-previous-analyzer">
+  ### تُفسَّر عمليات التعديل بواسطة المحلّل السابق
+</div>
 
-### الميزات غير المدعومة {#unsupported-features}
+لا تزال عمليات التعديل تستخدم المحلّل القديم.
+وهذا يعني أنه لا يمكن استخدام بعض ميزات ClickHouse SQL الجديدة في عمليات التعديل، مثل عبارة `QUALIFY`.
+يمكن الاطلاع على الحالة [هنا](https://github.com/ClickHouse/ClickHouse/issues/61563).
+
+<div id="unsupported-features">
+  ### الميزات غير المدعومة
+</div>
 
 فيما يلي قائمة بالميزات التي لا يدعمها المحلّل حاليًا:
 
 * فهرس Annoy.
 * فهرس Hypothesis. العمل جارٍ عليه [هنا](https://github.com/ClickHouse/ClickHouse/pull/48381).
+* ميزة Window View غير مدعومة. ولا توجد خطط لدعمها مستقبلًا.
 
-## الترحيل إلى Cloud {#cloud-migration}
+<div id="cloud-migration">
+  ## الترحيل إلى Cloud
+</div>
 
 نعمل على تمكين المحلّل في جميع المثيلات التي يكون معطّلًا فيها حاليًا، وذلك لدعم تحسينات جديدة في الوظائف والأداء. يفرض هذا التغيير قواعد أكثر صرامة لتحديد النطاق في SQL، ما يتطلب من العملاء تحديث الاستعلامات غير المتوافقة يدويًا.
 
-### سير عمل الترحيل {#migration-workflow}
+<div id="migration-workflow">
+  ### سير عمل الترحيل
+</div>
 
-1. حدِّد الاستعلام بتصفية `system.query_log` باستخدام `normalized_query_hash`:
+1. حدِّد الاستعلام بتصفية `system.query_log` باستخدام `normalized_query_hash`:
 
 ```sql
 SELECT query 
@@ -214,18 +250,21 @@ LIMIT 1
 SETTINGS skip_unavailable_shards=1
 ```
 
-2. نفّذ الاستعلام باستخدام المحلّل، مع إضافة إعداد التوافق الذي يستعيد آلية تحليل المعرّفات في التحليل الأقدم في الحالات التي يعتمد فيها الاستعلام عليها.
+2. نفّذ الاستعلام بعد تفعيل المحلّل بإضافة هذه الإعدادات.
 
 ```sql
 SETTINGS
+    enable_analyzer=1,
     analyzer_compatibility_join_using_top_level_identifier=1
 ```
 
-3. أعد صياغة الاستعلام وتحقّق من نتائج الاستعلام للتأكد من أنها تطابق المخرجات التي أنتجها الاستعلام قبل الترحيل.
+3. أعد صياغة الاستعلام وتحقّق من نتائج الاستعلام للتأكد من أنها تطابق المخرجات الناتجة عند تعطيل المحلِّل.
 
 يُرجى الرجوع إلى أكثر حالات عدم التوافق شيوعًا التي ظهرت أثناء الاختبارات الداخلية.
 
-### معرّف تعبير غير معروف {#unknown-expression-identifier}
+<div id="unknown-expression-identifier">
+  ### معرّف تعبير غير معروف
+</div>
 
 الخطأ: `Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`. رمز الاستثناء: 47
 
@@ -238,7 +277,9 @@ SETTINGS
 * مفاتيح JOIN: استخدم ON مع تعبيرات كاملة بدلًا من USING إذا كان المفتاح اسمًا مستعارًا.
 * في الاستعلامات الخارجية، ارجع إلى الاسم المستعار الخاص بالاستعلام الفرعي/تعبير الجدول الشائع نفسه، لا إلى الجداول الموجودة داخله.
 
-### الأعمدة غير المجمّعة في GROUP BY {#non-aggregated-columns-in-group-by}
+<div id="non-aggregated-columns-in-group-by">
+  ### الأعمدة غير المجمّعة في GROUP BY
+</div>
 
 الخطأ: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. رمز الاستثناء: 215
 
@@ -257,7 +298,9 @@ SELECT user_id, any(device_id) FROM table GROUP BY user_id
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
 ```
 
-### الأعمدة غير المجمّعة في `HAVING` {#non-aggregated-columns-in-having}
+<div id="non-aggregated-columns-in-having">
+  ### الأعمدة غير المجمّعة في `HAVING`
+</div>
 
 الخطأ: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. رمز الاستثناء: 215
 
@@ -273,38 +316,33 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-### تكرار أسماء CTE {#duplicate-cte-names}
+<div id="duplicate-cte-names">
+  ### أسماء تعبيرات الجدول الشائعة المكررة
+</div>
 
 الخطأ: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. رمز الاستثناء: 179
 
-السبب: كان المحلّل القديم يسمح بتعريف عدة تعابير جداول شائعة (WITH ...) بالاسم نفسه، بحيث يحجب التعريف اللاحق التعريف السابق. أما المحلّل الجديد فيرفض هذا الالتباس افتراضيًا.
+السبب: كان المُحلِّل القديم يسمح بتعريف عدة تعبيرات جدول شائعة (WITH ...) بالاسم نفسه، بحيث يطغى التعريف اللاحق على السابق. ويمنع المُحلِّل هذا الالتباس.
 
-الحل: أعد تسمية تعابير الجدول الشائعة المكررة بحيث يصبح لكلٍّ منها اسم مميز. ولتسهيل الترحيل، يمكنك تفعيل `analyzer_compatibility_allow_cte_redefinition = 1` (متاح منذ ClickHouse `26.10`) لاستعادة السلوك القديم، إذ يرتبط كل مرجع بأحدث تعريف للاسم لا يجري تحليله في تلك اللحظة. وبذلك يمكن لإعادة التعريف أن تقرأ التعريف السابق، بينما يقرأ متن الاستعلام التعريف الأخير.
-
-القيود: لا يمكن إعادة تعريف تعبير الجدول الشائع المُعلَن بوصفه `MATERIALIZED`، ولا تعبير الجدول الشائع الوارد في عبارة `WITH RECURSIVE`، حتى مع تفعيل هذا الإعداد. وثمة حالة واحدة يختلف فيها السلوك عن المحلّل القديم: فتعبير الجدول الشائع المُعلَن بين تعريفين للاسم نفسه يرتبط هو أيضًا بالتعريف الأخير، في حين كان المحلّل القديم يربطه بالتعريف المرئي عند موضع إعلانه.
+الحل: أعد تسمية تعبيرات الجدول الشائعة المكررة لتكون فريدة.
 
 ```sql
 /* ORIGINAL QUERY */
-WITH
-  data AS (SELECT 1 AS id),
-  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
+WITH 
+  data AS (SELECT 1 AS id), 
+  data AS (SELECT 2 AS id) -- Redefined
 SELECT * FROM data;
 
 /* FIXED QUERY */
-WITH
-  raw_data AS (SELECT 1 AS id),
-  processed_data AS (SELECT id + 1 AS id FROM raw_data)
+WITH 
+  raw_data AS (SELECT 1 AS id), 
+  processed_data AS (SELECT 2 AS id)
 SELECT * FROM processed_data;
-
-/* LEGACY BEHAVIOR AS A MIGRATION AID */
-WITH
-  data AS (SELECT 1 AS id),
-  data AS (SELECT id + 1 AS id FROM data)
-SELECT * FROM data
-SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
-### معرّفات الأعمدة الملتبسة {#ambiguous-column-identifiers}
+<div id="ambiguous-column-identifiers">
+  ### معرّفات الأعمدة الملتبسة
+</div>
 
 الخطأ: `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` رمز الاستثناء: 207
 
@@ -320,7 +358,9 @@ SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
 SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
 ```
 
-### استخدام غير صحيح لـ FINAL {#invalid-usage-of-final}
+<div id="invalid-usage-of-final">
+  ### استخدام غير صحيح لـ FINAL
+</div>
 
 الخطأ: `Table expression modifiers FINAL are not supported for subquery...` أو `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`). رموز الاستثناء: 1، 181
 
@@ -339,7 +379,9 @@ SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
 SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
 ```
 
-### عدم التمييز بين حالات الأحرف في الدالة `countDistinct()` {#countdistinct-case-insensitivity}
+<div id="countdistinct-case-insensitivity">
+  ### عدم التمييز بين حالات الأحرف في الدالة `countDistinct()`
+</div>
 
 الخطأ: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. رمز الاستثناء: 46
 

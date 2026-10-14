@@ -8,6 +8,7 @@ keywords: ['custom roles', 'security', 'permissions']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 This guide is intended for users with the Admin role in ClickHouse Cloud.
 
@@ -66,19 +67,21 @@ Review permissions assigned to your new role before finalizing. Click `Create ro
 </Step>
 </Steps>
 
-## Manage database roles {#manage-database-roles}
+## Manage database roles (beta) {#manage-database-roles}
+
+<BetaBadge/>
 
 In addition to console permissions, custom roles can include a `Data` policy that controls access to the databases of selected services. This lets you manage console and database access in one place instead of maintaining separate roles in each database.
 
 <Note>
-This feature is available for services running ClickHouse version 26.4 and above.
+This feature is in beta and is available for services running ClickHouse version 26.4 and above.
 </Note>
 
 When you add a `Data` policy to a custom role, ClickHouse Cloud creates a matching role in each selected service, prefixed with `cloud:`. For example, a custom role named `readonly` appears in the database as `cloud:readonly`. Members of the custom role receive these database permissions when they connect to the service through SQL console passwordless authentication.
 
-<Warning>
-Cloud-managed database roles replace manually assigned [`sql-console-role:<email>`](/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) roles, which are not compatible with JWT sessions within the SQL console.
-</Warning>
+<Tip>
+Cloud-managed database roles replace manually assigned [`sql-console-role:<email>`](/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) roles, which are not compatible with [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
 
 ### Prerequisites {#manage-database-roles-prerequisites}
 
