@@ -96,6 +96,14 @@ const char * __tsan_default_suppressions()
     /// race anywhere else in the crate (the state machine, the waker, the allocation) is still
     /// reported. `race:` matches any frame, so a wider pattern would also blind a
     /// heap-use-after-free seen through it.
+    ///
+    /// The `kanal` entries are the same false positive in the permit channel of a Vortex scan
+    /// (`FFI_VortexScan::permits`): a receiver that frees a waiting sender reads the sender's
+    /// `Signal` and publishes the outcome with a release store of its state, and the sender's
+    /// `Signal::poll` loads that state relaxed and goes on behind a standalone `fence(Acquire)`,
+    /// after which the sender future reuses the signal's memory. Only the receiving side's
+    /// `Signal` methods are named - `recv`, the `wake` it calls, and `send` for a
+    /// payload-carrying channel - not the futures and the queue around them.
     return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
            "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
            "race:^DB::getRequestBytesCost\n"
@@ -103,7 +111,10 @@ const char * __tsan_default_suppressions()
            "race:oneshot::channel::Channel*::take_message\n"
            "race:oneshot::channel::Channel*::drop_message\n"
            "race:oneshot::sender::Sender*::send\n"
-           "race:oneshot::receiver::Receiver*::poll\n";
+           "race:oneshot::receiver::Receiver*::poll\n"
+           "race:kanal::signal::Signal*::recv\n"
+           "race:kanal::signal::Signal*::wake\n"
+           "race:kanal::signal::Signal*::send\n";
 }
 #endif
 
