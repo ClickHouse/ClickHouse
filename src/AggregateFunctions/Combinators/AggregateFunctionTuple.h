@@ -71,7 +71,6 @@ public:
     bool isVersioned() const override;
     size_t getDefaultVersion() const override;
     size_t getVersionFromRevision(size_t revision) const override;
-    DataTypePtr getStateType() const override;
 
     size_t sizeOfData() const override { return total_state_size; }
     size_t alignOfData() const override { return max_state_align; }
@@ -83,14 +82,6 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
     void addBatch( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override;
-    void addBatchWithNonNullPlaces( /// NOLINT
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr * places,
@@ -158,9 +149,6 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
-    bool shouldPrintParametersWithTypes() const override;
-    bool isOnlyWindowFunction() const override;
-
     AggregateFunctionStateVariant getStateVariant() const override;
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override;
     void mergeStateFromDifferentVariant(
@@ -226,7 +214,7 @@ private:
     /// Shared implementation of the batch add overrides. Hoists the per-element column pointers, so
     /// no per-row unwrapping work remains in the row loop.
     /// `get_place` returns the aggregation state for a row, or nullptr when the row has none.
-    template <bool has_null_map, bool all_places_are_non_null, typename GetPlace>
+    template <bool has_null_map, typename GetPlace>
     void addBatchImpl(
         size_t row_begin,
         size_t row_end,

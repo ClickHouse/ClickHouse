@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
 # Tag no-parallel: the failpoints pause every ReplicatedMergeTree mutation on the server
 # Tag no-shared-merge-tree: the failpoints are in the ReplicatedMergeTree mutation task
 # Tag no-replicated-database: additional replicas execute the same mutation
@@ -80,28 +80,6 @@ function wait_for_cleanup_iterations()
     return 1
 }
 
-# Wait until the cleanup thread logs what it did with the temporary directory of the mutation. The server
-# writes `is in use` at most once per 10 seconds per table, so a message about another directory can delay it.
-function wait_for_cleanup_rows()
-{
-    local deadline poll_s
-    deadline=$(mutation_wait_deadline 60)
-    while :
-    do
-        poll_s=$(( deadline - SECONDS ))
-        if (( poll_s <= 0 )); then break; fi
-        sleep 0.3
-        if [[ $(timeout --foreground -k 1 "$poll_s" $CLICKHOUSE_CLIENT \
-            --query "SYSTEM FLUSH LOGS text_log; SELECT count() $CLEANUP_ROWS") -ge 1 ]]
-        then
-            return 0
-        fi
-    done
-
-    echo "The cleanup thread did not log anything about the temporary directory" >&2
-    return 1
-}
-
 # Phase 1: pause the mutation right before its temporary part directory is renamed to the persistent
 # name. The directory is still owned by the mutation task, so the cleanup thread must skip it.
 $CLICKHOUSE_CLIENT --query "
@@ -112,7 +90,7 @@ $CLICKHOUSE_CLIENT --query "
 wait_for_mutation_in_progress "rmt" "0000000000"
 timeout 120 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT rmt_mutate_task_pause_before_rename_part PAUSE"
 
-wait_for_cleanup_rows
+wait_for_cleanup_iterations 2
 
 $CLICKHOUSE_CLIENT --query "
     SELECT

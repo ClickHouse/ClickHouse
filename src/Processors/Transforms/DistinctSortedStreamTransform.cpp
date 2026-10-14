@@ -144,7 +144,7 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
         return {0, 0};
 
     size_t output_rows = 0;
-    const size_t range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, 0, chunk_rows);
+    const size_t range_end = getEqualRangeEndAssumeSorted(sorted_columns, sorted_columns_descr, 0, chunk_rows);
     if (other_columns.empty())
         std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
     else
@@ -168,7 +168,6 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns
     initChunkProcessing(input_columns);
-    key_runs.reset(sorted_columns.size());
 
     /// build filter:
     /// (1) find range with the same values in sorted columns -> [range_begin, range_end)
@@ -182,7 +181,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     while (range_end != chunk_rows)
     {
         // find new range [range_begin, range_end)
-        range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, range_begin, chunk_rows);
+        range_end = getEqualRangeEndAssumeSorted(sorted_columns, sorted_columns_descr, range_begin, chunk_rows);
 
         // update filter for range
         if (other_columns.empty())
@@ -224,12 +223,10 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         chunk.setColumns(std::move(input_columns), output_rows);
     }
 
-    /// Update total output rows and check limits. The size limits are checked before the limit
-    /// hint, matching DistinctTransform: in the `throw` overflow mode `check` throws, and a limit
-    /// hint reached by the same chunk must not turn that exception into a silent stop.
+    /// Update total output rows and check limits
     total_output_rows += output_rows;
-    if (!output_size_limits.check(total_output_rows, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED)
-        || (limit_hint && total_output_rows >= limit_hint))
+    if ((limit_hint && total_output_rows >= limit_hint)
+        || !output_size_limits.check(total_output_rows, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
     {
         stopReading();
     }

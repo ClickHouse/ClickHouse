@@ -1,4 +1,3 @@
-#include <Interpreters/applyColumnsTransformer.h>
 #include <Poco/String.h>
 
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -309,7 +308,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (asterisk->transformers)
             {
                 for (const auto & transformer : asterisk->transformers->children)
-                    applyColumnsTransformer(transformer, columns);
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
         }
         else if (auto * asterisk_column_list = child->as<ASTColumnsListMatcher>())
@@ -320,7 +319,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (asterisk_column_list->transformers)
             {
                 for (const auto & transformer : asterisk_column_list->transformers->children)
-                    applyColumnsTransformer(transformer, columns);
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
         }
         else if (const auto * asterisk_regexp_pattern = child->as<ASTColumnsRegexpMatcher>())
@@ -334,20 +333,12 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             bool first_table = true;
             for (const auto & table : tables_with_columns)
             {
-                /// `alias_columns` and `materialized_columns` are filled only when
-                /// `asterisk_include_alias_columns` / `asterisk_include_materialized_columns` are
-                /// enabled, the same way as for `*`. Without them a `COLUMNS` matcher cannot see,
-                /// for example, the per-metric `ALIAS` columns of the `bucketed` schema of
-                /// `system.metric_log`.
-                for (const auto * cols : {&table.columns, &table.alias_columns, &table.materialized_columns})
+                for (const auto & column : table.columns)
                 {
-                    for (const auto & column : *cols)
+                    if (re2::RE2::PartialMatch(column.name, regexp)
+                        && (first_table || !data.join_using_columns.contains(column.name)))
                     {
-                        if (re2::RE2::PartialMatch(column.name, regexp)
-                            && (first_table || !data.join_using_columns.contains(column.name)))
-                        {
-                            addIdentifier(columns, table.table, column.name);
-                        }
+                        addIdentifier(columns, table.table, column.name);
                     }
                 }
                 first_table = false;
@@ -356,7 +347,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (asterisk_regexp_pattern->transformers)
             {
                 for (const auto & transformer : asterisk_regexp_pattern->transformers->children)
-                    applyColumnsTransformer(transformer, columns);
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
@@ -367,11 +358,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             {
                 if (ident_db_and_name.satisfies(table.table, true))
                 {
-                    for (const auto * cols : {&table.columns, &table.alias_columns, &table.materialized_columns})
-                    {
-                        for (const auto & column : *cols)
-                            addIdentifier(columns, table.table, column.name);
-                    }
+                    for (const auto & column : table.columns)
+                        addIdentifier(columns, table.table, column.name);
                     break;
                 }
             }
@@ -379,7 +367,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (qualified_asterisk->transformers)
             {
                 for (const auto & transformer : qualified_asterisk->transformers->children)
-                    applyColumnsTransformer(transformer, columns);
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
         }
         else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
@@ -396,13 +384,10 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             {
                 if (ident_db_and_name.satisfies(table.table, true))
                 {
-                    for (const auto * cols : {&table.columns, &table.alias_columns, &table.materialized_columns})
+                    for (const auto & column : table.columns)
                     {
-                        for (const auto & column : *cols)
-                        {
-                            if (re2::RE2::PartialMatch(column.name, regexp))
-                                addIdentifier(columns, table.table, column.name);
-                        }
+                        if (re2::RE2::PartialMatch(column.name, regexp))
+                            addIdentifier(columns, table.table, column.name);
                     }
                     break;
                 }
@@ -411,7 +396,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (qualified_columns_regexp_matcher->transformers)
             {
                 for (const auto & transformer : qualified_columns_regexp_matcher->transformers->children)
-                    applyColumnsTransformer(transformer, columns);
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
         }
         else

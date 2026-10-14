@@ -1,0 +1,124 @@
+---
+noindex: true
+title: "Configure o Hydra (Compute-Compute Separation)"
+sidebarTitle: "Configure o Hydra (separação de compute)"
+description: "Este guia orienta você no provisionamento de instâncias filhas do Hydra para um cluster ClickHouse Private existente."
+---
+
+Este guia orienta você no provisionamento de instâncias filhas do Hydra para um cluster ClickHouse Private existente. O Hydra permite executar vários grupos de compute independentes em um conjunto de dados compartilhado, cada um com seu próprio dimensionamento e endpoint.
+
+Para uma visão geral conceitual de como o Hydra funciona, consulte [Hydra Compute Separation](/pt-BR/products/clickhouse-private/explanation/hydra-compute-separation).
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Um cluster ClickHouse Private em execução para servir como **pai** (este guia usa `default-xx-01`)
+
+* O ClickHouse Operator instalado com a flag de recurso Hydra habilitada:
+
+  ```text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  Se o operator tiver sido instalado sem essa flag, atualize-o com a flag definida como `true` antes de prosseguir.
+
+* Acesso ao registro do Helm e ao Chart do Helm `onprem-clickhouse-cluster`
+
+<Steps>
+  <Step>
+    ## 1. Identifique o Cluster Pai
+
+    Antes de criar um filho, anote o **nome** e o **espaço de nomes** do cluster pai. O pai precisa estar em execução — os filhos não podem ser provisionados se o pai estiver parado, encerrado ou ocioso.
+
+    Para um cluster chamado `default-xx-01`, os valores padrão são:
+
+    | Propriedade     | Valor              |
+    | --------------- | ------------------ |
+    | Nome do cluster | `default-xx-01`    |
+    | Espaço de nomes | `ns-default-xx-01` |
+  </Step>
+
+  <Step>
+    ## 2. Crie uma Instância Filha
+
+    <Warning>
+      Cada instância de ClickHouseCluster deve ficar em seu próprio espaço de nomes. Não implante uma instância filha no mesmo espaço de nomes do pai. O Operator pressupõe um ClickHouseCluster por espaço de nomes, e violar isso causa degradação dos clusters.
+    </Warning>
+
+    Implante um novo `ClickHouseCluster` usando o mesmo Chart do Helm que você usou para o pai, adicionando os valores de `parentCluster` para vinculá-lo:
+
+    ```bash
+    helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-02 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    A instância filha irá:
+
+    * Compartilhar o conjunto do ClickHouse Keeper do pai (não é necessária uma implantação separada do Keeper)
+    * Compartilhar o prefixo de dados no S3 do pai
+    * Executar seus próprios pods do ClickHouse server com alocações de recursos independentes
+    * Expor seu próprio endpoint de Service do Kubernetes
+  </Step>
+
+  <Step>
+    ## 3. Crie um Filho Somente Leitura (Opcional)
+
+    Para criar um filho que possa consultar dados, mas não gravá-los, adicione a flag `isReadonly`:
+
+    ```bash
+    helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-03 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json='isReadonly=true' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    Filhos somente leitura são adequados para cargas de trabalho de relatórios, dashboards ou analytics em que o acesso de gravação é desnecessário.
+  </Step>
+
+  <Step>
+    ## 4. Verifique a Instância Filha
+
+    Depois que o filho for implantado, verifique se ele está em execução:
+
+    ```bash
+    kubectl get clickhousecluster -n ns-default-xx-02
+    ```
+
+    Conecte-se pelo endpoint de serviço da própria instância filha:
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    Execute uma consulta para confirmar o acesso aos dados:
+
+    ```sql
+    SELECT count() FROM system.tables;
+    ```
+  </Step>
+</Steps>
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+1. **A instância pai deve estar em execução.** Você não pode provisionar instâncias filhas se a instância pai estiver parada, encerrada ou em modo inativo. A instância pai precisa estar em execução, pois as filhas dependem do ensemble do Keeper da instância pai e da configuração de dados compartilhados.
+
+2. **Exclua as instâncias filhas antes da instância pai.** Você deve excluir todas as instâncias filhas antes de excluir o cluster pai. A tentativa de excluir uma instância pai com filhas ativas falhará.
+
+3. **As redefinições de senha se aplicam à instância pai.** Não é possível redefinir senhas em instâncias filhas do Hydra. Para redefinir a senha de uma instância filha, faça a redefinição na instância pai. Consulte [how-to/reset-passwords.md](/pt-BR/products/clickhouse-private/guides/reset-user-passwords).

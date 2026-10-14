@@ -20,7 +20,6 @@ namespace PostponeReasons
     inline constexpr auto EXCEED_MAX_PART_SIZE = "Exceed max source part size";
     inline constexpr auto HIT_MUTATION_BACKOFF = "Hit mutation backoff policy";
     inline constexpr auto VERSION_NOT_VISIBLE = "Not visible by transaction version";
-    inline constexpr auto PENDING_LIGHTWEIGHT_UPDATE = "Lightweight update with a lower block number is not committed yet";
 
     /// Special key in parts_postpone_reasons map indicating the reason applies to all parts
     inline constexpr auto ALL_PARTS_KEY = "all_parts";
@@ -32,10 +31,6 @@ struct MergeTreeMutationStatus
     String id = "";
     String command = "";
     time_t create_time = 0;
-    /// Time when the mutation was completed. Zero if the mutation is not done yet or if its
-    /// completion time is unknown (see the `finish_time` column description in
-    /// `StorageSystemMutations`). For replicated tables the value is per-replica.
-    time_t finish_time = 0;
     std::map<String, Int64> block_numbers{};
 
     /// Parts that are currently being mutated.

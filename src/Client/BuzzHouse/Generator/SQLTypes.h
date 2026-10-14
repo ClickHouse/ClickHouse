@@ -653,31 +653,40 @@ public:
 template <typename T>
 bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, SQLType * tp)
 {
+    LowCardinality * lc = nullptr;
+
     if (dynamic_cast<const T *>(tp))
     {
         return true;
     }
     if (inside_nullable)
     {
-        if (auto * nl = dynamic_cast<Nullable *>(tp))
+        Nullable * nl = nullptr;
+
+        if ((nl = dynamic_cast<Nullable *>(tp)))
         {
             return hasType<T>(inside_array, inside_nullable, inside_nested, nl->subtype.get());
         }
     }
-    if (auto * lc = dynamic_cast<LowCardinality *>(tp))
+    if ((lc = dynamic_cast<LowCardinality *>(tp)))
     {
         return hasType<T>(inside_array, inside_nullable, inside_nested, lc->subtype.get());
     }
     if (inside_array)
     {
-        if (auto * at = dynamic_cast<ArrayType *>(tp))
+        ArrayType * at = nullptr;
+
+        if ((at = dynamic_cast<ArrayType *>(tp)))
         {
             return hasType<T>(inside_array, inside_nullable, inside_nested, at->subtype.get());
         }
     }
     if (inside_nested)
     {
-        if (auto * ttp = dynamic_cast<TupleType *>(tp))
+        TupleType * ttp = nullptr;
+        NestedType * ntp = nullptr;
+
+        if ((ttp = dynamic_cast<TupleType *>(tp)))
         {
             for (const auto & entry : ttp->subtypes)
             {
@@ -687,7 +696,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
                 }
             }
         }
-        else if (auto * ntp = dynamic_cast<NestedType *>(tp))
+        else if ((ntp = dynamic_cast<NestedType *>(tp)))
         {
             for (const auto & entry : ntp->subtypes)
             {
@@ -702,9 +711,9 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
 }
 
 String appendDecimal(RandomGenerator & rg, bool use_func, uint32_t left, uint32_t right);
-String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth, bool fuzz_floating_points);
-String strBuildJSONElement(RandomGenerator & rg, bool fuzz_floating_points);
-String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth, bool fuzz_floating_points);
+String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
+String strBuildJSONElement(RandomGenerator & rg);
+String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt);
 EnumType * getColumnEnumType(SQLType * tp);
 

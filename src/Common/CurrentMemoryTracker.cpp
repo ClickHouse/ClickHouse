@@ -12,7 +12,7 @@
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-constinit FiberLocal<bool, FiberLocalSlot::MEMORY_TRACKER_ALWAYS_THROW_ON_ALLOCATION> memory_tracker_always_throw_logical_error_on_allocation;
+thread_local bool memory_tracker_always_throw_logical_error_on_allocation = false;
 #endif
 
 namespace
@@ -60,9 +60,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
 
     if (auto * memory_tracker = getMemoryTracker())
     {
-        /// Optimization (needed for ARM only) as current_thread is a FiberLocal
-        DB::ThreadStatus * cur_thread = current_thread;
-        if (!cur_thread)
+        if (!current_thread)
         {
             /// total_memory_tracker only, ignore untracked_memory
             return memory_tracker->allocImpl(size, enforce_memory_limit);
@@ -74,23 +72,23 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
         /// Global memory tracker by 5 MB and the User memory tracker by 3 MB. So we can't group
         /// these two calls into one memory_tracker->allocImpl call.
         VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
-        if (blocker_level != cur_thread->untracked_memory_blocker_level)
+        if (blocker_level != current_thread->untracked_memory_blocker_level)
         {
-            cur_thread->flushUntrackedMemory();
+            current_thread->flushUntrackedMemory();
         }
-        cur_thread->untracked_memory_blocker_level = blocker_level;
+        current_thread->untracked_memory_blocker_level = blocker_level;
 
-        DB::PerCPUMemoryThreadState previous_per_cpu = cur_thread->per_cpu_untracked_memory;
-        Int64 new_untracked_memory = cur_thread->untracked_memory.add(size);
+        DB::PerCPUMemoryThreadState previous_per_cpu = current_thread->per_cpu_untracked_memory;
+        Int64 new_untracked_memory = current_thread->untracked_memory.add(size);
         Int64 previous_untracked_memory = new_untracked_memory - size;
 
         /// Flush when the per-thread cap is hit, or when the per-CPU budget cannot cover the deferral.
-        if (new_untracked_memory > cur_thread->untracked_memory_limit
-            || !DB::per_cpu_memory.sync(new_untracked_memory, cur_thread->per_cpu_untracked_memory))
+        if (new_untracked_memory > current_thread->untracked_memory_limit
+            || !DB::per_cpu_memory.sync(new_untracked_memory, current_thread->per_cpu_untracked_memory))
         {
-            DB::per_cpu_memory.release(cur_thread->per_cpu_untracked_memory);
+            DB::per_cpu_memory.release(current_thread->per_cpu_untracked_memory);
 
-            cur_thread->untracked_memory.store(0);
+            current_thread->untracked_memory.store(0);
 
             try
             {
@@ -102,13 +100,13 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
             }
             catch (...)
             {
-                cur_thread->untracked_memory.add(previous_untracked_memory);
-                DB::per_cpu_memory.rollback(cur_thread->per_cpu_untracked_memory, previous_per_cpu);
+                current_thread->untracked_memory.add(previous_untracked_memory);
+                DB::per_cpu_memory.rollback(current_thread->per_cpu_untracked_memory, previous_per_cpu);
                 throw;
             }
         }
 
-        return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));
+        return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
 
     return AllocationTrace(0);
@@ -153,29 +151,27 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
 {
     if (auto * memory_tracker = getMemoryTracker())
     {
-        /// Optimization (needed for ARM only) as current_thread is a FiberLocal
-        DB::ThreadStatus * cur_thread = current_thread;
-        if (!cur_thread)
+        if (!current_thread)
         {
             return memory_tracker->free(size);
         }
 
         VariableContext blocker_level = MemoryTrackerBlockerInThread::getLevel();
-        if (blocker_level != cur_thread->untracked_memory_blocker_level)
+        if (blocker_level != current_thread->untracked_memory_blocker_level)
         {
-            cur_thread->flushUntrackedMemory();
+            current_thread->flushUntrackedMemory();
         }
-        cur_thread->untracked_memory_blocker_level = blocker_level;
+        current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 new_untracked_memory = cur_thread->untracked_memory.add(-size);
+        Int64 new_untracked_memory = current_thread->untracked_memory.add(-size);
 
         /// Flush when the per-thread cap is hit, or when the per-CPU budget cannot cover the deferral.
-        if (new_untracked_memory < -cur_thread->untracked_memory_limit
-            || !DB::per_cpu_memory.sync(new_untracked_memory, cur_thread->per_cpu_untracked_memory))
+        if (new_untracked_memory < -current_thread->untracked_memory_limit
+            || !DB::per_cpu_memory.sync(new_untracked_memory, current_thread->per_cpu_untracked_memory))
         {
-            DB::per_cpu_memory.release(cur_thread->per_cpu_untracked_memory);
+            DB::per_cpu_memory.release(current_thread->per_cpu_untracked_memory);
 
-            cur_thread->untracked_memory.store(0);
+            current_thread->untracked_memory.store(0);
             /// We cannot return the AllocationTrace from here, since its sample_probability was calculated on the (batched) flushed size, which may not match the original allocation size.
             if (new_untracked_memory > 0)
                 std::ignore = memory_tracker->allocImpl(new_untracked_memory, /*enforce_memory_limit=*/ false, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
@@ -183,7 +179,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
                 std::ignore = memory_tracker->free(-new_untracked_memory, /*_sample_probability=*/ 0.0);
         }
 
-        return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));
+        return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
 
     return AllocationTrace(0);

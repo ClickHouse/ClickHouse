@@ -1,5 +1,4 @@
 #include <Compression/CachedCompressedReadBuffer.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>
@@ -46,7 +45,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         initInput();
         file_in->seek(file_pos, SEEK_SET);
 
-        auto cell = std::allocate_shared<UncompressedCacheCell>(ServerOwnedCacheEntryAllocator<UncompressedCacheCell>());
+        auto cell = std::make_shared<UncompressedCacheCell>();
 
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
@@ -55,10 +54,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         if (cell->compressed_size)
         {
             cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
-            {
-                MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-                cell->data.resize(size_decompressed + cell->additional_bytes);
-            }
+            cell->data.resize(size_decompressed + cell->additional_bytes);
             decompressTo(cell->data.data(), size_decompressed, size_compressed_without_checksum);
         }
 

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine
+# Tags: atomic-database, memory-engine, no-parallel
+
+# Uses `SYSTEM ... ALL BACKGROUND` commands, which affect all refreshable views
+# on the server, so it cannot run concurrently with other tests that create RMV
+# https://github.com/ClickHouse/ClickHouse/issues/102707
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,7 +42,7 @@ wait_running_with_progress() {
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(2) settings max_block_size=1;
+    insert into src select * from numbers(5) settings max_block_size=1;
     create materialized view p refresh every 1 year (x Int64) engine Memory empty as
         select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system refresh p;"
@@ -191,15 +195,7 @@ $CLICKHOUSE_CLIENT -q "
 # background activity. Here those tables are two refreshable views; the same code
 # path covers the streaming engines (Kafka, S3Queue, RabbitMQ, NATS) too.
 # The views use a yearly schedule so they only refresh when explicitly told to.
-# The wildcard skips tables the caller may not control (see Test 10), so it runs as a user
-# granted only on this database, to leave the views of concurrent tests alone.
 # ---------------------------------------------------------------------------
-
-db_user="user_04319_db_$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT -q "
-    create user $db_user;
-    grant system views on $CLICKHOUSE_DATABASE.* to $db_user;"
-DB_USER_CLIENT="$CLICKHOUSE_CLIENT --user $db_user"
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
@@ -210,44 +206,44 @@ $CLICKHOUSE_CLIENT -q "
         as select x from src;"
 
 # Test 5: SYSTEM REFRESH ALL BACKGROUND refreshes every view.
-$DB_USER_CLIENT -q "system refresh all background;"
 $CLICKHOUSE_CLIENT -q "
+    system refresh all background;
     system wait view va;
     system wait view vb;
     select '<5: refresh all background refreshes all views>',
         (select count() from va), (select count() from vb);"
 
 # Test 6: SYSTEM STOP ALL BACKGROUND disables every view.
-$DB_USER_CLIENT -q "system stop all background;"
+$CLICKHOUSE_CLIENT -q "system stop all background;"
 wait_status va Disabled
 wait_status vb Disabled
 $CLICKHOUSE_CLIENT -q "
     select '<6: stop all background disables all>',
         countIf(status = 'Disabled'), count()
-    from refreshes where view in ('va', 'vb');"
-$DB_USER_CLIENT -q "system start all background;"
+    from refreshes where view in ('va', 'vb');
+    system start all background;"
 while [ "`$CLICKHOUSE_CLIENT -q "select countIf(status = 'Disabled') from refreshes where view in ('va', 'vb') -- $LINENO" | xargs`" != '0' ]
 do
     sleep 0.1
 done
 
 # Test 7: SYSTEM PAUSE ALL BACKGROUND disables every view.
-$DB_USER_CLIENT -q "system pause all background;"
+$CLICKHOUSE_CLIENT -q "system pause all background;"
 wait_status va Disabled
 wait_status vb Disabled
 $CLICKHOUSE_CLIENT -q "
     select '<7: pause all background disables all>',
         countIf(status = 'Disabled'), count()
-    from refreshes where view in ('va', 'vb');"
-$DB_USER_CLIENT -q "system start all background;"
+    from refreshes where view in ('va', 'vb');
+    system start all background;"
 while [ "`$CLICKHOUSE_CLIENT -q "select countIf(status = 'Disabled') from refreshes where view in ('va', 'vb') -- $LINENO" | xargs`" != '0' ]
 do
     sleep 0.1
 done
 
 # Test 8: SYSTEM CANCEL ALL BACKGROUND interrupts current activity without disabling.
-$DB_USER_CLIENT -q "system cancel all background;"
 $CLICKHOUSE_CLIENT -q "
+    system cancel all background;
     select '<8: cancel all background keeps views enabled>',
         countIf(status != 'Disabled'), count()
     from refreshes where view in ('va', 'vb');
@@ -255,8 +251,7 @@ $CLICKHOUSE_CLIENT -q "
     system stop view vb;
     drop table va;
     drop table vb;
-    drop table src;
-    drop user $db_user;"
+    drop table src;"
 
 # ---------------------------------------------------------------------------
 # Test 9: Access control. The engine-agnostic commands require the same
