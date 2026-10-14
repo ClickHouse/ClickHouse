@@ -8,9 +8,9 @@ from helpers.test_tools import assert_logs_contain_with_retry
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", user_configs=["configs/empty_settings.xml"])
-node_env = cluster.add_instance(
-    "node_env",
-    main_configs=["configs/env_masking_rule.xml"],
+node_properties = cluster.add_instance(
+    "node_properties",
+    main_configs=["configs/property_masking_rule.xml"],
     env_variables={"MASK_PATTERN": "env_secret_value"},
 )
 
@@ -64,15 +64,16 @@ def test_reload_query_masking_rules():
     node.rotate_logs()
 
 
-def test_reload_keeps_system_env_reference():
-    # The rule reads its pattern through `${system.env.MASK_PATTERN}`; masking must hold before and after a reload.
-    node_env.query("SELECT 'env_secret_value'")
-    assert_logs_contain_with_retry(node_env, r"SELECT '\[env-hidden\]'")
-    assert not node_env.contains_in_log("SELECT 'env_secret_value'")
-    node_env.rotate_logs()
+def test_reload_keeps_property_references():
+    # The rule pattern `${application.name}_${system.env.MASK_PATTERN}` resolves to `clickhouse_env_secret_value`
+    # (the server is started as `clickhouse server`); masking must hold before and after a reload.
+    node_properties.query("SELECT 'clickhouse_env_secret_value'")
+    assert_logs_contain_with_retry(node_properties, r"SELECT '\[property-hidden\]'")
+    assert not node_properties.contains_in_log("SELECT 'clickhouse_env_secret_value'")
+    node_properties.rotate_logs()
 
-    node_env.query("SYSTEM RELOAD CONFIG")
+    node_properties.query("SYSTEM RELOAD CONFIG")
 
-    node_env.query("SELECT 'env_secret_value'")
-    assert_logs_contain_with_retry(node_env, r"SELECT '\[env-hidden\]'")
-    assert not node_env.contains_in_log("SELECT 'env_secret_value'")
+    node_properties.query("SELECT 'clickhouse_env_secret_value'")
+    assert_logs_contain_with_retry(node_properties, r"SELECT '\[property-hidden\]'")
+    assert not node_properties.contains_in_log("SELECT 'clickhouse_env_secret_value'")
