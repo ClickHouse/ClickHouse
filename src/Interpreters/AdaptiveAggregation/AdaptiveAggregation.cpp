@@ -386,7 +386,7 @@ size_t Aggregator::spillAdaptiveProducer(
         if (aggregator_tracker)
             aggregator_scope.emplace(aggregator_tracker);
         spillAdaptivePartitions(adaptive);
-        released = staged_bytes - adaptive.stagedBytes();
+        released = staged_bytes;
     }
     if (released >= at_least_bytes)
         return released;
