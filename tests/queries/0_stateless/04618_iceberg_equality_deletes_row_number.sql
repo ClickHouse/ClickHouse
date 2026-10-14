@@ -21,7 +21,7 @@ FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table')
 PREWHERE id % 7 = 3
 GROUP BY file
 ORDER BY file
-SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SETTINGS optimize_move_to_prewhere = 1;
 
 SELECT '--- equality deletes only: exact physical row numbers ---';
 SELECT data, _row_number

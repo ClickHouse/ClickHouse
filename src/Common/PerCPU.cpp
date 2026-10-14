@@ -9,7 +9,7 @@
 #endif
 
 #include <algorithm>
-#include <cstdlib>
+#include <charconv>
 
 namespace PerCPU
 {
@@ -28,53 +28,59 @@ namespace
 /// per-CPU structure sized by that count would route both CPUs to its fallback shard.
 UInt32 readPossibleCPUCount() noexcept
 {
-    char buf[256];
+    /// The list is usually a single range, but a sparse one (`0,2,4,...`) on a large machine is
+    /// still far below this size.
+    char buf[4096];
     int fd = ::open("/sys/devices/system/cpu/possible", O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return 0;
-    ssize_t n = ::read(fd, buf, sizeof(buf) - 1);
+    ssize_t n = ::read(fd, buf, sizeof(buf));
     [[maybe_unused]] int err = ::close(fd);
     chassert(!err);
-    if (n <= 0)
+    /// A completely filled buffer may hold a truncated list, whose last id would be cut short.
+    if (n <= 0 || static_cast<size_t>(n) == sizeof(buf))
         return 0;
-    buf[n] = 0;
 
     /// Highest id in the list plus one. The storage is indexed by the raw id, so a gap in the
     /// list (theoretically possible: `0-3,8-11`) must count towards the size.
-    UInt32 max_id = 0;
     const char * p = buf;
-    bool any = false;
-    while (*p)
+    const char * const buf_end = buf + n;
+    auto parse_id = [&](UInt32 & id)
     {
-        char * end = nullptr;
-        Int64 start = std::strtol(p, &end, 10);
-        if (end == p || start < 0)
+        auto [ptr, ec] = std::from_chars(p, buf_end, id);
+        if (ec != std::errc{} || id >= MAX_POSSIBLE_CPUS)
+            return false;
+        p = ptr;
+        return true;
+    };
+
+    UInt32 max_id = 0;
+    while (true)
+    {
+        UInt32 first = 0;
+        if (!parse_id(first))
             return 0;
-        Int64 last = start;
-        if (*end == '-')
+        UInt32 last = first;
+        if (p != buf_end && *p == '-')
         {
-            p = end + 1;
-            last = std::strtol(p, &end, 10);
-            if (end == p || last < start)
+            ++p;
+            if (!parse_id(last) || last < first)
                 return 0;
         }
-        max_id = std::max(max_id, static_cast<UInt32>(last));
-        any = true;
-        p = end;
-        if (*p == ',')
-            ++p;
-        else if (*p == '\n' || *p == 0)
-            break;
-        else
+        max_id = std::max(max_id, last);
+
+        if (p == buf_end || *p == '\n')
+            return max_id + 1;
+        if (*p != ',')
             return 0;
+        ++p;
     }
-    return any ? max_id + 1 : 0;
 }
 #endif
 
 }
 
-UInt32 getNumCPUs() noexcept
+UInt32 getNumPossibleCPUs() noexcept
 {
     static const UInt32 cached = []
     {
@@ -91,9 +97,14 @@ UInt32 getNumCPUs() noexcept
 #endif
         if (n <= 0)
             return UInt32{1};
-        return std::min(static_cast<UInt32>(n), MAX_CPUS);
+        return static_cast<UInt32>(std::min(n, Int64{MAX_POSSIBLE_CPUS}));
     }();
     return cached;
+}
+
+UInt32 getNumCPUs() noexcept
+{
+    return std::min(getNumPossibleCPUs(), MAX_CPUS);
 }
 
 }

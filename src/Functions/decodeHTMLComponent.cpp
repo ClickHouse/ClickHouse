@@ -3,7 +3,7 @@
 #include <Functions/FunctionStringToString.h>
 #include <Functions/HTMLCharacterReference.h>
 #include <base/find_symbols.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 
