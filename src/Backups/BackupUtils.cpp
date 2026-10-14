@@ -12,6 +12,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Common/typeid_cast.h>
@@ -177,8 +178,10 @@ std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStora
     std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> data_storages;
     auto add_if_keeps_data = [&](std::optional<ViewTarget::Kind> target_kind, const StoragePtr & data_storage)
     {
-        if (dynamic_cast<const MergeTreeData *>(data_storage.get()))
-            data_storages.emplace_back(target_kind, data_storage);
+        /// A lazily loaded table is reached through `StorageTableProxy`, which reports no storage policy, so the loaded
+        /// table is kept. Backing up or restoring the table loads it anyway.
+        if (auto merge_tree = castStorage<MergeTreeData>(data_storage, DeferredTable::Load))
+            data_storages.emplace_back(target_kind, std::move(merge_tree));
     };
 
     if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
