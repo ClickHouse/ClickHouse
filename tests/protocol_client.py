@@ -7,8 +7,9 @@ other protocol handlers too. The output is not expected to match the `.reference
 protocol formats results its own way. What matters is how the server behaves.
 
 Like `clickhouse-client` in a `.sql` test, it runs the queries one by one in one session and stops
-at the first error, unless the query carries a `-- { serverError ... }` or `-- { clientError ... }`
-hint. The `ssh` and `webterminal` protocols run the embedded client inside the server, which parses
+at the first error, unless the query carries a `-- { serverError ... }`, `-- { clientError ... }` or
+`-- { error ... }` hint with the code of the error. It also stops when a query with such a hint
+succeeds. The `ssh` and `webterminal` protocols run the embedded client inside the server, which parses
 the queries and applies the hints itself.
 
 The non-standard Python modules (`grpc`, `pyarrow`) are imported only by the protocols that need them.
@@ -52,7 +53,16 @@ SSH_MAX_QUERY_SIZE = 100 * 1024
 
 
 class QueryError(Exception):
-    pass
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        # The ClickHouse error code, if the protocol reports it; otherwise it is taken from the
+        # `Code: N.` prefix of the message, if there is one.
+        if code is None and (match := CODE_RE.search(message)):
+            code = int(match.group(1))
+        self.code = code
+
+
+CODE_RE = re.compile(r"\bCode: (\d+)\.")
 
 
 def env_port(name, default):
@@ -81,7 +91,9 @@ def parse_key_values(items):
 # semicolons, while string literals, quoted identifiers, comments and heredocs may contain anything.
 # The data of `INSERT ... FORMAT <not Values>` lasts until an empty line, as in `ClientBase`.
 
-HINT_RE = re.compile(r"\{\s*(serverError|clientError)\b")
+HINT_RE = re.compile(r"\{\s*(serverError|clientError|error)\b")
+# The list of the error codes or names of the hint, separated by commas, as `TestHint` parses it.
+ERROR_HINT_RE = re.compile(r"\{\s*(?:serverError|clientError|error)\b([^}]*)\}")
 INSERT_RE = re.compile(r"\s*(EXPLAIN|INSERT)\b", re.IGNORECASE)
 FORMAT_RE = re.compile(r"\bFORMAT\s+(\w+)\b", re.IGNORECASE)
 HEREDOC_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
@@ -216,8 +228,87 @@ def strip_comments(query):
     return "".join(result).strip()
 
 
-def expects_error(query, hint):
-    return bool(HINT_RE.search(hint) or HINT_RE.search(query))
+def iter_comments(query):
+    """Yield the comments of the query, each with whether it precedes the first token."""
+    leading = True
+    pos = 0
+    while pos < len(query):
+        char = query[pos]
+        if char in "'\"`":
+            pos = skip_quoted(query, pos, char)
+            leading = False
+        elif query.startswith("/*", pos):
+            end = skip_block_comment(query, pos)
+            yield query[pos:end], leading
+            pos = end
+        elif is_line_comment(query, pos):
+            end = query.find("\n", pos)
+            end = len(query) if end == -1 else end
+            yield query[pos:end], leading
+            pos = end
+        else:
+            if not char.isspace():
+                leading = False
+            pos += 1
+
+
+def expected_errors(query, hint):
+    """The error codes and names that the hint of the query expects, or `None` if the query is
+    expected to succeed. Like `TestHint`, it takes the hints from the comments in the query and
+    after it, except the leading comments, and the last hint wins.
+
+    The protocols have no client side that could fail by itself, so a `clientError` hint is
+    satisfied by a server error with one of its codes, the same as `serverError`: what the native
+    client rejects before sending, like a syntax error, the server rejects with the same code."""
+    comments = list(iter_comments(query)) + [(comment, False) for comment, _ in iter_comments(hint)]
+    expected = None
+    for comment, leading in comments:
+        if leading:
+            continue
+        if match := ERROR_HINT_RE.search(comment):
+            expected = [item.strip() for item in match.group(1).split(",") if item.strip()]
+    return expected
+
+
+class ErrorCodes:
+    """The codes of the errors by their names, from `system.errors` of the server, loaded on the
+    first use. It is queried over HTTP regardless of the protocol of the test."""
+
+    def __init__(self, host):
+        self.host = host
+        self.codes = None
+
+    def resolve(self, item):
+        if item.isdigit():
+            return int(item)
+        if self.codes is None:
+            connection = http.client.HTTPConnection(
+                self.host, env_port("CLICKHOUSE_PORT_HTTP", 8123), timeout=SOCKET_TIMEOUT
+            )
+            query = "SELECT name, code FROM system.errors SETTINGS system_events_show_zero_values = 1"
+            connection.request("POST", "/", body=query.encode())
+            response = connection.getresponse()
+            data = response.read().decode()
+            connection.close()
+            if response.status != 200:
+                raise QueryError(f"Cannot load the error codes from system.errors: {data}")
+            self.codes = {name: int(code) for name, code in (line.split("\t") for line in data.splitlines())}
+        if item not in self.codes:
+            raise QueryError(f"Unknown error name {item!r} in the test hint")
+        return self.codes[item]
+
+
+def check_error(client, error, expected, error_codes):
+    """Return the description of the mismatch of the error with the hint, or `None` if it matches."""
+    codes = [error_codes.resolve(item) for item in expected]
+    if error.code is None and not client.reports_error_codes:
+        # Nothing to compare with: the protocol did not report the code of this error.
+        return None
+    if error.code is None:
+        return f"Expected an error with the code in {expected}, got an error without a code: {error}"
+    if error.code not in codes:
+        return f"Expected an error with the code in {expected}, got the code {error.code}: {error}"
+    return None
 
 
 RESULT_KEYWORDS = {"SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "EXISTS", "CHECK"}
@@ -276,6 +367,9 @@ class QueryClient:
     # Whether the settings and the query parameters are passed with the protocol rather than with `SET`.
     native_settings = False
     native_params = False
+    # Whether the protocol reports the code of every error, so that it can be checked against the
+    # test hint. An error without a code from such a protocol does not satisfy any hint.
+    reports_error_codes = True
 
     def __init__(self, args):
         self.host = args.host
@@ -345,7 +439,8 @@ class HTTPClient(QueryClient):
             self.connection.close()
             raise
         if response.status != 200:
-            raise QueryError(data.decode("utf-8", errors="replace"))
+            code = response.getheader("X-ClickHouse-Exception-Code")
+            raise QueryError(data.decode("utf-8", errors="replace"), int(code) if code else None)
         return data
 
 
@@ -367,7 +462,7 @@ class MySQLClient(QueryClient):
         self.sequence = 0
         handshake = self.read_packet()
         if handshake[0] == 0xFF:
-            raise QueryError(self.error_message(handshake))
+            raise self.error(handshake)
 
         capabilities = (
             self.CLIENT_LONG_PASSWORD
@@ -392,7 +487,7 @@ class MySQLClient(QueryClient):
             if packet[0] == 0x00:
                 return
             if packet[0] == 0xFF:
-                raise QueryError(self.error_message(packet))
+                raise self.error(packet)
             if packet[0] == 0xFE:
                 # Auth switch request: the response for the empty password is empty again.
                 self.write_packet(auth_response)
@@ -437,12 +532,13 @@ class MySQLClient(QueryClient):
         return int.from_bytes(packet[pos + 1 : pos + 1 + size], "little"), pos + 1 + size
 
     @staticmethod
-    def error_message(packet):
+    def error(packet):
+        # ClickHouse sends its own error code as the MySQL error code.
         code = int.from_bytes(packet[1:3], "little")
         message = packet[3:]
         if message[:1] == b"#":
             message = message[6:]
-        return f"MySQL error {code}: {message.decode('utf-8', errors='replace')}"
+        return QueryError(f"MySQL error {code}: {message.decode('utf-8', errors='replace')}", code)
 
     @staticmethod
     def is_eof(packet):
@@ -455,7 +551,7 @@ class MySQLClient(QueryClient):
         if packet[0] == 0x00:
             return b""
         if packet[0] == 0xFF:
-            raise QueryError(self.error_message(packet))
+            raise self.error(packet)
         column_count, _ = self.read_length(packet, 0)
         for _ in range(column_count):
             self.read_packet()
@@ -465,7 +561,7 @@ class MySQLClient(QueryClient):
         while True:
             packet = self.read_packet()
             if packet[0] == 0xFF:
-                raise QueryError(self.error_message(packet))
+                raise self.error(packet)
             if self.is_eof(packet):
                 return format_rows(rows).encode()
             row = []
@@ -490,6 +586,11 @@ class MySQLClient(QueryClient):
 
 class PostgreSQLClient(QueryClient):
     """A minimal client of the PostgreSQL simple query protocol."""
+
+    # The `ErrorResponse` of a failed query carries a generic SQLSTATE and the text of the exception
+    # without its code (`PostgreSQLHandler::sendErrorResponseOrRethrow`), so the codes are compared
+    # only for the errors that have the `Code: N.` prefix in their text.
+    reports_error_codes = False
 
     def connect(self):
         self.sock = socket.create_connection(
@@ -602,7 +703,9 @@ class GRPCClient(QueryClient):
             timeout=SOCKET_TIMEOUT,
         )
         if result.HasField("exception"):
-            raise QueryError(f"Code: {result.exception.code}. {result.exception.display_text}")
+            raise QueryError(
+                f"Code: {result.exception.code}. {result.exception.display_text}", result.exception.code
+            )
         return result.output
 
     def close(self):
@@ -812,22 +915,25 @@ def run_webterminal(args, text):
     return 0 if terminal.run(setup + queries) else 1
 
 
-def run_queries(client, text):
+def run_queries(client, text, error_codes):
     client.connect()
     try:
         for query in client.setup_queries():
             client.execute(query)
         for query, hint in split_queries(text):
-            expected_error = expects_error(query, hint)
+            expected = expected_errors(query, hint)
             try:
                 output = client.execute(query)
             except QueryError as e:
-                if expected_error:
-                    continue
-                sys.stderr.write(f"Error on query {query!r}:\n{e}\n")
-                return 1
+                if expected is None:
+                    sys.stderr.write(f"Error on query {query!r}:\n{e}\n")
+                    return 1
+                if mismatch := check_error(client, e, expected, error_codes):
+                    sys.stderr.write(f"{mismatch}\nQuery: {query!r}\n")
+                    return 1
+                continue
             sys.stdout.buffer.write(output)
-            if expected_error:
+            if expected is not None:
                 sys.stderr.write(f"Expected an error, but the query succeeded: {query!r}\n")
                 return 1
         return 0
@@ -868,7 +974,7 @@ def main():
             "grpc": lambda: GRPCClient(args),
             "arrowflight": lambda: ArrowFlightClient(args),
         }[args.protocol]()
-        return run_queries(client, text)
+        return run_queries(client, text, ErrorCodes(args.host))
     except QueryError as e:
         sys.stderr.write(f"{e}\n")
         return 1
