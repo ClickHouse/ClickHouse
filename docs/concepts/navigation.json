@@ -83,13 +83,11 @@
         {
           "group": "Operations",
           "pages": [
-            "concepts/features/operations/background-queries",
             {
               "group": "Insert",
               "pages": [
                 "concepts/features/operations/insert/inserting-data",
                 "concepts/features/operations/insert/asyncinserts",
-                "concepts/features/operations/insert/async-insert-select",
                 "concepts/features/operations/insert/bulkinserts",
                 "concepts/features/operations/insert/deduplication",
                 "concepts/features/operations/insert/deduplicating-inserts-on-retries",
@@ -220,26 +218,24 @@
               "pages": [
                 "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
-                "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
                 "concepts/features/interfaces/adbc",
+                "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
                 { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",
-                "concepts/features/interfaces/prometheus-metrics",
                 "concepts/features/interfaces/ssh",
                 "concepts/features/interfaces/grpc",
                 "concepts/features/interfaces/arrowflight"
               ]
             },
+            "concepts/features/interfaces/cpp",
             "concepts/features/interfaces/schema-inference",
             "concepts/features/interfaces/documentation-search",
             "concepts/features/interfaces/web-sql",
-            "concepts/features/interfaces/sql-console",
             "concepts/features/interfaces/web-ui-color-coding",
             "concepts/features/interfaces/web-ui-pinned-columns",
-            "concepts/features/interfaces/web-ui-notebook",
             "concepts/features/interfaces/web-ui-result-shaping",
             "concepts/features/interfaces/web-terminal",
             {
