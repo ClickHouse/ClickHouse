@@ -143,7 +143,12 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 if (!new_data)
                     new_data = scope;
                 if (ast_with_elem)
-                    new_data->subqueries[ast_with_elem->name] = {ast_with_elem->subquery, ast.recursive_with};
+                {
+                    /// A copy does not carry MATERIALIZED, so marking the copy of a materialized element would bypass
+                    /// the refusal of a materialized recursive CTE: such a copy is left unmarked.
+                    bool recursive_with = ast.recursive_with && !ast_with_elem->is_materialized;
+                    new_data->subqueries[ast_with_elem->name] = {ast_with_elem->subquery, recursive_with};
+                }
                 else
                 {
                     new_data->literals[child_alias] = child;

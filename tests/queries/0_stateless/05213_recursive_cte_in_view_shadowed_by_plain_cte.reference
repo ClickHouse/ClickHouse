@@ -23,6 +23,7 @@ mv_shadowed	[]
 v_shadowed	[]
 boundary: an EXCEPT body is refused live and when stored
 boundary: a UNION DISTINCT body is refused live and when stored
+boundary: a MATERIALIZED recursive CTE is refused live and when stored
 boundary: a recursive CTE as the right argument of IN
 [1,2,3]
 boundary: IN reached from inside the shadowing CTE body

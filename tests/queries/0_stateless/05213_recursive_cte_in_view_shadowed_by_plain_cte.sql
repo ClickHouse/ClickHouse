@@ -143,6 +143,15 @@ CREATE VIEW v_distinct AS
 WITH RECURSIVE src AS (SELECT 1 AS id UNION DISTINCT SELECT id + 1 FROM src WHERE id < 3)
 SELECT id FROM (WITH src AS (SELECT id * 10 AS id FROM src) SELECT id FROM src); -- { serverError UNSUPPORTED_METHOD }
 
+SELECT 'boundary: a MATERIALIZED recursive CTE is refused live and when stored';
+WITH RECURSIVE src AS MATERIALIZED (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3) SELECT id FROM src; -- { serverError UNSUPPORTED_METHOD }
+CREATE VIEW v_materialized AS
+WITH RECURSIVE src AS MATERIALIZED (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3)
+SELECT id FROM src; -- { serverError UNSUPPORTED_METHOD }
+CREATE VIEW v_materialized_shadowed AS
+WITH RECURSIVE src AS MATERIALIZED (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3)
+SELECT id FROM (WITH src AS (SELECT id * 10 AS id FROM src) SELECT id FROM src); -- { serverError UNSUPPORTED_METHOD }
+
 -- A recursive CTE cannot be the right argument of IN in a live query: expression resolution drops the CTE
 -- marking before the union is resolved, so the self-reference falls through to the catalog. A stored
 -- definition returns rows there because the copy's self-reference reaches the list it was copied from. This

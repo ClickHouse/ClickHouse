@@ -20,7 +20,7 @@ class ApplyWithSubqueryVisitor
 public:
     struct Data
     {
-        /// A CTE body together with whether its list was `WITH RECURSIVE`, kept in one entry so that
+        /// A CTE body together with whether its copies are marked `recursive_with`, kept in one entry so that
         /// re-declaring the name in a nested list replaces both at once.
         struct Subquery
         {
