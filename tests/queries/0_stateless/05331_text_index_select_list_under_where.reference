@@ -7,6 +7,15 @@ tq where, order by s	3	0
 tq where, order by s	1	0
 tq unmerged expressions	1
 tq where, renamed column	0
+tq where, order by id	1	0
+tq where, order by id	2	1
+tq where, order by id	3	0
+tq where, tuple	[(1,0),(2,1),(3,0)]
+tp	1
+tp where, order by id	1	0
+tp where, order by id	2	1
+tp where, order by id	3	0
+tp where, unmerged expressions	1
 tg	1
 tg where	1
 te	1
