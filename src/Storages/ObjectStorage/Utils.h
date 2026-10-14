@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <functional>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -50,6 +51,16 @@ public:
             return false;
         reserved.push_back(path);
         return true;
+    }
+
+    /// Releases a key that this insert has reserved but is not going to write after all.
+    void release(const std::string & path)
+    {
+        auto it = std::ranges::find(reserved, path);
+        if (it == reserved.end())
+            return;
+        reserved.erase(it);
+        configuration->releasePathReservedForWrite(path);
     }
 
 private:

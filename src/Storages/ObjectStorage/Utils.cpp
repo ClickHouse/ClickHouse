@@ -70,9 +70,19 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     /// the object appears only when that insert is committed, and until then the reservation is the only thing
     /// that tells the two inserts apart - without it both would write the same key, and one would lose its rows.
     /// A key committed by a previous insert into this table is taken even if the object storage does not report it yet.
-    const bool object_exists = configuration.isPathCommittedByInsert(key) || object_storage.exists(StoredObject(key));
-    if (!object_exists && reservations.tryReserveStartingPath(key))
-        return std::nullopt;
+    ///
+    /// The key is reserved before the existence is checked: otherwise another insert could reserve it, write and commit
+    /// its object, and release the reservation between the check and the reservation of this insert, which would then
+    /// overwrite that object. A concurrent insert commits the key before it releases the reservation, so once this insert
+    /// holds the reservation, the check sees the object of any insert that has been writing the key.
+    bool object_exists = false;
+    if (reservations.tryReserveStartingPath(key))
+    {
+        object_exists = configuration.isPathCommittedByInsert(key) || object_storage.exists(StoredObject(key));
+        if (!object_exists)
+            return std::nullopt;
+        reservations.release(key);
+    }
 
     if (settings.create_new_file_on_insert)
     {
