@@ -238,6 +238,10 @@ public:
 
     void walkBranchAncestors(Int64 now_ms, Int64 head_id, Int32 min_keep, Int64 max_age_ms, std::set<Int64> & retained) const
     {
+        /// A branch head is always retained, whatever `min_keep` and `max_age_ms` are.
+        if (hasSnapshot(head_id))
+            retained.insert(head_id);
+
         Int64 walk_id = head_id;
         Int32 count = 0;
         while (hasSnapshot(walk_id))

@@ -11,6 +11,8 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -55,9 +57,6 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -128,6 +127,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
@@ -233,14 +233,9 @@ size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnes
 
     if (create.is_time_series_table)
     {
-        for (auto target_kind : StorageTimeSeries::getTargetKinds())
-        {
-            /// The recent samples target exists only if the create query has a `RECENT SAMPLES` clause.
-            if ((target_kind == ViewTarget::RecentSamples) && (!create.targets || !create.targets->tryGetTarget(target_kind)))
-                continue;
-            if (!create.hasTargetTableID(target_kind))
-                ++result;
-        }
+        /// The query must be already normalized here (see getTablePropertiesAndNormalizeCreateQuery).
+        chassert(hasExplicitTimeSeriesVersion(create));
+        result += countTimeSeriesInnerTables(create);
     }
 
     return result;
@@ -1825,7 +1820,9 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
+    auto ref_dependencies = getDependenciesFromCreateQuery(
+        context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true,
+        /*validate_current_database*/true, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
@@ -2094,7 +2091,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        /// A definition replayed from metadata or restored from a backup was bounded when it was created.
+        /// A full `ATTACH ... AS SELECT` is user input, so it is bounded as well, and so is a fresh `CREATE`
+        /// executed on a follower replica of a `Replicated` database: it carries the settings of the initial
+        /// query, and no earlier pass on this replica has expanded it.
+        const bool is_fresh_secondary_create = mode == LoadingStrictnessLevel::SECONDARY_CREATE && is_secondary_query
+            && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
+        ApplyWithSubqueryVisitor::visit(
+            *create.select,
+            isFreshTableDefinition(mode, create.attach_short_syntax) || is_fresh_secondary_create
+                ? getContext()->getSettingsRef()[Setting::max_expanded_ast_elements].value
+                : 0);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -3773,8 +3780,8 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
     /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
-    if (create.is_time_series_table && !hasExplicitTimeSeriesSettingVersion(create))
-        setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
+    if (create.is_time_series_table && !hasExplicitTimeSeriesVersion(create))
+        setTimeSeriesVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);
