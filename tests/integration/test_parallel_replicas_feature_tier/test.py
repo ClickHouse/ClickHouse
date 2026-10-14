@@ -54,6 +54,7 @@ def test_insert_select(start_cluster):
     create_table("t_source", rows)
     create_table("t_target", 0)
 
+    query_id = str(uuid.uuid4())
     node1.query(
         "INSERT INTO t_target SELECT * FROM t_source",
         settings={
@@ -63,12 +64,22 @@ def test_insert_select(start_cluster):
             "max_parallel_replicas": 3,
             "deduplicate_insert_select": "disable",
         },
+        query_id=query_id,
     )
     node1.query("SYSTEM SYNC REPLICA t_target LIGHTWEIGHT")
     assert (
         node1.query("SELECT count(), uniqExact(key) FROM t_target")
         == f"{rows}\t{rows}\n"
     )
+
+    for node in nodes:
+        node.query("SYSTEM FLUSH LOGS query_log")
+    followers = node1.query(
+        f"SELECT count() FROM clusterAllReplicas({CLUSTER}, system.query_log) "
+        f"WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert' AND NOT is_initial_query"
+    )
+    # Without it a local fallback of the INSERT would pass the row count above.
+    assert int(followers) == 2
 
 
 def test_select(start_cluster):
