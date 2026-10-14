@@ -317,8 +317,16 @@ size_t PackedFilesWriter::getSizeOfHeader()
 
 void PackedFilesWriter::spillIfNeeded()
 {
-    if (spill_settings.max_bytes_in_memory && state->bytes_in_memory > spill_settings.max_bytes_in_memory)
-        spill();
+    if (!spill_settings.max_bytes_in_memory || state->bytes_in_memory <= spill_settings.max_bytes_in_memory)
+        return;
+
+    /// The last chunks of the files being written can take more than the limit (e.g. a wide part with many columns).
+    /// Then the limit cannot be reached, so wait until there is at least half of it to move out of memory at once:
+    /// otherwise every new chunk would be moved to a new temporary file.
+    if (state->bytes_in_memory - state->non_spillable_bytes_in_memory < spill_settings.max_bytes_in_memory / 2)
+        return;
+
+    spill();
 }
 
 void PackedFilesWriter::spill()
@@ -390,13 +398,20 @@ PackedFilesWriter::Data::~Data()
         bytes += chunk.size();
 
     state->bytes_in_memory -= bytes;
+    if (!is_finalized && !chunks.empty())
+        state->non_spillable_bytes_in_memory -= chunks.back().size();
     CurrentMetrics::sub(CurrentMetrics::PackedPartsBufferedBytes, bytes);
 }
 
 void PackedFilesWriter::Data::addChunk()
 {
+    /// The previous last chunk is filled entirely now, so it can be moved out of memory.
+    if (!chunks.empty())
+        state->non_spillable_bytes_in_memory -= chunks.back().size();
+
     chunks.emplace_back(next_chunk_size);
     state->bytes_in_memory += next_chunk_size;
+    state->non_spillable_bytes_in_memory += next_chunk_size;
     CurrentMetrics::add(CurrentMetrics::PackedPartsBufferedBytes, next_chunk_size);
     next_chunk_size = std::min(next_chunk_size * 2, MAX_CHUNK_SIZE);
 
@@ -461,6 +476,7 @@ void PackedFilesWriter::FakeWriteBufferFromFile::finalizeImpl()
     data->last_chunk_data_size = pos - data->chunks.back().data();
     data->size = count();
     data->is_finalized = true;
+    data->state->non_spillable_bytes_in_memory -= data->chunks.back().size();
 
     /// The last chunk of the file can be moved out of memory only now. The files of a part are often
     /// finalized together right before the archive is written, so do not keep them in memory until then.

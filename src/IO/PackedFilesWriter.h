@@ -179,6 +179,8 @@ private:
     {
         /// Allocated size of the memory chunks of all files.
         size_t bytes_in_memory = 0;
+        /// Allocated size of the last chunks of the files that are still being written: they cannot be moved out of memory.
+        size_t non_spillable_bytes_in_memory = 0;
         /// Reset by the destructor of the writer.
         PackedFilesWriter * writer = nullptr;
     };
