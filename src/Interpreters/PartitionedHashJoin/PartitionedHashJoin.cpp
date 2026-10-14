@@ -91,9 +91,8 @@ PartitionedHashJoin::PartitionedHashJoin(
               any_take_last_row,
               /*reserve_num_=*/0,
               /*instance_id_=*/"",
+              HashJoinBuildLayout::oneBucket(1),
               /*stats_collecting_params_=*/HashJoinStatsCollectingParams{},
-              /*max_threads_=*/1,
-              /*use_parallel_layout_=*/false,
               /*allow_set_maps_=*/false))
     , delegate_mode(!table_join->oneDisjunct())
     , build_rows_hint(build_rows_hint_)
@@ -239,7 +238,7 @@ PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane(size_t worker_i
     return *fresh;
 }
 
-bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, size_t worker_id, bool check_limits)
+bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, JoinBuildContext context)
 {
     /// `num_rows` only matters for the columnless CROSS blocks this algorithm never plans.
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
@@ -251,7 +250,8 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     {
         /// The standard machinery runs the join whole, on one fill stream, so the inner join has one worker.
         ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, source_block.rows());
-        return hash_join->addBlockToJoin(source_block, source_block.rows(), /*worker_id=*/0, check_limits);
+        const auto inner_context = context.joinChecksLimits() ? JoinBuildContext::serial() : JoinBuildContext::serial().callerChecksLimits();
+        return hash_join->addBlockToJoin(source_block, source_block.rows(), inner_context);
     }
 
     /// Key preparation and per-row routing happen before the barrier picks the partition plan.
@@ -316,7 +316,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
                 /*grow_at_max_fill_=*/true);
         clause.insertSingleLaneBlock(fill);
 
-        if (!check_limits)
+        if (!context.joinChecksLimits())
             return true;
         return table_join->sizeLimits().check(
             accumulated_rows.load(std::memory_order_relaxed),
@@ -325,7 +325,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
             ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
 
-    FillLane & lane = getFillLane(worker_id);
+    FillLane & lane = getFillLane(context.getStream());
     if (cached_distinct_keys)
         clause.computeRoutes(fill);
     else
@@ -335,7 +335,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     accumulated_bytes.fetch_add(fill.stored.allocatedBytes() + fill.routes.allocated_bytes(), std::memory_order_relaxed);
     lane.blocks.push_back(std::move(fill));
 
-    if (!check_limits)
+    if (!context.joinChecksLimits())
         return true;
 
     /// The fill-phase analogue of `HashJoin`'s per-block limit check. Rows are the accumulated
@@ -720,9 +720,7 @@ PartitionedHashJoin::cloneNoParallel(const std::shared_ptr<TableJoin> & table_jo
         any_take_last_row,
         /*reserve_num_=*/0,
         /*instance_id_=*/"",
-        HashJoinStatsCollectingParams{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false);
+        HashJoinBuildLayout::oneBucket(1));
 }
 
 void PartitionedHashJoin::setEnableLazyColumnsIndexing(bool value)

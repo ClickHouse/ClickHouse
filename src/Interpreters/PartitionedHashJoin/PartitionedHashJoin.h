@@ -83,10 +83,11 @@ public:
     static bool isSupported(const TableJoin & table_join);
 
     std::string getName() const override { return "PartitionedHashJoin"; }
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::PARTITIONED_HASH); }
     const TableJoin & getTableJoin() const override;
 
-    /// `worker_id` indexes the fill lanes; an id past the lane table takes the thread-keyed lane.
-    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
+    /// The build stream of `context` indexes the fill lanes; a stream past the lane table takes the thread-keyed lane.
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
     JoinResultPtr joinBlock(Block block, size_t lane) override;
