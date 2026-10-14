@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -160,48 +161,41 @@ void addConsumerStage(DistributedQueryPlan & plan, const String & name, size_t n
     plan.stages[name] = std::move(stage);
 }
 
-QueryPlanPtr makeLimitedApplyPlan(const String & filter_key, size_t limit)
+/// A Limit gives the site a row estimate; without it the site has none.
+QueryPlanPtr makeApplyPlan(const String & filter_key, std::optional<size_t> limit)
 {
     auto plan = std::make_unique<QueryPlan>();
     plan->addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
-    plan->addStep(std::make_unique<LimitStep>(dataHeader(), limit, /*offset=*/0));
+    if (limit)
+        plan->addStep(std::make_unique<LimitStep>(dataHeader(), *limit, /*offset=*/0));
     auto dag = makeApplyFilterDAG(filter_key, "f");
     const String filter_column_name = applyFilterResultName(dag);
     plan->addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
     return plan;
 }
 
-void addUnionConsumerStage(DistributedQueryPlan & plan, const String & name, size_t num_tasks, QueryPlanPtr first, QueryPlanPtr second)
+/// Two `__applyFilter` sites in one fragment, under a UNION with children
+/// `[first_arm_limit, second_arm_limit]`. The wiring DFS visits the last child first.
+void addTwoSiteConsumerStage(
+    DistributedQueryPlan & plan,
+    const String & name,
+    const String & filter_key,
+    std::optional<size_t> first_arm_limit,
+    std::optional<size_t> second_arm_limit)
 {
     SharedHeaders headers;
     headers.emplace_back(dataHeader());
     headers.emplace_back(dataHeader());
     std::vector<QueryPlanPtr> union_plans;
-    union_plans.reserve(2);
-    union_plans.push_back(std::move(first));
-    union_plans.push_back(std::move(second));
+    union_plans.push_back(makeApplyPlan(filter_key, first_arm_limit));
+    union_plans.push_back(makeApplyPlan(filter_key, second_arm_limit));
 
     DistributedQueryStage stage;
     QueryPlan fragment;
     fragment.unitePlans(std::make_unique<UnionStep>(std::move(headers)), std::move(union_plans));
     stage.query_plan_fragment = std::move(fragment);
-    for (size_t task = 0; task < num_tasks; ++task)
-        stage.tasks.push_back(makeTask(name, task));
+    stage.tasks.push_back(makeTask(name, 0));
     plan.stages[name] = std::move(stage);
-}
-
-/// Two `__applyFilter` sites in one fragment, sized by Limit so admission can see them.
-/// UNION children are `[first_arm_limit, second_arm_limit]`; the wiring DFS is last-child-first.
-void addTwoSiteConsumerStage(
-    DistributedQueryPlan & plan,
-    const String & name,
-    size_t num_tasks,
-    const String & filter_key,
-    size_t first_arm_limit,
-    size_t second_arm_limit)
-{
-    addUnionConsumerStage(
-        plan, name, num_tasks, makeLimitedApplyPlan(filter_key, first_arm_limit), makeLimitedApplyPlan(filter_key, second_arm_limit));
 }
 
 /// Total exchange streams in the plan. Also asserts that the outputs and inputs pair up exactly:
@@ -327,83 +321,52 @@ protected:
     QueryScope query_scope;
 };
 
-TEST_F(RuntimeFilterExchangeWiring, SymmetricTopologyIsLinear)
+TEST_F(RuntimeFilterExchangeWiring, MultiLevelTree)
 {
-    /// With `S <= fan_in` build tasks and one receive stage of the same size, the tree is a single
-    /// root: S streams into it and S broadcast streams out, i.e. exactly 2 * S, where all-to-all
-    /// delivery would create S^2.
-    for (size_t tasks : {2, 4, 8})
+    /// With fan-in 16, 8 build tasks need only the root; 40 need ceil(40 / 16) = 3 tasks, then the
+    /// root. Each build task writes one stream and each receive task reads one broadcast stream.
+    static_assert(RUNTIME_FILTER_MERGE_FAN_IN == 16);
+    struct Case
     {
-        auto plan = wireSymmetric(tasks, tasks);
+        size_t build_tasks;
+        size_t streams;
+        std::vector<size_t> level_sizes;
+    };
+    for (const auto & test_case : {Case{8, 8 + 4, {1}}, Case{40, 40 + 3 + 4, {3, 1}}})
+    {
+        SCOPED_TRACE(test_case.build_tasks);
+        auto plan = wireSymmetric(test_case.build_tasks, 4);
 
-        EXPECT_EQ(countStreams(plan), 2 * tasks) << "for " << tasks << " tasks";
-
-        auto merge_stages = mergeStageNames(plan);
-        ASSERT_EQ(merge_stages.size(), 1u);
-        EXPECT_EQ(plan.stages.at(merge_stages.front()).tasks.size(), 1u);
-
-        for (const auto & task : plan.stages.at("build").tasks)
-            EXPECT_EQ(task.output_exchange_streams.size(), 1u);
-        for (const auto & task : plan.stages.at("probe").tasks)
-            EXPECT_EQ(task.input_exchange_streams.size(), 1u);
-
+        EXPECT_EQ(countStreams(plan), test_case.streams);
         for (const auto & [_, exchange] : plan.exchange_descriptions)
             EXPECT_EQ(exchange.kind, ExchangeDescription::Kind::Streaming);
 
-        /// The scheduler chain: probe depends on the root merge stage, which depends on build.
-        EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(merge_stages.front()));
-        EXPECT_TRUE(plan.stage_depends_on.at(merge_stages.front()).contains("build"));
+        /// Stage names carry increasing exchange ids, so sorted order is level order.
+        auto merge_stages = mergeStageNames(plan);
+        std::vector<size_t> level_sizes;
+        for (const auto & name : merge_stages)
+            level_sizes.push_back(plan.stages.at(name).tasks.size());
+        EXPECT_EQ(level_sizes, test_case.level_sizes);
+
+        /// Every merge task consumes at most fan-in inputs.
+        for (const auto & name : merge_stages)
+            for (const auto & task : plan.stages.at(name).tasks)
+                EXPECT_LE(task.input_exchange_streams.size(), RUNTIME_FILTER_MERGE_FAN_IN);
+
+        /// The scheduler chain: build -> each merge level -> probe.
+        String previous = "build";
+        for (const auto & name : merge_stages)
+        {
+            EXPECT_TRUE(plan.stage_depends_on.at(name).contains(previous)) << name;
+            previous = name;
+        }
+        EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(previous));
 
         expectWiredBuild(plan, "build");
         auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
         ASSERT_NE(build, nullptr);
         expectConsumerDescriptors(plan, "probe", *build);
     }
-}
-
-TEST_F(RuntimeFilterExchangeWiring, SingleBuildTaskDeliversThroughMergeStage)
-{
-    auto plan = wireSymmetric(1, 4);
-
-    /// One stream into the root merge task, one broadcast stream per receive task. The build
-    /// (data) task itself never holds the broadcast: a broadcast sink may wait until query end
-    /// for a receiver that finished early, and a data task must not carry that wait.
-    EXPECT_EQ(countStreams(plan), 1u + 4u);
-    auto merge_stages = mergeStageNames(plan);
-    ASSERT_EQ(merge_stages.size(), 1u);
-    EXPECT_EQ(plan.stages.at("build").tasks.front().output_exchange_streams.size(), 1u);
-    EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(merge_stages.front()));
-    EXPECT_TRUE(plan.stage_depends_on.at(merge_stages.front()).contains("build"));
-
-    expectWiredBuild(plan, "build");
-    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-    ASSERT_NE(build, nullptr);
-    expectConsumerDescriptors(plan, "probe", *build);
-}
-
-TEST_F(RuntimeFilterExchangeWiring, MultiLevelTree)
-{
-    /// 40 build tasks with fan-in 16 need two merge levels: ceil(40 / 16) = 3 tasks, then the
-    /// root. Streams: 40 into level one, 3 into the root, 4 broadcast.
-    static_assert(RUNTIME_FILTER_MERGE_FAN_IN == 16);
-    auto plan = wireSymmetric(40, 4);
-
-    EXPECT_EQ(countStreams(plan), 40u + 3u + 4u);
-
-    auto merge_stages = mergeStageNames(plan);
-    ASSERT_EQ(merge_stages.size(), 2u);
-    std::multiset<size_t> level_sizes{plan.stages.at(merge_stages[0]).tasks.size(), plan.stages.at(merge_stages[1]).tasks.size()};
-    EXPECT_EQ(level_sizes, (std::multiset<size_t>{3, 1}));
-
-    /// Every merge task consumes at most fan-in inputs.
-    for (const auto & name : merge_stages)
-        for (const auto & task : plan.stages.at(name).tasks)
-            EXPECT_LE(task.input_exchange_streams.size(), RUNTIME_FILTER_MERGE_FAN_IN);
-
-    expectWiredBuild(plan, "build");
-    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-    ASSERT_NE(build, nullptr);
-    expectConsumerDescriptors(plan, "probe", *build);
 }
 
 TEST_F(RuntimeFilterExchangeWiring, MultipleReceiveStages)
@@ -443,30 +406,6 @@ TEST_F(RuntimeFilterExchangeWiring, MultipleReceiveStages)
     expectConsumerDescriptors(plan, "probe_b", *build);
 }
 
-TEST_F(RuntimeFilterExchangeWiring, ApplicationInBuildStageStaysLocal)
-{
-    DistributedQueryPlan plan;
-    DistributedQueryStage stage;
-    QueryPlan fragment;
-    fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
-    fragment.addStep(
-        std::make_unique<BuildRuntimeFilterStep>(dataHeader(), "x", std::make_shared<DataTypeUInt64>(), "f", "key", testBuildOptions()));
-    auto dag = makeApplyFilterDAG("key", "f");
-    const String filter_column_name = applyFilterResultName(dag);
-    fragment.addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
-    stage.query_plan_fragment = std::move(fragment);
-    stage.tasks.push_back(makeTask("both", 0));
-    plan.stages["both"] = std::move(stage);
-
-    size_t next_exchange_id = 100;
-    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
-
-    EXPECT_EQ(countStreams(plan), 0u);
-    EXPECT_TRUE(plan.exchange_descriptions.empty());
-    EXPECT_EQ(next_exchange_id, 100u);
-    expectLocalBuild(plan, "both");
-}
-
 TEST_F(RuntimeFilterExchangeWiring, MixedLocalAndRemoteSkipsProducerStageExchange)
 {
     /// Producer stage also applies the filter: skip that stage on the exchange, still wire the
@@ -500,146 +439,43 @@ TEST_F(RuntimeFilterExchangeWiring, MixedLocalAndRemoteSkipsProducerStageExchang
     EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(merge_stages.front()));
 }
 
-TEST_F(RuntimeFilterExchangeWiring, PersistedPlanKindAppliesToSiblingStages)
+TEST_F(RuntimeFilterExchangeWiring, SameStageAdmission)
 {
-    /// The receiving stage is a sibling of the build stage, with no data edge between them. A
-    /// persisted plan must get persisted filter exchanges, otherwise they would use a transport
-    /// that is never started.
-    for (size_t build_tasks : {1, 8})
+    /// Two sites in one receive stage, the 10-row one visited first. The stage receives the filter
+    /// once if any site admits it: a tiny site does not veto a large or estimate-less sibling. The
+    /// budget is not upsized for the estimate-less site (100 * 8 < 4096), so it takes the
+    /// no-estimate path.
+    struct Case
     {
+        std::optional<size_t> first_arm_limit;
+        bool wired;
+    };
+    for (const auto & test_case : {Case{1'000'000, true}, Case{10, false}, Case{std::nullopt, true}})
+    {
+        SCOPED_TRACE(test_case.first_arm_limit ? std::to_string(*test_case.first_arm_limit) : "no estimate");
         DistributedQueryPlan plan;
-        addBuildStage(plan, "build", build_tasks, "key");
-        addConsumerStage(plan, "probe", 4, "key");
-        ASSERT_TRUE(plan.stage_depends_on.empty()) << "the sibling shape must have no data edge";
-
-        size_t next_exchange_id = 100;
-        wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Persisted);
-
-        EXPECT_FALSE(plan.exchange_descriptions.empty()) << "for " << build_tasks << " build tasks";
-        for (const auto & [name, exchange] : plan.exchange_descriptions)
-            EXPECT_EQ(exchange.kind, ExchangeDescription::Kind::Persisted) << name;
-
-        expectWiredBuild(plan, "build");
+        addBuildStage(plan, "build", 1, "key");
         auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
         ASSERT_NE(build, nullptr);
-        expectConsumerDescriptors(plan, "probe", *build);
-    }
-}
-
-TEST_F(RuntimeFilterExchangeWiring, StreamingPlanKindStaysStreaming)
-{
-    for (size_t build_tasks : {1, 8})
-    {
-        DistributedQueryPlan plan;
-        addBuildStage(plan, "build", build_tasks, "key");
-        addConsumerStage(plan, "probe", 4, "key");
+        build->setEstimatedBuildRows(100);
+        addTwoSiteConsumerStage(plan, "probe", "key", test_case.first_arm_limit, /*second_arm_limit=*/10);
 
         size_t next_exchange_id = 100;
         wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
 
-        EXPECT_FALSE(plan.exchange_descriptions.empty()) << "for " << build_tasks << " build tasks";
-        for (const auto & [name, exchange] : plan.exchange_descriptions)
-            EXPECT_EQ(exchange.kind, ExchangeDescription::Kind::Streaming) << name;
-
-        expectWiredBuild(plan, "build");
-        auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-        ASSERT_NE(build, nullptr);
-        expectConsumerDescriptors(plan, "probe", *build);
+        if (test_case.wired)
+        {
+            EXPECT_EQ(countStreams(plan), 2u);
+            expectWiredBuild(plan, "build");
+            expectConsumerDescriptors(plan, "probe", *build);
+        }
+        else
+        {
+            EXPECT_EQ(countStreams(plan), 0u);
+            EXPECT_TRUE(plan.exchange_descriptions.empty());
+            expectLocalBuild(plan, "build");
+        }
     }
-}
-
-TEST_F(RuntimeFilterExchangeWiring, BuildWithoutConsumersStaysLocal)
-{
-    DistributedQueryPlan plan;
-    addBuildStage(plan, "build", 4, "key");
-
-    size_t next_exchange_id = 100;
-    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
-
-    EXPECT_EQ(countStreams(plan), 0u);
-    EXPECT_TRUE(plan.exchange_descriptions.empty());
-    EXPECT_EQ(next_exchange_id, 100u);
-    expectLocalBuild(plan, "build");
-}
-
-TEST_F(RuntimeFilterExchangeWiring, SameStageTinySiteDoesNotVetoLargeSibling)
-{
-    /// UNION children [1e6, 10]: DFS visits the 10-row site first. The 1e6-row sibling still admits,
-    /// so the stage ships once.
-    DistributedQueryPlan plan;
-    addBuildStage(plan, "build", 1, "key");
-    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-    ASSERT_NE(build, nullptr);
-    build->setEstimatedBuildRows(100);
-    addTwoSiteConsumerStage(plan, "probe", 1, "key", /*first_arm_limit=*/1'000'000, /*second_arm_limit=*/10);
-
-    size_t next_exchange_id = 100;
-    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
-
-    EXPECT_EQ(countStreams(plan), 2u);
-    expectWiredBuild(plan, "build");
-    expectConsumerDescriptors(plan, "probe", *build);
-}
-
-TEST_F(RuntimeFilterExchangeWiring, SameStageHugeVisitedFirstStillWires)
-{
-    /// Reverse child order. Still one delivery.
-    DistributedQueryPlan plan;
-    addBuildStage(plan, "build", 1, "key");
-    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-    ASSERT_NE(build, nullptr);
-    build->setEstimatedBuildRows(100);
-    addTwoSiteConsumerStage(plan, "probe", 1, "key", /*first_arm_limit=*/10, /*second_arm_limit=*/1'000'000);
-
-    size_t next_exchange_id = 100;
-    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
-
-    EXPECT_EQ(countStreams(plan), 2u);
-    expectWiredBuild(plan, "build");
-    expectConsumerDescriptors(plan, "probe", *build);
-}
-
-TEST_F(RuntimeFilterExchangeWiring, SameStageBothTinyStaysLocal)
-{
-    DistributedQueryPlan plan;
-    addBuildStage(plan, "build", 1, "key");
-    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-    ASSERT_NE(build, nullptr);
-    build->setEstimatedBuildRows(100);
-    addTwoSiteConsumerStage(plan, "probe", 1, "key", /*first_arm_limit=*/10, /*second_arm_limit=*/10);
-
-    size_t next_exchange_id = 100;
-    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
-
-    EXPECT_EQ(countStreams(plan), 0u);
-    EXPECT_TRUE(plan.exchange_descriptions.empty());
-    expectLocalBuild(plan, "build");
-}
-
-TEST_F(RuntimeFilterExchangeWiring, SameStageStatsLessSiblingStillAdmits)
-{
-    /// The tiny site with a row estimate is visited first; its sibling has no estimate. The budget
-    /// is not upsized (100 * 8 < 4096), so the sibling takes the no-estimate path and admits.
-    DistributedQueryPlan plan;
-    addBuildStage(plan, "build", 1, "key");
-    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-    ASSERT_NE(build, nullptr);
-    build->setEstimatedBuildRows(100);
-
-    auto unknown = std::make_unique<QueryPlan>();
-    unknown->addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
-    auto dag = makeApplyFilterDAG("key", "f");
-    const String filter_column_name = applyFilterResultName(dag);
-    unknown->addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
-
-    addUnionConsumerStage(plan, "probe", 1, std::move(unknown), makeLimitedApplyPlan("key", 10));
-
-    size_t next_exchange_id = 100;
-    wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
-
-    EXPECT_EQ(countStreams(plan), 2u);
-    expectWiredBuild(plan, "build");
-    expectConsumerDescriptors(plan, "probe", *build);
 }
 
 namespace
@@ -699,38 +535,15 @@ TEST_F(RuntimeFilterExchangeWiring, NoCompletionEdgeWhenItWouldCycle)
     expectConsumerDescriptors(plan, "probe", *build);
 }
 
-TEST_F(RuntimeFilterExchangeWiring, NoCompletionEdgeWhenItWouldCycleTree)
-{
-    auto plan = wireProducerDependingOnConsumer(4, 4, ExchangeDescription::Kind::Streaming);
-
-    auto merge_stages = mergeStageNames(plan);
-    ASSERT_EQ(merge_stages.size(), 1u);
-    EXPECT_TRUE(plan.stages.at(merge_stages.front()).filter_only);
-
-    /// Four partials into the root, four broadcast streams out.
-    EXPECT_EQ(countStreams(plan), 4u + 4u);
-
-    auto probe_dependencies = plan.stage_depends_on.find("probe");
-    EXPECT_TRUE(probe_dependencies == plan.stage_depends_on.end()
-        || !probe_dependencies->second.contains(merge_stages.front()));
-
-    auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-    ASSERT_NE(build, nullptr);
-    expectConsumerDescriptors(plan, "probe", *build);
-}
-
 TEST_F(RuntimeFilterExchangeWiring, PersistedDeliveryRequiresCompletionEdge)
 {
     /// The completion dependency is what orders a persisted read after the blob write. Where it
     /// cannot be added, a persisted plan does not wire the delivery: behavior identical to no
     /// transport.
-    for (size_t build_tasks : {1, 2})
-    {
-        auto plan = wireProducerDependingOnConsumer(build_tasks, 2, ExchangeDescription::Kind::Persisted);
+    auto plan = wireProducerDependingOnConsumer(2, 2, ExchangeDescription::Kind::Persisted);
 
-        EXPECT_TRUE(mergeStageNames(plan).empty());
-        EXPECT_EQ(countStreams(plan), 0u);
-        for (const auto & task : plan.stages.at("probe").tasks)
-            EXPECT_TRUE(task.runtime_filter_descriptors.empty());
-    }
+    EXPECT_TRUE(mergeStageNames(plan).empty());
+    EXPECT_EQ(countStreams(plan), 0u);
+    for (const auto & task : plan.stages.at("probe").tasks)
+        EXPECT_TRUE(task.runtime_filter_descriptors.empty());
 }

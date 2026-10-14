@@ -135,11 +135,7 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            makeGeometry(
-                /*bytes_limit=*/1_MiB,
-                /*exact_values_limit=*/1,
-                /*bloom_filter_hash_functions=*/3,
-                /*max_ratio_of_set_bits_in_bloom_filter=*/1.0),
+            makeGeometry(1_MiB, 1, 3, 1.0),
             /*distinct_keys_hint=*/std::nullopt,
             /*distinct_keys_hint_matches_filter_key_=*/false));
 
@@ -168,11 +164,7 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            makeGeometry(
-                /*bytes_limit=*/1_KiB,
-                /*exact_values_limit=*/1,
-                /*bloom_filter_hash_functions=*/3,
-                /*max_ratio_of_set_bits_in_bloom_filter=*/0.05),
+            makeGeometry(1_KiB, 1, 3, 0.05),
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     destination.enableIndexAnalysis();
@@ -183,11 +175,7 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            makeGeometry(
-                /*bytes_limit=*/1_KiB,
-                /*exact_values_limit=*/1,
-                /*bloom_filter_hash_functions=*/3,
-                /*max_ratio_of_set_bits_in_bloom_filter=*/0.05),
+            makeGeometry(1_KiB, 1, 3, 0.05),
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     source.enableIndexAnalysis();
@@ -491,30 +479,14 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
     RuntimeFilter destination(
         /*filters_to_merge_=*/1,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(
-            type,
-            makeGeometry(
-                /*bytes_limit=*/1_MiB,
-                /*exact_values_limit=*/100,
-                /*bloom_filter_hash_functions=*/3,
-                /*max_ratio_of_set_bits_in_bloom_filter=*/1.0),
-            /*distinct_keys_hint_=*/std::nullopt,
-            /*distinct_keys_hint_matches_filter_key_=*/false));
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
     destination.enableIndexAnalysis();
     destination.insert(makeUInt64Column({3, 7}));
 
     RuntimeFilter source(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(
-            type,
-            makeGeometry(
-                /*bytes_limit=*/1_MiB,
-                /*exact_values_limit=*/100,
-                /*bloom_filter_hash_functions=*/3,
-                /*max_ratio_of_set_bits_in_bloom_filter=*/1.0),
-            /*distinct_keys_hint_=*/std::nullopt,
-            /*distinct_keys_hint_matches_filter_key_=*/false));
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
     source.enableIndexAnalysis();
     source.insert(makeUInt64Column({1, 9}));
     source.finishInsert();

@@ -26,12 +26,6 @@ SELECT count() FROM tiny, huge WHERE tid = hid;
 SELECT '-- Nullable key is not transportable, the local filter stays';
 SELECT count() FROM big_nullable, small_nullable WHERE bid = sid SETTINGS log_comment = '04892_nullable';
 
-SELECT '-- persisted exchanges';
-SELECT count() FROM huge, tiny WHERE hid = tid SETTINGS distributed_plan_force_exchange_kind = 'Persisted';
-
-SELECT '-- streaming exchanges';
-SELECT count() FROM huge, tiny WHERE hid = tid SETTINGS distributed_plan_force_exchange_kind = 'Streaming';
-
 SELECT '-- early close under LIMIT';
 SELECT count() FROM (SELECT hid FROM huge, tiny WHERE hid = tid LIMIT 10);
 

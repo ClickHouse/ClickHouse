@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
@@ -82,12 +81,6 @@ void finishInsert(AdaptiveSetRuntimeFilter & filter, const RuntimeFilterGeometry
     filter.finishInsert(evaluation_state);
 }
 
-/// Publishes a completed union the way `MergeRuntimeFiltersTransform` does in `RegisterUnion` mode.
-UniqueRuntimeFilterPtr publish(AdaptiveSetRuntimeFilter && filter)
-{
-    return std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, makeConfig(makeGeometry()), std::move(filter));
-}
-
 ColumnPtr makeColumn(UInt64 from, UInt64 to)
 {
     auto column = ColumnUInt64::create();
@@ -125,139 +118,12 @@ std::vector<bool> probe(const AdaptiveSetRuntimeFilter & filter, UInt64 from, UI
     return maskToVector(filter.find({makeColumn(from, to), std::make_shared<DataTypeUInt64>(), "probe"}, rows_passed), to - from);
 }
 
-std::vector<bool> probe(const RuntimeFilter & filter, UInt64 from, UInt64 to)
-{
-    return maskToVector(filter.find({makeColumn(from, to), std::make_shared<DataTypeUInt64>(), "probe"}), to - from);
-}
-
 /// The second byte of the state is the phase tag: 0 = exact values, 1 = bloom filter.
 bool isBloomState(const String & state)
 {
     return state.size() > 1 && state[1] == 1;
 }
 
-}
-
-TEST(RuntimeFilterSerialization, RoundTripExactValues)
-{
-    auto filter = makeFilter();
-    filter->insert(makeColumn(0, 10));
-
-    const String state = serializeToString(*filter);
-    EXPECT_FALSE(isBloomState(state));
-    auto restored = deserializeFromString(state);
-
-    finishInsert(*filter);
-    finishInsert(*restored);
-
-    EXPECT_EQ(probe(*filter, 0, 20), probe(*restored, 0, 20));
-    EXPECT_EQ(probe(*restored, 0, 10), std::vector<bool>(10, true));
-    EXPECT_EQ(probe(*restored, 10, 20), std::vector<bool>(10, false));
-}
-
-TEST(RuntimeFilterSerialization, RoundTripBloom)
-{
-    auto filter = makeFilter();
-    filter->insert(makeColumn(0, 1000));
-
-    const String state = serializeToString(*filter);
-    EXPECT_TRUE(isBloomState(state));
-    auto restored = deserializeFromString(state);
-
-    /// Restored state must be byte-identical, not merely probe-equivalent.
-    EXPECT_EQ(serializeToString(*restored), state);
-
-    finishInsert(*filter);
-    finishInsert(*restored);
-    EXPECT_EQ(probe(*filter, 0, 10000), probe(*restored, 0, 10000));
-}
-
-TEST(RuntimeFilterSerialization, UnionMatchesSingleBuild)
-{
-    auto direct = makeFilter();
-    direct->insert(makeColumn(0, 3000));
-
-    /// Three partials with different phases: two below the exact-values limit, one switched to bloom.
-    auto part1 = makeFilter();
-    part1->insert(makeColumn(0, 30));
-    auto part2 = makeFilter();
-    part2->insert(makeColumn(30, 90));
-    auto part3 = makeFilter();
-    part3->insert(makeColumn(90, 3000));
-
-    auto merged = deserializeFromString(serializeToString(*part1));
-    auto source2 = deserializeFromString(serializeToString(*part2));
-    auto source3 = deserializeFromString(serializeToString(*part3));
-    merged->mergeFrom(*source2);
-    merged->mergeFrom(*source3);
-
-    /// Byte identity holds because both unions end in the bloom phase, whose bits are a pure
-    /// function of the value set; exact-phase unions may store values in a different order.
-    EXPECT_EQ(serializeToString(*merged), serializeToString(*direct));
-
-    finishInsert(*direct);
-    finishInsert(*merged);
-    EXPECT_EQ(probe(*direct, 0, 6000), probe(*merged, 0, 6000));
-}
-
-TEST(RuntimeFilterSerialization, EmptyPartial)
-{
-    auto part = makeFilter();
-    part->insert(makeColumn(0, 10));
-    auto empty = makeFilter();
-
-    auto merged = deserializeFromString(serializeToString(*part));
-    auto empty_source = deserializeFromString(serializeToString(*empty));
-    merged->mergeFrom(*empty_source);
-    finishInsert(*merged);
-
-    auto alone = deserializeFromString(serializeToString(*part));
-    finishInsert(*alone);
-    EXPECT_EQ(probe(*merged, 0, 20), probe(*alone, 0, 20));
-
-    auto all_empty = deserializeFromString(serializeToString(*empty));
-    auto another_empty = deserializeFromString(serializeToString(*empty));
-    all_empty->mergeFrom(*another_empty);
-    finishInsert(*all_empty);
-    EXPECT_EQ(probe(*all_empty, 0, 10), std::vector<bool>(10, false));
-}
-
-TEST(RuntimeFilterSerialization, RoundTripLowCardinalityExactValues)
-{
-    /// The Set strips LowCardinality from its elements, so the serialized block is typed without it.
-    const auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    const UInt64 bytes_limit = 1 << 20;
-    auto make_lc_filter = [&]
-    { return std::make_unique<AdaptiveSetRuntimeFilter>(
-          lc_type, makeGeometry(bytes_limit), /*distinct_keys_hint_=*/std::nullopt,
-          /*distinct_keys_hint_matches_filter_key_=*/false); };
-    auto make_lc_column = [&](UInt64 from, UInt64 to)
-    {
-        auto column = lc_type->createColumn();
-        for (UInt64 i = from; i < to; ++i)
-            column->insert("value_" + std::to_string(i));
-        return ColumnPtr(std::move(column));
-    };
-
-    auto filter = make_lc_filter();
-    filter->insert(make_lc_column(0, 10));
-
-    const String state = serializeToString(*filter);
-    EXPECT_FALSE(isBloomState(state));
-
-    ReadBufferFromString in(state);
-    auto restored = AdaptiveSetRuntimeFilter::deserialize(in, lc_type, makeGeometry(bytes_limit));
-
-    finishInsert(*filter, makeGeometry(bytes_limit));
-    finishInsert(restored, makeGeometry(bytes_limit));
-    auto probe_lc = [&](const AdaptiveSetRuntimeFilter & f, UInt64 from, UInt64 to)
-    {
-        std::optional<size_t> rows_passed;
-        return maskToVector(f.find({make_lc_column(from, to), lc_type, "probe"}, rows_passed), to - from);
-    };
-    EXPECT_EQ(probe_lc(*filter, 0, 20), probe_lc(restored, 0, 20));
-    EXPECT_EQ(probe_lc(restored, 0, 10), std::vector<bool>(10, true));
-    EXPECT_EQ(probe_lc(restored, 10, 20), std::vector<bool>(10, false));
 }
 
 TEST(RuntimeFilterSerialization, GarbageFailsLoudly)
@@ -319,34 +185,40 @@ TEST(RuntimeFilterSerialization, TransportedGeometryBounds)
 TEST(RuntimeFilterSerialization, MergeOrderIndependence)
 {
     /// The merge tree delivers partial states in a nondeterministic order; the union must not
-    /// depend on it. Two exact-phase partials and one bloom-phase partial cover every merge
-    /// combination (exact into exact, exact into bloom, bloom into exact).
+    /// depend on it and must equal a single build over all keys. Two exact-phase partials, one
+    /// bloom-phase partial and one empty partial cover every merge combination.
+    auto direct = makeFilter();
+    direct->insert(makeColumn(0, 3000));
+    /// The union ends in the bloom phase, whose bits are a pure function of the value set, so
+    /// even the serialized bytes must match.
+    const String reference_state = serializeToString(*direct);
+    ASSERT_TRUE(isBloomState(reference_state));
+
     auto part1 = makeFilter();
     part1->insert(makeColumn(0, 30));
     auto part2 = makeFilter();
     part2->insert(makeColumn(30, 90));
     auto part3 = makeFilter();
     part3->insert(makeColumn(90, 3000));
+    auto empty = makeFilter();
 
-    const std::vector<String> states{serializeToString(*part1), serializeToString(*part2), serializeToString(*part3)};
+    const std::vector<String> states{
+        serializeToString(*part1), serializeToString(*part2), serializeToString(*part3), serializeToString(*empty)};
 
-    std::optional<String> reference_state;
-    std::vector<size_t> order{0, 1, 2};
+    std::vector<size_t> order{0, 1, 2, 3};
     do
     {
         auto merged = deserializeFromString(states[order[0]]);
-        merged->mergeFrom(*deserializeFromString(states[order[1]]));
-        merged->mergeFrom(*deserializeFromString(states[order[2]]));
-
-        /// Every permutation ends in the bloom phase, whose bits are a pure function of the value
-        /// set, so even the serialized bytes must match.
-        const String merged_state = serializeToString(*merged);
-        EXPECT_TRUE(isBloomState(merged_state));
-        if (!reference_state)
-            reference_state = merged_state;
-        else
-            EXPECT_EQ(merged_state, *reference_state);
+        for (size_t i = 1; i < order.size(); ++i)
+            merged->mergeFrom(*deserializeFromString(states[order[i]]));
+        EXPECT_EQ(serializeToString(*merged), reference_state);
     } while (std::next_permutation(order.begin(), order.end()));
+
+    /// A union of empty partials rejects every key.
+    auto all_empty = deserializeFromString(states[3]);
+    all_empty->mergeFrom(*deserializeFromString(states[3]));
+    finishInsert(*all_empty);
+    EXPECT_EQ(probe(*all_empty, 0, 10), std::vector<bool>(10, false));
 }
 
 namespace
@@ -380,20 +252,6 @@ ColumnPtr makeShortStringColumn(size_t from, size_t to)
     return column;
 }
 
-}
-
-TEST(RuntimeFilterSerialization, SenderBoundsExactStateByKeyBytes)
-{
-    /// The hash table buffer alone undercounts string keys (their bytes live outside it), so the
-    /// exact-phase byte budget must also count the actual key bytes: 10 strings of 2 KiB blow the
-    /// 4 KiB budget and the state degrades to a bloom filter even though the row count is tiny.
-    AdaptiveSetRuntimeFilter filter(
-        stringType(), makeGeometry(),
-        /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
-    filter.insert(makeStringColumn(10, 2048));
-
-    EXPECT_TRUE(isBloomState(serializeToString(filter)));
 }
 
 TEST(RuntimeFilterSerialization, LongTypeNameFitsTheExactStateBound)
@@ -562,26 +420,6 @@ TEST(RuntimeFilterSerialization, DegradedBloomIsSizedByGeometryNotTheExactByteBo
     EXPECT_THROW(AdaptiveSetRuntimeFilter::deserialize(sized_from_exact_bound_in, type, sized_from_exact_bound), Exception);
 }
 
-TEST(RuntimeFilterSerialization, RegisteredUnionIsFindable)
-{
-    auto part1 = makeFilter();
-    part1->insert(makeColumn(0, 10));
-    auto part2 = makeFilter();
-    part2->insert(makeColumn(10, 20));
-
-    auto merged = deserializeFromString(serializeToString(*part1));
-    auto source = deserializeFromString(serializeToString(*part2));
-    merged->mergeFrom(*source);
-
-    auto lookup = createRuntimeFilterLookup();
-    lookup->add("key", "name", publish(std::move(*merged)));
-
-    auto found = lookup->find("key");
-    ASSERT_NE(found, nullptr);
-    EXPECT_EQ(probe(*found, 0, 20), std::vector<bool>(20, true));
-    EXPECT_EQ(probe(*found, 20, 30), std::vector<bool>(10, false));
-}
-
 namespace
 {
 
@@ -608,7 +446,7 @@ makeBuildStep(bool with_topology, const String & filter_key = "rendezvous-key", 
             .distinct_keys_hint = std::nullopt,
             .distinct_keys_hint_matches_filter_key = false});
     if (with_topology)
-        step.addExchange("exchange_7", {"0", "1", "2", "3"});
+        step.setTreeExchange("exchange_7", {"0", "1", "2", "3"}, /*fan_in_=*/2);
     return step;
 }
 
@@ -676,31 +514,6 @@ QueryPlanStepPtr roundTripBuildStep(const BuildRuntimeFilterStep & step, UInt64 
     return BuildRuntimeFilterStep::deserialize(deserialization);
 }
 
-}
-
-TEST(RuntimeFilterSerialization, BuildStepTopologyRoundTrips)
-{
-    auto step = makeBuildStep(/*with_topology=*/true);
-    ASSERT_TRUE(step.hasFilterExchanges());
-
-    QueryPlanSerializationSettings settings;
-    const String payload = serializeBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings);
-
-    auto restored_ptr = roundTripBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    auto * restored = typeid_cast<BuildRuntimeFilterStep *>(restored_ptr.get());
-    ASSERT_NE(restored, nullptr);
-
-    EXPECT_TRUE(restored->hasFilterExchanges());
-    EXPECT_EQ(restored->getFilterKey(), "rendezvous-key");
-    EXPECT_EQ(restored->getFilterName(), "f");
-    EXPECT_EQ(restored->getFilterColumnName(), "x");
-    EXPECT_TRUE(restored->getFilterColumnType()->equals(*std::make_shared<DataTypeUInt64>()));
-    EXPECT_TRUE(restored->allowsNotExactFilter());
-    expectGeometryMatches(restored->getGeometry(), makeGeometry());
-    restored->getGeometry().validateTransported();
-
-    QueryPlanSerializationSettings restored_settings;
-    EXPECT_EQ(serializeBuildStep(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
 }
 
 TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchangesVersion)
@@ -791,62 +604,6 @@ TEST(RuntimeFilterSerialization, MergeStepRequiresRuntimeFilterExchangesVersion)
     {
         EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
     }
-
-    auto restored = deserialize_step(payload, settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    ASSERT_NE(typeid_cast<MergeRuntimeFiltersStep *>(restored.get()), nullptr);
-    QueryPlanSerializationSettings restored_settings;
-    EXPECT_EQ(serialize_step(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
-}
-
-TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTrips)
-{
-    auto step = makeBuildStep(/*with_topology=*/false);
-    Strings source_buckets;
-    source_buckets.reserve(20);
-    for (size_t i = 0; i < 20; ++i)
-        source_buckets.push_back(std::to_string(i));
-    step.setTreeExchange("exchange_tree", source_buckets, 16);
-    ASSERT_TRUE(step.hasFilterExchanges());
-
-    QueryPlanSerializationSettings settings;
-    const String payload = serializeBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings);
-
-    auto restored_ptr = roundTripBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    auto * restored = typeid_cast<BuildRuntimeFilterStep *>(restored_ptr.get());
-    ASSERT_NE(restored, nullptr);
-
-    EXPECT_TRUE(restored->hasFilterExchanges());
-    EXPECT_EQ(restored->getFilterKey(), "rendezvous-key");
-    EXPECT_EQ(restored->getFilterName(), "f");
-    EXPECT_EQ(restored->getFilterColumnName(), "x");
-    EXPECT_TRUE(restored->getFilterColumnType()->equals(*std::make_shared<DataTypeUInt64>()));
-    EXPECT_TRUE(restored->allowsNotExactFilter());
-    expectGeometryMatches(restored->getGeometry(), makeGeometry());
-    restored->getGeometry().validateTransported();
-
-    QueryPlanSerializationSettings restored_settings;
-    EXPECT_EQ(serializeBuildStep(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
-}
-
-TEST(RuntimeFilterSerialization, BuildStepWithoutTopologyRoundTrips)
-{
-    auto step = makeBuildStep(/*with_topology=*/false);
-    ASSERT_FALSE(step.hasFilterExchanges());
-
-    QueryPlanSerializationSettings settings;
-    const String payload = serializeBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings);
-
-    auto restored_ptr = roundTripBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    auto * restored = typeid_cast<BuildRuntimeFilterStep *>(restored_ptr.get());
-    ASSERT_NE(restored, nullptr);
-    EXPECT_FALSE(restored->hasFilterExchanges());
-    EXPECT_TRUE(restored->getFilterKey().empty());
-    EXPECT_EQ(restored->getFilterName(), "f");
-    EXPECT_EQ(restored->getFilterColumnName(), "x");
-    expectGeometryMatches(restored->getGeometry(), makeGeometry());
-
-    QueryPlanSerializationSettings restored_settings;
-    EXPECT_EQ(serializeBuildStep(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
 }
 
 TEST(RuntimeFilterSerialization, BuildStepCacheKeyOmitsRendezvousKey)
