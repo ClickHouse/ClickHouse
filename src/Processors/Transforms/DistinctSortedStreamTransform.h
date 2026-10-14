@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/SetVariants.h>
@@ -28,7 +27,7 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// For this, we don't clear sorting prefix value and hash table after a range is processed,
 /// only right before a new range processing
 ///
-class DistinctSortedStreamTransform final : public ISimpleTransform
+class DistinctSortedStreamTransform : public ISimpleTransform
 {
 public:
     DistinctSortedStreamTransform(
@@ -50,6 +49,9 @@ private:
     size_t ordinaryDistinctOnRange(IColumnFilter & filter, size_t range_begin, size_t range_end);
     inline void saveLatestKey(size_t row_pos);
     inline bool isLatestKeyFromPrevChunk(size_t row_pos) const;
+    inline bool isKey(size_t key_pos, size_t row_pos) const;
+    template<typename Predicate>
+    inline size_t getRangeEnd(size_t range_begin, size_t range_end, Predicate pred) const;
 
     template <typename Method>
     size_t buildFilterForRange(Method & method, IColumnFilter & filter, size_t range_begin, size_t range_end);
@@ -65,7 +67,6 @@ private:
     const SortDescription sorted_columns_descr;
     ColumnNumbers sorted_columns_pos;
     ColumnRawPtrs sorted_columns; // used during processing
-    SortedKeyRuns key_runs; // runs of the sorting prefix in the current chunk
 
     ColumnNumbers other_columns_pos;
     Sizes other_columns_sizes;

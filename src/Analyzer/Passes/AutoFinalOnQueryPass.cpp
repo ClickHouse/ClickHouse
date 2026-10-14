@@ -35,12 +35,12 @@ public:
         if (!query_node)
             return;
 
-        auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
+        auto table_expressions = extractTableExpressions(query_node->getJoinTree());
         for (auto & table_expression : table_expressions)
             applyFinalIfNeeded(table_expression);
     }
 private:
-    static void applyFinalIfNeeded(TableExpressionNodePtr & node)
+    static void applyFinalIfNeeded(QueryTreeNodePtr & node)
     {
         auto * table_node = node->as<TableNode>();
         auto * table_function_node = node->as<TableFunctionNode>();

@@ -1,9 +1,0 @@
--- Per-subquery setting: only the subquery is cached
-QueryCacheOnDiskMisses	1
-QueryCacheOnDiskHits	1
-same value in both processes
--- Setting query_cache_for_subqueries
-QueryCacheOnDiskMisses	2
-QueryCacheOnDiskHits	1
-QueryCacheOnDiskMisses	1
-same value in both processes

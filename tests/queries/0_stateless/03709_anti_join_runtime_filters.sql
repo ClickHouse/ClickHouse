@@ -1,5 +1,3 @@
-SET explain_query_plan_default = 'legacy';
-SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 
@@ -11,7 +9,6 @@ INSERT INTO customer SELECT number, 5 - (number % 2) FROM numbers(500);
 
 SET enable_parallel_replicas=0;
 SET query_plan_join_swap_table=0;
-SET join_runtime_filter_min_probe_rows=0;
 
 -- LEFT ANTI JOIN
 SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')

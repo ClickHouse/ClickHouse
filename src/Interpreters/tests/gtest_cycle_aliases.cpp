@@ -19,8 +19,7 @@ TEST(QueryNormalizer, SimpleLoopAlias)
     aliases["a"] = parseQuery(parser, "a as a", 0, 0, 0)->children[0];
 
     Settings settings;
-    NameSet source_columns;
-    QueryNormalizer::Data normalizer_data(aliases, source_columns, false, QueryNormalizer::ExtractedSettings(settings), false);
+    QueryNormalizer::Data normalizer_data(aliases, {}, false, QueryNormalizer::ExtractedSettings(settings), false);
     EXPECT_THROW(QueryNormalizer(normalizer_data).visit(ast), Exception);
 }
 
@@ -35,7 +34,6 @@ TEST(QueryNormalizer, SimpleCycleAlias)
     aliases["b"] = parseQuery(parser, "a as b", 0, 0, 0)->children[0];
 
     Settings settings;
-    NameSet source_columns;
-    QueryNormalizer::Data normalizer_data(aliases, source_columns, false, QueryNormalizer::ExtractedSettings(settings), true);
+    QueryNormalizer::Data normalizer_data(aliases, {}, false, QueryNormalizer::ExtractedSettings(settings), true);
     EXPECT_THROW(QueryNormalizer(normalizer_data).visit(ast), Exception);
 }

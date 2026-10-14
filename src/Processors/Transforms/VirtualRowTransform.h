@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// Virtual row is useful for read-in-order optimization when multiple parts exist.
-class VirtualRowTransform final : public IProcessor
+class VirtualRowTransform : public IProcessor
 {
 public:
     explicit VirtualRowTransform(SharedHeader header_, const Block & pk_block_, ExpressionActionsPtr virtual_row_conversions_);

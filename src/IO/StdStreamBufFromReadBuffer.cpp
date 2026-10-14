@@ -35,7 +35,7 @@ StdStreamBufFromReadBuffer::~StdStreamBufFromReadBuffer() = default;
 
 int StdStreamBufFromReadBuffer::underflow()
 {
-    char c = 0;
+    char c;
     if (!read_buffer->peek(c))
         return std::char_traits<char>::eof();
     return c;
