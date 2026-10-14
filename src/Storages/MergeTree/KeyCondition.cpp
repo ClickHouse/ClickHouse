@@ -3048,6 +3048,31 @@ String findKeySubexpressionName(const RPNBuilderTreeNode & node, const NameSet &
     return {};
 }
 
+/// Whether `normalized`, the conversion of `constant` into `column_type`, is the value that a comparison of
+/// such a column with a `String` constant compares with. A `String` constant does not name a value in its own
+/// domain: the comparison converts the spelling into the type of the other side and compares there
+/// (`executeWithConstString` in `FunctionsComparison.h`), so it is that conversion, not the spelling, that
+/// the predicate is about. Rendering the normalized constant back into a string judges the spelling instead:
+/// `'2023-02-01 12:00:00'` comes back as `'2023-02-01 12:00:00.000'` while naming exactly the same key point.
+/// So ask the conversion the comparison itself uses whether the normalization is the value the predicate
+/// names. A string-ish column is left to the round trip: two string-ish types are compared as bytes
+/// (`executeString`), where the padding a `FixedString` adds really does change the compared value. Any other
+/// constant answers `false`.
+bool comparisonConvertsStringConstantTo(
+    const ColumnWithTypeAndName & constant, const DataTypePtr & column_type, const Field & normalized)
+{
+    const DataTypePtr comparison_type = removeLowCardinalityAndNullable(column_type);
+    if (!isStringOrFixedString(removeLowCardinalityAndNullable(constant.type)) || isStringOrFixedString(comparison_type))
+        return false;
+
+    /// Both sides are values of `comparison_type`: the conversion produces one, the normalization the other.
+    /// So they share a carrier and the strict `Field` comparison is the right relation here; the
+    /// cross-carrier fallback of `fieldsHoldTheSameValue` is needed only when a round trip passes through a
+    /// `Dynamic`.
+    const Field compared_value = tryConvertFieldToType((*constant.column)[0], *comparison_type, constant.type.get(), {});
+    return !compared_value.isNull() && compared_value == normalized;
+}
+
 /// Whether `dag` maps both float zeros to one key value. A key function can tell the two signs apart:
 /// `toString(-0.0)` is `'-0'`, and `cityHash64` differs. The zeros are built in `input_type`, the type the
 /// constant was converted to, so the DAG consumes them the same way it consumes the constant. A zero nested
@@ -3118,39 +3143,16 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
                 transform_input_column, transform_input_type, cast_is_exact))
             continue;
 
-        const bool transform_input_has_nan = anyFieldSatisfies((*transform_input_column)[0], isNaNField);
-
-        /// A `String` constant does not name a value in its own domain: the comparison converts the spelling
-        /// into the type of the other side and compares there (`executeWithConstString` in
-        /// `FunctionsComparison.h`), so it is that conversion, not the spelling, that the predicate is about.
-        /// Rendering the normalized constant back into a string judges the spelling instead - `'2023-02-01
-        /// 12:00:00'` comes back as `'2023-02-01 12:00:00.000'` while naming exactly the same key point - so
-        /// ask the conversion the comparison itself uses whether the normalization is the value the predicate
-        /// names. A string-ish key column is left to the round trip: two string-ish types are compared as
-        /// bytes (`executeString`), where the padding a `FixedString` adds really does change the compared
-        /// value.
-        if (!cast_is_exact)
-        {
-            const DataTypePtr comparison_type = removeLowCardinalityAndNullable(candidate.dag.input_type);
-
-            if (isStringOrFixedString(removeLowCardinalityAndNullable(normalized_constant.type))
-                && !isStringOrFixedString(comparison_type))
-            {
-                /// Both sides are values of `comparison_type` - the conversion produces one, the
-                /// normalization the other - so they share a carrier and the strict `Field` comparison is
-                /// the right relation here; the cross-carrier fallback of `fieldsHoldTheSameValue` is
-                /// needed only when a round trip passes through a `Dynamic`.
-                const Field compared_value = tryConvertFieldToType(
-                    (*normalized_constant.column)[0], *comparison_type, normalized_constant.type.get(), {});
-                cast_is_exact = !compared_value.isNull() && compared_value == (*transform_input_column)[0];
-            }
-        }
+        const Field transform_input = (*transform_input_column)[0];
+        const bool transform_input_has_nan = anyFieldSatisfies(transform_input, isNaNField);
+        const bool normalization_is_exact = cast_is_exact
+            || comparisonConvertsStringConstantTo(normalized_constant, candidate.dag.input_type, transform_input);
 
         /// A float zero equals the zero of the other sign. When the transform tells the two apart, the
         /// transformed constant describes only one of them, so `x = 0` does not imply `f(x) = f(0)`, and not
         /// even a relaxed atom would be a superset of the matching rows. Such a candidate cannot constrain
         /// the key column.
-        if (anyFieldSatisfies((*transform_input_column)[0], isFloatZeroField)
+        if (anyFieldSatisfies(transform_input, isFloatZeroField)
             && !deterministicTransformMapsFloatZerosAlike(candidate.dag, transform_input_type, expr_name))
             continue;
 
@@ -3175,7 +3177,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         ///   preimage, as for a non-injective transform.
         const bool requires_relaxed_atom = transform_input_has_nan
             || deterministicTransformMayHideNull(candidate.dag.input_type, candidate.key_column_type, nested_null_is_ordinary_value)
-            || !cast_is_exact
+            || !normalization_is_exact
             || !isDeterministicTransformInjective(candidate.dag.actions->getActionsDAG(), expr_name, candidate.dag.output_name);
 
         Field transformed_value = (*transformed_const_column)[0];
