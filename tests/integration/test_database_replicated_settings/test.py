@@ -62,6 +62,9 @@ node_logs_to_keep_overflow = cluster.add_instance(
     external_dirs=["/backups/"],
 )
 
+# The value an out-of-range `logs_to_keep` is clamped to: `Int32::max`, see `DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP`.
+MAX_LOGS_TO_KEEP = "2147483647"
+
 
 def assert_exported_definition_is_clamped(node, db_name, stale_value, stage):
     # Every surface that exports the definition goes through `getCreateDatabaseQuery`, which reparses
@@ -70,19 +73,19 @@ def assert_exported_definition_is_clamped(node, db_name, stale_value, stage):
     # the stale literal, which it rejects. `stage` keeps the backup names apart when the same
     # database is checked more than once: a backup is never overwritten.
     show_create = node.query(f"SHOW CREATE DATABASE {db_name}")
-    assert "logs_to_keep = 4294967295" in show_create
+    assert f"logs_to_keep = {MAX_LOGS_TO_KEEP}" in show_create
     assert stale_value not in show_create
 
     engine_full = node.query(
         f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
     )
-    assert "logs_to_keep = 4294967295" in engine_full
+    assert f"logs_to_keep = {MAX_LOGS_TO_KEEP}" in engine_full
     assert stale_value not in engine_full
 
     backup_name = f"{db_name}_exported_{stage}"
     node.query(f"BACKUP DATABASE {db_name} TO Disk('backups', '{backup_name}')")
     backup_definition = read_file(node, "backups", f"{backup_name}/metadata/{db_name}.sql")
-    assert "logs_to_keep = 4294967295" in backup_definition
+    assert f"logs_to_keep = {MAX_LOGS_TO_KEEP}" in backup_definition
     assert stale_value not in backup_definition
 
 
@@ -239,8 +242,8 @@ def test_logs_to_keep_from_config_is_clamped(started_cluster):
     db_name = "test_" + get_random_string()
 
     # The out-of-range config default must not prevent creating a database (which on a restart is
-    # exactly the metadata replay path); the effective value is clamped to `UInt32::max` and written
-    # to Keeper as such.
+    # exactly the metadata replay path); the effective value is clamped to `MAX_LOGS_TO_KEEP` and
+    # written to Keeper as such.
     node_logs_to_keep_overflow.query(
         f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
         + r"'{shard}', '{replica}')"
@@ -249,10 +252,10 @@ def test_logs_to_keep_from_config_is_clamped(started_cluster):
     logs_to_keep_in_keeper = node_logs_to_keep_overflow.query(
         f"SELECT value FROM system.zookeeper WHERE path = '/test/{db_name}' AND name = 'logs_to_keep'"
     ).strip()
-    assert logs_to_keep_in_keeper == "4294967295"
+    assert logs_to_keep_in_keeper == MAX_LOGS_TO_KEEP
 
     assert node_logs_to_keep_overflow.contains_in_log(
-        "exceeds the maximum of 4294967295"
+        f"exceeds the maximum of {MAX_LOGS_TO_KEEP}"
     )
 
     node_logs_to_keep_overflow.query(f"DROP DATABASE {db_name}")
@@ -363,7 +366,7 @@ def test_logs_to_keep_restore_of_out_of_range_backup(started_cluster):
     logs_to_keep_in_keeper = node.query(
         f"SELECT value FROM system.zookeeper WHERE path = '/test/{db_name}' AND name = 'logs_to_keep'"
     ).strip()
-    assert logs_to_keep_in_keeper == "4294967295"
+    assert logs_to_keep_in_keeper == MAX_LOGS_TO_KEEP
     assert node.contains_in_log(
         "`logs_to_keep` of a Replicated database is 8888888888"
     )
@@ -371,7 +374,7 @@ def test_logs_to_keep_restore_of_out_of_range_backup(started_cluster):
     # that definition itself, so unlike a replayed file the definition of record holds the clamped
     # value: nothing downstream of this restore ever sees the stale literal again.
     restored_definition = read_metadata(node, f"metadata/{db_name}.sql")
-    assert "logs_to_keep = 4294967295" in restored_definition
+    assert f"logs_to_keep = {MAX_LOGS_TO_KEEP}" in restored_definition
     assert "8888888888" not in restored_definition
     assert_exported_definition_is_clamped(node, db_name, "8888888888", "restore")
 
