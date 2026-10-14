@@ -68,6 +68,9 @@ DEFAULT_SCHEMA = {
 }
 
 
+keeper = None
+
+
 def wait_catalog_ready(timeout=60, instance=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -81,15 +84,22 @@ def wait_catalog_ready(timeout=60, instance=None):
 
 @pytest.fixture(scope="module")
 def started_cluster():
+    global keeper
     try:
         cluster.start()
-        get_keeper().ensure_path("/aux_root")
+        # One Keeper session for the whole module. It reconnects on its own if Keeper restarts.
+        keeper = cluster.get_kazoo_client("zoo1")
+        keeper.ensure_path("/aux_root")
         if not cluster.minio_client.bucket_exists(BUCKET):
             cluster.minio_client.make_bucket(BUCKET)
         wait_catalog_ready()
         wait_catalog_ready(instance=node_aux)
         yield cluster
     finally:
+        if keeper is not None:
+            keeper.stop()
+            keeper.close()
+            keeper = None
         cluster.shutdown()
 
 
@@ -99,7 +109,7 @@ def catalog_url(path, instance=None):
 
 
 def get_keeper():
-    return cluster.get_kazoo_client("zoo1")
+    return keeper
 
 
 def restart_node():
