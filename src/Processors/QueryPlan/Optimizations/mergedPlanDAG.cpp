@@ -375,7 +375,9 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
     /// The join's own DAG computes some values before the join - its keys, and the columns it hands on,
     /// wrapped in `toNullable` under `join_use_nulls` - and the rest after it, from `actions_after_join`
     /// up. A value of the first kind reads one side only and is stuffed by the join like any column of
-    /// that side, so it is gated by the join's stuffing of that side, and it is below the join.
+    /// that side, so it is gated by the join's stuffing of that side, and it is below the join. The side is
+    /// the one of the join's inputs it reads, which the join's own DAG knows: the nodes below that the merge
+    /// put in place of those inputs need not read any table, as a constant of a subquery does not.
     {
         ActionsDAG::NodeRawConstPtrs roots;
         for (const auto * after_join : join_step->getActionsAfterJoin())
@@ -383,10 +385,15 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
         for (const auto & key : join_step->getJoinOperator().expression)
             roots.push_back(clone_mapping.at(key.getNode()));
 
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> original_of;
         NodeSet created_here;
         for (const auto & [original, merged_node] : clone_mapping)
-            if (original->type != ActionsDAG::ActionType::INPUT)
-                created_here.insert(merged_node);
+        {
+            if (original->type == ActionsDAG::ActionType::INPUT)
+                continue;
+            created_here.insert(merged_node);
+            original_of.emplace(merged_node, original);
+        }
 
         const auto is_below = [&](const ActionsDAG::Node * candidate) { return !created_here.contains(candidate); };
 
@@ -398,22 +405,11 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
 
             built.pre_join_nodes.push_back(pre_join);
 
-            const auto & node_sources = built.dag.getSources(pre_join);
-            if (node_sources.count() == 0)
-                continue;
-
-            bool reads_left = false;
-            bool reads_right = false;
-            for (const auto source : node_sources)
-                (source < source_shift ? reads_left : reads_right) = true;
-
-            const bool reads_left_only = reads_left && !reads_right;
-            const bool reads_right_only = reads_right && !reads_left;
-
+            const JoinActionRef in_join(original_of.at(pre_join), join_step->getExpressionActions());
             const MergedPlanDAG::Stuffing * stuffing = nullptr;
-            if (reads_left_only)
+            if (in_join.fromLeft())
                 stuffing = side_stuffing[0];
-            else if (reads_right_only)
+            else if (in_join.fromRight())
                 stuffing = side_stuffing[1];
 
             if (stuffing && built.dag.nearest_stuffing.emplace(pre_join, stuffing).second)
