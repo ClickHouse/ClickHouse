@@ -209,3 +209,50 @@ TEST(SchedulerCPULeaseAllocation, ParkGivesSlotBackToScheduler)
     allocation->free();
     scheduler.stop();
 }
+
+/// The allocation is shut down while two of its threads are parked. Their unparks come after the shutdown:
+/// they must not throw and must not ask the scheduler for slots again.
+TEST(SchedulerCPULeaseAllocation, UnparkAfterShutdown)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 3);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    CPULeaseSettings settings;
+    settings.parking_enabled = true;
+    ResourceLink link;
+    link.queue = queue.get();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 3, link, link, settings);
+
+    // All three requests are granted
+    while (semaphore->getInflights().first != 3)
+        std::this_thread::yield();
+    auto master_slot = allocation->acquire();
+    auto worker1_slot = allocation->acquire();
+    auto worker2_slot = allocation->acquire();
+    auto * worker1 = dynamic_cast<ISlotLease *>(worker1_slot.get());
+    auto * worker2 = dynamic_cast<ISlotLease *>(worker2_slot.get());
+
+    // Both workers park, and each gives one slot back
+    ASSERT_TRUE(worker1->park());
+    ASSERT_TRUE(worker2->park());
+    EXPECT_TRUE(waitUntil([&] { return semaphore->getInflights().first == 1; }));
+
+    // Shutdown with both workers parked releases the last slot
+    allocation->free();
+    EXPECT_TRUE(waitUntil([&] { return semaphore->getInflights().first == 0; }));
+
+    EXPECT_NO_THROW(worker1->unpark());
+    EXPECT_NO_THROW(worker2->unpark());
+    EXPECT_EQ(queue->getQueueLengthAndCost().first, 0u) << "unpark after shutdown enqueued a resource request";
+    EXPECT_EQ(semaphore->getInflights().first, 0);
+
+    master_slot.reset();
+    worker1_slot.reset();
+    worker2_slot.reset();
+    scheduler.stop();
+}

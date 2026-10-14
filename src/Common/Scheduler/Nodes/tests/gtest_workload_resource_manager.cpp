@@ -1490,30 +1490,6 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
     t.wait();
 }
 
-TEST(SchedulerWorkloadResourceManager, CPULeaseParkedThreadShutdownNoDeadlock)
-{
-    // A query is torn down while worker threads are still parked (no unpark first). Shutdown must
-    // wake the parked threads and let them exit; their unpark runs from the CPULeaseParkGuard
-    // destructor and must not throw. With the old code a parked thread could hang on shutdown or
-    // terminate on the unpark re-request; this must finish cleanly.
-    ResourceTest t;
-
-    // Target mode (master and worker share one resource), the only mode where parking is enabled.
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 3");
-
-    auto q = std::make_shared<TestQuery>(t);
-    q->start(TestQuery::AllocateLease, "all", 3); // master + 2 workers (all competing)
-    q->waitStartedThreads(3);
-
-    // Both workers park (emulating a blocking I/O wait), then the query is destroyed while parked.
-    q->requestPark();
-    q->waitParkedThreads(2);
-    q.reset(); // shutdown with two parked threads -- must not deadlock or terminate
-
-    t.wait();
-}
-
 TEST(SchedulerWorkloadResourceManager, CPUSchedulingFairness)
 {
     ResourceTest t;
