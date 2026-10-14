@@ -2340,15 +2340,15 @@ bool Aggregator::executeOnBlock(Columns columns,
     AdaptiveAggregationProducer * adaptive) const
 {
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    MemoryTracker * own_tracker = switchToOwnTracker(result, memory_tracker_switcher);
+    MemoryTracker * session_shared_tracker = switchToOwnTracker(result, memory_tracker_switcher);
 
     /// Staged records and the shared drain table belong to the session, not to this table:
     /// the local tracker is what a spill of this table can release, so the shared work runs
     /// under the aggregator's tracker instead.
     const auto session_scope = [&](std::optional<MemoryTrackerSwitcher> & scope)
     {
-        if (own_tracker)
-            scope.emplace(own_tracker);
+        if (session_shared_tracker)
+            scope.emplace(session_shared_tracker);
     };
 
     /// `result` will destroy the states of aggregate functions in the destructor
@@ -2454,7 +2454,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         session_scope(scope);
         executeFrozen(
             columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const,
-            own_tracker ? result.memory_tracker.get() : nullptr);
+            session_shared_tracker ? result.memory_tracker.get() : nullptr);
     }
     else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
              && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold)
@@ -2502,7 +2502,7 @@ bool Aggregator::executeOnBlock(Columns columns,
                     aggregate_functions_instructions.data(),
                     *adaptive,
                     /*all_keys_are_const=*/false,
-                    own_tracker ? result.memory_tracker.get() : nullptr);
+                    session_shared_tracker ? result.memory_tracker.get() : nullptr);
             }
         }
     }
@@ -2517,8 +2517,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
-    Int64 result_size_bytes = own_tracker && params.use_aggregation_memory_tracker
-        ? own_tracker->get()
+    Int64 result_size_bytes = session_shared_tracker && params.use_aggregation_memory_tracker
+        ? session_shared_tracker->get()
         : current_memory_usage - memory_usage_before_aggregation;
 
     if (adaptive && !adaptive->isBaseline())
