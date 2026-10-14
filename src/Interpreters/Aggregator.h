@@ -454,9 +454,9 @@ public:
 
     /// The destination of the adaptive merge: an empty two-level variants of the aggregation's method with a fresh
     /// arena slot per bucket, in which the merge creates the states of the bucket's groups. For a merge that goes
-    /// external because a producer on the baseline path spilled, the staged records join the external merge as chunks
-    /// of aggregate states, the form of a spilled part, which `mergeAndConvertAdaptiveBucket` makes with no sources
-    /// behind the destination.
+    /// external because producers wrote tables to disk (on the baseline path, or frozen ones), the staged records
+    /// join the external merge as chunks of aggregate states, the form of a spilled part, which
+    /// `mergeAndConvertAdaptiveBucket` makes with no sources behind the destination.
     AggregatedDataVariantsPtr createAdaptiveMergeDestination() const;
 
     /// The header of the blocks of aggregate states that the external aggregation spills and merges.
