@@ -1,5 +1,6 @@
 import argparse
 import csv
+import http.client
 import json
 import math
 import os
@@ -1649,16 +1650,27 @@ def dashboard_api_get(path, params=None, timeout_sec=60):
         with urllib.request.urlopen(url, timeout=timeout_sec) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace").strip()
+        try:
+            body = e.read().decode("utf-8", errors="replace").strip()
+        except (OSError, http.client.IncompleteRead):
+            body = ""
         error_type = PerfDashboardUnavailable if dashboard_did_not_answer(e.code, body) else PerfDashboardError
         raise error_type(f"HTTP {e.code} for [{url}]: {body[:300]}") from e
     except urllib.error.URLError as e:
         transport = isinstance(e.reason, OSError)
         raise (PerfDashboardUnavailable if transport else PerfDashboardError)(f"request to [{url}] failed: {e}") from e
-    except (TimeoutError, ConnectionError) as e:
+    except (TimeoutError, ConnectionError, http.client.IncompleteRead) as e:
         raise PerfDashboardUnavailable(f"request to [{url}] failed: {e}") from e
     except ValueError as e:
         raise PerfDashboardError(f"request to [{url}] failed: {e}") from e
+
+
+def dashboard_list(data, key):
+    """`data[key]` of a dashboard answer, which must be a list; anything else is a malformed answer."""
+    value = data.get(key) if isinstance(data, dict) else None
+    if not isinstance(value, list):
+        raise PerfDashboardError(f"malformed dashboard answer: no list [{key}]")
+    return value
 
 
 def dashboard_run_id(info):
@@ -1672,7 +1684,7 @@ def dashboard_run_id(info):
     data = dashboard_api_get("/runs", {"scope": "master", "q": info.sha[:12]})
     identities = [
         item.get("identity") or {}
-        for item in data.get("items", [])
+        for item in dashboard_list(data, "items")
         if (item.get("identity") or {}).get("newSha") == info.sha
     ]
     if not identities:
@@ -1708,7 +1720,7 @@ def dashboard_has_shard(run_id, arch, test):
     )
     return any(
         f" {arch} " in (table.get("title") or "")
-        for table in data.get("testTimes") or []
+        for table in dashboard_list(data, "testTimes")
     )
 
 
@@ -1726,7 +1738,7 @@ def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
         {"metrics": DASHBOARD_GATE_METRIC},
     )
     rows = []
-    for row in data.get("slowdowns") or []:
+    for row in dashboard_list(data, "slowdowns"):
         if row.get("arch") != arch:
             continue
         if row.get("metric") != DASHBOARD_GATE_METRIC:

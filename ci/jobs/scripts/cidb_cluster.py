@@ -46,7 +46,7 @@ class CIDBCluster:
         self._auth = {}
         # Why the last `is_ready` or `do_insert_query` call failed, whether
         # CIDB answered it with a 4xx other than 408 or 429, and whether CIDB
-        # itself did not answer it (a transport failure, an answer not from the
+        # itself did not answer it (a transport failure, a 5xx not from the
         # server, or one of its own-load codes).
         self.last_error = ""
         self.last_rejected = False
@@ -67,7 +67,7 @@ class CIDBCluster:
         self.last_error = f"HTTP {response.status_code}: {' '.join(response.text.split())[:200]}"
         self.last_rejected = response.status_code < 500 and response.status_code not in (408, 429)
         code = response.headers.get(self.EXCEPTION_CODE_HEADER)
-        self.last_unavailable = not self.last_rejected and (
+        self.last_unavailable = response.status_code >= 500 and (
             code is None or (code.isdigit() and int(code) in load_codes)
         )
 
