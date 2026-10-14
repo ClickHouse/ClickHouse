@@ -1748,9 +1748,7 @@ public:
 
     const Mode mode;
 
-    /// Work budget of the compare-chain traversal, in nodes hashed by getTreeHash (its dominant cost);
-    /// `optimize_and_compare_chain_max_hash_work`, 0 = unlimited. If the traversal exceeds it, the
-    /// derivation is reverted for the whole query, so equal copies of an expression stay equal.
+    /// Work budget of the compare-chain traversal, in nodes hashed by getTreeHash (its dominant cost).
     const size_t and_compare_chain_max_hash_work = 0;
     const size_t and_compare_chain_hash_work_start = 0;
 
@@ -1771,8 +1769,7 @@ public:
     };
     std::unordered_map<QueryTreeNodePtr, AndNodeBeforeCompareChain> and_nodes_before_compare_chain;
 
-    /// The derivation is applied to the whole query or not at all, so that equal copies of an expression
-    /// (e.g. a SELECT alias and its GROUP BY key) are rewritten the same way.
+    /// All or nothing per query: equal copies of an expression (a SELECT alias and its GROUP BY key) must be rewritten alike.
     void revertAndCompareChainIfBudgetExceeded()
     {
         if (!andCompareChainHashBudgetExceeded())
