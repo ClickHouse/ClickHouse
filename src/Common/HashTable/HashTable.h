@@ -660,7 +660,8 @@ protected:
     }
 
     /// Make the cell at place_value empty by moving it and the following elements of the collision resolution chain one cell to the right.
-    void shiftCellsRight(size_t place_value)
+    /// Not inlined to keep the code of inserts small.
+    void NO_INLINE shiftCellsRight(size_t place_value)
     {
         size_t empty_place = findEmptyCell(place_value);
 
@@ -1423,9 +1424,12 @@ protected:
     }
 
     /// Same as `emplaceNonZero`, but in the Robin Hood mode.
+    /// It must be inlined: if the arguments are passed by reference to a function that is not inlined,
+    /// the key, the iterator and the flag have to be kept in memory instead of registers in the ordinary linear probing as well,
+    /// and inserts into the hash tables that are not in the Robin Hood mode become up to 15% slower.
     template <typename KeyHolder>
-    void NO_INLINE emplaceNonZeroRobinHood(KeyHolder && key_holder, LookupResult & it,
-                                           bool & inserted, size_t hash_value)
+    void ALWAYS_INLINE emplaceNonZeroRobinHood(KeyHolder && key_holder, LookupResult & it,
+                                               bool & inserted, size_t hash_value)
     {
         bool found = false;
         size_t place_value = findCellRobinHood(keyHolderGetKey(key_holder), hash_value, grower.place(hash_value), found);
