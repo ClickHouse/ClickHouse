@@ -10,9 +10,11 @@ handshake, authentication, and gating paths.
 
 import base64
 import json
+import re
 import secrets
 import socket
 import struct
+import time
 
 import pytest
 
@@ -88,14 +90,13 @@ def _ws_handshake(sock, host, path="/webterminal", origin=None):
     return response
 
 
-def _ws_send_text(sock, payload):
-    """Send a single masked WebSocket text frame to the server."""
-    data = payload.encode("utf-8")
+def _ws_send_frame(sock, opcode, data):
+    """Send a single masked WebSocket frame to the server."""
     mask = secrets.token_bytes(4)
     masked = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
 
     header = bytearray()
-    header.append(0x81)  # FIN | text opcode
+    header.append(0x80 | opcode)  # FIN | opcode
     length = len(data)
     if length < 126:
         header.append(0x80 | length)
@@ -107,6 +108,16 @@ def _ws_send_text(sock, payload):
         header += struct.pack(">Q", length)
     header += mask
     sock.sendall(bytes(header) + masked)
+
+
+def _ws_send_text(sock, payload):
+    """Send a single masked WebSocket text (control) frame to the server."""
+    _ws_send_frame(sock, 0x01, payload.encode("utf-8"))
+
+
+def _ws_send_binary(sock, data):
+    """Send a single masked WebSocket binary frame (terminal input) to the server."""
+    _ws_send_frame(sock, 0x02, data)
 
 
 def _ws_read_frame(sock, timeout=10.0):
@@ -452,3 +463,89 @@ def test_non_auth_first_message_rejected():
             assert code == 1008, f"Expected close code 1008, got {code}"
     finally:
         sock.close()
+
+
+# Matches SGR / cursor-control sequences, OSC sequences, and NUL bytes that
+# replxx interleaves throughout the PTY output stream.
+ANSI_ESCAPE_RE = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\x00")
+
+
+def _read_pty_until(sock, timeout, marker=None):
+    """Collect binary PTY frames for up to `timeout` seconds and return the
+    output with ANSI escapes stripped. When `marker` is given, return as soon
+    as it appears in the cleaned output. Stops early on a close frame."""
+    buf = b""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        remaining = max(deadline - time.time(), 0.1)
+        try:
+            frame = _ws_read_frame(sock, timeout=remaining)
+        except socket.timeout:
+            break
+        if frame is None:
+            break
+        opcode, payload = frame
+        if opcode == 0x08:  # close
+            break
+        if opcode == 0x02:  # binary PTY data
+            buf += payload
+            if marker is not None and marker.encode() in ANSI_ESCAPE_RE.sub(b"", buf):
+                break
+    return ANSI_ESCAPE_RE.sub(b"", buf).decode(errors="replace")
+
+
+def test_session_keeps_user_settings():
+    """The embedded client must keep the settings of the authenticated user.
+
+    It used to replace the session settings with default values, dropping
+    everything that comes from the user's profiles, roles and
+    `CREATE USER ... SETTINGS`, so a `readonly` user got write access and
+    resource limits were removed. Settings sent along with a query must also
+    be checked against the constraints.
+    """
+    instance.query(
+        "CREATE USER restricted_terminal_user IDENTIFIED WITH plaintext_password BY 'restricted_password' "
+        "SETTINGS readonly = 1, max_memory_usage = 5000000 CONST"
+    )
+
+    try:
+        sock = _open_ws(instance.ip_address, 8123)
+        try:
+            _ws_send_text(
+                sock,
+                json.dumps(
+                    {
+                        "type": "auth",
+                        "user": "restricted_terminal_user",
+                        "password": "restricted_password",
+                    }
+                ),
+            )
+
+            output = _read_pty_until(sock, timeout=20, marker=":) ")
+            assert ":) " in output, f"no prompt from the embedded client: {output!r}"
+
+            _ws_send_binary(
+                sock,
+                b"SELECT concat('settings_', getSetting('readonly')::String, '_', getSetting('max_memory_usage')::String) FORMAT TSV\r",
+            )
+            output = _read_pty_until(sock, timeout=10, marker="settings_1_5000000\r\n")
+            assert "settings_1_5000000\r\n" in output, (
+                f"the session settings of the user were not preserved: {output!r}"
+            )
+
+            # Wait for the next prompt: while a query runs, the client reads the
+            # keyboard (to toggle the progress table) and would swallow the next query.
+            if ":) " not in output.split("settings_1_5000000\r\n", 1)[1]:
+                output = _read_pty_until(sock, timeout=10, marker=":) ")
+                assert ":) " in output, f"no prompt after the first query: {output!r}"
+
+            _ws_send_binary(sock, b"SELECT 'bypassed' SETTINGS readonly = 0 FORMAT TSV\r")
+            output = _read_pty_until(sock, timeout=10, marker="READONLY")
+            assert "READONLY" in output and "bypassed\r\n" not in output, (
+                f"changing `readonly` in the query was not rejected: {output!r}"
+            )
+        finally:
+            sock.close()
+    finally:
+        instance.query("DROP USER IF EXISTS restricted_terminal_user")
