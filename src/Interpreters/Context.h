@@ -1620,8 +1620,6 @@ public:
 
     /// The provider for the named worker cluster (empty = default), built on first use.
     StatelessWorkersProviderPtr getStatelessWorkersProvider(const String & cluster_name) const;
-    /// Like `getStatelessWorkersProvider`, but returns null instead of building one.
-    StatelessWorkersProviderPtr tryGetStatelessWorkersProvider(const String & cluster_name) const;
     std::shared_ptr<StatelessWorkersProviderRegistry> getStatelessWorkersProviderRegistry() const;
     void reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const;
     /// The query's provider, resolved once so plan sizing and the allocation use the same workers.

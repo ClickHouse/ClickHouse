@@ -9298,11 +9298,6 @@ StatelessWorkersProviderPtr Context::getStatelessWorkersProvider(const String & 
     return getStatelessWorkersProviderRegistry()->getProvider(cluster_name);
 }
 
-StatelessWorkersProviderPtr Context::tryGetStatelessWorkersProvider(const String & cluster_name) const
-{
-    return getStatelessWorkersProviderRegistry()->tryGetProvider(cluster_name);
-}
-
 void Context::reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const
 {
     getStatelessWorkersProviderRegistry()->reloadConfig(config);

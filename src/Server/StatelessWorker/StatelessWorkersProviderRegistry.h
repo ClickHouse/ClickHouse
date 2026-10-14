@@ -2,6 +2,8 @@
 
 #include <map>
 #include <mutex>
+#include <utility>
+#include <vector>
 #include <boost/core/noncopyable.hpp>
 #include <base/types.h>
 #include <Common/logger_useful.h>
@@ -33,6 +35,9 @@ public:
 
     /// The provider for `cluster_name` if it is already built, otherwise null.
     StatelessWorkersProviderPtr tryGetProvider(const String & cluster_name);
+
+    /// The providers built so far, by registry key (empty for the default cluster). Builds none.
+    std::vector<std::pair<String, StatelessWorkersProviderPtr>> getBuiltProviders();
 
     /// On a config reload, retire providers whose cluster was removed or reconfigured (queries holding
     /// them drain on them) and refresh the others in place. Never throws: a cluster whose new

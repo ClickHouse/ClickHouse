@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 
+#include <map>
 #include <string>
 
 namespace ProfileEvents
@@ -349,6 +350,32 @@ TEST(StatelessWorkersProviderRegistry, ReloadWithBrokenClusterRetiresWithoutThro
     EXPECT_NO_THROW(registry.reloadConfig(getContext().context->getConfigRef()));
     EXPECT_FALSE(registry.tryGetProvider("foo"));
     EXPECT_THROW(registry.getProvider("foo"), Exception);
+}
+
+/// The registry reports every provider it has built, by cluster, and builds none itself.
+TEST(StatelessWorkersProviderRegistry, ListsBuiltProvidersByCluster)
+{
+    applyStatelessWorkerConfig(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <host>default-host</host>
+        <clusters>
+            <a><host>host-a</host></a>
+            <b><host>host-b</host></b>
+        </clusters>
+    </stateless_worker_client>
+)");
+    StatelessWorkersProviderRegistry registry;
+    EXPECT_TRUE(registry.getBuiltProviders().empty());
+
+    auto default_provider = registry.getProvider("");
+    auto provider_a = registry.getProvider("a");
+    auto built = registry.getBuiltProviders();
+    ASSERT_EQ(built.size(), 2u);
+    std::map<String, StatelessWorkersProviderPtr> by_cluster(built.begin(), built.end());
+    EXPECT_EQ(by_cluster.at("").get(), default_provider.get());
+    EXPECT_EQ(by_cluster.at("a").get(), provider_a.get());
+    EXPECT_FALSE(by_cluster.contains("b"));
 }
 
 /// End-to-end: the registry resolves a named static cluster and allocates its workers (no discovery).

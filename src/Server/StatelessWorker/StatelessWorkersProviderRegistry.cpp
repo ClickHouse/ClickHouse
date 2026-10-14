@@ -139,6 +139,16 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::tryGetProvider(con
     return nullptr;
 }
 
+std::vector<std::pair<String, StatelessWorkersProviderPtr>> StatelessWorkersProviderRegistry::getBuiltProviders()
+{
+    std::lock_guard lock(mutex);
+    std::vector<std::pair<String, StatelessWorkersProviderPtr>> result;
+    result.reserve(providers.size());
+    for (const auto & [name, entry] : providers)
+        result.emplace_back(name, entry.provider);
+    return result;
+}
+
 StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(
     const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
 {
