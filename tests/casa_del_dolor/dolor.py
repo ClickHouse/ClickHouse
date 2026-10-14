@@ -734,6 +734,9 @@ forced_stop_during_run: set[str] = set()
 # A stop that left the process alive. The teardown stop may get it on the second try, so
 # this is the only record that the run had a stop failure.
 stop_failed_during_run: set[str] = set()
+# A replacement that did not come up. `start_clickhouse` kills it with a SIGKILL first, and the
+# teardown accepts that 137, so this is the only record that the restart failed.
+start_failed_during_run: set[str] = set()
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 # Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -874,8 +877,11 @@ while all_running and (not reached_limit):
                     start_wait_sec=SERVER_START_WAIT_SECONDS, retry_start=False
                 )
             except Exception as ex:
-                logger.error(f"Failed to start ClickHouse: {ex}")
+                logger.error(
+                    f"Server {next_pick.name} failed to start during a scheduled restart: {ex}"
+                )
                 logger.info(f"The server {next_pick.name} is not running")
+                start_failed_during_run.add(next_pick.name)
                 all_running = False
             if all_running and args.with_leak_detection and next_pick.name == "node0":
                 # Has to reset leak detector
@@ -1075,6 +1081,11 @@ for server in servers:
         logging.error(
             f"Server {server.name} was still running after a stop attempt during a "
             "scheduled restart earlier in the run"
+        )
+        good_exit = False
+    if server.name in start_failed_during_run:
+        logging.error(
+            f"Server {server.name} failed to start during a scheduled restart earlier in the run"
         )
         good_exit = False
     # The server reports one at `<Error>`, or at `<Fatal>` when it took the process down.

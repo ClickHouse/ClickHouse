@@ -60,6 +60,13 @@ EXIT_UNACCOUNTED_MESSAGE = "Exit code unaccounted for"
 # an unaccounted exit here, so a node that vanished this way never vetoes a benign OOM
 # downgrade coming from a *different* node's 137 in the same multi-node run.
 SERVER_GONE_MESSAGE = "is unexpectedly gone"
+# A scheduled restart whose replacement server did not come up. `start_clickhouse` SIGKILLs
+# it before raising, so its 137 must not reach the kernel-OOM heuristic either. `dolor.py`
+# logs this both when it happens and at teardown.
+START_FAILED_MESSAGE = "failed to start during a scheduled restart"
+# Wall-clock ceiling on `dolor.py`, far above its internal --timeout (30 or 60 minutes) plus
+# restarts/setup/shutdown overhead. A run that reaches it is hung, whatever the logs say.
+DOLOR_WATCHDOG_SEC = 4 * 3600
 
 
 def collapse_server_exit_code(
@@ -213,6 +220,30 @@ def get_node_workspace_logs(workspace_path: Path, node_index: int):
     ]
 
 
+# The three Keeper processes `ClickHouseCluster` starts for the `dolor` cluster run the
+# tested binary too. Their compose service restarts them, so a Keeper that aborts can leave
+# a run that otherwise finishes cleanly: only its logs show it.
+KEEPER_INDEXES = range(1, 4)
+
+
+def get_keeper_container_logs(keeper_index: int):
+    logs_dir = f"{_dolor_instances_dir()}/keeper{keeper_index}/log"
+    return [
+        Path(f"{logs_dir}/clickhouse-keeper.log"),
+        Path(f"{logs_dir}/clickhouse-keeper.err.log"),
+        # Raw stderr, where a sanitizer report goes
+        Path(f"{logs_dir}/stderr.log"),
+    ]
+
+
+def get_keeper_workspace_logs(workspace_path: Path, keeper_index: int):
+    return [
+        workspace_path / f"keeper{keeper_index}.log",
+        workspace_path / f"keeper{keeper_index}.err.log",
+        workspace_path / f"keeper_stderr{keeper_index}.log",
+    ]
+
+
 def _copy_node_cores_to_workspace(workspace_path: Path) -> list[Path]:
     """Find core dumps under the per-node Dolor instance directories and copy them to
     `workspace_path` with unique names. `ClickHouseService.collect_cores` only inspects
@@ -355,6 +386,8 @@ def _has_specific_failure_verdict(
     stop_failed: bool,
     generator_early_exit_code: int | None,
     exit_unaccounted: bool = False,
+    start_failed: bool = False,
+    watchdog_expired: bool = False,
 ) -> bool:
     """True when `_classify_failed_run` is guaranteed to name the failure itself.
 
@@ -367,6 +400,8 @@ def _has_specific_failure_verdict(
         or stop_failed
         or generator_early_exit_code is not None
         or exit_unaccounted
+        or start_failed
+        or watchdog_expired
     )
 
 
@@ -380,6 +415,8 @@ def _classify_failed_run(
     generator_early_exit_code: int | None = None,
     exit_unaccounted: bool = False,
     current_logs: list[Path] | None = None,
+    start_failed: bool = False,
+    watchdog_expired: bool = False,
 ) -> tuple[Result | None, str | None]:
     """Decide what a non-zero `dolor.py` exit means when `analyze_job_logs` returned OK.
 
@@ -420,6 +457,25 @@ def _classify_failed_run(
             "WARNING: Sanitizer OOM in a rotated log - test considered passed"
         )
         benign_downgrade = True
+    # The watchdog killing a hung dolor.py comes first: a benign OOM another node logged before
+    # the hang explains nothing about it, and the teardown that would leave its own markers
+    # never ran.
+    if failed_result is None and watchdog_expired:
+        message = (
+            f"dolor.py did not finish within {DOLOR_WATCHDOG_SEC // 3600} hours and was "
+            "killed by the watchdog"
+        )
+        failed_result = Result.create_from(
+            results=[
+                Result(
+                    name="Watchdog timeout",
+                    info=f"{message}. Check fuzzer.log.",
+                    status=Result.Status.FAIL,
+                )
+            ],
+            info=message,
+            stopwatch=sw,
+        )
     # A forced shutdown leaves no report anywhere and is a failure in its own right, not
     # something a benign OOM verdict explains: `collapse_server_exit_code` already withheld its
     # 137 from the kernel-OOM heuristic, so it overrides `benign_downgrade` instead of yielding.
@@ -449,6 +505,21 @@ def _classify_failed_run(
                 )
             ],
             info="A server was still running after a stop attempt",
+            stopwatch=sw,
+        )
+    # A replacement server that did not come up is a restart failure, and its 137 is the kill
+    # `start_clickhouse` sent it, so no OOM explains it either.
+    if failed_result is None and start_failed:
+        message = "A server failed to start during a scheduled restart"
+        failed_result = Result.create_from(
+            results=[
+                Result(
+                    name="Server startup",
+                    info=f"{message}. Check fuzzer.log.",
+                    status=Result.Status.FAIL,
+                )
+            ],
+            info=message,
             stopwatch=sw,
         )
     # The generator dying before cleanup is its own failure, whatever the servers did: an OOM
@@ -504,6 +575,22 @@ def _classify_failed_run(
         # run this function fails would contradict the report.
         info_override = None
     return failed_result, info_override
+
+
+def _complete_with_artifacts(
+    failed_result: Result, workspace_path: Path, paths: list[Path]
+) -> None:
+    """Report a failure this wrapper found itself, with the artifacts of any other failure.
+
+    `analyze_job_logs` attaches the artifacts only to a failure it reports itself, so repeat
+    that finalization here: encrypt the cores and attach every non-empty artifact. Without it
+    these findings would go out with a poorer report than every other failing path.
+    """
+    failed_result.set_files(ClickHouseService.collect_cores(workspace_path))
+    for file in paths:
+        if file.exists() and file.stat().st_size > 0:
+            failed_result.set_files(file)
+    failed_result.complete_job()
 
 
 def main():
@@ -834,10 +921,16 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         outfile.write(base_command)
         outfile.write("\n")
 
-    # 4-hour wall-clock ceiling so a wedged dolor.py doesn't block the runner until the
-    # job-level timeout. Comfortably above the internal --timeout (30 or 60 minutes, see
-    # dolor_timeout_minutes above) plus restarts/setup/shutdown overhead.
-    cmd_ok = Shell.check(command=base_command, verbose=True, timeout=4 * 3600)
+    # Bounded so a wedged dolor.py doesn't block the runner until the job-level timeout.
+    # `Shell.check` only says the command failed; only the elapsed time shows that the
+    # watchdog killed it. Its SIGTERM skips dolor.py's teardown, so no log says so either.
+    dolor_started = time.monotonic()
+    cmd_ok = Shell.check(command=base_command, verbose=True, timeout=DOLOR_WATCHDOG_SEC)
+    watchdog_expired = (
+        not cmd_ok and time.monotonic() - dolor_started >= DOLOR_WATCHDOG_SEC
+    )
+    if watchdog_expired:
+        print(f"dolor.py was killed by the {DOLOR_WATCHDOG_SEC}s watchdog")
 
     # Copy generated configuration files from container to host for further analysis.
     # Each `modify_*_settings` helper and the BuzzHouse generator write the *effective*
@@ -881,6 +974,21 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                 dst = workspace_path / f"{host_log.name}{suffix}"
                 shutil.copy2(rotated, dst)
                 paths.append(dst)
+    # The same for the Keepers, which a run without ZooKeeper does not have at all.
+    keeper_logs: list[Path] = []
+    for i in KEEPER_INDEXES:
+        for cont_log, host_log in zip(
+            get_keeper_container_logs(i), get_keeper_workspace_logs(workspace_path, i)
+        ):
+            for src in (cont_log, *cont_log.parent.glob(f"{cont_log.name}.*")):
+                if not src.is_file():
+                    continue
+                dst = (
+                    workspace_path / f"{host_log.name}{src.name[len(cont_log.name) :]}"
+                )
+                shutil.copy2(src, dst)
+                keeper_logs.append(dst)
+                paths.append(dst)
 
     # Safety net: detect Python-level crashes in the fuzzer log even if the
     # exit code was somehow swallowed (e.g. future command changes drop pipefail)
@@ -906,6 +1014,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
     server_died = False
     forced_stop = False
     stop_failed = False
+    start_failed = False
     exit_unaccounted = False
     fuzzer_exit_code = 0
     generator_early_exit_code: int | None = None
@@ -965,6 +1074,8 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                     exit_unaccounted = True
                 if STOP_FAILED_MESSAGE in line:
                     stop_failed = True
+                if START_FAILED_MESSAGE in line:
+                    start_failed = True
     except Exception:
         Result.create_from(
             status=Result.Status.ERROR,
@@ -978,7 +1089,13 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         print("A server had to be force killed on shutdown - not a kernel OOM")
     if stop_failed:
         print("A server was still running after a stop attempt")
-    server_exit_code = collapse_server_exit_code(node_exit_codes, forced_stop)
+    if start_failed:
+        print("A server failed to start during a scheduled restart")
+    # The SIGKILL `start_clickhouse` sends a server that failed to start is Dolor's own,
+    # like a forced stop's, and must not pass for a kernel OOM.
+    server_exit_code = collapse_server_exit_code(
+        node_exit_codes, forced_stop or start_failed
+    )
     # An abnormal exit code IS the server dying, and a pure kernel OOM logs no message
     # the patterns above match, so derive the flag rather than string-match for it.
     # `collapse_server_exit_code` returns 0 for the clean and graceful codes.
@@ -1054,12 +1171,39 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         True,
         error_logs=error_logs,
     )
+    # Nothing above reads the Keeper logs, and `dolor.py` can exit 0 with one of them holding
+    # a report, so a run that would pass has to clear them first.
+    if result.is_ok() or _is_expected_kill_only_failure(result):
+        keeper_failure, keeper_signal = _classify_genuine_failure(
+            keeper_logs, buzz_out, sw, "Genuine failure found in a Keeper log"
+        )
+        if keeper_failure is None and keeper_signal:
+            message = "A Keeper log holds a failure report the log parser cannot name"
+            keeper_failure = Result.create_from(
+                results=[
+                    Result(
+                        name="Keeper",
+                        info=f"{message}. Check the keeper*.log artifacts.",
+                        status=Result.Status.FAIL,
+                    )
+                ],
+                info=message,
+                stopwatch=sw,
+            )
+        if keeper_failure is not None:
+            _complete_with_artifacts(keeper_failure, workspace_path, paths)
+            return
     # A teardown failure, or a generator that died on its own, also reaches here already
     # failing and named after the expected kill line that the forced stop or the end-of-run
     # kill wrote. Let those be reclassified too, but only when there is a specific verdict to
     # put in their place.
     expected_kill_only = _has_specific_failure_verdict(
-        forced_stop, stop_failed, generator_early_exit_code, exit_unaccounted
+        forced_stop,
+        stop_failed,
+        generator_early_exit_code,
+        exit_unaccounted,
+        start_failed,
+        watchdog_expired,
     ) and _is_expected_kill_only_failure(result)
     if not cmd_ok and (result.is_ok() or expected_kill_only):
         failed_result, info_override = _classify_failed_run(
@@ -1072,21 +1216,14 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             generator_early_exit_code,
             exit_unaccounted,
             current_logs=current_logs,
+            start_failed=start_failed,
+            watchdog_expired=watchdog_expired,
         )
         if info_override and not expected_kill_only:
             print(info_override)
             result.set_info(info_override)
         if failed_result is not None:
-            # `analyze_job_logs` attaches the artifacts only to a failure it reports itself,
-            # and it returned OK here, so repeat that finalization for the failure this
-            # wrapper reports instead: encrypt the cores and attach every non-empty artifact.
-            # Without it the findings this path exists to preserve would go out with a poorer
-            # report than every other failing path.
-            failed_result.set_files(ClickHouseService.collect_cores(workspace_path))
-            for file in paths:
-                if file.exists() and file.stat().st_size > 0:
-                    failed_result.set_files(file)
-            failed_result.complete_job()
+            _complete_with_artifacts(failed_result, workspace_path, paths)
             return
 
     result.complete_job()
