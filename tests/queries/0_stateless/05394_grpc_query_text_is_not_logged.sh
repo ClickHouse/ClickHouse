@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # Tag no-fasttest: In fasttest, ENABLE_LIBRARIES=0, so the grpc library is not built
+# Tag no-replicated-database: the replicas listen on the same gRPC port, so the query can run on a server whose text_log is not read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
