@@ -421,6 +421,7 @@ FilterTransform::FilterTransform(
         constant_columns_after_filter
             = collectConstantColumnsAfterFilter(expression->getActionsDAG(), filter_column_name, transformed_header);
 
+        set_spillables.add(expression->getActionsDAG());
         /// Special check to stop queries like "WHERE ignore(...)"
         const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
         while (node->type == ActionsDAG::ActionType::ALIAS)

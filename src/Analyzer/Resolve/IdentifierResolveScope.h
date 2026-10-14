@@ -205,6 +205,9 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
 
+    /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
+    QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;
+
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column cast to supertype)
       * However, the column in the projection still refers to the table as its source.
