@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int METADATA_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
@@ -70,8 +71,6 @@ constexpr size_t MAX_NAMESPACE_LEVELS = 16;
 constexpr size_t MAX_NAMESPACE_LEVEL_LENGTH = 256;
 constexpr size_t MAX_NAMESPACE_PROPERTIES_SIZE = 64_KiB;
 constexpr size_t MAX_TABLE_NAME_LENGTH = 256;
-/// Metadata files with many snapshots reach tens of megabytes.
-constexpr size_t MAX_METADATA_FILE_SIZE = 64_MiB;
 constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
 /// The Iceberg table property that names the codec of metadata files.
@@ -631,8 +630,7 @@ Poco::JSON::Object::Ptr IcebergRESTCatalogHandler::readTableMetadata(
     const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const
 {
     const auto key = warehouse.objectKey(pointer.metadata_location);
-    const auto content = readObjectToString(
-        *warehouse.object_storage, key, server.context()->getReadSettings(), MAX_METADATA_FILE_SIZE, getMetadataFileCompressionMethod(key));
+    const auto content = readObjectToString(*warehouse.object_storage, key, server.context()->getReadSettings(), getMetadataFileCompressionMethod(key));
     return parseJSONObject(content, fmt::format("Metadata file {}", pointer.metadata_location));
 }
 
@@ -900,6 +898,12 @@ void IcebergRESTCatalogHandler::handleUpdateTable(
     }
     catch (const Exception & e)
     {
+        /// The request was based on metadata that another commit has since replaced. The client retries after reloading.
+        if (e.code() == ErrorCodes::METADATA_MISMATCH)
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", e.message());
+            return;
+        }
         /// Other errors are not caused by the client. The HTTP layer reports them as internal errors.
         if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::BAD_ARGUMENTS)
             throw;

@@ -2091,6 +2091,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
             return false;
         }
+        /// TODO: 500, 502 and 504 mean the commit state is unknown. The client should keep the written files
+        /// until it re-reads the table, instead of treating this as a failure and cleaning them up.
         LOG_ERROR(log, "updateMetadata failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,

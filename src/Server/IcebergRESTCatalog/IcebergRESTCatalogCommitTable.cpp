@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int METADATA_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -157,13 +158,13 @@ void addSnapshot(Poco::JSON::Object & metadata, const Poco::JSON::Object & updat
     if (findSnapshot(metadata, new_snapshot_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Snapshot {} already exists", new_snapshot_id);
 
-    /// Check the sequence number is valid. This validates the request against the metadata the server loaded.
-    /// A concurrent commit is rejected later by the Keeper version check in `commitTableMetadata`.
+    /// A stale sequence number means another commit landed since the client read the metadata, possibly on another ref.
+    /// The handler maps `METADATA_MISMATCH` to a 409 response, so the client reloads the metadata and retries.
     const auto new_sequence_number = getInteger(*new_snapshot, f_metadata_sequence_number);
     const auto last_sequence_number = getInteger(metadata, f_last_sequence_number);
     if (new_sequence_number <= last_sequence_number)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Snapshot sequence number {} must be greater than {}", new_sequence_number, last_sequence_number);
+            ErrorCodes::METADATA_MISMATCH, "Snapshot sequence number {} must be greater than {}", new_sequence_number, last_sequence_number);
 
     /// Add snapshot.
     getArray(metadata, f_snapshots)->add(new_snapshot);
@@ -200,9 +201,10 @@ void setSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & up
     {
         metadata.set(f_current_snapshot_id, snapshot_id);
 
+        /// The log records when main moved, which is now. The snapshot itself may be old, for example on a rollback.
         Poco::JSON::Object::Ptr entry = new Poco::JSON::Object;
         entry->set(f_metadata_snapshot_id, snapshot_id);
-        entry->set(f_timestamp_ms, snapshot->get(f_timestamp_ms));
+        entry->set(f_timestamp_ms, metadata.get(f_last_updated_ms));
         getArray(metadata, f_snapshot_log)->add(entry);
     }
 }
@@ -275,6 +277,8 @@ void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Ar
 {
     /// Read before the updates, which change the metadata in place.
     const auto previous_last_updated_ms = getInteger(metadata, f_last_updated_ms);
+    /// Set before the updates, so set-snapshot-ref records the same time in the snapshot log.
+    metadata.set(f_last_updated_ms, nowMs());
 
     for (const auto & update : updates)
     {
@@ -298,7 +302,6 @@ void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Ar
     }
 
     appendMetadataLog(metadata, current_metadata_location, previous_last_updated_ms);
-    metadata.set(f_last_updated_ms, nowMs());
 }
 
 String nextMetadataLocation(
