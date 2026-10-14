@@ -1131,7 +1131,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     /// it itself when it rebuilds the lambda from the serialized plan.
     auto compile_lambda_expression = planner_context->mayBeSerializedForRemoteExecution() ? CompileExpressions::no : CompileExpressions::yes;
     auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), compile_lambda_expression);
-    auto lambda_node_name = action_node_name_helper.nameApartFromInputColumns(calculateActionNodeName(node, *planner_context));
+    QueryTreeNodeToName lambda_node_to_name;
+    ActionNodeNameHelper lambda_name_helper(lambda_node_to_name, *planner_context,
+        /*use_column_identifier_as_action_node_name_=*/ true, action_node_name_helper.getIsInputColumnName());
+    auto lambda_node_name = action_node_name_helper.nameApartFromInputColumns(lambda_name_helper.calculateActionNodeName(node));
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
 

@@ -63,6 +63,14 @@ CREATE TABLE t_lam (a UInt8, arr Array(UInt8), `x UInt8 -> equals(x, a)` UInt8, 
 INSERT INTO t_lam (a, arr, `x UInt8 -> equals(x, a)`) VALUES (1, [1, 2], 7), (3, [1, 2], 7);
 SELECT a, d, `x UInt8 -> equals(x, a)` FROM t_lam ORDER BY a;
 
+CREATE TABLE t_lam2 (a UInt8, arr Array(UInt8), `equals(x, a)` UInt8,
+    c Array(UInt8) DEFAULT arrayMap(x -> x = a, arr), s Array(UInt8) DEFAULT arrayMap(x -> `equals(x, a)`, arr))
+    ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_lam2 (a, arr, `equals(x, a)`) VALUES (1, [1, 2], 7);
+SELECT c, s FROM t_lam2;
+ALTER TABLE t_lam2 UPDATE c = arrayMap(x -> `equals(x, a)`, arr), s = arrayMap(x -> x = a, arr) WHERE 1 SETTINGS mutations_sync = 2;
+SELECT c, s FROM t_lam2;
+
 -- { echoOff }
 
 DROP TABLE t_merge;
@@ -77,3 +85,4 @@ DROP TABLE t_inf1;
 DROP TABLE t_inf2;
 DROP TABLE t_idx;
 DROP TABLE t_lam;
+DROP TABLE t_lam2;
