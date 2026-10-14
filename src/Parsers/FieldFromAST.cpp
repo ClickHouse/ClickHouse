@@ -3,6 +3,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/isDiskFunction.h>
+#include <Common/HiddenSecret.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
@@ -76,7 +77,7 @@ public:
                 /// Not `key = value`, so the parser rejects it: hide it whole, a throw here would log the query unmasked.
                 if (!key_identifier)
                 {
-                    arg = make_intrusive<ASTLiteral>("[HIDDEN]");
+                    arg = make_intrusive<ASTLiteral>(String(HIDDEN_SECRET));
                     continue;
                 }
 
@@ -84,7 +85,7 @@ public:
                 {
                     auto & function_args = function_args_expr->children;
                     for (size_t i = 1; i < function_args.size(); ++i)
-                        function_args[i] = make_intrusive<ASTLiteral>("[HIDDEN]");
+                        function_args[i] = make_intrusive<ASTLiteral>(String(HIDDEN_SECRET));
                 }
             }
         }

@@ -6,37 +6,27 @@ tags: ['도구 및 유틸리티']
 keywords: ['자동 스키마 마이그레이션']
 ---
 
-<div id="what-is-schema-management">
-  ## 스키마 관리란 무엇입니까?
-</div>
+## 스키마 관리란 무엇입니까? {#what-is-schema-management}
 
 스키마 관리는 데이터베이스 스키마에 버전 관리 원칙을 적용하는 작업입니다. 일반적으로 테이블, 컬럼, 그리고 이들 간 관계의 변경 사항을 추적하고 자동화하는 것을 포함하며, 이를 통해 스키마 업데이트를 반복 가능하고 감사할 수 있으며 여러 환경에서 일관되게 적용할 수 있습니다. 스키마 관리는 새로운 사용 사례나 성능 최적화를 위해 데이터베이스 내 데이터 구조를 수정해야 할 때 필요해집니다.
 
-<div id="why-is-it-important">
-  ### 왜 중요한가요?
-</div>
+### 왜 중요한가요? {#why-is-it-important}
 
 스키마 관리 도구를 사용하면 애플리케이션 배포와 함께 스키마 변경을 자동화할 수 있습니다. 새로운 애플리케이션 버전을 배포하려면 스키마 변경이 먼저 필요한 경우가 많습니다. 또한 이러한 도구는 사용자가 데이터베이스의 한 버전에서 다른 버전으로 마이그레이션하는 과정과 관련되므로 &quot;스키마 마이그레이션&quot; 또는 &quot;데이터베이스 마이그레이션&quot; 도구라고도 합니다.
 
 스키마 관리 도구가 없으면 데이터베이스 변경을 수작업으로 처리해야 하므로 오류가 발생하기 쉽고, 팀과 환경 전반에서 조율하기도 어렵습니다. 물론 언제든지 데이터베이스에 직접 DDL을 실행할 수는 있지만, 이러한 도구를 사용하면 버전 관리, 자동화된 배포, rollback 지원, 감사 추적을 구현할 수 있습니다. 특히 ClickHouse에서는 일부 DDL 변경의 비용이 크거나 되돌릴 수 없는 경우가 있으므로, 검토 단계를 포함한 구조화된 마이그레이션 프로세스가 특히 중요합니다.
 
-<div id="types-of-schema-management-approaches">
-  ### 스키마 관리 방식의 유형
-</div>
+### 스키마 관리 방식의 유형 {#types-of-schema-management-approaches}
 
 스키마 관리 도구는 일반적으로 두 가지 범주로 나뉩니다.
 
-<div id="imperative">
-  #### 명령형
-</div>
+#### 명령형 {#imperative}
 
 이러한 도구는 상태 A에서 상태 B로 변경하는 방법을 설명하는 버전 관리된 SQL 파일을 사용합니다. `CREATE TABLE`, `ALTER TABLE`, `DROP COLUMN`과 같은 명시적인 DDL 문을 파일에 작성합니다. 그러면 도구가 파일을 순서대로 실행하고 어떤 파일이 적용되었는지 추적합니다. 이 범주에서는 실행할 SQL을 정확히 직접 지정합니다.
 
 예시: Golang Migrate, Goose, Flyway.
 
-<div id="declarative">
-  #### 선언형
-</div>
+#### 선언형 {#declarative}
 
 이러한 도구는 사용자가 먼저 원하는 상태의 스키마를 정의하는 것부터 시작합니다. 도구는 현재 데이터베이스(database)와 원하는 상태의 차이를 파악한 다음, 필요한 마이그레이션을 생성하고 적용합니다. 이 방식은 수동으로 마이그레이션을 작성하는 부담을 줄이고 스키마 드리프트를 완화합니다. 이 범주에서는 도구가 실행할 정확한 SQL을 결정합니다.
 
@@ -50,19 +40,13 @@ keywords: ['자동 스키마 마이그레이션']
 
 팀의 운영 방식에 맞는 도구를 선택하십시오. 명령형 도구는 어떤 DDL이 실행되는지 정확히 파악할 수 있게 해 주지만, 스키마 드리프트를 식별하고 관리하는 데 꾸준한 주의가 필요합니다. 선언형 도구는 유지 관리 작업의 상당 부분을 자동화하고 스키마 드리프트를 방지하는 데 도움이 되지만, ClickHouse에 적용하기 전에 생성된 계획을 항상 검토해야 합니다. 자동으로 생성된 계획에 예상치 못한 mutation이나 비용이 큰 재작성이 숨어 있지 않은지 반드시 확인하십시오.
 
-<div id="what-to-consider-when-choosing-a-tool">
-  ## 도구 선택 시 고려할 사항
-</div>
+## 도구 선택 시 고려할 사항 {#what-to-consider-when-choosing-a-tool}
 
-<div id="what-does-your-team-already-use">
-  ### 팀에서 이미 사용 중인 도구는 무엇입니까?
-</div>
+### 팀에서 이미 사용 중인 도구는 무엇입니까? {#what-does-your-team-already-use}
 
 대개는 익숙한 에코시스템을 기준으로 도구를 선택하게 됩니다. 팀이 Go를 주로 사용한다면 Golang Migrate나 Goose가 자연스럽게 느껴질 수 있습니다. Java 에코시스템을 사용한다면 이미 Flyway나 Liquibase를 도입해 두었을 수도 있습니다. 인프라 팀이 Terraform과 infrastructure-as-code 패턴을 사용한다면 Atlas의 선언형 모델이 편하게 맞을 수 있습니다. 팀이 이미 잘 알고 있는 도구를 선택하는 것은 분명한 장점이 있습니다. 가장 좋은 도구는 실제로 도입되어 꾸준히 사용되는 도구입니다.
 
-<div id="what-is-your-desired-process">
-  ### 원하는 프로세스는 무엇입니까?
-</div>
+### 원하는 프로세스는 무엇입니까? {#what-is-your-desired-process}
 
 스키마 변경이 조직 내에서 어떤 방식으로 이루어지는지 생각해 보십시오. 다음과 같은 것이 필요한지 검토하십시오.
 
@@ -72,15 +56,11 @@ keywords: ['자동 스키마 마이그레이션']
 
 요구 사항과 프로세스에 맞는 도구를 선택하십시오.
 
-<div id="recommended-tools">
-  ## 권장 도구
-</div>
+## 권장 도구 {#recommended-tools}
 
 다음은 성숙도, ClickHouse와의 호환성, 커뮤니티 채택 수준, 운영 적합성을 바탕으로 ClickHouse 사용자에게 일반적으로 권장하는 도구입니다.
 
-<div id="atlas">
-  ### Atlas
-</div>
+### Atlas {#atlas}
 
 [Atlas](https://atlasgo.io/guides/clickhouse)는 선언형 접근 방식을 사용하는 스키마를 코드로 관리하는 도구입니다. 원하는 스키마 상태를 HCL 또는 SQL로 정의하면 Atlas가 현재 데이터베이스를 검사하고 차이를 계산한 뒤 migration 계획을 생성하여, 필요하면 검토 후 적용합니다.
 
@@ -95,9 +75,7 @@ keywords: ['자동 스키마 마이그레이션']
 * **License and availability:** Open Core; Atlas CLI에는 Apache 2.0 커뮤니티 에디션이 있지만 ClickHouse 지원은 Pro 플랜 또는 평가판에서만 제공됩니다
 * **클러스터 지원:** 예
 
-<div id="golang-migrate">
-  ### Golang Migrate
-</div>
+### Golang Migrate {#golang-migrate}
 
 [Golang Migrate](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse)는 간단하면서도 널리 사용되는 마이그레이션 실행 도구입니다. 업 및 다운 단계가 포함된 버전별 SQL 파일을 작성하면, 이 도구가 이를 순서대로 적용하고 ClickHouse 데이터베이스의 `schema_migrations` 테이블에서 상태를 추적합니다.
 
@@ -112,9 +90,7 @@ keywords: ['자동 스키마 마이그레이션']
 * **라이선스:** 오픈 소스, MIT
 * **클러스터 지원:** 예
 
-<div id="goose">
-  ### Goose
-</div>
+### Goose {#goose}
 
 [Goose](https://github.com/pressly/goose)는 Golang Migrate와 비슷한 철학을 가진 또 다른 Go 기반 마이그레이션 실행 도구입니다. 버전이 지정된 SQL 파일이나 복잡한 로직을 위한 Go 함수를 작성하면, Goose가 이를 순차적으로 적용하고 ClickHouse의 버전 테이블에서 상태를 추적합니다.
 
@@ -129,19 +105,17 @@ keywords: ['자동 스키마 마이그레이션']
 * **License:** 오픈 소스, MIT
 * **클러스터 지원:** 없음
 
-<div id="other-tools-in-the-ecosystem">
-  ## 에코시스템의 기타 도구
-</div>
+## 에코시스템의 기타 도구 {#other-tools-in-the-ecosystem}
 
 다음 도구들도 ClickHouse와 함께 사용할 수 있습니다. 스택과 워크플로에 따라 더 적합한 선택일 수 있습니다. 다만 일반적으로는 위의 도구를 권장합니다.
 
-| 도구                                                                                            | 라이선스  | 다음과 같은 경우 고려                                                           |
-| :-------------------------------------------------------------------------------------------- | :---- | :--------------------------------------------------------------------- |
-| [Bytebase](https://docs.bytebase.com/introduction/supported-databases)                        | 오픈 코어 | 여러 환경 전반에서 거버넌스, 승인 워크플로, 감사 추적이 필요한 대규모 조직                            |
-| [Flyway](https://documentation.red-gate.com/fd/supported-databases-for-flyway-143754067.html) | 오픈 소스 | 이미 Flyway 또는 JVM 기반 인프라를 표준으로 사용하고 있는 팀                                |
-| [Liquibase](https://github.com/MEDIARITHMICS/liquibase-clickhouse)                            | 오픈 코어 | 여러 데이터베이스에서 Liquibase를 사용하며 일관성을 유지하려는 팀                               |
-| [`clickhouse-migrations` for Node.js](https://www.npmjs.com/package/clickhouse-migrations)    | 오픈 소스 | 단순한 ClickHouse 중심 실행 도구를 원하는 Node.js 또는 TypeScript 팀                   |
-| [Houseplant](https://github.com/juneHQ/houseplant)                                            | 오픈 소스 | 환경별 차이를 인식하는 ClickHouse 전용 도구를 원하는 Python 팀                            |
-| [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)                           | 오픈 소스 | 네이티브 ClickHouse 클라이언트 배포 스크립팅 또는 복잡한 배포 전반에서의 명시적 의존성 관리를 선호하는 팀       |
-| [Alembic](https://alembic.sqlalchemy.org/) with SQLAlchemy                                    | 오픈 소스 | 데이터베이스 액세스를 위해 이미 SQLAlchemy를 사용하고 있는 Python 팀                         |
-| [`clickhouse-migrations` for Python](https://github.com/zifter/clickhouse-migrations)         | 오픈 소스 | ClickHouse 클러스터를 지원하는 단순한 파일 기반 마이그레이션 실행 도구, CLI, 라이브러리를 원하는 Python 팀 |
+| 도구                                                                                            | 라이선스  | 다음과 같은 경우 고려                                                                                                                    |
+| :-------------------------------------------------------------------------------------------- | :---- | :------------------------------------------------------------------------------------------------------------------------------ |
+| [Bytebase](https://docs.bytebase.com/introduction/supported-databases)                        | Open Core | 여러 환경 전반에서 거버넌스, 승인 워크플로, 감사 추적이 필요한 대규모 조직                                                                                     |
+| [Flyway](https://documentation.red-gate.com/fd/supported-databases-for-flyway-143754067.html) | 오픈 소스 | 이미 Flyway 또는 JVM 기반 인프라를 표준으로 사용하고 있는 팀                                                                                         |
+| [Liquibase](https://github.com/MEDIARITHMICS/liquibase-clickhouse)                            | Open Core | 여러 데이터베이스에서 Liquibase를 사용하며 일관성을 유지하려는 팀                                                                                        |
+| [`clickhouse-migrations` for Node.js](https://www.npmjs.com/package/clickhouse-migrations)    | 오픈 소스 | 단순한 ClickHouse 중심 실행 도구를 원하는 Node.js 또는 TypeScript 팀                                                                            |
+| [Houseplant](https://github.com/juneHQ/houseplant)                                            | 오픈 소스 | 환경별 차이를 인식하는 ClickHouse 전용 도구를 원하는 Python 팀                                                                                     |
+| [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)                           | 오픈 소스 | 네이티브 ClickHouse 클라이언트 배포 스크립팅 또는 복잡한 배포 전반에서의 명시적 의존성 관리를 선호하는 팀                                                                |
+| [Alembic](https://alembic.sqlalchemy.org/) with SQLAlchemy                                    | 오픈 소스 | 데이터베이스 액세스를 위해 이미 SQLAlchemy를 사용하고 있는 Python 팀                                                                                  |
+| [`clickhouse-migrations` for Python](https://github.com/zifter/clickhouse-migrations)         | 오픈 소스 | ClickHouse 클러스터를 지원하는 단순한 파일 기반 마이그레이션 실행 도구, CLI, 라이브러리와 동시 실행을 위한 선택적 Keeper 기반 잠금, 스키마 덤프 및 차이 비교, 오프라인 유효성 검사를 원하는 Python 팀 |

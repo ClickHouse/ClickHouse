@@ -305,6 +305,11 @@ public:
         const StorageID & table_id_2,
         const std::optional<RecomputedDependencies> & recomputed_dependencies_1,
         const std::optional<RecomputedDependencies> & recomputed_dependencies_2);
+    void checkDatabaseCanBeRenamedWithNoCyclicDependencies(
+        const String & old_database_name,
+        const String & new_database_name,
+        const Strings & tables_in_database,
+        const RecomputedDependenciesByTable & recomputed_dependencies);
 
     struct TableMarkedAsDropped
     {
@@ -342,6 +347,11 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
+    void checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
+        const String & old_database_name,
+        const String & new_database_name,
+        const Strings & tables_in_database,
+        const RecomputedDependenciesByTable & recomputed_dependencies) const TSA_REQUIRES(databases_mutex);
 
     /// Waits on the table lock at most `table_lock_timeout`, single attempt on the database lock.
     /// Always returns a guard, check `ownsTableLock` for the outcome.

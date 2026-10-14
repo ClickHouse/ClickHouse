@@ -677,6 +677,7 @@ void registerStorageAlias(StorageFactory & factory)
             target_table,
             target_database_is_own_database);
     },
+    SecretArgumentsSpec{},
     {
         .supports_schema_inference = true
     },
