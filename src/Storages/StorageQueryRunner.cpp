@@ -580,7 +580,7 @@ private:
         std::swap(format_settings.native.encode_types_in_binary_format, format_settings.native.decode_types_in_binary_format);
         connection->setFormatSettings(format_settings);
 
-        auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
+        auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, std::vector<IConnectionPool::Entry>{connection}, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)
             return;
         auto & executor = *registered;
@@ -693,7 +693,7 @@ public:
               CurrentMetrics::QueryRunnerThreads,
               CurrentMetrics::QueryRunnerThreadsActive,
               CurrentMetrics::QueryRunnerThreadsScheduled,
-              num_threads_,
+              max_pending_queries_ ? std::min(num_threads_, max_pending_queries_) : num_threads_,
               0,
               max_pending_queries_)
     {

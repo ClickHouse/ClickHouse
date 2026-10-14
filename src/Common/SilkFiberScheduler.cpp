@@ -47,11 +47,11 @@ struct FiberContext
     static int main(FiberContext * self) noexcept
     {
         inside_silk_fiber = true;
+        /// Destroy the captures before returning: silk sets the future first and frees the fiber later.
+        auto task = std::move(self->task);
         try
         {
             DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
-            /// Destroy the captures before returning: silk sets the future first and frees the fiber later.
-            auto task = std::move(self->task);
             return task();
         }
         catch (...)
