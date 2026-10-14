@@ -96,7 +96,7 @@ namespace
             if (first_allowed_path.is_relative())
                 first_allowed_path = data_dir / first_allowed_path;
 
-            path = first_allowed_path / path;
+            path = (first_allowed_path / path).lexically_normal();
         }
 
         /// With overlapping entries, return the deepest one containing the path, so the durability
