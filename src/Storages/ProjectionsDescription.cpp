@@ -979,6 +979,10 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     if (declared_columns)
     {
+        NameSet declared_names;
+        for (const auto & child : declared_columns->children)
+            declared_names.insert(child->as<const ASTColumnDeclaration &>().name);
+
         for (size_t i = 0; i < physical_output_names.size(); ++i)
         {
             auto & original_name = physical_output_names[i];
@@ -996,9 +1000,15 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             const bool original_is_stored = metadata_columns.has(original_storage_name);
             const bool resolved_is_stored = metadata_columns.has(resolved_storage_name);
             if (original_is_stored && resolved_is_stored)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} has ambiguous stored columns for SELECT output {}",
-                    backQuote(result.name), backQuote(visible_output_names[i]));
+            {
+                /// An output without a codec needs no binding, even if both spellings are stored.
+                if (declared_names.contains(visible_output_names[i])
+                    || declared_names.contains(original_name) || declared_names.contains(resolved_name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Projection {} has ambiguous stored columns for SELECT output {}",
+                        backQuote(result.name), backQuote(visible_output_names[i]));
+                continue;
+            }
             if (resolved_is_stored)
                 original_name = resolved_name;
         }
