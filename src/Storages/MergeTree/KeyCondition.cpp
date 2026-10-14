@@ -3188,6 +3188,9 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         if (!tryNormalizeTextConstantForZonelessDateTimeInput(candidate.dag.input_type, normalized_constant))
             continue;
 
+        /// Tuple comparison pairs elements by position, so the constant converts by position too.
+        normalized_constant.type = removeTupleElementNames(normalized_constant.type);
+
         /// Conversion to the transform's input type can turn a `String` constant into a NaN.
         /// Inspect that value before applying the key expression.
         ColumnPtr transform_input_column;
