@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
