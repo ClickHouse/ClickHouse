@@ -110,6 +110,31 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
     return false;
 }
 
+bool subtreeMayReadViewSource(const IQueryTreeNode * node, const StoragePtr & view_source)
+{
+    if (!node || !view_source)
+        return false;
+
+    if (const auto * table_node = node->as<TableNode>())
+    {
+        const auto view_source_id = view_source->getStorageID();
+        if (table_node->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted()
+            || (table_node->getStorage() && table_node->getStorage()->mayReadViewSource(view_source_id)))
+            return true;
+    }
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        if (table_function_node->getStorage() && table_function_node->getStorage()->mayReadViewSource(view_source->getStorageID()))
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (subtreeMayReadViewSource(child.get(), view_source))
+            return true;
+
+    return false;
+}
+
 bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root)
 {
     std::vector<const IQueryTreeNode *> nodes_to_process;

@@ -6,8 +6,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
@@ -61,36 +59,6 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
-namespace
-{
-
-bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
-{
-    if (!node)
-        return false;
-
-    const auto & view_source_id = context.getViewSource()->getStorageID();
-    if (const auto * table_node = node->as<TableNode>())
-    {
-        if (table_node->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted()
-            || (table_node->getStorage() && table_node->getStorage()->mayReadViewSource(view_source_id)))
-            return true;
-    }
-    else if (const auto * table_function_node = node->as<TableFunctionNode>())
-    {
-        if (table_function_node->getStorage() && table_function_node->getStorage()->mayReadViewSource(view_source_id))
-            return true;
-    }
-
-    for (const auto & child : node->getChildren())
-        if (subtreeHasViewSource(child.get(), context))
-            return true;
-
-    return false;
-}
-
-}
-
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
 void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool execute_for_exists)
 {
@@ -139,7 +107,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+    bool can_use_global_scalars = !only_analyze_subquery && !subtreeMayReadViewSource(node_without_alias.get(), context->getViewSource());
 
     auto & scalars_cache = early_short_circuit_type_inference_in_process
         ? scalar_subquery_to_scalar_value_type_only

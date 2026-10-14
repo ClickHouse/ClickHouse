@@ -15,6 +15,9 @@ BLOCK_PER_ROW="max_block_size = 1, max_insert_threads = 1, min_insert_block_size
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS mv_merge;
 DROP TABLE IF EXISTS mv_loop;
+DROP TABLE IF EXISTS mv_row_policy;
+DROP ROW POLICY IF EXISTS policy_05388 ON policy_child;
+DROP TABLE IF EXISTS policy_child;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS dist;
 DROP TABLE IF EXISTS dist_target;
@@ -39,12 +42,24 @@ CREATE MATERIALIZED VIEW mv_loop TO dst AS
         (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src) WHERE x > 0 LIMIT 25)) AS value
     FROM src;
 
+-- The row policy of a 'Merge' child is analyzed as a standalone expression.
+CREATE TABLE policy_child (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO policy_child VALUES (1), (2), (3);
+CREATE ROW POLICY policy_05388 ON policy_child
+    USING x <= (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src) LIMIT 25)) TO ALL;
+CREATE MATERIALIZED VIEW mv_row_policy TO dst AS
+    SELECT 'row policy' AS name, count() AS block_rows, any(c.value) AS value
+    FROM src CROSS JOIN (SELECT count() AS value FROM merge(${CLICKHOUSE_DATABASE}, '^policy_child\$')) AS c;
+
 INSERT INTO src SELECT number + 1 FROM numbers(3) SETTINGS ${BLOCK_PER_ROW};
 
 SELECT * FROM dst ORDER BY name, value;
 
 DROP TABLE mv_merge;
 DROP TABLE mv_loop;
+DROP TABLE mv_row_policy;
+DROP ROW POLICY policy_05388 ON policy_child;
+DROP TABLE policy_child;
 DROP TABLE dst;
 DROP TABLE dist;
 DROP TABLE dist_target;
