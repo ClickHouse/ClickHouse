@@ -6856,6 +6856,40 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
     return test_names_to_skip
 
 
+# Values that `shell_config.sh` reads with `clickhouse extract-from-config` unless they are already set.
+SHELL_CONFIG_EXTRACTED_VARIABLES = [
+    "CLICKHOUSE_PORT_TCP",
+    "CLICKHOUSE_PORT_TCP_SECURE",
+    "CLICKHOUSE_PORT_TCP_WITH_PROXY",
+    "CLICKHOUSE_PORT_HTTP",
+    "CLICKHOUSE_PORT_PROMTHEUS_PORT",
+    "CLICKHOUSE_PORT_HTTPS",
+    "CLICKHOUSE_PORT_MYSQL",
+    "CLICKHOUSE_PORT_POSTGRESQL",
+    "CLICKHOUSE_PORT_KEEPER",
+    "CLICKHOUSE_PORT_SSH",
+    "CLICKHOUSE_KEEPER_IDENTITY",
+    "CLICKHOUSE_PORT_INTERSERVER",
+]
+
+
+def export_shell_config_ports(queries_dir):
+    """Resolve them once instead of in every `.sh` test: that is a dozen process starts per test."""
+    shell_config = os.path.join(queries_dir, "shell_config.sh")
+    if not os.path.exists(shell_config):
+        return
+    script = '. "$0" >/dev/null 2>&1; for name in "$@"; do printf "%s=%s\\0" "$name" "${!name}"; done'
+    output = subprocess.run(
+        ["bash", "-c", script, shell_config, *SHELL_CONFIG_EXTRACTED_VARIABLES],
+        stdout=PIPE,
+        check=True,
+        text=True,
+    ).stdout
+    for assignment in output.split("\0")[:-1]:
+        name, value = assignment.split("=", 1)
+        os.environ.setdefault(name, value)
+
+
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
     stop_testing = multiprocessing.Event()
@@ -6959,6 +6993,8 @@ def main(args):
 
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
+
+    export_shell_config_ports(base_dir)
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
