@@ -50,7 +50,8 @@ public:
     /// Get free space from most free disk
     UInt64 getMaxUnreservedFreeSpace() const override;
 
-    bool isBackupMetadataOnly() const override { return backup_metadata_only; }
+    /// Throws if the policy is marked `backup_metadata_only` but one of its volumes is not read-only.
+    bool isBackupMetadataOnly() const override;
 
     const String & getName() const override{ return name; }
 
@@ -106,6 +107,7 @@ private:
     bool backup_metadata_only = false;
 
     void buildVolumeIndices();
+    void checkVolumesAreReadOnly() const;
 
     LoggerPtr log;
 };
