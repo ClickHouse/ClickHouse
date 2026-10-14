@@ -16,7 +16,7 @@ SET max_rows_to_group_by = 0;
 DROP TABLE IF EXISTS t_cascades_bucket_order;
 CREATE TABLE t_cascades_bucket_order (k UInt64, v UInt64, v2 UInt64, v3 UInt64, v4 UInt64, v5 UInt64) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS index_granularity = 256, auto_statistics_types = '';
-INSERT INTO t_cascades_bucket_order SELECT number % 50000, number, number, number, number, number FROM numbers(200000);
+INSERT INTO t_cascades_bucket_order SELECT number % 50000, number, number, number, number, number FROM numbers(2000000);
 
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
@@ -25,7 +25,8 @@ SET distributed_plan_execute_locally = 1;
 SET distributed_plan_workers_num = 2;
 -- No statistics: the group count is a default fraction of the input. The aggregation sums five
 -- columns into one, so the two-node split, which halves the scan and merges a tenth of the rows, is
--- clearly cheaper than one node reading everything; with a narrow read the two are a near tie.
+-- clearly cheaper than one node reading everything; with a narrow read the two are a near tie. The
+-- table is large enough for the halved scan to pay for the exchange the split adds.
 SET use_statistics = 0;
 -- A shard plan otherwise carries `BlocksMarshallingStep`, which cannot run on a worker, and a plan
 -- holding it is executed with its exchanges turned into no-ops instead of being distributed.
@@ -95,7 +96,7 @@ SELECT k, sum(v + v2 + v3 + v4 + v5) FROM remote('127.0.0.{2,3}', currentDatabas
 
 -- The result must match the plain plan, not merely avoid the rejection: every group once, and the
 -- sums complete. Both shards read the same table, hence twice the sum of the inserted values.
-SELECT count(), sum(s) = 2 * 5 * (SELECT sum(number) FROM numbers(200000))
+SELECT count(), sum(s) = 2 * 5 * (SELECT sum(number) FROM numbers(2000000))
     FROM (SELECT k, sum(v + v2 + v3 + v4 + v5) AS s FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k);
 SELECT k, sum(v + v2 + v3 + v4 + v5) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k HAVING k = 7;
 SELECT k, sum(v + v2 + v3 + v4 + v5) FROM remote('127.0.0.{2,3}', currentDatabase(), t_cascades_bucket_order) GROUP BY k HAVING k = 7
