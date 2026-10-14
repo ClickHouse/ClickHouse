@@ -24,8 +24,9 @@ SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
 -- The admission decision is read from `system.text_log` (it is made on the initiator while the
 -- plan is optimized). Signs that a filter was sent:
---   * `BuildRuntimeFilterPartialTransform` with `output_rows > input_rows`: the task sent its
---     filter state to an exchange. It is counted at the sender.
+--   * `RuntimeFilterStatesSent` of the build tasks (`stage_%`): a task made its filter state for
+--     the exchange. It is counted before the send, so it does not depend on whether the merge task
+--     still reads (it stops when all probe tasks are done).
 --   * `MergeRuntimeFiltersTransform`: it runs only for a sent filter.
 -- A local filter shows neither. The receiver is not checked: a probe task stops waiting for the
 -- filter when its data work is done, so the filter may not arrive.
@@ -98,14 +99,11 @@ SELECT
     -- One serialized partial per build task, eight of them at the default bucket count; `>= 2`
     -- is the discriminator, because a local filter never leaves its own task and scores 0.
     (
-        SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 2
-        FROM system.processors_profile_log
-        WHERE event_date >= yesterday()
-          AND query_id IN (
+        SELECT sum(ProfileEvents['RuntimeFilterStatesSent']) >= 2
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'stage_%'
+          AND initial_query_id IN (
               SELECT query_id FROM system.query_log
-              WHERE type = 'QueryFinish' AND event_date >= yesterday()
-                AND initial_query_id IN (
-                    SELECT query_id FROM system.query_log
-                    WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-                      AND current_database = currentDatabase() AND log_comment = '04895_admitted'))
+              WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                AND current_database = currentDatabase() AND log_comment = '04895_admitted')
     );

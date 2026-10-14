@@ -13,7 +13,6 @@ SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimiz
 -- The plan shape and transported-filter admission depend on the join order and the estimate
 -- source, so pin them against test-level randomization.
 SET query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_limit = 10, use_hash_table_stats_for_join_reordering = 0, use_statistics = 0;
-SET log_processors_profiles = 1;
 SET distributed_plan_join_runtime_filters = 1;
 
 -- The apply sites for both dimension filters sit in the fact-scan fragment, below both shuffle
@@ -26,7 +25,7 @@ SELECT count() FROM fact INNER JOIN dim1 ON fact.k1 = dim1.d1 INNER JOIN dim2 ON
     SETTINGS distributed_plan_join_runtime_filters = 0;
 
 SET make_distributed_plan = 0;
-SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
+SYSTEM FLUSH LOGS query_log, text_log;
 
 -- Each dimension join gets its own filter, so two transported filters mean two merge trees and
 -- two sets of serialized partials. The tree count stays exact at two: one dimension losing its
@@ -35,16 +34,13 @@ SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 SELECT '-- both filters transported, each through its own merge tree';
 SELECT uniqExact(extract(query, '^rf_merge_\\d+_(_runtime_filter_\\d+)')) = 2
    AND (
-       SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows)
-       FROM system.processors_profile_log
-       WHERE event_date >= yesterday()
-         AND query_id IN (
+       SELECT sum(ProfileEvents['RuntimeFilterStatesSent'])
+       FROM system.query_log
+       WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'stage_%'
+         AND initial_query_id IN (
              SELECT query_id FROM system.query_log
-             WHERE type = 'QueryFinish' AND event_date >= yesterday()
-               AND initial_query_id IN (
-                   SELECT query_id FROM system.query_log
-                   WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-                     AND current_database = currentDatabase() AND log_comment = '04894_nested_placement'))
+             WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+               AND current_database = currentDatabase() AND log_comment = '04894_nested_placement')
    ) >= 2
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'rf_merge_%'

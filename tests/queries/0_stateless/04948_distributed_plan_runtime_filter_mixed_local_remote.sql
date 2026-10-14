@@ -18,7 +18,7 @@ SET enable_join_runtime_filters_index_analysis = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 SET query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_limit = 10, use_hash_table_stats_for_join_reordering = 0, use_statistics = 0;
-SET max_rows_to_group_by = 0, log_processors_profiles = 1;
+SET max_rows_to_group_by = 0;
 SET distributed_plan_join_runtime_filters = 1, distributed_plan_max_rows_to_broadcast = 100;
 
 SELECT '-- mixed local+remote apply';
@@ -29,7 +29,7 @@ INNER JOIN remote_probe AS r ON p.id = r.id
 SETTINGS log_comment = '04948_mixed';
 
 SET make_distributed_plan = 0;
-SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
+SYSTEM FLUSH LOGS query_log, text_log;
 
 -- Two filters apply to the `local_probe` scan: the shipped one and the stage's own one, built from
 -- the broadcast `dim`. So the scan is pruned whether or not the shipped filter arrives first. Even
@@ -53,17 +53,14 @@ WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
               AND current_database = currentDatabase() AND log_comment = '04948_mixed')
         AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'));
 
--- The filter for `p.id = d.id` is sent, so its build task must show
--- `BuildRuntimeFilterPartialTransform` with `output_rows > input_rows`. The `local_probe` stage
--- is not checked: a probe task stops waiting for the filter when its data work is done.
+-- The filter for `p.id = d.id` is sent, so its build task must count `RuntimeFilterStatesSent`.
+-- The `local_probe` stage is not checked: a probe task stops waiting for the filter when its data
+-- work is done.
 SELECT '-- the producer also shipped the filter over the exchange';
-SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 1
-FROM system.processors_profile_log
-WHERE event_date >= yesterday()
-  AND query_id IN (
+SELECT sum(ProfileEvents['RuntimeFilterStatesSent']) >= 1
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'stage_%'
+  AND initial_query_id IN (
       SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND event_date >= yesterday()
-        AND initial_query_id IN (
-            SELECT query_id FROM system.query_log
-            WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-              AND current_database = currentDatabase() AND log_comment = '04948_mixed'));
+      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+        AND current_database = currentDatabase() AND log_comment = '04948_mixed');

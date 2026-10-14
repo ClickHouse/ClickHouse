@@ -36,8 +36,9 @@ SET make_distributed_plan = 0;
 
 -- Tasks of a local distributed plan log under their own `query_id`, with the initiator's id as
 -- `initial_query_id`. Signs that a filter was sent:
---   * `BuildRuntimeFilterPartialTransform` with `output_rows > input_rows`: the task sent its
---     filter state to an exchange. It is counted at the sender.
+--   * `RuntimeFilterStatesSent` of the build tasks (`stage_%`): a task made its filter state for
+--     the exchange. It is counted before the send, so it does not depend on whether the merge task
+--     still reads (it stops when all probe tasks are done).
 --   * an `rf_merge_%` task: it exists only for a sent filter.
 -- A local filter shows neither. The receiver is not checked: a probe task stops waiting for the
 -- filter when its data work is done, so the filter may not arrive.
@@ -47,46 +48,37 @@ SELECT '-- shuffle join, setting on: states crossed the exchange';
 -- 8 build tasks (the `distributed_plan_default_shuffle_join_bucket_count` default), each
 -- serializing its partial onto the tree's exchange; >= 2 is the discriminator, because a local
 -- filter never leaves its own task and would score 0.
-SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 2
-FROM system.processors_profile_log
-WHERE event_date >= yesterday()
-  AND query_id IN (
+SELECT sum(ProfileEvents['RuntimeFilterStatesSent']) >= 2
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'stage_%'
+  AND initial_query_id IN (
       SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND event_date >= yesterday()
-        AND initial_query_id IN (
-            SELECT query_id FROM system.query_log
-            WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-              AND current_database = currentDatabase() AND log_comment = '04891_transport_on'));
+      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+        AND current_database = currentDatabase() AND log_comment = '04891_transport_on');
 
 SELECT '-- broadcast join, setting on: single-task build still ships the filter';
 -- The broadcast build side is a single task, so exactly one partial is serialized -- pinned at
 -- one, not `>= 1`, so a return to a per-bucket build side would not pass unnoticed.
-SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) = 1
-FROM system.processors_profile_log
-WHERE event_date >= yesterday()
-  AND query_id IN (
+SELECT sum(ProfileEvents['RuntimeFilterStatesSent']) = 1
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'stage_%'
+  AND initial_query_id IN (
       SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND event_date >= yesterday()
-        AND initial_query_id IN (
-            SELECT query_id FROM system.query_log
-            WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-              AND current_database = currentDatabase() AND log_comment = '04891_broadcast'));
+      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+        AND current_database = currentDatabase() AND log_comment = '04891_broadcast');
 
 SELECT '-- multiple keys, setting on: each key is sent';
 -- Two join keys means two filters, each with its own merge tree and its own 8 serialized
 -- partials: 2 trees and 16 partials, checked as at least 2 trees and at least 4 partials.
 SELECT uniqExact(extract(query, '^rf_merge_\\d+_(_runtime_filter_\\d+)')) >= 2
    AND (
-       SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows)
-       FROM system.processors_profile_log
-       WHERE event_date >= yesterday()
-         AND query_id IN (
+       SELECT sum(ProfileEvents['RuntimeFilterStatesSent'])
+       FROM system.query_log
+       WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'stage_%'
+         AND initial_query_id IN (
              SELECT query_id FROM system.query_log
-             WHERE type = 'QueryFinish' AND event_date >= yesterday()
-               AND initial_query_id IN (
-                   SELECT query_id FROM system.query_log
-                   WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-                     AND current_database = currentDatabase() AND log_comment = '04891_multi_key'))
+             WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+               AND current_database = currentDatabase() AND log_comment = '04891_multi_key')
    ) >= 4
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'rf_merge_%'
