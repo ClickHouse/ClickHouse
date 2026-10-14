@@ -1,0 +1,125 @@
+#!/usr/bin/expect -f
+
+# Editing with the `--vim` keymap of the client. Every query is edited so that its result differs
+# from any text displayed while typing it, so that matching the result checks the edit.
+# Escape is followed by a pause longer than the escape delay, so that it is not read as Meta.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc escape {} {
+    send -- "\033"
+    sleep 0.3
+}
+
+# Ctrl-J submits the query: Enter inserts a new line in the vim mode.
+proc submit {} {
+    send -- "\n"
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --vim"
+expect ":) "
+
+# Multibyte characters: Escape, a motion and a deletion around `é`.
+send -- "SELECT concat('ab', 'éa')"
+escape
+send -- "hhx"
+submit
+expect "abé"
+expect ":) "
+
+# `dh` deletes the character before the cursor.
+send -- "SELECT 1000+123"
+escape
+send -- "dh"
+submit
+expect "1013"
+expect ":) "
+
+# `dl` deletes the last character.
+send -- "SELECT 2000+456"
+escape
+send -- "dl"
+submit
+expect "2045"
+expect ":) "
+
+# `de` deletes the last character when it is the end of the word.
+send -- "SELECT 4000+12"
+escape
+send -- "de"
+submit
+expect "4001"
+expect ":) "
+
+# `dj` deletes the current and the next line.
+send -- "SELECT 3000 + 1\r+ 7\r+ 8"
+escape
+send -- "kdj"
+submit
+expect "3001"
+expect ":) "
+
+# A query submitted with a pending operator does not leave it to the next input,
+# which starts in insert mode.
+send -- "SELECT 5000+1"
+escape
+send -- "d"
+submit
+expect "5001"
+expect ":) "
+send -- "SELECT 5000+2"
+submit
+expect "5002"
+expect ":) "
+
+# A paste in normal mode, and with a pending motion, inserts the text.
+send -- "SELECT 6000+1 "
+escape
+send -- "\033\[200~2\033\[201~"
+submit
+expect "6012"
+expect ":) "
+
+send -- "SELECT 7000+1 "
+escape
+send -- "f\033\[200~3\033\[201~"
+submit
+expect "7013"
+expect ":) "
+
+# Repeating `t` and `T` with `;` skips the previous match.
+send -- "SELECT concat('a,b,c', '!')"
+escape
+send -- "0f't,;x"
+submit
+expect "a,,c!"
+expect ":) "
+
+send -- "SELECT concat('x,y,z', '?')"
+escape
+send -- "0f';T,;x"
+submit
+expect "x,,z?"
+expect ":) "
+
+send -- "\4"
+expect eof
