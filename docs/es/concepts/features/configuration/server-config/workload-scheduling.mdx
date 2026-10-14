@@ -120,6 +120,8 @@ Para personalizar el workload, se pueden usar las siguientes opciones de configu
 * `max_burst_cpu_seconds` - el número máximo de segundos de CPU que el workload puede consumir sin que se limite su tasa debido a `max_cpus`.
 * `scheduler` - (solo de tiempo compartido) el algoritmo de planificación que se aplica entre las consultas de este workload: `fifo` (predeterminado, por orden de llegada), `fair` (encolado justo ponderado), `las` (menor servicio recibido) o `priority` (orden estricto según la configuración `workload_priority` de la consulta). Consulta [planificación con reconocimiento de consultas](#query_aware_scheduling).
 * `max_memory` - el límite de la memoria total reservada para este workload.
+* `max_memory_before_spill` - el límite flexible de memoria a partir del cual se pide a las consultas del workload que vuelquen a disco la memoria recuperable, antes de que el límite estricto `max_memory` fuerce el desalojo. Experimental, consulta [Volcado a disco de la memoria recuperable](#spilling-reclaimable-memory).
+* `max_memory_to_spill_ratio` - el mismo límite flexible que `max_memory_before_spill`, pero normalizado según el `max_memory` de este workload. Si ambos están configurados, prevalece el umbral resultante más bajo.
 
 Todos los límites especificados mediante la configuración del workload son independientes para cada recurso. Por ejemplo, un workload con `max_bytes_per_second = '10Mi'` tendrá un límite de ancho de banda de 10 MB/s para cada recurso de lectura y escritura de forma independiente. Si necesitas un límite común para la lectura y la escritura, considera usar el mismo recurso para el acceso READ y WRITE.
 
@@ -357,6 +359,28 @@ En este ejemplo, la memoria total reservada por todas las consultas y actividade
 Si se produce presión de memoria, las asignaciones de la carga de trabajo de testing serán las primeras en expulsarse. Después, si hace falta liberar más memoria, las asignaciones de la carga de trabajo de staging se expulsarán antes que las de production si superan sus garantías. Tenga en cuenta que las queries pendientes en production y staging pueden expulsar asignaciones en ejecución en la carga de trabajo de testing para liberar memoria, pero no pueden expulsarse entre sí porque tienen la misma precedencia. En caso de presión de memoria, esperarán en queues, lo que permite al sistema evitar errores MEMORY&#95;LIMIT&#95;EXCEEDED debidos a un número excesivo de queries ejecutándose de forma concurrente.
 
 Tenga en cuenta que la carga de trabajo del sistema tiene precedencia 0 (default), que es superior a la de las cargas de trabajo de production, staging y testing, pero no son cargas de trabajo hermanas. El ancestro común más cercano es la carga de trabajo all, cuyos dos children tienen la misma precedencia. Por lo tanto, la carga de trabajo del sistema pendiente no puede expulsar a ninguna de ellas, ni viceversa. Esto garantiza que las actividades del sistema no puedan expulsarse fácilmente.
+
+### Volcado a disco de la memoria recuperable {#spilling-reclaimable-memory}
+
+Además del límite estricto `max_memory`, un workload puede definir un límite de memoria *flexible* más bajo que activa el volcado a disco de la memoria recuperable antes de que el límite estricto obligue a un desalojo. La memoria recuperable es la parte de la asignación de una consulta que sus operadores pueden serializar en disco y recargar bajo demanda (por ejemplo, las secuencias ordenadas de una ordenación externa o los estados de agregación intermedios), a diferencia de la memoria no recuperable, que debe permanecer en RAM.
+
+El límite flexible se configura mediante dos parámetros de configuración de la carga de trabajo; si se definen ambos, se aplica el menor de los umbrales resultantes:
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+-- Absolute soft limit:
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi'
+-- Or as a fraction of this workload's own max_memory:
+CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
+```
+
+Cuando la memoria asignada en el subárbol de un workload supera su límite flexible, el planificador solicita a las consultas con memoria recuperable que realicen un volcado a disco. Varias consultas pueden realizar el volcado a disco de forma concurrente para reducir el uso de memoria por debajo del límite flexible.
+
+Superar el límite flexible no bloquea ni desaloja consultas por sí mismo: son determinados operadores los que realizan el volcado a disco durante la ejecución. Configure un hueco entre los límites flexible y estricto para dejar holgura al volcado a disco. Si nada dentro del workload es recuperable, no se solicita ningún volcado a disco y el límite estricto `max_memory` sigue siendo la única salvaguarda. Establezca el límite flexible en un workload que contenga todos los workloads que desee controlar. Un límite en el workload raíz `all` solo es global en una jerarquía con una única raíz; las raíces hermanas quedan fuera de su alcance. Los workloads anidados pueden definir sus propios límites flexibles.
+
+:::note
+El volcado a disco de memoria recuperable es experimental y se basa en la planificación de reservas de memoria (que también es experimental). Entre los operadores compatibles se incluyen la ordenación externa, la agregación, las uniones hash con volcado a disco, `DISTINCT` externo y los conjuntos `IN` de subconsultas. Estos conjuntos pueden volcarse a disco tanto durante su construcción como durante su uso, incluso cuando los umbrales de conjuntos externos por consulta están deshabilitados. La cantidad de memoria que se puede recuperar depende de la fase de ejecución en la que se encuentre cada operador. Se ignoran las estimaciones de memoria recuperable inferiores al ajuste de consulta `min_bytes_to_spill`. Cuando no se notifica memoria recuperable, el límite flexible no tiene efecto y el comportamiento es idéntico al de usar únicamente el límite estricto `max_memory`.
+:::
 
 ## Planificación de slots de consulta {#query_scheduling}
 

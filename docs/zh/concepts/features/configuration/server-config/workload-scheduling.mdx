@@ -120,6 +120,8 @@ graph LR
 * `max_burst_cpu_seconds` - 该工作负载在不因 `max_cpus` 而被限流的情况下可消耗的最大 CPU 秒数。
 * `scheduler` - (仅限时间共享) 此工作负载内各查询之间采用的调度算法：`fifo` (默认，先到先服务) 、`fair` (加权公平排队) 、`las` (最少获得服务优先) 或 `priority` (严格按查询的 `workload_priority` 设置排序) 。请参阅 [查询感知调度](#query_aware_scheduling)。
 * `max_memory` - 为此工作负载保留的总内存上限。
+* `max_memory_before_spill` - 内存软限制：超过该值后，会在硬性 `max_memory` 限制强制执行驱逐之前，要求该工作负载的查询将可回收内存落盘。Experimental，请参阅 [溢写可回收内存](#spilling-reclaimable-memory)。
+* `max_memory_to_spill_ratio` - 与 `max_memory_before_spill` 相同的软限制，但按此工作负载的 `max_memory` 进行归一化。若两者同时设置，则以计算得出的较小阈值为准。
 
 通过工作负载设置指定的所有限制，对每种资源都是相互独立的。例如，设置了 `max_bytes_per_second = '10Mi'` 的工作负载，会对每个读取资源和写入资源分别应用 10 MB/s 的带宽限制。如果需要让读取和写入共用同一个限制，可以考虑对 READ 和 WRITE 访问使用同一个资源。
 
@@ -357,6 +359,28 @@ CREATE WORKLOAD testing IN user SETTINGS precedence = 2
 如果出现内存压力，testing 工作负载的内存分配会最先被驱逐。随后，如果还需要释放更多内存，并且 staging 工作负载 和 production 工作负载 超过各自的保证值，则 staging 工作负载 的内存分配会先于 production 工作负载 的内存分配被驱逐。请注意，production 和 staging 中处于等待状态的查询可以驱逐 testing 工作负载 中正在运行的内存分配以释放内存，但它们彼此不能相互驱逐，因为它们具有相同的优先次序。在内存压力情况下，它们会在队列中等待，这使系统能够避免因并发执行的查询过多而导致的 MEMORY&#95;LIMIT&#95;EXCEEDED 错误。
 
 请注意，system 工作负载的优先次序为 0 (default) ，高于 production、staging 和 testing 工作负载，但它们并不是同级工作负载。它们最近的共同祖先是工作负载 all，其两个子节点具有相同的优先次序。因此，处于等待状态的 system 工作负载 不能驱逐其中任何一个，反之亦然。这确保了 system 活动不容易被驱逐。
+
+### 溢写可回收内存 {#spilling-reclaimable-memory}
+
+除了硬性的 `max_memory` 限制之外，工作负载还可以定义一个更低的*软性*内存限制，在硬限制强制执行驱逐之前，先触发将可回收内存溢写到磁盘。可回收内存是指查询所分配的内存中，可由其运算符序列化到磁盘并按需重新加载的部分 (例如外部排序中已排序的连续序列，或中间聚合状态) ；与之相对的是必须保留在 RAM 中的不可回收内存。
+
+软限制通过两个工作负载设置进行配置；若两者均已设置，则以计算得出的较小阈值为准：
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+-- Absolute soft limit:
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi'
+-- Or as a fraction of this workload's own max_memory:
+CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
+```
+
+当某个工作负载子树中已分配的内存超过其软限制时，调度器会要求持有可回收内存的查询将数据落盘。多个查询可以并发溢写，从而将内存使用量降至软限制以下。
+
+超过软限制本身并不会阻塞或驱逐查询：溢写由选定的运算符在执行期间完成。请在软限制与硬限制之间留出一定差值，为溢写预留资源余量。如果该工作负载下没有任何可回收内存，则不会发出溢写请求，硬限制 `max_memory` 仍是唯一的兜底保障。请在涵盖所有待管控工作负载的上级工作负载上设置软限制。只有在单根层次结构中，根工作负载 `all` 上的限制才具有全局效力；同级的其他根不在其作用域内。嵌套的工作负载可以定义各自的软限制。
+
+:::note
+可回收内存的溢写是实验性功能，构建于内存预留调度之上 (后者本身也是实验性功能) 。已支持的运算符包括外部排序、聚合、可溢写的哈希连接、外部 `DISTINCT` 以及子查询 `IN` 集合。这些集合在构建和使用阶段均可溢写，即使已禁用单查询级别的外部集合阈值也不受影响。可回收的内存量取决于各运算符当前所处的执行阶段。低于查询设置 `min_bytes_to_spill` 的可回收内存估算值会被忽略。若未报告任何可回收内存，软限制将不起作用，其行为与仅使用硬限制 `max_memory` 时完全相同。
+:::
 
 ## 查询槽位调度 {#query_scheduling}
 

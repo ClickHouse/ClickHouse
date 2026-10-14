@@ -120,6 +120,8 @@ Pour personnaliser une charge de travail, les paramètres suivants peuvent être
 * `max_burst_cpu_seconds` - le nombre maximal de secondes CPU pouvant être consommées par la charge de travail sans être bridée en raison de `max_cpus`.
 * `scheduler` - (partagé dans le temps uniquement) l’algorithme d’ordonnancement appliqué aux requêtes de cette charge de travail : `fifo` (par défaut, premier arrivé, premier servi), `fair` (mise en file d’attente équitable pondérée), `las` (least-attained-service) ou `priority` (ordre strict selon le paramètre de requête `workload_priority`). Consultez [Ordonnancement tenant compte des requêtes](#query_aware_scheduling).
 * `max_memory` - la limite de la mémoire totale réservée à cette charge de travail.
+* `max_memory_before_spill` - la limite souple de mémoire au-delà de laquelle les requêtes de la charge de travail sont invitées à déverser sur le disque leur mémoire récupérable, avant que la limite stricte `max_memory` n’impose l’éviction. Expérimental, voir [Déversement de la mémoire récupérable](#spilling-reclaimable-memory).
+* `max_memory_to_spill_ratio` - la même limite souple que `max_memory_before_spill`, mais normalisée par rapport au `max_memory` de cette charge de travail. Lorsque les deux sont définis, c’est le seuil résultant le plus bas qui l’emporte.
 
 Toutes les limites définies via les paramètres de charge de travail s’appliquent indépendamment à chaque ressource. Par exemple, une charge de travail avec `max_bytes_per_second = '10Mi'` disposera d’une limite de débit de 10 Mo/s pour chaque ressource de lecture et d’écriture, de manière indépendante. Si une limite commune à la lecture et à l’écriture est nécessaire, envisagez d’utiliser la même ressource pour les accès READ et WRITE.
 
@@ -357,6 +359,28 @@ Dans cet exemple, la mémoire totale réservée par toutes les requêtes et acti
 En cas de pression sur la mémoire, les allocations du workload de test seront évincées en premier. Ensuite, s’il faut libérer davantage de mémoire, les allocations du workload staging seront évincées avant celles du workload production si elles dépassent leurs garanties. Notez que les requêtes en attente dans production et staging peuvent évincer des allocations en cours d’exécution dans le workload de test afin de libérer de la mémoire, mais elles ne peuvent pas s’évincer mutuellement, car elles ont la même préséance. En cas de pression sur la mémoire, elles attendront dans des files d’attente, ce qui permet au système d’éviter les erreurs MEMORY&#95;LIMIT&#95;EXCEEDED dues à un trop grand nombre de requêtes exécutées simultanément.
 
 Notez que le workload système a une préséance de 0 (par défaut), supérieure à celle des workloads production, staging et test, mais qu’il ne s’agit pas de workloads frères. Leur plus proche ancêtre commun est le workload all, dont les deux enfants ont la même préséance. Ainsi, un workload système en attente ne peut en évincer aucun, et inversement. Cela garantit que les activités système ne peuvent pas être facilement évincées.
+
+### Déversement sur le disque de la mémoire récupérable {#spilling-reclaimable-memory}
+
+Outre la limite stricte `max_memory`, une charge de travail peut définir une limite de mémoire *souple*, plus basse, qui déclenche le déversement sur le disque de la mémoire récupérable avant que la limite stricte n&#39;impose une éviction. La mémoire récupérable correspond à la partie de l&#39;allocation d&#39;une requête que ses opérateurs peuvent sérialiser sur le disque et recharger à la demande (par exemple, les séquences triées d&#39;un tri externe ou les états d’agrégation intermédiaires), par opposition à la mémoire non récupérable, qui doit rester en RAM.
+
+La limite souple se configure à l&#39;aide de deux paramètres de charge de travail ; lorsque les deux sont définis, c&#39;est le seuil résultant le plus bas qui s&#39;applique :
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+-- Absolute soft limit:
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi'
+-- Or as a fraction of this workload's own max_memory:
+CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
+```
+
+Lorsque la mémoire allouée dans le sous-arbre d&#39;une charge de travail dépasse sa limite souple, le planificateur demande aux requêtes disposant de mémoire récupérable de la déverser sur le disque. Plusieurs requêtes peuvent effectuer ce déversement de manière concurrente afin de ramener l&#39;utilisation de la mémoire sous la limite souple.
+
+Le franchissement de la limite souple ne bloque ni n&#39;évince en soi les requêtes : ce sont certains opérateurs qui déversent sur le disque pendant l&#39;exécution. Configurez un écart entre les limites souple et stricte afin de laisser une marge de capacité pour le déversement. Si rien n&#39;est récupérable au sein de la charge de travail, aucun déversement n&#39;est demandé et la limite stricte `max_memory` reste l&#39;unique garde-fou. Définissez la limite souple sur une charge de travail englobant toutes les charges de travail que vous souhaitez encadrer. Une limite définie sur la charge de travail racine `all` n&#39;est globale que dans une hiérarchie à racine unique ; les racines sœurs échappent à sa portée. Les charges de travail imbriquées peuvent définir leurs propres limites souples.
+
+:::note
+Le déversement de la mémoire récupérable est expérimental et repose sur la planification des réservations de mémoire (elle-même expérimentale). Parmi les opérateurs pris en charge figurent le tri externe, l&#39;agrégation, les jointures par hachage déversables, le `DISTINCT` externe et les sets `IN` issus de sous-requêtes. Ces sets peuvent être déversés aussi bien pendant leur construction que pendant leur utilisation, même lorsque les seuils de set externe par requête sont désactivés. La quantité de mémoire récupérable dépend de la phase d&#39;exécution en cours de chaque opérateur. Les estimations de mémoire récupérable inférieures au paramètre de requête `min_bytes_to_spill` sont ignorées. Lorsqu&#39;aucune mémoire récupérable n&#39;est signalée, la limite souple n&#39;a aucun effet et le comportement est identique à celui obtenu avec la seule limite stricte `max_memory`.
+:::
 
 ## Ordonnancement des slots de requête {#query_scheduling}
 

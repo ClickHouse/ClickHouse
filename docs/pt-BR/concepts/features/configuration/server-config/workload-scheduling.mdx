@@ -109,17 +109,19 @@ Para personalizar a carga de trabalho, as seguintes configurações podem ser us
 * `priority` - (somente compartilhamento por tempo) cargas de trabalho irmãs são atendidas de acordo com valores de prioridade estáticos (um valor menor significa prioridade mais alta). Determina a preempção.
 * `precedence` - (somente compartilhamento por espaço) cargas de trabalho irmãs são admitidas de acordo com valores estáticos (um valor menor significa precedência mais alta). Determina a evicção e a admissão.
 * `weight` - cargas de trabalho irmãs com a mesma prioridade estática ou precedência compartilham recursos de acordo com os pesos, de forma justa. Afeta a preempção, a evicção e a admissão.
-* `max_io_requests` - o limite para o número de solicitações de E/S concurrentes nesta carga de trabalho.
-* `max_bytes_inflight` - o limite para o total de bytes em trânsito de solicitações concurrentes nesta carga de trabalho.
+* `max_io_requests` - o limite para o número de solicitações de E/S concorrentes nesta carga de trabalho.
+* `max_bytes_inflight` - o limite para o total de bytes em trânsito de solicitações concorrentes nesta carga de trabalho.
 * `max_bytes_per_second` - o limite da taxa de leitura ou gravação de bytes desta carga de trabalho.
 * `max_burst_bytes` - o número máximo de bytes que pode ser processado pela carga de trabalho sem sofrer limitação de taxa (para cada recurso de forma independente).
 * `max_concurrent_threads` - o limite para o número de threads de consultas nesta carga de trabalho.
-* `max_concurrent_threads_ratio_to_cores` - o mesmo que `max_concurrent_threads`, mas normalized em relação ao número de CPU cores disponíveis.
-* `max_cpus` - o limite para o número de CPU cores para atender consultas nesta carga de trabalho.
-* `max_cpu_share` - o mesmo que `max_cpus`, mas normalized em relação ao número de CPU cores disponíveis.
+* `max_concurrent_threads_ratio_to_cores` - o mesmo que `max_concurrent_threads`, mas normalizado em relação ao número de núcleos de CPU disponíveis.
+* `max_cpus` - o limite para o número de núcleos de CPU para atender consultas nesta carga de trabalho.
+* `max_cpu_share` - o mesmo que `max_cpus`, mas normalizado em relação ao número de núcleos de CPU disponíveis.
 * `max_burst_cpu_seconds` - o número máximo de segundos de CPU que pode ser consumido pela carga de trabalho sem sofrer limitação devido a `max_cpus`.
 * `scheduler` - (somente compartilhamento por tempo) o algoritmo de escalonamento usado entre as consultas desta carga de trabalho: `fifo` (padrão, primeiro a chegar, primeiro a ser atendido), `fair` (enfileiramento justo ponderado), `las` (menor serviço obtido) ou `priority` (ordem estrita pela configuração `workload_priority` da consulta). Consulte [Escalonamento com reconhecimento de consultas](#query_aware_scheduling).
 * `max_memory` - o limite para o total de memória reservada para esta carga de trabalho.
+* `max_memory_before_spill` - o limite flexível de memória acima do qual as consultas da carga de trabalho devem fazer spill da memória recuperável para o disco, antes que o limite rígido `max_memory` force a evicção. Experimental; consulte [Spill de memória recuperável](#spilling-reclaimable-memory).
+* `max_memory_to_spill_ratio` - o mesmo limite flexível que `max_memory_before_spill`, mas normalizado em relação ao `max_memory` desta carga de trabalho. Quando ambos são definidos, prevalece o menor limiar resultante.
 
 Todos os limites especificados por meio das configurações de carga de trabalho são independentes para cada recurso. Por exemplo, uma carga de trabalho com `max_bytes_per_second = '10Mi'` terá um limite de largura de banda de 10 MB/s para cada recurso de leitura e gravação, de forma independente. Se for necessário um limite comum para leitura e gravação, considere usar o mesmo recurso para os acessos READ e WRITE.
 
@@ -357,6 +359,28 @@ Neste exemplo, a memória total reservada por todas as consultas e atividades em
 Se houver pressão de memória, as alocações da carga de trabalho de teste serão desalojadas primeiro. Em seguida, se mais memória precisar ser liberada, as alocações da carga de trabalho de staging serão desalojadas antes das alocações da carga de trabalho de produção, se excederem suas garantias. Observe que consultas pendentes em produção e staging podem desalojar alocações em execução na carga de trabalho de teste para liberar memória, mas não podem se desalojar mutuamente porque têm a mesma precedência. Em caso de pressão de memória, elas aguardarão em filas, o que permite ao sistema evitar erros de MEMORY&#95;LIMIT&#95;EXCEEDED devido ao número excessivo de consultas executadas simultaneamente.
 
 Observe que a carga de trabalho do sistema tem precedência 0 (padrão), que é superior à das cargas de trabalho de produção, staging e teste, mas elas não são cargas de trabalho irmãs. O ancestral comum mais próximo é a carga de trabalho all, cujos dois filhos têm a mesma precedência. Portanto, a carga de trabalho do sistema pendente não pode desalojar nenhuma delas, e vice-versa. Isso garante que as atividades do sistema não possam ser facilmente desalojadas.
+
+### Spill de memória recuperável {#spilling-reclaimable-memory}
+
+Além do limite rígido `max_memory`, uma carga de trabalho pode definir um limite de memória *flexível* mais baixo, que aciona o spill da memória recuperável para o disco antes que o limite rígido force uma evicção. Memória recuperável é a parte da alocação de uma consulta que seus operadores conseguem serializar em disco e recarregar sob demanda (por exemplo, sequências ordenadas de uma ordenação externa ou estados de agregação intermediários), ao contrário da memória não recuperável, que precisa permanecer na RAM.
+
+O limite flexível é definido por meio de duas configurações de carga de trabalho; quando ambas estão definidas, prevalece o menor limiar resultante:
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+-- Absolute soft limit:
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi'
+-- Or as a fraction of this workload's own max_memory:
+CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
+```
+
+Quando a memória alocada na subárvore de uma carga de trabalho excede seu limite flexível, o scheduler solicita que as consultas com memória recuperável façam spill para o disco. Várias consultas podem fazer spill de forma concorrente para reduzir o uso de memória abaixo do limite flexível.
+
+Ultrapassar o limite flexível não bloqueia nem remove consultas por si só: os operadores selecionados realizam o spill durante a execução. Configure uma lacuna entre os limites flexível e rígido para deixar margem de capacidade para o spill. Se nada na carga de trabalho for recuperável, nenhum spill é solicitado e o limite rígido `max_memory` continua sendo a única salvaguarda. Defina o limite flexível em uma carga de trabalho que englobe todas as cargas de trabalho que você deseja controlar. Um limite na carga de trabalho raiz `all` só é global em uma hierarquia com uma única raiz; raízes irmãs ficam fora do seu escopo. Cargas de trabalho aninhadas podem definir seus próprios limites flexíveis.
+
+:::note
+O spill de memória recuperável é experimental e se baseia no escalonamento de reservas de memória (que também é experimental). Os operadores compatíveis incluem ordenação externa, agregação, hash joins com suporte a spill, `DISTINCT` externo e conjuntos `IN` de subconsultas. Esses conjuntos podem fazer spill tanto durante a construção quanto durante o uso, mesmo quando os limiares de conjuntos externos por consulta estão desabilitados. A quantidade de memória que pode ser recuperada depende da fase de execução atual de cada operador. Estimativas de memória recuperável abaixo da configuração de consulta `min_bytes_to_spill` são ignoradas. Quando nenhuma memória recuperável é informada, o limite flexível não tem efeito e o comportamento é idêntico ao de usar apenas o limite rígido `max_memory`.
+:::
 
 ## Agendamento de slots de consulta {#query_scheduling}
 
