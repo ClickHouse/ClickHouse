@@ -1,0 +1,12 @@
+disabled	5	5
+enabled	0
+parts	1
+ttl_info	1	1
+all expired	1
+parts	1
+partitions	[0]
+parts	1
+replicated	[0]
+parts	1
+deduplicated	[0,11]
+parts	2

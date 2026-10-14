@@ -1,0 +1,13 @@
+-- the recent samples table drops the sample its TTL expired, the view target receives every sample
+2
+3
+ttl	1
+ttl	2
+ttl	3
+-- a recent samples table without a TTL gets every sample, and so does the view target
+1
+2
+3
+no_ttl	1
+no_ttl	2
+no_ttl	3

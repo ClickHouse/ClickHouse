@@ -14,6 +14,8 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 
+#include <ctime>
+
 
 namespace DB
 {
@@ -72,13 +74,26 @@ public:
       * When out_selector is set, it receives the row -> partition-index mapping (empty when the block
       * is not split, i.e. a single resulting partition). Deduplication needs it to attribute each
       * source row to the partition it landed in.
+      * When apply_ttl_delete is set, the rows already expired by the table `TTL ... DELETE` rule
+      * at `current_time` are removed before the split (see `removeRowsExpiredByTTL`). The selector
+      * still covers every source row: a removed row maps to the index past the last partition.
       */
     static BlocksWithPartition splitBlockIntoParts(
         Block && block,
         size_t max_parts,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
-        IColumn::Selector * out_selector = nullptr);
+        IColumn::Selector * out_selector = nullptr,
+        bool apply_ttl_delete = false,
+        time_t current_time = 0);
+
+    /// Removes from `block` the rows already expired by the table `TTL ... DELETE` rule of `metadata_snapshot`
+    /// at `current_time`. Returns one flag per source row: 1 if the row remains in `block`.
+    static IColumn::Filter removeRowsExpiredByTTL(
+        const ContextPtr & context,
+        const StorageInMemoryMetadata & metadata_snapshot,
+        Block & block,
+        time_t current_time);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
