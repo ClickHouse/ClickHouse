@@ -2342,7 +2342,7 @@ def test_create_table_as_rejects_source_storage_clauses(
     )
     primary_key = "PRIMARY KEY id" if source_property == "primary_key" else ""
     node.query(
-        f"CREATE TABLE default.{src_table} (id UInt64, name String{index}) "
+        f"CREATE TABLE default.{src_table} (id Int64, name String{index}) "
         f"ENGINE = MergeTree {primary_key} ORDER BY (id, name)"
     )
     engine = (
@@ -2727,7 +2727,7 @@ def test_show_create_table_round_trip_partition_and_sort_order(started_cluster):
     target_table = f"{CATALOG_NAME}.`{namespace}.{target_table_name}`"
     node.query(
         f"""
-        CREATE TABLE {source_table} (id UInt64, dt Date, name String)
+        CREATE TABLE {source_table} (id Int64, dt Date, name String)
         PARTITION BY (toYearNumSinceEpoch(dt), icebergBucket(8, id))
         ORDER BY (id, name DESC)
         """,

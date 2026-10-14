@@ -172,9 +172,17 @@ String constructTableLocation(
                 "abfss://<container>@<account>.dfs.core.windows.net[/<sub-path>])",
                 storage_endpoint);
 
-        if (extra_path.empty())
-            return fmt::format("abfss://{}@{}/{}/{}", container, account_host, namespace_name, table_name);
-        return fmt::format("abfss://{}@{}/{}/{}/{}", container, account_host, extra_path, namespace_name, table_name);
+        /// Reopening the table resolves its location against `storage_endpoint` again, see
+        /// `TableMetadata::constructLocation`, which would repeat a sub-path of the container.
+        if (!extra_path.empty())
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "`storage_endpoint` ({}) has a path below the container, which CREATE TABLE in DataLakeCatalog "
+                "does not support. Use a `storage_endpoint` that ends at the container and set `default_base_location` "
+                "to abfss://<container>@<account>.dfs.core.windows.net/<sub-path> instead",
+                storage_endpoint);
+
+        return fmt::format("abfss://{}@{}/{}/{}", container, account_host, namespace_name, table_name);
     }
 
     if (location_scheme == "s3")
@@ -192,6 +200,16 @@ String constructTableLocation(
                 "`storage_endpoint` ({}) does not contain a bucket; "
                 "CREATE TABLE in DataLakeCatalog requires `storage_endpoint` to include a non-empty bucket path.",
                 storage_endpoint);
+
+        /// Same as for Azure: a prefix below the bucket would be repeated when the table is reopened.
+        if (path.contains('/'))
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "`storage_endpoint` ({}) has a path below the bucket, which CREATE TABLE in DataLakeCatalog "
+                "does not support. Use a `storage_endpoint` that ends at the bucket and set `default_base_location` "
+                "to s3://<bucket>/<prefix> instead",
+                storage_endpoint);
+
         return fmt::format("s3://{}/{}/{}", path, namespace_name, table_name);
     }
 
