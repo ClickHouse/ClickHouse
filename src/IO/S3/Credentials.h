@@ -252,7 +252,6 @@ class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
 {
 public:
     /// `policy_` is an optional IAM session policy (JSON) that narrows the permissions of the assumed role.
-    /// TODO: `DurationSeconds` is not sent, so STS uses its default session duration.
     AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_, std::string policy_);
 
     Aws::Http::HeaderValueCollection GetHeaders() const override;
