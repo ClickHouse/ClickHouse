@@ -352,9 +352,19 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             }
         }
 
+        /// The job opens a session of its own, and the server accepts a one-time password once: ask for a fresh
+        /// one here, on the thread that owns the terminal, because the worker cannot.
+        ConnectionParameters background_connection_parameters = connection_parameters;
+        if (!background_connection_parameters.renewSecondFactor())
+        {
+            error_stream << "A background job opens a new session, which needs a fresh one-time password, and none was entered"
+                         << std::endl;
+            return true;
+        }
+
         BackgroundQueryManager::Snapshot snapshot(
             client_context,
-            connection_parameters,
+            background_connection_parameters,
             getClientConfiguration(),
             default_database,
             max_client_network_bandwidth,
@@ -1605,6 +1615,14 @@ void Client::connect()
     if (load_suggestions)
     {
         suggestion_limit = config().getInt("suggestion_limit", 10000);
+    }
+
+    /// The login used up the one-time password that was given in the command line, and the server accepts a
+    /// code once, so a later session (after a detached query, or a reconnect) has to ask for a fresh one.
+    if (connection_parameters.has_second_factor && config().has("one-time-password"))
+    {
+        config().remove("one-time-password");
+        config().setBool("ask-password-2fa", true);
     }
 
     server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);

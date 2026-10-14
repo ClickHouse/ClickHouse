@@ -285,6 +285,21 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
 
 }
 
+bool ConnectionParameters::renewSecondFactor()
+{
+    if (!has_second_factor)
+        return true;
+
+    std::string prompt{"TOTP for user (" + user + "): "};
+    char buf[1000] = {};
+    auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), RPP_ECHO_ON);
+    if (!result || !*result)
+        return false;
+
+    password = password_without_second_factor + "+" + std::string(result);
+    return true;
+}
+
 #if USE_JWT_CPP && USE_SSL
 void ConnectionParameters::refreshJWT()
 {
@@ -377,11 +392,15 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 
         if (config.has("one-time-password"))
         {
+            has_second_factor = true;
+            password_without_second_factor = password;
             password += "+";
             password += config.getString("one-time-password");
         }
         else if (config.getBool("ask-password-2fa", false))
         {
+            has_second_factor = true;
+            password_without_second_factor = password;
             std::string prompt{"TOTP for user (" + user + "): "};
             char buf[1000] = {};
             if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), RPP_ECHO_ON))
