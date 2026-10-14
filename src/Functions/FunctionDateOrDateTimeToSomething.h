@@ -100,6 +100,11 @@ public:
         /// only the date/time argument shapes, so Interval is handled here.
         if (!arguments.empty() && isInterval(arguments[0].type))
         {
+            /// The signature is bypassed in this branch, so enforce the argument count and
+            /// reject a timezone argument here, as for the date/time shapes.
+            constexpr bool result_is_date_or_date32 = (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>);
+            this->checkArguments(arguments, result_is_date_or_date32);
+
             IntervalKind required;
             if (!IntervalKind::tryParseFromNameOfFunctionExtractTimePart(this->getName(), required))
                 throw Exception(

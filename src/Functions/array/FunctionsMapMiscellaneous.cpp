@@ -148,6 +148,24 @@ public:
         impl.getLambdaArgumentTypes(arguments);
     }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        /// With `Name::signature` (authoritative) the base types-only path applies the DSL.
+        if constexpr (requires { Name::signature; })
+            return IFunction::getReturnTypeImpl(arguments);
+
+        /// A documentation-only signature must not take the base types-only path: it would
+        /// apply the DSL result directly and bypass the adapter's widening and naming below
+        /// (e.g. `mapConcat` key/value supertypes, the named tuple of `mapEntries`). Build
+        /// synthetic arguments to reuse the adapter implementation instead.
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// When `Name::signature` (authoritative) is set, delegate to the base
