@@ -81,22 +81,33 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
 }
 
+namespace
+{
+    /// Applies `rewrite` to the expression of the `id_generator` setting, which is stored as a string.
+    /// The setting is rewritten only if the rewrite changed something. An unparsable expression is left as is.
+    template <typename Rewrite>
+    void rewriteIdGeneratorSetting(SettingsChanges & changes, Rewrite && rewrite)
+    {
+        const Field * id_generator_field = changes.tryGet("id_generator");
+        if (!id_generator_field || (id_generator_field->getType() != Field::Types::String))
+            return;
+
+        const auto & id_generator = id_generator_field->safeGet<String>();
+        Tokens tokens(id_generator.data(), id_generator.data() + id_generator.size());
+        IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        Expected expected;
+        ASTPtr id_generator_ast;
+        if (!ParserFunction{}.parse(pos, id_generator_ast, expected) || !id_generator_ast || (pos->type != TokenType::EndOfStream))
+            return;
+
+        if (rewrite(*id_generator_ast))
+            changes.setSetting("id_generator", Field(id_generator_ast->formatWithSecretsOneLine()));
+    }
+}
+
 void materializeUUIDTypeVersionInIdGeneratorSetting(SettingsChanges & changes, UInt64 uuid_type_version)
 {
-    const Field * id_generator_field = changes.tryGet("id_generator");
-    if (!id_generator_field || (id_generator_field->getType() != Field::Types::String))
-        return;
-
-    const auto & id_generator = id_generator_field->safeGet<String>();
-    Tokens tokens(id_generator.data(), id_generator.data() + id_generator.size());
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    Expected expected;
-    ASTPtr id_generator_ast;
-    if (!ParserFunction{}.parse(pos, id_generator_ast, expected) || !id_generator_ast || (pos->type != TokenType::EndOfStream))
-        return;
-
-    if (applyUUIDTypeVersionInPlace(*id_generator_ast, uuid_type_version))
-        changes.setSetting("id_generator", Field(id_generator_ast->formatWithSecretsOneLine()));
+    rewriteIdGeneratorSetting(changes, [&](IAST & ast) { return applyUUIDTypeVersionInPlace(ast, uuid_type_version); });
 }
 
 namespace
@@ -2322,8 +2333,15 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         /// The recorded `id_type` is the name of the resolved type, which spells the historical type as a bare `UUID`
         /// (e.g. the type of the `id` column of an external tags table). Pin it the same way as the inner columns,
         /// otherwise the materialization above would flip it to `UUID2` on a second pass.
+        /// The same for the `id_generator` setting: a newly supplied generator was materialized above, so a bare `UUID`
+        /// left in it comes from the generator copied from the `AS <other_table>` clause or captured from the defaults of
+        /// an external tags table, and it must keep computing the same identifiers.
         if (materialize_uuid2)
+        {
             rewriteIdTypeSetting(create_query, [](IAST & type_ast) { return pinHistoricalUUIDTypeName(type_ast); });
+            if (create_query.storage && create_query.storage->settings)
+                rewriteIdGeneratorSetting(create_query.storage->settings->changes, [](IAST & ast) { return pinHistoricalUUIDTypeName(ast); });
+        }
     }
 
     /// Regenerate the columns of TimeSeries table from the resolved types.
