@@ -29,7 +29,7 @@ disk="disk(
     disk = 'local_disk')"
 
 # Strictly synchronous reads that always go through the cache, also on a repeated read (no
-# uncompressed cache, no columns cache). A cache hit counts at least one read buffer, so the buffer is pinned small:
+# uncompressed cache, no columns cache). A cache hit counts the read buffer it fills, so the buffer is pinned small:
 # `filesystem_cache_prefer_bigger_buffer_size` raises it to `prefetch_buffer_size`, and
 # `remote_read_min_bytes_for_seek` reads through a short forward seek.
 read_settings=(
