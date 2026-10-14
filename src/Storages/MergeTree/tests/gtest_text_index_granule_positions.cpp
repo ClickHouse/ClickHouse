@@ -106,7 +106,7 @@ void expectQuickBrownFoxRows(const std::map<std::string, Occurrences> & position
 MergeTreeIndexTextParams paramsWithPositions()
 {
     MergeTreeIndexTextParams params;
-    params.positions = 1;
+    params.enable_positions = true;
     return params;
 }
 
