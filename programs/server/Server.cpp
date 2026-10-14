@@ -4726,17 +4726,29 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG)
             && (has_catalog_port || has_catalog_secure_port))
         {
-            /// Both listeners share one handler factory.
-            /// TODO: PR 123331 adds an `already_listening` guard before the factory.
-            /// It must check both port names and skip the factory only when every configured port is listening.
+            auto is_listening = [&](const char * name)
+            {
+                return std::any_of(servers.begin(), servers.end(), [&](const auto & server)
+                {
+                    return !server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == name;
+                });
+            };
+
+            /// Both listeners share one handler factory. Create it only if some configured port is not listening yet.
+            const bool already_listening = (!has_catalog_port || is_listening("iceberg_rest_catalog.port"))
+                && (!has_catalog_secure_port || is_listening("iceberg_rest_catalog.secure_port"));
+
             HTTPRequestHandlerFactoryPtr handler_factory;
-            try
+            if (!already_listening)
             {
-                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
-            }
-            catch (...)
-            {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                try
+                {
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                }
             }
 
             if (handler_factory)
