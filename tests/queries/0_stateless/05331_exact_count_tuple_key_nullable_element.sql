@@ -5,6 +5,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/124155
 
 SET use_query_condition_cache = 0;
+-- The exact count from the primary key is `_exact_count_projection`, an implicit projection.
+SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 DROP TABLE IF EXISTS t_exact_count_tuple_nullable;
 
