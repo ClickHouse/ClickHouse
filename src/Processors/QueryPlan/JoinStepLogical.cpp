@@ -1919,8 +1919,9 @@ std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan:
     /// for ordinary tables. `partial_merge` is skipped over when `MergeJoin` declines the join, exactly as
     /// `tryAddJoinRuntimeFilter` does, so that a merge algorithm listed after it is still predicted: stopping
     /// at it would report an ordered input as unordered, and the runtime-filter pass would then erase the
-    /// merge algorithms of the join above. `grace_hash` without a spill threshold is skipped over for the same
-    /// reason: `tryCreateJoin` leaves the join to the next algorithm, and so does `tryAddJoinRuntimeFilter`.
+    /// merge algorithms of the join above. `grace_hash` without a spill threshold, or for a join shape that
+    /// `GraceHashJoin` does not support (such as `ASOF`), is skipped over for the same reason: `tryCreateJoin`
+    /// leaves the join to the next algorithm.
     /// `ie_join` claims a join that has equality keys only when `isIEJoinPreferred` says so (listed first,
     /// with at least two inequality predicates), and it is skipped over otherwise, like `tryAddJoinRuntimeFilter`
     /// does. Any other algorithm is taken as selected: its output order is not exploitable.
@@ -1949,7 +1950,7 @@ std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan:
                     continue;
                 return {};
             case JoinAlgorithm::GRACE_HASH:
-                if (isGraceHashJoinSkipped())
+                if (isGraceHashJoinSkipped() || !isGraceHashJoinSupported())
                     continue;
                 return {};
             default:
@@ -1965,6 +1966,26 @@ bool JoinStepLogical::isGraceHashJoinSkipped() const
     return !join_settings.legacy_join_size_limits_trigger_spilling
         && join_settings.getEffectiveMaxBytesBeforeExternalJoin() == 0
         && join_settings.join_algorithms.size() > 1;
+}
+
+bool JoinStepLogical::isGraceHashJoinSupported() const
+{
+    /// Keep this in sync with `GraceHashJoin::isSupported`: `tryCreateJoin` leaves a join that
+    /// `GraceHashJoin` declines to the next listed algorithm.
+    if (join_operator.strictness == JoinStrictness::Asof)
+        return false;
+
+    if (!isInner(join_operator.kind) && !isLeft(join_operator.kind) && !isRight(join_operator.kind) && !isFull(join_operator.kind))
+        return false;
+
+    /// An `OR` condition is split into several clauses, and `GraceHashJoin` supports one disjunct only.
+    for (const auto & condition : join_operator.expression)
+    {
+        if (std::get<0>(condition.asBinaryPredicate()) == JoinConditionOperator::Or)
+            return false;
+    }
+
+    return true;
 }
 
 bool JoinStepLogical::isPartialMergeJoinSupported() const

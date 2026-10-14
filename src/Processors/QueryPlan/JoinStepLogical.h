@@ -237,6 +237,9 @@ public:
     /// threshold it cannot run, and `tryCreateJoin` skips it when it is not listed alone.
     bool isGraceHashJoinSkipped() const;
 
+    /// Whether `GraceHashJoin` supports the kind, strictness and condition of this join.
+    bool isGraceHashJoinSupported() const;
+
     /// `applyParallelReplicas` may replace a join input with a distributed read after
     /// `tryAddJoinRuntimeFilter` memoized the eligibility on the pre-rewrite plan. The stale `true`
     /// would keep selecting a merge join whose input is no longer readable in order, so drop the
