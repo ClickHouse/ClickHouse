@@ -661,10 +661,22 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
 
-    const auto & settings = session->sessionContext()->getSettingsRef();
-    const Poco::Timespan receive_timeout = settings[Setting::receive_timeout];
-    const Poco::Timespan send_timeout = settings[Setting::send_timeout];
-    const UInt64 idle_connection_timeout = settings[Setting::idle_connection_timeout];
+    /// The session context is shared with the embedded client, so `SET` queries typed in the
+    /// terminal change it. The timeouts are re-read whenever the client returns to the prompt, as
+    /// `TCPHandler` re-reads them after each query.
+    ContextPtr session_context = session->sessionContext();
+    Poco::Timespan receive_timeout;
+    Poco::Timespan send_timeout;
+    UInt64 idle_connection_timeout = 0;
+    auto read_timeouts = [&]
+    {
+        /// The embedded client thread may change the settings concurrently, so take a locked copy.
+        const Settings settings = session_context->getSettingsCopy();
+        receive_timeout = settings[Setting::receive_timeout];
+        send_timeout = settings[Setting::send_timeout];
+        idle_connection_timeout = settings[Setting::idle_connection_timeout];
+    };
+    read_timeouts();
 
     LOG_DEBUG(log, "WebSocket connection established for user {}", auth_user);
 
@@ -746,11 +758,23 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// protocol connections waiting for the next query. A running query is never interrupted by
     /// this timeout, even if it produces no output.
     Stopwatch idle_time;
+    UInt64 last_prompts_count = 0;
 
     while (running && !server.isCancelled() && !client_runner->hasFinished())
     {
         if (!client_runner->isWaitingForQueryInput())
             idle_time.restart();
+
+        if (UInt64 prompts_count = client_runner->getPromptsCount(); prompts_count != last_prompts_count)
+        {
+            /// The client has returned to the prompt: apply the settings changed by the last query.
+            /// The counter is used instead of the flag, because a short query such as `SET` may
+            /// start and finish between two iterations of this loop.
+            last_prompts_count = prompts_count;
+            read_timeouts();
+            socket.setSendTimeout(send_timeout);
+            socket.setReceiveTimeout(receive_timeout);
+        }
 
         if (idle_time.elapsedSeconds() > static_cast<double>(idle_connection_timeout))
         {
@@ -807,7 +831,10 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                 /// the per-read timeout to hold the handler thread indefinitely.
                 /// The absolute deadline closes that hole by capping the total
                 /// time spent reading a single frame.
-                UInt64 frame_deadline = clock_gettime_ns() + static_cast<UInt64>(receive_timeout.totalMicroseconds()) * 1000;
+                /// A zero `receive_timeout` disables the timeout, as for other interfaces.
+                UInt64 frame_deadline = 0;
+                if (receive_timeout.totalMicroseconds() > 0)
+                    frame_deadline = clock_gettime_ns() + static_cast<UInt64>(receive_timeout.totalMicroseconds()) * 1000;
                 WebSocketFrame frame = readWebSocketFrame(socket, frame_deadline);
 
                 if (frame.message_too_big)

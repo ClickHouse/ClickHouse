@@ -5246,11 +5246,11 @@ void ClientBase::runInteractive()
                 next_query_to_prepopulate.clear();
             }
 
-            if (waiting_for_query_input)
-                waiting_for_query_input->store(true);
+            if (on_waiting_for_query_input)
+                on_waiting_for_query_input(true);
             SCOPE_EXIT_SAFE({
-                if (waiting_for_query_input)
-                    waiting_for_query_input->store(false);
+                if (on_waiting_for_query_input)
+                    on_waiting_for_query_input(false);
             });
 
             input = lr->readLine(getPrompt(), ":-] ");

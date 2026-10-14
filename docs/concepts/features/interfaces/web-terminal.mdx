@@ -76,7 +76,9 @@ Each web terminal session runs an embedded `clickhouse-client` with its own thre
 
 - [`max_sessions_for_user`](/reference/settings/session-settings/max#max_sessions_for_user) limits the number of simultaneous sessions of the user. A session over the limit is rejected before the embedded client is started, and the server closes the WebSocket with code `1008`.
 - [`idle_connection_timeout`](/reference/settings/session-settings/other#idle_connection_timeout) closes a session after the specified number of seconds without traffic in either direction while the embedded client waits for the next query, as for the native protocol. A running query is not interrupted by this timeout, even if it produces no output.
-- [`receive_timeout`](/reference/settings/session-settings/receive#receive_timeout) and [`send_timeout`](/reference/settings/session-settings/send#send_timeout) limit the time of reading a WebSocket frame from the client and sending data to the client.
+- [`receive_timeout`](/reference/settings/session-settings/receive#receive_timeout) and [`send_timeout`](/reference/settings/session-settings/send#send_timeout) limit the time of reading a WebSocket frame from the client and sending data to the client. A value of `0` disables the timeout.
+
+Changes of these settings with a `SET` query in the terminal take effect when the query finishes and the embedded client returns to the prompt.
 
 The sessions also count toward the server-wide [`max_connections`](/reference/settings/server-settings/settings/max#max_connections) limit together with the connections of other interfaces.
 

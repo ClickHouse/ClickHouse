@@ -9,18 +9,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 USER_LIMITED="u_sessions_${CLICKHOUSE_DATABASE}"
 USER_IDLE="u_idle_${CLICKHOUSE_DATABASE}"
+USER_SET="u_set_${CLICKHOUSE_DATABASE}"
 PROFILE_LIMITED="p_sessions_${CLICKHOUSE_DATABASE}"
 
 # `max_sessions_for_user` can only be set in a settings profile.
 ${CLICKHOUSE_CLIENT} --query "
-    DROP USER IF EXISTS ${USER_LIMITED}, ${USER_IDLE};
+    DROP USER IF EXISTS ${USER_LIMITED}, ${USER_IDLE}, ${USER_SET};
     DROP SETTINGS PROFILE IF EXISTS ${PROFILE_LIMITED};
     CREATE SETTINGS PROFILE ${PROFILE_LIMITED} SETTINGS max_sessions_for_user = 1;
     CREATE USER ${USER_LIMITED} IDENTIFIED WITH plaintext_password BY 'pass' SETTINGS PROFILE ${PROFILE_LIMITED};
     CREATE USER ${USER_IDLE} IDENTIFIED WITH plaintext_password BY 'pass' SETTINGS idle_connection_timeout = 1;
+    CREATE USER ${USER_SET} IDENTIFIED WITH plaintext_password BY 'pass' SETTINGS receive_timeout = 0;
 "
 
-python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "${USER_LIMITED}" "${USER_IDLE}" <<'PYEOF'
+python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "${USER_LIMITED}" "${USER_IDLE}" "${USER_SET}" <<'PYEOF'
 import base64
 import json
 import os
@@ -28,7 +30,7 @@ import socket
 import struct
 import sys
 
-host, port, user_limited, user_idle = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+host, port, user_limited, user_idle, user_set = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
 
 
 def recv_exact(sock, n):
@@ -123,6 +125,13 @@ while b"query_finished" not in output:
 print("query session: finished")
 print("query session:", *read_until_close(query))
 query.close()
+
+# `receive_timeout = 0` disables the timeout of reading a frame, and a `SET` typed in the
+# terminal takes effect when the client returns to the prompt.
+set_session = open_session(user_set)
+send_text(set_session, "SET idle_connection_timeout = 1\r")
+print("set session:", *read_until_close(set_session))
+set_session.close()
 PYEOF
 
-${CLICKHOUSE_CLIENT} --query "DROP USER ${USER_LIMITED}, ${USER_IDLE}; DROP SETTINGS PROFILE ${PROFILE_LIMITED}"
+${CLICKHOUSE_CLIENT} --query "DROP USER ${USER_LIMITED}, ${USER_IDLE}, ${USER_SET}; DROP SETTINGS PROFILE ${PROFILE_LIMITED}"
