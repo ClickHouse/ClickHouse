@@ -14,10 +14,16 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char packed_part_freeze_pause_before_copy[];
+}
 
 namespace ErrorCodes
 {
@@ -908,6 +914,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     bool need_commit = false;
     if (!to_detached && (params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params)))
     {
+        FailPointInjection::pauseFailPoint(FailPoints::packed_part_freeze_pause_before_copy);
+
         if (!dest_storage->transaction)
         {
             dest_storage->beginTransaction();

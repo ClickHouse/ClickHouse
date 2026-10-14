@@ -115,6 +115,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_pause_after_write[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
 }
 
@@ -1917,6 +1918,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         global_ctx->rows_written += block.rows();
         ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
+
+        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_write);
 
         if (global_ctx->merge_may_reduce_rows)
         {
