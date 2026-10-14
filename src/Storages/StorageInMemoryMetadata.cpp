@@ -43,6 +43,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_FUNCTION;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
@@ -1016,24 +1018,20 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
 
         if (!minmax_index_exists)
         {
-            IndexDescription index;
-            bool valid_index = true;
             try
             {
-                /// An index that cannot be built, e.g. over an ALIAS whose dictionary is gone, is not generated.
-                index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+                /// An index that cannot be built, e.g. over an ALIAS whose dictionary, `Join` table or function is gone, is not generated.
+                auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
                 static const MergeTreeSettings default_settings;
                 MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+                secondary_indices.push_back(std::move(index));
             }
             catch (const Exception & e)
             {
-                if (e.code() == ErrorCodes::BAD_ARGUMENTS || e.code() == ErrorCodes::INCORRECT_QUERY)
-                    valid_index = false;
-                else
+                if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::INCORRECT_QUERY
+                    && e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_FUNCTION)
                     throw;
             }
-            if (valid_index)
-                secondary_indices.push_back(std::move(index));
         }
 
     }
