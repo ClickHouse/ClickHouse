@@ -120,11 +120,10 @@ void applyProjectionColumnCodecs(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} has mismatched visible and physical output bindings", backQuote(projection_name));
 
     NameSet unique_physical_names;
+    NameSet repeated_physical_names;
     for (const auto & physical_name : physical_names)
         if (!unique_physical_names.insert(physical_name).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Projection {} has multiple SELECT outputs stored in column {}",
-                backQuote(projection_name), backQuote(physical_name));
+            repeated_physical_names.insert(physical_name);
 
     NameSet bound_columns;
     for (const auto & child : declarations.children)
@@ -149,6 +148,10 @@ void applyProjectionColumnCodecs(
                 "Column {} is not produced by projection {}", backQuote(name), backQuote(projection_name));
 
         const auto & physical_name = physical_names[*output_position];
+        if (repeated_physical_names.contains(physical_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} has multiple SELECT outputs stored in column {}",
+                backQuote(projection_name), backQuote(physical_name));
         if (source_columns.hasSubcolumn(GetColumnsOptions::All, physical_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} cannot declare a codec for subcolumn {}", backQuote(projection_name), backQuote(physical_name));
