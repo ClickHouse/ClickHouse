@@ -430,6 +430,39 @@ void updateHashWithRawValue(const IColumn & column, size_t n, SipHash & hash)
     {
         updateHashWithRawValue(column_const->getDataColumn(), 0, hash);
     }
+    else if (const auto * column_variant = typeid_cast<const ColumnVariant *>(&column))
+    {
+        /// The same framing as in `ColumnVariant::updateHashWithValue`.
+        const ColumnVariant::Discriminator global_discr = column_variant->globalDiscriminatorAt(n);
+        hash.update(global_discr);
+        if (global_discr != ColumnVariant::NULL_DISCRIMINATOR)
+            updateHashWithRawValue(column_variant->getVariantByGlobalDiscriminator(global_discr), column_variant->offsetAt(n), hash);
+    }
+    else if (const auto * column_dynamic = typeid_cast<const ColumnDynamic *>(&column))
+    {
+        /// The same framing as in `ColumnDynamic::updateHashWithValue`.
+        const auto & variant_column = column_dynamic->getVariantColumn();
+        const ColumnVariant::Discriminator discr = variant_column.globalDiscriminatorAt(n);
+        if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            hash.update(discr);
+        }
+        else if (discr == column_dynamic->getSharedVariantDiscriminator())
+        {
+            auto value = column_dynamic->getSharedVariant().getDataAt(variant_column.offsetAt(n));
+            ReadBufferFromMemory buf(value);
+            auto type = decodeDataType(buf);
+            hash.update(type->getName());
+            auto tmp_column = type->createColumn();
+            type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, ColumnDynamic::getBinaryEncodedValueFormatSettings());
+            updateHashWithRawValue(*tmp_column, 0, hash);
+        }
+        else
+        {
+            hash.update(column_dynamic->getVariantInfo().variant_names[discr]);
+            updateHashWithRawValue(variant_column.getVariantByGlobalDiscriminator(discr), variant_column.offsetAt(n), hash);
+        }
+    }
     else
     {
         column.updateHashWithValue(n, hash);

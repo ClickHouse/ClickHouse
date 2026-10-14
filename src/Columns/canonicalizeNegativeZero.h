@@ -55,7 +55,7 @@ std::optional<String> serializeValueIfContainsNegativeZero(const IColumn & colum
 
 /** `IColumn::updateHashWithValue` hashes negative zero as positive zero. This is the way it hashed values before
   * that, by the raw bits of the floating point values, recursively for `Nullable`, `Array`, `Tuple`, `Map`,
-  * `LowCardinality` and `Const` columns. It is for the hashes that are a part of a data format, such as the
+  * `LowCardinality`, `Variant`, `Dynamic` and `Const` columns. It is for the hashes that are a part of a data format, such as the
   * bucket of a key of a `Map` in a data part, so that the parts written by older versions remain readable.
   */
 void updateHashWithRawValue(const IColumn & column, size_t n, SipHash & hash);
