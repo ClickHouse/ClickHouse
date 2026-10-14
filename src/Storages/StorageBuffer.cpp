@@ -278,8 +278,15 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
+        /// `read` unites the destination with the buffers, so anything past `FetchColumns` has to be merged above both.
+        const bool merged_above = to_stage > QueryProcessingStage::FetchColumns;
+        if (merged_above)
+            to_stage = QueryProcessingStage::WithMergeableState;
+
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        const auto stage = destination->getQueryProcessingStage(
+            local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        return merged_above ? std::min(stage, QueryProcessingStage::WithMergeableState) : stage;
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -1647,6 +1654,7 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id,
             static_cast<bool>(args.getLocalContext()->getSettingsRef()[Setting::insert_allow_materialized_columns]));
     },
+    SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
         .supports_schema_inference = true,

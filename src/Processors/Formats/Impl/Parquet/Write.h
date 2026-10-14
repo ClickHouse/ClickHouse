@@ -72,6 +72,10 @@ struct WriteOptions
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
 
     bool write_geometadata = true;
+
+    /// Write a named `Tuple` whose element names are fields of the `FILE` logical type as a
+    /// `FILE`-annotated group. See getFileLogicalTypeElementTypes.
+    bool write_file_logical_type = false;
 };
 
 /// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
@@ -87,6 +91,7 @@ struct IcebergOptionality
     bool owned_by_enclosing_nullable = false;
 
     bool isOptional(const String & path) const;
+    bool isLocalTimestamp(const String & path) const;
 };
 
 /// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
@@ -102,6 +107,10 @@ struct ColumnChunkIndexes
     /// Set to false when a non-null page has stats dropped (e.g. value exceeded max_statistics_size).
     /// When false, the column index must not be written because it would contain invalid bounds.
     bool column_index_valid = true;
+    /// Set to false when a page had to start in the middle of a record, which the offset index
+    /// cannot describe: its first_row_index addresses whole rows. Only a record too large to fit
+    /// the format's 32-bit page size does that.
+    bool offset_index_valid = true;
     parq::BloomFilterHeader bloom_filter_header;
     BloomFilterData bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };

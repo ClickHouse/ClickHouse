@@ -17,6 +17,7 @@
 #include <Common/checkStackSize.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
@@ -264,7 +265,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::getJSONRequest(
 
 std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::postJSONRequest(
     const std::string & route,
-    std::function<void(std::ostream &)> out_stream_callback) const
+    std::function<void(DB::WriteBuffer &)> out_stream_callback) const
 {
     /// `out_stream_callback` is copied, not moved: the retry has to send the same body again.
     return requestWithRetry([&](bool force_refresh)
@@ -403,9 +404,15 @@ void UnityV2Catalog::createTable(
 
     LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
 
+    std::ostringstream body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    body_str.exceptions(std::ios::failbit);
+    body->stringify(body_str);
+
     try
     {
-        auto response = postJSONRequest(TABLES_ENDPOINT, [&](std::ostream & os) { body->stringify(os); });
+        auto response = postJSONRequest(
+            TABLES_ENDPOINT,
+            [body_serialized = body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); });
         LOG_TEST(log, "Unity createTable response: {}", response.second);
     }
     catch (...)
@@ -415,6 +422,26 @@ void UnityV2Catalog::createTable(
             "Failed to create table {}.{} in Unity catalog: {}",
             namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
+}
+
+std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    checkNamespaceExists(namespace_name);
+
+    auto json = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, namespace_name)).first;
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
+    /// and then the table engine arguments have to name the location explicitly.
+    if (!hasValueAndItsNotNone("storage_location", object))
+    {
+        LOG_DEBUG(log, "Schema {}.{} has no storage location", warehouse, namespace_name);
+        return std::nullopt;
+    }
+
+    return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
 }
 
 void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) const
@@ -653,7 +680,11 @@ std::shared_ptr<IStorageCredentials> UnityV2Catalog::getDeltaCredentials(
     request_body.set("table_id", table_id);
     request_body.set("operation", operation);
 
-    auto callback = [&request_body](std::ostream & os) { request_body.stringify(os); };
+    std::ostringstream request_body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    request_body_str.exceptions(std::ios::failbit);
+    request_body.stringify(request_body_str);
+
+    auto callback = [body_serialized = request_body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); };
 
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     const Poco::JSON::Object::Ptr & response = json.extract<Poco::JSON::Object::Ptr>();
