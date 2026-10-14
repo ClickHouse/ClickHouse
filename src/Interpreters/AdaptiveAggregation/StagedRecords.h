@@ -78,8 +78,8 @@ using AdaptiveRecordKey = std::remove_cvref_t<decltype(keyHolderGetKey(std::decl
 
 /// Reads a staged key back from its record. String-like keys were staged as raw characters and are rebuilt pointing
 /// into the record, so a table holding such a key needs the record until the table is converted or written: the merge
-/// frees a partition's records only after that, and copies the keys of the records it reads back from a spill, which
-/// it frees before.
+/// frees a partition's records only after that, and copies the keys of the records it reads back from a spill, whose
+/// blocks go before.
 template <typename Key>
 Key ALWAYS_INLINE readStagedKey(const char * key_pos, [[maybe_unused]] size_t key_size, [[maybe_unused]] size_t routing_hash)
 {

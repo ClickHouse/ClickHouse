@@ -444,8 +444,8 @@ public:
     /// unit free with its arena, at once or with the chunk that captured it, and once the bucket's last unit converted,
     /// the slot retires. A unit reads the spill streams of its partitions back a block at a time and drains each block
     /// before the next, so the merge holds the unit's groups instead of all its spilled records; a count-first unit,
-    /// which passes over its records twice, loads them into memory instead. `full_group_count` receives the bucket's
-    /// group count over all its units, taken before any top-K truncation.
+    /// which passes over its records twice, reads the spill streams back twice. `full_group_count` receives the
+    /// bucket's group count over all its units, taken before any top-K truncation.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
@@ -1000,7 +1000,7 @@ private:
     /// whose count bin the top-K pruning keeps alive (see `AdaptiveTopKPruning`), or those of the best groups of a
     /// count-first unit. New groups get their states in `arena`, the arena of the unit. String-like keys are emplaced
     /// pointing into the records, which are freed only after the table is converted or written, unless `copy_keys`:
-    /// records read back from a spill are freed before, so their new keys are copied into `arena` too. Returns how many
+    /// records read back from a spill go before, so their new keys are copied into `arena` too. Returns how many
     /// records it skipped.
     template <typename Method, bool copy_keys, typename Table, typename Filter>
     size_t drainAdaptivePartition(
@@ -1013,13 +1013,19 @@ private:
 
     /// Counts the groups of one partition's argument records into `counting_table`, only those whose routing hash
     /// `filter` takes: a record adds one row to the count its group keeps in the mapped value, as a lone `count()`
-    /// keeps it, and builds no state. `update_candidates(count, key, hash)` then takes the grown count by reference, so
-    /// a tracker of the best groups can keep its metadata in the count's high bits. Returns how many records it
-    /// skipped.
-    template <typename Method, typename Table, typename Filter, typename UpdateCandidates>
+    /// keeps it, and builds no state. `update_candidates(count, key_holder, hash)` then takes the grown count by
+    /// reference, so a tracker of the best groups can keep its metadata in the count's high bits. String-like keys
+    /// point into the records, unless `copy_keys`: records read back from a spill go before the counting ends, so the
+    /// counting table copies its new keys into `arena`, and the key holder copies the key there when the tracker
+    /// keeps it. Returns how many records it skipped.
+    template <typename Method, bool copy_keys, typename Table, typename Filter, typename UpdateCandidates>
     requires MapAggregationMethod<Method>
     size_t countPartitionGroups(
-        Table & counting_table, const AdaptiveRecordRanges & ranges, const Filter & filter, const UpdateCandidates & update_candidates) const;
+        Table & counting_table,
+        Arena * arena,
+        const AdaptiveRecordRanges & ranges,
+        const Filter & filter,
+        const UpdateCandidates & update_candidates) const;
 
     /// Destroys the states of a source cell whose group cannot reach the top, and clears the cell's slot.
     void discardAdaptiveSourceState(AggregateDataPtr & place) const;
@@ -1032,12 +1038,14 @@ private:
     void adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeTask & task) const;
 
     /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
-    /// cells and the records of every partition `for_each_partition` hands out, in the count bins `alive_bins` keeps
-    /// (all bins when null), and puts the hashes of its best groups by the count into `task.best_hashes`. With a
-    /// descending order `top_k` keeps the best groups up to date while they are counted, and `pruning`, if any, drops
-    /// those below its threshold; an ascending order selects them by a pass over the counted groups. Adds the records
-    /// the bins skipped to `pruned_records`. Returns the unit's group count.
-    template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachPartition>
+    /// cells, the records in memory of every partition `for_each_partition` hands out and the records of every spilled
+    /// block `for_each_spilled_block` reads back, in the count bins `alive_bins` keeps (all bins when null), and puts
+    /// the hashes of its best groups by the count into `task.best_hashes`. The counting table and `top_k` copy the
+    /// string-like keys of spilled records they keep into `arena`. With a descending order `top_k` keeps the best
+    /// groups up to date while they are counted, and `pruning`, if any, drops those below its threshold; an ascending
+    /// order selects them by a pass over the counted groups. Adds the records the bins skipped to `pruned_records`.
+    /// Returns the unit's group count.
+    template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachPartition, typename ForEachSpilledBlock>
     size_t selectCountFirstBestGroups(
         Table & counting_table,
         const Cells & cells,
@@ -1045,6 +1053,8 @@ private:
         TopK * top_k,
         const AdaptiveTopKPruning * pruning,
         const ForEachPartition & for_each_partition,
+        const ForEachSpilledBlock & for_each_spilled_block,
+        Arena * arena,
         AdaptiveMergeTask & task,
         size_t & pruned_records) const;
 

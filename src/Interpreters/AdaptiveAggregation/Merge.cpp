@@ -54,26 +54,34 @@ namespace
                 DB::ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive merge.");
     }
 
-    /// Emplaces a staged key, read back by `readStagedKey`, into `table` with its routing hash. A string-like key goes in
-    /// pointing into its record, which the merge frees only after converting the table, unless `copy_keys`: a record
-    /// read back from a spill goes before, so a new key is copied into `arena`.
+    /// The key holder (see `keyHolderGetKey`) of a staged key read back by `readStagedKey`. A string-like key points
+    /// into its record, which the merge frees only after converting the unit, unless `copy_keys`: a record read back
+    /// from a spill goes before, so the holder copies the key into `arena` when a table or a tracker of the best
+    /// groups keeps it.
+    template <bool copy_keys, typename Key>
+    auto ALWAYS_INLINE stagedKeyHolder(const Key & key, [[maybe_unused]] DB::Arena * arena)
+    {
+        if constexpr (copy_keys && std::is_same_v<Key, std::string_view>)
+            return DB::ArenaKeyHolder{key, *arena};
+        else if constexpr (copy_keys && std::is_same_v<Key, PackedStringRef>)
+            return DB::ArenaPackedStringHolder{key, *arena};
+        else
+            return key;
+    }
+
+    /// Emplaces a staged key into `table` with its routing hash, copying it into `arena` if `copy_keys` (see
+    /// `stagedKeyHolder`).
     template <typename Key, bool copy_keys, typename Table>
     void ALWAYS_INLINE emplaceStagedKey(
         Table & table,
-        [[maybe_unused]] DB::Arena * arena,
+        DB::Arena * arena,
         const char * key_pos,
         size_t key_size,
         size_t routing_hash,
         typename Table::LookupResult & it,
         bool & inserted)
     {
-        const Key key = readStagedKey<Key>(key_pos, key_size, routing_hash);
-        if constexpr (copy_keys && std::is_same_v<Key, std::string_view>)
-            table.emplace(DB::ArenaKeyHolder{key, *arena}, it, inserted, routing_hash);
-        else if constexpr (copy_keys && std::is_same_v<Key, PackedStringRef>)
-            table.emplace(DB::ArenaPackedStringHolder{key, *arena}, it, inserted, routing_hash);
-        else
-            table.emplace(key, it, inserted, routing_hash);
+        table.emplace(stagedKeyHolder<copy_keys>(readStagedKey<Key>(key_pos, key_size, routing_hash), arena), it, inserted, routing_hash);
     }
 
     /// Emplaces the key of a source table's cell into `table` with the cell's hash. The key of a string table is a view
@@ -271,16 +279,14 @@ namespace
     }
 
     /// The staged records of the bucket that a merge task merges, partition by partition: the producers' chunks of a
-    /// partition, and its spill stream (see `AdaptiveAggregationSession::SpilledPartition`). `collect` hands out the
-    /// records in memory, and `readBackSpilled` streams the spilled ones a block at a time; `loadSpilled` moves them into
-    /// memory instead, for a caller that passes over them more than once. `release` frees all of a partition's records.
+    /// partition, which `collect` hands out, and its spill stream (see `AdaptiveAggregationSession::SpilledPartition`),
+    /// which `readBackSpilled` reads back a block at a time, once per pass of the caller. `release` frees both.
     class AdaptiveBucketRecords
     {
     public:
         AdaptiveBucketRecords(DB::AdaptiveAggregationSession & session_, size_t bucket)
             : session(session_)
             , first_partition(session_.layout.firstPartition(bucket))
-            , loaded(session_.layout.partitionsPerBucket())
         {
         }
 
@@ -293,42 +299,27 @@ namespace
             return records;
         }
 
-        /// The records of partition `sub` of the bucket in memory: its chunks of every producer, then its loaded blocks.
+        /// The records of partition `sub` of the bucket in memory, its chunks of every producer.
         void collect(size_t sub, DB::AdaptiveRecordRanges & ranges) const
         {
             ranges.clear();
             for (const auto & producer : session.producer_buffers)
                 producer->forEachChunk(first_partition + sub, [&](std::string_view records) { ranges.push_back(records); });
-            for (const auto & block : loaded[sub])
-                ranges.emplace_back(block.data(), block.size());
         }
 
-        /// Whether partition `sub` has a spill stream that is not read back yet.
-        bool hasSpilledRecords(size_t sub) const { return spilledOf(sub).stream != nullptr; }
-
-        /// Reads the spill stream of partition `sub` back a block at a time (see `SpilledPartition::readBack`).
+        /// Reads the spill stream of partition `sub` back a block at a time, if the partition spilled (see
+        /// `SpilledPartition::readBack`).
         void readBackSpilled(size_t sub, const std::function<bool(const DB::PaddedPODArray<char> &)> & callback)
         {
             spilledOf(sub).readBack(callback);
         }
 
-        /// Reads the spill stream of partition `sub` back into memory, where `collect` hands its records out.
-        void NO_INLINE loadSpilled(size_t sub)
-        {
-            spilledOf(sub).readBack([&](const DB::PaddedPODArray<char> & block)
-            {
-                loaded[sub].emplace_back(block.begin(), block.end());
-                return true;
-            });
-        }
-
-        /// Frees the records of partition `sub` of the bucket: the producers' chunks, its loaded blocks, and its spill
-        /// stream, which a unit that the top-K pruning skips leaves unread.
+        /// Frees the records of partition `sub` of the bucket: the producers' chunks and its spill stream, which a unit
+        /// that the top-K pruning skips leaves unread.
         void release(size_t sub)
         {
             for (const auto & producer : session.producer_buffers)
                 producer->releasePartition(first_partition + sub);
-            loaded[sub].clear();
             spilledOf(sub).stream.reset();
         }
 
@@ -340,8 +331,6 @@ namespace
 
         DB::AdaptiveAggregationSession & session;
         const size_t first_partition;
-        /// The spilled records of each partition that `loadSpilled` read back into memory.
-        std::vector<std::vector<DB::PaddedPODArray<char>>> loaded;
     };
 
     /// The `limit` groups with the largest counts, kept up to date while the counts grow, so that no pass over all the
@@ -612,10 +601,14 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     return walk.skipped;
 }
 
-template <typename Method, typename Table, typename Filter, typename UpdateCandidates>
+template <typename Method, bool copy_keys, typename Table, typename Filter, typename UpdateCandidates>
 requires MapAggregationMethod<Method>
 size_t NO_INLINE Aggregator::countPartitionGroups(
-    Table & counting_table, const AdaptiveRecordRanges & ranges, const Filter & filter, const UpdateCandidates & update_candidates) const
+    Table & counting_table,
+    Arena * arena,
+    const AdaptiveRecordRanges & ranges,
+    const Filter & filter,
+    const UpdateCandidates & update_candidates) const
 {
     /// A count-first unit ranks by a count among other aggregates, so its records carry arguments.
     chassert(adaptive_argument_layout && !is_simple_count);
@@ -638,13 +631,13 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
                     bool inserted = false;
                     const auto [key_pos, key_size] = format.key(record);
                     const Key key = readStagedKey<Key>(key_pos, key_size, hash);
-                    counting_table.emplace(key, it, inserted, hash);
+                    counting_table.emplace(stagedKeyHolder<copy_keys>(key, arena), it, inserted, hash);
                     UInt64 & group_count = getInlineCountState(it->getMapped());
                     if (inserted)
                         group_count = 1;
                     else
                         ++group_count;
-                    update_candidates(group_count, key, hash);
+                    update_candidates(group_count, stagedKeyHolder<copy_keys>(key, arena), hash);
                 }).skipped;
         }
     });
@@ -701,7 +694,7 @@ void Aggregator::adoptSourceCells(Table & table, Cells & cells, const Filter & f
     }
 }
 
-template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachPartition>
+template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachPartition, typename ForEachSpilledBlock>
 size_t Aggregator::selectCountFirstBestGroups(
     Table & counting_table,
     const Cells & cells,
@@ -709,6 +702,8 @@ size_t Aggregator::selectCountFirstBestGroups(
     TopK * top_k,
     const AdaptiveTopKPruning * pruning,
     const ForEachPartition & for_each_partition,
+    const ForEachSpilledBlock & for_each_spilled_block,
+    Arena * arena,
     AdaptiveMergeTask & task,
     size_t & pruned_records) const
 {
@@ -736,16 +731,23 @@ size_t Aggregator::selectCountFirstBestGroups(
         if (top_k)
             top_k->update(group_count, cell.key, cell.hash);
     }
-    const auto update_candidates = [&](UInt64 & group_count, const Key & key, UInt64 hash) ALWAYS_INLINE
+    const auto update_candidates = [&](UInt64 & group_count, auto && key_holder, UInt64 hash) ALWAYS_INLINE
     {
         if (top_k)
-            top_k->update(group_count, key, hash);
+            top_k->update(group_count, key_holder, hash);
     };
+    /// The records in memory, then those of the spill streams, whose blocks go after their calls: the counting table
+    /// and the top copy the keys they keep into `arena`.
     const auto count_records = [&](const auto & filter)
     {
         for_each_partition([&](const AdaptiveRecordRanges & ranges)
         {
-            pruned_records += countPartitionGroups<Method>(counting_table, ranges, filter, update_candidates);
+            pruned_records += countPartitionGroups<Method, /*copy_keys=*/false>(counting_table, arena, ranges, filter, update_candidates);
+        });
+        for_each_spilled_block([&](const AdaptiveRecordRanges & ranges)
+        {
+            pruned_records += countPartitionGroups<Method, adaptive_key_stages_bytes<Key>>(
+                counting_table, arena, ranges, filter, update_candidates);
         });
     };
     if (alive_bins != nullptr)
@@ -1129,8 +1131,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 alive_bins = alive.data();
         }
 
-        /// Calls `f` with the records in memory of each partition of the unit: its chunks, and the spilled records the
-        /// unit loaded.
+        /// Calls `f` with the records in memory of each partition of the unit.
         const auto for_each_partition = [&](auto && f)
         {
             for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
@@ -1140,9 +1141,30 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             }
         };
 
-        /// Merges the source cells and the unit's records in memory that `filter` takes into the bucket's table. The cells
-        /// go first: a key a source holds is adopted with its state, so the records of that key update the adopted state
-        /// instead of creating one. Returns how many records `filter` skipped.
+        /// Calls `f` with the records of each block of the spill streams of the unit's partitions, read back a block at
+        /// a time: the next block overwrites them, so whatever keeps a string-like key past the call copies it into the
+        /// unit's arena, which lives until the unit is converted. Out of line, so the code of the units that did not
+        /// spill stays as it is.
+        const auto for_each_spilled_block = [&](auto && f) NO_INLINE
+        {
+            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
+            {
+                staged.readBackSpilled(sub, [&](const PaddedPODArray<char> & block)
+                {
+                    if (is_cancelled.load(std::memory_order_seq_cst))
+                        return false;
+                    task.ranges.clear();
+                    task.ranges.emplace_back(block.data(), block.size());
+                    f(task.ranges);
+                    return true;
+                });
+            }
+        };
+
+        /// Merges the source cells and the records of the unit that `filter` takes into the bucket's table: the records
+        /// in memory, then those of the spill streams. The cells go first: a key a source holds is adopted with its
+        /// state, so the records of that key update the adopted state instead of creating one. Returns how many records
+        /// `filter` skipped.
         const auto merge_unit = [&](const auto & filter)
         {
             adoptSourceCells<Method>(table, cells, filter, task);
@@ -1152,6 +1174,11 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             for_each_partition([&](const AdaptiveRecordRanges & ranges)
             {
                 skipped += drainAdaptivePartition<Method, /*copy_keys=*/false>(table, arena, ranges, filter, task.places, task.records);
+            });
+            for_each_spilled_block([&](const AdaptiveRecordRanges & ranges)
+            {
+                skipped += drainAdaptivePartition<Method, adaptive_key_stages_bytes<AdaptiveRecordKey<Method>>>(
+                    table, arena, ranges, filter, task.places, task.records);
             });
             return skipped;
         };
@@ -1164,12 +1191,18 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             {
                 /// The first pass counts the unit's groups and selects its best groups. The second builds the states of
                 /// the best groups in the bucket's table for the conversion, as the ordinary merge does, and the other
-                /// source cells go with their states. Both passes take the records that the unit's partitions spilled,
-                /// so the unit loads them into memory first.
-                for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-                    staged.loadSpilled(sub);
+                /// source cells go with their states. Each pass reads the spill streams of the unit's partitions back.
                 unit_groups = selectCountFirstBestGroups<Method>(
-                    counting_table, cells, alive_bins, top_k ? &*top_k : nullptr, pruning, for_each_partition, task, pruned_records);
+                    counting_table,
+                    cells,
+                    alive_bins,
+                    top_k ? &*top_k : nullptr,
+                    pruning,
+                    for_each_partition,
+                    for_each_spilled_block,
+                    arena,
+                    task,
+                    pruned_records);
                 counting_table.clear();
                 merge_unit(BestHashFilter(task.best_hashes));
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationCountFirstUnits);
@@ -1177,38 +1210,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         }
         else
         {
-            /// Drains the spill stream of partition `sub` of the unit a block at a time, each before the next one
-            /// overwrites it, so the table copies the string keys it keeps into the unit's arena, which lives until the
-            /// unit is converted. Out of line, like the drain itself, so the code of the units that did not spill stays
-            /// as it is.
-            const auto drain_spill = [&](size_t sub, const auto & filter) NO_INLINE
-            {
-                size_t skipped = 0;
-                staged.readBackSpilled(sub, [&](const PaddedPODArray<char> & block)
-                {
-                    if (is_cancelled.load(std::memory_order_seq_cst))
-                        return false;
-                    task.ranges.clear();
-                    task.ranges.emplace_back(block.data(), block.size());
-                    skipped += drainAdaptivePartition<Method, adaptive_key_stages_bytes<AdaptiveRecordKey<Method>>>(
-                        table, arena, task.ranges, filter, task.places, task.records);
-                    return true;
-                });
-                return skipped;
-            };
-            /// Merges the unit as `merge_unit` does, then drains the spill streams of its partitions.
-            const auto merge_with_spill = [&](const auto & filter)
-            {
-                size_t skipped = merge_unit(filter);
-                for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-                    if (staged.hasSpilledRecords(sub))
-                        skipped += drain_spill(sub, filter);
-                return skipped;
-            };
             if (alive_bins != nullptr)
-                pruned_records += merge_with_spill(AliveBinRecords{alive_bins});
+                pruned_records += merge_unit(AliveBinRecords{alive_bins});
             else
-                pruned_records += merge_with_spill(AllStagedRecords{});
+                pruned_records += merge_unit(AllStagedRecords{});
             unit_groups = table.size();
         }
 

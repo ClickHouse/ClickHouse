@@ -7,7 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A count-first unit of an adaptive aggregation that feeds `ORDER BY count() DESC LIMIT n` keeps its best
 # groups while it counts. It finds a group's entry through its count in the counting table and confirms it by
 # the key, so every key method takes its own path: numbers, packed strings, strings in every submap of the
-# legacy string table, serialized keys and wide fixed keys.
+# legacy string table, serialized keys and wide fixed keys. A unit whose records spilled reads them back twice,
+# once to count and once to build the states of its best groups, a block at a time, so the counting table and
+# the best groups copy the string keys they keep out of the blocks. The spilled string cells repeat the string
+# key methods spilling on every block, so most groups enter the counting table from a spilled block, under a
+# throw-mode group limit at the exact group count: a key the counting table did not copy splits its group,
+# which exceeds the limit. The limit also turns the top-K pruning off, so every unit is counted.
 #
 # Half of the rows go to a head of 3000 keys with about 50 rows each, so many groups tie around the top and
 # replace each other among the best. The other half are unique keys, which keep the aggregation frozen. A
@@ -42,6 +47,7 @@ function check()
 }
 
 legacy_string_key="concat(toString(k), repeat('x', k % 30), if(k % 11 = 0, '\\0', '')) AS sk"
+spilled_string_settings="max_bytes_before_external_group_by = 1, max_rows_to_group_by = 153000, group_by_overflow_mode = 'throw'"
 
 check 'Number key' 'max_threads = 4' 'k' 'k' 'c DESC LIMIT 10'
 check 'Number key in source cells' 'adaptive_aggregator_freeze_threshold = 8192' 'k' 'k' 'c DESC LIMIT 10'
@@ -52,4 +58,7 @@ check 'Serialized keys' 'max_threads = 4' 'k % 100 AS a, toString(intDiv(k, 100)
 check 'Wide fixed keys' 'max_threads = 4' 'toUInt64(k % 100) AS a, toUInt64(intDiv(k, 100)) AS b' 'a, b' 'c DESC LIMIT 10'
 check 'Full large top' 'max_threads = 4' 'k' 'k' 'c DESC LIMIT 300 OFFSET 100'
 check 'Limit above the groups of a unit' 'max_threads = 4' 'k' 'k' 'c DESC LIMIT 65536'
-check 'Spilled records' 'max_bytes_before_external_group_by = 2000000' 'k' 'k' 'c DESC LIMIT 10'
+check 'Spilled number key' 'max_bytes_before_external_group_by = 2000000' 'k' 'k' 'c DESC LIMIT 10'
+check 'Spilled packed string key' "$spilled_string_settings" "concat(toString(k), repeat('x', k % 30)) AS sk" 'sk' 'c DESC LIMIT 10'
+check 'Spilled legacy string key' "enable_packed_string_keys_in_aggregation = 0, $spilled_string_settings" "$legacy_string_key" 'sk' 'c DESC LIMIT 10'
+check 'Spilled serialized keys' "$spilled_string_settings" 'k % 100 AS a, toString(intDiv(k, 100)) AS b' 'a, b' 'c DESC LIMIT 10'

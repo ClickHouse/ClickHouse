@@ -179,11 +179,12 @@ struct AdaptiveAggregationSession
     /// partition's bucket reads it back after the finish barrier, a block at a time.
     struct SpilledPartition
     {
-        /// Reads the stream back in the order the producers wrote it, calls `callback(block)` with the records of each
-        /// block in a padded buffer like a chunk's, and removes the stream. Every block comes in the same buffer, which
-        /// the next block overwrites, so the records of a block are valid only during its call. The read stops when
-        /// `callback` returns false. Called by the one task that merges the partition's bucket, after the finish
-        /// barrier, so no producer writes to the stream any more.
+        /// Reads the stream back in the order the producers wrote it and calls `callback(block)` with the records of
+        /// each block in a padded buffer like a chunk's. Every block comes in the same buffer, which the next block
+        /// overwrites, so the records of a block are valid only during its call. The read stops when `callback`
+        /// returns false. The stream stays, so a merge unit that passes over its records twice reads it again; the
+        /// merge removes it once the unit no longer needs it. Called by the one task that merges the partition's
+        /// bucket, after the finish barrier, so no producer writes to the stream any more.
         void readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback);
 
         std::mutex mutex;

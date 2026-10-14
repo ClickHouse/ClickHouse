@@ -419,7 +419,6 @@ void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<
         if (!callback(block))
             break;
     }
-    stream.reset();
 }
 
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
