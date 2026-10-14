@@ -1017,6 +1017,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             need_commit = true;
         }
 
+        /// The files are rewritten into a new archive, so its writer buffers the whole part.
+        if (params.max_bytes_to_buffer_for_packed_part)
+            dest_storage->setTemporaryDataForTransaction(params.temporary_data, params.max_bytes_to_buffer_for_packed_part);
+
         auto files = reader->getFileNames();
         bool metadata_version_emitted = false;
         for (const auto & file : files)
@@ -1163,6 +1167,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
             dest_storage->beginTransaction();
             need_commit = true;
         }
+
+        /// The files are rewritten into a new archive, so its writer buffers the whole part.
+        if (params.max_bytes_to_buffer_for_packed_part)
+            dest_storage->setTemporaryDataForTransaction(params.temporary_data, params.max_bytes_to_buffer_for_packed_part);
 
         auto files = reader->getFileNames();
         std::vector<std::string> all_files;

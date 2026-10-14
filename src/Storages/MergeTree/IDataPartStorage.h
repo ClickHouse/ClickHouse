@@ -283,6 +283,10 @@ public:
         /// the disk root) so the new hardlink directory entries survive a power loss. Only honored
         /// by freeze() on a local disk, outside an external transaction.
         bool fsync_part_directory = false;
+        /// Where the buffered data of the files is moved if the clone rewrites them, see `setTemporaryDataForTransaction`.
+        /// It is not moved if `max_bytes_to_buffer_for_packed_part` is 0.
+        TemporaryDataOnDiskScopePtr temporary_data = nullptr;
+        size_t max_bytes_to_buffer_for_packed_part = 0;
     };
 
     /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever

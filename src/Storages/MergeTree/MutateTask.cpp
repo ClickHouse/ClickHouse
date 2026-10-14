@@ -4776,6 +4776,7 @@ bool MutateTask::prepare()
             .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
             .keep_metadata_version = true,
+            .temporary_data = ctx->context->getTempDataOnDisk(),
         };
 
         MergeTreeData::MutableDataPartPtr part;

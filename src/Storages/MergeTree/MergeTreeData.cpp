@@ -333,6 +333,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_avg_part_size_for_too_many_parts;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsUInt64 max_delay_to_insert;
     extern const MergeTreeSettingsUInt64 max_delay_to_mutate_ms;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
@@ -13226,6 +13227,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     params_with_invalidated_columns.invalidated_columns_to_write.insert(
         src_part->invalidated_system_columns.begin(), src_part->invalidated_system_columns.end());
 
+    /// A clone that rewrites the archive of a packed part buffers the whole part, the same as writing a new part.
+    params_with_invalidated_columns.max_bytes_to_buffer_for_packed_part = (*getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part];
+
     /// `freeze` rejects a non-empty destination, so reclaim the leftover here, once the destination disk
     /// is known (the claim itself was taken above).
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
@@ -13560,7 +13564,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
                 IDataPartStorage::ClonePartParams params
                 {
-                    .make_source_readonly = true
+                    .make_source_readonly = true,
+                    .temporary_data = local_context->getTempDataOnDisk(),
+                    .max_bytes_to_buffer_for_packed_part = (*getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part],
                 };
 
                 auto new_storage = data_part_storage->freeze(
