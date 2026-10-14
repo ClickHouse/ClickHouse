@@ -104,6 +104,8 @@ namespace Setting
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes;
@@ -280,6 +282,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
+    use_query_condition_cache_for_time_conditions = from[Setting::use_query_condition_cache_for_time_conditions];
+    query_condition_cache_time_condition_grid_factor = static_cast<double>(from[Setting::query_condition_cache_time_condition_grid_factor]);
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     /// The count optimization recovers the search query from the index read tasks that only the direct-read rewrite builds.
     /// TODO(ahmadov): extract the predicate-to-search-query analysis into a shared helper, so the count optimization works without direct read.
@@ -404,7 +408,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     max_threads = from[Setting::max_threads];
 
-    automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
+    automatic_parallel_replicas_mode = Context::getAutomaticParallelReplicasMode(from);
     network_compression_method = from[Setting::network_compression_method].toString();
     network_zstd_compression_level = from[Setting::network_zstd_compression_level];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
