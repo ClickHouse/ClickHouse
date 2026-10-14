@@ -3545,6 +3545,11 @@ Collect OpenTelemetry spans for processors.
 Collect OpenTelemetry spans for workload preemptive CPU scheduling.
 )", 0, \
         {"25.8", false, false, "New setting to trace `cpu_slot_preemption` feature."}) \
+    DECLARE(Bool, opentelemetry_trace_stateless_worker_discovery, false, R"(
+Only has an effect in ClickHouse Cloud. For a query that is itself being traced, collect OpenTelemetry spans for the stateless-worker discovery-service requests it makes to provision (lease) workers.
+The spans are named `StatelessWorkerDiscovery.<action>` and carry the attributes `clickhouse.discovery.action` and `clickhouse.discovery.status`.
+)", 0, \
+        {"26.10", false, false, "New setting to collect OpenTelemetry spans for the stateless-worker discovery-service requests a query makes to provision workers."}) \
     DECLARE(Bool, prefer_column_name_to_alias, false, R"(
 Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](/reference/syntax#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
 
