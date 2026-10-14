@@ -84,29 +84,26 @@ Int32 readTag(ReadBuffer & in)
 }
 
 /// `NON_NEG` in the specification: a 32-bit value in CDF-1 and CDF-2, and a 64-bit value in CDF-5.
-UInt64 readSize(ReadBuffer & in, UInt8 version, const char * what)
+/// The value is unsigned, as the reference implementation decodes it: a dimension of `2^31` elements
+/// is legal in CDF-2. The bounds that matter, such as the sizes of the lists, the extents of the
+/// variables and the size of the file, are checked where the value is used.
+UInt64 readSize(ReadBuffer & in, UInt8 version)
 {
-    Int64 value = 0;
     if (version == 5)
     {
+        UInt64 value = 0;
         readBinaryBigEndian(value, in);
-    }
-    else
-    {
-        Int32 value32 = 0;
-        readBinaryBigEndian(value32, in);
-        value = value32;
+        return value;
     }
 
-    if (value < 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative {} in the NetCDF header: {}", what, value);
-
-    return static_cast<UInt64>(value);
+    UInt32 value = 0;
+    readBinaryBigEndian(value, in);
+    return value;
 }
 
 /// Skips a `NON_NEG` field without looking at it. It is used for the declared size of a variable,
-/// which is written as all ones for variables larger than 4 GiB in CDF-2, and would therefore be
-/// rejected as negative by `readSize`.
+/// which is written as all ones for variables larger than 4 GiB in CDF-2, and does not describe
+/// the size of the data then.
 void skipSize(ReadBuffer & in, UInt8 version)
 {
     in.ignore(version == 5 ? 8 : 4);
@@ -135,7 +132,7 @@ UInt64 readOffset(ReadBuffer & in, UInt8 version)
 
 String readName(ReadBuffer & in, UInt8 version)
 {
-    UInt64 length = readSize(in, version, "name length");
+    UInt64 length = readSize(in, version);
     if (length > NETCDF_MAX_NAME_LENGTH)
         throw Exception(ErrorCodes::INCORRECT_DATA, "The name in the NetCDF header is {} bytes long", length);
 
@@ -164,7 +161,7 @@ void checkNameOfHeaderObject(const String & name, const char * what)
 UInt64 readListHeader(ReadBuffer & in, UInt8 version, Int32 expected_tag, const char * what)
 {
     Int32 tag = readTag(in);
-    UInt64 num_elements = readSize(in, version, what);
+    UInt64 num_elements = readSize(in, version);
 
     if (tag == 0)
     {
@@ -196,7 +193,7 @@ std::vector<NetCDFAttribute> readAttributeList(ReadBuffer & in, UInt8 version)
         NetCDFAttribute attribute;
         attribute.name = readName(in, version);
         attribute.type = checkNetCDFType(readTag(in), version);
-        attribute.num_elements = readSize(in, version, "attribute element count");
+        attribute.num_elements = readSize(in, version);
 
         UInt64 data_size = 0;
         if (common::mulOverflow(attribute.num_elements, netCDFTypeSize(attribute.type), data_size)
@@ -380,6 +377,8 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
             "Unknown version {} of the NetCDF classic format", static_cast<UInt16>(header.version));
 
     /// The number of records is written as all ones when the file is produced in the streaming mode.
+    /// Every other value is a legal unsigned number of records: the data it implies is checked
+    /// against the size of the file before anything is read.
     if (header.version == 5)
     {
         UInt64 num_records = 0;
@@ -388,9 +387,6 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
         /// the 32-bit marker of the older versions a legal number of records.
         header.num_records_is_streaming = num_records == std::numeric_limits<UInt64>::max();
         header.num_records = header.num_records_is_streaming ? 0 : num_records;
-
-        if (!header.num_records_is_streaming && num_records > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of records in the NetCDF header");
     }
     else
     {
@@ -398,9 +394,6 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
         readBinaryBigEndian(num_records, in);
         header.num_records_is_streaming = num_records == std::numeric_limits<UInt32>::max();
         header.num_records = header.num_records_is_streaming ? 0 : num_records;
-
-        if (!header.num_records_is_streaming && num_records > static_cast<UInt32>(std::numeric_limits<Int32>::max()))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of records in the NetCDF header");
     }
 
     UInt64 num_dimensions = readListHeader(in, header.version, NC_DIMENSION, "dimensions");
@@ -413,7 +406,7 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
         NetCDFDimension dimension;
         dimension.name = readName(in, header.version);
         checkNameOfHeaderObject(dimension.name, "dimension");
-        dimension.length = readSize(in, header.version, "dimension length");
+        dimension.length = readSize(in, header.version);
 
         /// A length of zero marks the unlimited dimension, of which there can be only one.
         if (dimension.length == 0)
@@ -447,7 +440,7 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
         variable.name = readName(in, header.version);
         checkNameOfHeaderObject(variable.name, "variable");
 
-        UInt64 rank = readSize(in, header.version, "number of dimensions of a variable");
+        UInt64 rank = readSize(in, header.version);
         if (rank > MAX_VARIABLE_RANK)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "The variable {} of the NetCDF file has {} dimensions", variable.name, rank);
@@ -455,7 +448,7 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
         variable.dimension_ids.reserve(rank);
         for (UInt64 j = 0; j < rank; ++j)
         {
-            UInt64 dimension_id = readSize(in, header.version, "dimension index");
+            UInt64 dimension_id = readSize(in, header.version);
             if (dimension_id >= header.dimensions.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "The variable {} of the NetCDF file refers to the dimension {}, but the file has only {} dimensions",
