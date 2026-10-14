@@ -908,6 +908,12 @@ void generateManifestList(
                 "Snapshot of a format-version 3 Iceberg table has no '{}', cannot assign row ids to the added data files",
                 Iceberg::f_first_row_id);
         snapshot_first_row_id = new_snapshot->getValue<Int64>(Iceberg::f_first_row_id);
+        if (snapshot_first_row_id < 0)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Snapshot of a format-version 3 Iceberg table has a negative '{}' ({}), cannot assign row ids",
+                Iceberg::f_first_row_id,
+                snapshot_first_row_id);
         next_first_row_id = snapshot_first_row_id;
     }
     auto reserve_row_ids = [&](Int64 rows)
