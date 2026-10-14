@@ -105,6 +105,8 @@ private:
         const Block & additional_columns) const;
 
     RangeReaders range_readers;
+    /// The readers of `range_readers` that read columns, not only a filter: see `MergeTreeRangeReader::startReadingChain`.
+    std::vector<IMergeTreeReader *> columns_cache_readers;
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
 

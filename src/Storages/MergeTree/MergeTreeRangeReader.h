@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <mutex>
+#include <span>
 
 namespace DB
 {
@@ -282,7 +283,8 @@ private:
         size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
-        size_t alignRowsToColumnsCacheStripes(size_t rows_num, size_t stripe_marks, size_t max_block_size_rows) const;
+        size_t alignRowsToColumnsCacheStripes(
+            size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
         size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
@@ -457,7 +459,10 @@ public:
 
     /// `max_block_size_rows` is the limit of rows in a block (`max_block_size`, lowered by a `LIMIT`), which `max_rows`
     /// can be below of to keep to `preferred_block_size_bytes`. 0 if not known.
-    ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows = 0);
+    /// `columns_cache_readers` are the readers of the chain that read columns, which decide together how its blocks
+    /// are aligned with the stripes of the columns cache; only this reader if empty.
+    ReadResult startReadingChain(
+        size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows = 0, std::span<IMergeTreeReader * const> columns_cache_readers = {});
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
 
     const Block & getSampleBlock() const { return result_sample_block; }

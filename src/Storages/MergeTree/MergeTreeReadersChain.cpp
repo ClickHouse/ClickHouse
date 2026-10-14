@@ -36,6 +36,11 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
     , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
     , is_initialized(true)
 {
+    for (const auto & range_reader : range_readers)
+    {
+        if (!range_reader.getReader()->producesFilterOnly())
+            columns_cache_readers.push_back(range_reader.getReader());
+    }
 }
 
 size_t MergeTreeReadersChain::numReadRowsInCurrentGranule() const
@@ -305,7 +310,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows);
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
