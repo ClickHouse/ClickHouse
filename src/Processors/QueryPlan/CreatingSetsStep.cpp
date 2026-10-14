@@ -13,6 +13,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Common/CurrentMetrics.h>
@@ -42,6 +43,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -85,10 +87,14 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         set_settings.max_bytes_ratio_before_external_set,
         "max_bytes_ratio_before_external_set");
 
-    /// The defaults keep the set in memory. The transform applies these settings only when it builds the
-    /// set itself. A set on disk is shared through the prepared sets cache like one in memory.
+    /// The transform applies these settings only when it builds the set itself.
+    /// A set on disk is shared through the prepared sets cache like one in memory.
     SetSpillSettings spill_settings;
-    if (max_bytes_before_external_set)
+    const auto & query_status = build_settings.process_list_element;
+    const bool scheduler_spilling = set_settings.allow_spilling && query_status && build_settings.temp_data_on_disk
+        && (query_status->getMemoryReservation()
+            || query_status->getContext()->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
+    if (max_bytes_before_external_set || scheduler_spilling)
     {
         if (!build_settings.temp_data_on_disk)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for the set of IN is not provided");
@@ -135,7 +141,8 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// mostly-unique input the transform may abandon and pass rows through. It also frees its
                 /// table and passes rows through under the spill threshold of the set.
                 return std::make_shared<DistinctTransform>(
-                    header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys, max_bytes_before_external_set);
+                    header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys,
+                    max_bytes_before_external_set, /*allow_spilling_=*/ true);
             });
     }
 
