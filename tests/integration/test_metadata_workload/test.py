@@ -149,6 +149,8 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         run_times_out(node_off, "create table t2 engine=URL('http://localhost:8123/?query=select+1', 'TSV')", workload="regular")
         run_times_out(node_off, "optimize table t final", workload="regular")
         run_times_out(node_off, "alter table t freeze", workload="regular")
+        # Admission comes before execution, so the target does not need to be a materialized view.
+        run_times_out(node_off, "alter table t modify query select 1 as x", workload="regular")
         run_times_out(node_off, "system prewarm mark cache t", workload="regular")
         run_times_out(node_off, "system load primary key t", workload="regular")
 

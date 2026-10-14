@@ -302,7 +302,6 @@ static bool isMetadataAlterCommand(const ASTAlterCommand & command)
         case ASTAlterCommand::MATERIALIZE_TTL:
         case ASTAlterCommand::MODIFY_SETTING:
         case ASTAlterCommand::RESET_SETTING:
-        case ASTAlterCommand::MODIFY_QUERY:
         case ASTAlterCommand::MODIFY_REFRESH:
         case ASTAlterCommand::REMOVE_TTL:
         case ASTAlterCommand::REMOVE_SAMPLE_BY:
@@ -335,7 +334,9 @@ static bool isMetadataAlterCommand(const ASTAlterCommand & command)
         case ASTAlterCommand::MODIFY_SQL_SECURITY:
         case ASTAlterCommand::UNLOCK_SNAPSHOT:
             return true;
-        /// Copy parts (`REPLACE_PARTITION` is also `ATTACH PARTITION ... FROM`) or run synchronously.
+        /// Copy parts (`REPLACE_PARTITION` is also `ATTACH PARTITION ... FROM`) or run synchronously. The new
+        /// `SELECT` of `MODIFY QUERY` is analyzed, which may read the sources it selects from, also through views.
+        case ASTAlterCommand::MODIFY_QUERY:
         case ASTAlterCommand::MOVE_PARTITION:
         case ASTAlterCommand::REPLACE_PARTITION:
         case ASTAlterCommand::FETCH_PARTITION:
