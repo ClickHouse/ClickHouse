@@ -28,6 +28,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsMaxThreads max_insert_threads;
 }
 
 namespace ErrorCodes
@@ -196,6 +197,7 @@ public:
         /// letting every branch fan out again would multiply the number of real sink branches (part
         /// writers, squashing and compression buffers) up to `max_insert_threads^2`, exceeding the
         /// budget the user allowed for this INSERT.
+        const size_t outer_max_insert_threads = getContext()->getSettingsRef()[Setting::max_insert_threads];
         insert_context->setSetting("max_insert_threads", 1);
 
         /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
@@ -209,6 +211,11 @@ public:
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_insert */ async_insert);
+
+        /// Every branch of the outer fan-out runs its own copy of the nested INSERT, with its own
+        /// squashing stages for the target and its dependent views, which the outer query cannot see.
+        /// Let them share the memory budget of the squashing stages, assuming the widest fan-out.
+        interpreter.setNumConcurrentCopies(outer_max_insert_threads);
 
         block_io = interpreter.execute();
         executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);

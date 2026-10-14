@@ -537,7 +537,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context);
+        context, num_concurrent_copies);
 
     const auto & settings = context->getSettingsRef();
 
@@ -640,7 +640,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
             {
                 size_t min_block_size_bytes = table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL;
                 /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-                min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, insert_dependencies->getNumSquashingPipelines());
+                min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, insert_dependencies->getNumSquashesSharingRootBudget());
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
                     table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
@@ -1077,7 +1077,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         async_insert,
         /*skip_destination_table*/ no_destination,
         insert_threads,
-        context);
+        context,
+        num_concurrent_copies);
 
     QueryPipeline pipeline
         = buildPushPipelineFromDependencies(insert_dependencies, context, table, max_threads, no_squash, async_insert);
@@ -1165,7 +1166,7 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
         /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
         size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
-            insert_dependencies->getNumSquashingPipelines());
+            insert_dependencies->getNumSquashesSharingRootBudget());
         add_head_transform(std::make_shared<PlanSquashingTransform>(
             insert_header,
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],

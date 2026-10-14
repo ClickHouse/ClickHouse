@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QueryPipeline/BlockIO.h>
+
+#include <algorithm>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -65,6 +67,11 @@ public:
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
+    /// The number of copies of this `INSERT` that run at the same time, e.g. the nested `INSERT` that
+    /// every branch of a forwarding storage (`Alias`) runs. They share the memory budget of the squashing
+    /// stages, see `InsertDependenciesBuilder::getNumSquashesSharingRootBudget`.
+    void setNumConcurrentCopies(size_t value) { num_concurrent_copies = std::max<size_t>(1, value); }
+
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
@@ -117,6 +124,7 @@ private:
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
+    size_t num_concurrent_copies = 1;
 
     /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
     /// transform can drop it as soon as the queue has the block; the caller is left with an empty holder.

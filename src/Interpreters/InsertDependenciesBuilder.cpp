@@ -602,7 +602,7 @@ private:
     StoragePtr inner_storage;
     ContextPtr context;
     bool async_insert = false;
-    /// See `InsertDependenciesBuilder::getNumSquashingPipelines`.
+    /// See `InsertDependenciesBuilder::getNumSquashesSharingViewsBudget`.
     size_t num_squashing_pipelines = 1;
 
     struct State
@@ -1018,7 +1018,7 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
-    ContextPtr context)
+    ContextPtr context, size_t num_concurrent_copies_)
     : init_table_id(table->getStorageID())
     , init_storage(table)
     , init_query(query)
@@ -1026,6 +1026,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     , init_context(context)
     , async_insert(async_insert_)
     , skip_destination_table(skip_destination_table_)
+    , num_concurrent_copies(std::max<size_t>(1, num_concurrent_copies_))
     , views_error_registry(std::make_shared<ViewErrorsRegistry>())
     , logger(getLogger("InsertDependenciesBuilder"))
 {
@@ -1214,7 +1215,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], getNumSquashingPipelines()) : 0ULL,
+                        table_prefers_large_blocks ? capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], getNumSquashesSharingViewsBudget()) : 0ULL,
                         settings[Setting::max_insert_block_size],
                         settings[Setting::max_insert_block_size_bytes],
                         squash_with_strict_limits));
@@ -1675,7 +1676,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
             async_insert,
-            getNumSquashingPipelines());
+            getNumSquashesSharingViewsBudget());
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
@@ -1691,7 +1692,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
             async_insert,
-            getNumSquashingPipelines());
+            getNumSquashesSharingViewsBudget());
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
