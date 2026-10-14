@@ -79,7 +79,12 @@ protected:
     /// fsync the parts committed so far and forget them. See MergeTreeData::fsyncPartsAfterInsert().
     void fsyncCommittedParts();
 
-    std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
+    /// Returns the block ids that are already in the deduplication log. If `conflict_parts` is given,
+    /// the parts those block ids belong to are appended to it.
+    std::vector<std::string> commitPart(
+        MutableDataPartPtr & part,
+        const std::vector<DeduplicationHash> & deduplication_hashes,
+        std::vector<MergeTreePartInfo> * conflict_parts = nullptr);
     virtual void finishDelayedChunk();
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 };

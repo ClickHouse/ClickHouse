@@ -330,7 +330,11 @@ void MergeTreeSink::finishDelayedChunk()
 
             auto & part = partition.temp_part->part;
             auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
-            auto conflicts = commitPart(part, deduplication_hashes);
+            /// A deduplicated block is acknowledged on the strength of the part that already holds it.
+            /// That part may have been committed by an INSERT that failed or was cancelled before its
+            /// own batched fsync (or that is still running), so it is synced together with the parts
+            /// this query commits.
+            auto conflicts = commitPart(part, deduplication_hashes, partition.temp_part->needs_fsync_on_finish ? &committed_parts : nullptr);
 
             if (conflicts.empty())
             {
@@ -427,7 +431,10 @@ MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & b
     return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
-std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
+std::vector<std::string> MergeTreeSink::commitPart(
+    MergeTreeMutableDataPartPtr & part,
+    const std::vector<DeduplicationHash> & deduplication_hashes,
+    std::vector<MergeTreePartInfo> * conflict_parts)
 {
     /// It's important to create it outside of lock scope because
     /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -458,6 +465,8 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             {
                 LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", res.block_id, res.part_info.getPartNameForLogs());
                 conflict_block_ids.push_back(res.block_id);
+                if (conflict_parts)
+                    conflict_parts->push_back(res.part_info);
             }
 
             if (!conflict_block_ids.empty())

@@ -497,6 +497,18 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     }
                 }
 
+                /// A deduplicated block is acknowledged on the strength of the part that already holds it.
+                /// If that part is on this replica, it may have been committed by an INSERT that failed or
+                /// was cancelled before its own batched fsync (or that is still running), so it is synced
+                /// together with the parts this query commits. A part that exists only on another replica
+                /// is not found locally and is skipped by MergeTreeData::fsyncPartsAfterInsert().
+                if (partition.temp_part->needs_fsync_on_finish)
+                {
+                    for (const auto & hash : conflicts)
+                        if (hash.hasConflictPartName())
+                            committed_parts.push_back(MergeTreePartInfo::fromPartName(hash.getConflictPartName(), storage.format_version));
+                }
+
                 if (conflicts.empty())
                 {
                     // Successfully committed
