@@ -95,6 +95,17 @@ bool isAzureCollectionKey(std::string_view key)
     return keys.contains(key);
 }
 
+/// The key of a `key = value` argument if it is one of those keys. Any other left operand can be the
+/// credential itself (`'sp=r&sig=...' = 'x'`), so its argument is hidden whole.
+std::optional<String> tryGetAzureKey(const AbstractFunction & equals)
+{
+    String key;
+    if (equals.arguments && equals.arguments->size() == 2
+        && FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals.arguments->at(0), &key) && isAzureCollectionKey(key))
+        return key;
+    return {};
+}
+
 /// Hides every override from `start` on that this rule cannot read: one whose key an Azure named collection does not
 /// accept or whose value is no plain literal (it can nest a credential), and every connection override when there are
 /// several: only one is read, and only one can be partly shown.
@@ -106,14 +117,13 @@ void maskUnreadAzureCollectionOverrides(FunctionSecretArgumentsFinder & finder, 
         const auto f = finder.function->arguments->at(i)->getFunction();
         if (!f || f->name() != "equals")
             continue;
-        String key;
-        const bool readable_key = f->arguments && f->arguments->size() == 2
-            && FunctionSecretArgumentsFinder::tryGetStringFromArgument(*f->arguments->at(0), &key);
-        if (!readable_key || !isAzureCollectionKey(key)
-            || !(FunctionSecretArgumentsFinder::tryGetStringFromArgument(*f->arguments->at(1), nullptr)
-                 || f->arguments->at(1)->tryGetLiteralText(nullptr)))
+        const auto key = tryGetAzureKey(*f);
+        if (!key)
+            finder.markSecretArgument(i);
+        else if (!(FunctionSecretArgumentsFinder::tryGetStringFromArgument(*f->arguments->at(1), nullptr)
+                   || f->arguments->at(1)->tryGetLiteralText(nullptr)))
             finder.markSecretArgument(i, /* argument_is_named= */ true);
-        if (readable_key && (key == "connection_string" || key == "storage_account_url"))
+        if (key == "connection_string" || key == "storage_account_url")
             connection_overrides.push_back(i);
     }
 
@@ -201,8 +211,8 @@ void maskUnshowableAzureConnectionOverrides(FunctionSecretArgumentsFinder & find
 
 /// The raw indexes of the arguments the Azure parser assigns slots to, the ones before `start` (the cluster name) as
 /// written: it strips the `SETTINGS` clause and the first `extra_credentials(...)`, and a `key = value` takes no slot.
-/// Also hides the value of a key the explicit form does not read, and every argument when a second
-/// `extra_credentials(...)` shifts the slots.
+/// Also hides the value of a key the explicit form does not read (all of an argument whose key is no Azure key), and
+/// every argument when a second `extra_credentials(...)` shifts the slots.
 std::vector<size_t> azureSlotArguments(FunctionSecretArgumentsFinder & finder, size_t start)
 {
     std::vector<size_t> result;
@@ -220,9 +230,10 @@ std::vector<size_t> azureSlotArguments(FunctionSecretArgumentsFinder & finder, s
         }
         if (f && f->name() == "equals" && f->arguments && f->arguments->size() == 2)
         {
-            String key;
-            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*f->arguments->at(0), &key)
-                || (key != "partition_strategy" && key != "partition_columns_in_data_file") || !f->arguments->at(1)->tryGetLiteralText(nullptr))
+            const auto key = tryGetAzureKey(*f);
+            if (!key)
+                finder.markSecretArgument(i);
+            else if ((key != "partition_strategy" && key != "partition_columns_in_data_file") || !f->arguments->at(1)->tryGetLiteralText(nullptr))
                 finder.markSecretArgument(i, /* argument_is_named= */ true);
             continue;
         }

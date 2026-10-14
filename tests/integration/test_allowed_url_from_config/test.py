@@ -91,6 +91,12 @@ def test_config_with_hosts(start_cluster):
             "pw_azure_sas_canary",
             "https://host:123",
         ),
+        (
+            "SELECT * FROM azureBlobStorage('https://host:123/?sv=2022-11-02&sr=c&sp=r&sig=pw_azure_url_sas_canary', "
+            "'cont', 'data.csv', 'account', 'key', 'CSV', 'auto', 'x UInt8')",
+            "pw_azure_url_sas_canary",
+            "https://host:123/",
+        ),
     ],
     ids=[
         "userinfo",
@@ -98,6 +104,7 @@ def test_config_with_hosts(start_cluster):
         "avro_schema_registry",
         "s3_presigned_in_path",
         "azure_connection_string_sas",
+        "azure_url_sas_with_account_key",
     ],
 )
 def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_url):

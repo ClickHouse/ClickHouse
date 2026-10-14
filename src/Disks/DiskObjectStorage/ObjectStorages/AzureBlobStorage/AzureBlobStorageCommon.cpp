@@ -220,9 +220,27 @@ String ConnectionParams::getConnectionURL() const
         try
         {
             auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
-            /// The query is the SAS that `ParseConnectionString` appends: this url is an endpoint, never a credential.
-            auto url = parsed_connection_string.BlobServiceUrl;
-            for (const auto & [key, value] : parsed_connection_string.BlobServiceUrl.GetQueryParameters())
+            return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
+    }
+
+    return endpoint.storage_account_url;
+}
+
+String ConnectionParams::getConnectionURLWithoutQuery() const
+{
+    if (std::holds_alternative<ConnectionString>(auth_method))
+    {
+        try
+        {
+            /// `ParseConnectionString` appends the SAS of the connection string to `BlobServiceUrl` as its query.
+            auto url = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url).BlobServiceUrl;
+            const auto query = url.GetQueryParameters();
+            for (const auto & [key, value] : query)
                 url.RemoveQueryParameter(key);
             return url.GetAbsoluteUrl();
         }
@@ -232,7 +250,7 @@ String ConnectionParams::getConnectionURL() const
         }
     }
 
-    return endpoint.storage_account_url;
+    return endpoint.storage_account_url.substr(0, endpoint.storage_account_url.find_first_of("?#"));
 }
 
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const

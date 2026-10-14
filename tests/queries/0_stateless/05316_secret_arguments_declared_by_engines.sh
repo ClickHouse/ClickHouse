@@ -53,7 +53,8 @@ SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/container/
 SELECT * FROM azureBlobStorageCluster('cluster', 'https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature', SETTINGS input_format_csv_skip_first_lines = 0)
 SELECT * FROM icebergAzure('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature', SETTINGS input_format_csv_skip_first_lines = 0)
 SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature', partition_strategy = 'none')
-SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature', extra_credentials(client_id = 'id', client_secret = 'plain_client_secret'))
+SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature' = 'x')
+SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature', extra_credentials(client_id = 'id', client_secret = 'plain_client_secret', role_arn = 'plain_role_arn'))
 SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', account_key = 'plain_account_key')
 SELECT * FROM azureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', extra_credentials(client_id = 'id'), extra_credentials(tenant_id = 'tid'), 'plain_account_key', 'CSV')
 SELECT * FROM azureBlobStorageCluster(extra_credentials(client_id = 'id'), 'https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature')
@@ -62,6 +63,7 @@ SELECT * FROM azureBlobStorage('AccountName=account;AccountKey=plain_account_key
 SELECT * FROM azureBlobStorage('AccountName=account;AccountKey=plain_account_key;AccountKey=plain_account_key_2', 'container', 'blob')
 SELECT * FROM azureBlobStorage('AccountName=account;BlobEndpoint=https://account.blob.core.windows.net/?sig=plain_sas_signature', 'container', 'blob')
 SELECT * FROM azureBlobStorage('account.blob.core.windows.net/?sig=plain_sas_signature', 'container', 'blob')
+SELECT * FROM azureBlobStorage('HTTPS://user:plain_password=x@account.blob.core.windows.net/', 'container', 'blob')
 SELECT * FROM azureBlobStorage(azure_conf, connection_string = 'AccountName=account;AccountKey=plain_account_key', account_key = 'plain_account_key')
 SELECT * FROM azureBlobStorage(azure_conf, client_secret = 'plain_client_secret', blob_path = 'blob')
 SELECT * FROM azureBlobStorage(azure_conf, container = headers('Authorization' = 'plain_header_secret'), blob_path = 'blob')
@@ -70,7 +72,10 @@ SELECT * FROM azureBlobStorageCluster('cluster', azure_conf, connection_string =
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature', partition_strategy = 'none')
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', 'CSV', extra_credentials(client_id = 'id', client_secret = 'plain_client_secret'))
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage(azure_conf, sas_token = 'plain_sas_signature')
+CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature' = 'x')
+CREATE TABLE test_azure_queue (key UInt64) ENGINE = AzureQueue('https://account.blob.core.windows.net', 'container', '*', 'account', 'plain_account_key' = 'x')
 CREATE TABLE test_azure_queue (key UInt64) ENGINE = AzureQueue('https://account.blob.core.windows.net', 'container', '*', 'CSV') SETTINGS after_processing_move_connection_string = 'HTTPS://account.blob.core.windows.net/?sig=plain_sas_signature'
+CREATE TABLE test_azure_queue (key UInt64) ENGINE = AzureQueue('https://account.blob.core.windows.net', 'container', '*', 'CSV') SETTINGS after_processing_move_connection_string = 'https://user:plain_password=x@account.blob.core.windows.net/'
 CREATE TABLE test_azure_queue (key UInt64) ENGINE = AzureQueue('https://account.blob.core.windows.net', 'container', '*', 'CSV') SETTINGS after_processing_move_connection_string = 'AccountName=account;AccountKey=plain_account_key;AccountKey=plain_account_key_2'
 SELECT encrypt('aes-256-ofb', 'plain_text', 'plain_key'), hmac('sha256', 'message', 'plain_key')
 BACKUP TABLE t TO S3('http://bucket.s3.amazonaws.com/backup', 'access_key_id', 'plain_secret_key')
