@@ -341,15 +341,12 @@ void deleteFilesFromS3(
                 /// or b) all the objects didn't exist; or c) some failure occurred.
                 const auto & err = outcome.GetError();
 
-                /// A digest error can also be a transient fault, such as a body altered in transit. It means that `DeleteObjects`
-                /// is unsupported only if every automatic digest has been rejected, and only while that is still undecided:
-                /// once `DeleteObjects` has worked, flipping the capability would be a mismatch (`setIsBatchDeleteSupported`).
-                /// That check and the update are one atomic step (`setBatchDeleteUnsupportedIfUndecided`).
-                /// An explicit algorithm and `S3Express` are never second-guessed. `GCS` only has `Content-MD5`.
-                /// When `MD5` is unavailable (FIPS), the first request already uses `SHA256`, so there is no second digest to try:
-                /// one transient digest error on the first `DeleteObjects` disables batch delete for the lifetime of these
-                /// capabilities. This is accepted.
-                /// TODO: re-check batch delete support periodically instead of deciding it once.
+                /// A digest error means `DeleteObjects` is unsupported only if every automatic digest was rejected. The request
+                /// tries `Content-MD5`, then `SHA256`. When `MD5` is unavailable (FIPS), the first request already uses `SHA256`,
+                /// so there is no second digest to try. An explicit checksum algorithm setting and `S3Express` buckets are never
+                /// second-guessed, and `GCS` only has `Content-MD5`. This applies only while support is still undecided: once
+                /// `DeleteObjects` has worked, changing the capability would trip the mismatch check in `setIsBatchDeleteSupported`,
+                /// so `setBatchDeleteUnsupportedIfUndecided` does the check and the update as one atomic step.
                 const bool digest_rejected = err.GetExceptionName() == "MissingContentMD5" || err.GetExceptionName() == "InvalidDigest";
                 const bool automatic_digests_exhausted = !explicit_checksum_algorithm && !s3_client->isS3ExpressBucket()
                     && (!use_checksum_header || checksum_algorithm == S3::RequestChecksum::Algorithm::SHA256);
