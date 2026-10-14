@@ -380,7 +380,6 @@ template <
     typename Mapped,
     bool nullable,
     bool prealloc,
-    /// Built over a sub-range of the block (see `SubRangeState`), so its position cache covers only the rows of the range.
     bool for_sub_range = false>
 struct HashMethodSerialized
     : public columns_hashing_impl::HashMethodBase<HashMethodSerialized<Value, Mapped, nullable, prealloc, for_sub_range>, Value, Mapped, false>
@@ -551,8 +550,6 @@ struct HashMethodSerialized
 
     /// Set up the dense `LowCardinality` position cache when every key column is a non-nullable
     /// `LowCardinality` and the product of the dictionary sizes is small enough for a dense array.
-    /// A sub-range state leaves out the keys that are constant over its range and builds the cache only if it has
-    /// no more slots than the range has rows or the whole-block state would build one.
     void initLowCardinalityCache(RowRange row_range)
     {
         if (keys_size < 2)
@@ -619,7 +616,6 @@ struct HashMethodSerialized
         lc_cache_enabled = true;
     }
 
-    /// Whether all values of a fixed-width column are equal on the rows [begin, end).
     static bool isConstantOnRange(const IColumn & column, size_t begin, size_t end)
     {
         if (end - begin < 2)
