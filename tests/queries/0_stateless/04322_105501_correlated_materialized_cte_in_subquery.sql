@@ -1,5 +1,5 @@
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET enable_materialized_cte = 1;
 
 -- A `MATERIALIZED` CTE materializes once and cannot depend on outer-scope columns,

@@ -44,6 +44,9 @@ struct TemporaryDataMetrics
     std::optional<ProfileEvents::Event> bytes_compressed = {};
     std::optional<ProfileEvents::Event> bytes_uncompressed = {};
     std::optional<ProfileEvents::Event> num_files = {};
+
+    /// Name of the operator that owns this temporary data
+    std::string_view spilled_to_disk_operator = {};
 };
 
 struct TemporaryDataOnDiskSettings
@@ -224,7 +227,7 @@ public:
     void cancelImpl() noexcept override;
 
     std::unique_ptr<ReadBuffer> read();
-    std::unique_ptr<SeekableReadBuffer> readRaw();
+    std::unique_ptr<SeekableReadBuffer> readRaw(size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     CompressedWriteBuffer & getCompressedWriteBuffer();
 
@@ -245,6 +248,8 @@ private:
 
     Stat stat;
     TemporaryDataMetrics metrics;
+
+    bool reported_spilled_to_disk = false;
 };
 
 

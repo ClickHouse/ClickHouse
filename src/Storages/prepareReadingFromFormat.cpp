@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -15,6 +17,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <base/scope_guard.h>
+#include <Common/assert_cast.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <unordered_map>
@@ -100,10 +103,15 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read = std::move(new_columns_to_read);
         }
 
-        /// If only virtual columns were requested, just read the smallest column.
+        /// If only virtual or hive partition columns were requested, just read the smallest column.
+        /// Prefer a non-partition column: partition columns are dropped from the format header below.
         if (columns_to_read.empty())
         {
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
+            NamesAndTypesList candidates;
+            for (const auto & column : columns_in_data_file)
+                if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
+                    candidates.push_back(column);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(candidates.empty() ? columns_in_data_file : candidates).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
@@ -122,6 +130,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
         if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
             info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
     }
+
+    /// A structure of only hive partition columns: read them, an empty header yields no rows.
+    if (info.format_header.columns() == 0)
+        for (const auto & column : info.columns_description)
+            info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
@@ -266,25 +279,22 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
     ///  supports_tuple_elements also support empty list of columns.)
 }
 
-ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
+ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info)
 {
-    chassert(prewhere_info || row_level_filter);
+    chassert(prewhere_info);
 
     if (info.prewhere_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "updateFormatPrewhereInfo called more than once");
 
     ReadFromFormatInfo new_info;
     new_info.prewhere_info = prewhere_info;
-    new_info.row_level_filter = row_level_filter;
 
     /// Removes columns that are only used as prewhere input.
     /// Adds prewhere outputs (the actual prewhere filter column is only added if
     /// !remove_prewhere_column; but there may also be subexpressions computed by prewhere
     /// expression and preserved for use further down the query pipeline).
-    /// If row_level_filter was already applied in a previous call, don't re-apply it;
-    /// only apply the new prewhere_info on top.
-    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(
-        info.format_header, info.row_level_filter ? nullptr : row_level_filter, prewhere_info);
+    /// The row-level filter is not applied, see the comment for `ReadFromFormatInfo::prewhere_info`.
+    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, /*row_level_filter=*/ nullptr, prewhere_info);
 
     /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
     /// don't need to replace subcolumns with their nested columns etc.
@@ -346,6 +356,76 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     }
 
     return res;
+}
+
+bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
+{
+    for (const auto & column : hive_partition_columns_to_read_from_file_path)
+        if (format_header.has(column.name))
+            return true;
+    return false;
+}
+
+namespace
+{
+
+bool isRowLineageColumn(const String & name)
+{
+    return name == "_row_id" || name == "_last_updated_sequence_number";
+}
+
+}
+
+std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns) const
+{
+    if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))
+        return filter_actions_dag;
+    if (formatReadsHivePartitionColumns())
+        return nullptr;
+
+    auto is_added_after_format = [&](const String & name)
+    {
+        return hive_partition_columns_to_read_from_file_path.contains(name)
+            || (requested_virtual_columns.contains(name) && !(keep_row_lineage_columns && isRowLineageColumn(name)));
+    };
+
+    auto reads_added_column = [&](const ActionsDAG::Node * atom)
+    {
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        std::vector<const ActionsDAG::Node *> stack{atom};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            if (!visited.insert(node).second)
+                continue;
+            if (node->type == ActionsDAG::ActionType::INPUT && is_added_after_format(node->result_name))
+                return true;
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+            /// `indexHint` keeps its arguments in its own DAG, not in `children`, and the format uses them for pruning.
+            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "indexHint")
+            {
+                const auto & adaptor = assert_cast<const FunctionToFunctionBaseAdaptor &>(*node->function_base);
+                for (const auto & inner : assert_cast<const FunctionIndexHint &>(*adaptor.getFunction()).getActions().getNodes())
+                    stack.push_back(&inner);
+            }
+        }
+        return false;
+    };
+
+    auto atoms = ActionsDAG::extractConjunctionAtoms(filter_actions_dag->getOutputs().at(0));
+    ActionsDAG::NodeRawConstPtrs kept;
+    for (const auto * atom : atoms)
+        if (!reads_added_column(atom))
+            kept.push_back(atom);
+
+    if (kept.size() == atoms.size())
+        return filter_actions_dag;
+    if (kept.empty())
+        return nullptr;
+    auto dag = ActionsDAG::buildFilterActionsDAG(kept);
+    return std::make_shared<const ActionsDAG>(std::move(*dag));
 }
 
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
@@ -450,12 +530,10 @@ size_t clampClusterFunctionNumStreams(UInt64 num_streams)
 
 std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names)
 {
-    /// Columns that the PREWHERE / row-level filter needs as inputs must stay in the main read
-    /// because filtering happens there.
+    /// Columns that the PREWHERE needs as inputs must stay in the main read because filtering
+    /// happens there. The inputs of the row-level filter must be in `required_names`: it is not
+    /// part of `info`, but the source applies it in the main read as well.
     NameSet columns_to_keep = required_names;
-    if (info.row_level_filter)
-        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
-            columns_to_keep.insert(column.name);
     if (info.prewhere_info)
         for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
             columns_to_keep.insert(column.name);
@@ -470,8 +548,6 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
             if (output->type != ActionsDAG::ActionType::INPUT)
                 columns_to_keep.insert(output->result_name);
     };
-    if (info.row_level_filter)
-        keep_filter_outputs(info.row_level_filter->actions);
     if (info.prewhere_info)
         keep_filter_outputs(info.prewhere_info->prewhere_actions);
 
@@ -574,13 +650,10 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     for (const auto & column : info.source_header)
         if (columns_to_keep.contains(column.name))
             seed_defaulted_column(column.name);
-    /// A defaulted column consumed only by the PREWHERE / row-level filter is stripped from
-    /// `info.source_header` by `updateFormatPrewhereInfo`, but the main branch still reads it and
-    /// `AddingDefaultsTransform` evaluates its expression there before the filter runs - so it
-    /// pins the inputs of its expression to the main branch just like a visible column.
-    if (info.row_level_filter)
-        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
-            seed_defaulted_column(column.name);
+    /// A defaulted column consumed only by the PREWHERE is stripped from `info.source_header` by
+    /// `updateFormatPrewhereInfo`, but the main branch still reads it and `AddingDefaultsTransform`
+    /// evaluates its expression there before the filter runs - so it pins the inputs of its
+    /// expression to the main branch just like a visible column.
     if (info.prewhere_info)
         for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
             seed_defaulted_column(column.name);

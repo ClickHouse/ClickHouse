@@ -10,7 +10,6 @@ SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 
 SELECT value == 'direct,hash,ie_join' FROM system.settings WHERE name = 'join_algorithm';
 
-EXPLAIN PIPELINE
 SELECT
     *
 FROM
@@ -22,15 +21,15 @@ FROM
         SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
-SETTINGS max_threads=16;
+SETTINGS max_threads=16, log_comment='03274_default_setting'
+FORMAT Null;
 
--- Test that join_algorithm = default does a hash join
+-- Test that join_algorithm = default also does a parallel hash join
 
 SET join_algorithm='default';
 
 SELECT value == 'default' FROM system.settings WHERE name = 'join_algorithm';
 
-EXPLAIN PIPELINE
 SELECT
     *
 FROM
@@ -42,15 +41,15 @@ FROM
         SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
-SETTINGS max_threads=16;
+SETTINGS max_threads=16, log_comment='03274_default_value'
+FORMAT Null;
 
 SET join_algorithm=DEFAULT; -- reset
 
--- Check that compat setting also achieves a hash join
+-- Check that compat setting also achieves a parallel hash join
 
 SET compatibility='24.11';
 
-EXPLAIN PIPELINE
 SELECT
     *
 FROM
@@ -62,4 +61,13 @@ FROM
         SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
-SETTINGS max_threads=16;
+SETTINGS max_threads=16, log_comment='03274_compatibility'
+FORMAT Null;
+
+-- The right side has no size estimate, so each join builds with the parallel layout
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('03274_default_setting', '03274_default_value', '03274_compatibility')
+ORDER BY event_time_microseconds;

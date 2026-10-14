@@ -921,7 +921,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using Map = const typename decltype(HashJoinTables::TYPE)::element_type; \
-        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map, join_features.need_flags>::Type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map>::Type; \
         processed_rows = joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*tables.TYPE, added_columns, scattered_block, lane); \
         break; \
     }

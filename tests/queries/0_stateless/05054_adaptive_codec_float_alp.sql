@@ -7,7 +7,7 @@ CREATE TABLE t_float_alp
 (
     d Float64, -- ALP(STD) expected
     f Float32, -- Float32 mirror of d
-    r Float64  -- ALP(RD) extected
+    r Float64  -- ALP(RD) expected
 )
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, default_compression_codec = 'LZ4';

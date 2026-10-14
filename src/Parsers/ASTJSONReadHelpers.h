@@ -170,6 +170,25 @@ public:
     /// `CODEC`/`STATISTICS` element, an index `TYPE`). Returns nullptr when the key is absent.
     ASTPtr readExpressionChild(const char * key) const;
 
+    /// `readExpressionChild`'s screen applied to every element of the "children" array.
+    ASTs readExpressionChildren() const;
+
+    /// `readChildOfType<ASTFunction>` with that screen applied to the restored function's ARGUMENTS and not to the function
+    /// node itself, for a slot whose function is legitimately argument-less while its arguments are expressions.
+    ASTPtr readFunctionChildWithExpressionArguments(const char * key) const;
+
+    /// `readChildOfType<T>` with that screen applied to the whole restored subtree, for a slot holding a
+    /// query or a table function: both carry expressions and query-shape nodes only, and the parser gives
+    /// even a zero-argument table function an empty `arguments` list. Returns nullptr when the key is absent.
+    template <typename T>
+    ASTPtr readScreenedChildOfType(const char * key) const
+    {
+        ASTPtr child = readChildOfType<T>(key);
+        if (child)
+            screenArgumentlessFunctions(*child, key);
+        return child;
+    }
+
     /// Read a child AST node and require it to be a string `ASTLiteral` (both the node type and the
     /// `Field` value category). Slots like `COMMENT`/`COLLATE` are parser-produced via
     /// `ParserStringLiteral`; downstream code reads them as `child->as<ASTLiteral &>().value.safeGet<String>()`,
@@ -335,7 +354,16 @@ private:
     /// so the AST depth/element limits and `checkDepth` do not bound this recursion.
     static Field readFieldFromObjectImpl(const Poco::JSON::Object & field_obj, size_t depth);
 
+    /// `readExpressionChild`'s screen, for the template above.
+    static void screenArgumentlessFunctions(const IAST & ast, const char * key);
+
     const Poco::JSON::Object & obj;
 };
+
+/// The select query node types the AST JSON format can build; `as` matches the exact type.
+bool isBareSelectQuery(const IAST * node);
+
+/// `INTO OUTFILE`, `FORMAT`, `SETTINGS` and compression, which `ASTQueryWithOutput` carries.
+bool hasQueryOutputOptions(const IAST * node);
 
 }

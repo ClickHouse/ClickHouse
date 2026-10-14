@@ -1,7 +1,7 @@
 -- Test: UNION-bodied MATERIALIZED CTE used directly as the right-hand side of IN
 -- exercises the `resolveUnion` branch of the identifier-resolution materialized-CTE path.
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET enable_materialized_cte = 1;
 
 -- Non-correlated UNION body: must materialize and work.

@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -90,12 +90,14 @@ public:
     ~GraceHashJoin() override;
 
     std::string getName() const override { return "GraceHashJoin"; }
+
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::GRACE_HASH); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
     void initialize(const Block & sample_block) override;
 
-    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
 
@@ -124,7 +126,7 @@ public:
 
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;
-    void requestSpill() override { force_spill = true; }
+    void requestSpill(JoinBuildContext /*context*/) override { force_spill = true; }
 
 private:
     void initBuckets();
@@ -143,10 +145,10 @@ private:
     void foldInMemoryJoin(GraceHashJoinStats & into, const IJoin & join) const;
 
     /// Add right table block to the @join. Calls @rehash on overflow.
-    void addBlockToJoinImpl(Block block, size_t worker_id);
+    void addBlockToJoinImpl(Block block, JoinBuildContext context);
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
-    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover);
+    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
     bool forcedSpillPending() const;
 
@@ -216,9 +218,6 @@ private:
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.
     std::atomic<size_t> accounted_right_rows = 0;
     std::atomic<size_t> accounted_right_bytes = 0;
-
-    /// Without it every probe thread would take `hash_join_mutex` once per block to learn the phase already ran.
-    std::atomic<bool> post_build_phase_ran = false;
 
     GraceHashJoinStats stats;
 
