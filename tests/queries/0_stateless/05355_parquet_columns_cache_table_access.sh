@@ -14,6 +14,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 FILE_PATH="${USER_FILES_PATH}/${FILE}"
 USER="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+# A user that never had `READ ON FILE`: with the replicated access storage (as in the `DatabaseReplicated`
+# test configuration) `GRANT READ ON FILE` reads back as `GRANT FILE ON *.*`, which `REVOKE READ ON FILE`
+# does not remove.
+USER2="user2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 $CLICKHOUSE_CLIENT -q "
     INSERT INTO FUNCTION file('${FILE}', Parquet) SELECT number AS id FROM numbers(1000)
@@ -78,7 +82,11 @@ $CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY} AND table != ''"
 
 QUERY_DROPPED="SELECT count() > 0 FROM system.columns_cache WHERE endsWith(part, '/${FILE}') AND table_uuid = toUUID('${TABLE_UUID}')"
 echo "--- the entries of a dropped table: global SHOW COLUMNS without READ ON FILE"
-$CLICKHOUSE_CLIENT -q "GRANT SHOW COLUMNS ON *.* TO ${USER}; REVOKE READ ON FILE FROM ${USER}"
+$CLICKHOUSE_CLIENT -q "
+    DROP USER IF EXISTS ${USER2};
+    CREATE USER ${USER2} IDENTIFIED WITH no_password;
+    GRANT SELECT ON system.columns_cache TO ${USER2};
+    GRANT SHOW COLUMNS ON *.* TO ${USER2};"
 populate
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_parquet_file SYNC"
 # With `distributed_ddl_output_mode = none` (as in the `DatabaseReplicated` test configuration) the
@@ -87,10 +95,10 @@ for _ in {1..60}; do
     [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.columns_cache WHERE table_uuid = toUUID('${TABLE_UUID}') AND table != ''")" = 0 ] && break
     sleep 0.5
 done
-$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY_DROPPED}"
+$CLICKHOUSE_CLIENT --user "${USER2}" -q "${QUERY_DROPPED}"
 echo "--- the entries of a dropped table: global SHOW COLUMNS and READ ON FILE"
-$CLICKHOUSE_CLIENT -q "GRANT READ ON FILE TO ${USER}"
-$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY_DROPPED}"
+$CLICKHOUSE_CLIENT -q "GRANT READ ON FILE TO ${USER2}"
+$CLICKHOUSE_CLIENT --user "${USER2}" -q "${QUERY_DROPPED}"
 
-$CLICKHOUSE_CLIENT -q "DROP USER ${USER}"
+$CLICKHOUSE_CLIENT -q "DROP USER ${USER}, ${USER2}"
 rm -f "${FILE_PATH}"
