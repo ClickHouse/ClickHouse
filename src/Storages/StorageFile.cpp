@@ -2885,6 +2885,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             lazy_row_index_registry,
             top_k_query_condition_cache_key);
 
+        source->setStorageLimits(query_info.storage_limits);
         pipes.emplace_back(std::move(source));
     }
 

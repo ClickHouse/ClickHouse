@@ -183,6 +183,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             need_only_count,
             lazy_row_index_registry);
 
+        source->setStorageLimits(query_info.storage_limits);
         pipes.emplace_back(std::move(source));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));

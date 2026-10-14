@@ -2042,6 +2042,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             need_only_count,
             storage->getStorageID());
 
+        source->setStorageLimits(query_info.storage_limits);
         pipes.emplace_back(std::move(source));
     }
 
