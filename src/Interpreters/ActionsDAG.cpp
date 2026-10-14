@@ -3912,6 +3912,36 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     return actions;
 }
 
+std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
+    const std::string & filter_name,
+    bool removes_filter,
+    const NodeRawConstPtrs & conjunctions_to_push,
+    const ColumnsWithTypeAndName & all_inputs)
+{
+    Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
+    if (!predicate)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+            filter_name,
+            dumpDAG());
+
+    if (predicate->type == ActionType::COLUMN || conjunctions_to_push.empty())
+        return {};
+
+    NodeRawConstPtrs rejected;
+    for (const auto * atom : extractConjunctionAtoms(predicate))
+        if (std::ranges::find(conjunctions_to_push, atom) == conjunctions_to_push.end())
+            rejected.push_back(atom);
+
+    auto actions = createActionsForConjunction(conjunctions_to_push, all_inputs);
+    if (!actions)
+        return {};
+
+    actions->is_filter_const_after_push_down = removeUnusedConjunctions(std::move(rejected), predicate, removes_filter);
+
+    return actions;
+}
+
 ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPushDown(
     const std::string & filter_name,
     bool removes_filter,
