@@ -13,6 +13,7 @@ DistinctSortedAlgorithm::DistinctSortedAlgorithm(
     SharedHeader output_header_,
     SortDescription key_description,
     const std::optional<String> & already_emitted_flag_column,
+    const SortDescription & arrival_number_description,
     size_t max_block_size_rows_)
     : output_header(std::move(output_header_))
     , description(std::move(key_description))
@@ -24,9 +25,11 @@ DistinctSortedAlgorithm::DistinctSortedAlgorithm(
     chassert(num_key_columns > 0);
 
     /// Sorting the flag descending after the keys places suppression rows before ordinary rows with equal
-    /// keys, independently of input registration.
+    /// keys, independently of input registration. Arrival numbers then order the ordinary rows with equal
+    /// keys, so the earliest of them survives independently of source order.
     if (has_already_emitted_flag)
         description.emplace_back(*already_emitted_flag_column, -1, 1);
+    description.insert(description.end(), arrival_number_description.begin(), arrival_number_description.end());
     for (auto & header : input_headers)
         addInput(std::move(header));
 }

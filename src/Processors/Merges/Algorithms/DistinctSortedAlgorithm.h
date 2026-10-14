@@ -13,10 +13,12 @@ namespace DB
 /// Merges inputs sorted by `key_description`, which contains the distinct keys without collators, into one
 /// row per key. If set, `already_emitted_flag_column` names the `UInt8` column that marks suppression rows,
 /// as in external `DISTINCT` runs, and each input then contains only ordinary rows or only suppression rows.
-/// Without it, all rows are ordinary. Suppression inputs need only the keys and the flag; ordinary
-/// inputs also provide every output column by name. Ordinary chunks are unique under the key sort order;
-/// suppression chunks may contain sort-equal keys.
-/// Equal ordinary keys retain the first row in source order. Suppression keys are never emitted.
+/// Without it, all rows are ordinary. Suppression rows identify keys already emitted before spilling; they
+/// suppress matching ordinary rows and are never emitted. Suppression inputs need only the keys, the flag and
+/// the columns of `arrival_number_description`; ordinary inputs also provide every output column by name.
+/// Ordinary chunks are unique under the key sort order; suppression chunks may contain sort-equal keys.
+/// Equal ordinary keys retain the first row in source order. With a nonempty `arrival_number_description`,
+/// they retain the row that sorts first by it instead, independently of source order.
 class DistinctSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
@@ -25,6 +27,7 @@ public:
         SharedHeader output_header_,
         SortDescription key_description,
         const std::optional<String> & already_emitted_flag_column,
+        const SortDescription & arrival_number_description,
         size_t max_block_size_rows_);
 
     const char * getName() const override { return "DistinctSortedAlgorithm"; }
@@ -35,8 +38,10 @@ public:
     MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
 private:
+
     /// Copies the boundary key before its input is replaced or forwarded to the output.
     void saveLastKey();
+
     /// Returns the accumulated output and resets the consumed-row count.
     Chunk pull();
     /// Without the already-emitted flag, no row is a suppression row.
@@ -53,7 +58,7 @@ private:
     };
 
     const SharedHeader output_header;
-    /// The keys, followed by the already-emitted flag descending if there is one.
+    /// The keys, the already-emitted flag descending if there is one, and `arrival_number_description`.
     SortDescription description;
     const bool has_already_emitted_flag;
     const size_t num_key_columns;

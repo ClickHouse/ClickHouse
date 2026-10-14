@@ -50,6 +50,7 @@ public:
         size_t max_bytes_in_block_before_external_sort = 0;
         size_t max_bytes_in_query_before_external_sort = 0;
 
+        size_t max_external_merge_fan_in = 64;
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
@@ -61,7 +62,7 @@ public:
         explicit Settings(size_t max_block_size_);
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
-        void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+        void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
 
         bool operator==(const Settings & other) const = default;
     };

@@ -1,12 +1,12 @@
 #pragma once
 
+#include <functional>
 #include <mutex>
 #include <condition_variable>
 
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/filesystemHelpers.h>
 
@@ -16,8 +16,6 @@ namespace DB
 class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
-
-class Pipe;
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -52,12 +50,6 @@ struct SortedBlocksWriter
             row_count = 0;
             bytes = 0;
         }
-    };
-
-    struct PremergedFiles
-    {
-        SortedFiles files;
-        Pipe pipe;
     };
 
     static constexpr const size_t num_streams = 2;
@@ -95,7 +87,6 @@ struct SortedBlocksWriter
 
     void insert(Block && block);
     TemporaryBlockStreamHolder flush(const BlocksList & blocks) const;
-    PremergedFiles premerge();
     SortedFiles finishMerge(std::function<void(const Block &)> callback);
 };
 

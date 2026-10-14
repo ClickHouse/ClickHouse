@@ -1,0 +1,5 @@
+smallest_sort_runs ok
+distinct_typed_unordered ok
+distinct_typed_ordered ok
+distinct_fingerprint_unordered ok
+distinct_fingerprint_ordered ok

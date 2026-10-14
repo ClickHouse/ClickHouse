@@ -75,10 +75,10 @@ DistinctSpillLayout::DistinctSpillLayout(
 
     if (preserve_input_order)
     {
-        auto type = std::make_shared<DataTypeUInt64>();
-        const auto name = uniqueColumnName(ordinary, ARRIVAL_NUMBER_COLUMN_NAME);
-        ordinary.insert({type->createColumn(), type, name});
-        arrival_number_sort_description.emplace_back(name, 1, 1);
+        auto arrival_type = std::make_shared<DataTypeUInt64>();
+        const auto arrival_name = uniqueColumnName(ordinary, ARRIVAL_NUMBER_COLUMN_NAME);
+        ordinary.insert({arrival_type->createColumn(), arrival_type, arrival_name});
+        arrival_number_sort_description.emplace_back(arrival_name, 1, 1);
     }
     merged_header = std::make_shared<const Block>(ordinary);
 
@@ -98,6 +98,12 @@ DistinctSpillLayout::DistinctSpillLayout(
     key_sort_description.reserve(suppression.columns());
     for (const auto & column : suppression)
         key_sort_description.emplace_back(column.name, 1, 1);
+
+    /// Ordered merges compare arrival numbers after the already-emitted flag, so every input must
+    /// provide an arrival column. Suppression rows represent keys already emitted and never become
+    /// output rows; a constant zero satisfies the shared sort description without affecting precedence.
+    if (arrival_number_column_pos)
+        suppression.insert(ordinary.getByPosition(*arrival_number_column_pos));
 
     auto flag_type = std::make_shared<DataTypeUInt8>();
     flag_column_name = uniqueColumnName(ordinary, FLAG_COLUMN_NAME);
@@ -137,6 +143,7 @@ Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_n
         columns.push_back(std::move(input_columns[pos]));
 
     chunk.setColumns(std::move(columns), num_rows);
+
     /// Match the set's normalization before hashing. Fingerprints survive `Native` round trips,
     /// which can change an aggregate state's serialized bytes.
     materializeChunk(chunk);
@@ -169,9 +176,11 @@ Chunk DistinctSpillLayout::prepareInputChunk(Chunk chunk, UInt64 first_arrival_n
 
 Chunk DistinctSpillLayout::prepareSuppressionChunk(MutableColumns key_columns) const
 {
-    chassert(key_columns.size() + 1 == suppression_run_header->columns());
+    chassert(key_columns.size() + 1 + arrival_number_column_pos.has_value() == suppression_run_header->columns());
     const size_t num_rows = key_columns.front()->size();
     Chunk chunk(std::move(key_columns), num_rows);
+    if (arrival_number_column_pos)
+        chunk.addColumn(ColumnConst::create(ColumnUInt64::create(1, UInt64{0}), num_rows));
     chunk.addColumn(ColumnConst::create(ColumnUInt8::create(1, UInt8{1}), num_rows));
     return chunk;
 }

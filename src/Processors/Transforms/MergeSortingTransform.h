@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Processors/Transforms/SortingTransform.h>
+#include <Processors/Sources/ExternalMergeSource.h>
 #include <Common/Logger.h>
 #include <Core/SortDescription.h>
-#include <Common/filesystemHelpers.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Common/ProfileEvents.h>
@@ -17,22 +17,20 @@ namespace ProfileEvents
 namespace DB
 {
 
-class IVolume;
-using VolumePtr = std::shared_ptr<IVolume>;
-class IMergingTransformBase;
-using MergingTransformPtr = std::shared_ptr<IMergingTransformBase>;
+class BufferingToFileSink;
 
-/// Takes sorted separate chunks of data. Sorts them.
-/// Returns stream with globally sorted data.
+/// Combines individually sorted chunks into a globally sorted stream. Buffered chunks can spill to
+/// temporary files, which `ExternalMergeSource` merges with a bounded number of file readers.
 class MergeSortingTransform final : public SortingTransform
 {
 public:
-    /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    /// merge_mode - the mode of the merges that form each spilled run and the output. With
+
+    /// A nonzero `limit_` allows returning only that many rows from the beginning of the sorted result.
+    /// `merge_mode_` is the mode of the merges that form each spilled run and the output. With
     /// `MergeUniqueChunks` the sort description has no collators, every input chunk must be unique on it, and
     /// the output keeps one row per key; a merge step that consumes only duplicates yields a chunk without
-    /// rows. `limit` must be 0 in this mode, because the merge of spilled runs takes no limit.
-    /// external_merge_event - counts the final merges of spilled runs, for the operator that the sort serves.
+    /// rows. `limit_` must be 0 in this mode, because the merge of spilled runs takes no limit.
+    /// `external_merge_event_` counts the final merges of spilled runs for the operator that the sort serves.
     MergeSortingTransform(
         SharedHeader header,
         const SortDescription & description_,
@@ -46,6 +44,7 @@ public:
         size_t max_bytes_in_query_before_external_sort_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_,
+        size_t max_external_merge_fan_in_,
         TopKThresholdTrackerPtr threshold_tracker_ = nullptr,
         MergeSorter::Mode merge_mode_ = MergeSorter::Mode::PreserveRows,
         ProfileEvents::Event external_merge_event_ = ProfileEvents::ExternalSortMerge);
@@ -55,6 +54,7 @@ public:
 protected:
     void consume(Chunk chunk) override;
     void serialize() override;
+    Status prepareSerialize() override;
     void generate() override;
 
     PipelineUpdate updatePipeline() override;
@@ -65,7 +65,6 @@ private:
     size_t max_bytes_in_block_before_external_sort;
     size_t max_bytes_in_query_before_external_sort;
     TemporaryDataOnDiskScopePtr tmp_data;
-    size_t temporary_files_num = 0;
     size_t min_free_disk_space;
     size_t max_block_bytes;
 
@@ -74,13 +73,16 @@ private:
 
     LoggerPtr log = getLogger("MergeSortingTransform");
 
-    /// If remerge doesn't save memory at least several times, mark it as useless and don't do it anymore.
+    /// Disables further remerging when it fails to achieve the configured memory reduction ratio.
     bool remerge_is_useful = true;
 
-    /// Merge all accumulated blocks to keep no more than limit rows.
+    /// Merges accumulated chunks and retains at most `limit` rows to release discarded rows' memory.
     void remerge();
 
-    MergingTransformPtr external_merging_sorted;
+    const size_t max_external_merge_fan_in;
+    size_t external_merge_block_size = 0;
+    ExternalMergeSource::Runs runs;
+    std::shared_ptr<BufferingToFileSink> write_sink;
 
     TopKThresholdTrackerPtr threshold_tracker;
     /// Rows of the sorted result generated so far, until the one at `limit` is published to `threshold_tracker`.
