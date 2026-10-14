@@ -17,6 +17,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
 #include <Core/Mongo/Handler.h>
