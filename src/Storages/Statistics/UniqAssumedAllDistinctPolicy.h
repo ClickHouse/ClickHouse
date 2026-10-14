@@ -74,6 +74,11 @@ public:
         const ColumnStatisticsDescription & desired_desc, const StatisticsMap & part_stats, const StatisticsBuildOptions & options);
 
 private:
+    /// Set once the build of this part has decided to keep the real sketches (the first eligible
+    /// Float block reached the default-ratio threshold, or the string probe rejected the assumption).
+    /// The decision is final for the part: converting on a later block would throw away everything
+    /// the real sketch has accumulated so far and restart the assumed cardinality from that block.
+    bool keep_real_sketches = false;
     StatisticsUniqStringProbe string_probe;
 };
 

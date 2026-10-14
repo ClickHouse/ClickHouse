@@ -13,6 +13,8 @@ DROP TABLE IF EXISTS t_auto_stats_disable_rebuild;
 DROP TABLE IF EXISTS t_auto_stats_mixed_real_and_assumed;
 DROP TABLE IF EXISTS t_auto_stats_threshold_change;
 DROP TABLE IF EXISTS t_auto_stats_reject_assumed_setting;
+DROP TABLE IF EXISTS t_auto_stats_float_guard_materialize;
+DROP TABLE IF EXISTS t_auto_stats_float_guard_merge;
 
 SET allow_statistics = 1;
 SET allow_suspicious_low_cardinality_types = 1;
@@ -403,6 +405,70 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_stats_reject_assumed_setting' AND active
 ORDER BY column;
 
+-- The Float default-ratio decision is made once per part, on its first block. Rebuilds (MATERIALIZE STATISTICS,
+-- merges of parts without statistics) read a part granule by granule: here the first granule (900 defaults in
+-- 1000 rows) fails the guard and the 1-row tail granule would pass it. The rejection must stick; converting on
+-- the tail would discard the real sketch and report only the tail's row count. The parts are written with
+-- ratio_of_defaults_for_sparse_serialization = 1 so that they are not sparse, then the threshold is lowered.
+SET materialize_statistics_on_insert = 0;
+
+CREATE TABLE t_auto_stats_float_guard_materialize
+(
+    x Float64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'uniq_v2',
+    auto_statistics_assume_floats_distinct = 1,
+    ratio_of_defaults_for_sparse_serialization = 1,
+    index_granularity = 1000,
+    index_granularity_bytes = 0;
+
+INSERT INTO t_auto_stats_float_guard_materialize
+SELECT if(number < 900, 0., toFloat64(number - 899)) FROM numbers(1001);
+
+ALTER TABLE t_auto_stats_float_guard_materialize MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_auto_stats_float_guard_materialize MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1;
+
+SELECT 'float default ratio guard across blocks, materialize';
+SELECT column, statistics, estimates.cardinality, (SELECT uniqExact(x) FROM t_auto_stats_float_guard_materialize) AS exact
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_float_guard_materialize' AND active AND column = 'x'
+ORDER BY name;
+
+CREATE TABLE t_auto_stats_float_guard_merge
+(
+    x Float64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'uniq_v2',
+    auto_statistics_assume_floats_distinct = 1,
+    ratio_of_defaults_for_sparse_serialization = 1,
+    index_granularity = 1000,
+    index_granularity_bytes = 0,
+    materialize_statistics_on_merge = 1;
+
+SYSTEM STOP MERGES t_auto_stats_float_guard_merge;
+INSERT INTO t_auto_stats_float_guard_merge
+SELECT if(number < 900, 0., toFloat64(number - 899)) FROM numbers(1001);
+INSERT INTO t_auto_stats_float_guard_merge
+SELECT if(number < 900, 0., toFloat64(number - 899)) FROM numbers(1001);
+
+ALTER TABLE t_auto_stats_float_guard_merge MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+SYSTEM START MERGES t_auto_stats_float_guard_merge;
+OPTIMIZE TABLE t_auto_stats_float_guard_merge FINAL;
+
+SELECT 'float default ratio guard across blocks, merge';
+SELECT column, statistics, estimates.cardinality, (SELECT uniqExact(x) FROM t_auto_stats_float_guard_merge) AS exact
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_float_guard_merge' AND active AND column = 'x'
+ORDER BY name;
+
 DROP TABLE t_auto_stats_mixed_real_and_assumed;
 DROP TABLE t_auto_stats_threshold_change;
 DROP TABLE t_auto_stats_reject_assumed_setting;
+DROP TABLE t_auto_stats_float_guard_materialize;
+DROP TABLE t_auto_stats_float_guard_merge;

@@ -151,11 +151,15 @@ std::optional<AssumedAllDistinctBuildDecision> UniqAssumedAllDistinctPolicy::dec
     const ColumnPtr & column,
     const StatisticsBuildOptions & options)
 {
+    if (keep_real_sketches)
+        return std::nullopt;
+
     auto types_to_replace = getConvertibleUniqStatistics(stats);
     /// Note: blocks rejected here (e.g. a sparse block in a mixed stream) are built into the real
     /// sketch but never probed; if a later block flips the probe to the assumption, those rows are
     /// not part of the assumed cardinality. That undercount is acceptable for an estimate.
-    if (types_to_replace.empty() || !stats_desc.data_type || !canUseAssumedAllDistinctForUniqBuild(column))
+    /// An empty block carries no evidence for or against the assumption, so it must not decide.
+    if (types_to_replace.empty() || !stats_desc.data_type || column->empty() || !canUseAssumedAllDistinctForUniqBuild(column))
         return std::nullopt;
 
     const auto inner_data_type = removeLowCardinalityAndNullable(removeNullable(stats_desc.data_type));
@@ -167,10 +171,13 @@ std::optional<AssumedAllDistinctBuildDecision> UniqAssumedAllDistinctPolicy::dec
         /// default-dominated column arrives as a full (not yet sparse) column, yet repeated
         /// defaults obviously violate the all-distinct assumption. NULL rows count towards the
         /// default ratio of a Nullable column, which errs on the side of a real sketch.
-        /// The decision is made once per part (on the first eligible block), like the string probe.
+        /// The decision is made once per part (on the first eligible block), like the string probe:
+        /// a rejection is remembered, because a later conversion would discard the real sketch built
+        /// so far and start the assumed cardinality at zero.
         const Float64 default_ratio = column->getRatioOfDefaultRows();
         if (default_ratio >= options.max_default_ratio_for_assumed_distinct)
         {
+            keep_real_sketches = true;
             LOG_TRACE(
                 getLogger("ColumnStatistics"),
                 "Keeping cardinality statistics ({}) for column type {}: ratio of default rows {} reaches the sparse threshold {}",
@@ -210,6 +217,7 @@ std::optional<AssumedAllDistinctBuildDecision> UniqAssumedAllDistinctPolicy::dec
         return decision;
     }
 
+    keep_real_sketches = true;
     LOG_TRACE(
         getLogger("ColumnStatistics"),
         "Keeping cardinality statistics ({}) for column type {} after probing {} rows: average string size {} is below threshold {}",

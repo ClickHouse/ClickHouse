@@ -335,6 +335,39 @@ TEST(Statistics, AssumedFloatPolicySkipsDefaultDominatedColumns)
     EXPECT_LT(stats->estimateCardinality(), 500);
 }
 
+TEST(Statistics, AssumedFloatPolicyRejectionIsFinalForThePart)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    StatisticsBuildOptions options;
+    options.assume_floats_distinct = true;
+    options.max_default_ratio_for_assumed_distinct = 0.5;
+
+    auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+
+    /// An empty block carries no evidence and must not decide in favour of the assumption.
+    auto empty_column = data_type->createColumn();
+    stats->build(static_cast<const IColumn &>(*empty_column).getPtr(), options);
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+
+    /// The first block (900 zeros, values 1..100) fails the default-ratio guard.
+    auto first_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 1000; ++i)
+        first_column->insert(i < 900 ? 0.0 : static_cast<Float64>(i - 899));
+    stats->build(static_cast<const IColumn &>(*first_column).getPtr(), options);
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+
+    /// A later block passing the guard must not switch to the assumption: that would discard the
+    /// real sketch built so far and report only this block's row count.
+    auto second_column = data_type->createColumn();
+    second_column->insert(101.0);
+    stats->build(static_cast<const IColumn &>(*second_column).getPtr(), options);
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(stats->estimateCardinality(), 102);
+}
+
 TEST(Statistics, AssumedLongStringPolicyStopsBuildingUniqAfterProbeThreshold)
 {
     tryRegisterAggregateFunctions();
