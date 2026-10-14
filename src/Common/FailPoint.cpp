@@ -179,7 +179,6 @@ static struct InitFiu
     ONCE(delta_lake_write_cancel_in_commit_window) \
     ONCE(delta_lake_commit_fail_before_log_write) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
-    PAUSEABLE_ONCE(trace_collector_pause_before_trace) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_analysis) \

@@ -48,6 +48,7 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
+#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -664,32 +665,18 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
-    auto flush_buffer_to_log = [&](ISystemLog * log)
-    {
-        if (!ignore_errors)
-        {
-            log->flushBufferToLog(std::chrono::system_clock::now());
-            return;
-        }
-
-        try
-        {
-            log->flushBufferToLog(std::chrono::system_clock::now());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    };
-
     if (names.empty())
     {
         if (text_log)
             flushAsyncTextLogsIfPossible();
 
+        /// Not at shutdown (`ignore_errors`), which a stuck collector would delay.
+        if (trace_log && !ignore_errors)
+            TraceCollector::flush();
+
         for (auto * log : getAllLogs())
         {
-            flush_buffer_to_log(log);
+            log->flushBufferToLog(std::chrono::system_clock::now());
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
@@ -751,8 +738,10 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             if (log == text_log.get())
                 flushAsyncTextLogsIfPossible();
+            else if (log == trace_log.get())
+                TraceCollector::flush();
 
-            flush_buffer_to_log(log);
+            log->flushBufferToLog(std::chrono::system_clock::now());
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});

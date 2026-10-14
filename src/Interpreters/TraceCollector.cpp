@@ -1,6 +1,4 @@
-#include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <thread>
 #include <Interpreters/TraceCollector.h>
 #include <Core/Field.h>
@@ -11,9 +9,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
@@ -35,14 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ABORTED;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
-}
-
-namespace FailPoints
-{
-    extern const char trace_collector_pause_before_trace[];
 }
 
 namespace
@@ -81,18 +70,8 @@ std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
     return result;
 }
 
-/// The first byte of a pipe message is 0 for a trace (`TraceSender::send`) and 1 to stop the collector.
-/// A drain marker is followed by its UInt64 number.
-constexpr char DRAIN_MARKER = 2;
-
-/// Shared by the successive collectors of the process; marker numbers are never reset.
-std::mutex drain_mutex;
-std::condition_variable drain_cv;
-UInt64 collector_generation = 0;
-bool collector_available = false;
-bool collector_failed = false;
-UInt64 drain_markers_requested = 0;
-UInt64 drain_markers_completed = 0;
+/// The first byte of a pipe message: 0 for a trace (`TraceSender::send`), 1 to stop the collector, 2 for a `flush` marker.
+constexpr char FLUSH_MARKER = 2;
 
 }
 
@@ -115,13 +94,6 @@ TraceCollector::TraceCollector()
     /// before closing the pipe; on a fresh start, senders should be allowed
     /// through again.
     TraceSender::shutdown.store(false);
-
-    {
-        std::lock_guard lock(drain_mutex);
-        ++collector_generation;
-        collector_available = true;
-        collector_failed = false;
-    }
 
     thread = ThreadFromGlobalPoolWithoutTraceCollector(&TraceCollector::run, this);
 }
@@ -158,12 +130,6 @@ void TraceCollector::tryClosePipe()
 
 TraceCollector::~TraceCollector()
 {
-    {
-        std::lock_guard lock(drain_mutex);
-        collector_available = false;
-    }
-    drain_cv.notify_all();
-
     // Pipes could be already closed due to exception in TraceCollector::run.
     if (TraceSender::pipe.fds_rw[1] >= 0)
     {
@@ -230,24 +196,17 @@ void TraceCollector::run()
     {
         while (true)
         {
-            char control = 0;
-            readChar(control, in);
-            if (control == DRAIN_MARKER)
+            char message_type = 0;
+            readChar(message_type, in);
+            if (message_type == FLUSH_MARKER)
             {
-                UInt64 marker = 0;
-                readPODBinary(marker, in);
-                {
-                    std::lock_guard lock(drain_mutex);
-                    drain_markers_completed = std::max(drain_markers_completed, marker);
-                }
-                drain_cv.notify_all();
+                std::lock_guard lock(TraceSender::flush_mutex);
+                ++TraceSender::flush_completed;
+                TraceSender::flush_cv.notify_all();
                 continue;
             }
-            if (control)
+            if (message_type)
                 break;
-
-            if (FailPointInjection::hasAnyFailPointBeenRegistered())
-                FailPointInjection::pauseFailPoint(FailPoints::trace_collector_pause_before_trace);
 
             std::string query_id;
             UInt8 query_id_size = 0;
@@ -366,71 +325,26 @@ void TraceCollector::run()
     catch (...)
     {
         tryLogCurrentException("TraceCollector");
-        {
-            std::lock_guard lock(drain_mutex);
-            collector_failed = true;
-        }
-        drain_cv.notify_all();
         throw;
     }
 }
 
-void TraceCollector::drain()
+void TraceCollector::flush()
 {
-    constexpr int timeout_seconds = 180;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
-
-    std::unique_lock lock(drain_mutex);
-    const UInt64 generation = collector_generation;
-    const UInt64 marker = ++drain_markers_requested;
-
-    char message[1 + sizeof(marker)];
-    message[0] = DRAIN_MARKER;
-    memcpy(&message[1], &marker, sizeof(marker));
-
-    /// The collector handles messages in order, so when it acks the marker, every trace sent before it has been handled.
-    bool sent = false;
-    while (true)
+    std::unique_lock lock(TraceSender::flush_mutex);
     {
-        if (drain_markers_completed >= marker || collector_generation != generation || !collector_available)
+        TraceSender::in_flight.fetch_add(1);
+        SCOPE_EXIT(TraceSender::in_flight.fetch_sub(1));
+        /// A full pipe drops the marker like it drops traces, then there is nothing to wait for.
+        if (!TraceSender::isCollecting() || ::write(TraceSender::pipe.fds_rw[1], &FLUSH_MARKER, 1) != 1)
             return;
-        if (collector_failed)
-            throw Exception(ErrorCodes::ABORTED, "The trace collector has stopped, traces are not written to system.trace_log");
-        if (std::chrono::steady_clock::now() >= deadline)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded ({} s) while waiting for the trace collector to drain the trace pipe", timeout_seconds);
-
-        if (sent)
-        {
-            drain_cv.wait_until(lock, deadline);
-            continue;
-        }
-
-        ssize_t res = 0;
-        {
-            TraceSender::in_flight.fetch_add(1);
-            SCOPE_EXIT(TraceSender::in_flight.fetch_sub(1));
-            if (TraceSender::shutdown.load() || TraceSender::pipe.fds_rw[1] < 0)
-                return;
-            res = ::write(TraceSender::pipe.fds_rw[1], message, sizeof(message));
-        }
-
-        if (res == static_cast<ssize_t>(sizeof(message)))
-        {
-            sent = true;
-        }
-        else if (res < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-        {
-            /// Traces are dropped when the pipe is full, but the marker must be delivered.
-            lock.unlock();
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            lock.lock();
-        }
-        else if (!(res < 0 && errno == EINTR))
-        {
-            throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write to the trace pipe");
-        }
     }
+
+    /// The markers reach the pipe in the order of their numbers, and the collector reads the pipe in order.
+    const UInt64 marker = ++TraceSender::flush_requested;
+    constexpr auto timeout = std::chrono::seconds(180);
+    if (!TraceSender::flush_cv.wait_for(lock, timeout, [&] { return TraceSender::flush_completed >= marker; }))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while waiting for the trace collector", timeout.count());
 }
 
 }

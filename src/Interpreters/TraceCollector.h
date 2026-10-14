@@ -22,9 +22,8 @@ public:
 
     void initialize(std::shared_ptr<TraceLog> trace_log_);
 
-    /// Wait until every trace sent before the call has been handed to `system.trace_log`;
-    /// returns at once when no collector runs.
-    static void drain();
+    /// Waits until the collector has handled every trace sent before the call.
+    static void flush();
 
 private:
     std::shared_ptr<TraceLog> getTraceLog();

@@ -73,9 +73,6 @@ public:
     {
     }
 
-    /// Waits until the traces still on their way from `TraceSender` are added to the log.
-    void flushBufferToLog(std::chrono::system_clock::time_point current_time) override;
-
     bool symbolize;
 };
 
