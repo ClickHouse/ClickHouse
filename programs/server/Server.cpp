@@ -4693,9 +4693,9 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::MONGO))
         {
             port_name = "mongo_port";
+#if USE_MONGODB && USE_RAPIDJSON
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
-#if USE_MONGODB && USE_RAPIDJSON
                 /// The listener is plaintext; a Mongo endpoint over TLS is declared in the `protocols`
                 /// section as a `tls` layer over a `mongo` one.
                 Poco::Net::ServerSocket socket;
@@ -4713,13 +4713,15 @@ void Server::createServers(
                         socket,
                         makeServerParams(server_settings),
                         connection_filter));
+            });
 #else
-                /// The port is a known setting in every build, so a configuration that asks for the
-                /// endpoint must not start a server that silently never listens on it.
-                UNUSED(port);
+            /// The port is a known setting in every build, so a configuration that asks for the
+            /// endpoint must not start a server that silently never listens on it. This is checked
+            /// outside of `createServer`, which only logs the errors of its callback when `listen_try`
+            /// is enabled (as it is when `listen_host` is omitted).
+            if (config.has(port_name))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mongo protocol is disabled because ClickHouse has been built without the MongoDB or the rapidjson library");
 #endif
-            });
         }
 
 #if USE_GRPC
