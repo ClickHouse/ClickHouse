@@ -412,6 +412,20 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
     LOG_EVENT(R);
 }
 
+void CPULeaseAllocation::resumePreempted()
+{
+    // A parked thread keeps its leased slot but uses no CPU, so `granted + parked_count`
+    // (that is `allocated - running`) counts the allocated slots that no running thread uses.
+    while (granted + static_cast<Int64>(threads.parked_count) > 0)
+    {
+        // We are trying to wake inactive thread with lowest thread number to increase utilization of lower threads
+        if (size_t thread_num = threads.preempted.find_first(); thread_num != boost::dynamic_bitset<>::npos)
+            resetPreempted(thread_num);
+        else
+            break; // No preempted threads, we are done
+    }
+}
+
 void CPULeaseAllocation::setParked(size_t thread_num)
 {
     // Move a running thread to parked (a non-CPU wait: I/O or idle). Lighter than setPreempted (no
@@ -494,6 +508,9 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
             acquirable.store(false, std::memory_order_relaxed);
         requests.finish();
     }
+
+    // The parked thread no longer uses its slot, so a preempted thread can run on it.
+    resumePreempted();
 
     // Parking is purely scheduler-side: no executor/task-layer callback (unlike preemption's
     // on_preempt). The parked thread keeps its task and executor slot; the freed scheduler unit is
@@ -599,15 +616,7 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
         requests.granted();
     } while (!schedule(lock));
 
-    // Resume preempted threads if necessary
-    while (granted > 0)
-    {
-        // We are trying to wake inactive thread with lowest thread number to increase utilization of lower threads
-        if (size_t thread_num = threads.preempted.find_first(); thread_num != boost::dynamic_bitset<>::npos)
-            resetPreempted(thread_num);
-        else
-            break; // No preempted threads, we are done
-    }
+    resumePreempted();
 }
 
 void CPULeaseAllocation::setMax(SlotCount new_max)

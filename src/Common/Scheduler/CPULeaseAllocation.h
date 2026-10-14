@@ -211,6 +211,9 @@ private:
     void setPreempted(size_t thread_num);
     void resetPreempted(size_t thread_num);
 
+    /// Resume preempted threads while some allocated slot is not used by a running thread.
+    void resumePreempted();
+
     /// Park/unpark a thread that voluntarily stops using CPU for a non-CPU wait (I/O or idle).
     /// `parkLease` moves the thread running -> parked (via `setParked`, mirroring `setPreempted`
     /// but lighter: no clock read) and, since a parked thread lowers the query's slot demand,
