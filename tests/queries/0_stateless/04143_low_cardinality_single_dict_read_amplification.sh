@@ -36,8 +36,6 @@ INSERT INTO lc_single_dict_repro
         arrayMap(i -> repeat('8 bytes|', 16) || toString(number % 8000), range(20)),
         if(intDiv(number, 32) % 2 = 0, 1, 0)
     FROM numbers(128 * 1024);
-
-OPTIMIZE TABLE lc_single_dict_repro FINAL;
 "
 
 $CLICKHOUSE_CLIENT -q "
