@@ -33,3 +33,19 @@ SELECT k, any(x), anyLast(x), groupArray(x) FROM (SELECT k, x FROM t_sparse_orde
 SELECT sum(x), count(x), uniqExact(x), min(x), max(x), sum(n), count(n) FROM (SELECT x, n FROM t_sparse_order ORDER BY i);
 
 DROP TABLE t_sparse_order;
+
+-- The `GROUP BY` key is a prefix of the sorting key. The aggregation in order adds the rows of a key in one
+-- go, after `AggregatingInOrderTransform` has made the sparse argument full.
+CREATE TABLE t_sparse_order_in_order (k UInt64, i UInt64, x UInt64)
+ENGINE = MergeTree ORDER BY (k, i)
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, serialization_info_version = 'with_types';
+
+INSERT INTO t_sparse_order_in_order SELECT intDiv(number, 6), number, if(number % 5 IN (1, 2), number, 0) FROM numbers(12);
+
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_sparse_order_in_order' AND column = 'x';
+
+SELECT k, any(x), anyLast(x), groupArray(x), deltaSum(x) FROM t_sparse_order_in_order GROUP BY k ORDER BY k
+SETTINGS optimize_aggregation_in_order = 1;
+
+DROP TABLE t_sparse_order_in_order;
