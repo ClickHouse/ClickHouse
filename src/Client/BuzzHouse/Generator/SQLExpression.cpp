@@ -504,17 +504,23 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
            "notHas",
            "hasToken",
            "hasTokenOrNull",
+           "hasTokenCaseInsensitive",
+           "hasTokenCaseInsensitiveOrNull",
+           "hasPhrase",
+           "matchPhrase",
            "mapContains",
            "match",
            "hasAllTokens",
            "hasAnyTokens",
            "startsWith"};
     const auto & nfunc = rg.pickRandomly(searchFuncs);
+    const bool is_phrase = nfunc == "hasPhrase" || nfunc == "matchPhrase";
+    const bool is_multi_token = nfunc == "hasAnyTokens" || nfunc == "hasAllTokens";
 
     sfc->mutable_func()->set_catalog_func(nfunc);
     Expr * res = sfc->add_args()->mutable_expr();
     Expr * expr2 = sfc->add_args()->mutable_expr();
-    if ((nfunc == "hasAnyTokens" || nfunc == "hasAllTokens") && rg.nextBool())
+    if (is_multi_token && rg.nextBool())
     {
         ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 5)) + 1;
@@ -525,27 +531,53 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
             next->mutable_lit_val()->set_string_lit(rg.nextTokenString());
         }
     }
+    else if (is_phrase)
+    {
+        /// Several tokens, otherwise the phrase degenerates into a single-token search.
+        String buf = rg.nextTokenString();
+
+        for (uint32_t i = 0, nextra = rg.randomInt<uint32_t>(1, 2); i < nextra; i++)
+        {
+            buf += " " + rg.nextTokenString();
+        }
+        expr2->mutable_lit_val()->set_string_lit(std::move(buf));
+    }
     else
     {
         expr2->mutable_lit_val()->set_string_lit(rg.nextTokenString());
+    }
+    /// The optional tokenizer argument defaults to `splitByNonAlpha`. One that disagrees with the
+    /// index's makes the index unusable for the predicate, and `hasPhrase` rejects some outright.
+    if ((is_phrase || is_multi_token) && rg.nextSmallNumber() < 4)
+    {
+        static const DB::Strings tokenizerVals
+            = {"splitByNonAlpha", "splitByString", "ngrams", "array", "keyword", "sparseGrams", "asciiCJK", "unicodeWord"};
+
+        sfc->add_args()->mutable_expr()->mutable_lit_val()->set_string_lit(
+            rg.pickRandomly(this->fc.tokenizers.empty() ? tokenizerVals : this->fc.tokenizers));
     }
     return res;
 }
 
 void StatementGenerator::generateExprIn(RandomGenerator & rg, const bool allow_empty, ExprInType * expr)
 {
-    const uint32_t nopt = rg.nextSmallNumber();
+    const uint32_t nopt = rg.nextMediumNumber();
 
-    if (allow_empty && rg.nextMediumNumber() < 4)
+    if (allow_empty && nopt < 4)
     {
-        /// `x IN ()` and `x IN []` are valid, and always evaluate to 0
         expr->set_empty_list(rg.nextBool());
     }
-    else if (nopt < 5 && this->allow_subqueries)
+    else if (allow_empty && nopt < 21 && this->allow_not_deterministic && collectionHas<SQLTable>(attached_tables))
+    {
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+
+        t.setName(expr->mutable_tbl(), false);
+    }
+    else if (nopt < 41 && this->allow_subqueries)
     {
         this->generateSubquery(rg, expr->mutable_sel());
     }
-    else if (nopt < 9)
+    else if (nopt < 81)
     {
         ExprList * elist2 = rg.nextBool() ? expr->mutable_tuple() : expr->mutable_array();
         const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));

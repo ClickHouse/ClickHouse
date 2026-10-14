@@ -1,0 +1,8 @@
+Internal sqlite_sequence sorts first in sqlite_master:
+sqlite_sequence
+sqliteX
+SHOW TABLES exposes the user table sqliteX and hides internal sqlite_* tables:
+sqliteX
+The user table is queryable through the database engine:
+1	a
+2	b

@@ -26,6 +26,8 @@ ${CLICKHOUSE_CLIENT} -q "create table t_dp_otel_dag (x UInt64) engine = MergeTre
 ${CLICKHOUSE_CLIENT} -q "insert into t_dp_otel_dag select number % 10 from numbers(10000)"
 
 # $1 - execute_locally, $2 - query id, $3 - trace id, $4 - the expression to aggregate.
+# The test profile sets a global max_rows_to_group_by; distributed aggregation cannot enforce it
+# once the aggregation is split per bucket and refuses the plan, so it is pinned to 0.
 function run_query
 {
     local _execute_locally="$1"
@@ -41,7 +43,7 @@ function run_query
                 distributed_plan_fallback_to_local_execution = 0,
                 distributed_plan_default_shuffle_join_bucket_count = 2,
                 distributed_plan_default_reader_bucket_count = 2,
-                distributed_plan_max_rows_to_broadcast = 0" 2>/dev/null
+                distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0" 2>/dev/null
 }
 
 # The span ids of the `DistributedPlanExecutor::execute` spans of the trace, as a comma-separated

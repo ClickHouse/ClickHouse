@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: this test WAITS on a process-global PAUSEABLE failpoint, so a concurrent
 # instance pausing or resuming the same channel would break the synchronisation.
 

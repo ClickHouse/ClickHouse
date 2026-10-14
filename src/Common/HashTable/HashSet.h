@@ -143,13 +143,14 @@ template <
     typename TCell, /// Supposed to have no state (HashTableNoState)
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator>
+    typename Allocator = HashTableAllocator,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
 class TwoLevelHashSetTable
-    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>
+    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
 {
 public:
     using Self = TwoLevelHashSetTable;
-    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>;
+    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>;
 
     using Base::Base;
 
@@ -230,8 +231,9 @@ template <
     typename Key,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator>
-using TwoLevelHashSet = TwoLevelHashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator>;
+    typename Allocator = HashTableAllocator,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+using TwoLevelHashSet = TwoLevelHashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator, BITS_FOR_BUCKET>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithStackMemory = HashSet<
@@ -253,8 +255,10 @@ template <
     typename Key,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator>
-using TwoLevelHashSetWithSavedHash = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
+    typename Allocator = HashTableAllocator,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+using TwoLevelHashSetWithSavedHash
+    = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator, BITS_FOR_BUCKET>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithSavedHashWithStackMemory = HashSetWithSavedHash<

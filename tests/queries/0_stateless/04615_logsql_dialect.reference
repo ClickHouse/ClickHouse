@@ -1,0 +1,199 @@
+error: cannot open file /var/lib/data
+fatal error: cannot allocate memory
+Error while processing request
+error: cannot open file /var/lib/data
+fatal error: cannot allocate memory
+error: cannot open file /var/lib/data
+warning: disk space low
+connection accepted from 10.2.3.4
+Error while processing request
+error: cannot open file /var/lib/data
+ssh: login fail for user "root"
+fatal error: cannot allocate memory
+Error while processing request
+fatal error: cannot allocate memory
+request finished in 25ms
+Error while processing request
+error: cannot open file /var/lib/data
+ssh: login fail for user "root"
+Error while processing request
+fatal error: cannot allocate memory
+Error while processing request
+error: cannot open file /var/lib/data
+fatal error: cannot allocate memory
+ssh: login fail for user "root"
+error: cannot open file /var/lib/data
+fatal error: cannot allocate memory
+fatal error: cannot allocate memory
+warning: disk space low
+Error while processing request
+error: cannot open file /var/lib/data
+fatal error: cannot allocate memory
+Error while processing request
+error: cannot open file /var/lib/data
+fatal error: cannot allocate memory
+ssh: login fail for user "root"
+connection accepted from 10.2.3.4
+ssh: login fail for user "root"
+user logged in successfully
+warning: disk space low
+fatal error: cannot allocate memory
+warning: disk space low
+ssh: login fail for user "root"
+warning: disk space low
+fatal error: cannot allocate memory
+error: cannot open file /var/lib/data
+Error while processing request
+request finished in 25ms
+user logged in successfully
+warning: disk space low
+Error while processing request
+error: cannot open file /var/lib/data
+fatal error: cannot allocate memory
+ssh: login fail for user "root"
+ssh: login fail for user "root"
+user logged in successfully
+warning: disk space low
+8
+ssh: login fail for user "root"
+3
+5
+3
+fatal error: cannot allocate memory
+user logged in successfully
+Error while processing request
+connection accepted from 10.2.3.4
+error: cannot open file /var/lib/data
+0
+8
+8
+3
+user logged in successfully
+fatal error: cannot allocate memory
+2024-01-01 10:04:00	warning: disk space low	warn
+warn	monitor
+warn	warn
+warn
+4096
+2048
+1024
+error	77
+error	2048
+error	1024
+fatal	4096
+42
+77
+4096
+2048
+8
+8
+error	3	3149
+fatal	1	4096
+info	3	700
+warn	1	42
+app-server	3
+monitor	1
+nginx	2
+sshd	1
+3	8
+2024-01-01 00:00:00	5
+2024-01-02 00:00:00	3
+4096	42	312.625
+error
+fatal
+info
+warn
+306
+app-server	1
+nginx	1
+sshd	1
+error
+fatal
+info
+warn
+error	3
+fatal	1
+info	3
+warn	1
+error	3
+info	3
+app-server	3
+nginx	2
+sshd	2
+nginx	0.5
+sshd	0.5
+user logged in successfully
+error: cannot open file /var/lib/data
+fatal error: cannot allocate memory
+1
+error	1
+2024-01-01 10:00:00	1.2.3.4	alice
+2024-01-01 10:01:00	5.6.7.8	bob
+2024-01-01 10:02:00		
+
+alice
+bob
+app=web level=warn size=200
+		
+x	42	y
+z	7	
+ip=1.2.3.4 user=alice dur=15ms
+0
+1
+2
+
+dev
+prod,eu
+
+dev
+eu
+prod
+["no","ip","here"]
+["no","ip","here"]
+3
+error
+info
+warn
+no ip there
+ip=N.N.N.N user=bob dur=Nms
+{"level":"error","app":"api"}
+level=error app=api
+2
+3
+3
+0
+3
+3
+1
+2
+ip=1.2.3.4 user=alice dur=15ms
+ip=5.6.7.8 user=bob dur=25ms
+1200	100
+api
+{"level":"error","app":"api"}
+['{"level":"info"}','{"level":"warn"}','{"level":"error"}']
+3
+1	1	1
+0.00003472222222222222
+50	1
+150	1
+250	1
+1	100
+2	200
+3	300
+api	300
+web	200
+1	100
+2024-01-01 10:00:00	100
+2024-01-01 10:01:00	300
+2024-01-01 10:02:00	600
+2024-01-01 10:00:00	web	2
+2024-01-01 10:01:00	web	2
+2024-01-01 10:02:00	api	1
+ip=5.6.7.8 user=bob dur=25ms
+no ip here
+2024-01-01 10:00:00	web	2
+2024-01-01 10:01:00	web	2
+2024-01-01 10:02:00	api	0
+1
+1
