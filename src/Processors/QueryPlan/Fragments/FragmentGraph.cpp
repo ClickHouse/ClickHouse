@@ -2,8 +2,6 @@
 
 #include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/BroadcastSendStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherReceiveStep.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
@@ -56,32 +54,12 @@ bool isExchangeEndpointStep(const IQueryPlanStep & step)
         || typeid_cast<const GatherReceiveStep *>(&step) || typeid_cast<const BroadcastReceiveStep *>(&step);
 }
 
-bool isPassThroughStep(const IQueryPlanStep & step)
+/// A fragment is a stage of the executor, so it always has a plan.
+const QueryPlan & checkNotEmpty(const QueryPlan & plan, const String & stage_name)
 {
-    return typeid_cast<const ExpressionStep *>(&step) || typeid_cast<const FilterStep *>(&step);
-}
-
-std::vector<String> buildSummary(const QueryPlan & plan)
-{
-    std::vector<String> summary;
-    const auto * root = plan.getRootNode();
-    if (!root)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A plan fragment of a distributed query plan is empty");
-
-    std::vector<const QueryPlan::Node *> stack{root};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (!isPassThroughStep(*node->step) && !isExchangeEndpointStep(*node->step))
-            summary.push_back(node->step->getName());
-
-        /// Push in reverse order so that the first child is visited first.
-        for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            stack.push_back(*it);
-    }
-    return summary;
+    if (!plan.getRootNode())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan of stage {} is empty", stage_name);
+    return plan;
 }
 
 const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
@@ -389,8 +367,7 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
         fragment.stage_name = stage_name;
         fragment.role = stage_name == main_stage_name ? QueryFragment::Role::Initiator : QueryFragment::Role::Worker;
         fragment.tasks = stage.tasks.size();
-        fragment.plan = &stage.query_plan_fragment;
-        fragment.summary = buildSummary(stage.query_plan_fragment);
+        fragment.plan = &checkNotEmpty(stage.query_plan_fragment, stage_name);
         graph.fragments.push_back(std::move(fragment));
     }
     std::sort(graph.fragments.begin(), graph.fragments.end(), [](const auto & lhs, const auto & rhs) { return lhs.id < rhs.id; });
@@ -464,8 +441,7 @@ FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<Str
     fragment.location = QueryFragment::ExecutionLocation::SingleNode;
     fragment.fallback_reason = std::move(fallback_reason);
     fragment.tasks = 1;
-    fragment.plan = &plan;
-    fragment.summary = buildSummary(plan);
+    fragment.plan = &checkNotEmpty(plan, fragment.stage_name);
     graph.fragments.push_back(std::move(fragment));
     return graph;
 }

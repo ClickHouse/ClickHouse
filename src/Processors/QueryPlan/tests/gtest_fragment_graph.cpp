@@ -398,7 +398,6 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     EXPECT_EQ(initiator.role, QueryFragment::Role::Initiator);
     EXPECT_EQ(initiator.location, QueryFragment::ExecutionLocation::Distributed);
     EXPECT_FALSE(initiator.description.has_value());
-    EXPECT_EQ(initiator.summary, (std::vector<String>{"Sorting"}));
     EXPECT_EQ(initiator.children, (std::vector<UInt32>{0}));
 
     const auto & worker = graph.getFragment(0);
@@ -407,7 +406,6 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     EXPECT_FALSE(worker.description.has_value());
     EXPECT_TRUE(worker.children.empty());
     EXPECT_EQ(worker.tasks, 2u);
-    EXPECT_EQ(worker.summary, (std::vector<String>{"ReadNothing"}));
 
     const auto & exchange = graph.getExchange(0);
     EXPECT_EQ(exchange.kind, FragmentExchange::Kind::Hash);

@@ -50,8 +50,6 @@ struct QueryFragment
     std::vector<UInt32> children;
     /// The plan of the stage (not owned); nullptr in hand-built graphs of tests.
     const QueryPlan * plan = nullptr;
-    /// Step names of the fragment in root-to-leaf order, excluding `Expression`, `Filter` and the send and receive steps.
-    std::vector<String> summary;
 };
 
 struct ExchangeStatistics
