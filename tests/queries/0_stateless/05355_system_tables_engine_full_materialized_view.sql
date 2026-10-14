@@ -25,7 +25,7 @@ CREATE VIEW plain_view AS SELECT x FROM src;
 
 SELECT name, engine, engine_full
 FROM system.tables
-WHERE database = currentDatabase() AND name NOT LIKE '.inner%'
+WHERE database = currentDatabase() AND name NOT LIKE '.inner%' AND engine IN ('MaterializedView', 'View')
 ORDER BY name;
 
 DROP TABLE mv_inner;
