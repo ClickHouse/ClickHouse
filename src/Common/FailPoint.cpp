@@ -37,6 +37,7 @@ static struct InitFiu
     ONCE(nats_fail_resubscribe_within_query) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
+    PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
@@ -192,6 +193,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(nats_pause_before_building_insert_pipeline) \
+    PAUSEABLE_ONCE(nats_pause_before_checking_direct_select_connection) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_is_active_remove) \
     PAUSEABLE(smt_create_table_pause_before_replicas_check) \
@@ -308,6 +310,7 @@ static struct InitFiu
     ONCE(backup_fail_lock_file_removal) \
     ONCE(backup_fail_lock_file_write_after_commit) \
     ONCE(backup_fail_lock_file_write_after_open) \
+    ONCE(backup_fail_reading_archive_size) \
     PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
     PAUSEABLE_ONCE(backup_pause_after_lock_file_creation) \
     PAUSEABLE(backup_from_snapshot_pause_holding_admin_lock) \
@@ -392,6 +395,7 @@ static struct InitFiu
     REGULAR(datalake_paimon_list_page_size_one) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
+    PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \
