@@ -2,10 +2,10 @@
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-parallel-replicas: the test asserts on the query plan shape (the number of reads of the samples table).
 
--- The SQL generated from a PromQL query may reference a named subquery more than once: the left side of `or`
--- feeds both the per-group presence-mask step and the final merge join, and the topk/bottomk/limitk operand grid
--- feeds both the group-selecting aggregation and the value-masking join. Such subqueries must be marked
--- AS MATERIALIZED and evaluated once, while subqueries referenced once must stay inlined and must not be materialized.
+-- A named subquery referenced more than once must be marked AS MATERIALIZED and evaluated once.
+-- The topk/bottomk/limitk operand grid is referenced by the group-selecting aggregation and the
+-- value-masking join. PromQL `or` names each operand once, so an `or` chain stays inlined.
+-- Subqueries referenced once stay inlined and must not be materialized.
 
 DROP TABLE IF EXISTS tags_table;
 DROP TABLE IF EXISTS samples_table;
@@ -48,7 +48,10 @@ INSERT INTO prometheus (metric_name, tags, samples) VALUES
     ('dense_and_left', map('test_case', 'and'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 1), (toDateTime64(120, 3), 1), (toDateTime64(130, 3), 1)]),
     ('sparse_and_right', map('test_case', 'and'), [(toDateTime64(100, 3), 2), (toDateTime64(130, 3), 2)]),
     ('dense_unless_left', map('test_case', 'unless'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 1), (toDateTime64(120, 3), 1), (toDateTime64(130, 3), 1)]),
-    ('sparse_unless_right', map('test_case', 'unless'), [(toDateTime64(100, 3), 2), (toDateTime64(130, 3), 2)]);
+    ('sparse_unless_right', map('test_case', 'unless'), [(toDateTime64(100, 3), 2), (toDateTime64(130, 3), 2)]),
+    ('or_chain_a', map('test_case', 'chain'), [(toDateTime64(100, 3), 1)]),
+    ('or_chain_b', map('test_case', 'chain'), [(toDateTime64(100, 3), 9), (toDateTime64(110, 3), 2)]),
+    ('or_chain_c', map('test_case', 'chain'), [(toDateTime64(100, 3), 8), (toDateTime64(110, 3), 8), (toDateTime64(120, 3), 3)]);
 
 SELECT '-- or, range';
 SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10) ORDER BY tags;
@@ -100,7 +103,7 @@ FROM prometheusQueryRange(
     'last_over_time(dense_unless_left[10]) unless last_over_time(missing_metric[10])',
     100, 130, 10);
 
-SELECT '-- or: the left side is evaluated once: two samples reads in total (left materialized + right inlined)';
+SELECT '-- or: each operand is named once: two samples reads, nothing is materialized';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
@@ -137,13 +140,37 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_tabl
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10));
 
-SELECT '-- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again';
+SELECT '-- disabling materialized CTEs does not read the left side of or a second time';
 SET enable_materialized_cte = 0;
 SET send_logs_level = 'error';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
 SET send_logs_level = 'warning';
+SET enable_materialized_cte = 1;
+
+SELECT '-- three-term or on(test_case) keeps the earliest sample at each step';
+SELECT tags, samples
+FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(or_chain_a[10]) or on(test_case) last_over_time(or_chain_b[10]) or on(test_case) last_over_time(or_chain_c[10])',
+    100, 120, 10)
+ORDER BY tags;
+
+SELECT '-- thirteen-term or returns every operand';
+SELECT count() AS series_count
+FROM prometheusQuery(
+    'prometheus',
+    'label_replace(vector(1), "k", "v1", "", "") or label_replace(vector(2), "k", "v2", "", "") or label_replace(vector(3), "k", "v3", "", "") or label_replace(vector(4), "k", "v4", "", "") or label_replace(vector(5), "k", "v5", "", "") or label_replace(vector(6), "k", "v6", "", "") or label_replace(vector(7), "k", "v7", "", "") or label_replace(vector(8), "k", "v8", "", "") or label_replace(vector(9), "k", "v9", "", "") or label_replace(vector(10), "k", "v10", "", "") or label_replace(vector(11), "k", "v11", "", "") or label_replace(vector(12), "k", "v12", "", "") or label_replace(vector(13), "k", "v13", "", "")',
+    100);
+
+SELECT '-- thirteen-term or names each operand once';
+SELECT sum(countMatches(explain, '"v1"')) AS v1_mentions,
+       sum(countMatches(explain, '"v13"')) AS v13_mentions
+FROM (EXPLAIN AST SELECT * FROM prometheusQuery(
+    'prometheus',
+    'label_replace(vector(1), "k", "v1", "", "") or label_replace(vector(2), "k", "v2", "", "") or label_replace(vector(3), "k", "v3", "", "") or label_replace(vector(4), "k", "v4", "", "") or label_replace(vector(5), "k", "v5", "", "") or label_replace(vector(6), "k", "v6", "", "") or label_replace(vector(7), "k", "v7", "", "") or label_replace(vector(8), "k", "v8", "", "") or label_replace(vector(9), "k", "v9", "", "") or label_replace(vector(10), "k", "v10", "", "") or label_replace(vector(11), "k", "v11", "", "") or label_replace(vector(12), "k", "v12", "", "") or label_replace(vector(13), "k", "v13", "", "")',
+    100));
 
 DROP TABLE prometheus;
 DROP TABLE tags_table;
