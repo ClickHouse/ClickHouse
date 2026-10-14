@@ -50,6 +50,27 @@ SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS use_skip_indexes
 SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS ignore_data_skipping_indices = 'idx_new';
 SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS ignore_data_skipping_indices = 'idx_old';
 
+SELECT '-- 28b. the same when the sibling reads a SUBCOLUMN whose name prefix is another column';
+-- idx_old requires `a.b.x`, a subcolumn of `a.b`, while the shorter prefix `a` is a column of its own.
+-- `a.b` must stay absent: its default changed after it expired, so idx_old's granules are stale.
+DROP TABLE IF EXISTS t_two_indices_dotted;
+CREATE TABLE t_two_indices_dotted (k UInt64, d DateTime, a Bool, `a.b` Tuple(x UInt64) TTL d + INTERVAL 1 SECOND,
+    INDEX idx_old `a.b.x` TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_two_indices_dotted SELECT number, '2000-01-01 00:00:00', 1, tuple(number * 3) FROM numbers(64);
+ALTER TABLE t_two_indices_dotted MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_dotted' AND active AND column = 'a.b';
+ALTER TABLE t_two_indices_dotted MODIFY COLUMN `a.b` REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_two_indices_dotted MODIFY COLUMN `a.b` Tuple(x UInt64) DEFAULT tuple(toUInt64(999)) SETTINGS alter_sync = 2;
+ALTER TABLE t_two_indices_dotted ADD INDEX idx_new tupleElement(`a.b`, 1) TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_two_indices_dotted MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_two_indices_dotted;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_dotted' AND active AND column = 'a.b';
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_two_indices_dotted';
+SELECT count() FROM t_two_indices_dotted WHERE `a.b.x` = 999 SETTINGS ignore_data_skipping_indices = 'idx_new';
+SELECT count() FROM t_two_indices_dotted WHERE `a.b.x` = 999 SETTINGS use_skip_indexes = 0;
+
 SELECT '-- 29. a sibling index whose granules this mutation rebuilds does not keep the column absent';
 -- Case 28 keeps the column absent because idx_old carries its granules over. Here the same mutation
 -- also rebuilds them, so they are written from current data and the column can be recorded - which
@@ -91,4 +112,5 @@ SELECT count() FROM t_sibling_rebuilt WHERE c = '';
 SELECT count() FROM t_sibling_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_two_indices_absent;
+DROP TABLE t_two_indices_dotted;
 DROP TABLE t_sibling_rebuilt;

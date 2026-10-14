@@ -21,6 +21,17 @@
 1
 1
 1
+-- 26c. the same when the name prefix of the subcolumn is another column
+1
+1
+1
+1
+-- 26d. the same on a compact part, where a later mutation reads the column for the index again
+Compact
+1
+1
+1
+2080
 -- 27. MATERIALIZE INDEX on a part that ALREADY has the index files must not record the column
 1
 1

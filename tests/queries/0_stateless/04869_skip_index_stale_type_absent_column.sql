@@ -87,6 +87,40 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_materialize_a
 SELECT count() FROM t_materialize_absent_sub WHERE p.x = 150;
 SELECT count() FROM t_materialize_absent_sub WHERE p.x = 150 SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 26c. the same when the name prefix of the subcolumn is another column';
+-- The index requires `a.b.x`, a subcolumn of `a.b`, while the shorter prefix `a` is a column the
+-- part does have, so it is `a.b` that has to be recorded.
+DROP TABLE IF EXISTS t_materialize_absent_dotted;
+CREATE TABLE t_materialize_absent_dotted (k UInt64, a Bool) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_materialize_absent_dotted SELECT number, number % 2 FROM numbers(64);
+ALTER TABLE t_materialize_absent_dotted ADD COLUMN `a.b` Tuple(x UInt64) DEFAULT tuple(k * 3) SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_materialize_absent_dotted ADD INDEX idx `a.b.x` TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_materialize_absent_dotted MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_materialize_absent_dotted;
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_materialize_absent_dotted' AND active AND column = 'a.b';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_materialize_absent_dotted WHERE `a.b.x` = 150) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() FROM t_materialize_absent_dotted WHERE `a.b.x` = 150;
+SELECT count() FROM t_materialize_absent_dotted WHERE `a.b.x` = 150 SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 26d. the same on a compact part, where a later mutation reads the column for the index again';
+-- A compact part rewrites every index it carries, so the UPDATE after the MATERIALIZE INDEX reads
+-- `a.b` for idx as well; it fails with NOT_FOUND_COLUMN_IN_BLOCK if `a.b` is resolved to `a`.
+DROP TABLE IF EXISTS t_materialize_absent_dotted_compact;
+CREATE TABLE t_materialize_absent_dotted_compact (k UInt64, a Bool, e UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+INSERT INTO t_materialize_absent_dotted_compact SELECT number, number % 2, number FROM numbers(64);
+ALTER TABLE t_materialize_absent_dotted_compact ADD COLUMN `a.b` Tuple(x UInt64) DEFAULT tuple(k * 3) SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_materialize_absent_dotted_compact ADD INDEX idx `a.b.x` TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_materialize_absent_dotted_compact MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_materialize_absent_dotted_compact UPDATE e = e + 1 WHERE 1 SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_materialize_absent_dotted_compact;
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_materialize_absent_dotted_compact' AND active;
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_materialize_absent_dotted_compact' AND active AND column = 'a.b';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_materialize_absent_dotted_compact WHERE `a.b.x` = 150) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() FROM t_materialize_absent_dotted_compact WHERE `a.b.x` = 150;
+SELECT sum(e) FROM t_materialize_absent_dotted_compact;
+
 SELECT '-- 27. MATERIALIZE INDEX on a part that ALREADY has the index files must not record the column';
 -- Such a part keeps its granules by hardlink rather than rebuilding them, so recording the column at
 -- the current metadata type would hand isPartTypeCompatible a matching type for a granule built under
@@ -118,4 +152,6 @@ DROP TABLE t_pre_add_index;
 DROP TABLE t_materialized_index;
 DROP TABLE t_materialize_absent;
 DROP TABLE t_materialize_absent_sub;
+DROP TABLE t_materialize_absent_dotted;
+DROP TABLE t_materialize_absent_dotted_compact;
 DROP TABLE t_rematerialize_absent;

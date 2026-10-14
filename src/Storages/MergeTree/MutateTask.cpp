@@ -827,13 +827,20 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
+    /// `a.b.x` can be a subcolumn of `a.b` even when a column `a` exists, so resolve by type, not by prefix.
+    auto getColumnNameInStorage = [&](const String & name) -> std::optional<String>
+    {
+        if (auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
+            return column->getNameInStorage();
+        return std::nullopt;
+    };
+
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
         NameSet extra_columns_for_indices_and_projections;
-        auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
         for (const auto & command : commands)
         {
@@ -903,7 +910,7 @@ static void splitAndModifyMutationCommands(
                             auto required_columns = index.expression->getRequiredColumns();
                             for (const auto & column : required_columns)
                             {
-                                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                                auto column_in_storage = getColumnNameInStorage(column);
                                 if (column_in_storage && !part_columns.has(*column_in_storage))
                                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
                             }
@@ -930,7 +937,7 @@ static void splitAndModifyMutationCommands(
                                 if (projection.with_block_offset && column == BlockOffsetColumn::name)
                                     continue;
 
-                                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                                auto column_in_storage = getColumnNameInStorage(column);
                                 if (column_in_storage && !part_columns.has(*column_in_storage))
                                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
                             }
@@ -1046,7 +1053,7 @@ static void splitAndModifyMutationCommands(
 
             for (const auto & column : index.expression->getRequiredColumns())
             {
-                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                auto column_in_storage = getColumnNameInStorage(column);
                 if (column_in_storage && !part_columns.has(*column_in_storage))
                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
             }
@@ -1075,7 +1082,7 @@ static void splitAndModifyMutationCommands(
                 if (projection.with_block_offset && column == BlockOffsetColumn::name)
                     continue;
 
-                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                auto column_in_storage = getColumnNameInStorage(column);
                 if (column_in_storage && !part_columns.has(*column_in_storage))
                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
             }
@@ -1166,7 +1173,7 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet extra_columns_for_indices;
-        auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+
 
         for (const auto & command : commands)
         {
@@ -1221,7 +1228,7 @@ static void splitAndModifyMutationCommands(
 
                         for (const auto & column : index.expression->getRequiredColumns())
                         {
-                            auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                            auto column_in_storage = getColumnNameInStorage(column);
                             if (column_in_storage && !part_columns.has(*column_in_storage))
                                 extra_columns_for_indices.emplace(*column_in_storage);
                         }
@@ -1316,7 +1323,7 @@ static void splitAndModifyMutationCommands(
 
                 for (const auto & column : index.expression->getRequiredColumns())
                 {
-                    auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                    auto column_in_storage = getColumnNameInStorage(column);
                     if (column_in_storage)
                         extra_columns_for_indices.erase(*column_in_storage);
                 }

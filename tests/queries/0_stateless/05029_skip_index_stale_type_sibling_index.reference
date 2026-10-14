@@ -10,6 +10,12 @@
 0
 0
 0
+-- 28b. the same when the sibling reads a SUBCOLUMN whose name prefix is another column
+1
+1
+2
+64
+64
 -- 29. a sibling index whose granules this mutation rebuilds does not keep the column absent
 1
 1
