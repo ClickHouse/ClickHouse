@@ -5,6 +5,8 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -18,7 +20,6 @@ bool tryBuildPrewhereSteps(
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
-    const ColumnsDescription * columns = nullptr,
-    bool read_ahead_columns = false);
+    const ColumnsDescription * columns = nullptr);
 
 }

@@ -1,8 +1,0 @@
-ArrowStream lz4_frame: OK
-ArrowStream lz4_frame pyarrow: OK
-ArrowStream zstd: OK
-ArrowStream zstd pyarrow: OK
-Arrow lz4_frame: OK
-Arrow lz4_frame pyarrow: OK
-Arrow zstd: OK
-Arrow zstd pyarrow: OK

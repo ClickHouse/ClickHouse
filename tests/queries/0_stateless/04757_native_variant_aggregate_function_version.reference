@@ -1,6 +1,0 @@
-old peer: no version
-no revision: version 1
-current peer: version 1
-Variant(AggregateFunction(quantileDeterministic, UInt64, UInt64), UInt8)
-492708	42
-492708	42

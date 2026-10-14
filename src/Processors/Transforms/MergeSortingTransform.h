@@ -16,7 +16,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 /// Takes sorted separate chunks of data. Sorts them.
 /// Returns stream with globally sorted data.
-class MergeSortingTransform final : public SortingTransform
+class MergeSortingTransform : public SortingTransform
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
@@ -42,7 +42,7 @@ protected:
     void serialize() override;
     void generate() override;
 
-    PipelineUpdate updatePipeline() override;
+    Processors expandPipeline() override;
 
 private:
     size_t max_bytes_before_remerge;
@@ -68,9 +68,6 @@ private:
     ProcessorPtr external_merging_sorted;
 
     TopKThresholdTrackerPtr threshold_tracker;
-    /// Rows of the sorted result generated so far, until the one at `limit` is published to `threshold_tracker`.
-    UInt64 rows_generated = 0;
-    bool generated_threshold_published = false;
 };
 
 }

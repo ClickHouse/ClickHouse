@@ -40,10 +40,8 @@ setup:
             max_value: 20
     node:
       repeat: 2
-      tag: "inner"
       node:
         repeat: 2
-        tag: "leaves"
         name:
           random_string:
             size: 12
@@ -68,7 +66,7 @@ generator:
     multi:
       size: 20
       create:
-        path: "/test2"
+        path: "/test"
         data:
           random_string:
             size:
@@ -77,37 +75,41 @@ generator:
         remove_factor: 0.8
       set:
         weight: 2
+        path: 
+          - "/test3"
+          - "/test4"
         path:
           children_of: "/test"
         data:
           random_string:
             size: 10
     get:
+      path: 
+        - "/test3"
+        - "/test4"
       path:
         children_of: "/test"
-      watch_probability: 0.5
 
     multi:
       weight: 10
       get:
+        path: 
+          - "/test3"
+          - "/test4"
         path:
           children_of: "/test"
       list:
+        path: 
+          - "/test3"
         path:
           children_of: "/test"
 
     list:
-      path:
+      path: 
         - "/test3"
         - "/test4"
-      watch_probability: 1.0
-
-    set:
       path:
-        tagged: "leaves"
-      data:
-        random_string:
-          size: 10
+        children_of: "/test"
 
 output:
   file: 

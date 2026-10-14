@@ -54,6 +54,8 @@ public:
     std::string toString() const override;
 
 private:
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
+
     const DictionaryStructure dict_struct;
     const std::shared_ptr<MongoDBConfiguration> configuration;
     SharedHeader sample_block;
