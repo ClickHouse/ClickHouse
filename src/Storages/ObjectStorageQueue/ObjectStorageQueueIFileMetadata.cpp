@@ -1023,8 +1023,11 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-        /// Remove /failed/node_hash.retriable node.
-        requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, retriable_failed_node_stat.version));
+        /// Remove /failed/node_hash.retriable node, only if it exists: the limit can be lowered to 0
+        /// between the branch selection and this check, in which case there is no marker to remove
+        /// and a remove request would fail the whole multi with ZNONODE.
+        if (has_failed_before)
+            requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, retriable_failed_node_stat.version));
         /// Create a persistent node /failed/node_hash.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
     }
