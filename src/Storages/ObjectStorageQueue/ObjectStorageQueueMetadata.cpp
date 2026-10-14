@@ -429,6 +429,12 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
     auto new_table_metadata{table_metadata};
 
+    /// The local cache may be stale: another replica could have changed the failed-files retention
+    /// (e.g. opted out of inheriting `tracked_file_ttl_sec`) since this replica last synced.
+    /// Start from the retention state currently stored in Keeper so an unrelated ALTER does not revert it.
+    new_table_metadata.failed_files_ttl_sec = metadata_from_zk.failed_files_ttl_sec.load();
+    new_table_metadata.failed_files_ttl_sec_inherited = metadata_from_zk.failed_files_ttl_sec_inherited.load();
+
     for (const auto & change : changes)
     {
         if (change.name == "metadata_cache_size_bytes")
@@ -510,7 +516,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "failed_files_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.failed_files_ttl_sec == value && !table_metadata.failed_files_ttl_sec_inherited)
+            if (new_table_metadata.failed_files_ttl_sec == value && !new_table_metadata.failed_files_ttl_sec_inherited)
             {
                 LOG_TRACE(log, "Setting `failed_files_ttl_sec` already equals {}. "
                         "Will do nothing", value);

@@ -1637,6 +1637,62 @@ def test_inherited_failed_files_ttl_opt_out_by_same_value_alter(started_cluster)
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def test_inherited_failed_files_ttl_opt_out_survives_alter_on_other_replica(started_cluster):
+    node = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+
+    table_name = f"test_inh_replica_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    make_legacy_inherited_table(
+        started_cluster, node, zk, table_name, keeper_path, files_path, 2000
+    )
+
+    create_table(
+        started_cluster,
+        node2,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_file_ttl_sec": 3600,
+            "tracked_files_limit": 0,
+            "cleanup_interval_min_ms": 2000,
+            "cleanup_interval_max_ms": 2000,
+            "s3queue_loading_retries": 0,
+        },
+    )
+
+    def read_metadata():
+        raw, _ = zk.get(f"{keeper_path}/metadata")
+        return json.loads(raw.decode())
+
+    try:
+        # Replica 1 opts out of inheriting tracked_file_ttl_sec.
+        node.query(f"ALTER TABLE {table_name} MODIFY SETTING failed_files_ttl_sec=3600")
+        assert read_metadata().get("failed_files_ttl_sec_inherited") == 0, read_metadata()
+
+        # Replica 2 (stale cache) makes an unrelated ALTER: it must not revert the opt-out.
+        node2.query(f"ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=2000")
+        metadata = read_metadata()
+        assert metadata.get("failed_files_ttl_sec_inherited") == 0, metadata
+        assert metadata.get("failed_files_ttl_sec") == 3600, metadata
+
+        # Reattach of replica 1 must still succeed.
+        node.query(f"DETACH TABLE {table_name}")
+        node.query(f"ATTACH TABLE {table_name}")
+        assert read_metadata().get("failed_files_ttl_sec_inherited") == 0, read_metadata()
+    finally:
+        for n in (node, node2):
+            try:
+                n.query(f"DROP TABLE IF EXISTS {table_name}")
+            except Exception:
+                pass
+
+
 def test_wait_for_path_reads_loading_retries_live(started_cluster):
     """`waitForPathToBeProcessed()` must react to `ALTER TABLE ... MODIFY SETTING s3queue_loading_retries`
     made while a `SYSTEM FLUSH OBJECT STORAGE QUEUE ... PATH` wait is already in progress, not to a
