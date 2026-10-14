@@ -144,6 +144,14 @@ bool containsObject(const DataTypePtr & type)
     });
 }
 
+bool containsInterval(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isInterval();
+    });
+}
+
 bool containsDateOrTime(const DataTypePtr & type)
 {
     return containsType(*type, [](const IDataType & nested_type)
@@ -155,7 +163,8 @@ bool containsDateOrTime(const DataTypePtr & type)
 /// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
 /// have the same stored representation.
 /// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
-/// `Decimal` vs `Float`, `String` vs `FixedString` / `Enum` / `Tuple`, `Object` / `JSON`, mixed date/time-family types,
+/// `Decimal` vs `Float`, `Decimal` of different scales, mixed-unit `Interval`, `String` vs `FixedString` / `Enum` / `Tuple`,
+/// `Object` / `JSON`, mixed date/time-family types,
 /// or runtime-dispatched `Dynamic` / `Variant` comparisons.
 bool canReplaceColumnWithConstantAfterFilter(
     const DataTypePtr & result_type,
@@ -179,6 +188,18 @@ bool canReplaceColumnWithConstantAfterFilter(
 
     if (containsDateOrTime(result_type)
         && (constant_type_is_dynamic || (containsDateOrTime(constant_type) && !result_type->equals(*constant_type))))
+        return false;
+
+    /// A `Decimal` constant of a different type makes the comparison scale or narrow the column values.
+    /// With `decimal_check_overflow = 0` this conversion can wrap, so distinct stored values can compare equal,
+    /// e.g. `Decimal64(0)` scaled to `Decimal64(18)`, or `UInt128` narrowed to `Decimal64`.
+    /// A `Decimal` column compared with an integer constant is fine: only the constant is scaled.
+    if (containsColumnedAsDecimal(constant_type) && !result_type->equals(*constant_type))
+        return false;
+
+    /// Mixed-unit `Interval` comparisons convert both sides to a common unit by an unchecked multiplication,
+    /// so different counts can compare equal after overflow, e.g. `IntervalYear` vs `IntervalMonth`.
+    if ((containsInterval(result_type) || containsInterval(constant_type)) && !result_type->equals(*constant_type))
         return false;
 
     /// `ColumnConst(Nullable)` has a different physical layout from a filtered full nullable column.
