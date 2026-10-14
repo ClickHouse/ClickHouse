@@ -287,6 +287,20 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     if (query_info.row_level_filter)
         return {};
 
+    /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,
+    /// so a condition on it may let other files make the threshold on a rerun.
+    auto reads_mutable_object_metadata = [&](const ActionsDAG & dag)
+    {
+        return std::ranges::any_of(dag.getInputs(), [&](const auto * input)
+        {
+            const auto & name = input->result_name;
+            return (name == "_time" || name == "_etag" || name == "_tags") && virtual_columns.contains(name);
+        });
+    };
+    if ((filter_actions_dag && reads_mutable_object_metadata(*filter_actions_dag))
+        || (query_info.prewhere_info && reads_mutable_object_metadata(query_info.prewhere_info->prewhere_actions)))
+        return {};
+
     auto key = std::make_shared<ObjectStorageTopKQueryConditionCacheKey>();
     UInt64 condition_hash = 0;
     if (filter_actions_dag)
