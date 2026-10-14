@@ -688,6 +688,25 @@ void NetCDFOutputFormat::finalizeImpl()
         writeVariableData(variable);
 }
 
+void NetCDFOutputFormat::resetFormatterImpl()
+{
+    for (auto & variable : variables)
+    {
+        variable.data = variable.data->cloneEmpty();
+        if (variable.null_map)
+            variable.null_map = ColumnUInt8::create();
+        variable.string_length = 0;
+        variable.fill_value.clear();
+        variable.element_size = 0;
+        variable.size = 0;
+        variable.begin = 0;
+    }
+
+    dimension_lengths.clear();
+    num_rows = 0;
+    version = 2;
+}
+
 void NetCDFOutputFormat::writeHeader(WriteBuffer & buffer) const
 {
     buffer.write("CDF", 3);

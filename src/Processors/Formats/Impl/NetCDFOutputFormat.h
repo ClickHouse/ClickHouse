@@ -56,6 +56,9 @@ private:
 
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
+    /// The same formatter writes one file per message of a message queue, so everything collected
+    /// for a file, and everything derived from it in `finalizeImpl`, is cleared between them.
+    void resetFormatterImpl() override;
 
     void writeHeader(WriteBuffer & buffer) const;
     void writeVariableData(const Variable & variable) const;
