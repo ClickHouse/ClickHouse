@@ -39,7 +39,8 @@ public:
     PartitionedRecordBuffer & operator=(const PartitionedRecordBuffer &) = delete;
 
     /// Appends one record of positive `bytes` and returns its storage. A record never straddles two chunks, and
-    /// `tail_padding_bytes` of the chunk follow it.
+    /// `tail_padding_bytes` of the chunk follow it. A chunk keeps its size in 32 bits, so a record too large for one
+    /// throws an exception and leaves the buffer unchanged.
     ALWAYS_INLINE char * append(size_t partition, size_t bytes)
     {
         chassert(bytes > 0);

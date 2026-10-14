@@ -68,19 +68,19 @@ void PartitionedRecordBuffer::releaseCurrentBlocks()
 
 void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
 {
-    /// The chunk metadata is 32-bit, so a record that does not fit is rejected before anything is allocated.
-    if (bytes > std::numeric_limits<UInt32>::max() - sizeof(ChunkHeader) - tail_padding_bytes - alignof(ChunkHeader))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "A staged record of {} bytes is too large for the partitioned record buffer", bytes);
+    /// A chunk is sized in multiples of the header's alignment, so the chunk carved after it in the block starts
+    /// aligned. Records need no alignment, and a chunk for a record larger than the doubled capacity is
+    /// sized by that record. The header keeps the size in 32 bits, so a record whose chunk would not fit them is
+    /// rejected before anything is allocated or changed.
+    const size_t needed = ::Memory::alignUp(sizeof(ChunkHeader) + bytes + tail_padding_bytes, alignof(ChunkHeader));
+    if (needed > std::numeric_limits<decltype(ChunkHeader::capacity)>::max())
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "A record of {} bytes does not fit a chunk of the partitioned record buffer", bytes);
 
     Cursor & cursor = cursors[partition];
     Chain & chain = chains[partition];
     if (chain.last)
         chain.last->used = static_cast<UInt32>(cursor.pos - chain.last->records());
 
-    /// A chunk is sized in multiples of the header's alignment, so the chunk carved after it in the block starts
-    /// aligned. Records need no alignment, and a chunk for a record larger than the doubled capacity is
-    /// sized by that record.
-    const size_t needed = ::Memory::alignUp(sizeof(ChunkHeader) + bytes + tail_padding_bytes, alignof(ChunkHeader));
     size_t capacity = 0;
     char * data = nullptr;
     Block * block = nullptr;

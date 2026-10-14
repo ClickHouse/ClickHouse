@@ -1,9 +1,11 @@
+#include <Common/Exception.h>
 #include <Common/PartitionedRecordBuffer.h>
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <thread>
 
@@ -48,6 +50,20 @@ TEST(PartitionedRecordBuffer, ChunkGrowthAndLargeRecords)
         EXPECT_EQ(buffer.recordsOf(partition), 100);
         EXPECT_EQ(readPartition(buffer, partition), expected[partition]);
     }
+}
+
+TEST(PartitionedRecordBuffer, RecordTooLargeForAChunk)
+{
+    /// A chunk keeps its size in 32 bits, so a record that cannot fit one is rejected before anything is allocated.
+    /// The partition keeps its records and accepts the next one.
+    PartitionedRecordBuffer buffer(1, 1);
+    appendRecord(buffer, 0, "first");
+    EXPECT_THROW(buffer.append(0, std::numeric_limits<UInt32>::max()), Exception);
+    appendRecord(buffer, 0, "second");
+    buffer.finishAppending();
+
+    EXPECT_EQ(buffer.recordsOf(0), 2);
+    EXPECT_EQ(readPartition(buffer, 0), "firstsecond");
 }
 
 TEST(PartitionedRecordBuffer, ReleaseAndResumeAppending)
