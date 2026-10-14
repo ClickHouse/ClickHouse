@@ -192,7 +192,10 @@ function clickhouse_client_removed_host_parameter()
 export CLICKHOUSE_TEST_DEADLINE=${CLICKHOUSE_TEST_DEADLINE:-$((EPOCHSECONDS + ${CLICKHOUSE_TEST_TIMEOUT:-600}))}
 function clickhouse_test_time_left()
 {
-    ((EPOCHSECONDS < CLICKHOUSE_TEST_DEADLINE))
+    ((EPOCHSECONDS < CLICKHOUSE_TEST_DEADLINE)) && return 0
+    # A loop that reaches the deadline did not get what it was waiting for: fail the test instead of going on.
+    echo "The ${CLICKHOUSE_TEST_TIMEOUT:-600}s test deadline expired in a 'while clickhouse_test_time_left' loop" >&2
+    return 1
 }
 export -f clickhouse_test_time_left
 
