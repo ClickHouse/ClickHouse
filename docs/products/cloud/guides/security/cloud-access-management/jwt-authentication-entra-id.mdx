@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'app roles', 'authentication', 'identity provider']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/components/VersionBadge/VersionBadge.jsx";
@@ -51,8 +53,10 @@ You'll need:
 In the Microsoft Entra admin center, open **App registrations** and select **New registration**:
 
 - **Name**: a display name, for example `clickhouse-cloud-production`.
-- **Supported account types**: **Accounts in this organizational directory only** (single tenant).
+- **Supported account types**: single tenant. Depending on the portal version, this option is labeled **Single tenant only** or **Accounts in this organizational directory only**.
 - **Redirect URI**: leave empty. Users sign in with the device code flow, which doesn't use a redirect URI.
+
+<Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Register an application form in the Microsoft Entra admin center with a single-tenant account type and no redirect URI"/>
 
 Select **Register**. On the **Overview** page, copy these values:
 
@@ -63,36 +67,40 @@ Select **Register**. On the **Overview** page, copy these values:
 
 By default, Entra ID issues v1.0 access tokens, whose issuer is `https://sts.windows.net/<TENANT_ID>/`. Configure the application to receive v2.0 tokens instead, whose issuer is `https://login.microsoftonline.com/<TENANT_ID>/v2.0` and whose `aud` claim is always the client ID.
 
-In your app registration, open **Manifest**, set `requestedAccessTokenVersion` in the `api` section to `2`, and select **Save**:
+In your app registration, open **Manifest**, set the access token version to `2`, and select **Save**. The property name depends on the manifest format the editor shows:
 
-```json
-"api": {
-    "requestedAccessTokenVersion": 2
-}
-```
+- Microsoft Graph format: `requestedAccessTokenVersion` in the `api` section.
+- Azure AD Graph format: the top-level `accessTokenAcceptedVersion`, as in the screenshot below.
 
-In the legacy Azure AD Graph manifest format, the same property is the top-level `accessTokenAcceptedVersion`.
+<Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="Application manifest editor with accessTokenAcceptedVersion set to 2"/>
 </Step>
 <Step title="Expose an API" id="expose-an-api">
 
 Open **Expose an API**:
 
 1. Next to **Application ID URI**, select **Add**, accept the default value `api://<CLIENT_ID>`, and save. Clients use this URI to request tokens for ClickHouse. It doesn't change the `aud` claim of v2.0 tokens, which stays the client ID.
+
+   <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Expose an API page with the Application ID URI panel showing the default api:// value"/>
+
 2. Select **Add a scope** and fill in the form. Users request this scope when they sign in. Applications that authenticate as themselves don't use it.
 
    | Field | Value |
    |---|---|
-   | **Scope name** | `access_as_user` |
+   | **Scope name** | `access_as_application` |
    | **Who can consent?** | **Admins only** |
    | **Admin consent display name** | For example, `Access ClickHouse as the signed-in user` |
    | **Admin consent description** | Any description |
    | **State** | **Enabled** |
+
+   <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Add a scope panel with the access_as_application scope, consent limited to admins, and the state set to Enabled"/>
 </Step>
 <Step title="Authorize a client application for user sign-in" id="authorize-client-application">
 
-Users get tokens through a public client application. Pre-authorizing that application for the `access_as_user` scope means users aren't asked to consent. This guide uses Azure CLI, whose client ID is `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, both for `az` and for `clickhouse-client --login`.
+Users get tokens through a public client application. Pre-authorizing that application for the `access_as_application` scope means users aren't asked to consent. This guide uses Azure CLI, whose client ID is `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, both for `az` and for `clickhouse-client --login`.
 
-In **Expose an API**, under **Authorized client applications**, select **Add a client application**. Enter `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, select the `api://<CLIENT_ID>/access_as_user` scope, and select **Add application**.
+In **Expose an API**, under **Authorized client applications**, select **Add a client application**. Enter `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, select the `api://<CLIENT_ID>/access_as_application` scope, and select **Add application**.
+
+<Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Add a client application panel with the Azure CLI client ID and the access_as_application scope selected"/>
 
 <Note>
 To use your own client application instead of Azure CLI, register a separate application, set **Allow public client flows** to **Yes** under **Authentication**, and pre-authorize its client ID here. Then pass that client ID as `--oauth-client-id` when you [sign in with clickhouse-client](#sign-in-with-clickhouse-client). If your tenant doesn't allow user consent, an administrator also has to grant consent for the `openid`, `profile`, and `offline_access` permissions of that application.
@@ -111,14 +119,22 @@ Open **App roles** and select **Create app role** for each ClickHouse role:
 | **Value** | The ClickHouse role name, for example `ch_analyst` |
 | **Description** | Any description |
 | **Do you want to enable this app role?** | Selected |
+
+The following example defines three app roles whose values are ClickHouse role names:
+
+<Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="App roles page listing ClickHouse Admin, ClickHouse Analyst DB, and ClickHouse Read Only with the values ch_admin, ch_analyst, and ch_readonly"/>
 </Step>
 <Step title="Require assignment" id="require-assignment">
 
 By default, any user in your tenant can get a token for the application. To limit tokens to the users, groups, and applications you assign to an app role, open **Enterprise applications**, select the application with the same name as your app registration, open **Properties**, set **Assignment required?** to **Yes**, and select **Save**.
+
+<Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Enterprise application properties with Assignment required set to Yes"/>
 </Step>
 <Step title="Assign users and groups to app roles" id="assign-users-and-groups">
 
 In the same enterprise application, open **Users and groups** and select **Add user/group**. Select a user or group, select an app role, and select **Assign**. Repeat for each user or group.
+
+<Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="Users and groups page of the enterprise application showing a user assigned to the ClickHouse Read Only app role"/>
 
 A user who is assigned several app roles, directly or through groups, gets all of them in the `roles` claim.
 
@@ -199,7 +215,7 @@ Entra ID access tokens are valid for 60 to 90 minutes by default. Request a new 
 clickhouse-client --host "$CH_HOST" --secure --login \
   --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
   --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
-  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_user"
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
 ```
 
 The client prints a URL and a code. Open the URL, enter the code, and sign in with your Entra ID account. Keep `offline_access` in the scope: it makes Entra ID return a refresh token, which the client uses to renew the access token. Without it, you have to sign in again when the access token expires.
@@ -277,7 +293,7 @@ Entra ID issued a v1.0 token. Set `requestedAccessTokenVersion` to `2` in the ap
 
 <Accordion title="Entra ID returns AADSTS65001 or asks for consent" id="consent-required">
 
-The client application isn't pre-authorized for the `access_as_user` scope. Add its client ID under **Expose an API → Authorized client applications**, as described in [Authorize a client application for user sign-in](#authorize-client-application).
+The client application isn't pre-authorized for the `access_as_application` scope. Add its client ID under **Expose an API → Authorized client applications**, as described in [Authorize a client application for user sign-in](#authorize-client-application).
 </Accordion>
 
 <Accordion title="Entra ID returns AADSTS50105 or AADSTS501051" id="not-assigned">
