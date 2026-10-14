@@ -53,6 +53,7 @@
         "zh/products/bring-your-own-cloud/reference/faq",
         {
           "group": "连接器模式",
+          "hidden": true,
           "pages": [
             "zh/products/bring-your-own-cloud/connector/overview",
             "zh/products/bring-your-own-cloud/connector/onboarding",
