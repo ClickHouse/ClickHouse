@@ -13,12 +13,10 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     automatic_parallel_replicas_min_bytes_per_replica = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
--- A boundary remembered from the first run would decline the second one without building the plan, which
--- counts `AutomaticParallelReplicasDecidedWithoutBuildingPlan` instead of the events checked here.
-SET automatic_parallel_replicas_remember_boundary = 0;
 SET enable_analyzer = 1;
 
--- Twice: the first run only collects statistics, the second is the one the cost model decides.
+-- Twice: the first run only collects statistics, the second is the one the cost model decides. It decides
+-- at the boundary the first run remembered, without building the plan, and still says why it declined.
 SELECT repeat('x', 1000) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
 FORMAT Null SETTINGS log_comment = '05257_autopr_rejected_by_cost_model';
 SELECT repeat('x', 1000) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
@@ -31,7 +29,8 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['AutoParallelReplicasNoStatistics'] AS no_statistics,
        ProfileEvents['AutoParallelReplicasCostModelEvaluated'] AS evaluated,
        ProfileEvents['AutoParallelReplicasRejectedByCostModel'] AS rejected_by_cost_model,
-       ProfileEvents['AutoParallelReplicasApplied'] AS applied
+       ProfileEvents['AutoParallelReplicasApplied'] AS applied,
+       ProfileEvents['AutomaticParallelReplicasDecidedWithoutBuildingPlan'] AS decided_without_plan
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15)))
     AND (current_database = currentDatabase())

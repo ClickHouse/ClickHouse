@@ -1145,13 +1145,16 @@ static bool decideAtBoundary(
     const QueryPlanPtr & plan_with_parallel_replicas,
     const QueryPlan::Node * const replicas_plan_boundary)
 {
-    /// Without the replicas plan, this call either declines, which the caller counts as
-    /// `AutomaticParallelReplicasDecidedWithoutBuildingPlan`, or asks for the plan and decides again. Either
-    /// way the funnel events are left to the call with the plan, so that each query ends in one of them.
+    /// The funnel events are counted as the call returns, unless it asks for the replicas plan: the call with
+    /// the plan then decides again and counts them, so that each query ends in one of them either way.
+    std::vector<std::pair<ProfileEvents::Event, UInt64>> events;
+    SCOPE_EXIT({
+        for (const auto & [event, amount] : events)
+            ProfileEvents::increment(event, amount);
+    });
     const auto count = [&](ProfileEvents::Event event, UInt64 amount = 1)
     {
-        if (plan_with_parallel_replicas)
-            ProfileEvents::increment(event, amount);
+        events.emplace_back(event, amount);
     };
 
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
@@ -1319,7 +1322,10 @@ static bool decideAtBoundary(
                 }
 
                 if (!plan_with_parallel_replicas)
+                {
+                    events.clear();
                     return true;
+                }
 
                 /// Every read of the candidate has to be given its analysis. One that is not would read
                 /// every mark, so the candidate is worse than the plan it replaces; decline rather than run it.
@@ -1378,6 +1384,7 @@ static bool decideAtBoundary(
             }
             else if (!plan_with_parallel_replicas)
             {
+                count(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
                     "Parallel replicas are not used: decided from the statistics of {}, so no plan with parallel replicas was built",
@@ -1407,7 +1414,10 @@ static bool decideAtBoundary(
         /// by design, and statistics collected at a wrong node would keep confirming it; going through the replicas
         /// plan here re-checks the mapping whenever the statistics are refreshed anyway.
         if (!plan_with_parallel_replicas)
+        {
+            events.clear();
             return true;
+        }
 
         auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
