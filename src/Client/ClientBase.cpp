@@ -3567,8 +3567,10 @@ void ClientBase::printMessageBestEffort(std::string_view message)
     /// (`STDOUT_FILENO`/`std::cout`) and `ClientEmbedded` (the pty/pipe descriptor and its
     /// matching stream) - so the message is always routed through the best-effort bounded path:
     /// on a live sink it appears immediately, on a stuck one it is dropped after a short wait,
-    /// since nothing is reading that sink anyway.
-    if (std_out)
+    /// since nothing is reading that sink anyway. A sink that cannot block (a regular file, or a
+    /// non-terminal device such as `/dev/full`) stays on the ordinary path, so that a real write
+    /// error is not silently swallowed by the lossy best-effort discipline (see isBlockingCapableSink).
+    if (std_out && isBlockingCapableSink(std_out->getFD()))
     {
         /// Every interactive print to output_stream ends with std::endl, so this flush is normally
         /// a no-op; it keeps the output ordered if anything is still buffered there.
@@ -3939,11 +3941,13 @@ void ClientBase::processParsedSingleQuery(
     /// written through the bounded best-effort path (as printCancellationMessage does) - it appears
     /// immediately on a live sink and is dropped after a short wait on a stuck one. A query that
     /// received no interrupt signal keeps the ordinary non-lossy writes: a slow-but-draining sink
-    /// (e.g. a pipe whose reader starts late) must eventually receive the requested output.
+    /// (e.g. a pipe whose reader starts late) must eventually receive the requested output. A sink
+    /// that cannot block (a regular file, or a non-terminal device such as `/dev/full`) also keeps
+    /// the ordinary writes, so that a real error such as `ENOSPC` is not silently swallowed.
     const bool bounded_epilogue = cancelled || query_received_interrupt;
     const auto write_epilogue = [&](std::ostream & stream, WriteBufferFromFileDescriptor * fd_buf, std::string_view data)
     {
-        if (bounded_epilogue && fd_buf)
+        if (bounded_epilogue && fd_buf && isBlockingCapableSink(fd_buf->getFD()))
         {
             /// Every write to the stream ends with an explicit "\n" or flush, so this flush is
             /// normally a no-op; it keeps the output ordered if anything is still buffered there.
