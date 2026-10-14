@@ -222,13 +222,12 @@ def test_postgresql_protocol_requires_totp(started_cluster):
         )
 
     # A SCRAM user with TOTP must be refused: the exchange cannot verify the second factor.
+    scram_user = "totuser_postgresql_scram"
     with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect("totuser_postgresql_scram", "abacaba")
+        connect(scram_user, "abacaba")
 
     with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(
-            "totuser_postgresql_scram", f"abacaba+{get_otp(totuser_postgresql_scram)}"
-        )
+        connect(scram_user, f"abacaba+{get_otp(scram_user)}")
 
     # Cleartext password authentication enforces the second factor.
     # The message is intentionally generic and does not reveal the reason.
