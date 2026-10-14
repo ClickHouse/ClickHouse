@@ -1108,3 +1108,64 @@ def test_files_dropped_by_the_replay_cap_are_not_skipped_in_ordered_mode(started
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+def test_evicted_statuses_do_not_starve_the_listing(started_cluster):
+    """Pending rechecks must not prevent the listing from reaching the later files.
+
+    A file skipped because of a foreign `processing` node is rechecked when the cached
+    observation expires. The observation lives in the file status cache, which can evict it
+    (here: a cache of one element and several foreign-held files). An evicted status must not
+    make the recheck due immediately: the failed claim records a fresh observation, which
+    evicts the statuses of the other pending files again, and the rechecks would then fill
+    every batch, so the listing would never reach the available files of the next batch.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_evicted_status_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # The first listing batch holds the foreign-held files, the second one the available files.
+    held_files = 3
+    files_to_generate = 5
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_list_objects_batch_size": held_files,
+            "s3queue_metadata_cache_size_elements": 1,
+            # The foreign observations stay trusted for the whole test.
+            "s3queue_processing_state_cache_ttl_seconds": 300,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    for i in range(held_files):
+        conflict_node = node.query(f"SELECT sipHash64('{files_path}/test_{i}.csv')").strip()
+        zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # The available files are processed while the foreign holds remain.
+        run_with_retry(lambda x: x == files_to_generate - held_files, get_count, retries=60)
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )

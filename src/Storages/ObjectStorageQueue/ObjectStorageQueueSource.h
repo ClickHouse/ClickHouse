@@ -130,7 +130,23 @@ public:
         /// (`processing_state_cache_ttl_seconds`), so the recheck does not wait
         /// for the current listing pass to end. Entries left when the listing is
         /// exhausted are taken over by the next iterator, see `inheritForeignProcessingRechecks`.
-        std::deque<ObjectInfoPtr> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
+        /// Each entry keeps its own recheck deadline: the file status cache may evict the status
+        /// of a pending file, and an evicted status must not make the file due immediately -
+        /// a failed claim refreshes the observation, which can evict the statuses of the other
+        /// pending files again, and the rechecks would then starve the listing.
+        struct PendingRecheck
+        {
+            ObjectInfoPtr object;
+            /// When the recheck is due if the status of the file is not cached any more.
+            time_t due_time = 0;
+        };
+        std::deque<PendingRecheck> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
+
+        /// The object-storage listing of this iterator is over: only the pending rechecks remain.
+        bool listing_exhausted TSA_GUARDED_BY(next_mutex) = false;
+        /// The previous batch was made of rechecks: the next batch boundary takes a listing batch
+        /// first, so that the rechecks cannot indefinitely prevent the listing from progressing.
+        bool last_batch_was_recheck TSA_GUARDED_BY(next_mutex) = false;
 
         /// Paths taken over from the previous iterator which the listing pass of this iterator
         /// has not listed again yet. A path stays here after its inherited recheck is taken,
@@ -201,7 +217,9 @@ public:
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
         ObjectInfos takeDueForeignProcessingRechecks() TSA_REQUIRES(next_mutex);
-        ObjectInfos takeForeignProcessingRechecksToInherit() TSA_REQUIRES(next_mutex);
+        std::vector<PendingRecheck> takeForeignProcessingRechecksToInherit() TSA_REQUIRES(next_mutex);
+        /// Queues a recheck of a file skipped because of the foreign `processing` observation in `status`.
+        void queueForeignProcessingRecheck(ObjectInfoPtr object, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status) TSA_REQUIRES(next_mutex);
         void recheckForeignProcessingLater(ObjectInfoPtr object_info, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status);
 
         std::atomic<bool> & shutdown_called;
