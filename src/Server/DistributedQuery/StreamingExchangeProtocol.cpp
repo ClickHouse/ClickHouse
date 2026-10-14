@@ -20,6 +20,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <cerrno>
 #include <cstddef>
@@ -44,6 +45,11 @@ namespace ErrorCodes
 
 namespace StreamingExchangeProtocol
 {
+
+/// The socket buffer sizes pushed by the server from the `streaming_exchange_sndbuf` and
+/// `streaming_exchange_rcvbuf` server settings (see `Server.cpp`). 0 = kernel TCP autotuning.
+std::atomic<UInt64> socket_sndbuf{0};
+std::atomic<UInt64> socket_rcvbuf{0};
 
 UInt64 SourceHelloBody::readVersion(ReadBuffer & in)
 {
@@ -353,6 +359,20 @@ void sendAll(Poco::Net::StreamSocket & socket, const char * buffer, size_t size,
             continue;
         throwSocketError(last_error, socket, "send " + description);
     }
+}
+
+void applySocketBufferSizes(Poco::Net::StreamSocket & socket)
+{
+    if (const UInt64 sndbuf = socket_sndbuf.load(std::memory_order_relaxed); sndbuf > 0)
+        socket.setSendBufferSize(static_cast<int>(sndbuf));
+    if (const UInt64 rcvbuf = socket_rcvbuf.load(std::memory_order_relaxed); rcvbuf > 0)
+        socket.setReceiveBufferSize(static_cast<int>(rcvbuf));
+}
+
+void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
+{
+    socket_sndbuf.store(sndbuf, std::memory_order_relaxed);
+    socket_rcvbuf.store(rcvbuf, std::memory_order_relaxed);
 }
 
 }
