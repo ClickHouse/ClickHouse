@@ -589,6 +589,12 @@ TEST(Executor, RemoveTasksWaitsForTasksDrainedOnShutdown)
     std::atomic<bool> destroyed{false};
     std::atomic<bool> destroyed_when_returned{false};
 
+    /// `removeTasksCorrespondingToStorage` pauses at this fail point once it has found a task it must wait for.
+    /// Enabled before any task exists: if this throws, unwinding must not reach a task blocked in its destructor.
+    const String fail_point = FailPoints::merge_tree_background_task_marked_for_deletion;
+    FailPointInjection::enableFailPoint(fail_point);
+    SCOPE_EXIT({ FailPointInjection::disableFailPoint(fail_point); });
+
     auto executor = std::make_shared<MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
         ThreadName::TEST_SCHEDULER,
@@ -607,11 +613,6 @@ TEST(Executor, RemoveTasksWaitsForTasksDrainedOnShutdown)
 
     /// The task is now cycling through `pending`, so `wait()` finds it there.
     step_executed.wait();
-
-    /// `removeTasksCorrespondingToStorage` pauses here once it has found a task it must wait for.
-    const String fail_point = FailPoints::merge_tree_background_task_marked_for_deletion;
-    FailPointInjection::enableFailPoint(fail_point);
-    SCOPE_EXIT({ FailPointInjection::disableFailPoint(fail_point); });
 
     std::thread shutdown_thread([&] { executor->wait(); });
 
