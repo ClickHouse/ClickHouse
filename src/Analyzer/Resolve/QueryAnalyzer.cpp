@@ -3850,6 +3850,21 @@ bool QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
         expanded = true;
     }
 
+    /// The frame offsets are resolved after `PARTITION BY` and `ORDER BY`, see `resolveWindow`.
+    if (window_node->hasFrameBeginOffset())
+    {
+        auto & frame_begin_offset_node = window_node->getFrameBeginOffsetNode();
+        expanded |= expandMatchersInsideProjectionExpression(frame_begin_offset_node, scope);
+        mark_passed(frame_begin_offset_node);
+    }
+
+    if (window_node->hasFrameEndOffset())
+    {
+        auto & frame_end_offset_node = window_node->getFrameEndOffsetNode();
+        expanded |= expandMatchersInsideProjectionExpression(frame_end_offset_node, scope);
+        mark_passed(frame_end_offset_node);
+    }
+
     return expanded;
 }
 
