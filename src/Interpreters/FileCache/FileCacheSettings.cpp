@@ -304,4 +304,33 @@ void FileCacheSettings::validate()
     }
 }
 
+void FileCacheSettings::checkFileSegmentFitsSLRUQueues(size_t cache_max_size) const
+{
+    const auto & settings = *this;
+
+    const auto policy = settings[FileCacheSetting::cache_policy].value;
+    if (policy != FileCachePolicy::SLRU && policy != FileCachePolicy::SLRU_OVERCOMMIT)
+        return;
+
+    /// The same rounding as in `SplitFileCachePriority` and `SLRUFileCachePriority`.
+    auto get_ratio = [](size_t total, double ratio)
+    {
+        return static_cast<size_t>(std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
+    };
+
+    /// The system part of a split cache keeps small files, so only the data part is checked.
+    const size_t data_size = settings[FileCacheSetting::use_split_cache]
+        ? get_ratio(cache_max_size, 1 - settings[FileCacheSetting::split_cache_ratio])
+        : cache_max_size;
+    const double ratio = settings[FileCacheSetting::slru_size_ratio];
+    const size_t smallest_queue_size = std::min(get_ratio(data_size, ratio), get_ratio(data_size, 1 - ratio));
+
+    if (settings[FileCacheSetting::max_file_segment_size] > smallest_queue_size)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`max_file_segment_size` ({}) must not exceed the size of each SLRU queue ({} with `max_size` {}): "
+            "a file segment must fit whole into the protected and the probationary queue",
+            settings[FileCacheSetting::max_file_segment_size].value, smallest_queue_size, cache_max_size);
+}
+
 }

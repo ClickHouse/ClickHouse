@@ -12,6 +12,8 @@
                 <disk>s3</disk>
                 <path>./s3_cache/</path>
                 <max_size>1000000</max_size>
+                <max_file_segment_size>262144</max_file_segment_size>
+                <boundary_alignment>262144</boundary_alignment>
             </s3_cache>
         </disks>
         <policies>

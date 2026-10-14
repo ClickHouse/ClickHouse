@@ -104,6 +104,7 @@ namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 namespace DB::FileCacheSetting
 {
@@ -2137,24 +2138,78 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
     ASSERT_EQ(cache->getUsedCacheSize(), 25);
     ASSERT_EQ(cache->getFileSegmentsNum(), 5);
 
-    /// Resize to max_size=8, max_elements=6.
-    /// Protected limit = 4, probationary limit = 4.
+    /// Resize to max_size=10, max_elements=6.
+    /// Protected limit = 5, probationary limit = 5 (a file segment still fits each queue).
     /// Both queues need eviction. Without the fix, the protected pass
     /// would short-circuit and modifySizeLimits would throw LOGICAL_ERROR.
     DB::FileCacheSettings new_settings = settings;
-    new_settings[FileCacheSetting::max_size] = 8;
+    new_settings[FileCacheSetting::max_size] = 10;
     DB::FileCacheSettings actual_settings = settings;
 
     /// Must not throw -- this is the core regression test for the bug.
     ASSERT_NO_THROW(cache->applySettingsIfPossible(new_settings, actual_settings));
 
     /// Verify limits were applied.
-    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 8);
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 10);
     ASSERT_EQ(actual_settings[FileCacheSetting::max_elements].value, 6);
 
     /// Verify cache usage is within new limits.
-    ASSERT_LE(cache->getUsedCacheSize(), 8);
+    ASSERT_LE(cache->getUsedCacheSize(), 10);
     ASSERT_LE(cache->getFileSegmentsNum(), 6);
+}
+
+TEST_F(FileCacheTest, SLRUApplySettingsKeepsFileSegmentFittingQueues)
+{
+    /// A settings change must not leave a file segment larger than an SLRU queue,
+    /// neither by shrinking the cache nor by growing the file segment. Such a change is rejected as a whole.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 1024;
+    settings[FileCacheSetting::max_size] = 4096;
+    settings[FileCacheSetting::max_elements] = 16;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_apply_settings_file_segment_fits", settings);
+    cache->initialize();
+
+    DB::FileCacheSettings actual_settings = settings;
+    auto expect_rejected = [&](const DB::FileCacheSettings & new_settings)
+    {
+        try
+        {
+            cache->applySettingsIfPossible(new_settings, actual_settings);
+            FAIL() << "Expected BAD_ARGUMENTS";
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::BAD_ARGUMENTS);
+        }
+        ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 4096);
+        ASSERT_EQ(actual_settings[FileCacheSetting::max_file_segment_size].value, 1024);
+    };
+
+    /// Queues of 512 bytes are smaller than a file segment of 1024 bytes.
+    DB::FileCacheSettings shrunk = settings;
+    shrunk[FileCacheSetting::max_size] = 1024;
+    expect_rejected(shrunk);
+
+    /// A file segment of 4096 bytes is larger than the current queues of 2048 bytes.
+    DB::FileCacheSettings larger_file_segment = settings;
+    larger_file_segment[FileCacheSetting::max_file_segment_size] = 4096;
+    expect_rejected(larger_file_segment);
+
+    /// A file segment of 1024 bytes fits queues of 1024 bytes.
+    DB::FileCacheSettings fits = settings;
+    fits[FileCacheSetting::max_size] = 2048;
+    ASSERT_NO_THROW(cache->applySettingsIfPossible(fits, actual_settings));
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 2048);
 }
 
 TEST_F(FileCacheTest, DynamicResizeConcurrentWithReservations)
@@ -2178,6 +2233,8 @@ TEST_F(FileCacheTest, DynamicResizeConcurrentWithReservations)
     settings[FileCacheSetting::path] = cache_path;
     settings[FileCacheSetting::max_size] = max_size_large;
     settings[FileCacheSetting::max_elements] = max_elements;
+    /// A file segment must fit each SLRU queue of the small size too.
+    settings[FileCacheSetting::max_file_segment_size] = max_size_small / 2;
     settings[FileCacheSetting::boundary_alignment] = 1;
     /// SLRU exercises both sub-queues during resize eviction.
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
@@ -3233,6 +3290,8 @@ TEST_F(FileCacheTest, EvictionMetricsRuntimeToggle)
     settings[FileCacheSetting::path] = cache_base_path;
     settings[FileCacheSetting::max_size] = 40;
     settings[FileCacheSetting::max_elements] = 6;
+    /// A file segment must fit each SLRU queue.
+    settings[FileCacheSetting::max_file_segment_size] = 20;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
