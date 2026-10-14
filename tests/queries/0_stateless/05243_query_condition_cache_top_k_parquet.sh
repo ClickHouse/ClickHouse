@@ -168,12 +168,19 @@ run order_asc_pass "SELECT k FROM t_05243_order ORDER BY k LIMIT 3" "${ORDER_SET
 run order_asc_no_pass "SELECT k FROM t_05243_order ORDER BY k LIMIT 3" "${ORDER_SETTINGS} = 4"
 run order_desc_pass "SELECT k FROM t_05243_order ORDER BY k DESC LIMIT 3" "${ORDER_SETTINGS} = 1"
 run order_desc_no_pass "SELECT k FROM t_05243_order ORDER BY k DESC LIMIT 3" "${ORDER_SETTINGS} = 4"
+# The entries exclude every row group of f_1 to f_3, whose readers skip them, so a rerun with the pass reads only
+# the footer of f_4, once in the pass and once in its reader.
+run order_asc_pass_rerun "SELECT k FROM t_05243_order ORDER BY k LIMIT 3" "${ORDER_SETTINGS} = 1"
 events order_asc_pass order_asc_no_pass order_desc_pass order_desc_no_pass
 ${CLICKHOUSE_CLIENT} --query "
     SELECT replaceOne(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_', ''), read_rows <= 1000 FROM system.query_log
     WHERE query_id IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_order_asc_pass', '${CLICKHOUSE_TEST_UNIQUE_NAME}_order_desc_pass')
         AND current_database = currentDatabase() AND type = 'QueryFinish'
     ORDER BY query_id"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT 'order_asc_pass_rerun', ProfileEvents['QueryConditionCacheHits'], ProfileEvents['ParquetMetadataCacheHits']
+    FROM system.query_log
+    WHERE query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_order_asc_pass_rerun' AND current_database = currentDatabase() AND type = 'QueryFinish'"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243_order"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}_order"
 

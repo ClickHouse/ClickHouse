@@ -2893,8 +2893,50 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
         std::atomic<size_t> files_with_rows = 0;
         std::atomic<bool> found_bound = false;
         std::atomic<bool> stop = false;
+
+        QueryConditionCachePtr query_condition_cache;
+        UUID table_uuid = UUIDHelpers::Nil;
+        std::optional<UInt64> plain_condition_hash;
+        StorageFileSource::TopKQueryConditionCacheKeyPtr top_k_key;
+
+        /// Whether the entries `StorageFileSource` consults for this version of the file exclude all its row groups.
+        bool cacheExcludesAllRowGroups(const String & path, const String & token) const
+        {
+            const String file_key = QueryConditionCache::makeFilePartName(path, token);
+            std::optional<QueryConditionCache::MatchingMarks> marks;
+            auto merge = [&](UInt64 condition_hash)
+            {
+                auto other = query_condition_cache->read(table_uuid, file_key, condition_hash, /*increment_profile_events=*/ false);
+                if (!other)
+                    return;
+                if (!marks)
+                    marks = std::move(other);
+                else if (marks->size() == other->size())
+                    for (size_t j = 0; j < marks->size(); ++j)
+                        (*marks)[j] = (*marks)[j] && (*other)[j];
+            };
+            if (plain_condition_hash)
+                merge(*plain_condition_hash);
+            if (top_k_key)
+            {
+                auto it = top_k_key->file_version_tokens.find(path);
+                if (it != top_k_key->file_version_tokens.end() && it->second == token)
+                    merge(top_k_key->condition_hash);
+            }
+            return marks && std::find(marks->begin(), marks->end(), true) == marks->end();
+        }
     };
     auto state = std::make_shared<State>();
+    /// The reader of a file whose row groups are all excluded skips the file, so its footer is not needed.
+    if (storage->getStorageID().uuid != UUIDHelpers::Nil)
+    {
+        state->table_uuid = storage->getStorageID().uuid;
+        if (ctx->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+            state->plain_condition_hash = format_filter_info->condition_hash;
+        state->top_k_key = makeTopKQueryConditionCacheKey();
+        if (state->plain_condition_hash || state->top_k_key)
+            state->query_condition_cache = ctx->getQueryConditionCache();
+    }
     state->bounds.resize(files->size());
     state->files = std::move(*files);
     state->storage = storage;
@@ -2935,6 +2977,9 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
                     struct stat file_stat{};
                     if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode) || file_stat.st_size == 0)
                         continue;
+                    const String token = computeFileCacheVersionToken(file_stat);
+                    if (state->query_condition_cache && state->cacheExcludesAllRowGroups(path, token))
+                        continue;
 
                     try
                     {
@@ -2943,7 +2988,7 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
                         auto bound = ParquetV3BlockInputFormat::getTopKSortColumnBound(
                             *buf, state->header, state->format_settings, state->format_filter_info,
                             state->format_settings.parquet.local_read_min_bytes_for_seek, *state->metadata_cache,
-                            path, computeFileCacheVersionToken(file_stat));
+                            path, token);
 
                         const size_t footer_bytes = bound.metadata_bytes;
                         state->claimed_bytes += footer_bytes;
