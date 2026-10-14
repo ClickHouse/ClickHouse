@@ -23,6 +23,8 @@
 
     <!-- LEFT ARRAY JOIN keeps the row count, so reading in order stops early for the function form too. -->
     <query>SELECT id, arrayJoin(emptyArrayToSingle(tags)) AS tag, payload FROM array_join_sorted ORDER BY id LIMIT 10 OFFSET 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <!-- a selective filter is fused into LEFT ARRAY JOIN, so the eager passenger is copied only for the elements it keeps -->
+    <query>SELECT id, arrayJoin(emptyArrayToSingle(tags)) AS tag, payload FROM array_join_sorted WHERE tag = 't2' SETTINGS max_threads = 1, enable_lazy_columns_replication = 0 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS array_join_wide_chain</drop_query>
     <drop_query>DROP TABLE IF EXISTS array_join_sorted</drop_query>
