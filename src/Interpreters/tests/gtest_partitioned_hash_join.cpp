@@ -714,9 +714,8 @@ TEST(PartitionedHashJoin, SeveralClausesMatchHashJoin)
         /*any_take_last_row_=*/false,
         /*reserve_num_=*/0,
         /*instance_id_=*/"",
+        HashJoinBuildLayout::oneBucket(1),
         HashJoinStatsCollectingParams{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false,
         /*allow_set_maps_=*/false);
     addBuildBlocks(*hash_join, distinct_keys, duplicates, options);
     hash_join->onBuildPhaseFinish();
@@ -1165,9 +1164,8 @@ TEST(PartitionedHashJoin, SizesTwoClauseTablesFromSummedStatistics)
         /*any_take_last_row_=*/false,
         /*reserve_num_=*/0,
         /*instance_id_=*/"",
+        HashJoinBuildLayout::oneBucket(1),
         HashJoinStatsCollectingParams{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false,
         /*allow_set_maps_=*/false);
     addBuildBlocks(*hash_join, distinct_keys, duplicates, options);
     hash_join->onBuildPhaseFinish();
