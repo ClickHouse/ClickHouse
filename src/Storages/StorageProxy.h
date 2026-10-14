@@ -63,6 +63,15 @@ public:
     /// nested table anyway - a lazy `MergeTree` table must not be rejected as an engine without them.
     bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
     bool supportsStatistics() const override { return getNested()->supportsStatistics(); }
+    /// The same holds for `DELETE`, `UPDATE` and `ALTER ... DELETE/UPDATE`: their interpreters probe
+    /// these on the catalog object before handing the mutation to `mutate` or `updateLightweight`.
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { return getNested()->getColumnSizes(columns, calculate_subcolumn_sizes); }
@@ -166,25 +175,7 @@ public:
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
-
-    /// Answered together with `supportsLightweightUpdate` below: forwarding only the predicate would let
-    /// `UPDATE` pass the check and then fail with `Lightweight updates are not supported by storage TableProxy`.
-    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
-    {
-        return getNested()->updateLightweight(commands, context);
-    }
-
-    /// The capability predicates have to be forwarded as well: they are answered before the operation
-    /// that would materialize the nested storage, so a lazy stand-in that keeps the `IStorage` defaults
-    /// rejects `DELETE` and every mutation for the whole lifetime of the server process.
-    bool supportsDelete() const override { return getNested()->supportsDelete(); }
-    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
-    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
-
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
-    {
-        getNested()->checkMutationIsPossible(commands, settings);
-    }
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override { return getNested()->updateLightweight(commands, context); }
 
     /// Not forwarding these makes `BACKUP` write the table definition with no data at all, and the
     /// restore of such a backup silently succeeds with an empty table. `supportsBackupPartition` is

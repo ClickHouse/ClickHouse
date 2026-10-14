@@ -157,6 +157,10 @@ protected:
     DatabaseMetadataDiskSettings database_metadata_disk_settings;
     DiskPtr metadata_disk_ptr;
 
+    /// The CREATE queries of the `Replicated*MergeTree` tables of a database with `lazy_load_tables`, found by the
+    /// metadata scan and consumed by `restoreMetadataAfterConvertingToReplicated` at table startup.
+    std::unordered_map<String, ASTPtr> lazy_replicated_create_queries TSA_GUARDED_BY(mutex);
+
 private:
     bool shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;
     void loadTableLazy(
@@ -172,8 +176,7 @@ private:
     /// resolves the path through the database's attached-table map.
     String getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query);
     String getConvertToReplicatedFlagPath(const String & table_name);
-    /// Whether the flag exists on the first disk of the table's storage policy, where it is looked for.
-    bool hasConvertToReplicatedFlag(const ASTCreateQuery & create_query);
+    StoragePolicyPtr getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const;
 };
 
 }

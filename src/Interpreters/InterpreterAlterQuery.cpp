@@ -19,6 +19,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -65,6 +66,7 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
@@ -646,10 +648,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
+    /// The query of `MODIFY QUERY` and the expressions of all mutation commands share one budget, so
+    /// `max_expanded_ast_elements` bounds the whole query rather than each of them separately.
+    ExpandedASTBudget expansion_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
+
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*modify_query);
+        ApplyWithSubqueryVisitor::visit(*modify_query, expansion_budget);
     }
 
     /// The same for the expressions of the mutation commands, as `InterpreterUpdateQuery` does: the
@@ -666,7 +672,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             if (!expression)
                 continue;
             ASTPtr expression_ptr = expression->ptr();
-            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext());
+            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext(), expansion_budget);
         }
     }
 
