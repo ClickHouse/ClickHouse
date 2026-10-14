@@ -26,3 +26,18 @@ SELECT id, m[0.0], m[-0.0], m[0.5], f[0.0], f[-0.0], t[(0.0, 1)], t[(-0.0, 1)], 
 SELECT 'm[0.0] != \'\'', arraySort(groupArray(id)) FROM t_map_buckets_signed_zero WHERE m[0.0] != '';
 
 DROP TABLE t_map_buckets_signed_zero;
+
+-- A zero in a path of a `JSON` key.
+DROP TABLE IF EXISTS t_map_buckets_signed_zero_json;
+CREATE TABLE t_map_buckets_signed_zero_json (id UInt64, m Map(JSON(z Float64), String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+    map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0, max_buckets_in_map = 4;
+
+INSERT INTO t_map_buckets_signed_zero_json SELECT 1, map(CAST('{"z":-0.0}', 'JSON(z Float64)'), 'a');
+INSERT INTO t_map_buckets_signed_zero_json SELECT 2, map(CAST('{"z":0.0}', 'JSON(z Float64)'), 'b');
+INSERT INTO t_map_buckets_signed_zero_json SELECT 3, map(CAST('{"z":0.5}', 'JSON(z Float64)'), 'c');
+
+SELECT id, `m.key_{"z":0}`, `m.key_{"z":-0}` FROM t_map_buckets_signed_zero_json ORDER BY id;
+
+DROP TABLE t_map_buckets_signed_zero_json;
