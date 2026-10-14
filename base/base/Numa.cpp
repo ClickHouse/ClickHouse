@@ -5,8 +5,8 @@
 #    include <cstdint>
 #    include <filesystem>
 #    include <fstream>
-#    include <stdexcept>
 #    include <string>
+#    include <system_error>
 
 #    include <linux/mempolicy.h>
 #    include <sys/syscall.h>
@@ -33,10 +33,15 @@ std::optional<size_t> getNumaNodesTotalMemory()
     if (mode != MPOL_BIND)
         return {};
 
+    /// If the node sizes cannot be read, the binding is ignored as on a kernel without NUMA support,
+    /// so that the server can still start with the total memory of the machine.
     size_t total_memory = 0;
     bool excludes_node_with_memory = false;
-    for (const auto & entry : std::filesystem::directory_iterator("/sys/devices/system/node"))
+    std::error_code ec;
+    std::filesystem::directory_iterator it("/sys/devices/system/node", ec);
+    for (; !ec && it != std::filesystem::directory_iterator(); it.increment(ec))
     {
+        const auto & entry = *it;
         const std::string name = entry.path().filename();
         size_t node = 0;
         const char * number_end = name.data() + name.size();
@@ -50,13 +55,16 @@ std::optional<size_t> getNumaNodesTotalMemory()
         size_t node_id = 0;
         size_t memory_kb = 0;
         if (!(meminfo >> node_word >> node_id >> key >> memory_kb) || key != "MemTotal:")
-            throw std::runtime_error("Cannot read MemTotal from " + (entry.path() / "meminfo").string());
+            return {};
 
         if ((nodemask[node / bits_per_word] >> (node % bits_per_word)) & 1)
             total_memory += memory_kb * 1024;
         else if (memory_kb)
             excludes_node_with_memory = true;
     }
+
+    if (ec)
+        return {};
 
     if (excludes_node_with_memory)
         return total_memory;
