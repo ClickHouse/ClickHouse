@@ -341,12 +341,14 @@ void deleteFilesFromS3(
                 /// or b) all the objects didn't exist; or c) some failure occurred.
                 const auto & err = outcome.GetError();
 
-                /// A digest error means `DeleteObjects` is unsupported only if every automatic digest was rejected. The request
-                /// tries `Content-MD5`, then `SHA256`. When `MD5` is unavailable (FIPS), the first request already uses `SHA256`,
-                /// so there is no second digest to try. An explicit checksum algorithm setting and `S3Express` buckets are never
-                /// second-guessed, and `GCS` only has `Content-MD5`. This applies only while support is still undecided: once
-                /// `DeleteObjects` has worked, changing the capability would trip the mismatch check in `setIsBatchDeleteSupported`,
-                /// so `setBatchDeleteUnsupportedIfUndecided` does the check and the update as one atomic step.
+                /// `MissingContentMD5` and `InvalidDigest` mean the digest header is missing or malformed, which is the same on
+                /// every request, so retrying is pointless. A digest error means `DeleteObjects` is unsupported only if every
+                /// automatic digest was rejected. The request tries `Content-MD5`, then `SHA256`. When `MD5` is unavailable (FIPS),
+                /// the first request already uses `SHA256`, so there is no second digest to try. An explicit checksum algorithm
+                /// setting and `S3Express` buckets are never second-guessed, and `GCS` only has `Content-MD5`.
+                /// This applies only while support is still undecided: once `DeleteObjects` has worked, changing the capability
+                /// would trip the mismatch check in `setIsBatchDeleteSupported`, so `setBatchDeleteUnsupportedIfUndecided`
+                /// does the check and the update as one atomic step.
                 const bool digest_rejected = err.GetExceptionName() == "MissingContentMD5" || err.GetExceptionName() == "InvalidDigest";
                 const bool automatic_digests_exhausted = !explicit_checksum_algorithm && !s3_client->isS3ExpressBucket()
                     && (!use_checksum_header || checksum_algorithm == S3::RequestChecksum::Algorithm::SHA256);
