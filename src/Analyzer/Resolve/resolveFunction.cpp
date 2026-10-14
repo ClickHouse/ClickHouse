@@ -1440,6 +1440,31 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
+    /// Bind named arguments `f(name => value)` to positions before anything looks at the arguments.
+    if (!function_node_ptr->getArgumentNames().empty())
+    {
+        const FunctionNamedArguments * named_arguments = nullptr;
+        if (!lambda_expression_untyped && !function_node_ptr->isWindowFunction())
+            named_arguments = FunctionFactory::instance().tryGetNamedArguments(function_name);
+
+        if (!named_arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} does not support named arguments. In scope {}",
+                function_name,
+                scope.scope_node->formatASTForErrorMessage());
+
+        auto & argument_nodes = function_node_ptr->getArguments().getNodes();
+        auto positions = named_arguments->bind(function_name, function_node_ptr->getArgumentNames());
+
+        QueryTreeNodes bound_argument_nodes;
+        bound_argument_nodes.reserve(positions.size());
+        for (size_t position : positions)
+            bound_argument_nodes.push_back(std::move(argument_nodes[position]));
+
+        argument_nodes = std::move(bound_argument_nodes);
+        function_node_ptr->setArgumentNames({});
+    }
+
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
       * user-defined function with the same name.
