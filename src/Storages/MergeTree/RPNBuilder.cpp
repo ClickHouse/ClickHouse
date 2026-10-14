@@ -395,7 +395,9 @@ bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool
     from_type = removeNullable(from_type);
     to_type = removeNullable(to_type);
 
-    if (from_type->equals(*to_type))
+    /// Not `equals`: it ignores the time zone of `DateTime`, which changes how a literal is parsed,
+    /// and the custom name of `Bool`, to which `CAST` converts a `UInt8` 2 as 1.
+    if (from_type->getName() == to_type->getName())
         return true;
 
     const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
