@@ -1,0 +1,27 @@
+bounds: a comparison NaN cannot satisfy prunes file 1
+2
+bounds: the NaN row of file 1 matches a negation
+4
+4
+4
+4
+bounds: a NaN count of 0 still prunes file 2 for a negation
+4
+no NaN counts: a comparison NaN cannot satisfy prunes the file with bounds [3, 3]
+2
+no NaN counts: a negation prunes nothing
+1
+partitions: the NaN partition is kept
+2
+1
+pruned files per query: min/max, partition
+q01	1	0
+q02	0	0
+q03	0	0
+q04	0	0
+q05	0	0
+q06	1	0
+q07	1	0
+q08	0	0
+q09	0	1
+q10	0	2

@@ -569,7 +569,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
                 auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);
                 auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
-                if (!left || !right)
+                /// The spec forbids NaN bounds, yet the ORC statistics of a file that starts with a NaN give them.
+                if (!left || !right || left->isNaN() || right->isNaN())
                 {
                     /// A bound that does not decode is wider than the storage of its type, a decimal
                     /// bound beyond the precision of its type on the inner side of the range, or

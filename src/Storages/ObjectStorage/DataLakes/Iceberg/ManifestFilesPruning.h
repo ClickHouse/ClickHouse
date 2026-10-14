@@ -66,6 +66,8 @@ private:
     std::optional<DB::KeyCondition> partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
+    /// The conditions of the columns that can hide a NaN, relaxed for a file that may hold one.
+    std::unordered_map<Int32, DB::KeyCondition> nan_relaxed_min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
     std::unordered_map<Int32, DB::DataTypePtr> min_max_column_types;
 
