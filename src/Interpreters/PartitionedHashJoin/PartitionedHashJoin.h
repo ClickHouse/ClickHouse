@@ -136,7 +136,8 @@ public:
     static bool isSupported(const TableJoin & table_join);
 
     std::string getName() const override { return "PartitionedHashJoin"; }
-    std::string getAlgorithm() const override { return toString(JoinAlgorithm::PARTITIONED_HASH); }
+    /// A Join table is the right side of a `hash` join whatever `join_algorithm` says, so it reports `hash`.
+    std::string getAlgorithm() const override { return toString(join_table_mode ? JoinAlgorithm::HASH : JoinAlgorithm::PARTITIONED_HASH); }
     const TableJoin & getTableJoin() const override;
 
     /// The build stream of `context` indexes the fill lanes; a stream past the lane table takes the thread-keyed lane.
