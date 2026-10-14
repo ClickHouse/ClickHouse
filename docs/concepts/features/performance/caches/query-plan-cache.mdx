@@ -46,7 +46,9 @@ A `SELECT` query can use the plan cache when all of the following hold:
   because the plan bakes in the combined row policies of the alias and its target while only the alias is fingerprinted as a dependency.
 - Scalar subqueries (e.g. `(SELECT max(x) FROM t)`) are evaluated once during analysis and baked into the plan as constants. By default
   such queries are not cached; set `query_plan_cache_allow_scalar_subqueries = 1` to cache them when the tables referenced by scalar
-  subqueries are static or stale scalar values are acceptable.
+  subqueries are static or stale scalar values are acceptable. A scalar subquery reading a `MaterializedView` or `Buffer` table is never
+  cached, because these engines check `SELECT` on another table (the source or the destination) while reading, which a cache hit could not repeat.
+- Streaming reads (`FROM t STREAM ...`) are not cached.
 
 Plans containing a step that does not support serialization are executed normally and simply not cached.
 

@@ -115,6 +115,12 @@ struct QueryPlanCacheEntry
     /// Persisted so that cache-hit paths can propagate them to `system.query_log`.
     std::set<String> used_row_policies;
 
+    /// Quota and limit exemptions the planner derived while building the plan (a single read of
+    /// `system.one` or of a quota table, see `PlannerJoinTree`). A hit skips planning, so they are
+    /// replayed from here to keep the same exemptions as normal execution.
+    bool ignore_quota = false;
+    bool ignore_limits = false;
+
     /// User who inserted this entry. Stamped by `QueryPlanCache::set` so that the
     /// eviction callback can decrement the right per-user accounting bucket.
     std::optional<UUID> inserter_user_id;

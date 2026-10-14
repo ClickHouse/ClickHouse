@@ -43,8 +43,6 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
         || setting_name == "max_bytes_to_read"
         || setting_name == "max_result_rows"
         || setting_name == "max_result_bytes"
-        || setting_name == "max_rows_in_set"
-        || setting_name == "max_bytes_in_set"
         /// Thread fan-out is decided when the pipeline is built from the plan, not stored
         /// on the plan itself, so different thread counts can safely share a cached plan.
         || setting_name == "max_threads"
@@ -61,6 +59,9 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
     /// Sort-related limits (`max_rows_to_sort`, `max_bytes_to_sort`) and `extremes` are
     /// intentionally NOT ignored: they are baked into `SortingStep` / `ExtremesStep`,
     /// so two queries with different values of these settings must not share a plan.
+    /// The set limits (`max_rows_in_set`, `max_bytes_in_set`) are NOT ignored either: the analyzer
+    /// builds and checks a set while folding an all-constant `IN` expression, and a hit, which
+    /// skips analysis and only carries the folded constant, cannot re-enforce a tightened limit.
     /// `query_plan_cache_allow_scalar_subqueries` is also intentionally NOT ignored: it
     /// affects whether a query is eligible at all and whether scalar subqueries are folded
     /// into the plan as constants. If it were ignored, an entry stored while it was enabled

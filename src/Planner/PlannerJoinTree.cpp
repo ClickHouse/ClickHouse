@@ -2097,6 +2097,43 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             }
         }
 
+        /// Record the identity of every storage the cacheable plan is built from, so that the
+        /// query plan cache can bind both the stored dependencies and the execution of the plan
+        /// to exactly the storages that were analyzed here - a name can start resolving to a
+        /// different table right after this point (see `Context::PlanCacheStorageIdentities`).
+        /// Besides the UUID, the identity carries a fingerprint of the semantics the plan bakes
+        /// in from the analysis-time metadata snapshot (schema, row policy): an in-place
+        /// `ALTER` keeps the UUID but changes what the plan means, and dependency collection
+        /// runs only after the whole plan is built (see
+        /// `computeQueryPlanCacheSemanticsFingerprint`).
+        /// The collector pointer is set only while a cacheable logical plan is being built, but
+        /// it is deliberately not gated on `select_query_options.cacheable_logical_plan` here:
+        /// scalar subqueries are executed during that same analysis through a nested regular
+        /// interpreter whose options do not carry the flag, while their contexts are copies
+        /// that share the pointer. Their results are baked into the plan as constants, so the
+        /// tables they read are analyzed storages in exactly the same sense. Such a nested
+        /// interpreter may also answer from the trivial count shortcut below, which reads no
+        /// data, so the shortcut records the storage as well.
+        /// Temporary tables are never cacheable dependencies, so they are not recorded.
+        /// The preliminary filter-collection pass (see `collectFiltersForAnalysis`) plans
+        /// over `StorageDummy` stand-ins that carry the real storage's `StorageID` but a
+        /// columns-only metadata (no view `select`, no constraints), so recording them
+        /// would pin a wrong semantics fingerprint for the name; only the real pass
+        /// records.
+        auto record_plan_cache_storage_identity = [&]()
+        {
+            if (table_node && table_node->getTemporaryTableName().empty()
+                && !typeid_cast<const StorageDummy *>(storage.get()))
+                if (auto identities = query_context->getPlanCacheStorageIdentities())
+                    identities->add(
+                        table_node->getStorageID(),
+                        computeQueryPlanCacheSemanticsFingerprint(
+                            storage_snapshot->metadata,
+                            table_node->getStorageID().getDatabaseName(),
+                            table_node->getStorageID().table_name,
+                            query_context));
+        };
+
         /// Apply trivial_count if possible. The plain variant requires no `WHERE`; the
         /// sparsity-filter variant requires a `WHERE`, so at most one of them fires.
         is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
@@ -2124,6 +2161,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         if (is_trivial_count_applied)
         {
             till_stage = QueryProcessingStage::WithMergeableState;
+            record_plan_cache_storage_identity();
 
             /// Log table access even when trivial count optimization skips reading
             if (query_context->hasQueryContext() && !select_query_options.is_internal)
@@ -2340,37 +2378,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     table_expression_query_info.cacheable_logical_plan = true;
                 }
 
-                /// Record the identity of every storage the cacheable plan is built from, so that the
-                /// query plan cache can bind both the stored dependencies and the execution of the plan
-                /// to exactly the storages that were analyzed here - a name can start resolving to a
-                /// different table right after this point (see `Context::PlanCacheStorageIdentities`).
-                /// Besides the UUID, the identity carries a fingerprint of the semantics the plan bakes
-                /// in from the analysis-time metadata snapshot (schema, row policy): an in-place
-                /// `ALTER` keeps the UUID but changes what the plan means, and dependency collection
-                /// runs only after the whole plan is built (see
-                /// `computeQueryPlanCacheSemanticsFingerprint`).
-                /// The collector pointer is set only while a cacheable logical plan is being built, but
-                /// it is deliberately not gated on `select_query_options.cacheable_logical_plan` here:
-                /// scalar subqueries are executed during that same analysis through a nested regular
-                /// interpreter whose options do not carry the flag, while their contexts are copies
-                /// that share the pointer. Their results are baked into the plan as constants, so the
-                /// tables they read are analyzed storages in exactly the same sense.
-                /// Temporary tables are never cacheable dependencies, so they are not recorded.
-                /// The preliminary filter-collection pass (see `collectFiltersForAnalysis`) plans
-                /// over `StorageDummy` stand-ins that carry the real storage's `StorageID` but a
-                /// columns-only metadata (no view `select`, no constraints), so recording them
-                /// would pin a wrong semantics fingerprint for the name; only the real pass
-                /// records.
-                if (table_node && table_node->getTemporaryTableName().empty()
-                    && !typeid_cast<const StorageDummy *>(storage.get()))
-                    if (auto identities = query_context->getPlanCacheStorageIdentities())
-                        identities->add(
-                            table_node->getStorageID(),
-                            computeQueryPlanCacheSemanticsFingerprint(
-                                storage_snapshot->metadata,
-                                table_node->getStorageID().getDatabaseName(),
-                                table_node->getStorageID().table_name,
-                                query_context));
+                record_plan_cache_storage_identity();
 
                 /// For trivial views over Distributed tables, inline the view body and use the
                 /// underlying StorageDistributed directly. StorageDistributed will substitute the

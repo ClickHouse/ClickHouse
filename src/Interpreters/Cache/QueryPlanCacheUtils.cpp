@@ -606,6 +606,20 @@ private:
         if (!visited.insert({resolved_id.getFullTableName(), inside_scalar_subquery}).second)
             return true;
 
+        /// `MaterializedView` and `Buffer` check `SELECT` on another table (the defining source,
+        /// the destination) inside their own `read`. For an ordinary read that check replays from
+        /// the plan leaf on every execution, but a scalar subquery is folded into a constant during
+        /// analysis, so a hit would never repeat it and would keep serving the value after the grant
+        /// on that other table was revoked. Such secondary requirements are not part of the
+        /// dependency record, so do not cache them inside folded scalar subqueries.
+        if (inside_scalar_subquery && storageRechecksColumnAccessOnRead(storage))
+        {
+            LOG_DEBUG(getLogger("QueryPlanCache"),
+                "Not caching plan: scalar subquery reads {}, whose engine checks access to another table while reading",
+                resolved_id.getNameForLogs());
+            return false;
+        }
+
         QueryPlanCacheDependency dep;
         if (!fillDependency(dep, storage, context))
             return false;
@@ -695,6 +709,15 @@ bool collectPlanDependencies(
 
         if (const auto * read_from_table = typeid_cast<const ReadFromTableStep *>(node->step.get()))
         {
+            /// `ReadFromTableStep::serialize` does not carry the `STREAM` modifier, so a deserialized
+            /// plan would silently turn a streaming read (cursor, subscription) into an ordinary
+            /// snapshot read on a hit.
+            if (read_from_table->getTableExpressionModifiers().hasStream())
+            {
+                LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: streaming read of {}", read_from_table->getTable());
+                return false;
+            }
+
             Identifier identifier = parseTableIdentifier(read_from_table->getTable(), context);
             auto table_node = IdentifierResolver::tryResolveTableIdentifier(identifier, context);
             if (!table_node)

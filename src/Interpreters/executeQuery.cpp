@@ -1384,7 +1384,10 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
                 plan.addDistributedPlanDecisionContext(context);
 
                 ProfileEvents::increment(ProfileEvents::QueryPlanCacheHits);
-                return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
+                SelectQueryOptions hit_options = select_query_options;
+                hit_options.ignore_quota = cached_entry->ignore_quota;
+                hit_options.ignore_limits = cached_entry->ignore_limits;
+                return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, hit_options);
             }
 
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheValidationMisses);
@@ -1465,6 +1468,12 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     }
 
     auto & logical_plan = analyzer_interpreter->getQueryPlan();
+
+    /// The planner may exempt the query from quotas and limits (a single read of `system.one` or a
+    /// quota table, see `PlannerJoinTree`) by updating the interpreter's options. The interpreters
+    /// that execute the plan on a miss and on a hit must apply the same exemptions.
+    const bool planner_ignore_quota = analyzer_interpreter->ignoreQuota();
+    const bool planner_ignore_limits = analyzer_interpreter->ignoreLimits();
 
     /// Lets a test replace a table between analysis and execution of the plan, which is otherwise a
     /// narrow race; see `04655_query_plan_cache_table_replaced_while_planning`.
@@ -1566,6 +1575,8 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
         entry.serialized_plan = serializeQueryPlanForCache(logical_plan);
         entry.dependencies = std::move(*dependencies);
         entry.used_row_policies = analyzer_interpreter->getPlanner().getUsedRowPolicies();
+        entry.ignore_quota = planner_ignore_quota;
+        entry.ignore_limits = planner_ignore_limits;
     }
     catch (const Exception & e)
     {
@@ -1646,7 +1657,10 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             "falling back to normal planning");
         return nullptr;
     }
-    return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
+    SelectQueryOptions miss_options = select_query_options;
+    miss_options.ignore_quota = planner_ignore_quota;
+    miss_options.ignore_limits = planner_ignore_limits;
+    return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, miss_options);
 }
 
 /// The introspection port is open while the shared state is either not fully constructed or is being
