@@ -2687,13 +2687,17 @@ static bool castKeptEveryValue(
     /// does by wrapping its target in `Nullable`; a target it cannot wrap (an `Array`, or a `Tuple`
     /// holding one) leaves the question unanswered. A `Dynamic` cannot be wrapped either, because it
     /// carries its own NULLs, but it also cannot refuse a value: every value fits a `Dynamic`, so there
-    /// the plain accurate cast is total and its result answers the question directly.
+    /// the plain accurate cast is total and its result answers the question directly. A reverse
+    /// conversion that does not exist although the forward one does leaves the question unanswered as
+    /// well: `FixedString` accepts only a string-ish source, so a `FixedString` value cast into a number
+    /// has no way back.
     ColumnPtr back_column;
     if (WhichDataType(*source_type).isDynamic())
         back_column = castColumnAccurate({cast_column, cast_type, ""}, source_type);
     else if (canBeAccurateCastOrNullTarget(source_type))
-        back_column = castColumnAccurateOrNull({cast_column, cast_type, ""}, source_type);
-    else
+        back_column = tryCastColumnAccurateOrNull({cast_column, cast_type, ""}, source_type);
+
+    if (!back_column)
         return false;
 
     for (size_t i = 0, size = column->size(); i < size; ++i)
