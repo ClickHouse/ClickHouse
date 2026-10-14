@@ -189,8 +189,10 @@ bool canReadLazily(const QueryPlan::Node & source, const QueryPlanOptimizationSe
 {
     auto * step = source.step.get();
 
+    /// A MergeTree read is split by its pruning, which is not possible for every read: for a FINAL one that merges by
+    /// every column it reads, or for `GraphiteMergeTree`.
     if (auto * merge_tree = typeid_cast<ReadFromMergeTree *>(step))
-        return canUseLazyMaterializationForReadingStep(merge_tree);
+        return canUseLazyMaterializationForReadingStep(merge_tree) && merge_tree->canRemoveUnusedColumns();
 
     if (auto * object_storage = typeid_cast<ReadFromObjectStorageStep *>(step))
         return settings.optimize_lazy_materialization_for_object_storage && object_storage->canUseLazyMaterialization();
@@ -623,10 +625,6 @@ private:
 
             if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(step))
             {
-                /// The read is split by its pruning, which is not right for every read.
-                if (!merge_tree->canRemoveUnusedColumns())
-                    continue;
-
                 /// The positions the main read need not produce: nothing below the `LIMIT` reads them, and they do not
                 /// cross it. The inputs of a source follow its header.
                 const auto & inputs = merged.sources[source].inputs;
