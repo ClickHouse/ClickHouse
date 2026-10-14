@@ -20,6 +20,28 @@ hasAnyTokens lazy, lowercased
 [3]
 [3]
 [3]
+hasPhrase quick brown, lowercased
+[1]
+[1]
+[1]
+hasPhrase brown fox, lowercased
+[2]
+[2]
+[2]
+hasPhrase lazy dog, lowercased
+[]
+[]
+[]
+Array column with the array tokenizer and a postprocessor
+hasPhrase hello world spans elements
+[1]
+[1]
+[1]
+Array column with a preprocessor and a postprocessor
+hasPhrase hello world, a dropped token does not break a phrase within one element
+[1]
+[1]
+[1]
 hasPhrase on an Array column
 hasPhrase hello world
 [7]
