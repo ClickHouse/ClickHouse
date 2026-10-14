@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Functions/FunctionFactory.h>
@@ -67,13 +68,16 @@ bool isNameOfThisPass(std::string_view name)
 }
 
 /// `if(mask, value, default)`: the value where the join matched the row, and the default where it stuffed
-/// it, which is what the join itself stands there.
+/// it, which is what the join itself stands there: the one `IDataType::insertDefaultInto` makes, which for some
+/// types, such as `Date32`, is not the one `IDataType::getDefault` gives.
 const ActionsDAG::Node & addMasked(
     ActionsDAG & dag, const ActionsDAG::Node & mask, const ActionsDAG::Node & value, const String & name, const ContextPtr & context)
 {
     const auto & type = value.result_type;
+    auto default_column = type->createColumn();
+    type->insertDefaultInto(*default_column);
     const auto & default_value = dag.addColumn(
-        type->createColumnConstWithDefaultValue(0), type, fmt::format("defaultValueOfTypeName('{}')", type->getName()));
+        ColumnConst::create(std::move(default_column), 1), type, fmt::format("defaultValueOfTypeName('{}')", type->getName()));
 
     auto if_function = FunctionFactory::instance().get("if", context);
     const auto & masked = dag.addFunction(if_function, {&mask, &value, &default_value}, {});

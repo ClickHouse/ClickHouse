@@ -1,5 +1,6 @@
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Interpreters/Squashing.h>
@@ -444,13 +445,48 @@ void LazyMaterializingTransform::prepareLazyChunk()
         permute_ms = permute_watch.elapsedMilliseconds();
     }
 
+    /// At a row a join left unmatched the lazy read has nothing, and the value is the one the join stands there: the
+    /// default of the type, as `IDataType::insertDefaultInto` makes it, which is not the default of the column for every
+    /// type - an `Enum` has its first element, a `Date32` the epoch.
     if (matched_rows)
     {
-        for (auto & col : lazy_columns)
+        const auto & lazy_header = getInputs().back().getHeader();
+        for (size_t column = 0; column < lazy_columns.size(); ++column)
         {
-            auto expanded = IColumn::mutate(std::move(col));
-            expanded->expand(*matched_rows, /*inverted=*/false);
-            col = std::move(expanded);
+            const auto & type = lazy_header.getByPosition(column).type;
+            /// The rows are inserted into a column the type creates, which is a full one.
+            const auto full_column = recursiveRemoveSparse(lazy_columns[column]->convertToFullColumnIfConst());
+            const auto & lazy_column = *full_column;
+
+            auto expanded = type->createColumn();
+            expanded->reserve(matched_rows->size());
+            size_t next_lazy_row = 0;
+            size_t row = 0;
+            while (row < matched_rows->size())
+            {
+                size_t run_end = row;
+                const bool matched = (*matched_rows)[row];
+                while (run_end < matched_rows->size() && static_cast<bool>((*matched_rows)[run_end]) == matched)
+                    ++run_end;
+
+                if (matched)
+                {
+                    expanded->insertRangeFrom(lazy_column, next_lazy_row, run_end - row);
+                    next_lazy_row += run_end - row;
+                }
+                else
+                {
+                    for (size_t unmatched = row; unmatched < run_end; ++unmatched)
+                        type->insertDefaultInto(*expanded);
+                }
+                row = run_end;
+            }
+
+            if (next_lazy_row != lazy_column.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "LazyMaterializingTransform: {} rows of the lazy chunk for {} matched rows", lazy_column.size(), next_lazy_row);
+
+            lazy_columns[column] = std::move(expanded);
         }
         rows = matched_rows->size();
     }
