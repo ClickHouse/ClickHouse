@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # A relative File() destination is resolved against the first backups.allowed_path entry and must stay
-# allowed when that entry has `.` or `..` components.
+# allowed when that entry, or the data path a relative entry is resolved against, has `.` or `..` components.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +16,8 @@ cd "${WORK_DIR}" || exit 1
 for arm in \
     "dot|${WORK_DIR}/./backups|${WORK_DIR}/data" \
     "dotdot|${WORK_DIR}/sub/../backups|${WORK_DIR}/data" \
-    "relative|../backups|${WORK_DIR}/data"
+    "relative|../backups|${WORK_DIR}/data" \
+    "relative_data_path|../backups|./data"
 do
     IFS='|' read -r label allowed data <<< "${arm}"
     cat > "${WORK_DIR}/config.xml" <<EOF

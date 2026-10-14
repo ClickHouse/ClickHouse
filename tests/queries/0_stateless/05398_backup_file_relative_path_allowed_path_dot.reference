@@ -13,3 +13,8 @@ relative
 b1
 b2
 BAD_ARGUMENTS
+relative_data_path
+10	45
+b1
+b2
+BAD_ARGUMENTS

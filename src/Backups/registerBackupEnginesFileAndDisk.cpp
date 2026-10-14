@@ -144,7 +144,7 @@ namespace
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
 
             location.path = args[0].safeGet<String>();
-            location.allowed_path = checkPath(location.path, context->getConfigRef(), context->getPath());
+            location.allowed_path = checkPath(location.path, context->getConfigRef(), fs::absolute(context->getPath()));
         }
         else if (engine_name == "Disk")
         {
