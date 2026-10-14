@@ -75,7 +75,6 @@ namespace S3
 #    include <Poco/Net/HTTPClientSession.h>
 #    include <Poco/Net/HTTPRequest.h>
 #    include <Poco/Net/HTTPResponse.h>
-#    include <Poco/StreamCopier.h>
 
 namespace ProfileEvents
 {
@@ -453,12 +452,12 @@ String getAvailabilityZoneOrException(bool is_zone_id)
         token_request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_HEADER, AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
         token_request.setContentLength(0);
 
-        token_session.sendRequest(token_request);
+        sendHTTPRequest(token_session, token_request)->finalize();
 
         Poco::Net::HTTPResponse token_response;
-        std::istream & token_rs = token_session.receiveResponse(token_response);
+        auto token_body = receiveHTTPResponse(token_session, token_response);
         if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-            Poco::StreamCopier::copyToString(token_rs, token_str);
+            readStringUntilEOF(token_str, *token_body);
         else
             LOG_WARNING(
                 logger,
@@ -474,14 +473,14 @@ String getAvailabilityZoneOrException(bool is_zone_id)
 
     if (!token_str.empty())
         request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_HEADER, token_str);
-    session.sendRequest(request);
+    sendHTTPRequest(session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session.receiveResponse(response);
+    auto response_body = receiveHTTPResponse(session, response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
+    readStringUntilEOF(response_data, *response_body);
     return response_data;
 }
 }
@@ -508,12 +507,12 @@ static String getGCPAvailabilityZoneOrException()
     Poco::Net::HTTPResponse response;
     request.set("Metadata-Flavor", "Google");
 
-    session.sendRequest(request);
-    std::istream & rs = session.receiveResponse(response);
+    sendHTTPRequest(session, request)->finalize();
+    auto response_body = receiveHTTPResponse(session, response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
+    readStringUntilEOF(response_data, *response_body);
     Strings zone_info;
     boost::split(zone_info, response_data, boost::is_any_of("/"));
     /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".

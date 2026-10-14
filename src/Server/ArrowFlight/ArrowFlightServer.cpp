@@ -7,6 +7,7 @@
 #include <Server/ArrowFlight/commandSelector.h>
 #include <Server/ArrowFlight/PollSession.h>
 
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -610,6 +611,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         {
             if (!block.empty())
             {
+                removeSpecialColumnRepresentations(block);
                 if (block_modifier)
                     block_modifier(query_context, block);
                 if (!header)
@@ -1101,7 +1103,11 @@ arrow::Status ArrowFlightServer::DoGet(
 
                 Block block;
                 while (executor.pull(block))
+                {
+                    /// PullingPipelineExecutor returns sparse and other special column representations, which CHColumnToArrowColumn does not read.
+                    removeSpecialColumnRepresentations(block);
                     chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
+                }
 
                 auto header = executor.getHeader();
                 auto ch_to_arrow_converter = createCHToArrowConverter(header, query_context);
@@ -1375,14 +1381,14 @@ arrow::Status ArrowFlightServer::DoAction(
                 }
             };
 
-            for (const auto & [setting, value] : request.session_options)
+            auto apply_option = [&](const std::string & setting, const auto & value)
             {
                 if (!isValidIdentifier(setting))
                 {
                     result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{
                         arrow::flight::SetSessionOptionErrorValue::kInvalidName
                     };
-                    continue;
+                    return;
                 }
 
                 try
@@ -1390,14 +1396,14 @@ arrow::Status ArrowFlightServer::DoAction(
                     if (std::holds_alternative<std::monostate>(value))
                     {
                         /// std::monostate means "reset to default" (SET setting = DEFAULT).
-                        query_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
+                        session_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
                         session_context->resetSettingsToDefaultValue({setting});
                     }
                     else
                     {
                         auto string_value = std::visit(to_string_value, value);
                         SettingChange change{setting, Field{string_value}};
-                        query_context->checkSettingsConstraints(change, SettingSource::QUERY);
+                        session_context->checkSettingsConstraints(change, SettingSource::QUERY);
                         session_context->setSetting(setting, string_value);
                     }
                 }
@@ -1415,6 +1421,15 @@ arrow::Status ArrowFlightServer::DoAction(
 
                     result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{error_value};
                 }
+            };
+
+            /// The options arrive in a map with no order, so `profile` goes first for its constraints to bind the rest.
+            if (auto profile = request.session_options.find("profile"); profile != request.session_options.end())
+                apply_option(profile->first, profile->second);
+            for (const auto & [setting, value] : request.session_options)
+            {
+                if (setting != "profile")
+                    apply_option(setting, value);
             }
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())

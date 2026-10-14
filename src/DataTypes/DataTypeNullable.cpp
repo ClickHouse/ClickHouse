@@ -102,10 +102,9 @@ SerializationPtr DataTypeNullable::doGetSerialization(const SerializationInfoSet
     return SerializationNullable::create(nested_data_type->getDefaultSerialization());
 }
 
-void DataTypeNullable::forEachChild(const ChildCallback & callback) const
+DataTypePtr DataTypeNullable::doCloneWithChildren(const DataTypes & new_children) const
 {
-    callback(*nested_data_type);
-    nested_data_type->forEachChild(callback);
+    return std::make_shared<DataTypeNullable>(new_children[0]);
 }
 
 

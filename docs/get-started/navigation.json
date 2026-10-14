@@ -30,8 +30,7 @@
               "group": "Real-time analytics",
               "pages": [
                 "get-started/quickstarts/create-your-first-materialized-view",
-                "get-started/quickstarts/create-your-first-projection",
-                "get-started/quickstarts/tutorial"
+                "get-started/quickstarts/create-your-first-projection"
               ]
             },
             {

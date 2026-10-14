@@ -215,6 +215,13 @@ public:
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
+    /// Checks if the condition has unknown atoms.
+    bool hasUnknownAtoms() const;
+
+    /// A copy where every atom that cannot be evaluated is replaced with the constant that maximizes the condition.
+    /// It has the same `can_be_true` on every range, but `can_be_false` is not exact, so it must not be used for exact ranges.
+    KeyCondition createWithUnknownAtomsAssumedTrue() const;
+
     String toString() const;
 
     size_t getNumKeyColumns() const { return num_key_columns; }
@@ -241,15 +248,6 @@ public:
       */
     using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
 
-    /** Computes value of constant expression and its data type.
-      * Returns false, if expression isn't constant.
-      */
-    static bool getConstant(
-        const ASTPtr & expr,
-        Block & block_with_constants,
-        Field & out_value,
-        DataTypePtr & out_type);
-
     /** Calculate expressions, that depend only on constants.
       * For index to work when something like "WHERE Date = toDate(now())" is written.
       */
@@ -258,11 +256,24 @@ public:
         const TreeRewriterResultPtr & syntax_analyzer_result,
         ContextPtr context);
 
+    /// Whether a real NULL is nested somewhere in `field`. A `Tuple`, `Array` or `Map` key value holds its
+    /// NULLs inside, where `Field::isNull` does not see them - and where it would answer true for the
+    /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
+    static bool fieldHasNullInside(const Field & field);
+
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
         DataTypePtr current_type,
         bool single_point = false);
+
+    /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
+    /// could not be evaluated on a range (rather than because it is not monotonic there). Such an answer is an
+    /// over-approximation, so it supports no exactness claim derived from `matchesExactContinuousRange`, and it
+    /// contradicts none either. The caller takes a snapshot before a check and compares after it: the analysis of a
+    /// part runs on one thread, and the counter is the only channel that reaches through every path applying a chain,
+    /// including `MergeTreeSetIndex`.
+    static size_t getNumUnevaluableChainApplications();
 
     bool matchesExactContinuousRange() const;
 
@@ -377,6 +388,10 @@ public:
         /// construction, such RPNElements get converted to FUNCTION_ARGS_IN_HYPERRECTANGLE operating
         /// on the key column directly (see findHyperrectanglesForArgumentsOfSpaceFillingCurves).
         std::optional<size_t> argument_num_of_space_filling_curve;
+
+        /// Position of this element in the RPN built from the filter. An element that
+        /// `findHyperrectanglesForArgumentsOfSpaceFillingCurves` collapses takes the position of its first atom.
+        std::optional<size_t> position_in_filter_rpn;
 
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
@@ -600,6 +615,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
+        bool nested_null_is_ordinary_value,
         bool & out_atom_is_exact);
 
     /// Checks if node is a subexpression of any of key columns expressions,
@@ -721,6 +737,8 @@ private:
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
+    /// Consulted only while extracting atoms, so the private copying constructor leaves it unset.
+    bool validate_enum_literals_in_operators = true;
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
