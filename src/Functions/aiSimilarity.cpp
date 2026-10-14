@@ -188,8 +188,8 @@ public:
 
         FunctionBaseAI::EmbeddingResult embedding_result;
         FunctionBaseAI::embedTexts(
-            provider, model, dimensions, getName(), inputs, max_batch_size, max_concurrent_requests, policy,
-            quota_tracker, embedding_result);
+            provider, model, dimensions, getName(), getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
+            inputs, max_batch_size, max_concurrent_requests, policy, quota_tracker, embedding_result);
 
         const auto & embeddings = embedding_result.embeddings;
 

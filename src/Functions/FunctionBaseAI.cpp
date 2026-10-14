@@ -344,6 +344,8 @@ void FunctionBaseAI::embedTexts(
     const String & model,
     UInt64 dimensions,
     const String & function_name,
+    const String & query_id,
+    const String & initial_query_id,
     const VectorWithMemoryTracking<std::string_view> & inputs,
     size_t max_batch_size,
     size_t max_concurrent_requests,
@@ -393,6 +395,8 @@ void FunctionBaseAI::embedTexts(
             ai_embedding_request.model = model;
             ai_embedding_request.dimensions = dimensions;
             ai_embedding_request.function_name = function_name;
+            ai_embedding_request.query_id = query_id;
+            ai_embedding_request.initial_query_id = initial_query_id;
             ai_embedding_request.inputs.reserve(end - begin);
             for (size_t k = begin; k < end; ++k)
                 ai_embedding_request.inputs.emplace_back(inputs[k]);
@@ -468,6 +472,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     const auto policy = makeRequestPolicy(getContext());
 
+    const String query_id = getContext()->getCurrentQueryId();
+    const String & initial_query_id = getContext()->getClientInfo().initial_query_id;
+
     auto result_col = removeNullable(result_type)->createColumn();
     auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
 
@@ -514,7 +521,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 continue;
             }
 
-            AIRequest ai_request;
+            AIChatRequest ai_request;
             ai_request.system_prompt = system_prompt;
             ai_request.user_message = sanitizeForModel(buildUserMessage(arguments, row));
             ai_request.response_format = response_format;
@@ -522,6 +529,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             ai_request.temperature = temperature;
             ai_request.max_tokens = max_tokens;
             ai_request.function_name = getName();
+            ai_request.query_id = query_id;
+            ai_request.initial_query_id = initial_query_id;
 
             wave.push_back(submitAIRequest(provider, std::move(ai_request), policy, quota_tracker));
         }

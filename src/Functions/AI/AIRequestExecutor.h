@@ -32,7 +32,7 @@ struct AIRequestPolicy
 /// check that the model produced a complete answer. Also handles retries with backoff, API-call
 /// reservation, and token accounting.
 std::future<std::optional<AIResponse>> submitAIRequest(
-    std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
+    std::shared_ptr<IAIProvider> provider, AIChatRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
 
 /// The same, for one batch of texts sent to an embeddings endpoint.
 std::future<std::optional<AIEmbeddingResponse>> submitAIRequest(

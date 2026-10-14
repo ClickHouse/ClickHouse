@@ -102,7 +102,7 @@ void checkResponseIsComplete(const AIResponse & response)
 {
     /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
     /// interpolating it into an exception message that reaches the logs and `system.query_log`.
-    const String safe_finish_reason = sanitizeForLog(response.raw_finish_reason);
+    const String safe_finish_reason = sanitize(response.raw_finish_reason);
 
     switch (response.finish_reason)
     {
@@ -178,7 +178,7 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
     return {};
 }
 
-void runAttempt(IAIProvider & provider, const AIRequest & request, const ConnectionTimeouts & timeouts, AIResponse & response)
+void runAttempt(IAIProvider & provider, const AIChatRequest & request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
     provider.call(request, timeouts, response);
     checkResponseIsComplete(response);
@@ -222,7 +222,7 @@ std::future<std::optional<Response>> submit(
 }
 
 std::future<std::optional<AIResponse>> submitAIRequest(
-    std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
+    std::shared_ptr<IAIProvider> provider, AIChatRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
     return submit<AIResponse>(std::move(provider), std::move(request), std::move(policy), std::move(quota));
 }
