@@ -451,18 +451,18 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 
             if (pool && slots_outstanding.load(std::memory_order_relaxed))
             {
-                if (auto slot = cpu_slots->tryAcquire())
+                try
                 {
-                    try
+                    if (auto slot = cpu_slots->tryAcquire())
                     {
                         std::lock_guard lock(spawn_mutex);
                         slots_outstanding.store(spawnThreads(std::move(slot)), std::memory_order_relaxed);
                     }
-                    catch (...)
-                    {
-                        cancel(IProcessor::CancelReason::Exception);
-                        throw;
-                    }
+                }
+                catch (...)
+                {
+                    cancel(IProcessor::CancelReason::Exception);
+                    throw;
                 }
             }
 
