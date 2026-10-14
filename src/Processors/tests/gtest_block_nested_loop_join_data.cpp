@@ -14,6 +14,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
+#include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -192,12 +193,18 @@ TEST(BlockNestedLoopJoinData, ConstAndSparseColumnsAreMaterialized)
 
 TEST(BlockNestedLoopJoinData, FinishIsRecorded)
 {
-    auto data = makeData();
+    auto storage = makeTemporaryStorage();
+    auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillOnRequest(storage.scope));
     ASSERT_TRUE(data->addBlock(makeBlock({1}), 1, 0));
 
     EXPECT_FALSE(data->isFinished());
+    EXPECT_GT(data->getMemoryStats().spillable_memory_bytes, 0);
     data->finish();
     EXPECT_TRUE(data->isFinished());
+    EXPECT_EQ(data->getMemoryStats().spillable_memory_bytes, 0);
+    EXPECT_EQ(data->getMemoryStats().need_reserved_memory_bytes, 0);
+    EXPECT_EQ(data->spill(1), 0);
+    EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1}));
 }
 
 TEST(BlockNestedLoopJoinData, SizeLimitsThrow)
@@ -515,7 +522,15 @@ TEST(BlockNestedLoopJoinData, ARewoundReaderStartsTheTemporaryFileOver)
 TEST(BlockNestedLoopJoinData, SpillingOnDemandMovesTheStoredBlocksOut)
 {
     auto storage = makeTemporaryStorage();
-    auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillOnRequest(storage.scope));
+    auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillOnRequest(storage.scope), 2);
+    auto finish_counter = std::make_shared<FinishCounter>(2);
+    BlockNestedLoopBuildTransform first(makeHeader(), data, finish_counter, 0);
+    BlockNestedLoopBuildTransform second(makeHeader(), data, finish_counter, 1);
+    ASSERT_EQ(first.getSpillables().size(), 1);
+    ASSERT_EQ(second.getSpillables().size(), 1);
+    auto * spillable = first.getSpillables().front();
+    ASSERT_EQ(spillable, second.getSpillables().front());
+    ASSERT_EQ(spillable, data->getSpillable());
 
     /// Nothing spills on its own without a threshold, ...
     ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2, 0));
@@ -523,21 +538,24 @@ TEST(BlockNestedLoopJoinData, SpillingOnDemandMovesTheStoredBlocksOut)
     EXPECT_EQ(data->getNumSpilledBlocks(), 0);
     EXPECT_GT(data->getInMemoryBytes(), 0);
 
-    /// ... until the memory tracker asks for it.
-    EXPECT_FALSE(data->spillInMemoryBlocks(data->getInMemoryBytes() + 1, 0));
-    EXPECT_TRUE(data->spillInMemoryBlocks(data->getInMemoryBytes(), 0));
+    /// ... until the scheduler asks for it, even when less than requested can be released.
+    const size_t resident_bytes = data->getInMemoryBytes();
+    EXPECT_EQ(spillable->getMemoryStats().spillable_memory_bytes, resident_bytes);
+    EXPECT_EQ(spillable->getMemoryStats().need_reserved_memory_bytes, 2 * data->getMaxInMemoryBlockBytes());
+    EXPECT_EQ(spillable->spill(resident_bytes + 1), resident_bytes);
     EXPECT_EQ(data->getNumSpilledBlocks(), 2);
     EXPECT_EQ(data->getInMemoryBytes(), 0);
-    EXPECT_FALSE(data->spillInMemoryBlocks(0, 0));
+    EXPECT_EQ(second.getSpillables().front()->getMemoryStats().spillable_memory_bytes, 0);
+    EXPECT_EQ(second.getSpillables().front()->spill(1), 0);
 
-    /// From then on the build side streams: a block that arrives later goes straight to the file,
-    /// so the file order stays the block order.
+    /// Later blocks go to the build streams' own files; the scheduler's file stays separate.
     ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2, 0));
-    EXPECT_EQ(data->getNumSpilledBlocks(), 3);
+    ASSERT_TRUE(data->addBlock(makeBlock({6}), 1, 1));
+    EXPECT_EQ(data->getNumSpilledBlocks(), 4);
     data->finish();
 
-    EXPECT_EQ(data->getRowOffsets(), (std::vector<size_t>{0, 2, 3, 5}));
-    EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1, 2, 3, 4, 5}));
+    EXPECT_EQ(data->getRowOffsets(), (std::vector<size_t>{0, 2, 3, 5, 6}));
+    EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1, 2, 3, 4, 5, 6}));
 }
 
 TEST(BlockNestedLoopJoinData, SpillingOnAThresholdTakesTheEarlierBlocksWithIt)
@@ -562,7 +580,7 @@ TEST(BlockNestedLoopJoinData, SpillingOnAThresholdTakesTheEarlierBlocksWithIt)
     EXPECT_EQ(data->getInMemoryBytes(), 0);
     EXPECT_EQ(data->getMaxInMemoryBlockBytes(), 0);
     /// Nothing is left for the memory tracker to gain.
-    EXPECT_FALSE(data->spillInMemoryBlocks(0, 0));
+    EXPECT_EQ(data->spill(0), 0);
 
     ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2, 0));
     data->finish();
@@ -625,7 +643,7 @@ TEST(BlockNestedLoopJoinData, MatchFlagsAreIndexedAcrossTheSpilledBoundary)
     auto data = makeData(JoinKind::Right, JoinStrictness::All, SizeLimits{}, spillOnRequest(storage.scope));
 
     ASSERT_TRUE(data->addBlock(makeBlock({10, 11, 12}), 3, 0));
-    ASSERT_TRUE(data->spillInMemoryBlocks(0, 0));
+    ASSERT_GT(data->spill(0), 0);
     /// The store now holds one spilled block and, from here on, everything else spilled too.
     ASSERT_TRUE(data->addBlock(makeBlock({13, 14}), 2, 0));
     data->finish();
@@ -659,7 +677,8 @@ TEST(BlockNestedLoopJoinData, ColumnlessBuildSidesNeverSpill)
 
     EXPECT_FALSE(data->canSpill());
     ASSERT_TRUE(data->addBlock(Block{}, 5, 0));
-    EXPECT_FALSE(data->spillInMemoryBlocks(0, 0));
+    EXPECT_EQ(data->getMemoryStats().spillable_memory_bytes, 0);
+    EXPECT_EQ(data->spill(0), 0);
     data->finish();
 
     EXPECT_EQ(data->getNumSpilledBlocks(), 0);
@@ -680,4 +699,3 @@ TEST(BlockNestedLoopJoinData, SizeLimitsCountSpilledRowsToo)
     EXPECT_EQ(data->getNumSpilledBlocks(), 1);
     EXPECT_THROW(data->addBlock(makeBlock({3}), 1, 0), Exception);
 }
-
