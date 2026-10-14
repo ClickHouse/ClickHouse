@@ -155,6 +155,27 @@ def test_crash_log_extra_fields(started_node, failpoint, trace_column):
     ).strip() == "1"
 
 
+@pytest.mark.parametrize(
+    "failpoint, access_type",
+    [
+        ("segfault_read_access", "read"),
+        ("segfault_write_access", "write"),
+    ]
+)
+def test_crash_log_fault_access_type(started_node, failpoint, access_type):
+    started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
+    started_node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    started_node.query("SELECT 1", ignore_error=True)
+    wait_for_clickhouse_stop(started_node)
+    started_node.restart_clickhouse()
+
+    assert (
+        started_node.query("SELECT signal, fault_access_type FROM system.crash_log")
+        == f"11\t{access_type}\n"
+    )
+    assert f"Access: {access_type}." in read_server_log(started_node)
+
+
 # The fault handler writes one bare dump under `Stack trace:`, and one under `Job's origin stack
 # trace:` for every job that scheduled the faulting one. Longest marker first, so a tail is never
 # taken from a partial match.
