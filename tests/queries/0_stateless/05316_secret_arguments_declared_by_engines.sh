@@ -62,4 +62,4 @@ EOF
 # A dictionary source key that is only partly secret still makes the logged query masked.
 $CLICKHOUSE_CLIENT -q "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_mongodb_uri (key UInt64, value String) PRIMARY KEY key SOURCE(MONGODB(URI 'mongodb://user:plain_mongodb_password@localhost:27017/db' COLLECTION 'c')) LIFETIME(0) LAYOUT(FLAT())"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT -q "SELECT countIf(query LIKE '%plain_mongodb_password%'), countIf(query LIKE '%[HIDDEN]%') FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'CREATE DICTIONARY%dict_mongodb_uri%' AND type = 'QueryFinish'"
+$CLICKHOUSE_CLIENT -q "SELECT countIf(query LIKE '%plain_mongodb_password%'), countIf(query LIKE '%[HIDDEN]%') FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'CREATE DICTIONARY%dict_mongodb_uri%' AND type = 'QueryFinish' AND is_initial_query"

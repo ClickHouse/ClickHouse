@@ -181,7 +181,7 @@ def check_policy_is_enforced(node):
         mkfifo_result,
     ) = run_probe(node)
     assert mode == SECCOMP_MODE_FILTER
-    assert getxattr_result == "EPERM"
+    assert getxattr_result == "ENOSYS"
     assert clone_result == "EPERM"
     assert clone3_result == "ENOSYS"
     assert thread_result == "OK"
@@ -190,11 +190,13 @@ def check_policy_is_enforced(node):
 
 
 def test_system_call_outside_the_policy_is_refused(started_cluster):
-    # `getxattr` is not in the policy, so the `errno` mode turns it into `EPERM` - which is what
-    # makes the filter more than a formality. A `clone` that asks for a user namespace is refused
-    # by its flags, and `clone3`, whose arguments a filter cannot read, is refused as a whole with
-    # `ENOSYS` - and making a thread keeps working, because `ENOSYS` is what sends the libc back to
-    # `clone`. `mknod` is refused for a device node, but a FIFO is still made.
+    # `getxattr` is not in the policy, and the whole extended-attribute family is refused with
+    # `ENOSYS` whatever the mode, so that the NSS modules of the host, which probe for it, carry on.
+    # A `clone` that asks for a user namespace is refused by its flags with the configured action,
+    # `EPERM` here - which is what makes the filter more than a formality - and `clone3`, whose
+    # arguments a filter cannot read, is refused as a whole with `ENOSYS` - and making a thread
+    # keeps working, because `ENOSYS` is what sends the libc back to `clone`. `mknod` is refused
+    # for a device node, but a FIFO is still made.
     check_policy_is_enforced(errno_node)
 
 
