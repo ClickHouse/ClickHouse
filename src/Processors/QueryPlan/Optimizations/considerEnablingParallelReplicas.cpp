@@ -43,8 +43,8 @@ extern const Event AutomaticParallelReplicasProbePlansBuilt;
 extern const Event AutoParallelReplicasOptimizationMicroseconds;
 extern const Event AutoParallelReplicasPlanBuildMicroseconds;
 extern const Event AutoParallelReplicasSkippedDueToSettings;
-extern const Event AutoParallelReplicasPlanShapeNotSupported;
-extern const Event AutoParallelReplicasPlanNotSuitable;
+extern const Event AutoParallelReplicasSkippedDueToQuery;
+extern const Event AutoParallelReplicasPlansNotComparable;
 extern const Event AutoParallelReplicasNoStatistics;
 extern const Event AutoParallelReplicasStatisticsDrifted;
 extern const Event AutoParallelReplicasCostModelEvaluated;
@@ -784,7 +784,7 @@ void considerEnablingParallelReplicas(
     /// runs, and considering the set-building plan adds one.
     if (typeid_cast<const CreatingSetStep *>(root.step.get()))
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanShapeNotSupported);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedDueToQuery);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "The plan builds a set, its root must be preserved. Skipping optimization");
         return;
     }
@@ -828,7 +828,7 @@ void considerEnablingParallelReplicas(
         });
     if (!plan_is_simple_enough)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanShapeNotSupported);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedDueToQuery);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "Some steps in the plan don't support dataflow statistics collection. Skipping optimization. Unsupported steps: {}",
@@ -937,14 +937,14 @@ void considerEnablingParallelReplicas(
     auto build_result = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, getLogger("AutoParallelReplicas"));
 
     /// The builder checks what it can before it builds anything, and logs the specific reason when it
-    /// stops there. Those are skips, like the ones above, not plans that turned out unsuitable.
+    /// stops there. Those are skips, like the ones above, not plans that could not be compared.
     switch (build_result.skip_reason)
     {
         case PlanWithParallelReplicas::SkipReason::Settings:
             ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedDueToSettings);
             return;
         case PlanWithParallelReplicas::SkipReason::QueryShape:
-            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanShapeNotSupported);
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedDueToQuery);
             return;
         case PlanWithParallelReplicas::SkipReason::None:
             break;
@@ -960,7 +960,7 @@ void considerEnablingParallelReplicas(
     if (!final_node_in_replica_plan)
     {
         /// `findTopNodeOfReplicasPlan` has logged why.
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         return;
     }
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
@@ -970,7 +970,7 @@ void considerEnablingParallelReplicas(
     if (!corresponding_node_in_single_replica_plan)
     {
         /// `findCorrespondingNodeInSingleNodePlan` has logged why.
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         return;
     }
 
@@ -984,7 +984,7 @@ void considerEnablingParallelReplicas(
         = collectCoordinatedReads(*final_node_in_replica_plan, *corresponding_node_in_single_replica_plan, reads);
     if (!reads.usable)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "The single-node plan and the replicas plan do not agree about the read coordinated between the "
@@ -993,7 +993,7 @@ void considerEnablingParallelReplicas(
     }
     if (!found_coordinated_read)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "No read below the node whose output the replicas ship is coordinated between them, so nothing "
@@ -1016,7 +1016,7 @@ void considerEnablingParallelReplicas(
     /// parallel replicas for plans that are cheaper to execute locally. Skip the optimization instead.
     if (corresponding_node_in_single_replica_plan->step.get() == source_reading_step)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
@@ -1028,7 +1028,7 @@ void considerEnablingParallelReplicas(
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
         return;
     }
@@ -1043,14 +1043,14 @@ void considerEnablingParallelReplicas(
     /// the parallel-replicas plan cannot be relied on to reproduce.
     if (analysis->readFromProjection())
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "The read is served from a projection. Skipping optimization");
         return;
     }
     const auto rows_to_read = analysis->selected_rows;
     if (!rows_to_read)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Index analysis result doesn't contain selected rows. Skipping optimization");
         return;
     }
@@ -1176,7 +1176,7 @@ void considerEnablingParallelReplicas(
                 if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
                 {
                     /// `transplantAnalysisToAllReads` has logged which read could not be paired and why.
-                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
                     return;
                 }
                 /// The candidate's reads have their filter actions only now, so the pass that tags a filter
