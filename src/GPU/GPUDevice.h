@@ -5,7 +5,7 @@
 #if USE_GPU
 
 #include <GPU/GPUMemory.h>
-#include <GPU/GPUStreams.cuh>
+#include <GPU/GPUResources.cuh>
 #include <GPU/GPUTypes.cuh>
 
 #include <Common/Exception.h>
@@ -71,19 +71,19 @@ void waitOnFailure(rmm::cuda_stream_view stream, Body && body)
 /// The `gpu_*` server settings; see their descriptions in `ServerSettings`.
 struct GPUDeviceSettings
 {
-    /// Pinned host memory that `PinnedMemoryPool` keeps for reuse, in all and of one buffer.
-    size_t max_pooled_pinned_bytes = 0;
-    size_t max_pooled_pinned_capacity = 0;
-
     /// Freed device memory that the device's default memory pool keeps instead of returning it to the driver.
     uint64_t memory_pool_release_threshold = 0;
+
+    /// Freed pinned host memory that `PinnedMemoryPool` keeps instead of returning it to the system.
+    size_t pinned_memory_pool_release_threshold = 0;
 
     static GPUDeviceSettings fromServerSettings(const ServerSettings & server_settings);
 };
 
-/// The GPU the server runs queries on and what is shared by all of them: the streams, the pinned host memory and the
-/// device's memory pool, which cuDF allocates from as well. It is made at the start of the server when `enable_gpu` is
-/// set, from the `gpu_*` server settings, held in the global `Context`, and waits for the device and releases all of it at shutdown.
+/// The GPU the server runs queries on and what is shared by all of them: the `GPUResources`, which are the streams and
+/// the device's memory pool that cuDF allocates from as well, and the pinned host memory. It is made at the start of
+/// the server when `enable_gpu` is set, from the `gpu_*` server settings, held in the global `Context`, and waits for
+/// the device and releases all of it at shutdown.
 class GPUDevice : private boost::noncopyable
 {
 public:
@@ -93,18 +93,16 @@ public:
     /// The device of the global `Context`; throws when `enable_gpu` is not set.
     static GPUDevice & instance();
 
-    const StreamRegistry & streams() const { return stream_registry; }
+    const GPUResources & resources() const { return gpu_resources; }
 
     PinnedMemoryPool & pinnedPool() { return PinnedMemoryPool::instance(); }
 
-    cudaMemPool_t memoryPool() const { return memory_pool; }
-
 private:
-    cudaMemPool_t memory_pool = nullptr;
+    /// Its pool is taken first, which checks that there is a device; the streams are set once they are made.
+    GPUResources gpu_resources;
 
     StreamPtr upload_stream;
     StreamPtr decompression_stream;
-    StreamRegistry stream_registry;
 };
 
 }

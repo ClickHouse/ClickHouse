@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GPU/GPUStreams.cuh>
+#include <GPU/GPUResources.cuh>
 #include <GPU/GPUTypes.cuh>
 
 #include <cudf/column/column.hpp>

@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
-#include <bit>
 #include <cstring>
 #include <utility>
 
@@ -20,98 +19,64 @@ namespace DB::ErrorCodes
 namespace DB::GPU
 {
 
-namespace
-{
-
-/// What `cudaHostAlloc` aligns to, and the smallest size class, as `cudaHostAlloc` gives whole pages anyway.
-constexpr size_t pinned_alignment = 4096;
-
-}
-
 PinnedMemoryPool & PinnedMemoryPool::instance()
 {
     /// Never destroyed, see the comment of the class.
-    static PinnedMemoryPool * const pool = new PinnedMemoryPool;
-    return *pool;
+    static PinnedMemoryPool * const instance = new PinnedMemoryPool;
+    return *instance;
 }
 
-void PinnedMemoryPool::configure(size_t max_pooled_bytes_, size_t max_pooled_capacity_)
+void PinnedMemoryPool::configure(size_t release_threshold)
 {
-    std::lock_guard lock(mutex);
-    max_pooled_bytes = max_pooled_bytes_;
-    max_pooled_capacity = max_pooled_capacity_;
+    if (pool)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The pool of pinned host memory is configured twice");
+
+    pool.emplace(cuda::memory_pool_properties{.release_threshold = release_threshold});
 }
 
 void PinnedMemoryPool::drain() noexcept
 {
-    std::lock_guard lock(mutex);
-    for (const auto & [capacity, buffer] : free_buffers)
-        cudaFreeHost(buffer);
-    free_buffers.clear();
-    pooled_bytes = 0;
-    max_pooled_bytes = 0;
-}
+    if (!pool)
+        return;
 
-size_t PinnedMemoryPool::capacityFor(size_t bytes) const
-{
-    if (bytes > max_pooled_capacity)
-        return bytes;
-    return std::bit_ceil(std::max(bytes, pinned_alignment));
+    try
+    {
+        pool->set_attribute(cuda::memory_pool_attributes::release_threshold, 0);
+        pool->trim_to(0);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 char * PinnedMemoryPool::acquire(size_t bytes)
 {
-    const size_t capacity = capacityFor(bytes);
+    if (!pool)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pinned host memory is taken before its pool is configured");
 
-    if (bytes <= max_pooled_capacity)
-    {
-        std::lock_guard lock(mutex);
-        const auto it = free_buffers.find(capacity);
-        if (it != free_buffers.end())
-        {
-            char * const taken = it->second;
-            pooled_bytes -= capacity;
-            free_buffers.erase(it);
-            return taken;
-        }
-    }
-
-    void * fresh = nullptr;
-    checkCuda(cudaHostAlloc(&fresh, capacity, cudaHostAllocDefault), "Cannot allocate {} bytes of pinned host memory", capacity);
-    return static_cast<char *>(fresh);
+    return static_cast<char *>(pool->allocate_sync(bytes));
 }
 
 void PinnedMemoryPool::release(char * buffer, size_t bytes) noexcept
 {
-    if (buffer == nullptr)
-        return;
-
-    if (bytes <= max_pooled_capacity)
-    {
-        const size_t capacity = capacityFor(bytes);
-
-        std::lock_guard lock(mutex);
-        if (pooled_bytes + capacity <= max_pooled_bytes)
-        {
-            free_buffers.emplace(capacity, buffer);
-            pooled_bytes += capacity;
-            return;
-        }
-    }
-
-    cudaFreeHost(buffer);
+    if (buffer != nullptr)
+        pool->deallocate_sync(buffer, bytes);
 }
 
 
 void * PinnedAllocator::alloc(size_t size, size_t alignment)
 {
-    if (alignment > pinned_alignment)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pinned host memory aligned to {} bytes, more than {}", alignment, pinned_alignment);
+    if (alignment > cuda::mr::default_cuda_malloc_alignment)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Pinned host memory aligned to {} bytes, more than {}",
+            alignment,
+            cuda::mr::default_cuda_malloc_alignment);
 
     PinnedMemoryPool & pool = GPUDevice::instance().pinnedPool();
-    const size_t capacity = pool.capacityFor(size);
 
-    auto trace = CurrentMemoryTracker::alloc(capacity);
+    auto trace = CurrentMemoryTracker::alloc(size);
     char * buffer = nullptr;
     try
     {
@@ -119,31 +84,24 @@ void * PinnedAllocator::alloc(size_t size, size_t alignment)
     }
     catch (...)
     {
-        [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(capacity);
+        [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
         throw;
     }
 
-    trace.onAlloc(buffer, capacity);
+    trace.onAlloc(buffer, size);
     return buffer;
 }
 
 void PinnedAllocator::free(void * buf, size_t size, size_t /* alignment */) noexcept
 {
-    PinnedMemoryPool & pool = PinnedMemoryPool::instance();
-    const size_t capacity = pool.capacityFor(size);
+    PinnedMemoryPool::instance().release(static_cast<char *>(buf), size);
 
-    pool.release(static_cast<char *>(buf), size);
-
-    auto trace = CurrentMemoryTracker::free(capacity);
-    trace.onFree(buf, capacity);
+    auto trace = CurrentMemoryTracker::free(size);
+    trace.onFree(buf, size);
 }
 
 void * PinnedAllocator::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
 {
-    const PinnedMemoryPool & pool = PinnedMemoryPool::instance();
-    if (pool.capacityFor(old_size) == pool.capacityFor(new_size))
-        return buf;
-
     void * const fresh = alloc(new_size, alignment);
     memcpy(fresh, buf, std::min(old_size, new_size));
     free(buf, old_size, alignment);
@@ -215,7 +173,7 @@ void DeviceBuffer::reserve(size_t bytes)
 
     void * fresh = nullptr;
     checkCuda(
-        cudaMallocFromPoolAsync(&fresh, grown.capacity, GPUDevice::instance().memoryPool(), stream),
+        cudaMallocFromPoolAsync(&fresh, grown.capacity, GPUResources::get().memory_pool, stream),
         "Cannot allocate {} bytes on the device",
         grown.capacity);
     grown.memory = static_cast<char *>(fresh);

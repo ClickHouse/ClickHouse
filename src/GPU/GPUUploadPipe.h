@@ -249,7 +249,7 @@ private:
     StagedBlocks staged_data;
     StagedBlocks staged_sizes;
     SyncDecompressor decompressor;
-    DeviceBuffer expanded_sizes{StreamRegistry::get().compute};
+    DeviceBuffer expanded_sizes{GPUResources::get().compute};
 
     /// Expanded bytes of both streams staged or on the device since the last `reset`.
     size_t staged_bytes = 0;

@@ -16,9 +16,8 @@ namespace DB::ErrorCodes
 
 namespace DB::ServerSetting
 {
-    extern const ServerSettingsUInt64 gpu_max_pooled_pinned_bytes;
-    extern const ServerSettingsUInt64 gpu_max_pooled_pinned_capacity;
     extern const ServerSettingsUInt64 gpu_memory_pool_release_threshold;
+    extern const ServerSettingsUInt64 gpu_pinned_memory_pool_release_threshold;
 }
 
 namespace DB::GPU
@@ -38,9 +37,8 @@ bool isClickHouseException(const std::exception & exception)
 GPUDeviceSettings GPUDeviceSettings::fromServerSettings(const ServerSettings & server_settings)
 {
     return {
-        .max_pooled_pinned_bytes = server_settings[ServerSetting::gpu_max_pooled_pinned_bytes],
-        .max_pooled_pinned_capacity = server_settings[ServerSetting::gpu_max_pooled_pinned_capacity],
         .memory_pool_release_threshold = server_settings[ServerSetting::gpu_memory_pool_release_threshold],
+        .pinned_memory_pool_release_threshold = server_settings[ServerSetting::gpu_pinned_memory_pool_release_threshold],
     };
 }
 
@@ -67,23 +65,26 @@ cudaMemPool_t defaultMemoryPool()
 }
 
 GPUDevice::GPUDevice(const GPUDeviceSettings & settings)
-    : memory_pool(defaultMemoryPool())
+    : gpu_resources{
+          .compute = rmm::cuda_stream_view{cudaStreamLegacy},
+          .upload = {},
+          .decompression = {},
+          .memory_pool = defaultMemoryPool(),
+      }
     , upload_stream(createStream())
     , decompression_stream(createStream())
-    , stream_registry{
-          .compute = rmm::cuda_stream_view{cudaStreamLegacy},
-          .upload = rmm::cuda_stream_view{upload_stream.get()},
-          .decompression = rmm::cuda_stream_view{decompression_stream.get()},
-      }
 {
+    gpu_resources.upload = rmm::cuda_stream_view{upload_stream.get()};
+    gpu_resources.decompression = rmm::cuda_stream_view{decompression_stream.get()};
+
     uint64_t release_threshold = settings.memory_pool_release_threshold;
     checkCuda(
-        cudaMemPoolSetAttribute(memory_pool, cudaMemPoolAttrReleaseThreshold, &release_threshold),
+        cudaMemPoolSetAttribute(gpu_resources.memory_pool, cudaMemPoolAttrReleaseThreshold, &release_threshold),
         "Cannot set the release threshold of the device's memory pool");
 
-    PinnedMemoryPool::instance().configure(settings.max_pooled_pinned_bytes, settings.max_pooled_pinned_capacity);
+    PinnedMemoryPool::instance().configure(settings.pinned_memory_pool_release_threshold);
 
-    setCudfMemoryPool(memory_pool);
+    setCudfMemoryPool(gpu_resources.memory_pool);
 }
 
 GPUDevice::~GPUDevice()
@@ -92,7 +93,7 @@ GPUDevice::~GPUDevice()
     {
         checkCuda(cudaDeviceSynchronize(), "Cannot wait for the device");
         resetCudfMemoryPool();
-        checkCuda(cudaMemPoolTrimTo(memory_pool, 0), "Cannot return the memory of the device's memory pool");
+        checkCuda(cudaMemPoolTrimTo(gpu_resources.memory_pool, 0), "Cannot return the memory of the device's memory pool");
     }
     catch (...)
     {
@@ -110,9 +111,9 @@ GPUDevice & GPUDevice::instance()
     return context->getGPU();
 }
 
-const StreamRegistry & StreamRegistry::get()
+const GPUResources & GPUResources::get()
 {
-    return GPUDevice::instance().streams();
+    return GPUDevice::instance().resources();
 }
 
 void synchronizeStream(rmm::cuda_stream_view stream)

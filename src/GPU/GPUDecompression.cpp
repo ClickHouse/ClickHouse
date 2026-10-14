@@ -125,13 +125,7 @@ void SyncDecompressor::decompress(
     if (blocks.empty())
         return;
 
-    const EventPtr destination_ready = createEvent();
-    checkCuda(cudaEventRecord(destination_ready.get(), StreamRegistry::get().compute), "Cannot mark a point in the compute stream");
-    checkCuda(
-        cudaStreamWaitEvent(StreamRegistry::get().decompression, destination_ready.get(), 0),
-        "Cannot make the decompression stream wait for the compute stream");
-
-    waitOnFailure(StreamRegistry::get().decompression, [&]
+    waitOnFailure(GPUResources::get().decompression, [&]
     {
         device_compressed.clear();
         device_compressed.append(host_compressed.substr(0, compressed_total));
@@ -146,83 +140,52 @@ void SyncDecompressor::decompress(
     batch.waitAndCheck();
 }
 
-AsyncDecompressor::AsyncDecompressor()
-{
-    checkCuda(cudaEventCreateWithFlags(&values_copied_out, cudaEventDisableTiming), "Cannot create a CUDA event");
-}
-
 AsyncDecompressor::AsyncDecompressor(AsyncDecompressor && other) noexcept
     : batch(std::move(other.batch))
     , in_flight(std::exchange(other.in_flight, false))
-    , values(std::move(other.values))
-    , values_copied_out(std::exchange(other.values_copied_out, nullptr))
-    , values_in_use(std::exchange(other.values_in_use, false))
 {
 }
 
 AsyncDecompressor::~AsyncDecompressor()
 {
+    if (!in_flight)
+        return;
+
     try
     {
-        if (in_flight)
-            batch.wait();
-        if (values_in_use)
-            checkCuda(cudaEventRecord(values_copied_out, StreamRegistry::get().compute), "Cannot mark a point in the compute stream");
-        if (values_copied_out != nullptr)
-            checkCuda(cudaEventSynchronize(values_copied_out), "Cannot wait for the expanded values to be copied out");
+        batch.wait();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    if (values_copied_out != nullptr)
-        cudaEventDestroy(values_copied_out);
 }
 
-void AsyncDecompressor::launch(GPUCodec codec, std::span<const CompressedPiece> pieces)
+void AsyncDecompressor::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * device_destination)
 {
     if (in_flight)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was launched while the last one was not waited for");
-    if (values_in_use)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was taken again before being released");
 
-    size_t total = 0;
-    for (const CompressedPiece & piece : pieces)
-        total += decompressedBytesOf(piece.blocks);
-
-    checkCuda(
-        cudaStreamWaitEvent(StreamRegistry::get().decompression, values_copied_out, 0),
-        "Cannot make the decompression stream wait for the expanded values to be copied out");
-    values.clear();
-
-    batch.launch(codec, pieces, values.grow(total));
+    batch.launch(codec, pieces, device_destination);
     in_flight = true;
 }
 
-const char * AsyncDecompressor::wait()
+void AsyncDecompressor::wait()
 {
     if (!in_flight)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was waited for without being launched");
 
     in_flight = false;
     batch.waitAndCheck();
-    values_in_use = true;
-    return values.data();
-}
-
-void AsyncDecompressor::release()
-{
-    if (!values_in_use)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was released without being taken");
-
-    checkCuda(cudaEventRecord(values_copied_out, StreamRegistry::get().compute), "Cannot mark a point in the compute stream");
-    values_in_use = false;
 }
 
 void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination)
 {
-    const rmm::cuda_stream_view stream = StreamRegistry::get().decompression;
+    const rmm::cuda_stream_view stream = GPUResources::get().decompression;
+
+    /// The destination is the caller's, which may have just allocated or written it on the compute stream.
+    checkCuda(cudaEventRecord(destination_ready.get(), GPUResources::get().compute), "Cannot mark a point in the compute stream");
+    checkCuda(cudaStreamWaitEvent(stream, destination_ready.get(), 0), "Cannot make the decompression stream wait for the compute stream");
 
     size_t num_blocks = 0;
     size_t decompressed_total = 0;

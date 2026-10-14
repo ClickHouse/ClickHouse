@@ -22,7 +22,7 @@ namespace DB::GPU
 {
 
 DeviceFixedColumnBuffer::DeviceFixedColumnBuffer(GPUElementType element_type_)
-    : DeviceFixedColumnBuffer(element_type_, StreamRegistry::get().compute)
+    : DeviceFixedColumnBuffer(element_type_, GPUResources::get().compute)
 {
 }
 
@@ -199,7 +199,7 @@ bool ColumnUploadPipe::canUpload(const IDataType & type)
 }
 
 ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_)
-    : ColumnUploadPipe(type, stage_bytes_, StreamRegistry::get().compute)
+    : ColumnUploadPipe(type, stage_bytes_, GPUResources::get().compute)
 {
 }
 
@@ -314,17 +314,21 @@ void ColumnUploadPipe::sendStagedToDevice()
     if (staging_bytes == 0 || in_flight)
         return;
 
-    switch (columnKindOf(column_type))
+    /// Until `in_flight` is set, nothing waits for the copies from the staging buffers, which the pool may give away.
+    waitOnFailure(stream, [&]
     {
-        case GPUColumnKind::Fixed:
-            std::get<DeviceFixedColumnBuffer>(device).appendPlain(bytesOf(staged_data));
-            break;
-        case GPUColumnKind::Variable:
-            std::get<DeviceVariableColumnBuffer>(device).append(bytesOf(staged_offsets), bytesOf(staged_data));
-            break;
-    }
+        switch (columnKindOf(column_type))
+        {
+            case GPUColumnKind::Fixed:
+                std::get<DeviceFixedColumnBuffer>(device).appendPlain(bytesOf(staged_data));
+                break;
+            case GPUColumnKind::Variable:
+                std::get<DeviceVariableColumnBuffer>(device).append(bytesOf(staged_offsets), bytesOf(staged_data));
+                break;
+        }
 
-    checkCuda(cudaEventRecord(copied.get(), stream), "Cannot mark a point in an upload stream");
+        checkCuda(cudaEventRecord(copied.get(), stream), "Cannot mark a point in an upload stream");
+    });
     in_flight = true;
 }
 
@@ -364,7 +368,7 @@ CompressedUploadPipe::CompressedUploadPipe(const IDataType & type, size_t stage_
     : column_type(columnTypeOrThrow(type))
     , stage_bytes(stage_bytes_)
     , codec(codec_)
-    , device(deviceColumnFor(column_type, StreamRegistry::get().compute))
+    , device(deviceColumnFor(column_type, GPUResources::get().compute))
 {
 }
 
