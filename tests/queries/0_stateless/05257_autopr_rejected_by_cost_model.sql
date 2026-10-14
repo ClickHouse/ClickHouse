@@ -13,6 +13,9 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     automatic_parallel_replicas_min_bytes_per_replica = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+-- A boundary remembered from the first run would decline the second one without building the plan, which
+-- counts `AutomaticParallelReplicasDecidedWithoutBuildingPlan` instead of the events checked here.
+SET automatic_parallel_replicas_remember_boundary = 0;
 SET enable_analyzer = 1;
 
 -- Twice: the first run only collects statistics, the second is the one the cost model decides.

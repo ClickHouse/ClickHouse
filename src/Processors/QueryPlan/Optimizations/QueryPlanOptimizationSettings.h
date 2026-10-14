@@ -288,6 +288,10 @@ struct QueryPlanOptimizationSettings
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
+    bool automatic_parallel_replicas_remember_boundary = true;
+    /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
+    /// plan; see `parallelReplicasBoundarySettingsHash`.
+    UInt64 parallel_replicas_boundary_settings_hash = 0;
 
     bool query_plan_optimize_primary_key = true;
 

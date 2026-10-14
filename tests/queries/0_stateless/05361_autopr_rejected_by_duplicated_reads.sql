@@ -19,6 +19,9 @@ SET enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3
 -- The `distributed plan` checks turn `serialize_query_plan` on, which ships a plan fragment instead
 -- and takes a different path to the same decision; pin it so the assertion below stays about the ratio.
 SET serialize_query_plan = 0;
+-- A boundary remembered from the first run would decline the second one without building the plan, which
+-- counts `AutomaticParallelReplicasDecidedWithoutBuildingPlan` instead of the events checked here.
+SET automatic_parallel_replicas_remember_boundary = 0;
 -- A small task size leaves the coordinated read splittable enough that distributing wins the time
 -- comparison, so that the ratio alone decides the outcome.
 SET merge_tree_min_bytes_per_task_for_remote_reading = 4096;
