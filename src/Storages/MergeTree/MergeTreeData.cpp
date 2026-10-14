@@ -1173,23 +1173,23 @@ void MergeTreeData::checkProperties(
             checkSuspiciousIndices(index_function);
 
     /// The sorting key, the partition id and the part minmax index are computed from the block before
-    /// compression, so a lossy codec (e.g. SZ3) on a column backing either key leaves them describing values
-    /// the data on disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
+    /// compression, and so is the condition of a partial index, which decides what its granules contain.
+    /// A lossy codec (e.g. SZ3) on a column backing any of them leaves them describing values the data on
+    /// disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
     if (!attach)
     {
-        Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
-        const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
-        key_columns.insert(key_columns.end(), partition_key_columns.begin(), partition_key_columns.end());
-
-        for (const auto & name : key_columns)
+        /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
+        /// so lossiness is resolved per substream the way the part writer resolves it.
+        auto is_lossy_column = [&](const String & name)
         {
+            /// A subcolumn is read from the stream of its column, whose codec is the one that counts.
+            const auto stored = new_metadata.columns.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name);
             const auto column = new_metadata.columns.tryGetColumnDescription(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
+                GetColumnsOptions(GetColumnsOptions::AllPhysical), stored ? stored->getNameInStorage() : name);
             if (!column || !column->codec)
-                continue;
+                return false;
 
-            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
-            /// so lossiness is resolved per substream the way the part writer resolves it.
             bool is_lossy = false;
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {
@@ -1199,12 +1199,31 @@ void MergeTreeData::checkProperties(
                                .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
             };
             column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+            return is_lossy;
+        };
 
-            if (is_lossy)
+        Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
+        const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        key_columns.insert(key_columns.end(), partition_key_columns.begin(), partition_key_columns.end());
+
+        for (const auto & name : key_columns)
+            if (is_lossy_column(name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Column {} is used in the sorting key or the partition key, so it cannot be compressed "
                     "with a lossy codec",
                     backQuoteIfNeed(name));
+
+        for (const auto & index : new_metadata.getSecondaryIndices())
+        {
+            if (!index.where_expression)
+                continue;
+
+            for (const auto & name : index.where_expression->getRequiredColumns())
+                if (is_lossy_column(name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} is used in the WHERE of the skip index {}, so it cannot be compressed "
+                        "with a lossy codec",
+                        backQuoteIfNeed(name), backQuoteIfNeed(index.name));
         }
     }
 
