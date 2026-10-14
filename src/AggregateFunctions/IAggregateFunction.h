@@ -290,6 +290,7 @@ public:
     /// The caller must later merge each deferred destination with all its deferred sources — e.g. via
     /// `parallelizeMergeMulti` — and destroy the deferred source states.
     /// Functions that cannot parallelize their merge (see `isAbleToParallelizeMerge`) defer nothing.
+    /// If it throws, every source state of the batch has been destroyed or recorded in `deferred_src`.
     virtual void mergeAndDestroyBatchOrDefer(
         AggregateDataPtr * dst_places,
         AggregateDataPtr * src_places,
@@ -848,29 +849,40 @@ public:
         /// merged nor recorded in `deferred_*` would leak. Reserve the slots for the deferred pairs before
         /// anything is merged, so that recording a pair cannot throw. The destinations of a batch are distinct
         /// and a merge changes only its own destination, so the decisions below do not change in the loop.
-        size_t num_large = 0;
-        for (size_t i = 0; i < size; ++i)
-            num_large += static_cast<const Derived *>(this)->isLargeMergePair(dst_places[i] + offset, rhs_places[i] + offset);
-        if (num_large)
+        /// If something throws, the source states that are neither destroyed nor recorded yet are destroyed here.
+        size_t i = 0;
+        try
         {
-            deferred_dst.reserve(deferred_dst.size() + num_large);
-            deferred_src.reserve(deferred_src.size() + num_large);
-        }
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
-                     "IAggregateFunction::mergeAndDestroyBatchOrDefer called with the same source and destination state");
-            if (static_cast<const Derived *>(this)->isLargeMergePair(dst_places[i] + offset, rhs_places[i] + offset))
+            size_t num_large = 0;
+            for (size_t j = 0; j < size; ++j)
+                num_large += static_cast<const Derived *>(this)->isLargeMergePair(dst_places[j] + offset, rhs_places[j] + offset);
+            if (num_large)
             {
-                chassert(deferred_dst.size() < deferred_dst.capacity() && deferred_src.size() < deferred_src.capacity());
-                deferred_dst.push_back(dst_places[i] + offset);
-                deferred_src.push_back(rhs_places[i] + offset);
-                continue;
+                deferred_dst.reserve(deferred_dst.size() + num_large);
+                deferred_src.reserve(deferred_src.size() + num_large);
             }
 
-            static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
-            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            for (; i < size; ++i)
+            {
+                chassert(dst_places[i] + offset != rhs_places[i] + offset,
+                         "IAggregateFunction::mergeAndDestroyBatchOrDefer called with the same source and destination state");
+                if (static_cast<const Derived *>(this)->isLargeMergePair(dst_places[i] + offset, rhs_places[i] + offset))
+                {
+                    chassert(deferred_dst.size() < deferred_dst.capacity() && deferred_src.size() < deferred_src.capacity());
+                    deferred_dst.push_back(dst_places[i] + offset);
+                    deferred_src.push_back(rhs_places[i] + offset);
+                    continue;
+                }
+
+                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+                static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            }
+        }
+        catch (...)
+        {
+            for (; i < size; ++i)
+                static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            throw;
         }
     }
 

@@ -3598,16 +3598,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
     {
         if (dst_places.empty())
             return;
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-        {
-            if (deferred_ptr && aggregate_functions[i]->isAbleToParallelizeMerge())
-                aggregate_functions[i]->mergeAndDestroyBatchOrDefer(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i],
-                    deferred[i].dst_places, deferred[i].src_places, arena);
-            else
-                aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
-        }
+        mergeAndDestroyDetachedBatch(dst_places, src_places, deferred_ptr, arena, is_cancelled, /*skip_compiled=*/ false);
         dst_places.clear();
         src_places.clear();
     };
@@ -4870,9 +4861,37 @@ void NO_INLINE Aggregator::mergeDataImpl(
         const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
         callJITFunction(compiled_functions.merge_aggregate_states_function, dst_places.data(), src_places.data(), dst_places.size());
 
-        for (size_t i = 0; i < params.aggregates_size; ++i)
+        mergeAndDestroyDetachedBatch(dst_places, src_places, deferred, arena, is_cancelled, /*skip_compiled=*/ true);
+        return;
+    }
+#endif
+
+    mergeAndDestroyDetachedBatch(dst_places, src_places, deferred, arena, is_cancelled, /*skip_compiled=*/ false);
+}
+
+void Aggregator::mergeAndDestroyDetachedBatch(
+    PaddedPODArray<AggregateDataPtr> & dst_places,
+    PaddedPODArray<AggregateDataPtr> & src_places,
+    DeferredMerges * deferred,
+    Arena * arena,
+    std::atomic<bool> & is_cancelled,
+    [[maybe_unused]] bool skip_compiled) const
+{
+    auto is_skipped = [&](size_t i)
+    {
+#if USE_EMBEDDED_COMPILER
+        return skip_compiled && is_aggregate_function_compiled[i];
+#else
+        return false;
+#endif
+    };
+
+    size_t i = 0;
+    try
+    {
+        for (; i < params.aggregates_size; ++i)
         {
-            if (is_aggregate_function_compiled[i])
+            if (is_skipped(i))
                 continue;
 
             if (deferred && aggregate_functions[i]->isAbleToParallelizeMerge())
@@ -4883,20 +4902,20 @@ void NO_INLINE Aggregator::mergeDataImpl(
                 aggregate_functions[i]->mergeAndDestroyBatch(
                     dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
         }
-
-        return;
     }
-#endif
-
-    for (size_t i = 0; i < params.aggregates_size; ++i)
+    catch (...)
     {
-        if (deferred && aggregate_functions[i]->isAbleToParallelizeMerge())
-            aggregate_functions[i]->mergeAndDestroyBatchOrDefer(
-                dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i],
-                (*deferred)[i].dst_places, (*deferred)[i].src_places, arena);
-        else
-            aggregate_functions[i]->mergeAndDestroyBatch(
-                dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
+        /// The source states are detached from their hash table, so nobody else will destroy them. The function
+        /// that threw has handled its own states of the batch (`mergeAndDestroyBatchOrDefer` destroys or records
+        /// all of them); the states of the following functions are untouched and are destroyed here.
+        for (size_t k = i + 1; k < params.aggregates_size; ++k)
+        {
+            if (is_skipped(k))
+                continue;
+            for (auto * src : src_places)
+                aggregate_functions[k]->destroy(src + offsets_of_aggregate_states[k]);
+        }
+        throw;
     }
 }
 
@@ -5025,34 +5044,56 @@ void Aggregator::mergeAndDestroyRowOrDefer(AggregateDataPtr dst, AggregateDataPt
             && aggregate_functions[i]->isLargeMergePair(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i]);
     };
 
-    /// Everything that can throw is done in this loop: the merges and the reservation of the slots for the
-    /// deferred pairs. If something throws, the source row is still owned by the source table and is destroyed
-    /// once, by it.
-    for (size_t i = 0; i < params.aggregates_size; ++i)
+    /// Everything that can throw is done in this loop: the merges and the recording of the deferred pairs. The decision
+    /// to defer a pair is taken once, here: a later check could see a destination grown by the serial merge of this
+    /// very pair. If something throws, the pairs recorded for this row are removed again, so the source row is still
+    /// owned by the source table and is destroyed once, by it.
+    size_t i = 0;
+    try
     {
-        if (is_deferred(i))
+        for (; i < params.aggregates_size; ++i)
         {
-            auto & pairs = (*deferred)[i];
-            pairs.dst_places.reserve(pairs.dst_places.size() + 1);
-            pairs.src_places.reserve(pairs.src_places.size() + 1);
+            if (is_deferred(i))
+            {
+                auto & pairs = (*deferred)[i];
+                pairs.dst_places.reserve(pairs.dst_places.size() + 1);
+                pairs.src_places.reserve(pairs.src_places.size() + 1);
+                pairs.dst_places.push_back(dst + offsets_of_aggregate_states[i]);
+                pairs.src_places.push_back(src + offsets_of_aggregate_states[i]);
+            }
+            else
+                aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
         }
-        else
-            aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+    }
+    catch (...)
+    {
+        for (size_t j = 0; j < i; ++j)
+        {
+            if (isRecordedDeferredPair(deferred, j, src))
+            {
+                (*deferred)[j].dst_places.pop_back();
+                (*deferred)[j].src_places.pop_back();
+            }
+        }
+        throw;
     }
 
-    /// The pairs are recorded and the other source states destroyed only after every merge of the row succeeded,
-    /// and nothing here can throw: the slots are reserved and `destroy` is `noexcept`. The decision is the same
-    /// as above, because the states of a deferred pair have not been touched.
-    for (size_t i = 0; i < params.aggregates_size; ++i)
+    /// The other source states are destroyed only after every merge of the row succeeded; `destroy` is `noexcept`.
+    /// A recorded pair is the last one in its array: its source state is still alive, so no other recorded source
+    /// can have the same address.
+    for (size_t j = 0; j < params.aggregates_size; ++j)
     {
-        if (is_deferred(i))
-        {
-            (*deferred)[i].dst_places.push_back(dst + offsets_of_aggregate_states[i]);
-            (*deferred)[i].src_places.push_back(src + offsets_of_aggregate_states[i]);
-        }
-        else
-            aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
+        if (!isRecordedDeferredPair(deferred, j, src))
+            aggregate_functions[j]->destroy(src + offsets_of_aggregate_states[j]);
     }
+}
+
+bool Aggregator::isRecordedDeferredPair(const DeferredMerges * deferred, size_t i, AggregateDataPtr src) const
+{
+    if (!deferred)
+        return false;
+    const auto & src_places = (*deferred)[i].src_places;
+    return !src_places.empty() && src_places.back() == src + offsets_of_aggregate_states[i];
 }
 
 template <typename Method, typename Table>

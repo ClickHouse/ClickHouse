@@ -1134,6 +1134,21 @@ private:
     /// pairs of states too large to merge serially are recorded there instead, as in `mergeDataImpl`.
     void mergeAndDestroyRowOrDefer(AggregateDataPtr dst, AggregateDataPtr src, Arena * arena, DeferredMerges * deferred) const;
 
+    /// Merge the batch of source rows `src_places` into `dst_places` and destroy them, deferring the large pairs to
+    /// `deferred` if it is not null. The source rows are detached from their hash table: if it throws, every state
+    /// of the batch has been destroyed, except those already recorded in `deferred` and, with `skip_compiled`, the
+    /// states of the compiled functions, which the caller has merged by the JIT-compiled function.
+    void mergeAndDestroyDetachedBatch(
+        PaddedPODArray<AggregateDataPtr> & dst_places,
+        PaddedPODArray<AggregateDataPtr> & src_places,
+        DeferredMerges * deferred,
+        Arena * arena,
+        std::atomic<bool> & is_cancelled,
+        bool skip_compiled) const;
+
+    /// Whether the state of the `i`-th aggregate function of the source row `src` is the last pair recorded in `deferred`.
+    bool isRecordedDeferredPair(const DeferredMerges * deferred, size_t i, AggregateDataPtr src) const;
+
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     /// `deferred` is the same as for `mergeDataImpl`.
     template <typename Method, typename Table>
