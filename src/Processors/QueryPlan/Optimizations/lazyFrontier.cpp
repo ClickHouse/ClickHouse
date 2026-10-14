@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/lazyFrontier.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -30,18 +32,42 @@ namespace
 /// A value that does not answer the same twice cannot be recomputed above the `LIMIT`: the filter below
 /// already used one answer, and the result has to agree with it. Same for a function whose answer depends
 /// on the rows around it, which above the `LIMIT` are no longer the same rows.
+///
+/// A higher-order function answers as its lambdas do, so it is recomputed only with them. A lambda is as deterministic as
+/// its body, which its capture function says, or, for a lambda that captures nothing, the function of its constant.
 bool canBeRecomputed(const ActionsDAG::Node * node)
 {
     if (node->type == ActionsDAG::ActionType::ARRAY_JOIN)
         return false;
 
     if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->is_deterministic_constant;
+    {
+        if (!node->is_deterministic_constant)
+            return false;
+
+        if (!WhichDataType(node->result_type).isFunction() || !node->column)
+            return true;
+
+        const auto full_column = node->column->convertToFullColumnIfConst();
+        const auto * column_function = typeid_cast<const ColumnFunction *>(full_column.get());
+        if (!column_function)
+            return true;
+
+        const auto & function = column_function->getFunction();
+        return function->isDeterministicInScopeOfQuery() && !function->isStateful();
+    }
 
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return true;
 
-    return node->function_base->isDeterministicInScopeOfQuery() && !node->function_base->isStateful();
+    if (!node->function_base->isDeterministicInScopeOfQuery() || node->function_base->isStateful())
+        return false;
+
+    for (const auto * child : node->children)
+        if (WhichDataType(child->result_type).isFunction() && !canBeRecomputed(child))
+            return false;
+
+    return true;
 }
 
 /// Which source an input belongs to, or nullopt for a node that is not an input.
@@ -175,6 +201,11 @@ private:
         if (!can_be_had_above)
             return Decision::Cross;
 
+        /// A lambda is not a column a step can hand over. It is placed only for the higher-order function that reads it,
+        /// which is recomputed only when the lambda can be as well, see `canBeRecomputed`.
+        if (WhichDataType(node->result_type).isFunction())
+            return Decision::Recompute;
+
         /// How to have it above, once the rest of this settles whether to: a source column is read a
         /// second time, anything else is computed a second time.
         const auto have_it_above = source ? Decision::LazyRead : Decision::Recompute;
@@ -191,18 +222,19 @@ private:
                     return Decision::Cross;
         }
 
+        /// A value that does not answer the same twice is computed where the plan computes it, and crosses as a column.
+        /// Where something below the `LIMIT` uses it, the result has to agree with that; where nothing does, it is still
+        /// computed for the rows there - one value per row a join then repeats, a number that counts the rows before the
+        /// `LIMIT`. What is computed from it may still be recomputed above, since that gives the same answer.
+        if (!canBeRecomputed(node))
+            return Decision::Cross;
+
         /// Nothing below the `LIMIT` computes it, so there is nothing to hand over or to agree with.
         if (!frontier.at(node).computed_below)
             return have_it_above;
 
         /// The main branch hands this one over regardless, so there is nothing to weigh up.
         if (already_crossing.contains(node))
-            return Decision::Cross;
-
-        /// This value was already used below the `LIMIT` and the result has to agree with it, so one
-        /// that does not answer the same twice crosses as a column instead. What is computed from it may
-        /// still be recomputed above, since that gives the same answer.
-        if (!canBeRecomputed(node))
             return Decision::Cross;
 
         return preferRecomputing(node) ? have_it_above : Decision::Cross;

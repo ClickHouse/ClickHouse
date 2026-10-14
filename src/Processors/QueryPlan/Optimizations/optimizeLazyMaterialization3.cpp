@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Functions/FunctionFactory.h>
@@ -93,8 +94,10 @@ const ActionsDAG::Node & addMasked(
 /// reads it there reads it as the join left it, so the mask applies to the value itself.
 bool isMaskedRecomputation(const MergedPlanDAG & merged, const LazyFrontier & frontier, const ActionsDAG::Node * node)
 {
+    /// A lambda is no value of a row: the higher-order function that reads it is masked instead.
     return (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::COLUMN)
-        && frontier.at(node).above == Placement::Above::Recomputed && merged.getNearestStuffing(node) != nullptr;
+        && !WhichDataType(node->result_type).isFunction() && frontier.at(node).above == Placement::Above::Recomputed
+        && merged.getNearestStuffing(node) != nullptr;
 }
 
 /// The expression computed above the `LIMIT`: the outputs of `merged`, computed from the columns of
