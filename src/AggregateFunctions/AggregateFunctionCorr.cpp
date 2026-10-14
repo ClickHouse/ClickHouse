@@ -19,9 +19,9 @@ $$
 
 <br/>
 
-<Note>
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](/reference/functions/aggregate-functions/corrStable) function. It is slower but provides a more accurate result.
-</Note>
+:::note
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](../reference/corrStable.md) function. It is slower but provides a more accurate result.
+:::
     )";
     FunctionDocumentation::Syntax syntax = "corr(x, y)";
     FunctionDocumentation::Arguments arguments = {

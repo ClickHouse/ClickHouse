@@ -39,35 +39,32 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
   ## 测试用例：TPC-H
 </div>
 
-下表比较了常规 PostgreSQL 表与连接到 ClickHouse 的 pg&#95;clickhouse 在 TPC-H 查询上的性能，
-两者均加载了扩展因子为 1 的数据；✔︎ 表示以单次外部扫描实现完全下推，✼ 表示以
-多次外部扫描实现完全下推。所有测试均在配备 36 GB 内存的 MacBook Pro M4 Max
-上运行。
+下表比较了常规 PostgreSQL 表与连接到 ClickHouse 的 pg&#95;clickhouse 在 [TPC-H] 查询上的性能表现，二者均使用扩缩容因子 1 加载；✔︎ 表示完全下推，短横线表示查询在 1 分钟后被取消。所有测试均在配备 36 GB 内存的 MacBook Pro M4 Max 上运行。
 
-|         查询 | PostgreSQL | pg&#95;clickhouse |  下推 |
-| ---------: | ---------: | ----------------: | :-: |
-|  [Query 1] |    4483 ms |             59 ms |  ✔  |
-|  [Query 2] |     588 ms |             24 ms |  ✔  |
-|  [Query 3] |     786 ms |             62 ms |  ✔  |
-|  [Query 4] |     550 ms |             38 ms |  ✔  |
-|  [Query 5] |     721 ms |           1439 ms |  ✔  |
-|  [Query 6] |     592 ms |             17 ms |  ✔  |
-|  [Query 7] |     639 ms |             29 ms |  ✔  |
-|  [Query 8] |     398 ms |            383 ms |  ✔  |
-|  [Query 9] |    2842 ms |            162 ms |  ✔  |
-| [Query 10] |     860 ms |            125 ms |  ✔  |
-| [Query 11] |     276 ms |             21 ms |  ✼  |
-| [Query 12] |     963 ms |             26 ms |  ✔  |
-| [Query 13] |    1037 ms |           1354 ms |     |
-| [Query 14] |     675 ms |             30 ms |  ✔  |
-| [Query 15] |    2520 ms |            387 ms |     |
-| [Query 16] |     539 ms |            823 ms |     |
-| [Query 17] |    2107 ms |             37 ms |  ✔  |
-| [Query 18] |    5230 ms |           7228 ms |     |
-| [Query 19] |      68 ms |             47 ms |  ✔  |
-| [Query 20] |     473 ms |             28 ms |     |
-| [Query 21] |    1145 ms |           4470 ms |     |
-| [Query 22] |     270 ms |             45 ms |  ✼  |
+|      Query | PostgreSQL | pg&#95;clickhouse | 下推 |
+| ---------: | ---------: | ----------------: | :------: |
+|  [Query 1] |    4693 ms |            268 ms |    ✔︎    |
+|  [Query 2] |     458 ms |           3446 ms |          |
+|  [Query 3] |     742 ms |            111 ms |    ✔︎    |
+|  [Query 4] |     270 ms |            130 ms |    ✔︎    |
+|  [Query 5] |     337 ms |           1460 ms |    ✔︎    |
+|  [Query 6] |     764 ms |             53 ms |    ✔︎    |
+|  [Query 7] |     619 ms |             96 ms |    ✔︎    |
+|  [Query 8] |     342 ms |            156 ms |    ✔︎    |
+|  [Query 9] |    3094 ms |            298 ms |    ✔︎    |
+| [Query 10] |     581 ms |            197 ms |    ✔︎    |
+| [Query 11] |     212 ms |             24 ms |          |
+| [Query 12] |    1116 ms |             84 ms |    ✔︎    |
+| [Query 13] |     958 ms |           1368 ms |          |
+| [Query 14] |     181 ms |             73 ms |    ✔︎    |
+| [Query 15] |    1118 ms |            557 ms |          |
+| [Query 16] |     497 ms |           1714 ms |          |
+| [Query 17] |    1846 ms |          32709 ms |          |
+| [Query 18] |    5823 ms |          10649 ms |          |
+| [Query 19] |      53 ms |            206 ms |    ✔︎    |
+| [Query 20] |     421 ms |                 - |          |
+| [Query 21] |    1349 ms |           4434 ms |          |
+| [Query 22] |     258 ms |           1415 ms |          |
 
 <div id="compile-from-source">
   ### 从源码编译
@@ -139,6 +136,16 @@ make
 sudo make install
 ```
 
+{/* XXX DSO 当前已禁用。
+  默认情况下，`make` 会动态链接 `clickhouse-cpp` 库（macOS 除外，因为目前尚不支持动态 `clickhouse-cpp` 库）。若要将 ClickHouse 库静态编译进 `pg_clickhouse`，请指定
+  `CH_BUILD=static`：
+
+  ```sh
+  make CH_BUILD=static
+  sudo make install CH_BUILD=static
+  ```
+  */}
+
 如果主机上安装了多个 PostgreSQL 版本，你可能需要指定
 对应版本的 `pg_config`：
 
@@ -148,7 +155,7 @@ make
 sudo make install
 ```
 
-如果你的主机上的 路径 中没有 `curl-config`，你可以显式指定其路径：
+如果你的主机上的 path 中没有 `curl-config`，你可以显式指定其路径：
 
 ```sh
 export CURL_CONFIG=/opt/homebrew/opt/curl/bin/curl-config
@@ -156,7 +163,7 @@ make
 sudo make install
 ```
 
-如果你遇到以下错误：
+如果遇到以下错误：
 
 ```text
 "Makefile", line 8: Need an operator
@@ -171,13 +178,13 @@ gmake install
 gmake installcheck
 ```
 
-如果遇到以下错误：
+如果你遇到以下错误：
 
 ```text
 make: pg_config: Command not found
 ```
 
-请确保已安装 `pg_config`，并且它已在你的 `路径` 中。如果你使用了
+请确保已安装 `pg_config`，并且它已在你的 `path` 中。如果你使用了
 RPM 等软件包管理系统来安装 PostgreSQL，请确保同时安装了
 `-devel` 软件包。如有必要，请告诉 build 过程应到哪里
 查找它：
@@ -276,8 +283,6 @@ make] 和 [CMake]。
 </div>
 
 * [David E. Wheeler](https://justatheory.com/)
-* [serprex](https://github.com/serprex)
-* [Josh Ventura](https://github.com/JoshDreamland)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 

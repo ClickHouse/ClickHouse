@@ -99,7 +99,7 @@ Peak memory usage: 485.15 MiB.
 
 ### Create the Iceberg table {#create-iceberg-table}
 
-For direct reads from an existing Iceberg table, we recommend the [`icebergS3` table function](/reference/functions/table-functions/iceberg). This guide demonstrates creating and populating standalone Iceberg tables, so it uses the [`IcebergS3` table engine](/reference/engines/table-engines/integrations/iceberg) with an explicit schema. The example S3 locations already contain the completed tables; to run the `CREATE` and `INSERT` statements, replace both locations with empty, writable S3 prefixes and credentials you control.
+To write data into Iceberg, create a table using the [`IcebergS3` table engine](/reference/engines/table-engines/integrations/iceberg).
 
 Note that the schema must be simplified compared to the MergeTree source. ClickHouse supports a richer type system than Iceberg and the underlying Parquet files - types such as `Enum`, `LowCardinality`, and `UInt8` are not supported in Iceberg and must be mapped to compatible types.
 
@@ -128,10 +128,8 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 Use `INSERT INTO SELECT` to write data from the MergeTree table into the Iceberg table. In this example, we write only London transactions:
 
-This example requires the [`allow_insert_into_iceberg` setting](/reference/settings/session-settings/allow#allow_insert_into_iceberg). See the [support matrix](/guides/use-cases/data-warehousing/support-matrix) for current maturity and limitations.
-
 ```sql
-SET allow_insert_into_iceberg = 1;
+SET allow_experimental_insert_into_iceberg = 1;
 
 INSERT INTO uk.uk_iceberg SELECT *
 FROM uk.uk_price_paid

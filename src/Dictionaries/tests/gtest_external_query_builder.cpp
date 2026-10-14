@@ -33,11 +33,10 @@ static DictionaryStructure makeSingleStringKeyStructure()
 }
 
 /// Returns the WHERE clause of a composeLoadKeysQuery call for the given values.
-static std::string buildWhereClause(
-    IdentifierQuotingStyle style, const std::vector<std::string> & values, const std::string & table = "t")
+static std::string buildWhereClause(IdentifierQuotingStyle style, const std::vector<std::string> & values)
 {
     auto dict_struct = makeSingleStringKeyStructure();
-    ExternalQueryBuilder builder(dict_struct, "", "", table, "", "", style);
+    ExternalQueryBuilder builder(dict_struct, "", "", "t", "", "", style);
 
     auto col = ColumnString::create();
     for (const auto & v : values)
@@ -68,24 +67,6 @@ TEST(ExternalQueryBuilderEscaping, DoubleQuotesLeavesBackslashUnchanged)
     EXPECT_NE(sql.find("'foo\\bar'"), std::string::npos) << "SQL: " << sql;
     // Must NOT double the backslash (that would store two backslashes in the DB).
     EXPECT_EQ(sql.find("'foo\\\\bar'"), std::string::npos) << "Must not double backslash. SQL: " << sql;
-}
-
-/// DoubleQuotesPostgreSQL (PostgreSQL): identifiers escape '"' by doubling it.
-TEST(ExternalQueryBuilderEscaping, DoubleQuotesPostgreSQLDoublesQuoteInIdentifier)
-{
-    std::string sql = buildWhereClause(IdentifierQuotingStyle::DoubleQuotesPostgreSQL, {"key"}, R"(t"x)");
-    EXPECT_NE(sql.find(R"("t""x")"), std::string::npos) << "SQL: " << sql;
-    // A '\"' would end the identifier for PostgreSQL and turn the rest of the query into statements.
-    EXPECT_EQ(sql.find(R"("t\"x")"), std::string::npos) << "Must not use backslash escaping. SQL: " << sql;
-}
-
-TEST(ExternalQueryBuilderEscaping, DoubleQuotesPostgreSQLKeepsQuoteDoublingForLiterals)
-{
-    // The dictionary source picks one style for identifiers and literals both, so the PostgreSQL
-    // identifier dialect must keep the '' literal escaping that DoubleQuotes enables.
-    std::string sql = buildWhereClause(IdentifierQuotingStyle::DoubleQuotesPostgreSQL, {"it's"});
-    EXPECT_NE(sql.find("'it''s'"), std::string::npos) << "SQL: " << sql;
-    EXPECT_EQ(sql.find("it\\'s"), std::string::npos) << "Must not use backslash escaping. SQL: " << sql;
 }
 
 /// Backticks (ClickHouse / MySQL): \' for single quotes, \\ for backslashes.

@@ -41,7 +41,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
@@ -280,20 +279,13 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionIf>(
-            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
+        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
-    explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool allow_lossy_numeric_supertype_ = false)
-        : FunctionIfBase()
-        , use_variant_when_no_common_type(use_variant_when_no_common_type_)
-        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
-    {}
+    explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
 
 private:
     bool use_variant_when_no_common_type = false;
-    bool allow_lossy_numeric_supertype = false;
 
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
@@ -705,8 +697,7 @@ private:
             temporary_columns[1] = {col1_contents[i], type1.getElements()[i], {}};
             temporary_columns[2] = {col2_contents[i], type2.getElements()[i], {}};
 
-            /// The result for one element can be constant (for example NULL in both branches), a tuple element cannot.
-            tuple_columns[i] = executeImpl(temporary_columns, tuple_result.getElements()[i], input_rows_count)->convertToFullColumnIfConst();
+            tuple_columns[i] = executeImpl(temporary_columns, tuple_result.getElements()[i], input_rows_count);
         }
 
         return ColumnTuple::create(tuple_columns);
@@ -1377,21 +1368,19 @@ public:
         }
 
         if (use_variant_when_no_common_type)
-            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});
 
-        return getLeastSupertype(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
+        return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
-        ColumnPtr res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count);
-        if (!res)
-            res = executeForNullThenElse(arguments, result_type, input_rows_count);
-        if (!res)
-            res = executeForNullableThenElse(arguments, result_type, input_rows_count);
-        if (res)
+        ColumnPtr res;
+        if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))
+            || (res = executeForNullThenElse(arguments, result_type, input_rows_count))
+            || (res = executeForNullableThenElse(arguments, result_type, input_rows_count)))
             return res;
 
         const ColumnWithTypeAndName & arg_cond = arguments[0];
@@ -1480,20 +1469,15 @@ public:
 
         /// TODO optimize for map type
         /// TODO optimize for nullable type
-        if (callOnBasicTypes<true, true, true, false>(left_id, right_id, call))
-            return res;
-
-        res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count);
-        if (!res)
-            res = executeString(cond_col, arguments, result_type);
-        if (!res)
-            res = executeGenericArray(cond_col, arguments, result_type);
-        if (!res)
-            res = executeTuple(arguments, result_type, input_rows_count);
-        if (!res)
-            res = executeMap(arguments, result_type, input_rows_count);
-        if (!res)
+        if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
+            || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))
+            || (res = executeString(cond_col, arguments, result_type))
+            || (res = executeGenericArray(cond_col, arguments, result_type))
+            || (res = executeTuple(arguments, result_type, input_rows_count))
+            || (res = executeMap(arguments, result_type, input_rows_count))))
+        {
             return executeGeneric(cond_col, arguments, result_type, input_rows_count);
+        }
 
         return res;
     }
@@ -1535,7 +1519,7 @@ Performs conditional branching.
 - If the condition `cond` evaluates to a non-zero value, the function returns the result of the expression `then`.
 - If `cond` evaluates to zero or NULL, the result of the `else` expression is returned.
 
-The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+The setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 
 If enabled, the `then` expression is evaluated only on rows where `cond` is true and the `else` expression where `cond` is false.
 
@@ -1571,9 +1555,9 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type, allow_lossy_numeric_supertype));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type));
 }
 
 }

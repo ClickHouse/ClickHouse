@@ -160,13 +160,15 @@ class PostgreSQLIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_LIBPQXX && USE_LIBPQXX
 private:
-    /// No custom deleter: unlike MYSQL* and sqlite3*, the destructor closes safely.
-    std::unique_ptr<pqxx::connection> postgres_connection;
+    static void closePostgreSQLConnection(pqxx::connection * psql);
+    using PostgreSQLUniqueKeyPtr = std::unique_ptr<pqxx::connection, decltype(&closePostgreSQLConnection)>;
+
+    PostgreSQLUniqueKeyPtr postgres_connection;
 
     int sqlstateToInt(const String & sqlstate);
 
 public:
-    PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, std::unique_ptr<pqxx::connection> pcon)
+    PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, PostgreSQLUniqueKeyPtr pcon)
         : ClickHouseIntegratedDatabase(fcc, scc)
         , postgres_connection(std::move(pcon))
     {
