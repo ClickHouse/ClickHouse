@@ -225,6 +225,10 @@ public:
     };
     void buffer(Chunk && chunk, ChunkType chunk_type);
 
+    /// Called when a consumer stopped reading the query result before the end, so only a prefix of it was buffered.
+    /// finalizeWrite() then does not insert anything.
+    void markResultIncomplete();
+
     void finalizeWrite();
 private:
     using Cache = QueryResultCache::Cache;
@@ -240,6 +244,7 @@ private:
     const size_t max_block_size;
     Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
     std::atomic<bool> skip_insert = false;
+    std::atomic<bool> result_is_incomplete = false;
     std::atomic<bool> was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 

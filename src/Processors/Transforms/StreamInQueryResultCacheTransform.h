@@ -25,10 +25,6 @@ public:
 private:
     const std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer;
     const QueryResultCacheWriter::ChunkType chunk_type;
-
-    /// Whether the upstream finished and all its chunks were buffered into the writer.
-    bool input_exhausted = false;
-    bool finished = false;
 };
 
 }

@@ -21,22 +21,18 @@ void StreamInQueryResultCacheTransform::transform(Chunk & chunk)
 
 IProcessor::Status StreamInQueryResultCacheTransform::prepare()
 {
-    /// Remember whether the upstream finished and all its data was processed before we go to the finished state.
-    /// A consumer may close its input port before that (e.g. DISTINCT with a limit hint), in which case
-    /// the base class closes our input and the buffered result is partial.
-    if (!finished && input.isFinished() && !has_input)
-        input_exhausted = true;
+    /// A consumer may stop reading before the upstream is exhausted, e.g. `LIMIT` or `DISTINCT` with a limit hint. The base class then
+    /// closes our input, and the chunks buffered so far are only a prefix of the query result. Such a result must not be cached.
+    /// Several transforms (one per stream) share the writer, so the writer remembers that the result is incomplete.
+    if (output.isFinished() && !(input.isFinished() && !has_input))
+        query_result_cache_writer->markResultIncomplete();
 
-    auto status = ISimpleTransform::prepare();
-    if (status == Status::Finished)
-        finished = true;
-    return status;
+    return ISimpleTransform::prepare();
 }
 
 void StreamInQueryResultCacheTransform::finalizeWriteInQueryResultCache()
 {
-    /// Store the result only if the whole result passed through the transform. Otherwise the cache entry would be truncated.
-    if (!isCancelled() && input_exhausted)
+    if (!isCancelled())
         query_result_cache_writer->finalizeWrite();
 }
 
