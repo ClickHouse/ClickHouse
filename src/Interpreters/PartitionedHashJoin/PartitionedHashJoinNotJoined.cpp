@@ -113,8 +113,6 @@ private:
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
     /// The stored-block cursor of the per-row scan, resumable across calls.
     std::optional<HashJoin::StoredBlocksList::const_iterator> stored_position;
-    /// The stored-block cursor of the per-row scan, resumable across calls.
-    std::optional<HashJoin::StoredBlocksList::const_iterator> stored_position;
 
     /// The rows one call collected, as encoded ref words.
     struct Collected
@@ -208,33 +206,6 @@ private:
                     continue;
                 collectMapped(it->getMapped(), collected);
             }
-        }
-
-        fillOutput(columns_right, collected);
-        return collected.rows;
-    }
-
-    /// Per-row used flags: every stored row nothing marked, whether it entered a table or not, as
-    /// `NotJoinedHash` walks them. The streams take the stored blocks round-robin by block number.
-    template <bool with_row_store, bool with_columns>
-    size_t fillFromStoredBlocks(MutableColumns & columns_right)
-    {
-        const auto & stored_blocks = parent.storedBlocks();
-        if (!stored_position.has_value())
-            stored_position = stored_blocks.begin();
-
-        Collected collected;
-        collected.reserve<with_row_store, with_columns>(max_block_size);
-
-        const auto end = stored_blocks.end();
-        for (auto & it = *stored_position; it != end && collected.rows < max_block_size; ++it)
-        {
-            if (it->block_no % num_streams != stream_idx)
-                continue;
-            const size_t rows = it->blockRows();
-            for (size_t row = 0; row < rows; ++row)
-                if (!parent.hash_join->isUsed(it->block_no, row))
-                    collectRow<with_row_store, with_columns>(it->block_no, static_cast<UInt32>(row), collected);
         }
 
         fillOutput(columns_right, collected);

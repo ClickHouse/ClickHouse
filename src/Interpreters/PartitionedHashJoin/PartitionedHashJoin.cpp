@@ -1361,7 +1361,7 @@ UInt64 PartitionedHashJoin::getJoinTableRowCount() const
                         ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", storedData().type);
             }
         },
-        clause.tableMaps().maps);
+        clauses.front().tableMaps().maps);
     return rows;
 }
 
