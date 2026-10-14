@@ -2160,6 +2160,22 @@ static bool castReordersTupleElements(const DataTypePtr & from_type, const DataT
     return false;
 }
 
+/// Whether a `Variant` or `Dynamic` in `type`, at any depth, may hold a `FixedString`. `column`, if given, holds the
+/// value, and a top-level `Variant` or `Dynamic` then only counts the members it actually holds.
+static bool variantMayHoldFixedString(const IDataType & type, const IColumn * column)
+{
+    if (!isVariant(type) && !isDynamic(type))
+        return anyInTypeTree(type, [](const IDataType & node) { return isVariant(node) || isDynamic(node); });
+
+    const auto members = tryGetHeldVariantMembers(type, column);
+    if (!members)
+        return true;
+    for (const auto & member : *members)
+        if (anyInTypeTree(*member.first, [](const IDataType & node) { return isFixedString(node) || isVariant(node) || isDynamic(node); }))
+            return true;
+    return false;
+}
+
 /// Builds the one-row column of a constant. A `Field` does not tell which member of a `Variant`/`Dynamic` holds the
 /// value, so a constant with such a type, at any depth, is taken from `original`, the column of the constant in the
 /// query. Returns nullptr when `original` does not hold the constant of `type`.
@@ -3375,6 +3391,13 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
     ColumnPtr const_column = createConstantColumn(const_value_type, const_value, original_const_column);
     if (!const_column || castReordersTupleElements(const_value_type, dag.input_type, const_column.get()))
+        return false;
+
+    /// A key expression that reads a `Variant` or `Dynamic` sees which member holds a value, while the comparison does
+    /// not: a `FixedString` compares equal to the `String` with its trailing zero bytes, but `CAST(k AS String)` drops
+    /// them only from the `FixedString`. So the transformed constant would not match the transformed values it equals.
+    if (anyInTypeTree(*dag.input_type, [](const IDataType & type_node) { return isVariant(type_node) || isDynamic(type_node); })
+        && variantMayHoldFixedString(*const_value_type, const_column.get()))
         return false;
 
     /// Convert before transforming, so the value the transform consumes is observable here: normalizing

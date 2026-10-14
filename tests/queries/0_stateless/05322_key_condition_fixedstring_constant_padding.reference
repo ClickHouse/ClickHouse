@@ -48,6 +48,11 @@ SELECT count() FROM t_named_monotonic WHERE k = CAST(('x', 'y') AS Tuple(b Strin
 1
 SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(b String, a String)) AS Dynamic);
 1
+-- A key expression that reads a `Dynamic` drops the padding of the `FixedString` the constant holds.
+SELECT count() FROM t_dynamic_key WHERE k = CAST(toFixedString('abc', 4) AS Dynamic) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+1
+SELECT count() FROM t_dynamic_key WHERE k = CAST(toFixedString('abc', 4) AS Dynamic) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, use_primary_key = 0;
+1
 -- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
 1
@@ -75,6 +80,8 @@ SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(a St
 1
 SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(a String, b String)) AS Variant(Tuple(a String, b String), Tuple(b String, a String))) SETTINGS force_primary_key = 1;
 1
+SELECT count() FROM t_dynamic_key WHERE k = CAST('abc\0' AS Dynamic) SETTINGS force_primary_key = 1;
+1
 -- Named tuple elements are paired by name, as `CAST` does.
 SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple('abc', toFixedString('abc', 4)) AS Tuple(b String, a FixedString(4)))) SETTINGS force_primary_key = 1;
 1
@@ -100,3 +107,4 @@ DROP TABLE t_named_partitioned;
 DROP TABLE t_named_hashed;
 DROP TABLE t_named_monotonic;
 DROP TABLE t_named_dynamic;
+DROP TABLE t_dynamic_key;
