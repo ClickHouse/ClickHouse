@@ -128,6 +128,8 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     hash.update(format_settings.parquet.allow_geoparquet_parser);
     hash.update(format_settings.parquet.enable_json_parsing);
     hash.update(format_settings.parquet.local_time_as_utc);
+    hash.update(format_settings.parquet.detect_variant_by_structure);
+    hash.update(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
     hash.update(format_settings.precise_float_parsing);
     hash.update(static_cast<UInt64>(format_settings.date_time_overflow_behavior));
     options->file_identity = hash.get64();
