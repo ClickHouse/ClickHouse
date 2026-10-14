@@ -7,42 +7,42 @@
       "versionId": "73de02de6a1c10aebc177a6490cb2186e3f533fab0787962e38279fb457e9325",
       "translations": {
         "zh": {
-          "updatedAt": "2026-10-14T15:09:11.075Z",
+          "updatedAt": "2026-10-14T15:50:30.953Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "ja": {
-          "updatedAt": "2026-10-14T15:09:10.318Z",
+          "updatedAt": "2026-10-14T15:50:30.540Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "ru": {
-          "updatedAt": "2026-10-14T15:09:10.883Z",
+          "updatedAt": "2026-10-14T15:50:30.842Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "es": {
-          "updatedAt": "2026-10-14T15:09:10.126Z",
+          "updatedAt": "2026-10-14T15:50:30.429Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-14T15:09:10.690Z",
+          "updatedAt": "2026-10-14T15:50:30.736Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "ko": {
-          "updatedAt": "2026-10-14T15:09:10.504Z",
+          "updatedAt": "2026-10-14T15:50:30.636Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "ar": {
-          "updatedAt": "2026-10-14T15:09:11.259Z",
+          "updatedAt": "2026-10-14T15:50:31.058Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "fr": {
-          "updatedAt": "2026-10-14T15:09:11.463Z",
+          "updatedAt": "2026-10-14T15:50:31.167Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         }
@@ -85318,51 +85318,50 @@
     },
     {
       "fileId": "ca4a064c64056937712f866b49a997a481834fd5d7c756860a21c3559437dc16",
-      "versionId": "f34c81673abb5a5e4bba7a089df3607c24cddc66af9404fc252694c9af417830",
+      "versionId": "0769e19b005655677560975c06ecf019a26ac666f97b46729cd71cfd1d271a6e",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.169Z",
+          "updatedAt": "2026-10-14T15:50:32.857Z",
           "fileName": "es/reference/engines/table-engines/integrations/hive.mdx",
-          "postProcessHash": "0337adec97651a9cb0c785b7c9567be89a4e2d0e6c5e64efac2a1818412c78aa"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.169Z",
-          "fileName": "ja/reference/engines/table-engines/integrations/hive.mdx",
-          "postProcessHash": "f9ecd61bee51938b52e644ea0d29dd7f31bec9551bfb8d1963305d89ba8ef635"
+          "postProcessHash": "c49902741c994e288a34e01a056da7719be521049f2036c87ea0c55457a23bc3"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.169Z",
+          "updatedAt": "2026-10-14T15:50:32.858Z",
           "fileName": "ko/reference/engines/table-engines/integrations/hive.mdx",
-          "postProcessHash": "b210bf8832309604682195b51dcc8a194b8d521c1a4a0f329efe3451b6e9cbbc"
+          "postProcessHash": "37b04314c3da556154a9734537fe9af3b0b523bd790c3dec85dbfe0f106ead6a"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.169Z",
+          "updatedAt": "2026-10-14T15:50:32.859Z",
           "fileName": "pt-BR/reference/engines/table-engines/integrations/hive.mdx",
-          "postProcessHash": "3fc69c7cccdcea741bd41abea8e9b107bb5185668e3bd683ab94afdff8170a4b"
+          "postProcessHash": "322e9901f66e7c44a8dc896c0db85b05da6279cb712a5645de55cf23468bb27a"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.169Z",
+          "updatedAt": "2026-10-14T15:50:32.859Z",
           "fileName": "ru/reference/engines/table-engines/integrations/hive.mdx",
-          "postProcessHash": "3c446f693e098e4120e165db6d57fadc5c12d628f0c30acb990449fcb12eb2e0"
+          "postProcessHash": "2fedac0f7919622cc136f9ee0c04bd4eca1329dd84d82d9151b5c59e30f921a2"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.170Z",
+          "updatedAt": "2026-10-14T15:50:32.859Z",
           "fileName": "zh/reference/engines/table-engines/integrations/hive.mdx",
-          "postProcessHash": "2e7ee070fb05e83519b7c3724f838f910d93c46d4bcb9f953e51503a4be618d6"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.170Z",
-          "fileName": "ar/reference/engines/table-engines/integrations/hive.mdx",
-          "postProcessHash": "13870842963b918740da47aa05c077f61a572716b5c9f5271a7ff6f1bb658f57"
+          "postProcessHash": "c17a2e967b41bcfa9600a9f8c7c333ced89cd4bcab05e47da9e070a52b019885"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.170Z",
+          "updatedAt": "2026-10-14T15:50:32.860Z",
           "fileName": "fr/reference/engines/table-engines/integrations/hive.mdx",
-          "postProcessHash": "85d71b139e57ea27aeb4d432655acd6cef787a8330b505649822b89396251c08"
+          "postProcessHash": "bd10154e4bbc93f9f30b4d105464b04d5cb33fc920f35bd5c1a988f0312cb4be"
+        },
+        "ja": {
+          "updatedAt": "2026-10-14T15:50:33.260Z",
+          "fileName": "ja/reference/engines/table-engines/integrations/hive.mdx",
+          "postProcessHash": "d1b9f523975e863558a1dbcab79c35273b55a92c4490678b9147eb50e7c8c0e4"
+        },
+        "ar": {
+          "updatedAt": "2026-10-14T15:50:33.260Z",
+          "fileName": "ar/reference/engines/table-engines/integrations/hive.mdx",
+          "postProcessHash": "6f0d6b3841b3b28f148a698ecf4095b8bcec613004bef1fec5f3444ee6b46793"
         }
       },
-      "fileName": "reference/engines/table-engines/integrations/hive.mdx",
-      "staged": false
+      "fileName": "reference/engines/table-engines/integrations/hive.mdx"
     },
     {
       "fileId": "7a67c305e515b28103159e244e65c930a96d8a28406524f50c9e1ed268ec8c22",
