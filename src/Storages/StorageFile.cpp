@@ -1732,7 +1732,7 @@ void StorageFileSource::beforeDestroy()
             {
                 auto file_path = pathFromString(file_path_ref);
                 String new_filename = storage->file_renamer.generateNewFilename(pathToGenericString(file_path.filename()));
-                file_path.replace_filename(new_filename);
+                file_path.replace_filename(pathFromString(new_filename));
 
                 // Checking access rights. The path is the one the rename will operate on, so a `..` in
                 // it must be resolved and not folded lexically.

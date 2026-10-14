@@ -1101,7 +1101,7 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
                     fs::path parent_path = pathFromString(loaded_config.config_path).parent_path();
                     preprocessed_dir = pathToString(parent_path);
                     fs::path fs_new_path = pathFromString(new_path);
-                    fs_new_path.replace_filename(pathToString(fs_new_path.stem()) + PREPROCESSED_SUFFIX + pathToString(fs_new_path.extension()));
+                    fs_new_path.replace_filename(pathFromString(pathToString(fs_new_path.stem()) + PREPROCESSED_SUFFIX + pathToString(fs_new_path.extension())));
                     new_path = pathToString(fs_new_path);
                 }
                 else
