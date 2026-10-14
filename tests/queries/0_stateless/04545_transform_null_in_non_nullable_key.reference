@@ -173,6 +173,19 @@ Named tuple key, reordered collapsing element, declined
 1
 ('2020-01-01 00:00:00','2030-02-03')
 1
+Tuple key, sub-second DateTime64 element, declined
+('2020-01-01 00:00:01.0000',1)
+('2020-01-01 00:00:01.1000',1)
+1
+2020-01-01 00:00:01.0000
+1
+1
+Transformed key, coarser-scale source, declined
+1.23
+1.2345
+1
+1.2345
+1
 Component-equal temporal pair stays exact
 2020-01-01 00:00:00
 1

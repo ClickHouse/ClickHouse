@@ -9,14 +9,15 @@
 -- Regression test for issue #111340: `transform_null_in = 1`, non-Nullable key column, `IN`/`NOT IN`
 -- a subquery whose result is Nullable. Previously threw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN (349).
 --
--- Cases A, B, D, C, C2 -- C23, E, F, H, I, J, G, K cover, in order: the folded-default pair, the
+-- Cases A, B, D, C, C2 -- C25, E, F, H, I, J, G, K cover, in order: the folded-default pair, the
 -- numeric analogue, the cross-type exact direction and its counterexample, the three silent-collapse
 -- families (text key against a different type / key with a finer Decimal or DateTime64 scale, or a
 -- scaled key against a scale-less integer or float source / temporal key whose target drops its time
 -- of day or its calendar date) with their controls (injective numeric narrowing, identical text types,
 -- identical composite element types, a component-equal temporal pair, and three liveness controls: a
 -- finer-scale source, a scale-zero key, a widening temporal pair), a `FixedString` key against a
--- `String` element, named tuples cast by name, the `NOT has` caller, the `LowCardinality(Nullable(T))`
+-- `String` element, named tuples cast by name, a sub-second `DateTime64` tuple element, a transformed
+-- key, the `NOT has` caller, the `LowCardinality(Nullable(T))`
 -- source, the multi-column set, the all-NULL empty set, the positive `IN` direction, and the two
 -- shapes that must stay unchanged (`Tuple(Nullable, Nullable)` key, duplicate key mapping).
 
@@ -394,6 +395,35 @@ SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nt WHERE k IN (SELE
 SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDate('2030-02-03'), toDateTime('2020-01-01 00:00:00')), 'Nullable(Tuple(b Date, a DateTime))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDate('2030-02-03'), toDateTime('2020-01-01 00:00:00')), 'Nullable(Tuple(b Date, a DateTime))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 1/3%';
 
+-- Case C24: `Set::execute` keeps the sub-second rows of a top-level `DateTime64` key out of a `DateTime`
+-- set, but a `Tuple` element is truncated to the second, so both 00:00:01 keys match the set value.
+SELECT 'Tuple key, sub-second DateTime64 element, declined';
+DROP TABLE IF EXISTS t_tsub;
+CREATE TABLE t_tsub (k Tuple(DateTime64(4), UInt64)) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+INSERT INTO t_tsub VALUES (('2020-01-01 00:00:01.0000', 1)), (('2020-01-01 00:00:01.1000', 1)), (('2020-01-01 00:00:02.0000', 1));
+SELECT k FROM t_tsub WHERE k IN (SELECT CAST(tuple(toDateTime('2020-01-01 00:00:01'), toUInt64(1)), 'Nullable(Tuple(DateTime, UInt64))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tsub WHERE k IN (SELECT CAST(tuple(toDateTime('2020-01-01 00:00:01'), toUInt64(1)), 'Nullable(Tuple(DateTime, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
+-- CONTROL: the top-level `DateTime64` key does not collapse, so its atom stays live.
+DROP TABLE IF EXISTS t_dsub;
+CREATE TABLE t_dsub (d DateTime64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_dsub VALUES ('2020-01-01 00:00:01.0000'), ('2020-01-01 00:00:01.1000'), ('2020-01-01 00:00:02.0000');
+SELECT d FROM t_dsub WHERE d IN (SELECT CAST(toDateTime('2020-01-01 00:00:01'), 'Nullable(DateTime)') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dsub WHERE d IN (SELECT CAST(toDateTime('2020-01-01 00:00:01'), 'Nullable(DateTime)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dsub WHERE d IN (SELECT CAST(toDateTime('2020-01-01 00:00:01'), 'Nullable(DateTime)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+
+-- Case C25: for a transformed key, membership casts the column the transform reads into the set's type,
+-- so the collapse is checked on that column. The set holds no NULL: an actual NULL makes the transform
+-- decline on its own.
+SELECT 'Transformed key, coarser-scale source, declined';
+DROP TABLE IF EXISTS t_dh;
+CREATE TABLE t_dh (d Decimal(10, 4)) ENGINE = MergeTree ORDER BY cityHash64(d) PARTITION BY cityHash64(d);
+INSERT INTO t_dh VALUES (1.2300), (1.2345), (2.0000);
+SELECT d FROM t_dh WHERE d IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))')) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dh WHERE d IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))'))) WHERE explain ILIKE '%cityHash64(d) in%';
+-- CONTROL: a finer-scale source drops no digits, so the transformed atom stays live.
+SELECT d FROM t_dh WHERE d IN (SELECT CAST(1.2345, 'Nullable(Decimal(10, 6))')) ORDER BY d;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dh WHERE d IN (SELECT CAST(1.2345, 'Nullable(Decimal(10, 6))'))) WHERE explain ILIKE '%cityHash64(d) in 1-element set%';
+
 -- Case C21 (CONTROL, must NOT change): a component-EQUAL temporal pair loses nothing, so the arm must
 -- NOT fire. This is what stops it from being "fixed" by declining every temporal pair. The forward
 -- `DateTime -> DateTime` cast is the equal-types base case of `canBeSafelyCast`, so this atom is
@@ -530,3 +560,6 @@ DROP TABLE t_d64;
 DROP TABLE t_td;
 DROP TABLE t_fss;
 DROP TABLE t_nt;
+DROP TABLE t_tsub;
+DROP TABLE t_dsub;
+DROP TABLE t_dh;

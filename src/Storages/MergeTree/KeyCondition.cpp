@@ -3226,8 +3226,8 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 
 /// True when casting the KEY into `set_element_type` -- the direction runtime membership takes --
 /// can map two distinct key values onto one set value silently. Detects only the classes below, and
-/// the caller consults it only where the forward `canBeSafelyCast` was rejected.
-static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
+/// the callers consult it only for a `Nullable` set element. `is_element` marks a pair nested in a composite.
+static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool is_element)
 {
     auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
     auto set_unwrapped = removeLowCardinalityAndNullable(set_element_type);
@@ -3239,14 +3239,15 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     if (key_which.isArray() && set_which.isArray())
         return keyToSetConversionMayCollapse(
             assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
-            assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType());
+            assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType(),
+            /*is_element=*/ true);
 
     if (key_which.isMap() && set_which.isMap())
     {
         const auto & key_map = assert_cast<const DataTypeMap &>(*key_unwrapped);
         const auto & set_map = assert_cast<const DataTypeMap &>(*set_unwrapped);
-        return keyToSetConversionMayCollapse(key_map.getKeyType(), set_map.getKeyType())
-            || keyToSetConversionMayCollapse(key_map.getValueType(), set_map.getValueType());
+        return keyToSetConversionMayCollapse(key_map.getKeyType(), set_map.getKeyType(), /*is_element=*/ true)
+            || keyToSetConversionMayCollapse(key_map.getValueType(), set_map.getValueType(), /*is_element=*/ true);
     }
 
     if (key_which.isTuple() && set_which.isTuple())
@@ -3266,7 +3267,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
                 for (size_t i = 0; i < key_elements.size(); ++i)
                 {
                     auto set_position = set_tuple.tryGetPositionByName(key_names[i]);
-                    if (!set_position || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position]))
+                    if (!set_position || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position], /*is_element=*/ true))
                         return true;
                 }
 
@@ -3278,7 +3279,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return false;
 
         for (size_t i = 0; i < key_elements.size(); ++i)
-            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i]))
+            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i], /*is_element=*/ true))
                 return true;
 
         return false;
@@ -3321,6 +3322,10 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return true;
         /// A float target loses mantissa precision at any scale.
         else if (set_which.isFloat())
+            return true;
+        /// `Set::execute` drops the sub-second keys of a top-level `DateTime64` column only, so an
+        /// element is truncated to the second.
+        else if (is_element && key_which.isDateTime64() && set_which.isDateTime() && *key_scale > 0)
             return true;
     }
 
@@ -3432,6 +3437,12 @@ static bool tryPrepareSetColumnsForIndex(
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
+
+            /// Membership casts the column the transform reads, not the key, into the set's type.
+            if (isNullableOrLowCardinalityNullable(set_element_type)
+                && keyToSetConversionMayCollapse(set_transforming_dag.input_type, set_element_type, /*is_element=*/ false))
+                return false;
+
             bool dag_cast_is_exact = true;
             if (!applyDeterministicDagToColumn(
                     set_column,
@@ -3480,7 +3491,7 @@ static bool tryPrepareSetColumnsForIndex(
             /// A key-to-set cast that maps two distinct keys onto one set value makes the pruning set
             /// an UNDER-approximation, which `relaxed` cannot repair: it only ever forces
             /// `can_be_false = true` and never widens `can_be_true`.
-            if (keyToSetConversionMayCollapse(key_column_type, set_element_type))
+            if (keyToSetConversionMayCollapse(key_column_type, set_element_type, /*is_element=*/ false))
                 return false;
 
             const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
