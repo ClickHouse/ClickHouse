@@ -246,6 +246,16 @@ static void applyReplyOutputSettings(ContextMutablePtr & query_context)
     /// the Mongo dialect on for the user would otherwise have those statements reparsed as Mongo
     /// syntax, so the dialect is pinned rather than inherited.
     query_context->setSetting("dialect", String("clickhouse"));
+
+    /// The handlers decode the answers of their own statements - `EXISTS TABLE`, the probes of the
+    /// shape of a table - by their text, and ask for the format they decode with a `FORMAT`
+    /// clause, or rely on the default one where they do not. A profile with `default_format`, or
+    /// with `format` and `output_format` that override even an explicit `FORMAT` clause, would
+    /// change that text under them, so the default is pinned and the overrides are cleared.
+    query_context->setDefaultFormat("TabSeparated");
+    query_context->setSetting("format", String(""));
+    query_context->setSetting("output_format", String(""));
+    query_context->setSetting("input_format", String(""));
 }
 
 /// A write of this endpoint is acknowledged when it has been written, which is the contract every
@@ -262,6 +272,10 @@ static void applyAcknowledgedWriteSettings(ContextMutablePtr & query_context)
     /// what a write of one table can promise.
     query_context->setSetting("mutations_sync", Field(UInt64(1)));
     query_context->setSetting("lightweight_deletes_sync", Field(UInt64(1)));
+    /// An insert into a `Distributed` table is otherwise only queued for the remote shards, and is
+    /// not even affected by `async_insert`: the row would not be readable yet when the write is
+    /// acknowledged, and a failure to send it would be reported to nobody.
+    query_context->setSetting("distributed_foreground_insert", true);
 }
 
 ContextMutablePtr QueryExecutor::makeQueryContext()
