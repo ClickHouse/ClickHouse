@@ -2608,20 +2608,43 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 }
 
 
+/// A broken invariant, a memory limit, a deadline or a cancellation is not something the index analysis
+/// may decide to ignore: these are the outer guards of the query, and swallowing one would let the query
+/// go on, for example to a full scan, instead of aborting. The analysis runs functions on query constants
+/// and on whole boundary columns (`applyFunction`): a key expression can exceed the memory limit on a
+/// constant, and a conversion with a cancellation budget can hit `max_execution_time`.
+/// The cancellation exception stored by `checkTimeLimit` may carry `QUERY_WAS_CANCELLED_BY_CLIENT`,
+/// and an allocation failure below the memory tracker surfaces as `CANNOT_ALLOCATE_MEMORY`.
+static bool isQueryOuterGuardError(int code)
+{
+    return code == ErrorCodes::LOGICAL_ERROR
+        || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+        || code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+        || code == ErrorCodes::TIMEOUT_EXCEEDED
+        || code == ErrorCodes::TOO_SLOW
+        || code == ErrorCodes::ABORTED;
+}
+
+
 /// Casts `column` into `target_type` with `accurateOrNull`, which writes NULL for a value that does not fit,
 /// or returns nullptr when the conversion between the two types does not exist. The OrNull contract applies
 /// per value, but the conversion itself must exist. When it is not implemented at all (for example, casting
 /// `IPv6` into `FixedString(16)`, or a number into `FixedString`), building the cast throws before any value
 /// is seen. There is no single error code for such type pairs (`NOT_IMPLEMENTED`, `CANNOT_CONVERT_TYPE`,
-/// `TYPE_MISMATCH`, ... depending on the target type), so any error means that the conversion does not exist.
+/// `TYPE_MISMATCH`, ... depending on the target type), so any error other than an outer guard of the query
+/// (see `isQueryOuterGuardError`) means that the conversion does not exist.
 static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type)
 {
     try
     {
         return castColumnAccurateOrNull(column, target_type);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
         return nullptr;
     }
 }
@@ -2854,9 +2877,11 @@ static bool executeDeterministicDag(
     {
         dag.actions->execute(block, false, true);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
-        /// If any error occurs during the execution of the DAG, we cannot transform the constant
+        /// Any error other than an outer guard of the query means that the constant cannot be transformed.
+        if (isQueryOuterGuardError(e.code()))
+            throw;
         return false;
     }
 
@@ -7104,24 +7129,6 @@ namespace
 {
 
 thread_local size_t num_unevaluable_chain_applications = 0;
-
-/// A broken invariant, a memory limit, a deadline or a cancellation is not something the index analysis
-/// may decide to ignore: these are the outer guards of the query, and `applyFunction` runs the function on
-/// a whole boundary column, so a conversion with a cancellation budget can hit `max_execution_time` there.
-/// Swallowing that would let the query proceed to a full scan instead of aborting.
-/// The cancellation exception stored by `checkTimeLimit` may carry `QUERY_WAS_CANCELLED_BY_CLIENT`,
-/// and an allocation failure below the memory tracker surfaces as `CANNOT_ALLOCATE_MEMORY`.
-bool isQueryOuterGuardError(int code)
-{
-    return code == ErrorCodes::LOGICAL_ERROR
-        || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
-        || code == ErrorCodes::QUERY_WAS_CANCELLED
-        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-        || code == ErrorCodes::TIMEOUT_EXCEEDED
-        || code == ErrorCodes::TOO_SLOW
-        || code == ErrorCodes::ABORTED;
-}
 
 }
 
