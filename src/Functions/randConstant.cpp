@@ -20,7 +20,6 @@ public:
     String getName() const override { return "randConstant"; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -77,7 +76,6 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -128,7 +126,7 @@ It is useful for applying consistent random seeds or identifiers across all rows
     )";
     FunctionDocumentation::Syntax syntax = "randConstant([x])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a column of type `UInt32` containing the same random value in each row.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {

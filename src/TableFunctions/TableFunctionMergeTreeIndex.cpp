@@ -31,9 +31,6 @@ public:
     static constexpr auto name = "mergeTreeIndex";
     std::string getName() const override { return name; }
 
-    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
-    bool canBeUsedToCreateTable() const override { return false; }
-
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
@@ -241,7 +238,7 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `with_marks`  | Whether include columns with marks to the result. |
 | `with_minmax` | Whether include min-max index to the result.      |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 A table object with columns with values of primary index and min-max index (if enabled) of source table, columns with values of marks (if enabled) for all possible files in data parts of source table and virtual columns:
 
@@ -304,7 +301,7 @@ DESCRIBE mergeTreeIndex(currentDatabase(), test_table, with_marks = true) SETTIN
 │ arr.mark        │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
 └─────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = true}
     );
 }

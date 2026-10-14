@@ -1,6 +1,0 @@
-1_same_nan	[0]	[0]
-2_different_nan	[1]	[1]
-3_signed_zero	[1]	[1]
-1_same_nan	[0,0,0]	[0,0,0]
-2_different_nan	[0,1,1]	[0,1,1]
-3_signed_zero	[0,1,1]	[0,1,1]

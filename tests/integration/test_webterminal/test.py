@@ -494,27 +494,19 @@ def _read_pty_until(sock, timeout, marker=None):
     return ANSI_ESCAPE_RE.sub(b"", buf).decode(errors="replace")
 
 
-def test_tab_completion_respects_session_user():
-    """TAB completion in the embedded client must be fed from the session's own user.
+def test_session_keeps_user_settings():
+    """The embedded client must keep the settings of the authenticated user.
 
-    Suggestions used to be loaded through a separate `LocalConnection` that
-    re-authenticated as the `default` user with an empty password. That broke
-    completion entirely on servers where `default` has a password or does not
-    exist, and otherwise leaked names of entities the web-terminal user has no
-    access to. Suggestions must be loaded through the authenticated session
-    itself: words for accessible entities must be completed, and words for
-    inaccessible ones must not even be known to the client.
+    It used to replace the session settings with default values, dropping
+    everything that comes from the user's profiles, roles and
+    `CREATE USER ... SETTINGS`, so a `readonly` user got write access and
+    resource limits were removed. Settings sent along with a query must also
+    be checked against the constraints.
     """
     instance.query(
-        "CREATE TABLE default.visible_completion_target (visible_column UInt64) ENGINE = Memory"
+        "CREATE USER restricted_terminal_user IDENTIFIED WITH plaintext_password BY 'restricted_password' "
+        "SETTINGS readonly = 1, max_memory_usage = 5000000 CONST"
     )
-    instance.query(
-        "CREATE TABLE default.hidden_completion_target (hidden_column UInt64) ENGINE = Memory"
-    )
-    instance.query(
-        "CREATE USER completer IDENTIFIED WITH plaintext_password BY 'completer_password'"
-    )
-    instance.query("GRANT SELECT ON default.visible_completion_target TO completer")
 
     try:
         sock = _open_ws(instance.ip_address, 8123)
@@ -524,47 +516,36 @@ def test_tab_completion_respects_session_user():
                 json.dumps(
                     {
                         "type": "auth",
-                        "user": "completer",
-                        "password": "completer_password",
+                        "user": "restricted_terminal_user",
+                        "password": "restricted_password",
                     }
                 ),
             )
 
-            # Wait for the prompt; suggestions are loaded synchronously before
-            # the embedded client shows it.
             output = _read_pty_until(sock, timeout=20, marker=":) ")
             assert ":) " in output, f"no prompt from the embedded client: {output!r}"
 
-            # The full table name can only appear if it was loaded from
-            # `system.completions` through the authenticated session (either
-            # TAB completion or the ghost-text hint prints it).
-            _ws_send_binary(sock, b"SELECT * FROM visible_completion_ta\t")
-            output = _read_pty_until(
-                sock, timeout=10, marker="visible_completion_target"
+            _ws_send_binary(
+                sock,
+                b"SELECT concat('settings_', getSetting('readonly')::String, '_', getSetting('max_memory_usage')::String) FORMAT TSV\r",
             )
-            assert "visible_completion_target" in output, (
-                "TAB did not complete a table name the user has access to; "
-                f"suggestions were not loaded. raw output: {output!r}"
+            output = _read_pty_until(sock, timeout=10, marker="settings_1_5000000\r\n")
+            assert "settings_1_5000000\r\n" in output, (
+                f"the session settings of the user were not preserved: {output!r}"
             )
 
-            # Ctrl-U clears the line.
-            _ws_send_binary(sock, b"\x15")
-            _read_pty_until(sock, timeout=1)
+            # Wait for the next prompt: while a query runs, the client reads the
+            # keyboard (to toggle the progress table) and would swallow the next query.
+            if ":) " not in output.split("settings_1_5000000\r\n", 1)[1]:
+                output = _read_pty_until(sock, timeout=10, marker=":) ")
+                assert ":) " in output, f"no prompt after the first query: {output!r}"
 
-            # A table the user has no grants on is not visible in
-            # `system.completions` for this user, so it must not be completed.
-            # Before the fix, suggestions were loaded under the `default` user
-            # and leaked names of inaccessible tables.
-            _ws_send_binary(sock, b"SELECT * FROM hidden_completion_ta\t")
-            output = _read_pty_until(sock, timeout=5)
-            assert "hidden_completion_target" not in output, (
-                "TAB completed a table name the user has no access to; "
-                "suggestions were loaded under a wrong (more privileged) user. "
-                f"raw output: {output!r}"
+            _ws_send_binary(sock, b"SELECT 'bypassed' SETTINGS readonly = 0 FORMAT TSV\r")
+            output = _read_pty_until(sock, timeout=10, marker="READONLY")
+            assert "READONLY" in output and "bypassed\r\n" not in output, (
+                f"changing `readonly` in the query was not rejected: {output!r}"
             )
         finally:
             sock.close()
     finally:
-        instance.query("DROP USER IF EXISTS completer")
-        instance.query("DROP TABLE IF EXISTS default.visible_completion_target")
-        instance.query("DROP TABLE IF EXISTS default.hidden_completion_target")
+        instance.query("DROP USER IF EXISTS restricted_terminal_user")

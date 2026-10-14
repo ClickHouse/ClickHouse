@@ -130,16 +130,13 @@ bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMod
 {
     if (max_execution_time != 0)
     {
-        /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for values
-        /// above ~584 years, which `max_execution_time` accepts. Dividing the elapsed time instead can
-        /// only fire the timeout up to a microsecond later - never before it.
-        if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
             return handleOverflowMode(
                 overflow_mode,
                 ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded: elapsed {:.3f} ms, maximum: {:.3f} ms",
+                "Timeout exceeded: elapsed {:.3f} ms, maximum: {} ms",
                 static_cast<double>(elapsed_ns) / 1000000ULL,
-                static_cast<double>(max_execution_time.totalMicroseconds()) / 1000);
+                max_execution_time.totalMilliseconds());
     }
 
     return true;
