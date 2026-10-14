@@ -113,6 +113,45 @@ SENDER_USER_CONFIG = os.path.join(
     os.path.dirname(__file__), "..", "..", "config", "users.d", "ci_logs_sender.yaml"
 )
 
+
+
+def _sender_profile_settings():
+    """The settings of the `ci_logs_sender` profile of SENDER_USER_CONFIG, as
+    `{name: value}`, without its constraints. The file is parsed by hand: it is
+    a flat mapping, and PyYAML is not installed in the integration tests
+    runner."""
+    settings = {}
+    in_profiles = False
+    in_profile = False
+    for line in Path(SENDER_USER_CONFIG).read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            in_profiles = stripped == "profiles:"
+            in_profile = False
+        elif in_profiles and indent == 4:
+            in_profile = stripped == f"{SENDER_USER}:"
+        elif in_profile and indent == 8:
+            name, _, value = stripped.partition(":")
+            value = value.strip()
+            if value:
+                settings[name] = value
+    return settings
+
+
+# The settings of the `INSERT ... SELECT` that sends the rows the log tables
+# already hold when the export is set up. It runs as the user of the test
+# rather than through a `_watcher` view, so the `DEFINER = ci_logs_sender`
+# profile does not apply to it, and the Distributed table stores the settings of
+# the insert in its queue and replays them on the CI Logs cluster. It gets the
+# same settings as the watchers, and no time limit, since the test may set a
+# tiny `max_execution_time` in the `default` profile (e.g. 0.5 seconds in
+# `test_backup_restore_new`).
+BACKFILL_SETTINGS = {**_sender_profile_settings(), "max_execution_time": "0"}
+
+
 # The images whose instances run the binary under test: the base integration
 # test image, and the images derived from it (`FROM clickhouse/integration-test`
 # in ci/docker/integration/*/Dockerfile), each with the environment variable
@@ -596,7 +635,14 @@ def setup_for_instance(cluster, instance, only_since_start=False):
     hold to those written since the server started. It is for the first enable
     in `restart_with_latest_version`: the tables also hold the rows of the old
     release that ran before the swap, which must stay out of the export, see
-    `supports_export`."""
+    `supports_export`. The instance keeps that boundary, so that the tables
+    whose setup fails here and is retried by `refresh_after_start` exclude the
+    same rows, see `_upgrade_backfill_filters`."""
+    if only_since_start:
+        instance.ci_logs_export_since_upgrade = True
+        instance.ci_logs_export_upgrade_time = None
+    else:
+        instance.ci_logs_export_since_upgrade = False
     try:
         _setup_for_instance(cluster, instance, only_since_start)
     except Exception:
@@ -628,11 +674,9 @@ def _setup_for_instance(cluster, instance, only_since_start):
     if not exportable:
         return
 
-    backfill_filters = None
-    if only_since_start:
-        backfill_filters = _backfill_filters_since_start(
-            instance, [table for table, _, _ in tables if table in exportable]
-        )
+    backfill_filters = _upgrade_backfill_filters(
+        instance, [table for table, _, _ in tables if table in exportable]
+    )
 
     active = _create_senders_and_watchers(
         instance, tables, exportable, expression, backfill_filters
@@ -728,7 +772,12 @@ def _refresh_after_start(cluster, instance):
         return
 
     expression = _extra_columns_expression(_test_name(cluster), instance.name)
-    created = _create_senders_and_watchers(instance, changed, exportable, expression)
+    backfill_filters = _upgrade_backfill_filters(
+        instance, [table for table, _, _ in changed if table in exportable]
+    )
+    created = _create_senders_and_watchers(
+        instance, changed, exportable, expression, backfill_filters
+    )
     for table, hash_value, _ in changed:
         if table in created:
             hashes[table] = hash_value
@@ -786,9 +835,31 @@ def _active_tables_query(tables):
     return f"SELECT name FROM system.tables WHERE database = 'system' AND name IN ({names})"
 
 
-def _backfill_filters_since_start(instance, tables):
+def _upgrade_backfill_filters(instance, tables):
+    """The `backfill_filters` of `_create_senders_and_watchers` for an instance:
+    `None` (send everything) unless the export was enabled by the switch of a
+    `with_installed_binary` instance to the binary under test, see
+    `setup_for_instance`. Then the boundary is the start of that binary, taken
+    once, at the first setup after the switch, and kept on the instance: a
+    later restart resets `uptime`, and the rows between the switch and that
+    restart belong to the export. If the first setup failed before taking it,
+    the start of the current server is used instead, which loses those rows
+    rather than sending the rows of the old release."""
+    if not getattr(instance, "ci_logs_export_since_upgrade", False):
+        return None
+    if getattr(instance, "ci_logs_export_upgrade_time", None) is None:
+        instance.ci_logs_export_upgrade_time = _server_start_time(instance)
+    return _backfill_filters_since(instance, tables, instance.ci_logs_export_upgrade_time)
+
+
+def _server_start_time(instance):
+    """The Unix time the server of the instance started at."""
+    return int(instance.query("SELECT toUnixTimestamp(now()) - uptime()", timeout=60).strip())
+
+
+def _backfill_filters_since(instance, tables, start_time):
     """The conditions that keep, of the rows a log table already holds, only
-    those written since the server started: `{table: condition}` for the tables
+    those written since `start_time`: `{table: condition}` for the tables
     with an `event_time` column. A table without it is left out, and its rows
     from before the `_watcher` existed are not sent at all, since nothing tells
     the rows of the server apart from those of the binary that ran before it."""
@@ -796,17 +867,14 @@ def _backfill_filters_since_start(instance, tables):
         return {}
     names = ", ".join(f"'{_escape_sql_string(table)}'" for table in tables)
     output = instance.query(
-        "SELECT table, toUnixTimestamp(now()) - uptime() FROM system.columns "
+        "SELECT table FROM system.columns "
         f"WHERE database = 'system' AND name = 'event_time' AND table IN ({names})",
         timeout=60,
     )
-    filters = {}
-    for line in output.splitlines():
-        if not line.strip():
-            continue
-        table, start_time = line.split("\t")
-        filters[table] = f"event_time >= toDateTime({int(start_time)})"
-    return filters
+    return {
+        table: f"event_time >= toDateTime({int(start_time)})"
+        for table in output.split()
+    }
 
 
 def _create_senders_and_watchers(instance, tables, exportable, expression, backfill_filters=None):
@@ -815,16 +883,20 @@ def _create_senders_and_watchers(instance, tables, exportable, expression, backf
     condition of the table, and nothing for a table without one, see
     `_backfill_filters_since_start`."""
     cluster_name = _cluster_name()
+    backfill_settings = ", ".join(f"{name} = {value}" for name, value in BACKFILL_SETTINGS.items())
     statements = []
     for table, hash_value, _ in tables:
         if table not in exportable:
             continue
         if backfill_filters is None:
-            backfill = f"INSERT INTO system.{table}_sender SELECT {expression}, * FROM system.{table};"
+            backfill = (
+                f"INSERT INTO system.{table}_sender SETTINGS {backfill_settings} "
+                f"SELECT {expression}, * FROM system.{table};"
+            )
         elif table in backfill_filters:
             backfill = (
-                f"INSERT INTO system.{table}_sender SELECT {expression}, * FROM system.{table} "
-                f"WHERE {backfill_filters[table]};"
+                f"INSERT INTO system.{table}_sender SETTINGS {backfill_settings} "
+                f"SELECT {expression}, * FROM system.{table} WHERE {backfill_filters[table]};"
             )
         else:
             backfill = ""

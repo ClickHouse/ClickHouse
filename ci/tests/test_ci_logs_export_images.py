@@ -421,7 +421,9 @@ def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
     monkeypatch.setattr(HELPER, "_ensure_remote_tables", ensure_remote_tables)
     created = []
 
-    def create_senders_and_watchers(instance, tables, exportable, expression):
+    def create_senders_and_watchers(
+        instance, tables, exportable, expression, backfill_filters=None
+    ):
         created.extend(tables)
         return [table for table, _, _ in tables]
 
@@ -501,7 +503,9 @@ def test_a_restart_after_a_partially_failed_refresh(monkeypatch):
     monkeypatch.setattr(
         HELPER,
         "_create_senders_and_watchers",
-        lambda instance, tables, exportable, expression: [t for t, _, _ in tables],
+        lambda instance, tables, exportable, expression, backfill_filters=None: [
+            t for t, _, _ in tables
+        ],
     )
 
     instance = Instance()
@@ -550,7 +554,9 @@ def test_a_restart_retries_a_setup_that_exported_nothing(monkeypatch):
     monkeypatch.setattr(
         HELPER,
         "_create_senders_and_watchers",
-        lambda instance, tables, exportable, expression: [t for t, _, _ in tables],
+        lambda instance, tables, exportable, expression, backfill_filters=None: [
+            t for t, _, _ in tables
+        ],
     )
 
     instance = Instance()
@@ -761,25 +767,31 @@ def test_the_first_enable_after_an_upgrade_skips_the_old_release_rows():
 
     class Instance:
         name = "node"
+        ci_logs_export_since_upgrade = True
+        ci_logs_export_upgrade_time = None
         queries = []
 
         def query(self, sql, timeout=None):
             self.queries.append(sql)
-            if sql.startswith("SELECT table, toUnixTimestamp(now()) - uptime()"):
-                return "query_log\t1700000000\n"
+            if sql.startswith("SELECT toUnixTimestamp(now()) - uptime()"):
+                return "1700000000\n"
+            if sql.startswith("SELECT table FROM system.columns"):
+                return "query_log\n"
             return "query_log_watcher\nquery_log_sender\ntext_log_watcher\ntext_log_sender\n"
 
     instance = Instance()
     tables = [("query_log", "h1", ""), ("text_log", "h2", "")]
-    filters = HELPER._backfill_filters_since_start(instance, ["query_log", "text_log"])
+    filters = HELPER._upgrade_backfill_filters(instance, ["query_log", "text_log"])
     assert filters == {"query_log": "event_time >= toDateTime(1700000000)"}
+    assert instance.ci_logs_export_upgrade_time == 1700000000
     active = HELPER._create_senders_and_watchers(
         instance, tables, {"query_log", "text_log"}, "1 AS c", filters
     )
     assert active == ["query_log", "text_log"]
     batch = instance.queries[-1]
+    assert "INSERT INTO system.query_log_sender SETTINGS " in batch
     assert (
-        "INSERT INTO system.query_log_sender SELECT 1 AS c, * FROM system.query_log "
+        "SELECT 1 AS c, * FROM system.query_log "
         "WHERE event_time >= toDateTime(1700000000);"
     ) in batch
     assert "INSERT INTO system.text_log_sender" not in batch
@@ -787,6 +799,111 @@ def test_the_first_enable_after_an_upgrade_skips_the_old_release_rows():
 
     source = CLUSTER_HELPER.read_text()
     assert "setup_for_instance(self.cluster, self, only_since_start=True)" in source
+
+
+def test_a_retried_setup_after_an_upgrade_keeps_the_boundary(monkeypatch):
+    """A table whose export failed at the first enable after an upgrade is set
+    up again by `refresh_after_start` at a later restart. Its backfill must keep
+    excluding the rows of the old release, by the boundary taken at the first
+    enable, not by the start of the restarted server."""
+
+    class Instance:
+        name = "node"
+        queries = []
+
+        def query(self, sql, timeout=None):
+            self.queries.append(sql)
+            if sql.startswith("SELECT toUnixTimestamp(now()) - uptime()"):
+                return "1700000000\n"
+            if sql.startswith("SELECT table FROM system.columns"):
+                return "".join(f"{t}\n" for t in ("query_log", "text_log") if f"'{t}'" in sql)
+            raise AssertionError(f"unexpected query: {sql}")
+
+    class Cluster:
+        client_bin_path = "clickhouse"
+        base_dir = "/tests/test_version_update"
+        base_path = "/tests/test_version_update/test.py"
+
+    discovered = [("query_log", "q", ""), ("text_log", "t", "")]
+    available = {"query_log"}
+    monkeypatch.setattr(HELPER, "_disabled_reason", lambda cache_dir: None)
+    monkeypatch.setattr(HELPER, "_discover_log_tables", lambda instance: discovered)
+    monkeypatch.setattr(
+        HELPER,
+        "_ensure_remote_tables",
+        lambda client_bin_path, tables: {t for t, _, _ in tables if t in available},
+    )
+    calls = []
+
+    def create_senders_and_watchers(
+        instance, tables, exportable, expression, backfill_filters=None
+    ):
+        calls.append(backfill_filters)
+        return sorted(t for t, _, _ in tables if t in exportable)
+
+    monkeypatch.setattr(
+        HELPER, "_create_senders_and_watchers", create_senders_and_watchers
+    )
+
+    instance = Instance()
+    # The destination of `text_log` is unavailable at the first enable
+    HELPER.setup_for_instance(Cluster(), instance, only_since_start=True)
+    assert instance.ci_logs_export_tables == ["query_log"]
+    boundary = "event_time >= toDateTime(1700000000)"
+    assert calls == [{"query_log": boundary}]
+
+    # The server restarts much later; the boundary must not move
+    available.add("text_log")
+    HELPER.refresh_after_start(Cluster(), instance)
+    assert calls[1] == {"text_log": boundary}
+    uptime_queries = [q for q in instance.queries if "uptime()" in q]
+    assert len(uptime_queries) == 1
+    assert instance.ci_logs_export_tables == ["query_log", "text_log"]
+
+    # A fresh instance still sends everything
+    fresh = Instance()
+    calls.clear()
+    HELPER.setup_for_instance(Cluster(), fresh)
+    assert calls == [None]
+
+
+def test_the_backfill_runs_with_the_export_settings():
+    """The rows already in the log tables are sent by an `INSERT ... SELECT` of
+    the test user, not through the `DEFINER = ci_logs_sender` views, and the
+    Distributed table replays the settings of that insert on the CI Logs
+    cluster. It must carry the settings of the sender profile, whatever the
+    `default` profile of the test sets, and no time limit."""
+    config = Path(HELPER.SENDER_USER_CONFIG).read_text()
+    profile = config[: config.index("constraints:")]
+    for name, value in HELPER._sender_profile_settings().items():
+        assert f"        {name}: {value}\n" in profile
+    assert HELPER.BACKFILL_SETTINGS["send_timeout"] == "15"
+    assert HELPER.BACKFILL_SETTINGS["receive_timeout"] == "15"
+    assert HELPER.BACKFILL_SETTINGS["max_memory_usage_for_user"] == "0"
+    assert HELPER.BACKFILL_SETTINGS["distributed_foreground_insert"] == "0"
+    assert HELPER.BACKFILL_SETTINGS["max_execution_time"] == "0"
+    # Every pinned setting of the watchers, i.e. every readonly constraint
+    constraints = config[config.index("constraints:") : config.index("\nusers:")]
+    constrained = re.findall(r"^            (\w+):$", constraints, re.MULTILINE)
+    assert constrained and set(constrained) <= HELPER.BACKFILL_SETTINGS.keys()
+
+    class Instance:
+        name = "node"
+        queries = []
+
+        def query(self, sql, timeout=None):
+            self.queries.append(sql)
+            return "query_log_watcher\nquery_log_sender\n"
+
+    instance = Instance()
+    HELPER._create_senders_and_watchers(
+        instance, [("query_log", "h", "")], {"query_log"}, "1 AS c"
+    )
+    settings = ", ".join(f"{k} = {v}" for k, v in HELPER.BACKFILL_SETTINGS.items())
+    assert (
+        f"INSERT INTO system.query_log_sender SETTINGS {settings} "
+        "SELECT 1 AS c, * FROM system.query_log;"
+    ) in instance.queries[0]
 
 
 def test_test_name_of_a_single_file_suite_is_the_suite(tmp_path):
