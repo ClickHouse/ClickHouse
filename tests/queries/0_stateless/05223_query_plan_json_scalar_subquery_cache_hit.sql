@@ -10,8 +10,9 @@
 -- this query has already run and the profiler has already captured -- the id is remembered beside
 -- the cached value and handed back, rather than a second sub-plan being invented.
 --
--- The check is the size of `ConsumedBy`, not the names in it: which steps end up holding the value
--- depends on how the query is planned, but there must be one sub-plan and two distinct readers.
+-- The check is the number of steps listing the sub-plan in their `SubPlans`, not which steps they
+-- are: which steps end up holding the value depends on how the query is planned, but there must be
+-- one sub-plan and two distinct readers.
 
 DROP TABLE IF EXISTS t_cache_hit_05223;
 
@@ -39,23 +40,23 @@ SYSTEM FLUSH LOGS query_log;
 
 WITH
     toJSONString(query_plan) AS plan,
-    JSONExtractArrayRaw(plan, 'SubPlans') AS subqueries,
-    JSONExtractArrayRaw(plan, 'Nodes') AS nodes
+    arraySlice(JSONExtractArrayRaw(plan, 'Plans'), 2) AS subqueries,
+    arrayFlatten(arrayMap(p -> JSONExtractArrayRaw(p, 'Nodes'), JSONExtractArrayRaw(plan, 'Plans'))) AS nodes,
+    arrayMap(q -> JSONExtractUInt(q, 'SubqueryId'), subqueries) AS subquery_ids
 SELECT
     replaceOne(log_comment, '05223_', '') AS shape,
     length(subqueries) AS sub_plans,
-    -- Every reader of a cached value is named, and named once: a step consumes a subquery once
+    -- Every reader of a cached value lists it, and lists it once: a step consumes a subquery once
     -- however many times it reaches it.
-    arrayMap(q -> length(arrayDistinct(JSONExtractArrayRaw(q, 'ConsumedBy'))), subqueries) AS readers,
-    arrayAll(q -> length(JSONExtractArrayRaw(q, 'ConsumedBy'))
-                = length(arrayDistinct(JSONExtractArrayRaw(q, 'ConsumedBy'))), subqueries) AS no_duplicate_readers,
+    arrayMap(id -> length(arrayDistinct(arrayMap(n -> JSONExtractString(n, 'Node Id'),
+        arrayFilter(n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), id), nodes)))), subquery_ids) AS readers,
+    arrayAll(n -> length(JSONExtract(n, 'SubPlans', 'Array(UInt64)'))
+                = length(arrayDistinct(JSONExtract(n, 'SubPlans', 'Array(UInt64)'))), nodes) AS no_duplicate_readers,
     -- A cache hit must not invent a sub-plan of its own: each one here still has a root and is a
     -- scalar capture in its own right.
     arrayAll(q -> JSONHas(q, 'Root') AND JSONExtractString(q, 'Kind') = 'Scalar', subqueries) AS all_scalar_with_root,
-    -- And every named reader is a step of this document.
-    arrayAll(q -> arrayAll(
-        c -> arrayExists(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(c), nodes),
-        JSONExtractArrayRaw(q, 'ConsumedBy')), subqueries) AS readers_exist
+    -- And every sub-plan a step reads is a plan of this document.
+    arrayAll(n -> arrayAll(id -> has(subquery_ids, id), JSONExtract(n, 'SubPlans', 'Array(UInt64)')), nodes) AS readers_exist
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05223_twice', '05223_distinct')

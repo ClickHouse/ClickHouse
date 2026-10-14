@@ -37,33 +37,25 @@ SYSTEM FLUSH LOGS query_log;
 
 WITH
     toJSONString(query_plan) AS plan,
-    JSONExtractArrayRaw(plan, 'SubPlans') AS subqueries,
-    JSONExtractArrayRaw(plan, 'Nodes') AS nodes
+    arraySlice(JSONExtractArrayRaw(plan, 'Plans'), 2) AS subqueries,
+    arrayFlatten(arrayMap(p -> JSONExtractArrayRaw(p, 'Nodes'), JSONExtractArrayRaw(plan, 'Plans'))) AS all_nodes
 SELECT
     length(subqueries) AS sub_plans,
-    -- Every subquery names at least one consumer.
-    arrayAll(s -> length(JSONExtractArrayRaw(s, 'ConsumedBy')) > 0, subqueries) AS all_linked,
+    -- Every subquery is listed in the `SubPlans` of at least one consumer.
+    arrayAll(s -> arrayExists(
+        n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), JSONExtractUInt(s, 'SubqueryId')),
+        all_nodes), subqueries) AS all_linked,
     -- Exactly one of them is consumed from inside another subquery's plan rather than from the
-    -- query's own plan. That is the link a per-plan name match could not express.
-    countIf(
-        arrayExists(n ->
-            (JSONExtractString(n, 'Node Id') = consumer) AND JSONHas(n, 'SubPlanId'),
-            nodes)) AS consumed_inside_another_sub_plan
-FROM
-(
-    WITH
-        toJSONString(query_plan) AS plan,
-        JSONExtractArrayRaw(plan, 'SubPlans') AS subqueries
-    SELECT
-        query_plan,
-        arrayJoin(arrayMap(c -> JSONExtractString(c),
-            arrayFlatten(arrayMap(s -> JSONExtractArrayRaw(s, 'ConsumedBy'), subqueries)))) AS consumer
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05219_nested'
-    ORDER BY event_time DESC
-    LIMIT 1 BY query_id
-)
-GROUP BY plan, subqueries, nodes;
+    -- query's own plan: a step of that subquery's plan lists it in `SubPlans`. That is the link a
+    -- per-plan name match could not express.
+    length(arrayDistinct(arrayFlatten(arrayMap(
+        n -> JSONExtract(n, 'SubPlans', 'Array(UInt64)'),
+        arrayFlatten(arrayMap(s -> JSONExtractArrayRaw(s, 'Nodes'), subqueries))))))
+        AS consumed_inside_another_sub_plan
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05219_nested'
+ORDER BY event_time DESC
+LIMIT 1 BY query_id;
 
 DROP TABLE t_outer_05219;
 DROP TABLE t_mid_05219;

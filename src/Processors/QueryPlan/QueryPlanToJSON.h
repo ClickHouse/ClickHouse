@@ -22,9 +22,10 @@ namespace DB
 /// renamed, removed, or given a different meaning. Adding a key is not such a change: a reader
 /// that does not know it ignores it, and rows written by older servers stay readable either way,
 /// because `system.query_log` holds whatever version was current when each row was written.
-constexpr UInt64 QUERY_PLAN_JSON_VERSION = 1;
+constexpr UInt64 QUERY_PLAN_JSON_VERSION = 2;
 
-/// Writes the document.
+/// Writes the document: `{Version, Plans[]}`, with one entry of `Plans` for every plan that ran for
+/// the query, each holding its own `Nodes`. The query's own plan is the first entry, of `Kind` `Query`.
 JSONBuilder::ItemPtr capturedPlanToJSON(const CapturedPlan & captured);
 
 }

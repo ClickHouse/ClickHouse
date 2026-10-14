@@ -5,8 +5,8 @@
 -- The conjuncts beyond the two inequalities become the residual condition of `IEJoinStep`, which
 -- keeps them in an `ExpressionActions` of its own rather than in a `Filter` step above the join.
 -- Steps are asked for the `ActionsDAG`s they own, so that residual is reached like any other
--- expression; a step that answered for nothing would capture and time the sub-plan while leaving
--- `ConsumedBy` empty.
+-- expression; a step that answered for nothing would capture and time the sub-plan while no step
+-- listed it in its `SubPlans`.
 
 DROP TABLE IF EXISTS t_iel_05261;
 DROP TABLE IF EXISTS t_ier_05261;
@@ -42,19 +42,17 @@ SYSTEM FLUSH LOGS query_log;
 
 WITH
     toJSONString(query_plan) AS plan,
-    JSONExtractRaw(plan, 'SubPlans', 1) AS sub_plan,
-    JSONExtractArrayRaw(plan, 'Nodes') AS nodes
+    JSONExtractRaw(plan, 'Plans', 2) AS sub_plan,
+    arrayFlatten(arrayMap(p -> JSONExtractArrayRaw(p, 'Nodes'), JSONExtractArrayRaw(plan, 'Plans'))) AS nodes
 SELECT
     'ie_join',
-    length(JSONExtractArrayRaw(plan, 'SubPlans')) AS sub_plans,
+    length(JSONExtractArrayRaw(plan, 'Plans')) - 1 AS sub_plans,
     JSONExtractString(sub_plan, 'Kind') AS kind,
     -- By node type rather than by id, which carries a serial number.
     arrayStringConcat(
         arraySort(arrayMap(
-            c -> JSONExtractString(
-                arrayFilter(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(c), nodes)[1],
-                'Node Type'),
-            JSONExtractArrayRaw(sub_plan, 'ConsumedBy'))),
+            n -> JSONExtractString(n, 'Node Type'),
+            arrayFilter(n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), JSONExtractUInt(sub_plan, 'SubqueryId')), nodes))),
         ',') AS consumer_types
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'

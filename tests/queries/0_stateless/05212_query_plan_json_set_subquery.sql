@@ -26,17 +26,19 @@ SET log_query_plans = 0;
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
-    -- The subquery's plan is in the document, and its root is named at the top level so a reader
-    -- can tell it apart from the query's own root.
-    length(JSONExtractArrayRaw(toJSONString(query_plan), 'SubPlans')) AS sub_plans,
+    -- The subquery's plan is in the document as a plan of its own, after the query's, with its own
+    -- root so a reader can tell it apart from the query's root.
+    length(JSONExtractArrayRaw(toJSONString(query_plan), 'Plans')) - 1 AS sub_plans,
     -- The table the subquery reads is named. This is the whole point: the main plan reads only
-    -- `target`, so before the capture no `source` scan appeared anywhere.
-    countSubstrings(toJSONString(query_plan), concat('"Description":"', currentDatabase(), '.source"')) > 0 AS names_source,
-    -- Its nodes are ordinary entries of the flat `Nodes` array, marked with where they came from.
-    countSubstrings(toJSONString(query_plan), '"Kind":"Set"') > 0 AS marked,
+    -- `target`, so before the capture no `source` scan appeared anywhere. It is named in the
+    -- subquery's own `Nodes`, not in the query plan's.
+    countSubstrings(JSONExtractRaw(toJSONString(query_plan), 'Plans', 2, 'Nodes'), concat('"Description":"', currentDatabase(), '.source"')) > 0
+        AND countSubstrings(JSONExtractRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes'), concat('"Description":"', currentDatabase(), '.source"')) = 0 AS names_source,
+    -- The plan its nodes live in is marked with where it came from.
+    JSONExtractString(toJSONString(query_plan), 'Plans', 2, 'Kind') = 'Set' AS marked,
     -- And they carry what their own pipeline measured, not zeros and not the main pipeline's.
-    JSONExtractUInt(JSONExtractArrayRaw(toJSONString(query_plan), 'SubPlans')[1], 'ExecutionTimeNs') > 0 AS sub_execution_time,
-    JSONExtractUInt(JSONExtractArrayRaw(toJSONString(query_plan), 'SubPlans')[1], 'MaxThreads') > 0 AS sub_max_threads
+    JSONExtractUInt(toJSONString(query_plan), 'Plans', 2, 'ExecutionTimeNs') > 0 AS sub_execution_time,
+    JSONExtractUInt(toJSONString(query_plan), 'Plans', 2, 'MaxThreads') > 0 AS sub_max_threads
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05212_set_subquery';
 
@@ -46,27 +48,31 @@ SELECT
     countIf(node.1 = 1) > 1 AS more_than_one_sub_node
 FROM
 (
-    SELECT arrayJoin(arrayMap(n ->
-        (toUInt8(JSONHas(n, 'SubPlanId')), toUInt8(JSONHas(n, 'Statistics'))),
-        JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes'))) AS node
+    -- Every node of every plan, paired with whether its plan is a sub-plan: anything after the first.
+    WITH JSONExtractArrayRaw(toJSONString(query_plan), 'Plans') AS plans
+    SELECT arrayJoin(arrayFlatten(arrayMap((p, i) -> arrayMap(n ->
+        (toUInt8(i > 1), toUInt8(JSONHas(n, 'Statistics'))),
+        JSONExtractArrayRaw(p, 'Nodes')), plans, arrayEnumerate(plans)))) AS node
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05212_set_subquery'
 );
 
 -- The subquery is tied to the step that uses the set it builds, so a reader can see what the query
--- wanted it for. Both ends carry the same assigned id -- the subquery's `Id` and the consuming
--- step's recorded ids -- so the link is a join and holds across plan boundaries.
+-- wanted it for. Both ends carry the same assigned id -- the subquery's `SubqueryId` and the
+-- consuming step's `SubPlans` -- so the link is a join and holds across plan boundaries.
 WITH
     toJSONString(query_plan) AS plan,
-    JSONExtractArrayRaw(plan, 'SubPlans')[1] AS subquery,
-    JSONExtractString(JSONExtractArrayRaw(subquery, 'ConsumedBy')[1]) AS consumer
+    JSONExtractArrayRaw(plan, 'Plans')[2] AS subquery,
+    JSONExtractUInt(subquery, 'SubqueryId') AS subquery_id,
+    arrayFlatten(arrayMap(p -> JSONExtractArrayRaw(p, 'Nodes'), JSONExtractArrayRaw(plan, 'Plans'))) AS all_nodes,
+    arrayFilter(n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), subquery_id), all_nodes) AS consumers
 SELECT
-    JSONHas(subquery, 'Id') AS has_id,
-    consumer != '' AS names_a_consumer,
+    JSONHas(subquery, 'SubqueryId') AS has_id,
+    length(consumers) > 0 AS names_a_consumer,
     -- The consumer is a step of the query's own plan, not one of the subquery's.
     arrayExists(
-        n -> (JSONExtractString(n, 'Node Id') = consumer) AND NOT JSONHas(n, 'SubPlanId'),
-        JSONExtractArrayRaw(plan, 'Nodes')) AS consumer_is_in_main_plan
+        n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), subquery_id),
+        JSONExtractArrayRaw(plan, 'Plans', 1, 'Nodes')) AS consumer_is_in_main_plan
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05212_set_subquery';
 

@@ -25,7 +25,7 @@ SYSTEM FLUSH LOGS query_log;
 -- and recording `main` or `stage_<n>_<m>` as its text, so match the user's query by its table.
 SELECT
     replaceOne(log_comment, '05218_', '') AS shape,
-    length(JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes')) AS plan_nodes
+    length(JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes')) AS plan_nodes
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05218_distributed', '05218_local')

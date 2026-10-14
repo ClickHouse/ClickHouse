@@ -22,7 +22,7 @@ SET log_query_plans = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
-WITH JSONExtractRaw(toJSONString(query_plan), 'SubPlans', 1) AS sub_plan
+WITH JSONExtractRaw(toJSONString(query_plan), 'Plans', 2) AS sub_plan
 SELECT
     'scalar',
     -- The sub-plan is captured, and its thread count was recorded even before the fix.

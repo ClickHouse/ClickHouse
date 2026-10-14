@@ -11,9 +11,10 @@
 -- keys inherited from EXPLAIN json=1 (`Node Type`, `Node Id`) contain spaces, which a JSON path
 -- would have to quote.
 --
--- The plan is stored as a flat array: `{"Root": <id>, "ExecutionTimeNs": <ns>, "MaxThreads": <n>,
--- "Output": [...], "Nodes": [...]}`, with each node naming its children by id. Anything a reader
--- can compute from those is not stored -- see StepStatisticsJSONPrinter.
+-- The document is `{"Version": 2, "Plans": [...]}`, and its first plan is the query's own:
+-- `{"Kind": "Query", "Root": <id>, "ExecutionTimeNs": <ns>, "MaxThreads": <n>, "Output": [...],
+-- "Nodes": [...]}`, a flat array of nodes with each node naming its children by id. Anything a
+-- reader can compute from those is not stored -- see StepStatisticsJSONPrinter.
 
 SET log_query_plans = 0;
 SELECT count() FROM numbers(1000) WHERE number > 900 AND '05045_off' != '' FORMAT Null;
@@ -48,9 +49,9 @@ SELECT
     'finish',
     count(),
     anyLast(isValidJSON(toJSONString(query_plan))),
-    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Version')),
-    anyLast(JSONExtractString(toJSONString(query_plan), 'Root')) != '',
-    anyLast(JSONHas(toJSONString(query_plan), 'Nodes')),
+    anyLast(JSONExtractUInt(toJSONString(query_plan), 'Version')) = 2,
+    anyLast(JSONExtractString(toJSONString(query_plan), 'Plans', 1, 'Root')) != '',
+    anyLast(JSONHas(toJSONString(query_plan), 'Plans', 1, 'Nodes')),
     anyLast(position(toJSONString(query_plan), '"Statistics"')) > 0,
     anyLast(position(toJSONString(query_plan), 'ReadFromSystemNumbers')) > 0,
     anyLast(position(toJSONString(query_plan), '"WallClockTimeNs"')) > 0,
@@ -65,7 +66,7 @@ SELECT
     'exception',
     count(),
     anyLast(isValidJSON(toJSONString(query_plan))),
-    anyLast(JSONExtractString(toJSONString(query_plan), 'Root')) != '',
+    anyLast(JSONExtractString(toJSONString(query_plan), 'Plans', 1, 'Root')) != '',
     anyLast(position(toJSONString(query_plan), '"Statistics"')) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'

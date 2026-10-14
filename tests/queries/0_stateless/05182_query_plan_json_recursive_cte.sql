@@ -28,10 +28,10 @@ SELECT
     -- Present and parseable at all.
     anyLast(isValidJSON(toJSONString(query_plan))),
     -- The stored plan is the one whose output is the aggregate, not the recursive step's `n`.
-    anyLast(position(arrayStringConcat(JSONExtractArrayRaw(toJSONString(query_plan), 'Output')), 'sum')) > 0,
+    anyLast(position(arrayStringConcat(JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Output')), 'sum')) > 0,
     -- And the root it names really is a node of the same document.
     anyLast(arrayExists(
-        n -> JSONExtractString(n, 'Node Id') = JSONExtractString(toJSONString(query_plan), 'Root'),
-        JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes')))
+        n -> JSONExtractString(n, 'Node Id') = JSONExtractString(toJSONString(query_plan), 'Plans', 1, 'Root'),
+        JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes')))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05182_recursive_cte';

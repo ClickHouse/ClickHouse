@@ -24,7 +24,7 @@ INSERT INTO t_scalar_05220 SELECT number, number * 2 FROM numbers(10000);
 
 SET log_query_plans = 1;
 
--- Used in a WHERE so there is a step that reads the folded value, and `ConsumedBy` can name it.
+-- Used in a WHERE so there is a step that reads the folded value, and lists it in its `SubPlans`.
 SELECT count() FROM t_scalar_05220 WHERE v > (SELECT avg(v) FROM t_scalar_05220 WHERE k > 10)
     SETTINGS log_comment = '05220_scalar' FORMAT Null;
 
@@ -59,8 +59,9 @@ SYSTEM FLUSH LOGS query_log;
 
 WITH
     toJSONString(query_plan) AS plan,
-    JSONExtractArrayRaw(plan, 'SubPlans') AS subqueries,
-    JSONExtractArrayRaw(plan, 'Nodes') AS nodes
+    arraySlice(JSONExtractArrayRaw(plan, 'Plans'), 2) AS subqueries,
+    JSONExtractArrayRaw(plan, 'Plans', 1, 'Nodes') AS main_nodes,
+    arrayFlatten(arrayMap(q -> JSONExtractArrayRaw(q, 'Nodes'), subqueries)) AS sub_nodes
 SELECT
     replaceOne(log_comment, '05220_', '') AS shape,
     length(subqueries) AS sub_plans,
@@ -68,15 +69,18 @@ SELECT
     -- The table the subquery read is named. This is the whole point: the outer plan reads only
     -- `system.one`, so without the capture no scan appeared anywhere.
     countSubstrings(plan, concat('"Description":"', currentDatabase(), '.t_scalar_05220"')) > 0 AS names_table,
-    -- Its nodes are ordinary entries of the flat array, attributed by id, and carry statistics.
-    arrayExists(n -> JSONHas(n, 'SubPlanId'), nodes) AS marked,
-    arrayAll(n -> NOT JSONHas(n, 'SubPlanId') OR JSONHas(n, 'Statistics'), nodes) AS sub_nodes_have_statistics,
-    -- The step that reads the folded value is named, and it belongs to the query's own plan.
+    -- Its nodes are in the sub-plan's own `Nodes` rather than the query plan's, and carry statistics.
+    notEmpty(sub_nodes) AS marked,
+    arrayAll(n -> JSONHas(n, 'Statistics'), sub_nodes) AS sub_nodes_have_statistics,
+    -- The step that reads the folded value lists it in its `SubPlans`, and it belongs to the query's
+    -- own plan.
     arrayExists(
-        c -> arrayExists(n -> (JSONExtractString(n, 'Node Id') = JSONExtractString(c)) AND NOT JSONHas(n, 'SubPlanId'), nodes),
-        JSONExtractArrayRaw(subqueries[1], 'ConsumedBy')) AS consumer_in_main_plan,
-    -- Every captured subquery names a consumer, the folded pair included.
-    arrayAll(q -> length(JSONExtractArrayRaw(q, 'ConsumedBy')) > 0, subqueries) AS all_linked
+        n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), JSONExtractUInt(subqueries[1], 'SubqueryId')),
+        main_nodes) AS consumer_in_main_plan,
+    -- Every captured subquery has a consumer, the folded pair included.
+    arrayAll(q -> arrayExists(
+        n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), JSONExtractUInt(q, 'SubqueryId')),
+        arrayConcat(main_nodes, sub_nodes)), subqueries) AS all_linked
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05220_scalar', '05220_correlated', '05220_projected', '05220_folded',

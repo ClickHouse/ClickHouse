@@ -9,8 +9,8 @@
 -- therefore cannot travel on the folded value, because there is none; it travels on the hash the
 -- call reads back, which is the only part of the subquery left in the query.
 --
--- Without that the sub-plan is captured and timed but `ConsumedBy` is empty, so the document shows
--- a subquery that scanned a table and nothing saying which step wanted it.
+-- Without that the sub-plan is captured and timed but no step lists it in its `SubPlans`, so the
+-- document shows a subquery that scanned a table and nothing saying which step wanted it.
 
 DROP TABLE IF EXISTS t_get_scalar_05255;
 
@@ -38,18 +38,17 @@ SYSTEM FLUSH LOGS query_log;
 
 WITH
     toJSONString(query_plan) AS plan,
-    JSONExtractArrayRaw(plan, 'SubPlans') AS subqueries,
-    JSONExtractArrayRaw(plan, 'Nodes') AS nodes
+    arraySlice(JSONExtractArrayRaw(plan, 'Plans'), 2) AS subqueries,
+    arrayFlatten(arrayMap(p -> JSONExtractArrayRaw(p, 'Nodes'), JSONExtractArrayRaw(plan, 'Plans'))) AS nodes,
+    arrayMap(q -> JSONExtractUInt(q, 'SubqueryId'), subqueries) AS subquery_ids
 SELECT
     replaceOne(log_comment, '05255_', '') AS shape,
     length(subqueries) AS sub_plans,
     JSONExtractString(subqueries[1], 'Kind') AS kind,
-    -- The point of the test: the subquery names the step that reads its value.
-    length(JSONExtractArrayRaw(subqueries[1], 'ConsumedBy')) > 0 AS linked,
-    -- And every step it names is a step of this document.
-    arrayAll(
-        c -> arrayExists(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(c), nodes),
-        JSONExtractArrayRaw(subqueries[1], 'ConsumedBy')) AS readers_exist
+    -- The point of the test: the step that reads the subquery's value lists it in its `SubPlans`.
+    arrayExists(n -> has(JSONExtract(n, 'SubPlans', 'Array(UInt64)'), subquery_ids[1]), nodes) AS linked,
+    -- And every sub-plan a step lists is a plan of this document.
+    arrayAll(n -> arrayAll(id -> has(subquery_ids, id), JSONExtract(n, 'SubPlans', 'Array(UInt64)')), nodes) AS readers_exist
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05255_array', '05255_tuple', '05255_folded')

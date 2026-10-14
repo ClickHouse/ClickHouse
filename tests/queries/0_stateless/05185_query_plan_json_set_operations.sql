@@ -36,7 +36,7 @@ SELECT
     replaceOne(log_comment, '05185_', '') AS shape,
     -- A plan was stored, and it is the set operation's own plan: the step that performs it is there
     -- along with a source per branch.
-    length(JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes')) > 0 AS captured,
+    length(JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes')) > 0 AS captured,
     countSubstrings(toJSONString(query_plan), '"Node Type":"IntersectOrExcept"') AS set_op_steps,
     countSubstrings(toJSONString(query_plan), '"Node Type":"ReadFromSystemNumbers"') AS sources
 FROM system.query_log

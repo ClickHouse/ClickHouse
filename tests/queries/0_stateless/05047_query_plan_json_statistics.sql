@@ -32,9 +32,9 @@ SELECT
 FROM
 (
     SELECT
-        JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes') AS nodes,
+        JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes') AS nodes,
         arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers', nodes)[1] AS source,
-        arrayFilter(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(toJSONString(query_plan), 'Root'), nodes)[1] AS root
+        arrayFilter(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(toJSONString(query_plan), 'Plans', 1, 'Root'), nodes)[1] AS root
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats'
 );
@@ -54,15 +54,15 @@ SELECT
     anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Sum')) > 0,
     -- The query-level figures every stage is read against. A step cannot have been busy for
     -- longer than the query executed, which is what keeps a derived share at or below 100%.
-    anyLast(JSONExtractUInt(plan, 'ExecutionTimeNs')) > 0,
-    anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) <= anyLast(JSONExtractUInt(plan, 'ExecutionTimeNs')),
-    anyLast(JSONExtractUInt(plan, 'MaxThreads')) > 0
+    anyLast(JSONExtractUInt(plan, 'Plans', 1, 'ExecutionTimeNs')) > 0,
+    anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) <= anyLast(JSONExtractUInt(plan, 'Plans', 1, 'ExecutionTimeNs')),
+    anyLast(JSONExtractUInt(plan, 'Plans', 1, 'MaxThreads')) > 0
 FROM
 (
     SELECT
         toJSONString(query_plan) AS plan,
         arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers',
-                    JSONExtractArrayRaw(plan, 'Nodes'))[1] AS source,
+                    JSONExtractArrayRaw(plan, 'Plans', 1, 'Nodes'))[1] AS source,
         JSONExtractArrayRaw(source, 'Statistics', 'Stages')[1] AS stage
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats'
