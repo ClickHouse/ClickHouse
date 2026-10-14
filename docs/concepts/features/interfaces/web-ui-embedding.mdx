@@ -37,12 +37,18 @@ The page has to speak first because a host that opened it with `window.open` can
 <iframe id="play" src="https://example.com:8443/play"></iframe>
 <script>
 const connection = {url: 'https://example.com:8443/', user: 'alice', password: 'secret'};
+const frame = document.getElementById('play');
+/// The origin the iframe was configured with. The frame object survives navigation,
+/// so it alone does not prove that the iframe still shows this origin.
+const expectedOrigin = new URL(frame.src).origin;
 window.addEventListener('message', (event) => {
-    /// Answer this iframe only, and only its readiness announcement.
-    if (event.source !== document.getElementById('play').contentWindow) return;
+    /// Answer this iframe only, only at its configured origin, and only its readiness announcement.
+    if (event.source !== frame.contentWindow) return;
+    if (event.origin !== expectedOrigin) return;
     if (!event.data || event.data.type !== 'clickhouse-hello') return;
-    /// An exact target origin, never '*': the credentials must reach that origin only.
-    event.source.postMessage({type: 'clickhouse-credentials', ...connection}, event.origin);
+    /// The pinned origin as the target, never '*' or `event.origin`: if the iframe navigated
+    /// away in the meantime, the browser drops the message instead of delivering the password.
+    event.source.postMessage({type: 'clickhouse-credentials', ...connection}, expectedOrigin);
 });
 </script>
 ```
@@ -68,17 +74,17 @@ The list is not configurable, unlike the web terminal's `webterminal_allowed_ori
 
 ## What a page does with a new connection {#adopting-a-connection}
 
-Each page adopts the connection and then redoes what it had already loaded with the previous one, so the handover also works when it arrives after the page started querying. A page that queries only on demand simply keeps the new connection for its next query:
+Each page adopts the connection and then redoes what it had already loaded with the previous one, so the handover also works when it arrives after the page started querying. Whatever is still in flight on the previous connection is abandoned first, so none of its follow-up requests reach the new server. A page that queries only on demand simply keeps the new connection for its next query:
 
 | Page                  | On adopting a connection                                                            |
 |-----------------------|-------------------------------------------------------------------------------------|
 | `/play`               | Re-checks the server and probes the credentials                                     |
 | `/docs`               | Rebuilds the documented-name cache and re-runs the search currently displayed        |
-| `/dashboard`          | Reloads the charts, re-running the dashboard search when no charts are displayed yet |
+| `/dashboard`          | Reloads the charts, re-running the dashboard search unless the charts were customized |
 | `/schema`             | Reloads the schema graph                                                             |
 | `/merges`             | Fills the fields; the animation reads them when it is started                        |
-| `/jemalloc`           | Reloads the allocator statistics                                                     |
-| `/processors-profile` | Reloads the list of queries                                                          |
+| `/jemalloc`           | Reloads the allocator statistics and rebuilds the profiling panels                  |
+| `/processors-profile` | Clears the displayed pipeline and reloads the list of queries                       |
 | `/binary`             | Drops the cached tiles and redraws the map                                           |
 
 ## Opening `/docs` from `/play` {#docs-from-play}
