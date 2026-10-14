@@ -132,7 +132,7 @@ ClickHouse는 데이터 전송 중 여러 압축 코덱을 지원합니다. 대�
 
 **압축을 배칭 및 효율적인 입력 형식(예: Native)과 함께 사용하면 최상의 수집 성능을 얻을 수 있습니다.**
 
-네이티브 인터페이스(예: [clickhouse-client](/ko/concepts/features/interfaces/cli))를 사용할 때는 LZ4 압축이 기본적으로 활성화됩니다. 필요에 따라 설정을 통해 ZSTD로 전환할 수 있습니다.
+네이티브 인터페이스(예: [clickhouse-client](/ko/concepts/features/interfaces/client))를 사용할 때는 LZ4 압축이 기본적으로 활성화됩니다. 필요에 따라 설정을 통해 ZSTD로 전환할 수 있습니다.
 
 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)에서는 Content-Encoding 헤더를 사용해 압축을 적용하십시오(예: Content-Encoding: lz4). 전체 페이로드는 전송하기 전에 반드시 압축되어야 합니다.
 
@@ -162,7 +162,7 @@ ClickHouse는 데이터 전송 중 여러 압축 코덱을 지원합니다. 대�
   ### 네이티브
 </div>
 
-ClickHouse는 데이터 수집을 위한 두 가지 주요 인터페이스, 즉 **네이티브 인터페이스**와 **HTTP 인터페이스**를 제공합니다. 각 인터페이스는 성능과 유연성 측면에서 서로 다른 장단점이 있습니다. [clickhouse-client](/ko/concepts/features/interfaces/cli)와 Go, C++ 같은 일부 언어 클라이언트에서 사용하는 네이티브 인터페이스는 성능에 최적화되도록 설계되었습니다. 이 인터페이스는 항상 ClickHouse의 매우 효율적인 Native 형식으로 데이터를 전송하고, LZ4 또는 ZSTD를 사용하는 블록 단위 압축을 지원하며, 구문 분석 및 포맷 변환 같은 작업을 클라이언트로 넘겨 서버 측 처리를 최소화합니다.
+ClickHouse는 데이터 수집을 위한 두 가지 주요 인터페이스, 즉 **네이티브 인터페이스**와 **HTTP 인터페이스**를 제공합니다. 각 인터페이스는 성능과 유연성 측면에서 서로 다른 장단점이 있습니다. [clickhouse-client](/ko/concepts/features/interfaces/client)와 Go, C++ 같은 일부 언어 클라이언트에서 사용하는 네이티브 인터페이스는 성능에 최적화되도록 설계되었습니다. 이 인터페이스는 항상 ClickHouse의 매우 효율적인 Native 형식으로 데이터를 전송하고, LZ4 또는 ZSTD를 사용하는 블록 단위 압축을 지원하며, 파싱 및 포맷 변환 같은 작업을 클라이언트로 넘겨 서버 측 처리를 최소화합니다.
 
 또한 클라이언트 측에서 MATERIALIZED 및 DEFAULT 컬럼 값을 계산할 수 있으므로 서버는 이 단계를 완전히 건너뛸 수 있습니다. 따라서 네이티브 인터페이스는 효율성이 중요한 고처리량 수집 시나리오에 이상적입니다.
 

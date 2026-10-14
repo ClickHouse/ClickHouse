@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'AWS PrivateLink for ClickPipes'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'Establish a secure connection between ClickPipes and a data source using AWS PrivateLink.'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'AWS PrivateLink for ClickPipes'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'ClickPipes security', 'vpc endpoint', 'private connectivity', 'vpc resource']
 integration:
@@ -351,6 +352,16 @@ Private endpoints are linked to a specific ClickHouse service and aren't transfe
 Multiple ClickPipes for a single ClickHouse service can reuse the same endpoint.
 
 AWS MSK supports only one PrivateLink (VPC endpoint) per MSK cluster per authentication type (SASL_IAM or SASL_SCRAM). As a result, multiple ClickHouse Cloud services or organizations cannot create separate PrivateLink connections to the same MSK cluster using the same auth type.
+
+### Replica limit per reverse private endpoint {#rpe-replica-limit}
+
+A reverse private endpoint supports up to 190 ClickPipe replicas in total. Replicas of all ClickPipes that share the same endpoint count toward this limit, including paused ClickPipes.
+
+ClickPipes rejects creating a ClickPipe, or scaling one up, if the total number of replicas for the endpoint would exceed the limit. The error message includes the reverse private endpoint ID, the number of replicas already used by other ClickPipes, and the requested number of replicas. Scaling down is always allowed.
+
+To free up capacity, you can:
+- Scale down other ClickPipes that use the same endpoint.
+- Create a separate reverse private endpoint for additional ClickPipes.
 
 ### Automatic cleanup of inactive endpoints {#automatic-cleanup}
 

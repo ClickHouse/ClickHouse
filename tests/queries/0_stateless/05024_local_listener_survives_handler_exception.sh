@@ -63,17 +63,19 @@ for _ in {1..600}; do
     sleep 0.1
 done
 read -r tcp_port http_port < "$ports_file"
-# Both steps below are mandatory: skipping either leaves the final query answering from a listener
-# that was never poked, which passes without testing anything.
+# Both steps below are mandatory: skipping either leaves the final query answering from a listener that
+# was never poked, which passes without testing anything.
 [ -n "$tcp_port" ] && [ -n "$http_port" ] || { echo "failed to read listener ports"; exit 1; }
 
-# The method matters: `GET` and `POST` are recognized as a wrong-port mistake and answered politely,
-# while any other verb is rejected as an unexpected packet, which is the case this test needs.
-exec 3<>"/dev/tcp/127.0.0.1/${tcp_port}" || { echo "failed to connect to the native port"; exit 1; }
-printf 'HEAD / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: keep-alive\r\n\r\n' >&3
-head -c 20 <&3 >/dev/null 2>&1
-exec 3<&- 2>/dev/null
-exec 3>&- 2>/dev/null
+# `GET` and `POST` are answered as a wrong-port mistake, so the unexpected packet needs another verb.
+# The server closes the connection in response, which makes writes to the socket raise SIGPIPE. Bash
+# picks the descriptor, because a number chosen here can be one the shell already uses for itself.
+trap '' PIPE
+exec {sock}<>"/dev/tcp/127.0.0.1/${tcp_port}" || { echo "failed to connect to the native port"; exit 1; }
+{ printf 'HEAD / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: keep-alive\r\n\r\n' >&${sock}; } 2>/dev/null
+head -c 20 <&${sock} >/dev/null 2>&1
+exec {sock}<&- 2>/dev/null
+exec {sock}>&- 2>/dev/null
 
 # The listener cannot answer this if the failed connection took the process down.
 ${CLICKHOUSE_CURL} -sS --max-time 60 "http://127.0.0.1:${http_port}/?query=SELECT%20%27listener%20still%20serving%27"

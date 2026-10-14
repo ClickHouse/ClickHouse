@@ -18,5 +18,4 @@ SELECT * FROM values('x UInt8', true, false);
 DROP FUNCTION IF EXISTS udf_04611_bool;
 CREATE FUNCTION udf_04611_bool AS () -> true;
 SELECT * FROM values('x String', udf_04611_bool()) SETTINGS enable_analyzer = 1;
-SELECT * FROM values('x String', udf_04611_bool()) SETTINGS enable_analyzer = 0;
 DROP FUNCTION udf_04611_bool;

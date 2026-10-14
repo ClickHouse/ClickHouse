@@ -1,6 +1,10 @@
--- Tags: no-fasttest, no-openssl-fips
+-- Tags: no-fasttest, no-openssl-fips, no-flaky-check
 -- ^ certain functions are disabled in the fast test build.
 -- ^ MD5 function is not available in FIPS build
+-- ^ this test evaluates a few hundred functions on a constant empty string; its
+--   result is deterministic, so the flaky check has nothing to detect by re-running
+--   it, while a single run exceeds the flaky check's per-run time budget under the
+--   heaviest sanitizer configuration.
 
 SET session_timezone = 'UTC';
 
@@ -119,7 +123,7 @@ SELECT encodeURLComponent('');
 SELECT encodeURLFormComponent('');
 SELECT encodeXMLComponent('');
 SELECT entropy('');
-SELECT estimateCompressionRatio('');
+SELECT estimateCompressionRatio('LZ4')(''); -- pin the codec so the ratio does not depend on the server's default compression codec
 SELECT extractKeyValuePairs('');
 SELECT extractKeyValuePairsWithEscaping('');
 SELECT extractTextFromHTML('');

@@ -139,7 +139,7 @@ SELECT polygonPerimeterCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
 SELECT round(polygonPerimeterSpherical([[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]), 6)
                   )",
                   R"(
-0.045539
+0.001201
                   )"}};
     FunctionDocumentation::IntroducedIn introduced_in_spherical = {21, 4};
     FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;

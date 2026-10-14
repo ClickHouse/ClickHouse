@@ -30,7 +30,11 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fmodl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexpl.cpp"
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/hypot.cpp"
+    # hypot deliberately omitted: llvm-libc's is a correctly-rounded
+    # digit-recurrence loop that ignores LIBC_MATH_HAS_SKIP_ACCURATE_PASS and
+    # measures ~22x slower than the platform one (91 ns vs 4.2 ns per call on
+    # Neoverse-V2); the libc hypot (musl, or glibc in dynamic builds) wins the
+    # link instead.
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpl.cpp"

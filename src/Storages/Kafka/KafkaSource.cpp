@@ -80,7 +80,8 @@ bool KafkaSource::checkTimeLimit() const
     {
         auto elapsed_ns = total_stopwatch.elapsed();
 
-        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+        /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for huge values.
+        if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
             return false;
     }
 

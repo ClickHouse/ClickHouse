@@ -12,7 +12,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
-    extern const MergeTreeSettingsUInt64 max_replicated_logs_to_keep;
+    extern const MergeTreeSettingsNonZeroUInt64 max_replicated_logs_to_keep;
     extern const MergeTreeSettingsUInt64 min_replicated_logs_to_keep;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window_for_async_inserts;
@@ -93,7 +93,11 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         cleaned_part_like += storage.clearUnusedPatchParts();
     }
 
-    cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+    {
+        /// Rebuilds each outdated part's cache keys from its root path, which changes during rename.
+        auto lock = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+        cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+    }
 
     /// We need to measure the number of removed objects somehow (for better scheduling),
     /// but just summing the number of removed async blocks, logs, and empty parts does not make any sense.

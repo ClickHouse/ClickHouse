@@ -41,8 +41,10 @@ SELECT count(), countIf(k IN (SELECT k FROM left_side)) FROM right_dup_keys;
 {% set semi_anti_kinds = ['SEMI LEFT', 'SEMI RIGHT', 'ANTI LEFT', 'ANTI RIGHT'] -%}
 {% set asof_kinds = ['ASOF', 'ASOF LEFT'] -%}
 
+-- `grace_hash` spills on `max_bytes_before_external_join`, which has to stay above the size of an empty
+-- hash table: below that every freshly split bucket looks oversized and the buckets keep splitting.
 {% set cases = [
-    ('grace_hash', "join_algorithm = 'grace_hash', max_bytes_before_external_join = 1",
+    ('grace_hash', "join_algorithm = 'grace_hash', max_bytes_before_external_join = 16777216",
         all_kinds + any_kinds + semi_anti_kinds),
 
     ('partial_merge', "join_algorithm = 'partial_merge'",

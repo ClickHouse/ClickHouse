@@ -5,6 +5,8 @@
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
+#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -27,9 +29,27 @@ namespace
 
 void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// `nulls_direction` already holds the effective direction, so
+    /// `nulls_direction_was_explicitly_specified` is only about formatting and is left unhashed.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 88, "If members were added to ASTOrderByElement, hash them here unless they are purely cosmetic.");
+
+    /// The children carry different roles (collation, `WITH FILL` bounds) recorded only in
+    /// `positions`. Without hashing the roles, `WITH FILL FROM 1 TO 2` and `WITH FILL FROM 1 STEP 2`
+    /// hash equally. Iterate over all enumerators so that a newly added one is hashed without
+    /// changing this code.
+    for (auto child : magic_enum::enum_values<Child>())
+    {
+        auto it = positions.find(child);
+        if (it != positions.end())
+        {
+            hash_state.update(child);
+            hash_state.update(it->second);
+        }
+    }
+
     hash_state.update(direction);
     hash_state.update(nulls_direction);
-    hash_state.update(nulls_direction_was_explicitly_specified);
     hash_state.update(with_fill);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
@@ -132,6 +152,9 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
     nulls_direction = validateOrderByDirection(r.getInt("nulls_direction"), "nulls_direction");
     nulls_direction_was_explicitly_specified = r.getBool("nulls_direction_was_explicitly_specified");
     with_fill = r.getBool("with_fill");
+    if (!nulls_direction_was_explicitly_specified && nulls_direction != direction)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'nulls_direction' must equal 'direction' unless it is explicitly specified during AST JSON deserialization");
     /// `fill_*` are only meaningful (and only formatted) under `WITH FILL`; the parser never attaches
     /// them otherwise, so reject them when `with_fill` is false instead of silently dropping them.
     if (!with_fill && (r.has("fill_from") || r.has("fill_to") || r.has("fill_step") || r.has("fill_staleness")))

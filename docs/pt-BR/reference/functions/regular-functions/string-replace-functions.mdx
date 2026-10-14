@@ -108,9 +108,9 @@ SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;
 ```
 
 ```response title=Response
-┌─res──────────────────────┐
-│ My mother is from Mexico.│
-└──────────────────────────┘
+┌─res───────────────────────┐
+│ My mother is from Mexico. │
+└───────────────────────────┘
 ```
 
 **Substituição com tamanho**
@@ -120,9 +120,9 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────┐
-│ My dad is from Mexico.│
-└───────────────────────┘
+┌─res────────────────────┐
+│ My dad is from Mexico. │
+└────────────────────────┘
 ```
 
 <div id="overlayUTF8">
@@ -161,9 +161,9 @@ SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────────────┐
-│ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘
+┌─res────────────────────────────┐
+│ Mein Vater ist aus der Türkei. │
+└────────────────────────────────┘
 ```
 
 <div id="printf">
@@ -344,7 +344,7 @@ replaceRegexpAll(haystack, pattern, replacement)
 
 * `haystack` — A string de entrada na qual a busca será feita. [`String`](/pt-BR/reference/data-types/string)
 * `pattern` — O padrão de expressão regular a ser encontrado. [`const String`](/pt-BR/reference/data-types/string)
-* `replacement` — A string que substituirá o padrão; pode conter substituições. [`const String`](/pt-BR/reference/data-types/string)
+* `replacement` — A string de substituição; pode conter substituições. [`const String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -359,9 +359,9 @@ SELECT replaceRegexpAll('Hello123', '.', '\\0\\0') AS res
 ```
 
 ```response title=Response
-┌─res──────────────────┐
-│ HHeelllloo112233     │
-└──────────────────────┘
+┌─res──────────────┐
+│ HHeelllloo112233 │
+└──────────────────┘
 ```
 
 **Exemplo de substituição de substring vazia**

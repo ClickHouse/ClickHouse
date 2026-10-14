@@ -8,7 +8,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-ClickHouseには時系列データを扱うためのさまざまな方法があり、異なる時間範囲にまたがるデータポイントを集約、グループ化、分析できます。
+ClickHouseには時系列データを扱うためのさまざまな方法があり、異なる時間範囲にまたがるデータポイントを集計、グループ化、分析できます。
 このセクションでは、時間ベースのデータを扱う際によく使われる基本的な操作を説明します。
 
 代表的な操作としては、データを時間インターバルごとにグループ化すること、時系列データの欠損を扱うこと、期間間の変化を計算することなどがあります。
@@ -34,7 +34,7 @@ ORDER BY (time);
 ```sql
 INSERT INTO wikistat 
 SELECT *
-FROM s3('https://ClickHouse-public-datasets.s3.amazonaws.com/wikistat/partitioned/wikistat*.native.zst') 
+FROM s3('https://ClickHouse-public-datasets.s3.amazonaws.com/wikistat/partitioned/wikistat*.native.zst', NOSIGN)
 LIMIT 1e9;
 ```
 

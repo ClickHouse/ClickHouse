@@ -179,8 +179,6 @@ DROP TABLE pipe_settings_view;
 -- SETTINGS goes before INTERPOLATE in the generated wrapper, as in an ordinary SELECT query
 SELECT 1 AS x, 10 AS y |> ORDER BY x WITH FILL FROM 1 TO 4 INTERPOLATE (y AS y + 1) SETTINGS max_threads = 1;
 
--- The following sections require the analyzer: the old analyzer does not support WITH RECURSIVE
--- and column alias lists on subqueries, and it expands asterisks in EXPLAIN SYNTAX.
 SET enable_analyzer = 1;
 
 SELECT '-- The resulting AST is the same as with nested subqueries';
@@ -204,9 +202,6 @@ SELECT count() FROM numbers(10) SETTINGS max_rows_to_read = 5 |> LIMIT 1; -- { s
 SELECT number FROM numbers(2) SETTINGS max_block_size = 1 |> ORDER BY number;
 
 SELECT '-- An analyzer setting before the first pipe operator becomes a subquery override, exactly as in the hand-written nested form (requires the analyzer)';
-SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1; -- { serverError INCORRECT_QUERY }
-SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1; -- { serverError INCORRECT_QUERY }
-SELECT number FROM numbers(1) SETTINGS allow_experimental_analyzer = 0 |> LIMIT 1; -- { serverError INCORRECT_QUERY }
 
 SELECT '-- Errors';
 FROM orders |> FOO; -- { clientError SYNTAX_ERROR }
