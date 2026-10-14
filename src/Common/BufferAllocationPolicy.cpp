@@ -3,8 +3,10 @@
 #include <base/defines.h>
 
 #include <algorithm>
-#include <deque>
+#include <functional>
 #include <memory>
+#include <queue>
+#include <vector>
 
 namespace DB
 {
@@ -130,6 +132,17 @@ MultipartUploadMemory getMultipartUploadMemoryForBufferSize(const MultipartUploa
     return result;
 }
 
+MultipartUploadMemory getMultipartUploadMemoryForStream(
+    const MultipartUploadMemory & memory, UInt64 buf_size, bool use_adaptive_write_buffer, UInt64 adaptive_write_buffer_initial_size)
+{
+    MultipartUploadMemory result = memory;
+    result.initial_buffer_size = use_adaptive_write_buffer
+        ? getMultipartUploadInitialBufferSize(true, adaptive_write_buffer_initial_size)
+        : std::min<UInt64>(buf_size, DBMS_DEFAULT_BUFFER_SIZE);
+    result.initial_buffer_size_follows_caller = !use_adaptive_write_buffer;
+    return result;
+}
+
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file)
 {
     MultipartUploadMemory result;
@@ -252,37 +265,39 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         if (bytes_written <= first_buffer_size)
             return std::min(memory.ceiling, first_buffer_size);
 
-        UInt64 written = 0;
-        UInt64 live_memory = 0;
+        /// The buffer being filled coexists with up to max_inflight_parts earlier, detached or in-flight
+        /// buffers (the extra slot over the in-flight limit is explained in getMultipartUploadMemory). Uploads
+        /// do not complete in order: TaskTracker::waitTilInflightShrink drops whichever futures finish, so an
+        /// old, large buffer (like the first one) can outlive later, smaller ones. Hence the live set is not
+        /// the most recent buffers but, in the worst case, the largest earlier ones. The exponential policy
+        /// can have several smaller buffers alive while the current buffer has reached a larger tier, so
+        /// multiplying every live slot by the largest reached tier would over-reserve small merges. Replay
+        /// the policy and keep the largest max_inflight_parts earlier buffers.
+        const UInt64 max_earlier_buffers = memory.max_inflight_parts;
+        std::priority_queue<UInt64, std::vector<UInt64>, std::greater<>> largest_earlier_buffers;
+        UInt64 earlier_memory = 0;
         UInt64 peak_live_memory = 0;
-        UInt64 live_buffers = 0;
-        if (__builtin_add_overflow(memory.max_inflight_parts, static_cast<UInt64>(1), &live_buffers))
-            return MultipartUploadMemory::UNLIMITED;
-
-        /// A multipart writer keeps the current buffer together with the most recent detached or in-flight
-        /// buffers. The exponential policy may have several older, smaller buffers alive while the current
-        /// buffer has reached a larger tier, so multiplying every live slot by the largest reached tier
-        /// over-reserves small merges. Replay the policy and retain exactly the live allocation window.
-        std::deque<UInt64> allocated_buffers;
+        UInt64 written = 0;
         UInt64 buffer_size = first_policy_buffer_size;
         while (true)
         {
-            allocated_buffers.push_back(buffer_size);
-            if (__builtin_add_overflow(live_memory, buffer_size, &live_memory))
+            UInt64 live_memory = 0;
+            if (__builtin_add_overflow(earlier_memory, buffer_size, &live_memory))
                 return MultipartUploadMemory::UNLIMITED;
-
-            if (allocated_buffers.size() > live_buffers)
-            {
-                live_memory -= allocated_buffers.front();
-                allocated_buffers.pop_front();
-            }
-
             peak_live_memory = std::max(peak_live_memory, live_memory);
-            if (written >= bytes_written)
-                break;
+
             written += std::min(buffer_size, bytes_written - written);
             if (written == bytes_written)
                 break;
+
+            /// The filled buffer is detached; keep it if it is among the largest earlier ones.
+            largest_earlier_buffers.push(buffer_size);
+            earlier_memory += buffer_size;
+            if (largest_earlier_buffers.size() > max_earlier_buffers)
+            {
+                earlier_memory -= largest_earlier_buffers.top();
+                largest_earlier_buffers.pop();
+            }
 
             policy->nextBuffer();
             buffer_size = policy->getBufferSize();

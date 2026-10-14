@@ -18,8 +18,8 @@ namespace
 /// The largest total size of live upload buffers a writer using this policy reaches with the given in-flight
 /// limit, by replaying WriteBufferFromS3::nextImpl over the real BufferAllocationPolicy: it detaches the full
 /// buffer, holds the first part back until a second one exists, submits the detached parts one by one - each
-/// submission blocked by TaskTracker::add while the in-flight count is at the limit - and only then allocates
-/// the next buffer. So it is a check of getMultipartUploadMemory against the code it models rather than
+/// submission blocked by TaskTracker::add while the in-flight count is at the limit, with uploads completing
+/// in the order that keeps the most memory alive - and only then allocates the next buffer. So it is a check of getMultipartUploadMemory against the code it models rather than
 /// against a restated formula.
 UInt64 liveBuffersUpperBound(const BufferAllocationPolicy::Settings & settings, size_t max_inflight, size_t buffers)
 {
@@ -64,9 +64,10 @@ UInt64 liveBuffersUpperBound(const BufferAllocationPolicy::Settings & settings, 
                 detached.pop_front();
                 observe(current_buffer);
 
-                /// TaskTracker::add returns only once the in-flight count is below the limit.
+                /// TaskTracker::add returns only once the in-flight count is below the limit. Uploads complete
+                /// in any order, so let the smallest one finish first: the worst case for the live memory.
                 while (inflight.size() >= max_inflight)
-                    inflight.pop_front();
+                    inflight.erase(std::min_element(inflight.begin(), inflight.end()));
             }
         }
 
@@ -163,6 +164,27 @@ TEST(MultipartUploadMemory, ExponentialPolicyAccountsForTheLiveBufferTiers)
     EXPECT_EQ(
         getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 * 1024),
         32ULL * 1024 * 1024 + 20 * 16ULL * 1024 * 1024);
+}
+
+TEST(MultipartUploadMemory, ExponentialPolicyAllowsForUploadsCompletingOutOfOrder)
+{
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = 64 * 1024 * 1024;
+    settings.min_size = 8 * 1024 * 1024;
+    settings.max_size = 64 * 1024 * 1024;
+    settings.multiply_factor = 2;
+    settings.multiply_parts_count_threshold = 1;
+
+    const auto memory = getMultipartUploadMemory(settings, 2);
+
+    /// The policy hands out 64, 16, 32, 64 MiB buffers. At 113 MiB of output the fourth buffer is being
+    /// filled. If the first upload is still pending while the second one has finished, the first 64 MiB
+    /// buffer coexists with the fourth one, and the third may still be held too - so the live set is the
+    /// largest earlier buffers, not the most recent ones (16 + 32 + 64 MiB).
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 113ULL * 1024 * 1024),
+        (64ULL + 32 + 64) * 1024 * 1024);
+    EXPECT_GE(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 113ULL * 1024 * 1024), liveBuffersUpperBound(settings, 2, 4));
 }
 
 TEST(MultipartUploadMemory, ExponentialPolicyFirstBufferFollowsMinUploadPartSize)
