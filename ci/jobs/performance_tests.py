@@ -1041,6 +1041,14 @@ def export_system_logs(servers):
     return True
 
 
+class CIDBUnavailableReason(str):
+    """An upload failure reason: CIDB did not answer until the deadline."""
+
+
+class NotAttemptedReason(str):
+    """An upload failure reason: the deadline had passed before the first attempt."""
+
+
 def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
     """Run a REPORT-stage INSERT into `table`. Returns None on success and the
     reason of the failure otherwise.
@@ -1086,8 +1094,9 @@ def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
         print(f"WARNING: insert into [{table}] failed, retrying in {pause:.0f}s")
         time.sleep(pause)
     if error is None:
-        return f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent"
-    return f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
+        return NotAttemptedReason(f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent")
+    reason = f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
+    return CIDBUnavailableReason(reason) if cidb.last_unavailable else reason
 
 
 def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, deadline):
@@ -1524,7 +1533,8 @@ def find_base_release_build(info, build_type):
 # compute a delta against. `report.py` embeds a status into `report.html`, but
 # `main` below discards it ("always green mode") and recomputes the final
 # status: in `master_head` mode from the performance dashboard's verdict (see
-# `perf_dashboard_gate`), in `release_base` mode from the slower counts below.
+# `perf_dashboard_gate`; from the shard's slower count when the dashboard
+# cannot answer), in `release_base` mode from the slower counts below.
 # The value must stay synchronized with the slower-queries threshold in
 # `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
 # "slower" queries is dominated by CI noise (a single bad shard run, frequency
@@ -1602,11 +1612,36 @@ class PerfDashboardError(Exception):
     """The performance dashboard could not deliver a verdict for this shard."""
 
 
+class PerfDashboardUnavailable(PerfDashboardError):
+    """The dashboard, or the CIDB tables it reads, did not answer for this shard before the deadline."""
+
+
+# Measured backend-outage signatures in the dashboard's application errors.
+DASHBOARD_OUTAGE_SIGNATURES = ("connect: connection refused", "context canceled")
+
+
+def dashboard_did_not_answer(status, body):
+    """Whether an HTTP error means the dashboard could not answer yet, not that the request is wrong."""
+    try:
+        envelope = json.loads(body)
+    except ValueError:
+        envelope = None
+    is_app = isinstance(envelope, dict) and all(isinstance(envelope.get(k), str) for k in ("code", "message"))
+    message = envelope["message"] if is_app else None
+    if message is None:
+        return status in (502, 503, 504)  # not the application: a gateway in front of a down backend
+    if status == 404:
+        return "code = NotFound" in message  # the run or test is not ingested yet
+    return status >= 500 and any(s in message for s in DASHBOARD_OUTAGE_SIGNATURES)
+
+
 def dashboard_api_get(path, params=None, timeout_sec=60):
     """GET `path` from the dashboard API and return the decoded JSON body.
 
     Every failure, transport or HTTP, is raised as `PerfDashboardError` so the
-    caller can retry the whole step or fail the check with the reason."""
+    caller can retry the whole step or fail the check with the reason. It is a
+    `PerfDashboardUnavailable` when the dashboard did not answer: a transport
+    failure, or an HTTP error that `dashboard_did_not_answer` recognizes."""
     url = f"{PERF_DASHBOARD_API_URL}{path}"
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
@@ -1614,9 +1649,15 @@ def dashboard_api_get(path, params=None, timeout_sec=60):
         with urllib.request.urlopen(url, timeout=timeout_sec) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace").strip()[:300]
-        raise PerfDashboardError(f"HTTP {e.code} for [{url}]: {body}") from e
-    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        body = e.read().decode("utf-8", errors="replace").strip()
+        error_type = PerfDashboardUnavailable if dashboard_did_not_answer(e.code, body) else PerfDashboardError
+        raise error_type(f"HTTP {e.code} for [{url}]: {body[:300]}") from e
+    except urllib.error.URLError as e:
+        transport = isinstance(e.reason, OSError)
+        raise (PerfDashboardUnavailable if transport else PerfDashboardError)(f"request to [{url}] failed: {e}") from e
+    except (TimeoutError, ConnectionError) as e:
+        raise PerfDashboardUnavailable(f"request to [{url}] failed: {e}") from e
+    except ValueError as e:
         raise PerfDashboardError(f"request to [{url}] failed: {e}") from e
 
 
@@ -1635,7 +1676,7 @@ def dashboard_run_id(info):
         if (item.get("identity") or {}).get("newSha") == info.sha
     ]
     if not identities:
-        raise PerfDashboardError(f"no master run for sha {info.sha} yet")
+        raise PerfDashboardUnavailable(f"no master run for sha {info.sha} yet")
     identities.sort(
         key=lambda identity: identity.get("runTime", ""), reverse=True
     )
@@ -1715,13 +1756,19 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     """Ask the performance dashboard for its verdict on this shard.
 
     Fails at once when a table in `missing_inputs` was not uploaded, otherwise
-    waits until `deadline` for the dashboard to serve this shard's data, then
-    returns the slowdown rows of this shard and arch whose confidence tier is
-    in `DASHBOARD_BLOCKING_TIERS`. Raises `PerfDashboardError` when no verdict
-    could be obtained; the caller fails the check in that case rather than
-    passing a run nobody has judged."""
+    waits until `deadline` for the dashboard to serve this shard's data and
+    slowdowns, then returns the slowdown rows of this shard and arch whose
+    confidence tier is in `DASHBOARD_BLOCKING_TIERS`. Raises
+    `PerfDashboardUnavailable` when no verdict could be obtained because CIDB
+    or the dashboard did not answer, and a plain `PerfDashboardError` for every
+    other reason; the caller fails the check on the latter rather than passing
+    a run nobody has judged."""
     if missing_inputs:
-        raise PerfDashboardError(
+        reasons = missing_inputs.values()
+        unavailable = any(isinstance(r, CIDBUnavailableReason) for r in reasons) and all(
+            isinstance(r, (CIDBUnavailableReason, NotAttemptedReason)) for r in reasons
+        )
+        raise (PerfDashboardUnavailable if unavailable else PerfDashboardError)(
             "the shard's results were not uploaded to CIDB: "
             + "; ".join(f"{table} ({reason})" for table, reason in missing_inputs.items())
         )
@@ -1737,19 +1784,21 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
             if run_id is None:
                 run_id = dashboard_run_id(info)
             if dashboard_has_shard(run_id, arch, tests[0]):
+                rows = fetch_dashboard_slowdowns(run_id, arch, shard_queries)
                 break
             reason = f"run [{run_id}] has no {arch} data for test [{tests[0]}] yet"
+            error_type = PerfDashboardUnavailable
         except PerfDashboardError as e:
             reason = str(e)
+            error_type = type(e)
         if time.monotonic() >= deadline:
-            raise PerfDashboardError(
+            raise error_type(
                 "dashboard did not serve this shard within "
                 f"{DASHBOARD_INGEST_TIMEOUT_SEC}s: {reason}"
             )
         print(f"Waiting for the performance dashboard: {reason}")
         time.sleep(min(DASHBOARD_POLL_INTERVAL_SEC, max(0, deadline - time.monotonic())))
 
-    rows = fetch_dashboard_slowdowns(run_id, arch, shard_queries)
     for row in rows:
         print(
             f"Dashboard slowdown: {row['test']} #{row['query_index']} "
@@ -1757,6 +1806,21 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
             f"tier [{row['tier']}]: {row['reason']}"
         )
     return [row for row in rows if row["tier"] in DASHBOARD_BLOCKING_TIERS]
+
+
+def judge_without_dashboard(summary, error):
+    """Status and message suffix for a `master_head` shard whose dashboard verdict is unavailable.
+
+    The dashboard replaced a gate that failed only above 10 slower queries and so passed a single
+    large regression; without the dashboard, any slower query of this shard's report fails."""
+    suffix = f"; performance dashboard verdict unavailable: {error}"
+    if not is_perf_summary_message(summary.lower()):
+        return Result.Status.FAIL, suffix
+    slower = parse_slower_count(summary.lower())
+    return (
+        Result.Status.FAIL if slower else Result.Status.OK,
+        f"{suffix}; judged by this shard's report instead: {slower} slower",
+    )
 
 
 def confirm_dashboard_regressions(regressions, pr_number, workdir):
@@ -2925,9 +2989,7 @@ def main():
             report_path = f"{perf_wd}/report/all-query-metrics.tsv"
             with open(report_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-                print(lines)
                 data = "".join(lines)
-            print(data)
 
             insert_metadata = get_insert_metadata(info, compare_against_release)
             query = INSERT_HISTORICAL_DATA.format(
@@ -3087,6 +3149,10 @@ def main():
                     dashboard_regressions = confirm_dashboard_regressions(
                         dashboard_regressions, info.pr_number, perf_wd
                     )
+                except PerfDashboardUnavailable as e:
+                    print(f"ERROR: {e}")
+                    status, suffix = judge_without_dashboard(message, e)
+                    message += suffix
                 except PerfDashboardError as e:
                     print(f"ERROR: {e}")
                     status = Result.Status.FAIL
