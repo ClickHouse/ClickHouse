@@ -654,7 +654,7 @@ void QueryPlan::explainPlan(
     PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, options.show_secrets);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
         precomputed_pretty_names = &local_pretty_names;
     }
 
@@ -674,7 +674,6 @@ void QueryPlan::explainPlan(
         .compact = options.compact,
         .pretty = options.pretty,
         .inside_explain_analyze = steps_to_stats != nullptr,
-        .show_secrets = options.show_secrets,
         .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
         .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };

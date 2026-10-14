@@ -672,6 +672,73 @@ def test_mysql_null(started_cluster):
     conn.close()
 
 
+def test_mysql_not_in_null(started_cluster):
+    table_name = "test_mysql_not_in_null"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int(11) NOT NULL,
+            `money` int NULL default NULL,
+            `price` decimal(10, 2) NULL default NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+            """
+        )
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            money Nullable(UInt32),
+            price Nullable(Decimal(10, 2))
+        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        """
+    )
+
+    money = "[1, 2, NULL][number % 3 + 1]"
+    price = "CAST([1.5, 2.5, NULL][number % 3 + 1] AS Nullable(Decimal(10, 2)))"
+    node1.query(
+        f"INSERT INTO {table_name} (id, money, price) SELECT number, {money}, {price} FROM numbers(9)"
+    )
+
+    # ClickHouse ignores a `NULL` member of an `IN` set, while MySQL applies the three-valued logic,
+    # so the set must reach MySQL without it. A `Decimal` set is written as `tuple(...)`, not as a literal.
+    for predicate, expected in [
+        ("money NOT IN (1, NULL)", 3),
+        ("NOT (money IN (1, NULL))", 3),
+        ("money IN (1, NULL)", 3),
+        ("money NOT IN (NULL)", 6),
+        ("price NOT IN (toDecimal64(1.5, 2), NULL)", 3),
+        ("price IN (toDecimal64(1.5, 2), NULL)", 3),
+    ]:
+        local = node1.query(
+            f"SELECT countIf({predicate}) FROM (SELECT {money} AS money, {price} AS price FROM numbers(9))"
+        )
+        remote = node1.query(f"SELECT count() FROM {table_name} WHERE {predicate}")
+        assert int(local) == expected, predicate
+        assert int(remote) == expected, predicate
+
+    for predicate in [
+        "money NOT IN (1, NULL)",
+        "price NOT IN (toDecimal64(1.5, 2), NULL)",
+        "price IN (toDecimal64(1.5, 2), NULL)",
+    ]:
+        remote = node1.query(
+            f"SELECT count() FROM {table_name} WHERE {predicate} SETTINGS external_table_strict_query = 1"
+        )
+        assert int(remote) == 3, predicate
+
+    node1.query(f"DROP TABLE {table_name}")
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_settings(started_cluster):
     table_name = "test_settings"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")

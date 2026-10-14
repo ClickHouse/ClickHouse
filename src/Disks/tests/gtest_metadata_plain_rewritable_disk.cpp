@@ -14,6 +14,7 @@
 
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 
 #include <base/scope_guard.h>
 
@@ -28,6 +29,18 @@
 #include <thread>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
+
+namespace ProfileEvents
+{
+    extern const Event MetadataTransactionRollbacks;
+    extern const Event MetadataTransactionRollbacksFailed;
+    extern const Event DiskPlainRewritableUndoStageRetries;
+}
 
 class MetadataPlainRewritableDiskTest : public testing::Test
 {
@@ -3504,4 +3517,527 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAReplacedFile)
     metadata = restartMetadataStorage("UndoReplacedFile");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/source").front().remote_path), "the source file");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/target").front().remote_path), "the target file");
+}
+
+static void expectCommitReportsDivergence(const MetadataTransactionPtr & tx, const std::string & missing_blob)
+{
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction that needs a missing blob succeeded";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CORRUPTED_DATA) << e.message();
+        EXPECT_THAT(e.message(), testing::HasSubstr("diverged"));
+        EXPECT_THAT(e.message(), testing::HasSubstr(missing_blob));
+        EXPECT_THAT(e.message(), testing::Not(testing::HasSubstr("did not complete")));
+    }
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UnlinkOfFileWithoutBlob)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UnlinkWithoutBlob");
+    auto object_storage = getObjectStorage("UnlinkWithoutBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "the file");
+        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto blob = metadata->getStorageObjects("/A/file").front().remote_path;
+    object_storage->removeObjectIfExists(StoredObject(blob));
+    const auto objects_before = allObjects(object_storage, "UnlinkWithoutBlob");
+
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/file", /*if_exists=*/false, /*should_remove_objects=*/true);
+    expectCommitReportsDivergence(tx, blob);
+
+    EXPECT_EQ(allObjects(object_storage, "UnlinkWithoutBlob"), objects_before);
+    EXPECT_TRUE(metadata->existsFile("/A/file"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReplaceFromFileWithoutBlobKeepsTarget)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("ReplaceWithoutBlob");
+    auto object_storage = getObjectStorage("ReplaceWithoutBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    const auto target_blob = metadata->getStorageObjects("/A/target").front().remote_path;
+    object_storage->removeObjectIfExists(StoredObject(source_blob));
+    const auto objects_before = allObjects(object_storage, "ReplaceWithoutBlob");
+
+    /// The move must fail before it touches the target.
+    auto tx = metadata->createTransaction();
+    tx->replaceFile("/A/source", "/A/target");
+    expectCommitReportsDivergence(tx, source_blob);
+
+    EXPECT_EQ(allObjects(object_storage, "ReplaceWithoutBlob"), objects_before);
+    EXPECT_EQ(readObject(object_storage, target_blob), "the target file");
+
+    metadata = restartMetadataStorage("ReplaceWithoutBlob");
+    EXPECT_TRUE(metadata->existsFile("/A/target"));
+    EXPECT_FALSE(metadata->existsFile("/A/source"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, CopyOfFileWithoutBlob)
+{
+    thread_local_rng.seed(42);
+
+    /// With hard links, `createHardLink` copies no blob.
+    hard_links_enabled = false;
+
+    auto metadata = getMetadataStorage("CopyWithoutBlob");
+    auto object_storage = getObjectStorage("CopyWithoutBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "the file");
+        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto blob = metadata->getStorageObjects("/A/file").front().remote_path;
+    object_storage->removeObjectIfExists(StoredObject(blob));
+    const auto objects_before = allObjects(object_storage, "CopyWithoutBlob");
+
+    auto tx = metadata->createTransaction();
+    tx->createHardLink("/A/file", "/A/copy");
+    expectCommitReportsDivergence(tx, blob);
+
+    EXPECT_EQ(allObjects(object_storage, "CopyWithoutBlob"), objects_before);
+    EXPECT_TRUE(metadata->existsFile("/A/file"));
+    EXPECT_FALSE(metadata->existsFile("/A/copy"));
+}
+
+/// Throws its own exception type from `copyObject`, as the Azure SDK does.
+class LocalObjectStorageWithForeignErrors final : public LocalObjectStorage
+{
+public:
+    using LocalObjectStorage::LocalObjectStorage;
+
+    void copyObject( /// NOLINT
+        const StoredObject & object_from,
+        const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        std::optional<ObjectAttributes> object_to_attributes) override
+    {
+        if (!before_copy_of.empty() && object_from.remote_path.starts_with(before_copy_of))
+            before_copy();
+        if (!exists(object_from))
+            throw std::runtime_error("The source object does not exist");
+        if (object_from.remote_path == fail_copy_of)
+        {
+            const std::string partial = "partial";
+            auto out = writeObject(object_to, WriteMode::Rewrite);
+            out->write(partial.data(), partial.size());
+            out->finalize();
+            throw std::runtime_error("Injected foreign error");
+        }
+        LocalObjectStorage::copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+    }
+
+    void removeObjectIfExists(const StoredObject & object) override
+    {
+        if (object.remote_path == fail_remove_of)
+            throw std::runtime_error("Injected foreign error");
+        LocalObjectStorage::removeObjectIfExists(object);
+    }
+
+    /// The copy of this existing key fails after it wrote a part of the blob.
+    std::string fail_copy_of;
+
+    /// The removal of this key fails.
+    std::string fail_remove_of;
+
+    /// Runs before a copy from a key with this prefix, as an outside deleter does.
+    std::string before_copy_of;
+    std::function<void()> before_copy;
+};
+
+TEST_F(MetadataPlainRewritableDiskTest, UnlinkOfFileWithoutBlobOnForeignErrors)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "UnlinkWithoutBlobForeignErrors";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", /*hard_links_enabled_=*/ false);
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto a_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/a").serialize(), "file a");
+        tx->createMetadataFile("/A/a", {StoredObject("/A/a", "a", a_size)});
+        auto b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/b").serialize(), "file b");
+        tx->createMetadataFile("/A/b", {StoredObject("/A/b", "b", b_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto b_blob = metadata->getStorageObjects("/A/b").front().remote_path;
+    object_storage->removeObjectIfExists(StoredObject(b_blob));
+    const auto objects_before = allObjects(object_storage, key_prefix);
+
+    /// The rollback must restore the first unlink.
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+    tx->unlinkFile("/A/b", /*if_exists=*/false, /*should_remove_objects=*/true);
+    expectCommitReportsDivergence(tx, b_blob);
+
+    EXPECT_EQ(allObjects(object_storage, key_prefix), objects_before);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ForeignErrorRollsBackTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "ForeignErrorRollback";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", /*hard_links_enabled_=*/ false);
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto other_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/other").serialize(), "the other file");
+        tx->createMetadataFile("/A/other", {StoredObject("/A/other", "other", other_size)});
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    object_storage->fail_copy_of = metadata->getStorageObjects("/A/target").front().remote_path;
+    const auto objects_before = allObjects(object_storage, key_prefix);
+    const auto rollbacks_before = ProfileEvents::global_counters[ProfileEvents::MetadataTransactionRollbacks];
+    const auto failed_rollbacks_before = ProfileEvents::global_counters[ProfileEvents::MetadataTransactionRollbacksFailed];
+
+    /// The backup of the target fails halfway, after the unlink and after the move saved the source. The original error
+    /// reaches the caller, so the callers that check its type still can.
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/other", /*if_exists=*/false, /*should_remove_objects=*/true);
+    tx->replaceFile("/A/source", "/A/target");
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction with a failed copy succeeded";
+    }
+    catch (const std::runtime_error & e)
+    {
+        EXPECT_THAT(e.what(), testing::HasSubstr("Injected foreign error"));
+    }
+
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MetadataTransactionRollbacks] - rollbacks_before, 1u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MetadataTransactionRollbacksFailed], failed_rollbacks_before);
+    EXPECT_EQ(allObjects(object_storage, key_prefix), objects_before);
+    EXPECT_TRUE(metadata->existsFile("/A/other"));
+    EXPECT_TRUE(metadata->existsFile("/A/source"));
+    EXPECT_TRUE(metadata->existsFile("/A/target"));
+}
+
+/// The cleanup of a terminated instance deletes its whole prefix while a transaction still runs.
+TEST_F(MetadataPlainRewritableDiskTest, PrefixRemovedDuringTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "PrefixRemovedDuringTransaction";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", /*hard_links_enabled_=*/ false);
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto a_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/a").serialize(), "file a");
+        tx->createMetadataFile("/A/a", {StoredObject("/A/a", "a", a_size)});
+        auto b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/b").serialize(), "file b");
+        tx->createMetadataFile("/A/b", {StoredObject("/A/b", "b", b_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    object_storage->before_copy_of = metadata->getStorageObjects("/A/b").front().remote_path;
+    object_storage->before_copy = [&] { for (const auto & blob : listAllBlobs(key_prefix)) fs::remove(blob); };
+
+    /// The prefix goes after the unlink of `a` removed its blob, so its temporary copy goes too.
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+    tx->unlinkFile("/A/b", /*if_exists=*/false, /*should_remove_objects=*/true);
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction whose objects were deleted succeeded";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CORRUPTED_DATA) << e.message();
+        EXPECT_THAT(e.message(), testing::HasSubstr("Cannot restore the blob of the file '/A/a'"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("(CORRUPTED_DATA)"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("did not complete"));
+    }
+}
+
+/// The move has overwritten the target, and its backup is gone, so the rollback cannot report success.
+TEST_F(MetadataPlainRewritableDiskTest, MoveTargetBackupRemovedDuringTransaction)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "MoveTargetBackupRemoved";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", /*hard_links_enabled_=*/ false);
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The source is copied first to its temporary key and then over the target; before the second copy the temporary
+    /// keys are deleted. The removal of the source then fails.
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    object_storage->before_copy_of = source_blob;
+    object_storage->before_copy = [&] { for (const auto & blob : listAllBlobs(key_prefix + "/__root")) fs::remove(blob); };
+    object_storage->fail_remove_of = source_blob;
+    const auto failed_rollbacks_before = ProfileEvents::global_counters[ProfileEvents::MetadataTransactionRollbacksFailed];
+
+    auto tx = metadata->createTransaction();
+    tx->replaceFile("/A/source", "/A/target");
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction with a failed removal succeeded";
+    }
+    catch (const Exception & e)
+    {
+        /// The error is foreign, but the rollback did not complete, so the caller gets an `Exception` with both.
+        EXPECT_THAT(e.message(), testing::HasSubstr("Injected foreign error"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("Cannot restore the blob of the file '/A/target'"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("(CORRUPTED_DATA)"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("did not complete"));
+    }
+
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MetadataTransactionRollbacksFailed] - failed_rollbacks_before, 1u);
+}
+
+/// The temporary key goes between the probe of a restore stage and its copy: the next attempt probes again and stops.
+TEST_F(MetadataPlainRewritableDiskTest, TemporaryKeyRemovedDuringUndo)
+{
+    thread_local_rng.seed(42);
+
+    const std::string key_prefix = "TemporaryKeyRemovedDuringUndo";
+    fs::remove_all("./" + key_prefix);
+    SCOPE_EXIT(fs::remove_all("./" + key_prefix));
+
+    auto object_storage = std::make_shared<LocalObjectStorageWithForeignErrors>(
+        LocalObjectStorageSettings("test", "./" + key_prefix, /*read_only_=*/false));
+    auto metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", /*hard_links_enabled_=*/ false);
+    SCOPE_EXIT(object_storage->shutdown());
+    SCOPE_EXIT(metadata->shutdown());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto a_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/a").serialize(), "file a");
+        tx->createMetadataFile("/A/a", {StoredObject("/A/a", "a", a_size)});
+        auto b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/b").serialize(), "file b");
+        tx->createMetadataFile("/A/b", {StoredObject("/A/b", "b", b_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The unlink of `b` fails, so the unlink of `a` restores its blob from the temporary key, which goes right before the copy.
+    object_storage->removeObjectIfExists(StoredObject(metadata->getStorageObjects("/A/b").front().remote_path));
+    object_storage->before_copy_of = "./" + key_prefix + "/__root/";
+    object_storage->before_copy = [&] { for (const auto & blob : listAllBlobs(key_prefix + "/__root")) fs::remove(blob); };
+    const auto retries_before = ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries];
+
+    auto tx = metadata->createTransaction();
+    tx->unlinkFile("/A/a", /*if_exists=*/false, /*should_remove_objects=*/true);
+    tx->unlinkFile("/A/b", /*if_exists=*/false, /*should_remove_objects=*/true);
+    try
+    {
+        tx->commit(DB::NoCommitOptions{});
+        ADD_FAILURE() << "The commit of a transaction that needs a missing blob succeeded";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CORRUPTED_DATA) << e.message();
+        EXPECT_THAT(e.message(), testing::HasSubstr("Cannot restore the blob of the file '/A/a'"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("did not complete"));
+    }
+
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries] - retries_before, 1u);
+}
+
+/// A marker of an unfinished operation is rewritten in place, so on the local object storage a process that dies in the
+/// middle of it leaves the content torn. While anything has the name of such a marker, the load must neither roll the
+/// operation back nor reclaim it, and a torn marker that marks nothing is just deleted.
+TEST_F(MetadataPlainRewritableDiskTest, TornTombstoneMarker)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("TornTombstoneMarker");
+    auto object_storage = getObjectStorage("TornTombstoneMarker");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "the file");
+        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// As if a removal of `A` died after moving the directory under the removed name.
+    const std::string removed_name = "__removed.abcdefghijklmnop";
+    const std::string marker_key = fmt::format("./TornTombstoneMarker/__meta/__tombstone/{}", removed_name);
+    writeObject(object_storage, createMetadataObjectPath(metadata, "A/"), removed_name + "/");
+
+    /// Torn while being rewritten as committed, and while being written as pending.
+    for (const auto & torn_content : {std::string(), removed_name.substr(0, 12), std::string("pending\nA/"), std::string("pending\n")})
+    {
+        writeObject(object_storage, marker_key, torn_content);
+        EXPECT_THROW(restartMetadataStorage("TornTombstoneMarker"), DB::Exception) << "'" << torn_content << "'";
+        EXPECT_TRUE(object_storage->exists(StoredObject(marker_key)));
+    }
+
+    writeObject(object_storage, marker_key, "pending\nA/\n");
+    metadata = restartMetadataStorage("TornTombstoneMarker");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "the file");
+    EXPECT_FALSE(object_storage->exists(StoredObject(marker_key)));
+
+    const std::string unused_marker_key = "./TornTombstoneMarker/__meta/__tombstone/__removed.qrstuvwxyzabcdef";
+    writeObject(object_storage, unused_marker_key, "pend");
+    metadata = restartMetadataStorage("TornTombstoneMarker");
+    EXPECT_FALSE(object_storage->exists(StoredObject(unused_marker_key)));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "the file");
+}
+
+/// A read-only disk cannot restore the target of a replacement that a writer died in the middle of, but it has to show
+/// the last committed state anyway: the target as it was before the replacement, and the source still in place.
+TEST_F(MetadataPlainRewritableDiskTest, ReadOnlyLoadOfPendingReplace)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("ReadOnlyPendingReplace");
+    auto object_storage = getObjectStorage("ReadOnlyPendingReplace");
+
+    std::string source_key;
+    std::string target_key;
+    size_t target_size = 0;
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+
+        source_key = tx->generateObjectKeyForPath("/A/source").serialize();
+        auto source_size = writeObject(object_storage, source_key, "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+
+        target_key = tx->generateObjectKeyForPath("/A/target").serialize();
+        target_size = writeObject(object_storage, target_key, "the target file, longer");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// As if a writer died after copying the source over the target, but before committing the replacement.
+    const std::string removed_name = "__removed.abcdefghijklmnop";
+    writeObject(
+        object_storage,
+        fmt::format("./ReadOnlyPendingReplace/__meta/__tombstone/{}", removed_name),
+        PlainRewritableLayout::makePendingReplaceTombstoneContent(PlainRewritableLayout::PendingReplace{
+            .directory_remote_path = fs::path(target_key).parent_path().filename(),
+            .file_name = "target",
+            .size = target_size,
+        }));
+    writeObject(object_storage, fmt::format("./ReadOnlyPendingReplace/__root/{}", removed_name), "the target file, longer");
+    writeObject(object_storage, target_key, "the source file");
+
+    const auto objects_before = allObjects(object_storage, "ReadOnlyPendingReplace");
+
+    LocalObjectStorageSettings read_only_settings("test", "./ReadOnlyPendingReplace", /*read_only_=*/true);
+    auto read_only_object_storage = std::make_shared<LocalObjectStorage>(std::move(read_only_settings));
+    auto read_only_metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(read_only_object_storage, "", hard_links_enabled);
+
+    /// The same after a subsequent load.
+    for (size_t load = 0; load < 2; ++load)
+    {
+        if (load)
+            read_only_metadata->dropCache();
+
+        EXPECT_EQ(sorted(read_only_metadata->listDirectory("/A")), (std::vector<std::string>{"source", "target"}));
+        EXPECT_EQ(read_only_metadata->getFileSize("/A/target"), target_size);
+        EXPECT_EQ(readObject(object_storage, read_only_metadata->getStorageObjects("/A/target").front().remote_path), "the target file, longer");
+        EXPECT_EQ(readObject(object_storage, read_only_metadata->getStorageObjects("/A/source").front().remote_path), "the source file");
+    }
+
+    EXPECT_EQ(allObjects(object_storage, "ReadOnlyPendingReplace"), objects_before);
+
+    /// A writable disk restores the target.
+    {
+        auto restored_metadata = restartMetadataStorage("ReadOnlyPendingReplace");
+        EXPECT_EQ(restored_metadata->getStorageObjects("/A/target").front().remote_path, target_key);
+        EXPECT_EQ(readObject(object_storage, target_key), "the target file, longer");
+        EXPECT_EQ(readObject(object_storage, restored_metadata->getStorageObjects("/A/source").front().remote_path), "the source file");
+    }
+
+    /// The replacement is redone and finished this time. The `prefix.path` of the directory does not change, but a refresh
+    /// of the read-only disk must not reuse the info of the directory that described the target as read from its backup.
+    {
+        auto tx = getMetadataStorage("ReadOnlyPendingReplace")->createTransaction();
+        tx->replaceFile("/A/source", "/A/target");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    read_only_metadata->refresh(0);
+    EXPECT_EQ(sorted(read_only_metadata->listDirectory("/A")), (std::vector<std::string>{"target"}));
+    EXPECT_EQ(read_only_metadata->getFileSize("/A/target"), std::string_view("the source file").size());
+    EXPECT_EQ(readObject(object_storage, read_only_metadata->getStorageObjects("/A/target").front().remote_path), "the source file");
+
+    read_only_metadata->shutdown();
 }
