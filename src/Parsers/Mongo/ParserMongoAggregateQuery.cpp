@@ -152,6 +152,7 @@ public:
     ASTPtr select_list;
     ASTPtr where;
     ASTPtr group_by;
+    ASTPtr having;
     ASTPtr order_by;
     ASTPtr limit;
     ASTPtr offset;
@@ -167,7 +168,7 @@ public:
 
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
-    bool onlyFiltered() const { return !select_list && !group_by && !order_by && !limit && !offset; }
+    bool onlyFiltered() const { return !select_list && !group_by && !having && !order_by && !limit && !offset; }
 
     void wrap()
     {
@@ -200,6 +201,7 @@ public:
         select_list = nullptr;
         where = nullptr;
         group_by = nullptr;
+        having = nullptr;
         order_by = nullptr;
         limit = nullptr;
         offset = nullptr;
@@ -260,6 +262,8 @@ public:
             select->setExpression(ASTSelectQuery::Expression::WHERE, where->clone());
         if (group_by)
             select->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by->clone());
+        if (having)
+            select->setExpression(ASTSelectQuery::Expression::HAVING, having->clone());
         if (order_by)
             select->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by->clone());
         if (limit)
@@ -273,6 +277,16 @@ public:
 private:
     ASTPtr source;
 };
+
+/** The `HAVING` of an aggregation of the whole stream - a `$count`, a `$group` by `null` - that
+  * drops its one row when the stream is empty. Mongo produces no document out of no documents, while
+  * an aggregation without keys produces one row over an empty input, unless the session happens to
+  * set `empty_result_for_aggregation_by_empty_set`; the stage must not depend on that.
+  */
+ASTPtr makeNonEmptyStreamCondition()
+{
+    return makeASTFunction("greater", makeASTFunction("count"), makeLiteral(Field(UInt64(0))));
+}
 
 /// A required member of the document of a stage.
 const rapidjson::Value & requireStageMember(const rapidjson::Value & stage, const char * name, std::string_view stage_name)
@@ -372,6 +386,8 @@ void translateGroup(SelectChain & chain, const rapidjson::Value & stage)
     chain.select_list = std::move(select_list);
     if (!group_by->children.empty())
         chain.group_by = std::move(group_by);
+    else
+        chain.having = makeNonEmptyStreamCondition();
 }
 
 void translateProject(SelectChain & chain, const rapidjson::Value & stage)
@@ -491,7 +507,19 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
     if (!stage.IsObject() || stage.MemberCount() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$sort' must be a non empty document");
 
-    if (chain.order_by || chain.limit || chain.offset)
+    /** A `$sort` orders the documents the stage before it produced. A key that the select being built
+      * computes - a field replaced by a `$project` or a `$set`, the key or an accumulator of a
+      * `$group` - shares its name with a column of the rows the select reads, and an `ORDER BY` in
+      * the same select would be resolved to that column (`prefer_column_name_to_alias`) rather than
+      * to the computed value. So the select is closed off first unless it carries every key through
+      * unchanged.
+      */
+    bool computes_a_key = false;
+    if (chain.select_list)
+        for (auto it = stage.MemberBegin(); it != stage.MemberEnd(); ++it)
+            computes_a_key = computes_a_key || !selectListCarries(chain.select_list, std::string(stringView(it->name)));
+
+    if (chain.order_by || chain.limit || chain.offset || chain.group_by || chain.having || computes_a_key)
         chain.wrap();
 
     auto order_by = make_intrusive<ASTExpressionList>();
@@ -530,6 +558,7 @@ void translateCount(SelectChain & chain, const rapidjson::Value & stage)
     auto select_list = make_intrusive<ASTExpressionList>();
     select_list->children.push_back(withAlias(makeASTFunction("count"), std::string(stringView(stage))));
     chain.select_list = std::move(select_list);
+    chain.having = makeNonEmptyStreamCondition();
 }
 
 void translateUnset(SelectChain & chain, const rapidjson::Value & stage)

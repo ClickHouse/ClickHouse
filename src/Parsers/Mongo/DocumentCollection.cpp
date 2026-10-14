@@ -335,30 +335,41 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
 
 void rewriteSelect(ASTSelectQuery & select)
 {
+    /** The expressions of a stage are computed from the document the stage receives, never from the
+      * fields it produces itself: `{$project: {value: {$toString: "$value"}}}` reads the stored
+      * `value`. So the select list, the `WHERE` - a `$match` folded under a projection filters the
+      * documents before it - the `GROUP BY` and the `ARRAY JOIN` name the fields of the documents,
+      * even where an alias of the select list has the same name. Only the clauses that a stage
+      * folded on top of the select fills - the `ORDER BY` of a `$sortByCount`, the `HAVING` of an
+      * aggregation - name the columns the select produces.
+      */
     std::unordered_set<String> aliases;
     collectAliases(select.select(), aliases);
+    const std::unordered_set<String> input_scope;
 
-    /** The clauses whose whole expression may be an identifier of its own are taken by reference, so
-      * that such an identifier can be replaced. The rest are lists, and a list is never replaced -
-      * only the identifiers inside it are, which a copy of the pointer to it reaches all the same.
-      */
     /// A field of the select list becomes a path that keeps the name of the field as its alias.
     if (const auto select_list = select.select())
     {
         for (auto & child : select_list->children)
-            rewriteField(child, aliases, /* keep_name_as_alias = */ true);
+            rewriteField(child, input_scope, /* keep_name_as_alias = */ true);
     }
 
     /// A clause whose whole expression may be a field of its own is taken by reference, so that the
     /// field can be replaced. The rest are lists, whose children are replaced one by one.
     if (select.where())
-        rewriteField(select.refWhere(), aliases);
+        rewriteField(select.refWhere(), input_scope);
     if (select.prewhere())
-        rewriteField(select.refPrewhere(), aliases);
+        rewriteField(select.refPrewhere(), input_scope);
     if (select.having())
         rewriteField(select.refHaving(), aliases);
 
-    for (const auto & list : {select.groupBy(), select.orderBy(), select.limitBy()})
+    if (const auto group_by = select.groupBy())
+    {
+        for (auto & child : group_by->children)
+            rewriteField(child, input_scope);
+    }
+
+    for (const auto & list : {select.orderBy(), select.limitBy()})
     {
         if (!list)
             continue;
@@ -373,7 +384,7 @@ void rewriteSelect(ASTSelectQuery & select)
         {
             auto * element = child->as<ASTTablesInSelectQueryElement>();
             if (element && element->array_join)
-                rewriteField(element->array_join, aliases);
+                rewriteField(element->array_join, input_scope);
         }
     }
 }
