@@ -1181,11 +1181,15 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,  # ~2h on medium
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
-        Job.ParamSet(
-            parameter="arm_asan_ubsan, azure, sequential",
-            runs_on=RunnerLabels.ARM_SMALL_MEM,
-            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"arm_asan_ubsan, azure, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_SMALL_MEM,
+                requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
     # and status-model comment above for `bugfix_validation_ft_pr_jobs`. Each
@@ -1545,10 +1549,11 @@ class JobConfigs:
         )
     )
 
-    # Pull requests run the LLVM coverage jobs only with the `ci-coverage` label. By default they
-    # run the same configurations on the `arm_binary` build instead, which is several times faster
-    # than the coverage build and randomizes settings and runs `long` tests, which the coverage runs
-    # do not. The plain coverage batches and `excluded_from_llvm` need no replacement: the full
+    # Pull requests run the LLVM coverage jobs only with the `ci-coverage` or `ci-llvm-coverage`
+    # label. By default they run the same configurations on the `arm_binary` build instead, which
+    # is several times faster than the coverage build and randomizes settings and runs `long`
+    # tests, which the coverage runs do not. The plain coverage batches and `excluded_from_llvm`
+    # need no replacement: the full
     # `arm_binary, parallel`/`sequential` stateless jobs already run the whole suite. The parallel
     # jobs use the same runner shape as the coverage jobs (16 vCPU, 64 GiB): with 32 vCPU and the
     # same memory, the stateful data load and the doubled test concurrency exceed the memory limits.
