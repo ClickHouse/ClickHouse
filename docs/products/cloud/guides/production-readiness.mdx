@@ -161,7 +161,7 @@ Lack of proactive alerting integration with enterprise incident management syste
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["https://api.clickhouse.cloud/v1/organizations/<org_id>/prometheus"]
+      - targets: ["https://api.clickhouse.cloud/v1/organizations/<org_id>/services/<service_id>/prometheus"]
     basic_auth:
       username: <KEY_ID>
       password: <KEY_SECRET>
