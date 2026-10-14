@@ -129,8 +129,10 @@ void DeviceVariableColumnBuffer::dropFront(size_t num_rows)
 
     uint64_t dropped_bytes = 0;
     checkCuda(
-        cudaMemcpy(&dropped_bytes, reinterpret_cast<const uint64_t *>(offsets.data()) + num_rows, sizeof(uint64_t), cudaMemcpyDeviceToHost),
+        cudaMemcpyAsync(
+            &dropped_bytes, reinterpret_cast<const uint64_t *>(offsets.data()) + num_rows, sizeof(uint64_t), cudaMemcpyDeviceToHost, stream),
         "Cannot copy an offset back from the device");
+    synchronizeStream(stream);
 
     const size_t kept_offsets = (sizedRows() - num_rows + 1) * sizeof(uint64_t);
     spare.clear();
