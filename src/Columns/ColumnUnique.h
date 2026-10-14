@@ -16,12 +16,12 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NaNUtils.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <base/range.h>
-#include <base/scope_guard.h>
 #include <base/unaligned.h>
 
 
@@ -140,23 +140,7 @@ public:
 
     void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
     {
-        /// Restore the invariant even if cloning `nested_null_mask` or `callback` throws,
-        /// so the dictionary does not stay without its nullable view and with a stale
-        /// `reverse_index`. The guard reads the members at exit and keeps no extra
-        /// reference to them, so it does not affect the ownership assertions.
-        SCOPE_EXIT({
-            reverse_index.setColumn(getRawColumnPtr());
-            if (is_nullable)
-                nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
-        });
-
-        if (is_nullable)
-        {
-            nested_column_nullable = nullptr;
-            nested_null_mask = IColumn::mutate(nested_null_mask);
-        }
-
-        callback(column_holder);
+        mutateWithoutNullableView([&] { callback(column_holder); });
     }
 
     void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
@@ -179,25 +163,12 @@ public:
         /// `assumeMutableRef` ownership check passes; re-create `nested_column_nullable`
         /// after the in-place mutations are done. Clone `nested_null_mask` because the
         /// original dictionary's nullable view keeps it shared and `updateNullMask` can
-        /// later resize it.
-        /// Restore the invariant even if cloning `nested_null_mask`, `callback` or the
-        /// recursive descent throws, so the column does not stay in an inconsistent state.
-        /// The guard is installed before the nullable view is dropped, so it also covers
-        /// the `nested_null_mask` clone.
-        SCOPE_EXIT({
-            reverse_index.setColumn(getRawColumnPtr());
-            if (is_nullable)
-                nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
-        });
-
-        if (is_nullable)
+        /// later resize it. See `mutateWithoutNullableView`.
+        mutateWithoutNullableView([&]
         {
-            nested_column_nullable = nullptr;
-            nested_null_mask = IColumn::mutate(nested_null_mask);
-        }
-
-        callback(*column_holder);
-        column_holder->forEachMutableSubcolumnRecursively(callback);
+            callback(*column_holder);
+            column_holder->forEachMutableSubcolumnRecursively(callback);
+        });
     }
 
     bool structureEquals(const IColumn & rhs) const override
@@ -286,6 +257,41 @@ private:
     void updateNullMaskImpl();
 
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
+
+    /// Re-creates `reverse_index` and the nullable view after `column_holder` was exposed for mutation.
+    void restoreNullableView()
+    {
+        reverse_index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
+    /// Drops the nullable view (it keeps a second reference to `column_holder`, see `createNullMask`),
+    /// runs `mutate_subcolumns` and re-creates the view. The view is re-created in ordinary control
+    /// flow, so an exception from that allocation (e.g. `MEMORY_LIMIT_EXCEEDED`) propagates to the
+    /// caller. If anything throws, the view is re-created with the memory limit check disabled before
+    /// rethrowing, so the dictionary never stays without its nullable view or with a stale `reverse_index`.
+    template <typename F>
+    void mutateWithoutNullableView(F && mutate_subcolumns)
+    {
+        try
+        {
+            if (is_nullable)
+            {
+                nested_column_nullable = nullptr;
+                nested_null_mask = IColumn::mutate(nested_null_mask);
+            }
+
+            mutate_subcolumns();
+            restoreNullableView();
+        }
+        catch (...)
+        {
+            LockMemoryExceptionInThread lock(VariableContext::Global);
+            restoreNullableView();
+            throw;
+        }
+    }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
     /// `column_holder` is intentionally shared with `nested_column_nullable` for `is_nullable`
