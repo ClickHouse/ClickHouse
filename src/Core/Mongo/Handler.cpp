@@ -290,111 +290,55 @@ std::vector<std::string> splitByNewline(const std::string & s)
     return result;
 }
 
-/// Tells whether the value of a filter field is a subdocument naming nested fields, as opposed to
-/// the operators applied to the field it is the value of.
-static bool isSubdocument(const rapidjson::Value & value)
+/// Tells whether the value of a filter field is an embedded document, as opposed to the operators
+/// applied to the field it is the value of, or an Extended JSON wrapper of one value.
+static bool isEmbeddedDocument(const rapidjson::Value & value)
 {
     if (!value.IsObject() || value.ObjectEmpty())
         return false;
 
     for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
     {
-        std::string_view name = it->name.GetString();
+        std::string_view name(it->name.GetString(), it->name.GetStringLength());
         if (name.empty() || name.front() == '$')
             return false;
     }
     return true;
 }
 
-/// Replaces a subdocument by the fields it names: a nested field is the column of its dotted path,
-/// so `{"profile" : {"name" : "x"}}` has to reach the parser as `{"profile.name" : "x"}`.
-static void flattenSubdocument(
-    rapidjson::Value & subdocument, const String & path, rapidjson::Value & out, rapidjson::Document::AllocatorType & allocator)
+/** Validates the fields of a filter document. `{"profile": {"name": "x"}}` asks for the documents
+  * whose `profile` is exactly `{"name": "x"}`, while `{"profile.name": "x"}` also matches one whose
+  * `profile` has other fields besides. The nested fields of a document are columns or paths of their
+  * own here, and the exact equality of a whole embedded document cannot be expressed over them, so
+  * such a filter is refused rather than answered as the wider dotted one - which a `delete` would
+  * turn into documents removed that the request did not select.
+  *
+  * Only the places where a filter names fields are walked: the filters `$and`, `$or` and `$nor`
+  * combine. `$expr` holds an aggregation expression, whose documents are the arguments of its
+  * operators, and the operand of a field operator is a value; both are left as they are.
+  */
+static void validateFilterFields(const rapidjson::Value & filter)
 {
-    for (auto it = subdocument.MemberBegin(); it != subdocument.MemberEnd(); ++it)
+    if (!filter.IsObject())
+        return;
+
+    for (auto it = filter.MemberBegin(); it != filter.MemberEnd(); ++it)
     {
-        auto result_path = path + "." + it->name.GetString();
-        if (isSubdocument(it->value))
+        std::string_view name(it->name.GetString(), it->name.GetStringLength());
+        if (name == "$and" || name == "$or" || name == "$nor")
         {
-            flattenSubdocument(it->value, result_path, out, allocator);
+            if (it->value.IsArray())
+                for (const auto & element : it->value.GetArray())
+                    validateFilterFields(element);
             continue;
         }
 
-        rapidjson::Value new_key(result_path.c_str(), allocator);
-        out.AddMember(new_key, it->value, allocator);
-    }
-}
-
-static void AddPrefixToKeys(
-    rapidjson::Value & value, rapidjson::Document::AllocatorType & allocator, const String & current_path = "", bool in_projection = false)
-{
-    if (value.IsObject())
-    {
-        rapidjson::Value new_object(rapidjson::kObjectType);
-        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
-        {
-            if (!in_projection)
-            {
-                std::string key = it->name.GetString();
-                if (key.empty() || key[0] == '$')
-                {
-                    new_object.AddMember(it->name, it->value, allocator);
-                }
-                else
-                {
-                    auto result_path = current_path.empty() ? key : current_path + "." + key;
-                    if (isSubdocument(it->value))
-                    {
-                        flattenSubdocument(it->value, result_path, new_object, allocator);
-                    }
-                    else
-                    {
-                        rapidjson::Value new_key(result_path.c_str(), allocator);
-                        new_object.AddMember(new_key, it->value, allocator);
-                    }
-                }
-            }
-            else if (it->value.IsString())
-            {
-                std::string str_value = it->value.GetString();
-                if (str_value.empty() || str_value[0] == '$')
-                {
-                    new_object.AddMember(it->name, it->value, allocator);
-                }
-                else
-                {
-                    auto result_path = current_path.empty() ? str_value : current_path + "." + str_value;
-                    rapidjson::Value new_value(result_path.c_str(), allocator);
-                    new_object.AddMember(it->name, new_value, allocator);
-                }
-            }
-            else
-            {
-                new_object.AddMember(it->name, it->value, allocator);
-            }
-        }
-        value = std::move(new_object);
-    }
-
-    if (value.IsObject())
-    {
-        for (auto & member : value.GetObject())
-        {
-            String name = member.name.GetString();
-            if (name == "$projection")
-                AddPrefixToKeys(member.value, allocator, current_path, true);
-            else if (!current_path.empty())
-                AddPrefixToKeys(member.value, allocator, current_path + "." + name, in_projection);
-            else
-                AddPrefixToKeys(member.value, allocator, name, in_projection);
-        }
-    }
-    else if (value.IsArray())
-    {
-        for (auto & element : value.GetArray())
-        {
-            AddPrefixToKeys(element, allocator);
-        }
+        if (!name.empty() && name.front() != '$' && isEmbeddedDocument(it->value))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The filter of the field '{}' is an embedded document, which asks for the documents whose '{}' is exactly that document: "
+                "this is not supported, name the nested fields with their dotted paths instead, as in '{}.<field>'",
+                name, name, name);
     }
 }
 
@@ -952,7 +896,7 @@ String modifyFilter(const String & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect json in filter");
     }
 
-    AddPrefixToKeys(doc, doc.GetAllocator());
+    validateFilterFields(doc);
 
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);

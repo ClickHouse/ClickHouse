@@ -100,6 +100,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         collection.database);
 
     /// A collection of documents addresses its fields as the paths of the document column.
+    const bool stores_documents = getCollectionShape(collection, executor).stores_documents;
     adaptQueryToCollectionShape(ast, collection, executor);
 
     String sql_query;
@@ -116,9 +117,21 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     /// values of the pipeline are unwrapped, deduplicated again (two arrays are free to share
     /// elements) and returned in ascending order, which Mongo promises and a `GROUP BY` alone
     /// does not.
+    ///
+    /// A path of a stored document is a `Dynamic` value, whose array - if it holds one - is an array
+    /// only at run time, so `flatten` sees one element in it. Its elements are read by the type the
+    /// value holds in each row instead: an array is cast into an array of `Dynamic` values, and
+    /// anything else is the one element it is. Only the arrays are cast, so that the cast cannot fail
+    /// in the branch that is not taken.
+    String elements = "flatten([_id])";
+    if (stores_documents)
+        elements = "if(startsWith(dynamicType(_id), 'Array('), "
+                   "CAST(if(startsWith(dynamicType(_id), 'Array('), _id, CAST(NULL, 'Dynamic')), 'Array(Dynamic)'), [_id])";
+
     sql_query = fmt::format(
-        "SELECT DISTINCT arrayJoin(flatten([_id])) AS _id FROM ({}) ORDER BY _id ASC "
+        "SELECT DISTINCT arrayJoin({}) AS _id FROM ({}) ORDER BY _id ASC "
         "SETTINGS allow_suspicious_types_in_order_by = 1",
+        elements,
         sql_query);
 
     /// Mongo reads a collection that does not exist as empty rather than raising an error, so

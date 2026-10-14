@@ -25,8 +25,9 @@ cluster.add_instance(
         "configs/mongo.xml",
         "configs/log.xml",
         "configs/users.xml",
+        "configs/remote_servers.xml",
     ],
-    user_configs=["configs/default_password.xml"],
+    user_configs=["configs/default_password.xml", "configs/single_session_user.xml"],
     env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
@@ -1060,9 +1061,9 @@ def test_update_operators(started_cluster):
 
 
 def test_update_by_a_nested_field(started_cluster):
-    """The filter of an `update` names a nested field the same way the filter of a `find` does:
-    either as a subdocument or as a dotted path. An update writes columns, so the table is one
-    created in ClickHouse, whose nested field is the column `profile.name`."""
+    """The filter of an `update` names a nested field the same way the filter of a `find` does: as a
+    dotted path. An update writes columns, so the table is one created in ClickHouse, whose nested
+    field is the column `profile.name`."""
     node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["nested_update"]
@@ -1081,9 +1082,9 @@ def test_update_by_a_nested_field(started_cluster):
         ]
     )
 
-    assert [doc["id"] for doc in collection.find({"profile": {"name": "alpha"}})] == [1]
+    assert [doc["id"] for doc in collection.find({"profile.name": "alpha"})] == [1]
 
-    collection.update_many({"profile": {"name": "alpha"}}, {"$set": {"flag": 1}})
+    collection.update_many({"profile.name": "alpha"}, {"$set": {"flag": 1}})
     assert wait_for(lambda: sorted(doc["flag"] for doc in collection.find({})) == [0, 1])
 
     collection.update_many({"profile.name": "beta"}, {"$set": {"flag": 2}})
@@ -1192,8 +1193,12 @@ def test_insert_unsupported_bson_type(started_cluster):
 
 
 def test_aggregate_match_subdocument(started_cluster):
-    """A `$match` uses the query syntax, so a subdocument names nested fields exactly like the
-    filter of a `find` - including when the `$match` comes from the `query` of a `distinct`."""
+    """A `$match` uses the query syntax, so a dotted path names a nested field exactly like in the
+    filter of a `find` - including when the `$match` comes from the `query` of a `distinct`.
+
+    An embedded document as the value of a field asks for the documents whose field is exactly that
+    document, which the nested fields stored as paths or columns cannot answer: it is refused rather
+    than answered as the dotted filter, which also matches the document that has an `age`."""
     client = make_client()
     collection = client["db"]["match_subdocument"]
 
@@ -1202,13 +1207,27 @@ def test_aggregate_match_subdocument(started_cluster):
         [
             {"id": 1, "profile": {"name": "alpha"}},
             {"id": 2, "profile": {"name": "beta"}},
-            {"id": 3, "profile": {"name": "alpha"}},
+            {"id": 3, "profile": {"name": "alpha", "age": 30}},
         ]
     )
 
-    assert [doc["id"] for doc in collection.aggregate([{"$match": {"profile": {"name": "alpha"}}}, {"$sort": {"id": 1}}, {"$project": {"id": 1}}])] == [1, 3]
+    assert [doc["id"] for doc in collection.aggregate([{"$match": {"profile.name": "alpha"}}, {"$sort": {"id": 1}}, {"$project": {"id": 1}}])] == [1, 3]
 
-    assert collection.distinct("id", {"profile": {"name": "alpha"}}) == [1, 3]
+    assert collection.distinct("id", {"profile.name": "alpha"}) == [1, 3]
+
+    embedded = {"profile": {"name": "alpha"}}
+    for request in [
+        lambda: list(collection.find(embedded)),
+        lambda: list(collection.find({"$or": [{"id": 2}, embedded]})),
+        lambda: list(collection.aggregate([{"$match": embedded}])),
+        lambda: collection.distinct("id", embedded),
+        lambda: collection.delete_many(embedded),
+    ]:
+        with pytest.raises(pymongo.errors.OperationFailure) as error:
+            request()
+        assert "embedded document" in str(error.value)
+
+    assert sorted(doc["id"] for doc in collection.find({})) == [1, 2, 3]
 
 
 def test_readback_preserves_document_shape(started_cluster):
@@ -1255,7 +1274,7 @@ def test_readback_preserves_document_shape(started_cluster):
 
 def test_union_with_nested_match(started_cluster):
     """The `$match` stages inside the pipeline of a `$unionWith` use the same query syntax as the
-    outer ones, so their subdocument filters are normalized the same way."""
+    outer ones, so their dotted paths name the nested fields the same way."""
     client = make_client()
     collection = client["db"]["union_nested_match"]
 
@@ -1278,11 +1297,11 @@ def test_union_with_nested_match(started_cluster):
 
     result = collection.aggregate(
         [
-            {"$match": {"profile": {"name": "alpha"}}},
+            {"$match": {"profile.name": "alpha"}},
             {
                 "$unionWith": {
                     "coll": "union_nested_match_other",
-                    "pipeline": [{"$match": {"profile": {"name": "alpha"}}}],
+                    "pipeline": [{"$match": {"profile.name": "alpha"}}],
                 }
             },
             {"$sort": {"id": 1}},
@@ -3060,3 +3079,141 @@ def test_a_union_with_a_missing_collection_is_an_error(started_cluster):
         )
 
     collection.drop()
+
+
+def test_expr_keeps_the_documents_of_its_operators(started_cluster):
+    """`$expr` holds an aggregation expression, whose documents are the arguments of its operators
+    rather than nested fields of a filter: they reach the translation as they were sent, in a
+    `find` and in a `$match`."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.expr_documents", password="123")
+    node.query(
+        "CREATE TABLE db.expr_documents (id Int64, when DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "INSERT INTO db.expr_documents VALUES (1, '2026-03-01 00:00:00'), (2, '2025-03-01 00:00:00')",
+        password="123",
+    )
+
+    collection = make_client()["db"]["expr_documents"]
+    condition = {"$expr": {"$eq": [{"$dateToString": {"date": "$when", "format": "%Y"}}, "2026"]}}
+    assert [doc["id"] for doc in collection.find(condition)] == [1]
+    assert [doc["id"] for doc in collection.aggregate([{"$match": condition}, {"$project": {"id": 1}}])] == [1]
+
+    node.query("DROP TABLE db.expr_documents", password="123")
+
+
+def test_a_projection_of_a_document_collection_reads_the_stored_field(started_cluster):
+    """A computed field of a projection is computed from the document the stage receives, also when
+    it replaces the field it reads."""
+    collection = make_client()["db"]["projection_overwrite"]
+    collection.drop()
+    collection.insert_one({"value": 42})
+
+    assert list(collection.aggregate([{"$project": {"_id": 0, "value": {"$toString": "$value"}}}])) == [{"value": "42"}]
+
+    collection.drop()
+
+
+def test_distinct_of_arrays_in_a_document_collection(started_cluster):
+    """`distinct` is element-wise over the arrays a document holds, also in a collection created by
+    the endpoint, where the field is a path of the document column."""
+    collection = make_client()["db"]["distinct_document_arrays"]
+    collection.drop()
+    collection.insert_many([{"tags": ["red", "blue"]}, {"tags": ["blue"]}, {"tags": "green"}])
+
+    assert collection.distinct("tags") == ["blue", "green", "red"]
+
+    collection.drop()
+
+
+def test_the_formats_of_a_profile_do_not_change_the_replies(started_cluster):
+    """The endpoint decodes the answers of the statements it runs itself, so the formats of the
+    profile of the user - a `default_format`, or a `format` that overrides even an explicit `FORMAT`
+    clause - must not change them."""
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mongo_format_user", password="123")
+    node.query(
+        "CREATE USER mongo_format_user IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS default_format = 'JSONEachRow', format = 'JSONEachRow'",
+        password="123",
+    )
+    node.query("GRANT ALL ON db.* TO mongo_format_user", password="123")
+
+    make_client()["db"]["profile_formats"].drop()
+    make_client()["db"]["profile_formats"].insert_many([{"id": 1}, {"id": 2}])
+
+    collection = make_client(user="mongo_format_user", password="mongo_pass", database="db")["db"]["profile_formats"]
+    assert sorted(doc["id"] for doc in collection.find({})) == [1, 2]
+    assert collection.count_documents({}) == 2
+
+    collection.drop()
+    node.query("DROP USER mongo_format_user", password="123")
+
+
+def test_a_login_over_the_session_limit_closes_the_connection(started_cluster):
+    """A login refused for `max_sessions_for_user` - after the password was accepted - closes the
+    connection once it is answered, so no command can run in the session it left behind."""
+    # The user is declared in `configs/single_session_user.xml`, with a profile that sets the limit.
+    holder = make_client(user="mongo_limited_user", password="mongo_pass", database="db")
+    holder["db"].command("ping")
+
+    with connect_raw() as sock:
+        sock.sendall(
+            encode_op_msg(
+                {
+                    "saslStart": 1,
+                    "mechanism": "PLAIN",
+                    "payload": bson.Binary(b"\x00mongo_limited_user\x00mongo_pass"),
+                    "$db": "admin",
+                },
+                request_id=1,
+            )
+        )
+        assert read_op_msg(sock)["ok"] == 0.0
+        try:
+            sock.sendall(encode_op_msg({"find": "anything", "$db": "db"}, request_id=2))
+            assert sock.recv(1) == b""
+        except (ConnectionResetError, BrokenPipeError):
+            pass
+
+    holder.close()
+
+
+def test_an_incomplete_message_is_timed_out(started_cluster):
+    """A peer that announces a message and does not send it must not hold the connection forever:
+    the whole message has to arrive within `handshake_timeout_milliseconds` before a login."""
+    with connect_raw() as sock:
+        sock.sendall(struct.pack("<iiii", 48000000, 1, 0, OP_MSG))
+        try:
+            assert sock.recv(1) == b""
+        except ConnectionResetError:
+            pass
+
+
+def test_an_insert_into_a_distributed_table_is_written_when_acknowledged(started_cluster):
+    """An insert into a `Distributed` table is acknowledged once the remote shard has it, not when
+    it is queued for a background send - which is stopped here, so a queued row would never come."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.distributed_writes", password="123")
+    node.query("DROP TABLE IF EXISTS db.distributed_writes_local", password="123")
+    node.query(
+        "CREATE TABLE db.distributed_writes_local (id Int64, name String) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "CREATE TABLE db.distributed_writes AS db.distributed_writes_local "
+        "ENGINE = Distributed(mongo_remote_shard, db, distributed_writes_local)",
+        password="123",
+    )
+    node.query("SYSTEM STOP DISTRIBUTED SENDS db.distributed_writes", password="123")
+
+    collection = make_client()["db"]["distributed_writes"]
+    collection.insert_one({"id": 1, "name": "written"})
+    assert [doc["name"] for doc in collection.find({})] == ["written"]
+
+    node.query("DROP TABLE db.distributed_writes", password="123")
+    node.query("DROP TABLE db.distributed_writes_local", password="123")

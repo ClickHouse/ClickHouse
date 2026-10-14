@@ -17,11 +17,12 @@ namespace DB::MongoProtocol
 
 std::vector<std::string> splitByNewline(const std::string & s);
 
+/// Validates the filter of a wire command and returns it serialized: a filter that compares a field
+/// with a whole embedded document, which cannot be answered exactly, is refused.
 String modifyFilter(const String & json);
 
-/// Serializes an aggregation pipeline, normalizing the filter of every `$match` stage the same
-/// way the filter of a `find` is normalized (see `modifyFilter`): `$match` uses the query syntax,
-/// where a nested document names nested fields rather than holding a value.
+/// Serializes an aggregation pipeline, validating the filter of every `$match` stage the same way
+/// the filter of a `find` is validated (see `modifyFilter`): `$match` uses the query syntax.
 String serializePipeline(const rapidjson::Value & pipeline);
 
 /** A numeric option of a wire command that must be a whole number, such as the `limit` and the
