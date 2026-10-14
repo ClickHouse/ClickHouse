@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeperNodeVersion.h>
 
 #include <map>
 #include <memory>
@@ -21,7 +22,7 @@ struct IcebergTablePointer
     String uuid;
     String metadata_location;
     /// Znode version of the uuid node. Set by `getTable`, checked by `updateTable`.
-    int32_t version = -1;
+    ZooKeeperNodeVersion version{};
 };
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.

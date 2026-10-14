@@ -28,12 +28,12 @@ String propertiesToJSON(const std::map<String, String> & properties)
     Poco::JSON::Object json;
     for (const auto & [key, value] : properties)
         json.set(key, value);
-    return toJSONString(json);
+    return IcebergRESTCatalog::toJSONString(json);
 }
 
 std::map<String, String> propertiesFromJSON(const String & data, const String & path)
 {
-    const auto json = parseJSONObject(data, fmt::format("Namespace properties at {}", path));
+    const auto json = IcebergRESTCatalog::parseJSONObject(data, fmt::format("Namespace properties at {}", path));
 
     std::map<String, String> properties;
     for (const auto & [key, value] : *json)
@@ -221,7 +221,7 @@ std::optional<IcebergTablePointer> KeeperIcebergRESTCatalogStore::getTable(const
     Coordination::Stat stat;
     if (!zookeeper->tryGet(tableUuidPath(ns, table, pointer.uuid), pointer.metadata_location, &stat))
         return std::nullopt;
-    pointer.version = stat.version;
+    pointer.version = ZooKeeperNodeVersion(stat.version);
     return pointer;
 }
 
@@ -279,7 +279,7 @@ KeeperIcebergRESTCatalogStore::UpdateTableResult KeeperIcebergRESTCatalogStore::
     /// The uuid node pins the table identity. A table re-created under the same name has another uuid, so the set misses it.
     auto zookeeper = getZooKeeper();
     const auto path = tableUuidPath(ns, table, expected.uuid);
-    const auto code = zookeeper->trySet(path, new_pointer.metadata_location, expected.version);
+    const auto code = zookeeper->trySet(path, new_pointer.metadata_location, expected.version.toInt32());
     if (code == Coordination::Error::ZBADVERSION)
         return UpdateTableResult::VersionMismatch;
     if (code == Coordination::Error::ZNONODE)

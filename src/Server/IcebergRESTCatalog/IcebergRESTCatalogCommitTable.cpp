@@ -1,12 +1,15 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogCommitTable.h>
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#include <expected>
+#include <functional>
 #include <set>
 #include <unordered_map>
 
@@ -19,35 +22,37 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace IcebergRESTCatalog
+{
+
 using namespace Iceberg;
-using namespace IcebergRESTCatalogJSON;
 
 /// Requirements.
 
 namespace
 {
 
-using RequirementCheck = std::optional<String> (*)(const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement);
+using RequirementCheck = std::function<std::expected<void, String>(const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement)>;
 
 /// Verify table does not yet exist.
-std::optional<String> checkCreate(const Poco::JSON::Object &, const Poco::JSON::Object &)
+std::expected<void, String> checkCreate(const Poco::JSON::Object &, const Poco::JSON::Object &)
 {
     /// Stage-create is not supported, so the table always exists at this point.
-    return "Table already exists";
+    return std::unexpected("Table already exists");
 }
 
 /// Verify table has expected UUID.
-std::optional<String> checkTableUuid(const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement)
+std::expected<void, String> checkTableUuid(const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement)
 {
     const auto expected = getString(requirement, f_uuid);
     const auto actual = getString(metadata, f_table_uuid);
     if (expected != actual)
-        return fmt::format("Table uuid is {}, expected {}", actual, expected);
-    return std::nullopt;
+        return std::unexpected(fmt::format("Table uuid is {}, expected {}", actual, expected));
+    return {};
 }
 
 /// Verify given ref has expected snapshot ID.
-std::optional<String> checkRefSnapshotId(const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement)
+std::expected<void, String> checkRefSnapshotId(const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement)
 {
     /// Get expected ref. Missing or null means it expects no existing ref.
     const auto ref = getString(requirement, "ref");
@@ -61,23 +66,23 @@ std::optional<String> checkRefSnapshotId(const Poco::JSON::Object & metadata, co
 
     /// Compare.
     if (expected != actual)
-        return fmt::format(
+        return std::unexpected(fmt::format(
             "Ref '{}' points to snapshot {}, expected {}",
             ref,
             actual ? toString(*actual) : "none",
-            expected ? toString(*expected) : "none");
-    return std::nullopt;
+            expected ? toString(*expected) : "none"));
+    return {};
 }
 
 /// Compares one integer of the requirement with one integer of the metadata.
-std::optional<String> checkInteger(
+std::expected<void, String> checkInteger(
     const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement, const String & requirement_key, const String & metadata_key)
 {
     const auto expected = getInteger(requirement, requirement_key);
     const auto actual = getInteger(metadata, metadata_key);
     if (expected != actual)
-        return fmt::format("{} is {}, expected {}", metadata_key, actual, expected);
-    return std::nullopt;
+        return std::unexpected(fmt::format("{} is {}, expected {}", metadata_key, actual, expected));
+    return {};
 }
 
 const std::unordered_map<String, RequirementCheck> REQUIREMENT_CHECKS = {
@@ -98,7 +103,7 @@ const std::unordered_map<String, RequirementCheck> REQUIREMENT_CHECKS = {
 
 }
 
-std::optional<String> checkTableRequirements(const Poco::JSON::Object & metadata, const Poco::JSON::Array & requirements)
+std::expected<void, String> checkTableRequirements(const Poco::JSON::Object & metadata, const Poco::JSON::Array & requirements)
 {
     for (const auto & requirement : requirements)
     {
@@ -111,10 +116,10 @@ std::optional<String> checkTableRequirements(const Poco::JSON::Object & metadata
         if (it == REQUIREMENT_CHECKS.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown requirement type '{}'", type);
 
-        if (auto failed = it->second(metadata, *requirement_object))
-            return failed;
+        if (auto result = it->second(metadata, *requirement_object); !result)
+            return result;
     }
-    return std::nullopt;
+    return {};
 }
 
 /// Updates.
@@ -122,7 +127,7 @@ std::optional<String> checkTableRequirements(const Poco::JSON::Object & metadata
 namespace
 {
 
-using UpdateAction = void (*)(Poco::JSON::Object & metadata, const Poco::JSON::Object & update);
+using UpdateAction = std::function<void(Poco::JSON::Object & metadata, const Poco::JSON::Object & update)>;
 
 Poco::JSON::Object::Ptr findSnapshot(const Poco::JSON::Object & metadata, Int64 snapshot_id)
 {
@@ -149,7 +154,8 @@ void addSnapshot(Poco::JSON::Object & metadata, const Poco::JSON::Object & updat
     if (findSnapshot(metadata, new_snapshot_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Snapshot {} already exists", new_snapshot_id);
 
-    /// Check the sequence number is valid.
+    /// Check the sequence number is valid. This validates the request against the metadata the server loaded.
+    /// A concurrent commit is rejected later by the Keeper version check in `commitTableMetadata`.
     const auto new_sequence_number = getInteger(*new_snapshot, f_metadata_sequence_number);
     const auto last_sequence_number = getInteger(metadata, f_last_sequence_number);
     if (new_sequence_number <= last_sequence_number)
@@ -245,18 +251,24 @@ void appendMetadataLog(Poco::JSON::Object & metadata, const String & previous_me
     entry->set(f_metadata_file, previous_metadata_location);
     entry->set(f_timestamp_ms, previous_last_updated_ms);
 
-    auto log = getArray(metadata, f_metadata_log);
-    log->add(entry);
+    auto metadata_log = getArray(metadata, f_metadata_log);
+    metadata_log->add(entry);
 
     const auto properties = getObject(metadata, f_properties);
     const auto max_entries = properties->optValue<size_t>("write.metadata.previous-versions-max", 100);
-    while (log->size() > max_entries)
-        log->remove(0);
+    size_t removed = 0;
+    while (metadata_log->size() > max_entries)
+    {
+        metadata_log->remove(0);
+        ++removed;
+    }
+    if (removed > 0)
+        LOG_TRACE(getLogger("IcebergRESTCatalogCommitTable"), "Removed {} oldest entries from metadata-log, keeping {}", removed, max_entries);
 }
 
 }
 
-void applyTableUpdates(Poco::JSON::Object & metadata, const Poco::JSON::Array & updates, const String & current_metadata_location)
+void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Array & updates, const String & current_metadata_location)
 {
     /// Read before the updates, which change the metadata in place.
     const auto previous_last_updated_ms = getInteger(metadata, f_last_updated_ms);
@@ -296,6 +308,8 @@ String nextMetadataLocation(
         version + 1,
         toString(UUIDHelpers::generateV4()),
         compression_suffix);
+}
+
 }
 
 }

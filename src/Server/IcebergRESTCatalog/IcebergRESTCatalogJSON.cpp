@@ -18,6 +18,9 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+namespace IcebergRESTCatalog
+{
+
 String toJSONString(const Poco::JSON::Object & json, unsigned indent)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -43,8 +46,6 @@ Int64 nowMs()
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-namespace IcebergRESTCatalogJSON
-{
 
 Poco::JSON::Object::Ptr getOptionalObject(const Poco::JSON::Object & json, const String & key)
 {

@@ -22,8 +22,10 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace IcebergRESTCatalog
+{
+
 using namespace Iceberg;
-using namespace IcebergRESTCatalogJSON;
 
 namespace
 {
@@ -264,6 +266,8 @@ Poco::JSON::Object::Ptr buildInitialTableMetadata(
     metadata->set(f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     metadata->set(f_partition_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     return metadata;
+}
+
 }
 
 }

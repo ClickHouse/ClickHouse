@@ -59,7 +59,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-using namespace IcebergRESTCatalogJSON;
+using namespace IcebergRESTCatalog;
 
 namespace
 {
@@ -238,6 +238,8 @@ void IcebergRESTCatalogHandler::sendNoContent(HTTPServerResponse & response)
 void IcebergRESTCatalogHandler::sendError(
     HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message)
 {
+    LOG_DEBUG(getLogger("IcebergRESTCatalogHandler"), "Request rejected with {} {}: {}", static_cast<int>(status), type, message);
+
     /// ErrorModel from the Iceberg REST specification.
     Poco::JSON::Object error;
     error.set("message", message);
@@ -601,6 +603,7 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
             fmt::format("Namespace already exists: {}", joinNamespace(name)));
         return;
     }
+    LOG_INFO(log, "Created namespace {}", joinNamespace(name));
 
     Poco::JSON::Object properties_json;
     for (const auto & [key, value] : properties)
@@ -878,9 +881,9 @@ void IcebergRESTCatalogHandler::handleUpdateTable(
         const auto requirements = getArray(*json, "requirements");
         const auto updates = getArray(*json, "updates");
 
-        if (const auto failed = checkTableRequirements(*metadata, *requirements))
+        if (const auto result = checkTableRequirements(*metadata, *requirements); !result)
         {
-            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", *failed);
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", result.error());
             return;
         }
 
@@ -891,7 +894,7 @@ void IcebergRESTCatalogHandler::handleUpdateTable(
             return;
         }
 
-        applyTableUpdates(*metadata, *updates, pointer->metadata_location);
+        applyTableUpdatesToJSON(*metadata, *updates, pointer->metadata_location);
         /// A `set-properties` update may change the codec. The new file follows the updated properties.
         compression_method = getMetadataCompressionMethod(*metadata);
     }
@@ -935,25 +938,29 @@ void IcebergRESTCatalogHandler::commitTableMetadata(
         compression_method,
         static_cast<int>(server.context()->getSettingsRef()[Setting::output_format_compression_level]));
 
+    /// Update Keeper.
     using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
-    UpdateTableResult result;
-    try
+    const auto result = [&]() -> std::optional<UpdateTableResult>
     {
-        /// Update Keeper.
-        result = warehouse.store->updateTable(ns, table, pointer, {.uuid = pointer.uuid, .metadata_location = new_location});
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        /// The set may have been applied, so the new file must stay. The client reloads the table to find out.
-        LOG_WARNING(log, "Commit of {}.{} to {} has an unknown outcome: {}", joinNamespace(ns), table, new_location, e.message());
-        sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
+        try
+        {
+            return warehouse.store->updateTable(ns, table, pointer, {.uuid = pointer.uuid, .metadata_location = new_location});
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            /// The set may have been applied, so the new file must stay. The client reloads the table to find out.
+            LOG_WARNING(log, "Commit of {}.{} to {} has an unknown outcome: {}", joinNamespace(ns), table, new_location, e.message());
+            sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
+            return std::nullopt;
+        }
+    }();
+    if (!result)
         return;
-    }
 
-    if (result != UpdateTableResult::Updated)
+    if (*result != UpdateTableResult::Updated)
         warehouse.object_storage->removeObjectIfExists(StoredObject(object_key));
 
-    switch (result)
+    switch (*result)
     {
         case UpdateTableResult::Updated:
             LOG_INFO(log, "Committed table {}.{}: {} -> {}", joinNamespace(ns), table, pointer.metadata_location, new_location);
