@@ -4821,11 +4821,48 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
 
-        const Settings & current = client_context->getSettingsRef();
+        /// The limits are compared against the effective values of the session, not against the
+        /// local copy: after a `SET profile`, or with `apply_settings_from_server = 0`, the settings
+        /// profile of the user sets them on the server unseen, and a local `0` read as "no limit"
+        /// would send an override that loosens a stricter limit of the profile - a profile default
+        /// is not a constraint, so the server would accept it. The condition under which the local
+        /// copy is the effective one is the same as for `readonly` in `sessionReadonlyIfKnown`.
+        /// Otherwise the server is asked, and the stricter of its answer and the local value is
+        /// taken: the question does not carry the settings the client changed itself, which travel
+        /// with the query and win over the profile, and being stricter than needed is harmless.
+        Settings current = client_context->getSettingsRef();
+        if (connection && !(current[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile))
+        {
+            Settings server_values;
+            for (const char * name : {"max_execution_time", "max_execution_time_leaf", "max_memory_usage", "max_memory_usage_for_user"})
+                if (const std::optional<String> value = serverEffectiveSettingValue(name))
+                    server_values.set(name, Field(*value));
+
+            const auto stricter = [](auto local_value, auto server_value)
+            {
+                if (local_value == 0)
+                    return server_value;
+                if (server_value == 0)
+                    return local_value;
+                return std::min(local_value, server_value);
+            };
+            current[Setting::max_execution_time] = Poco::Timespan(stricter(
+                current[Setting::max_execution_time].totalMicroseconds(), server_values[Setting::max_execution_time].totalMicroseconds()));
+            current[Setting::max_execution_time_leaf] = Poco::Timespan(stricter(
+                current[Setting::max_execution_time_leaf].totalMicroseconds(),
+                server_values[Setting::max_execution_time_leaf].totalMicroseconds()));
+            current[Setting::max_memory_usage] = stricter(
+                current[Setting::max_memory_usage].value, server_values[Setting::max_memory_usage].value);
+            current[Setting::max_memory_usage_for_user] = stricter(
+                current[Setting::max_memory_usage_for_user].value, server_values[Setting::max_memory_usage_for_user].value);
+        }
+
         const auto tighten = [&](std::string_view name, UInt64 current_value, UInt64 limit)
         {
             if (current_value == 0 || current_value > limit)
                 client_context->setSetting(String(name), limit);
+            else
+                client_context->setSetting(String(name), current_value);
         };
         /// The execution-time limits only look like whole seconds: they are `Seconds` settings
         /// backed by microseconds, and `0.5` is a value a session can legitimately hold. Compared
@@ -4837,6 +4874,10 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
             const Int64 limit_microseconds = static_cast<Int64>(limit_seconds) * 1'000'000;
             if (current_microseconds == 0 || current_microseconds > limit_microseconds)
                 client_context->setSetting(String(name), limit_seconds);
+            else
+                /// The effective value can be stricter than the local one (see above), and the local one
+                /// is what the query carries, so the effective one is pinned explicitly.
+                client_context->setSetting(String(name), static_cast<Float64>(current_microseconds) / 1'000'000);
         };
         tighten_seconds("max_execution_time", current[Setting::max_execution_time].totalMicroseconds(), max_execution_time_limit);
         tighten_seconds(
@@ -5223,15 +5264,41 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
     NameSet seen_databases;
     NameSet seen_lookups;
 
+    auto add_branch = [&](String branch)
+    {
+        if (seen_lookups.emplace(branch).second)
+            branches.push_back(std::move(branch));
+    };
+
     auto add_lookup = [&](const String & database_expression, const String & name_literal)
     {
-        String branch = fmt::format(
+        add_branch(fmt::format(
             "SELECT 'table' AS kind, database AS db, name AS tbl, engine AS eng "
             "FROM system.tables WHERE database = {} AND name = {}",
             database_expression,
-            name_literal);
-        if (seen_lookups.emplace(branch).second)
-            branches.push_back(std::move(branch));
+            name_literal));
+
+        /// The expressions the server evaluates when the table is read, although the query does not
+        /// write them: an `ALIAS` column is expanded into its expression, and a `DEFAULT` or
+        /// `MATERIALIZED` one is computed for the parts that predate the column.
+        add_branch(fmt::format(
+            "SELECT 'expression', database, table, default_expression "
+            "FROM system.columns WHERE database = {} AND table = {} AND default_expression != ''",
+            database_expression,
+            name_literal));
+    };
+
+    /// The filters of the row policies, which the server adds to the query. A temporary table has
+    /// none. Every policy of the table is checked, not only those of the current user: which ones
+    /// apply is resolved by the server. Reading `system.row_policies` needs the `SHOW ROW POLICIES`
+    /// grant; without it the check fails, and the query has to go through the confirmed tool.
+    auto add_row_policy_lookup = [&](const String & database_expression, const String & name_literal)
+    {
+        add_branch(fmt::format(
+            "SELECT 'policy', database, table, assumeNotNull(select_filter) "
+            "FROM system.row_policies WHERE database IN ({}, '') AND table IN ({}, '') AND select_filter IS NOT NULL",
+            database_expression,
+            name_literal));
     };
 
     for (const auto & table : tables)
@@ -5246,6 +5313,9 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
             add_lookup(database_expression, name_literal);
             if (table.database.empty())
                 add_lookup("''", name_literal);
+            /// The tables of the server-owned databases are judged by name, not by what they hold.
+            if (!isServerOwnedDatabaseForAIAgent(table.database))
+                add_row_policy_lookup(database_expression, name_literal);
         }
 
         if (seen_databases.emplace(table.database).second)
@@ -5271,6 +5341,8 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
     String current_database;
     std::map<std::pair<String, String>, String> table_engines;
     std::map<String, String> database_engines;
+    std::multimap<std::pair<String, String>, String> column_expressions;
+    std::vector<std::tuple<String, String, String>> row_policy_filters;
     for (size_t row = 0; row < result.rows(); ++row)
     {
         const std::string_view kind = kind_column.getDataAt(row);
@@ -5279,11 +5351,33 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
             current_database = std::move(database);
         else if (kind == "database")
             database_engines.emplace(std::move(database), String(engine_column.getDataAt(row)));
+        else if (kind == "expression")
+            column_expressions.emplace(
+                std::pair{std::move(database), String(table_column.getDataAt(row))},
+                String(engine_column.getDataAt(row)));
+        else if (kind == "policy")
+            row_policy_filters.emplace_back(
+                std::move(database), String(table_column.getDataAt(row)), String(engine_column.getDataAt(row)));
         else
             table_engines.emplace(
                 std::pair{std::move(database), String(table_column.getDataAt(row))},
                 String(engine_column.getDataAt(row)));
     }
+
+    /// The table is read through an allowed engine; what is left is what the server evaluates for
+    /// the read without the query writing it.
+    const auto check_stored_expressions = [&](const String & database, const String & table)
+    {
+        const auto [begin, end] = column_expressions.equal_range({database, table});
+        for (auto it = begin; it != end; ++it)
+            validateStoredExpressionForAIAgent(
+                it->second, fmt::format("a column expression of the table `{}.{}`", database, table), allow_schema_access);
+
+        for (const auto & [policy_database, policy_table, filter] : row_policy_filters)
+            if ((policy_database.empty() || policy_database == database) && (policy_table.empty() || policy_table == table))
+                validateStoredExpressionForAIAgent(
+                    filter, fmt::format("the filter of a row policy of the table `{}.{}`", database, table), allow_schema_access);
+    };
 
     for (const auto & reference : tables)
     {
@@ -5302,6 +5396,7 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
                         "server, so it is not allowed for the read-only tool. Use the run_query tool for this query",
                         reference.table,
                         it->second);
+                check_stored_expressions("", reference.table);
                 continue;
             }
             database = current_database;
@@ -5378,6 +5473,8 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
                 database,
                 reference.table,
                 table_it->second);
+
+        check_stored_expressions(database, reference.table);
     }
 }
 

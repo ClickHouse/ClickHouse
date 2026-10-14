@@ -1,6 +1,7 @@
 #include <Client/AI/AIQueryValidation.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Functions/FunctionFactory.h>
@@ -32,6 +33,8 @@
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Poco/String.h>
 
@@ -189,6 +192,19 @@ bool isDeniedScalarFunction(const String & name)
         /// secrets among them unmasked, and it reveals the server configuration even when
         /// the schema access of the agent is disabled.
         "getserversetting",
+        /// Not external either, but it writes: it creates and advances a counter in Keeper, and
+        /// `readonly` does not stop it.
+        "generateserialid",
+        /// The consumers of dictionaries whose names do not say so: they read the dictionary named
+        /// by an argument, which loads it from its source (an HTTP or a database source) if it is
+        /// not loaded yet, just like `dictGet` does. `assignCentroid` takes either a dictionary or
+        /// a literal array of centroids; both forms are rejected, as the client cannot tell which
+        /// one a constant expression is before the server resolves it.
+        "naivebayesclassifier",
+        "naivebayesclassifierwithprob",
+        "naivebayesclassifierwithallprobs",
+        "predictxgboost",
+        "assigncentroid",
     };
     const String lowercase_name = Poco::toLower(name);
     return denied.contains(lowercase_name)
@@ -621,6 +637,16 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         "query_cache",
         "errors",
         "distribution_queue",
+        /// The raw texts of mutation commands and of the errors of the background operations:
+        /// `mutations` has `command` and `latest_fail_reason`, `replication_queue` and
+        /// `part_moves_between_shards` the `last_exception`, `view_refreshes` and
+        /// `asynchronous_loader` the `exception`. A failed mutation keeps the literals of its
+        /// command, and its error quotes them, even when they never reached a table.
+        "mutations",
+        "replication_queue",
+        "part_moves_between_shards",
+        "view_refreshes",
+        "asynchronous_loader",
         "dictionaries",
         "backups",
         "users",
@@ -703,6 +729,34 @@ bool isAllowedDatabaseEngineForAIAgent(const String & engine)
         "Overlay",
     };
     return allowed.contains(engine);
+}
+
+void validateStoredExpressionForAIAgent(const String & expression, std::string_view origin, bool allow_schema_access)
+{
+    ParserExpression parser;
+    const ASTPtr ast = parseQuery(
+        parser, expression, "stored expression", /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    try
+    {
+        checkNoExternalAccess(*ast);
+        if (!allow_schema_access)
+            checkNoSchemaAccess(*ast);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("in {}, which the server evaluates when the table is read", origin);
+        throw;
+    }
+
+    /// A subquery of the expression reads a table this validation has not resolved; resolving it
+    /// would take another round of the same check, for an expression that rarely needs one.
+    if (!collectNamedTablesForAIAgent(*ast).empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The {} reads other tables, which the server does when the table is read, so it is not allowed for the "
+            "read-only tool. Use the run_query tool for this query",
+            origin);
 }
 
 void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
