@@ -47,6 +47,7 @@ extern const Event AutoParallelReplicasPlanBuildMicroseconds;
 extern const Event AutoParallelReplicasSkippedDueToSettings;
 extern const Event AutoParallelReplicasSkippedDueToQuery;
 extern const Event AutoParallelReplicasPlansNotComparable;
+extern const Event AutoParallelReplicasPlanWithoutParallelReplicas;
 extern const Event AutoParallelReplicasNoStatistics;
 extern const Event AutoParallelReplicasStatisticsDrifted;
 extern const Event AutoParallelReplicasCostModelEvaluated;
@@ -76,6 +77,16 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
 {
     return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step)
         || typeid_cast<const ReadFromParallelReplicasStep *>(&step);
+}
+
+/// The planner leaves the read from the other replicas out where it turns parallel replicas off by itself,
+/// e.g. for too few rows per replica or a correlated subquery.
+bool planReadsFromOtherReplicas(QueryPlan::Node & root)
+{
+    bool found = false;
+    Stack stack;
+    traverseQueryPlan(stack, root, [&](const auto & frame_node) { found |= isReadFromOtherReplicas(*frame_node.step); });
+    return found;
 }
 
 /// Steps that can sit between the `Union` and the node the two plans have in common without changing
@@ -1056,8 +1067,12 @@ void considerEnablingParallelReplicas(
     auto * const replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!replicas_plan_boundary)
     {
-        /// `findTopNodeOfReplicasPlan` has logged why.
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        /// `findTopNodeOfReplicasPlan` has logged why. Without any read from the other replicas, the planner has
+        /// declined parallel replicas for this query, which is not a limitation of this optimization.
+        if (planReadsFromOtherReplicas(*plan_with_parallel_replicas->getRootNode()))
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        else
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanWithoutParallelReplicas);
         return;
     }
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
