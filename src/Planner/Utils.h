@@ -67,10 +67,8 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     bool use_column_identifier_as_action_node_name = true,
     const IsInputColumnName & is_input_column_name = {});
 
-/// Whether a name is a column, a subcolumn or a virtual column of the storage.
+/// Whether a name is a column, subcolumn or virtual column of the storage; empty for a table expression that is not a table or table function.
 IsInputColumnName makeIsStorageColumnName(const StorageSnapshotPtr & storage_snapshot);
-
-/// The same for the storage of a table or a table function, empty for other table expressions.
 IsInputColumnName makeIsStorageColumnName(const QueryTreeNodePtr & table_expression);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise

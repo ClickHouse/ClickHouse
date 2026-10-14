@@ -25,8 +25,7 @@ class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 using ColumnNodes = std::vector<ColumnNodePtr>;
 
-/// Whether a name is a column of the input of the actions. Over plain column names, a function named like such a column
-/// (as `CREATE TABLE ... AS SELECT a = b` names one) would be taken for that column, so the function is named differently.
+/// Whether a name is an input column of the actions; a function with such a name gets another action node name.
 using IsInputColumnName = std::function<bool(const String &)>;
 
 /** Planner actions visitor is responsible for adding necessary actions to calculate query tree expression node
