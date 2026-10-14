@@ -924,7 +924,7 @@ private:
         SetIndexAnalysisResult analysis,
         bool allow_relaxed_pruning,
         AtomGroup & group,
-        const DataTypePtr & has_element_type = nullptr);
+        const DataTypePtr & has_element_type = nullptr) const;
 
     /// Checks that the index can not be used.
     ///

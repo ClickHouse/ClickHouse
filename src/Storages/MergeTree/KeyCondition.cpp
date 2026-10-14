@@ -3924,7 +3924,7 @@ void KeyCondition::appendSetAtoms(
     SetIndexAnalysisResult analysis,
     bool allow_relaxed_pruning,
     AtomGroup & group,
-    const DataTypePtr & has_element_type)
+    const DataTypePtr & has_element_type) const
 {
     const size_t args_count = analysis.componentwise_candidate.args_count;
 
