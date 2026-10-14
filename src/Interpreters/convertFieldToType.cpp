@@ -475,6 +475,49 @@ const IDataType * removeNullableAndLowCardinalityFromHint(const IDataType * from
     return unwrapped_hint;
 }
 
+/// `FieldVisitorToString` does not know the type and formats a `Field::UUID` with the historical `UUID` layout.
+/// Bring the `UUID2` leaves of `src` (of type `src_type`) to that layout, so that the text keeps the identifier.
+Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
+{
+    const IDataType * unwrapped_type = removeNullableAndLowCardinalityFromHint(&src_type);
+    if (src.isNull() || !unwrapped_type)
+        return src;
+
+    if (WhichDataType(*unwrapped_type).isUUID2() && src.getType() == Field::Types::UUID)
+        return UUIDHelpers::swapHalves(src.safeGet<UUID>());
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(unwrapped_type); array_type && src.getType() == Field::Types::Array)
+    {
+        Array res = src.safeGet<Array>();
+        for (auto & element : res)
+            element = uuid2LeavesToUUIDLayout(element, *array_type->getNestedType());
+        return res;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(unwrapped_type); tuple_type && src.getType() == Field::Types::Tuple)
+    {
+        Tuple res = src.safeGet<Tuple>();
+        const auto & element_types = tuple_type->getElements();
+        for (size_t i = 0; i < res.size() && i < element_types.size(); ++i)
+            res[i] = uuid2LeavesToUUIDLayout(res[i], *element_types[i]);
+        return res;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(unwrapped_type); map_type && src.getType() == Field::Types::Map)
+    {
+        Map res = src.safeGet<Map>();
+        for (auto & key_value : res)
+        {
+            auto & pair = key_value.safeGet<Tuple>();
+            pair[0] = uuid2LeavesToUUIDLayout(pair[0], *map_type->getKeyType());
+            pair[1] = uuid2LeavesToUUIDLayout(pair[1], *map_type->getValueType());
+        }
+        return res;
+    }
+
+    return src;
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     /// A non-Null constant of `Nullable(T)` / `LowCardinality(T)` is a plain value of `T`, and the caller only unwraps
@@ -1042,6 +1085,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
             return convertFieldToTypeImpl(
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
+
+        if (from_type_hint && typeContainsUUID2(*from_type_hint))
+            return applyVisitor(FieldVisitorToString(), uuid2LeavesToUUIDLayout(src, *from_type_hint));
 
         return applyVisitor(FieldVisitorToString(), src);
     }
