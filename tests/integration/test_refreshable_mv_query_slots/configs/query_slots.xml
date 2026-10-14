@@ -1,0 +1,5 @@
+<clickhouse>
+    <use_query_slot_to_refresh_materialized_view>true</use_query_slot_to_refresh_materialized_view>
+    <default_replica_path>/test/rmv_query_slots/{uuid}</default_replica_path>
+    <default_replica_name>r</default_replica_name>
+</clickhouse>
