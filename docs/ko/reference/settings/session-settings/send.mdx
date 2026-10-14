@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="send_profile_events">
-  ## send_profile_events
-</div>
+## send_profile_events {#send_profile_events}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,7 @@ profile events가 필요하지 않은 클라이언트의 네트워크 트래픽�
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-<div id="send_progress_in_http_headers">
-  ## send_progress_in_http_headers
-</div>
+## send_progress_in_http_headers {#send_progress_in_http_headers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +41,7 @@ profile events가 필요하지 않은 클라이언트의 네트워크 트래픽�
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-<div id="send_table_structure_on_insert_with_inline_data">
-  ## send_table_structure_on_insert_with_inline_data
-</div>
+## send_table_structure_on_insert_with_inline_data {#send_table_structure_on_insert_with_inline_data}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +49,7 @@ profile events가 필요하지 않은 클라이언트의 네트워크 트래픽�
 
 이 설정이 비활성화되어 있고 INSERT 쿼리에 인라인 데이터가 포함되어 있으면, 서버는 네이티브 프로토콜을 통해 테이블 구조와 컬럼 기본값을 클라이언트에 다시 전송하지 않습니다. 대신 서버가 인라인 데이터를 직접 파싱합니다. 이렇게 하면 네이티브 프로토콜을 통한 소규모 삽입이 많은 경우 성능이 향상될 수 있습니다.
 
-<div id="send_timeout">
-  ## send_timeout
-</div>
+## send_timeout {#send_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="300" />
 

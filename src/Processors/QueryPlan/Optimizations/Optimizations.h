@@ -82,9 +82,6 @@ struct Optimization
 
         size_t max_block_size{};
 
-        // parallel replicas
-        bool parallel_replicas_filter_pushdown = false;
-
         /// The plan being optimized. Standalone plans extracted by optimizations inherit its execution
         /// limits and its resource holder (table locks, storage holders, interpreter contexts), because
         /// they may be executed after the outer plan has been consumed into a pipeline.
