@@ -1049,7 +1049,7 @@ void StorageMaterializedView::updateExternalDynamicMetadataIfExists(ContextPtr l
     /// The analyzer and the interpreters refresh the external metadata of the outermost storage, which is the
     /// view itself, so forward the refresh to the target (e.g. `IcebergLocal`). In particular, `ALTER ... UPDATE/DELETE`
     /// has to validate the mutation against the same state of the target that `mutate` executes it against.
-    /// The refresh is a hook of the engine that a lazy-load stand-in does not forward.
+    /// A lazy-load stand-in forwards the refresh only to a table that is already materialized, so resolve it.
     if (auto target = tryGetTargetTable())
         resolveStorageProxyLoading(target)->updateExternalDynamicMetadataIfExists(local_context);
 }

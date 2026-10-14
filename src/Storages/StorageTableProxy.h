@@ -102,6 +102,16 @@ public:
             nested->onActionLockRemove(action_type);
     }
 
+    /// The analyzer and the interpreters refresh the external metadata (e.g. the current snapshot and schema of
+    /// an Iceberg table) on the catalog object, which is this stand-in, so forward it to a materialized table,
+    /// or it keeps the state it was loaded with forever. An untouched table is left alone: it reads the current
+    /// state when it is materialized, and the refresh is also asked for by `DESCRIBE`, which must not load it.
+    void updateExternalDynamicMetadataIfExists(ContextPtr context_) override
+    {
+        if (auto materialized = tryGetNested())
+            materialized->updateExternalDynamicMetadataIfExists(context_);
+    }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
