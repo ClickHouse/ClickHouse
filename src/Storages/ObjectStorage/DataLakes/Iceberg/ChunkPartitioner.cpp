@@ -31,9 +31,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// The Iceberg type of a `bucket[N]` partition field, `int`; any other transform keeps the type of the
-/// ClickHouse function computing it. Every value `icebergBucket` produces fits an `int`, because `N` is
-/// validated to be in `(0, INT32_MAX]` and the result is in `[0, N)`.
+/// A `bucket[N]` partition field is an Iceberg `int`. Its values always fit: `icebergBucket` requires `N`
+/// in `(0, INT32_MAX]` and returns a value in `[0, N)`.
 DataTypePtr icebergPartitionFieldType(const String & transform_function_name, const DataTypePtr & transform_result_type)
 {
     if (transform_function_name != "icebergBucket")
@@ -135,8 +134,6 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         const auto & partition_field_type = result_data_types[transform_ind];
         auto result
             = functions[transform_ind]->build(arguments)->execute(arguments, transform_result_type, chunk.getNumRows(), false);
-        /// Convert before the partition keys and the scatter selector are taken from the column, so that
-        /// the stored value, the published type and the grouping all agree.
         if (!transform_result_type->equals(*partition_field_type))
             result = castColumn(ColumnWithTypeAndName(result, transform_result_type, ""), partition_field_type);
         functions_columns.push_back(result);

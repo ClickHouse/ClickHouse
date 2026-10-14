@@ -164,9 +164,8 @@ bool isNaNPartitionValue(const Field & field, DataTypePtr type)
     }
 }
 
-/// Whether every field of a partition tuple can be described truthfully in a manifest-list field
-/// summary. A summary saying `contains_null = false` with no bounds states that the field holds no
-/// orderable value at all, which makes a spec-compliant reader skip the entire manifest.
+/// Whether every field can get real bounds. A field summary with `contains_null = false` and no bounds
+/// claims the field holds no value, so a spec-compliant reader skips the whole manifest.
 bool canWritePartitionSummary(const std::vector<std::pair<Field, DataTypePtr>> & partition_summary)
 {
     for (const auto & [partition_value, partition_type] : partition_summary)
@@ -179,9 +178,8 @@ bool canWritePartitionSummary(const std::vector<std::pair<Field, DataTypePtr>> &
     return true;
 }
 
-/// Whether a parent manifest-list entry's `partitions` summaries can be carried forward unchanged.
-/// Copying the empty-range claim above keeps a reader skipping that manifest forever. Fails closed,
-/// which is safe because `partitions` is optional: its absence only costs a reader an unskippable manifest.
+/// Whether a parent entry's `partitions` holds no such empty-range summary and can be copied as is. Fails
+/// closed: `partitions` is optional, and its absence only makes the manifest unskippable.
 bool canCarryForwardPartitionSummaries(const avro::GenericDatum & partitions)
 {
     if (partitions.type() == avro::AVRO_NULL)

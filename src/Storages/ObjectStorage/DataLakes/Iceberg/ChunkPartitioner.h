@@ -37,8 +37,7 @@ public:
 
     const std::vector<String> & getColumns() const { return columns_to_apply; }
 
-    /// The types of the partition key values `partitionChunk` returns: the Iceberg `int` for a
-    /// `bucket[N]` field, and otherwise the type of the ClickHouse function computing the transform.
+    /// Types of the keys `partitionChunk` returns: Iceberg `int` for `bucket[N]`, else the transform function's type.
     const DataTypes & getResultTypes() const { return result_data_types; }
 
 private:
