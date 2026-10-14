@@ -128,6 +128,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
@@ -176,6 +177,7 @@ namespace FailPoints
     extern const char atomic_populate_pause_after_view_publication[];
     extern const char atomic_populate_pause_before_source_guard[];
     extern const char atomic_populate_pause_before_population[];
+    extern const char attach_from_path_pause_before_relocation[];
 }
 
 namespace ErrorCodes
@@ -1824,7 +1826,9 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
+    auto ref_dependencies = getDependenciesFromCreateQuery(
+        context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true,
+        /*validate_current_database*/true, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
@@ -2093,7 +2097,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        /// A definition replayed from metadata or restored from a backup was bounded when it was created.
+        /// A full `ATTACH ... AS SELECT` is user input, so it is bounded as well, and so is a fresh `CREATE`
+        /// executed on a follower replica of a `Replicated` database: it carries the settings of the initial
+        /// query, and no earlier pass on this replica has expanded it.
+        const bool is_fresh_secondary_create = mode == LoadingStrictnessLevel::SECONDARY_CREATE && is_secondary_query
+            && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
+        ApplyWithSubqueryVisitor::visit(
+            *create.select,
+            isFreshTableDefinition(mode, create.attach_short_syntax) || is_fresh_secondary_create
+                ? getContext()->getSettingsRef()[Setting::max_expanded_ast_elements].value
+                : 0);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -2783,12 +2797,23 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
+    /// rename() requires the exclusive lock, and createTable() makes the table visible to other queries.
+    TableExclusiveLockHolder attach_from_lock;
+    if (from_path)
+        attach_from_lock
+            = res->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
     /// when data directory moved, but table has not been created due to some error.
     if (from_path)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::attach_from_path_pause_before_relocation);
         res->rename(actual_data_path, {create.getDatabase(), create.getTable(), create.uuid});
+    }
+    /// Released before startup(), which is not part of the rename contract.
+    attach_from_lock.release();
 
     /// We must call "startup" and "shutdown" while holding DDLGuard.
     /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup
