@@ -1,0 +1,11 @@
+-inf
+inf
+-inf
+inf
+-0	-inf
+0	inf
+-0	-inf
+0	inf
+neg		b
+neg		b
+{-0:'neg',1.5:'a',2.5:'b',3.5:'c'}	{-0:'neg',1.5:'a',2.5:'b',3.5:'c'}
