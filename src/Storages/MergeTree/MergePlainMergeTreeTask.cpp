@@ -95,10 +95,13 @@ void MergePlainMergeTreeTask::prepare()
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
     task_context = createTaskContext();
+    auto initial_query_group = CurrentThread::getGroup();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        task_context);
+        task_context,
+        storage.merger_mutator.merges_blocker.getCancellationRequestPredicate(future_part->part_info.getPartitionId()));
+    ThreadGroupSwitcher preparation_group((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
@@ -121,7 +124,7 @@ void MergePlainMergeTreeTask::prepare()
             projections_duration_ms);
     };
 
-    transfer_profile_counters_to_initial_query = [this, query_thread_group = CurrentThread::getGroup()] ()
+    transfer_profile_counters_to_initial_query = [this, query_thread_group = std::move(initial_query_group)] ()
     {
         if (query_thread_group)
         {
@@ -206,6 +209,15 @@ void MergePlainMergeTreeTask::finish()
 void MergePlainMergeTreeTask::cancel() noexcept
 {
     auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::cancel");
+    cleanupAfterFailure();
+}
+
+void MergePlainMergeTreeTask::cleanupAfterFailure() noexcept
+{
+    /// Cleanup must finish rollback even after the operation is cancelled.
+    ThreadGroupSwitcher operation_group(
+        merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    ThreadStatus::QueryCancellationBlocker cleanup_scope;
     if (merge_task)
         merge_task->cancel();
 
@@ -216,6 +228,8 @@ void MergePlainMergeTreeTask::cancel() noexcept
     /// temp directories which guards temporary dir from background removal which can
     /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
     merge_task.reset();
+
+    new_part.reset();
 
     if (merge_mutate_entry)
         merge_mutate_entry->finalize();
