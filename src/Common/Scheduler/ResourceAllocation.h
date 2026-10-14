@@ -55,7 +55,6 @@ public:
 
 private:
     friend class AllocationQueue;
-    friend class AllocationLimit; // reads `fair_key` to self-kill a requester whose grow exceeds the limit
 
     ResourceCost allocated = 0; /// Currently allocated.
     ResourceCost reclaiming = 0; /// Bytes requested for spilling but not yet settled, including requests not yet executing.

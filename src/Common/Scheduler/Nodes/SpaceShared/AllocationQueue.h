@@ -33,6 +33,7 @@ public:
     void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) override;
     ResourceCost requestSpill(ResourceAllocation & allocation, ResourceCost max_bytes) override;
     void finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total) override;
+    ResourceCost getFairKey(const ResourceAllocation & allocation) override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;

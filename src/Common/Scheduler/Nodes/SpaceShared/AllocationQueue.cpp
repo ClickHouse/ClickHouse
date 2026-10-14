@@ -222,6 +222,12 @@ void AllocationQueue::finishSpill(ResourceAllocation & allocation, ResourceCost 
     scheduleActivation();
 }
 
+ResourceCost AllocationQueue::getFairKey(const ResourceAllocation & allocation)
+{
+    std::lock_guard lock(mutex);
+    return allocation.fair_key;
+}
+
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
 {
     std::lock_guard lock(mutex);

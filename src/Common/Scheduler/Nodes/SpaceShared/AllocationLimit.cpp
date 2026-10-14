@@ -101,9 +101,10 @@ ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest & k
     // If the requester's own reservation would exceed the limit, no eviction anywhere in the subtree can make
     // it admissible. Fail its own request here instead of descending into a (possibly lower-precedence)
     // sibling workload — and, for a `reserve_memory = 0` first grow that is not yet a running child, instead
-    // of leaving the increase blocked forever. `fair_key` is the requester's allocated size plus its pending
-    // increase, so `fair_key > limit` means it cannot fit even with the whole subtree freed.
-    if (killer.allocation.fair_key > limit)
+    // of leaving the increase blocked forever. The ordering key is the requester's allocated size plus its pending
+    // increase minus outstanding spill requests, so a key above `limit` cannot fit even with the whole subtree freed.
+    // Query threads update the key under the queue lock (e.g. on spill settlement), so read a locked snapshot.
+    if (killer.allocation.queue.getFairKey(killer.allocation) > limit)
     {
         details = fmt::format("Evicting allocation (eviction_score {}) to satisfy its own increase, its reservation exceeds the limit", killer.allocation.eviction_score);
         return &killer.allocation;
