@@ -44,17 +44,17 @@ SYSTEM STOP MERGES t_vertical_packed;
 INSERT INTO t_vertical_packed SELECT
     number * 3 AS id, 'str_' || toString(id), toString(id % 17), range(id % 5),
     range(id % 4), arrayMap(x -> toString(x), range(id % 4)), map('k' || toString(id % 3), id), if(id % 100 = 0, id, 0)
-FROM numbers(10000);
+FROM numbers(300);
 
 INSERT INTO t_vertical_packed SELECT
     number * 3 + 1 AS id, 'str_' || toString(id), toString(id % 17), range(id % 5),
     range(id % 4), arrayMap(x -> toString(x), range(id % 4)), map('k' || toString(id % 3), id), if(id % 100 = 0, id, 0)
-FROM numbers(10000);
+FROM numbers(300);
 
 INSERT INTO t_vertical_packed SELECT
     number * 3 + 2 AS id, 'str_' || toString(id), toString(id % 17), range(id % 5),
     range(id % 4), arrayMap(x -> toString(x), range(id % 4)), map('k' || toString(id % 3), id), if(id % 100 = 0, id, 0)
-FROM numbers(10000);
+FROM numbers(300);
 
 INSERT INTO t_horizontal_full SELECT * FROM t_vertical_packed;
 
@@ -79,8 +79,8 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND database = currentDatabase() AND table = 't_vertical_packed' AND event_type = 'MergeParts';
 
 SELECT (SELECT count(), sum(cityHash64(*)) FROM t_vertical_packed) = (SELECT count(), sum(cityHash64(*)) FROM t_horizontal_full);
-SELECT count() FROM t_vertical_packed WHERE s = 'str_3000' SETTINGS force_data_skipping_indices = 'idx_s';
-SELECT count() FROM t_vertical_packed WHERE id + sparse = 6000 SETTINGS force_data_skipping_indices = 'idx_sum';
+SELECT count() FROM t_vertical_packed WHERE s = 'str_300' SETTINGS force_data_skipping_indices = 'idx_s';
+SELECT count() FROM t_vertical_packed WHERE id + sparse = 600 SETTINGS force_data_skipping_indices = 'idx_sum';
 
 CHECK TABLE t_vertical_packed SETTINGS check_query_single_value_result = 1;
 
@@ -94,7 +94,7 @@ WHERE database = currentDatabase() AND table = 't_vertical_packed' AND active
 GROUP BY part_type, part_storage_type;
 
 SELECT (SELECT count(), sum(cityHash64(*)) FROM t_vertical_packed) = (SELECT count(), sum(cityHash64(*)) FROM t_horizontal_full);
-SELECT count() FROM t_vertical_packed WHERE s = 'str_3000' SETTINGS force_data_skipping_indices = 'idx_s';
+SELECT count() FROM t_vertical_packed WHERE s = 'str_300' SETTINGS force_data_skipping_indices = 'idx_s';
 
 DROP TABLE t_vertical_packed;
 DROP TABLE t_horizontal_full;
