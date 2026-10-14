@@ -358,6 +358,12 @@ void AllocationQueue::updateMinMaxAllocated(ResourceCost new_value)
     if (setIncrease() && parent)
         update.setIncrease(increase);
 
+    // A queued decrease may not be published yet (its activation can run after this callback). Publish it with
+    // the increase, so the limit does not evict for a grow that the queued release would satisfy. Only when
+    // propagating: a locally advanced `decrease` would otherwise never be published by `processActivation`.
+    if (update && setDecrease())
+        update.setDecrease(decrease);
+
     // Propagate after releasing the lock: propagation can re-enter this queue's
     // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.
     lock.unlock();
@@ -642,6 +648,12 @@ void AllocationQueue::updateQueueLimit(Int64 value)
     Update update;
     if (setIncrease() && parent)
         update.setIncrease(increase);
+
+    // A queued decrease may not be published yet (its activation can run after this callback). Publish it with
+    // the increase, so the limit does not evict for a grow that the queued release would satisfy. Only when
+    // propagating: a locally advanced `decrease` would otherwise never be published by `processActivation`.
+    if (update && setDecrease())
+        update.setDecrease(decrease);
 
     // Propagate after releasing the lock: propagation can re-enter this queue's
     // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.

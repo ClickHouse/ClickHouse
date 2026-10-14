@@ -11,6 +11,7 @@
 
 #include <barrier>
 #include <cstdlib>
+#include <functional>
 #include <future>
 #include <initializer_list>
 #include <thread>
@@ -2073,6 +2074,51 @@ TEST(SchedulerSpaceShared, NoKillWhenDecreaseApprovalReselectsIncrease)
     EXPECT_EQ(a.size(), 4500);
     EXPECT_EQ(b.size(), 4000);
     EXPECT_EQ(d.size(), 0);
+}
+
+
+/// A workload-settings callback can run before the activation of requests that query threads have already
+/// queued. When it publishes a newly selected increase, it must also publish the queued decrease; otherwise
+/// the limit evaluates the grow as if no release were pending. Here `b`'s queued decrease makes `a`'s grow fit.
+static void testNoKillWhenSettingsUpdatePublishesIncrease(std::function<void(AllocationQueue &)> settings_update)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation a(queue, "a", 7000);
+    ManualAllocation b(queue, "b", 3000);
+
+    // Park the scheduler, queue the settings callback first, then the requests (their activation runs after it).
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+    t.scheduler.event_queue.enqueue([&] { settings_update(*queue); });
+
+    b.decreaseAsync(3000);
+    a.increaseAsync(2000); // 10000 + 2000 > 10000 until `b`'s decrease is applied
+
+    release.set_value();
+
+    a.waitSynced();
+    b.waitSynced();
+    ASSERT_EQ(a.killCount(), 0u);
+    ASSERT_EQ(b.killCount(), 0u);
+    EXPECT_EQ(a.size(), 9000);
+    EXPECT_EQ(b.size(), 0);
+}
+
+TEST(SchedulerSpaceShared, NoKillWhenQueueLimitUpdatePublishesIncrease)
+{
+    testNoKillWhenSettingsUpdatePublishesIncrease([](AllocationQueue & queue) { queue.updateQueueLimit(100); });
+}
+
+TEST(SchedulerSpaceShared, NoKillWhenMinMaxAllocatedUpdatePublishesIncrease)
+{
+    testNoKillWhenSettingsUpdatePublishesIncrease([](AllocationQueue & queue) { queue.updateMinMaxAllocated(10000); });
 }
 
 
