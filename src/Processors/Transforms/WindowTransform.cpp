@@ -374,8 +374,7 @@ void WindowTransform::computeReadyRows()
             prev_frame = frame.bounds();
 
             // Move to the next row. The frame will have to be recalculated.
-            peers.advanceCurrentRow(blocks, partition.bounds());
-            checkInvariants(blocks, next_output_block_number, partition.bounds(), peers, frame.bounds(), prev_frame);
+            peers.advanceCurrentRow(blocks);
         }
 
         if (input_is_finished)
@@ -408,8 +407,8 @@ void WindowTransform::startNextPartition()
     partition.beginAt(blocks, partition_start);
     partition.advance(blocks);
 
-    peers.enterPartition(blocks, partition.bounds());
-    frame.enterPartition(blocks, peers.current(), partition.bounds());
+    peers.enterPartition(partition.bounds());
+    frame.enterPartition(partition.bounds());
     prev_frame = FrameBounds{.start = peers.current(), .end = peers.current(), .fully_visible = true};
 
     // Reinitialize the aggregate function states because the new partition
