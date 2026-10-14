@@ -120,9 +120,10 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
 }
 
 /// The `table_type` values of tables whose data lives outside the catalog's own storage, so their
-/// log may be committed directly. Everything else (`MANAGED`, `MANAGED_SHALLOW_CLONE`, foreign tables,
-/// views, an absent or unknown value) is refused: a direct commit is safe only when it is known to be.
-static const std::unordered_set<std::string> DIRECTLY_WRITABLE_TABLE_TYPES = {"EXTERNAL", "EXTERNAL_SHALLOW_CLONE"};
+/// log may be committed directly. Everything else (`MANAGED`, shallow clones, foreign tables, views,
+/// an absent or unknown value) is refused: a direct commit is safe only when it is known to be.
+/// Shallow clones are not readable through either Unity implementation, so they are not writable either.
+static const std::unordered_set<std::string> DIRECTLY_WRITABLE_TABLE_TYPES = {"EXTERNAL"};
 
 void checkUnityDirectCommitIsAllowed(const Poco::JSON::Object::Ptr & table_json, const String & full_table_name)
 {
