@@ -2172,9 +2172,7 @@ class MergeTreeSettingsRandomizer:
         "min_bytes_for_full_part_storage": threshold_generator(
             0.3, 0.3, 0, 512 * 1024 * 1024
         ),
-        "max_bytes_to_buffer_for_packed_part": threshold_generator(
-            0.2, 0.2, 64 * 1024, 256 * 1024 * 1024
-        ),
+        "max_bytes_to_buffer_for_packed_part": lambda: 1,
         "compact_parts_max_bytes_to_buffer": lambda: random.randint(
             1024, 512 * 1024 * 1024
         ),
