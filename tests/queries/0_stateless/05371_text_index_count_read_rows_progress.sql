@@ -11,6 +11,8 @@ SET make_distributed_plan = 0;
 SET serialize_query_plan = 0;
 -- The granules pruned by the query condition cache entries of the previous queries disable the optimization.
 SET use_query_condition_cache = 0;
+-- `max_rows_to_read` with `read_overflow_mode = 'throw'` disables `use_skip_indexes_on_data_read`.
+SET max_rows_to_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
