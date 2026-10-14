@@ -552,7 +552,7 @@ struct HashMethodSerialized
     /// Set up the dense `LowCardinality` position cache when every key column is a non-nullable
     /// `LowCardinality` and the product of the dictionary sizes is small enough for a dense array.
     /// A sub-range state leaves out the keys that are constant over its range and builds the cache only if it has
-    /// no more slots than the range has rows.
+    /// no more slots than the range has rows or the whole-block state would build one.
     void initLowCardinalityCache(RowRange row_range)
     {
         if (keys_size < 2)
@@ -564,11 +564,15 @@ struct HashMethodSerialized
         {
             range_end = std::min(row_range.end, key_columns[0]->size());
             range_begin = std::min(row_range.begin, range_end);
+            /// A cache over fewer than two rows cannot produce a hit.
+            if (range_end - range_begin < 2)
+                return;
         }
 
         std::vector<size_t> dict_sizes;
         dict_sizes.reserve(keys_size);
         size_t product = 1;
+        size_t whole_block_product = 1;
 
         for (size_t i = 0; i < keys_size; ++i)
         {
@@ -576,13 +580,19 @@ struct HashMethodSerialized
             if (!low_cardinality || low_cardinality->getDictionary().nestedColumnIsNullable())
                 return;
 
+            const size_t dict_size = low_cardinality->getDictionary().size();
+
             if constexpr (for_sub_range)
             {
+                if (dict_size == 0 || whole_block_product > lc_cache_max_size / dict_size)
+                    whole_block_product = 0;
+                else
+                    whole_block_product *= dict_size;
+
                 if (isConstantOnRange(low_cardinality->getIndexes(), range_begin, range_end))
                     continue;
             }
 
-            const size_t dict_size = low_cardinality->getDictionary().size();
             if (dict_size == 0 || product > lc_cache_max_size / dict_size)
                 return;
 
@@ -593,7 +603,8 @@ struct HashMethodSerialized
 
         if constexpr (for_sub_range)
         {
-            if (product > range_end - range_begin)
+            /// A cache larger than its range still pays off where the whole-block state would build one: it is never larger than that one.
+            if (product > range_end - range_begin && whole_block_product == 0)
                 return;
             lc_range_begin = range_begin;
             lc_range_end = range_end;
