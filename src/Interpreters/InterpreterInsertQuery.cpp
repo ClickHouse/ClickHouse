@@ -47,6 +47,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -62,6 +63,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <memory>
 #include <unordered_set>
@@ -71,6 +73,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool async_insert;
     extern const SettingsBool async_insert_select_as_async_insert;
     extern const SettingsBool distributed_foreground_insert;
@@ -80,7 +83,6 @@ namespace Setting
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsMaxThreads max_insert_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsUInt64Auto insert_quorum;
@@ -101,7 +103,6 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
@@ -150,12 +151,13 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
+    {
+        quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_ROWS);
         quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_BYTES);
+    }
 
     const Settings & settings = getContext()->getSettingsRef();
-    max_threads = getMaxThreadsForAvailableMemory(
-        std::max<size_t>(1, settings[Setting::max_threads]),
-        settings[Setting::max_threads_min_free_memory_per_thread]);
+    max_threads = getEffectiveMaxThreads(settings);
     max_insert_threads = getMaxThreadsForAvailableMemory(
         std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
         settings[Setting::max_insert_threads_min_free_memory_per_thread]);
@@ -199,7 +201,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
-    return DatabaseCatalog::instance().getTable(query.table_id, current_context);
+    /// The insert path reads engine facts the proxy of an unloaded table cannot answer.
+    return resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, current_context));
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -887,8 +890,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
-    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
-        && settings[Setting::parallel_replicas_prefer_local_replica])
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_prefer_local_replica])
     {
         /// The local pipeline executes inside the initiator's pipeline and shares the initiator's 'QueryStatus',
         /// so it cannot be bounded by 'max_execution_time_leaf' (the leaf timeout is substituted into
@@ -1244,7 +1246,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (query.table_id.empty())
         return {};
 
-    StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
+    StoragePtr dst_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, local_context));
     if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
 
@@ -1256,9 +1258,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         if (auto * sq = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
             select_query = sq;
+            const size_t max_expanded_ast_elements = local_context->getSettingsRef()[Setting::max_expanded_ast_elements];
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0), max_expanded_ast_elements);
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0), max_expanded_ast_elements);
 
             JoinedTables joined_tables(Context::createCopy(local_context), *sq);
             if (joined_tables.tablesCount() == 1)
@@ -1308,7 +1311,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// structure and format arguments are added so that the nodes do not infer the schema again.
     {
         auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
-        src_storage_cluster->updateQueryToSendIfNeeded(select_to_send.list_of_selects->children.at(0), src_snapshot, local_context);
+        /// The query is forwarded to the nodes of `src_cluster`, which is the source storage's own cluster.
+        src_storage_cluster->updateQueryToSendIfNeeded(
+            select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, src_storage_cluster->getClusterName());
     }
 
     String query_str;

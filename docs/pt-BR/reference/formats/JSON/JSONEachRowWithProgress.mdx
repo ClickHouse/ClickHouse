@@ -15,25 +15,49 @@ doc_type: 'reference'
 | ------- | ----- | ----- |
 | ✗       | ✔     |       |
 
-<div id="description">
-  ## Descrição
-</div>
+## Descrição {#description}
 
-Difere de [`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow)/[`JSONStringsEachRow`](/pt-BR/reference/formats/JSON/JSONStringsEachRow) porque o ClickHouse também fornece informações de progresso como valores JSON.
+Difere de [`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow)/[`JSONStringsEachRow`](/pt-BR/reference/formats/JSON/JSONStringsEachRow) porque o ClickHouse transmite cada evento como um objeto JSON separado e também fornece informações de progresso.
 
-<div id="example-usage">
-  ## Exemplo de uso
-</div>
+O formato relacionado `JSONStringsEachRowWithProgress` usa os mesmos tipos de objeto de nível superior; os valores dos campos são serializados como strings.
+
+As variantes compactas `JSONCompactEachRowWithProgress` e `JSONCompactStringsEachRowWithProgress` compartilham os mesmos tipos de objeto do stream e as mesmas ressalvas sobre progresso/`LIMIT`/exceções; suas cargas úteis `row` / `totals` / `min` / `max` são arrays de valores, e não objetos nomeados.
+
+## Objetos do stream {#stream-objects}
+
+Cada linha da resposta é um objeto JSON. Os clientes devem fazer o encaminhamento com base na chave de nível superior:
+
+| Chave de nível superior      | Quando aparece                                                                             | Formato                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meta`                       | Uma vez, antes da primeira `row` (um objeto `progress` pode ser emitido antes dela)        | `{"meta":[{"name":...,"type":...}, ...]}` — nomes e tipos das colunas                                                                       |
+| `row`                        | Uma vez por linha do resultado                                                             | `{"row":{...}}` — valores das colunas dessa linha                                                                                           |
+| `progress`                   | Periodicamente, enquanto a consulta é executada                                            | `{"progress":{...}}` — contadores como `read_rows`, `read_bytes`, `total_rows_to_read`                                                      |
+| `totals`                     | Quando há totais                                                                           | `{"totals":{...}}` — valores da linha de totais                                                                                             |
+| `min` / `max`                | Quando há valores extremos                                                                 | `{"min":{...}}` / `{"max":{...}}` — valores das linhas de extremos                                                                          |
+| `rows_before_limit_at_least` | Quando a consulta contém `LIMIT`                                                           | `{"rows_before_limit_at_least":N}` — estimativa mínima do número de linhas que haveria sem `LIMIT` (não prova que linhas foram descartadas) |
+| `rows_before_aggregation`    | Quando a consulta realiza agregação e o contador `rows_before_aggregation` está habilitado | `{"rows_before_aggregation":N}`                                                                                                             |
+| `exception`                  | Quando a consulta falha, no caminho HTTP com `http_write_exception_in_output_format=1`     | `{"exception":"..."}` — texto do erro como uma **string de nível superior**, e não aninhado em `row`                                        |
+
+O objeto `rows_before_limit_at_least` é emitido sempre que a consulta contém `LIMIT`, mesmo que o limite não tenha descartado nenhuma linha. Trata-se de uma estimativa mínima do número de linhas que haveria sem `LIMIT` (com o mesmo significado que em `JSON`); os clientes não devem interpretá-lo como prova de que linhas foram descartadas.
+
+`meta` é emitido uma única vez antes da primeira `row`, mas um objeto `progress` pode chegar antes de `meta`. O objeto `exception` de nível superior só é emitido no caminho HTTP quando `http_write_exception_in_output_format=1`; caso contrário, o erro é reportado pela camada de transporte. Quando emitido, é um objeto de nível superior independente, e não aninhado em `row`.
+
+## Exemplo de uso {#example-usage}
 
 ```json
+{"meta":[{"name":"num","type":"UInt8"},{"name":"str","type":"String"},{"name":"arr","type":"Array(UInt8)"}]}
 {"row":{"num":42,"str":"hello","arr":[0,1]}}
 {"row":{"num":43,"str":"hello","arr":[0,1,2]}}
 {"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
-<div id="format-settings">
-  ## Configurações de formato
-</div>
+Um objeto `progress` ainda pode ser emitido antes de `meta`. Pelo caminho HTTP, com `http_write_exception_in_output_format=1`, uma consulta com falha termina com um objeto separado de nível superior (não aninhado em `row`):
+
+```json
+{"exception":"Code: 62. DB::Exception: Syntax error: failed at position 1 (SELECT) (line 1, col 1): ..."}
+```
+
+## Configurações de formato {#format-settings}
 
 {/*AUTOGENERATED_END*/}
