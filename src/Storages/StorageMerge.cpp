@@ -16,6 +16,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
 #include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
@@ -1603,6 +1604,20 @@ private:
     std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
 };
 
+/// The action name the outer plan gives the `Merge` virtual column.
+String outerActionNameOfVirtualColumn(const String & column_name)
+{
+    return "__table1." + column_name;
+}
+
+/// The action name the constant replacing the `Merge` virtual column carries in a child that executes
+/// the query above `FetchColumns`. It must differ from the column identifier the child's own planner
+/// gives a physical column of the same name.
+String childActionNameOfVirtualColumn(const String & column_name)
+{
+    return "__merge_virtual_column." + column_name;
+}
+
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
     TableExpressionNodePtr original_table_expression,
@@ -1784,16 +1799,13 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// `FetchColumns` the constant-column step in `addVirtualColumns` covers the plan header,
         /// but at later stages the child executes the whole query - a `Distributed` child runs it
         /// on the shards - so any expression over these columns must already see the constant.
-        /// `__actionName` pins the action name the outer plan expects for this column.
-        ///
-        /// Known limitation, for both `_database` and `_table`: the pinned name is the column
-        /// identifier the child's own planner gives a physical column of the same name. So when a
-        /// child that executes the query itself (`Distributed`) reads a table with a physical
-        /// `_database`/`_table` column, and its query reads no other real column (e.g.
-        /// `SELECT _database FROM m` or `SELECT count() FROM m WHERE _table = ...`), the shard picks
-        /// the smallest physical column to read, which may be that one, and it shadows the constant.
-        /// Queries that also read a real column are not affected
-        /// (see `05055_merge_virtual_columns_delegating_children`).
+        /// `__actionName` pins the action name of this column in the child's plan. Above
+        /// `FetchColumns` that name is not the one the outer plan expects (`__table1._table`):
+        /// it is the column identifier the child's own planner gives a physical column of the
+        /// same name, and a child that executes the query itself (`Distributed`) may read such a
+        /// physical column - as the smallest column, or for one of its `ALIAS` columns - which would
+        /// then shadow the constant. So a name of its own is pinned instead, and `addVirtualColumns`
+        /// renames it back in the child's output.
         ///
         /// The substitution is not conditioned on the column being among the requested ones: a
         /// column referenced only by a filter is not requested at stages above `FetchColumns`,
@@ -1816,7 +1828,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 return;
 
             auto value_node = std::make_shared<ConstantNode>(value);
-            auto action_name_node = std::make_shared<ConstantNode>("__table1." + column_name);
+            auto action_name_node = std::make_shared<ConstantNode>(common_processed_stage > QueryProcessingStage::FetchColumns
+                ? childActionNameOfVirtualColumn(column_name)
+                : outerActionNameOfVirtualColumn(column_name));
 
             auto function_node = std::make_shared<FunctionNode>("__actionName");
             function_node->getArguments().getNodes().push_back(value_node);
@@ -2049,9 +2063,33 @@ void ReadFromMerge::addVirtualColumns(
     const StorageWithLockAndName & storage_with_lock) const
 {
     /// At stages above `FetchColumns` the child executed the whole query, and the constants
-    /// injected by `getModifiedQueryInfo` are already part of its output.
+    /// injected by `getModifiedQueryInfo` are already part of its output, under the action names
+    /// of their own pinned there. Give them back the names the outer plan expects.
     if (processed_stage > QueryProcessingStage::FetchColumns)
+    {
+        const auto & header = child.plan.getCurrentHeader();
+        ActionsDAG renaming_dag(header->getColumnsWithTypeAndName());
+        bool renamed = false;
+        for (auto & output : renaming_dag.getOutputs())
+        {
+            for (const auto * column_name : {"_database", "_table"})
+            {
+                if (output->result_name == childActionNameOfVirtualColumn(column_name))
+                {
+                    output = &renaming_dag.addAlias(*output, outerActionNameOfVirtualColumn(column_name));
+                    renamed = true;
+                }
+            }
+        }
+
+        if (renamed)
+        {
+            auto renaming_step = std::make_unique<ExpressionStep>(header, std::move(renaming_dag));
+            renaming_step->setStepDescription("Rename the _database and _table virtual columns for Merge", 100);
+            child.plan.addStep(std::move(renaming_step));
+        }
         return;
+    }
 
     if (!has_database_virtual_column && !has_table_virtual_column)
         return;
@@ -2548,6 +2586,12 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
+    /// Above `FetchColumns` the child executed the query tree in which `getModifiedQueryInfo` had
+    /// already replaced the `ALIAS` columns by their expressions, so its output needs no alias
+    /// evaluation, and it does not even carry the columns those expressions read. Evaluating them
+    /// here would compute them over the child's output instead, e.g. over the constant that took the
+    /// place of a `_database`/`_table` column of the child.
+    if (common_processed_stage == QueryProcessingStage::FetchColumns)
     {
         for (const auto & alias : aliases)
         {
@@ -3272,8 +3316,6 @@ SELECT * FROM WatchLog;
     If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
 
     When the matched table reads its data through another table (`Distributed`, `Merge`, `Buffer`, `Alias`), `_table` still contains the matched table's name, not the name of the underlying table, so such tables are pruned by the filter on `_table` the same way as any other matched table.
-
-    Known limitation: if a matched `Distributed` table reads a table that has a physical column named `_database` or `_table`, and the query reads no other real column (for example `SELECT _database FROM merge_table` or `SELECT count() FROM merge_table WHERE _table = 'xyz'`), the value of that physical column may be returned instead of the matched table's name.
 
 - `_database` — Contains the name of the database the matched table belongs to. Type: [String](/reference/data-types/string).
 

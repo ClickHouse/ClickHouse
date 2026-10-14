@@ -102,12 +102,9 @@ SELECT child FROM m_alias WHERE child = 't_alias_b';
 SELECT x, child FROM m_alias ORDER BY x;
 
 SELECT '-- a remote table with physical _database and _table columns does not shadow the child name';
--- Only the shapes where the shard reads a real column are covered. A shard query that reads no real
--- column (e.g. `SELECT _database FROM m_over_phys_dist` or `SELECT count() ... WHERE _table = ...`)
--- makes the shard read its smallest physical column, and when that column is named `_database` or
--- `_table`, its identifier `__table1._database`/`__table1._table` is the same as the action name the
--- child-name constant is pinned to, so the remote value shadows the constant. That shape is a known
--- limitation, see `ReadFromMerge::getModifiedQueryInfo`.
+-- A shard query that reads no real column (e.g. `SELECT _database FROM m_over_phys_dist` or
+-- `SELECT count() ... WHERE _table = ...`) makes the shard read its smallest physical column, which
+-- may be the physical `_database`/`_table`; it must not shadow the child-name constant either.
 CREATE TABLE t_phys_leaf (`_database` String, `_table` String, s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_phys_leaf VALUES ('remote_db', 'remote_table', 'a');
 CREATE TABLE t_phys_dist AS t_phys_leaf
@@ -119,6 +116,11 @@ SELECT count() FROM m_over_phys_dist WHERE _database = 'remote_db' AND s != '';
 SELECT count() FROM m_over_phys_dist WHERE _table = 't_phys_dist' AND s != '';
 SELECT _database = currentDatabase(), _table, s, sum(c) FROM (SELECT _database, _table, s, count() AS c FROM m_over_phys_dist GROUP BY _database, _table, s) GROUP BY ALL;
 SELECT DISTINCT concat(_database, '/', _table, '/', s) = concat(currentDatabase(), '/t_phys_dist/a') FROM m_over_phys_dist;
+SELECT _database = currentDatabase() FROM m_over_phys_dist;
+SELECT _table FROM m_over_phys_dist;
+SELECT count() FROM m_over_phys_dist WHERE _table = 't_phys_dist';
+SELECT count() FROM m_over_phys_dist WHERE _table = 'remote_table';
+SELECT _table, count() FROM m_over_phys_dist GROUP BY _table;
 
 DROP TABLE m_over_phys_dist;
 DROP TABLE t_phys_dist;
