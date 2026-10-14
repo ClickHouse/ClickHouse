@@ -1998,6 +1998,141 @@ def test_postgres_pushdown_injection_via_in_list(started_cluster):
     started_cluster.postgres_conn.commit()
 
 
+def test_postgres_pushdown_injection_via_in_list_non_conforming_server(started_cluster):
+    # The container path on a server with `standard_conforming_strings = off`, i.e. the two defects
+    # combined. After the fix a container element is formatted by the same scalar path, so it also gets
+    # the `E'...'` form and stays a value on either server setting; before the fix the element was
+    # written with ClickHouse backslash rules and broke out here too.
+    db_name = "test_pushdown_injection_in_list_off_db"
+    table_name = "test_pushdown_injection_in_list_off"
+    marker_table = "test_pushdown_injection_in_list_off_marker"
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+
+    admin_conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port
+    )
+    admin_cursor = admin_conn.cursor()
+    admin_cursor.execute(f"DROP DATABASE IF EXISTS {db_name} WITH (FORCE)")
+    admin_cursor.execute(f"CREATE DATABASE {db_name}")
+    admin_cursor.execute(
+        f"ALTER DATABASE {db_name} SET standard_conforming_strings = off"
+    )
+
+    db_conn = get_postgres_conn(
+        started_cluster.postgres_ip,
+        started_cluster.postgres_port,
+        database=True,
+        database_name=db_name,
+    )
+    db_cursor = db_conn.cursor()
+    db_cursor.execute(f"CREATE TABLE {table_name} (name text)")
+    db_cursor.execute(f"CREATE TABLE {marker_table} (payload text)")
+    db_cursor.execute(f"INSERT INTO {table_name} VALUES ('x'), ('y')")
+    db_cursor.execute(
+        "CREATE VIEW conforming_strings AS "
+        "SELECT current_setting('standard_conforming_strings') AS value"
+    )
+
+    # As in the scalar test: the setting has to hold on the connection ClickHouse itself uses, or the
+    # injection could not fire and this test would pass while the defect is present.
+    assert (
+        node1.query(
+            f"SELECT value FROM postgresql('{host}', '{db_name}', 'conforming_strings', "
+            f"'postgres', '{pg_pass}')"
+        ).strip()
+        == "off"
+    ), "ClickHouse reached PostgreSQL over a connection that still has standard_conforming_strings on"
+
+    # A backslash directly before the quote, so the break-out needs the server to read `\'` as an
+    # escaped quote -- which is exactly what `off` does.
+    payload = f"a\\')) TO STDOUT; COMMIT; INSERT INTO {marker_table} VALUES ($$in_list_off_pwned$$); --"
+
+    node1.query("DROP TABLE IF EXISTS pg_pushdown_injection_in_list_off")
+    node1.query(
+        f"CREATE TABLE pg_pushdown_injection_in_list_off (name String) "
+        f"ENGINE = PostgreSQL('{host}', '{db_name}', '{table_name}', 'postgres', '{pg_pass}')"
+    )
+
+    result, pushed_down = _pushed_down_query(
+        node1,
+        f"SELECT count() FROM pg_pushdown_injection_in_list_off "
+        f"WHERE name IN ('x', {_clickhouse_string_literal(payload)})",
+    )
+    assert result == "1", f"unexpected result, query pushed down: {pushed_down}"
+
+    # The load-bearing assertion.
+    db_cursor.execute(f"SELECT count(*) FROM {marker_table}")
+    assert db_cursor.fetchone()[0] == 0, (
+        f"the pushed-down literal escaped into executable SQL, query pushed down: {pushed_down}"
+    )
+
+    # The element carries a backslash, so it must be written in the escape string constant form.
+    assert "E'" in pushed_down, pushed_down
+
+    node1.query("DROP TABLE pg_pushdown_injection_in_list_off")
+    db_conn.close()
+    admin_cursor.execute(f"DROP DATABASE {db_name} WITH (FORCE)")
+    admin_conn.close()
+
+
+def test_postgres_pushdown_injection_via_json_text_in_list(started_cluster):
+    # The same container defect, reached with the payload wrapped in JSON text rather than used as a
+    # bare element. Note what this does *not* test: on this path the JSON value is converted to a
+    # `String` before the literal formatter sees it -- reverting the `Object` overload of the dialect
+    # visitor leaves this test passing, while reverting the container recursion makes it fail. So the
+    # element arrives as a string that happens to hold JSON, and the guard being exercised is the
+    # container recursion, in the extra quoting context that JSON brings with it.
+    #
+    # `Array` and `Map` elements are a different matter: their `[...]` form makes PostgreSQL fail at the
+    # `[` before it ever reaches the quote, so losing the dialect there is not exploitable at all.
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_pushdown_injection_json_text"
+    marker_table = "test_pushdown_injection_json_text_marker"
+
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"DROP TABLE IF EXISTS {marker_table}")
+    cursor.execute(f"CREATE TABLE {table_name} (name text)")
+    cursor.execute(f"CREATE TABLE {marker_table} (payload text)")
+    cursor.execute(f"INSERT INTO {table_name} VALUES ('x'), ('y')")
+    started_cluster.postgres_conn.commit()
+
+    # The payload sits inside a JSON string value, so it must not contain a double quote. The break-out
+    # shape is the same as for a plain `IN` element: close the literal, close the `IN` list and the
+    # `COPY` subquery, complete that statement, then stack the injected one.
+    payload = f"x')) TO STDOUT; COMMIT; INSERT INTO {marker_table} VALUES ($$json_text_pwned$$); --"
+    json_literal = _clickhouse_string_literal('{"k":"' + payload + '"}')
+
+    node1.query("DROP TABLE IF EXISTS pg_pushdown_injection_json_text")
+    node1.query(
+        f"CREATE TABLE pg_pushdown_injection_json_text (name String) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"
+    )
+
+    result, pushed_down = _pushed_down_query(
+        node1,
+        f"SELECT count() FROM pg_pushdown_injection_json_text "
+        f"WHERE name IN ('x', CAST({json_literal}, 'JSON'))",
+    )
+    assert result == "1", f"unexpected result, query pushed down: {pushed_down}"
+
+    # The load-bearing assertion, as in the other cases.
+    started_cluster.postgres_conn.commit()
+    cursor.execute(f"SELECT count(*) FROM {marker_table}")
+    assert cursor.fetchone()[0] == 0, (
+        f"the pushed-down literal escaped into executable SQL, query pushed down: {pushed_down}"
+    )
+    started_cluster.postgres_conn.commit()
+
+    # The quote inside the JSON string is doubled rather than written as the ClickHouse `\'`.
+    assert "''" in pushed_down, pushed_down
+
+    node1.query("DROP TABLE pg_pushdown_injection_json_text")
+    cursor.execute(f"DROP TABLE {table_name}")
+    cursor.execute(f"DROP TABLE {marker_table}")
+    started_cluster.postgres_conn.commit()
+
+
 def test_postgres_pushdown_injection_via_scalar_literal(started_cluster):
     # The scalar path needs no container at all. `writeQuotedStringPostgreSQL` doubles the quote but
     # leaves a backslash as it is, so the value `a\'...` is emitted as `'a\''...'`. A server with
