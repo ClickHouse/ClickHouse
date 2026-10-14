@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
+    extern const SettingsBool use_page_cache_lookahead_for_text_index;
 }
 
 namespace MergeTreeSetting
@@ -155,6 +156,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
+    result.use_page_cache_lookahead_for_text_index = settings[Setting::use_page_cache_lookahead_for_text_index];
     return result;
 }
 

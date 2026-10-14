@@ -683,12 +683,15 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
     constexpr size_t dictionary_buffer_size = 16 * 1024;
 
+    /// Blocks are visited in token-cardinality order (and in ranges for patterns), not in file order,
+    /// so ask the page cache for one block at a time instead of a lookahead the next seek abandons.
     auto dictionary_stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
         dictionary_substream,
         state.reader_settings,
-        dictionary_buffer_size);
+        dictionary_buffer_size,
+        /*use_page_cache_lookahead=*/ false);
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
@@ -996,13 +999,16 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
         return lhs.second->cardinality < rhs.second->cardinality;
     });
 
+    /// Tokens are read rarest-first (`tokens_to_read` is sorted by cardinality above), so their
+    /// posting lists are visited out of file order: ask the page cache for one block at a time.
     const auto postings_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
         postings_substream,
         state.reader_settings,
-        largest_segment_bytes);
+        largest_segment_bytes,
+        /*use_page_cache_lookahead=*/ false);
 
     for (const auto & [token, token_info] : tokens_to_read)
     {
