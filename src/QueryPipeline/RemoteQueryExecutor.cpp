@@ -37,6 +37,7 @@
 #include <base/scope_guard.h>
 
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Access/AccessControl.h>
 #include <Access/User.h>
@@ -422,14 +423,14 @@ static Block adaptBlockStructure(Block block, const Block & header)
     /// Both `block` and `header` may contain several columns with the same name. Match the same-named elements
     /// of `header` to the same-named columns of `block` in order, so that each of them reads its own column.
     /// If `block` has fewer columns with this name, the remaining elements of `header` read the last of them.
-    UnorderedMapWithMemoryTracking<std::string_view, std::vector<size_t>> block_positions_by_name;
+    UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<size_t>> block_positions_by_name;
     for (size_t i = 0; i < block.columns(); ++i)
         block_positions_by_name[block.getByPosition(i).name].push_back(i);
 
-    std::vector<std::optional<size_t>> source_positions;
+    VectorWithMemoryTracking<std::optional<size_t>> source_positions;
     source_positions.reserve(header.columns());
     /// A column may be moved out of `block` only on its last use.
-    std::vector<size_t> remaining_uses(block.columns());
+    VectorWithMemoryTracking<size_t> remaining_uses(block.columns());
     {
         UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
         for (const auto & elem : header)
