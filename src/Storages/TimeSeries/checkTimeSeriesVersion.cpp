@@ -1,4 +1,4 @@
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 
 #include <Common/Exception.h>
 #include <Interpreters/StorageID.h>
