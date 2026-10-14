@@ -143,6 +143,8 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
             return true;
         default:
             return false;
@@ -319,7 +321,8 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Float64:
             return dumpValue(field.safeGet<Float64>());
         case TypeIndex::Float32:
-            return dumpValue(field.safeGet<Float32>());
+            /// A `Field` keeps a `Float32` as `Float64`, while Iceberg writes `float` as 4 bytes.
+            return dumpValue(static_cast<Float32>(field.safeGet<Float64>()));
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not dump such stats");
@@ -663,6 +666,10 @@ void generateManifestFile(
             auto statistics = effective_statistics->getNullCounts();
             set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
+            auto nan_counts = effective_statistics->getNanCounts();
+            if (!nan_counts.empty())
+                set_fields(nan_counts, Iceberg::f_nan_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
+
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = effective_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
@@ -886,7 +893,7 @@ void generateManifestList(
                     upper.selectBranch(1);
                     upper.value<std::vector<uint8_t>>() = bound;
                 }
-                /// else: a partition type whose bounds we cannot serialize (e.g. `Float`); leave the bounds null, matching the data-file statistics path.
+                /// else: a partition type whose bounds we cannot serialize; leave the bounds null, matching the data-file statistics path.
             }
             summaries.value().push_back(summary_datum);
         }

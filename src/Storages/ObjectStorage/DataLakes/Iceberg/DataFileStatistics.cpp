@@ -2,6 +2,8 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 
@@ -44,6 +46,40 @@ static std::optional<Range> getExtremeRangeFromColumn(const ColumnPtr & column)
     return Range(min_val, true, max_val, true);
 }
 
+/// Counts the NaN at the non-NULL rows of a float column; nullopt for any other column.
+static std::optional<Int64> countNaNs(const IColumn & column)
+{
+    const IColumn * values = &column;
+    const NullMap * null_map = nullptr;
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&column))
+    {
+        values = &nullable->getNestedColumn();
+        null_map = &nullable->getNullMapData();
+    }
+
+    auto count = [&](const auto & data)
+    {
+        Int64 result = 0;
+        for (size_t i = 0; i < data.size(); ++i)
+            result += (!null_map || !(*null_map)[i]) && std::isnan(data[i]);
+        return result;
+    };
+
+    if (const auto * column_float64 = checkAndGetColumn<ColumnFloat64>(values))
+        return count(column_float64->getData());
+    if (const auto * column_float32 = checkAndGetColumn<ColumnFloat32>(values))
+        return count(column_float32->getData());
+    return std::nullopt;
+}
+
+/// Iceberg orders `-0.0` before `+0.0` and `getExtremes` returns either zero, so a zero bound is widened to cover both.
+static Field widenZeroBound(const Field & bound, bool lower)
+{
+    if (bound.getType() == Field::Types::Float64 && bound.safeGet<Float64>() == 0)
+        return Field(lower ? -0.0 : 0.0);
+    return bound;
+}
+
 void DataFileStatistics::update(const Chunk & chunk)
 {
     if (!chunk.hasRows())
@@ -53,6 +89,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     {
         null_counts.resize(num_columns, 0);
         ranges.resize(num_columns);
+        nan_counts.resize(num_columns);
     }
 
     chassert(ranges.size() == num_columns);
@@ -66,6 +103,8 @@ void DataFileStatistics::update(const Chunk & chunk)
                 null_counts[i] += v;
         }
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(col));
+        if (auto nans = countNaNs(*recursiveRemoveSparse(col->convertToFullColumnIfConst())))
+            nan_counts[i] = nan_counts[i].value_or(0) + *nans;
     }
 }
 
@@ -118,6 +157,7 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
     {
         null_counts = other.null_counts;
         ranges = other.ranges;
+        nan_counts = other.nan_counts;
         return;
     }
 
@@ -126,6 +166,8 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
     {
         null_counts[i] += other.null_counts[i];
         ranges[i] = uniteRanges(ranges[i], other.ranges[i]);
+        if (other.nan_counts[i])
+            nan_counts[i] = nan_counts[i].value_or(0) + *other.nan_counts[i];
     }
 }
 
@@ -162,6 +204,16 @@ std::vector<std::pair<size_t, size_t>> DataFileStatistics::getNullCounts() const
     return result;
 }
 
+std::vector<std::pair<size_t, size_t>> DataFileStatistics::getNanCounts() const
+{
+    std::vector<std::pair<size_t, size_t>> result;
+    for (size_t i = 0; i < nan_counts.size(); ++i)
+    {
+        if (nan_counts[i])
+            result.push_back({field_ids[i], *nan_counts[i]});
+    }
+    return result;
+}
 
 std::vector<std::pair<size_t, Field>> DataFileStatistics::getLowerBounds() const
 {
@@ -169,7 +221,7 @@ std::vector<std::pair<size_t, Field>> DataFileStatistics::getLowerBounds() const
     for (size_t i = 0; i < ranges.size(); ++i)
     {
         if (ranges[i])
-            result.push_back({field_ids[i], ranges[i]->left});
+            result.push_back({field_ids[i], widenZeroBound(ranges[i]->left, /*lower=*/ true)});
     }
     return result;
 }
@@ -180,7 +232,7 @@ std::vector<std::pair<size_t, Field>> DataFileStatistics::getUpperBounds() const
     for (size_t i = 0; i < ranges.size(); ++i)
     {
         if (ranges[i])
-            result.push_back({field_ids[i], ranges[i]->right});
+            result.push_back({field_ids[i], widenZeroBound(ranges[i]->right, /*lower=*/ false)});
     }
     return result;
 }

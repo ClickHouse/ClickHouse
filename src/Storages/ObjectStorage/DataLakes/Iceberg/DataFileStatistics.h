@@ -37,6 +37,7 @@ public:
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
     std::vector<std::pair<size_t, size_t>> getNullCounts() const;
+    std::vector<std::pair<size_t, size_t>> getNanCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
@@ -49,6 +50,8 @@ private:
     std::vector<Int64> null_counts;
     /// Per column, the range of its non-NULL, non-NaN values; empty while no block has one.
     std::vector<std::optional<Range>> ranges;
+    /// Per column, the number of NaN at its non-NULL rows; set only for a float column.
+    std::vector<std::optional<Int64>> nan_counts;
 };
 
 using DataFileStatisticsPtr = std::shared_ptr<DataFileStatistics>;

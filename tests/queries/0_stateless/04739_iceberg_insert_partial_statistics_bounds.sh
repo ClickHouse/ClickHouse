@@ -67,13 +67,13 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
     "INSERT INTO ${PREFIX}_c SELECT number::Int32, 'val-' || toString(number) FROM numbers(5)"
 report "${ROOT}/c"
 
-# Case D: wrapper composition with a non-NULL value. Float64 is unsupported for bounds even though
-# the byte dumper handles it, so the filter must gate on the bounds predicate and skip only `f`.
-echo '--- D: key Int32 + f Nullable(Float64) with values'
+# Case D: wrapper composition with a non-NULL value. UUID is unsupported for bounds, so the filter
+# must gate on the bounds predicate and skip only `u`.
+echo '--- D: key Int32 + u Nullable(UUID) with values'
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${PREFIX}_d (key Int32, f Nullable(Float64))
+    CREATE TABLE ${PREFIX}_d (key Int32, u Nullable(UUID))
     ENGINE = IcebergLocal('${ROOT}/d/')
 "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
-    "INSERT INTO ${PREFIX}_d SELECT number::Int32, number + 0.5 FROM numbers(5)"
+    "INSERT INTO ${PREFIX}_d SELECT number::Int32, toUUID('00000000-0000-0000-0000-00000000000' || toString(number)) FROM numbers(5)"
 report "${ROOT}/d"

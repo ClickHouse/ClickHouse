@@ -88,6 +88,7 @@ DEFINE_ICEBERG_FIELD(owner);
 DEFINE_ICEBERG_FIELD(column_sizes);
 DEFINE_ICEBERG_FIELD(value_counts);
 DEFINE_ICEBERG_FIELD(null_value_counts);
+DEFINE_ICEBERG_FIELD(nan_value_counts);
 DEFINE_ICEBERG_FIELD(lower_bounds);
 DEFINE_ICEBERG_FIELD(upper_bounds);
 DEFINE_ICEBERG_FIELD(partitions);

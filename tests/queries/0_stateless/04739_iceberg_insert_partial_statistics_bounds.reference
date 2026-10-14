@@ -4,5 +4,5 @@ lower_ids=[1]	upper_ids=[1]	key_lower=[0]	key_upper=[4]
 lower_ids=[1]	upper_ids=[1]	key_lower=[0]	key_upper=[4]
 --- C: key Int32 + val String (control, all supported)
 lower_ids=[1,2]	upper_ids=[1,2]	key_lower=[0]	key_upper=[4]
---- D: key Int32 + f Nullable(Float64) with values
+--- D: key Int32 + u Nullable(UUID) with values
 lower_ids=[1]	upper_ids=[1]	key_lower=[0]	key_upper=[4]
