@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool implicit_transaction;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -419,7 +420,7 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
     /// actually read. The caller passes a throwaway copy of the AST, so in-place expansion is fine.
     try
     {
-        ApplyWithSubqueryVisitor::visit(ast);
+        ApplyWithSubqueryVisitor::visit(ast, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
     }
     catch (...)
     {
@@ -592,7 +593,7 @@ static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const 
     /// not resolved as a table.
     try
     {
-        ApplyWithSubqueryVisitor::visit(ast);
+        ApplyWithSubqueryVisitor::visit(ast, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
     }
     catch (...)
     {
