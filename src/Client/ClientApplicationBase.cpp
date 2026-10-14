@@ -14,6 +14,9 @@
 
 #if defined(OS_WINDOWS)
 #include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
 #include <Poco/UnWindows.h>
 #endif
 
@@ -306,6 +309,27 @@ void ClientApplicationBase::init(int argc, char ** argv)
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
     /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
     /// have an option for client to shutdown gracefully.
+#else
+    /// `HandledSignals` is built on `sigaction` and its signal pipe, which Windows does not have.
+    /// Report an uncaught exception directly to stderr instead, with the stack trace captured at
+    /// the throw. Faults such as access violations come through Structured Exception Handling
+    /// and are not covered here.
+    std::set_terminate([]
+    {
+        static thread_local bool terminating = false;
+        if (terminating)
+            std::abort();
+        terminating = true;
+
+        std::string message;
+        if (std::current_exception())
+            message = "Terminate called for uncaught exception:\n" + getCurrentExceptionMessage(true) + "\n";
+        else
+            message = "Terminate called without an active exception\n";
+        std::fwrite(message.data(), 1, message.size(), stderr);
+        std::fflush(stderr);
+        std::abort();
+    });
 #endif
 
     fatal_channel_ptr = new Poco::SplitterChannel;
