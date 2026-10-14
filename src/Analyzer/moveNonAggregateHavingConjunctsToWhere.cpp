@@ -26,12 +26,13 @@ namespace
   * - else any `arrayJoin` function -> `KeepInHaving` (before aggregation it would multiply the rows);
   * - else, with `keep_index_hint_conjuncts`, any `indexHint` function -> `KeepInHaving` (before aggregation it would
   *   prune granules, leaving partial groups);
-  * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
+  * - else any non-deterministic function or function with observable side effects (like `sleepEachRow`)
+  *   -> `KeepInHaving` (stricter than legacy, which moved them);
   * - else -> `Move`.
   *
   * Inside subqueries only the non-deterministic and stateful functions are taken into account: aggregate, window
   * and `grouping` functions there belong to the scope of the subquery. A non-deterministic subquery, or one with
-  * a stateful function (like `timeSeriesStoreTags`, which has side effects), keeps the conjunct in `HAVING`,
+  * a function with observable side effects or a stateful function (like `timeSeriesStoreTags`, which has side effects), keeps the conjunct in `HAVING`,
   * because in `WHERE` a correlated subquery would be evaluated per source row instead of per group. The same holds for a subquery reading a non-deterministic table function, like `generateRandom`.
   *
   * With `keep_server_dependent_conjuncts`, a conjunct also stays in `HAVING` if its result may differ between
@@ -105,6 +106,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                     auto function_base = function_node->getFunction();
                     if (function_base
                         && (function_base->isStateful()
+                            || function_base->hasObservableSideEffects()
                             || !function_base->isDeterministicInScopeOfQuery()
                             || (check_server_dependent && !function_base->isDeterministic())))
                         keep_in_having();
@@ -122,7 +124,9 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                         if (function_base->isStateful())
                             return HavingConjunctMoveAction::AbortRewrite;
 
-                        if (!function_base->isDeterministicInScopeOfQuery()
+                        /// Functions like `sleepEachRow` must be evaluated once per group, not per source row.
+                        if (function_base->hasObservableSideEffects()
+                            || !function_base->isDeterministicInScopeOfQuery()
                             || (check_server_dependent && !function_base->isDeterministic()))
                             keep_in_having();
                     }

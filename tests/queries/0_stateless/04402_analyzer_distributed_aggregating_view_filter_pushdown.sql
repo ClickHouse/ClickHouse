@@ -234,6 +234,20 @@ FROM (
 )
 SETTINGS group_by_use_nulls = 1;
 
+-- A function with observable side effects, like `sleepEachRow`, must stay in `HAVING`: it runs once per group,
+-- not once per source row. Ten rows of one group need 10000 microseconds per block, above the limit of 2000.
+SELECT '--- HAVING with sleepEachRow';
+DROP TABLE IF EXISTS t_sleep_local_04402;
+DROP TABLE IF EXISTS t_sleep_dist_04402;
+CREATE TABLE t_sleep_local_04402 (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_sleep_dist_04402 AS t_sleep_local_04402
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), 't_sleep_local_04402');
+INSERT INTO t_sleep_local_04402 SELECT 1, number FROM numbers(10);
+SELECT k, sum(x) FROM t_sleep_dist_04402 GROUP BY k HAVING sleepEachRow(0.001) = 0
+    SETTINGS query_plan_enable_optimizations = 0, max_block_size = 16, function_sleep_max_microseconds_per_block = 2000;
+DROP TABLE t_sleep_dist_04402;
+DROP TABLE t_sleep_local_04402;
+
 DROP VIEW v_hav_04402;
 DROP VIEW v_agg_04402;
 DROP TABLE t_dist_04402;
