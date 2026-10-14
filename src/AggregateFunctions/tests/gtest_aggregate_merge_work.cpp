@@ -64,18 +64,33 @@ TEST(AggregateMergeWork, WrappersWithSameStateRepresentation)
         {"uniqExactState", {value_type}},
         {"uniqExactMerge", {state->getResultType()}},
         {"uniqExactArrayIfState", {std::make_shared<DataTypeArray>(value_type), condition_type}},
-        {"uniqExactOrNull", {value_type}},
-        {"uniqExactOrDefault", {value_type}},
     };
+    const bool parallelizable = getFunction("uniqExact", {value_type})->isAbleToParallelizeMerge();
     for (const auto & [name, arguments] : cases)
     {
         SCOPED_TRACE(name);
         const auto function = getFunction(name, arguments);
-        EXPECT_EQ(function->isAbleToParallelizeMerge(), getFunction("uniqExact", {value_type})->isAbleToParallelizeMerge());
+        EXPECT_EQ(function->isAbleToParallelizeMerge(), parallelizable);
         /// These wrappers retain the base function's state layout, so the base can populate their states directly.
         checkWork(*function, function->getBaseAggregateFunctionWithSameStateRepresentation(), {values()}, 3);
         /// An empty state has no merge work, but still retains the nested function's preparation requirement.
         checkWork(*function, function->getBaseAggregateFunctionWithSameStateRepresentation(), {ColumnUInt64::create()}, 0);
+    }
+}
+
+TEST(AggregateMergeWork, OrFillKeepsNestedMergeHooks)
+{
+    /// `-OrNull` and `-OrDefault` keep a flag after the nested state, so they populate their own states. They report
+    /// the nested function's merge work, preparation requirement and parallel merge.
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+    const bool parallelizable = getFunction("uniqExact", {value_type})->isAbleToParallelizeMerge();
+    for (const auto * name : {"uniqExactOrNull", "uniqExactOrDefault"})
+    {
+        SCOPED_TRACE(name);
+        const auto function = getFunction(name, {value_type});
+        EXPECT_EQ(function->isAbleToParallelizeMerge(), parallelizable);
+        checkWork(*function, *function, {values()}, 3);
+        checkWork(*function, *function, {ColumnUInt64::create()}, 0);
     }
 }
 
