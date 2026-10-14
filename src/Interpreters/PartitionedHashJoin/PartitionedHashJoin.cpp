@@ -1196,13 +1196,20 @@ UInt64 PartitionedHashJoin::getJoinTableRowCount() const
     std::visit(
         [&](const auto & shape)
         {
+            auto count_rows = [&](const auto & table)
+            {
+                if constexpr (requires { table.begin()->getMapped().rows(); })
+                    for (auto it = table.begin(); it != table.end(); ++it)
+                        rows += it->getMapped().rows();
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The table of a Join table mode does not keep every row of a key");
+            };
             switch (storedData().type)
             {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         if (shape.TYPE) \
-            for (auto it = shape.TYPE->begin(); it != shape.TYPE->end(); ++it) \
-                rows += it->getMapped().rows(); \
+            count_rows(*shape.TYPE); \
         break;
                 APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
