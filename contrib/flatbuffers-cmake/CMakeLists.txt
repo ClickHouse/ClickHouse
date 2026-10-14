@@ -74,10 +74,6 @@ set(FLATC_SRCS
   ${LIBRARY_DIR}/grpc/src/compiler/ts_generator.cc)
 
 add_executable(flatc ${FLATC_SRCS})
-# musl: executables need explicit CRT objects because of -nostartfiles.
-if (USE_MUSL)
-    target_sources(flatc PRIVATE ${MUSL_CRT_START_OBJECTS} ${MUSL_CRT_END_OBJECTS})
-endif()
 target_link_libraries(flatc PRIVATE _flatbuffers)
 target_include_directories(flatc SYSTEM PRIVATE
   "${LIBRARY_DIR}/include"

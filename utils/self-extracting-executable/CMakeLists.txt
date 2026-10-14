@@ -1,18 +1,10 @@
-if (USE_MUSL)
-    add_executable (pre_compressor ${MUSL_CRT_START_OBJECTS} compressor.cpp ${MUSL_CRT_END_OBJECTS})
-else ()
-    add_executable (pre_compressor compressor.cpp)
-endif ()
+add_executable (pre_compressor compressor.cpp)
 target_include_directories(pre_compressor PRIVATE .)
 target_link_libraries(pre_compressor PUBLIC ch_contrib::zstd)
 
 add_native_target (pre_compressor)
 
-if (USE_MUSL)
-    add_executable (decompressor ${MUSL_CRT_START_OBJECTS} decompressor.cpp ${MUSL_CRT_END_OBJECTS})
-else ()
-    add_executable (decompressor decompressor.cpp)
-endif ()
+add_executable (decompressor decompressor.cpp)
 target_include_directories(decompressor PRIVATE .)
 target_link_libraries(decompressor PUBLIC ch_contrib::zstd)
 
