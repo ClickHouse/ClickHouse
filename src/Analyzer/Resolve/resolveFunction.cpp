@@ -1440,8 +1440,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
+    /// An argument expanded into several ones (`untuple`, `*`, `COLUMNS`) would shift the bound positions.
+    auto throw_expanded_argument = [&]()
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Arguments of function {} cannot expand into several arguments when some of them are named. In scope {}",
+            function_name,
+            scope.scope_node->formatASTForErrorMessage());
+    };
+
     /// Bind named arguments `f(name => value)` to positions before anything looks at the arguments.
-    if (!function_node_ptr->getArgumentNames().empty())
+    bool has_named_arguments = !function_node_ptr->getArgumentNames().empty();
+    if (has_named_arguments)
     {
         const FunctionNamedArguments * named_arguments = nullptr;
         if (!lambda_expression_untyped && !function_node_ptr->isWindowFunction())
@@ -1454,6 +1464,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 scope.scope_node->formatASTForErrorMessage());
 
         auto & argument_nodes = function_node_ptr->getArguments().getNodes();
+        for (const auto & argument : argument_nodes)
+        {
+            const auto * argument_function = argument->as<FunctionNode>();
+            if (argument->getNodeType() == QueryTreeNodeType::MATCHER || (argument_function && argument_function->getFunctionName() == "untuple"))
+                throw_expanded_argument();
+        }
+
         auto positions = named_arguments->bind(function_name, function_node_ptr->getArgumentNames());
 
         QueryTreeNodes bound_argument_nodes;
@@ -2428,12 +2445,28 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    auto arguments_projection_names = resolveExpressionNodeList(
-        function_node_ptr->getArgumentsNode(),
-        scope,
-        true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/,
-        allow_niladic_functions);
+    ProjectionNames arguments_projection_names;
+    if (has_named_arguments)
+    {
+        /// One by one, to catch an expansion through an alias or a lambda.
+        for (auto & argument : function_node_ptr->getArguments().getNodes())
+        {
+            auto argument_projection_names = resolveExpressionNode(
+                argument, scope, true /*allow_lambda_expression*/, allow_table_expressions, false /*ignore_alias*/, allow_niladic_functions);
+            if (argument->getNodeType() == QueryTreeNodeType::LIST)
+                throw_expanded_argument();
+            arguments_projection_names.insert(arguments_projection_names.end(), argument_projection_names.begin(), argument_projection_names.end());
+        }
+    }
+    else
+    {
+        arguments_projection_names = resolveExpressionNodeList(
+            function_node_ptr->getArgumentsNode(),
+            scope,
+            true /*allow_lambda_expression*/,
+            allow_table_expressions /*allow_table_expression*/,
+            allow_niladic_functions);
+    }
 
     /// Mask arguments if needed
     if (!canDisplaySecrets(scope.context))

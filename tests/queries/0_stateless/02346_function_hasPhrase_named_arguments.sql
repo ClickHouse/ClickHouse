@@ -12,6 +12,12 @@ SELECT hasPhrase('a b', input => 'a b', phrase => 'b'); -- { serverError BAD_ARG
 SELECT hasPhrase(phrase => 'b', phrase => 'b', input => 'a b'); -- { serverError BAD_ARGUMENTS }
 SELECT hasPhrase(input => 'a b', tokenizer => 'splitByNonAlpha'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hasPhrase('a b', 'b', 'splitByNonAlpha', 'x', phrase => 'b'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT hasPhrase(input => untuple(('a b', 'b')), phrase => 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
+SELECT hasPhrase(untuple(('a b', 'b')), tokenizer => 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
+SELECT hasPhrase(input => *, phrase => 'b') FROM (SELECT 'a b' AS s); -- { serverError BAD_ARGUMENTS }
+SELECT hasPhrase(input => 'a b', phrase => COLUMNS('s')) FROM (SELECT 'b' AS s); -- { serverError BAD_ARGUMENTS }
+WITH untuple(('a b', 'b')) AS u SELECT hasPhrase(input => u, phrase => 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
+WITH x -> untuple(x) AS g SELECT hasPhrase(input => g(('a b', 'b')), phrase => 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- bind';
 
