@@ -794,6 +794,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     bool is_aggregate = false;
     Names visible_output_names;
     Names physical_output_names;
+    Names resolved_output_names;
     {
         /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
         /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
@@ -816,6 +817,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             const size_t visible_count = resolved_outputs.size() - (projection_order_by ? 1 : 0);
             visible_output_names.reserve(visible_count);
             physical_output_names.reserve(visible_count);
+            resolved_output_names.reserve(visible_count);
             const auto & projection_nodes = query_node.getProjection().getNodes();
             if (projection_nodes.size() != resolved_outputs.size())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -824,18 +826,12 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             {
                 visible_output_names.push_back(resolved_outputs[i].name);
 
-                /// The old interpreter builds the stored column names from the original SELECT
-                /// expressions. Resolution can fold constants or rename aggregate functions, so
-                /// the resolved node's default AST may name a different column.
+                /// Resolution can fold constants or rename aggregate functions. The old
+                /// interpreter may store either spelling, so check its actual metadata below.
                 const QueryTreeNodePtr * unresolved_node = &projection_nodes[i];
                 if (const auto * constant_node = (*unresolved_node)->as<ConstantNode>();
                     constant_node && constant_node->hasSourceExpression())
                     unresolved_node = &constant_node->getSourceExpression();
-                if (auto it = unresolved_node_names.find(*unresolved_node); it != unresolved_node_names.end())
-                {
-                    physical_output_names.push_back(it->second);
-                    continue;
-                }
 
                 ConvertToASTOptions ast_options;
                 ast_options.use_source_expression_for_constants = true;
@@ -843,7 +839,12 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
                 ast_options.fully_qualified_identifiers = false;
                 auto physical_expression = projection_nodes[i]->toAST(ast_options);
                 physical_expression->setAlias({});
-                physical_output_names.push_back(physical_expression->getColumnName());
+                resolved_output_names.push_back(physical_expression->getColumnName());
+
+                if (auto it = unresolved_node_names.find(*unresolved_node); it != unresolved_node_names.end())
+                    physical_output_names.push_back(it->second);
+                else
+                    physical_output_names.push_back(resolved_output_names.back());
             }
         }
 
@@ -977,9 +978,35 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
 
     if (declared_columns)
+    {
+        for (size_t i = 0; i < physical_output_names.size(); ++i)
+        {
+            auto & original_name = physical_output_names[i];
+            const auto & resolved_name = resolved_output_names[i];
+            if (original_name == resolved_name)
+                continue;
+
+            const String original_storage_name = result.with_parent_part_offset && original_name == "_part_offset"
+                ? "_parent_part_offset" : original_name;
+            const String resolved_storage_name = result.with_parent_part_offset && resolved_name == "_part_offset"
+                ? "_parent_part_offset" : resolved_name;
+            if (original_storage_name == resolved_storage_name)
+                continue;
+
+            const bool original_is_stored = metadata_columns.has(original_storage_name);
+            const bool resolved_is_stored = metadata_columns.has(resolved_storage_name);
+            if (original_is_stored && resolved_is_stored)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Projection {} has ambiguous stored columns for SELECT output {}",
+                    backQuote(result.name), backQuote(visible_output_names[i]));
+            if (resolved_is_stored)
+                original_name = resolved_name;
+        }
+
         applyProjectionColumnCodecs(
             *declared_columns, visible_output_names, physical_output_names, columns,
             result.name, result.with_parent_part_offset, metadata_columns);
+    }
 
     metadata.setColumns(std::move(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
