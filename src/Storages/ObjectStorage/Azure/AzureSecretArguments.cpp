@@ -200,15 +200,19 @@ void maskUnshowableAzureConnectionOverrides(FunctionSecretArgumentsFinder & find
 }
 
 /// The raw indexes of the arguments the Azure parser assigns slots to, the ones before `start` (the cluster name) as
-/// written: it strips the first `extra_credentials(...)`, and a `key = value` takes no slot. Also hides the value of a
-/// key the explicit form does not read, and every argument when a second `extra_credentials(...)` shifts the slots.
+/// written: it strips the `SETTINGS` clause and the first `extra_credentials(...)`, and a `key = value` takes no slot.
+/// Also hides the value of a key the explicit form does not read, and every argument when a second
+/// `extra_credentials(...)` shifts the slots.
 std::vector<size_t> azureSlotArguments(FunctionSecretArgumentsFinder & finder, size_t start)
 {
     std::vector<size_t> result;
     size_t extra_credentials = 0;
     for (size_t i = 0, size = finder.function->arguments->size(); i < size; ++i)
     {
-        const auto f = i < start ? nullptr : finder.function->arguments->at(i)->getFunction();
+        const auto argument = finder.function->arguments->at(i);
+        if (argument->isSettings())
+            continue;
+        const auto f = i < start ? nullptr : argument->getFunction();
         if (f && f->name() == "extra_credentials")
         {
             ++extra_credentials;
