@@ -31,6 +31,13 @@ namespace DB
         return QueryProcessingStage::FetchColumns;
     }
 
+    bool StorageLoop::mayReadViewSource(const StorageID & view_source_id) const
+    {
+        return inner_storage
+            && (inner_storage->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted()
+                || inner_storage->mayReadViewSource(view_source_id));
+    }
+
     void StorageLoop::read(
             QueryPlan & query_plan,
             const Names & column_names,

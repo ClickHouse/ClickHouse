@@ -8,6 +8,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Every row is pushed to the views as its own block, so a scalar subquery result reused across blocks shows.
+BLOCK_PER_ROW="max_block_size = 1, max_insert_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
+    min_insert_block_size_rows_for_materialized_views = 0, min_insert_block_size_bytes_for_materialized_views = 0"
+
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS mv_merge;
 DROP TABLE IF EXISTS mv_loop;
@@ -35,9 +39,9 @@ CREATE MATERIALIZED VIEW mv_loop TO dst AS
         (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src) WHERE x > 0 LIMIT 25)) AS value
     FROM src;
 
-INSERT INTO src VALUES (1), (2), (3);
+INSERT INTO src SELECT number + 1 FROM numbers(3) SETTINGS ${BLOCK_PER_ROW};
 
-SELECT * FROM dst ORDER BY name;
+SELECT * FROM dst ORDER BY name, value;
 
 DROP TABLE mv_merge;
 DROP TABLE mv_loop;
@@ -78,7 +82,7 @@ CREATE MATERIALIZED VIEW db_05388.mv_executable TO db_05388.dst AS
         (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05388.src WHERE x > 0))) AS value
     FROM db_05388.src;
 
-INSERT INTO db_05388.src VALUES (1), (2), (3);
+INSERT INTO db_05388.src SELECT number + 1 FROM numbers(3) SETTINGS ${BLOCK_PER_ROW};
 
-SELECT * FROM db_05388.dst ORDER BY name;
+SELECT * FROM db_05388.dst ORDER BY name, value;
 "

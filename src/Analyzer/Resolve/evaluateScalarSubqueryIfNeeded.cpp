@@ -6,6 +6,8 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
@@ -67,9 +69,16 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
     if (!node)
         return false;
 
+    const auto & view_source_id = context.getViewSource()->getStorageID();
     if (const auto * table_node = node->as<TableNode>())
     {
-        if (table_node->getStorageID().getFullNameNotQuoted() == context.getViewSource()->getStorageID().getFullNameNotQuoted())
+        if (table_node->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted()
+            || (table_node->getStorage() && table_node->getStorage()->mayReadViewSource(view_source_id)))
+            return true;
+    }
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        if (table_function_node->getStorage() && table_function_node->getStorage()->mayReadViewSource(view_source_id))
             return true;
     }
 

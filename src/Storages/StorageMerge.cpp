@@ -413,6 +413,15 @@ bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predica
     }) != nullptr;
 }
 
+bool StorageMerge::mayReadViewSource(const StorageID & view_source_id) const
+{
+    return hasChildTable([&](const StoragePtr & table)
+    {
+        return table->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted()
+            || table->mayReadViewSource(view_source_id);
+    });
+}
+
 bool StorageMerge::supportsPrewhere() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
