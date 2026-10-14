@@ -13,15 +13,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُنشأة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="send_profile_events">
-  ## send_profile_events
-</div>
+## send_profile_events {#send_profile_events}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "إعداد جديد. يحدد ما إذا كان سيتم إرسال أحداث ProfileEvents إلى العملاء."}]}]} />
 
-يُفعِّل أو يُعطِّل إرسال حزم [ProfileEvents](/ar/resources/develop-contribute/native-protocol/protocol#profileevents) إلى العميل.
+يُفعِّل أو يُعطِّل إرسال حزم [ProfileEvents](/ar/resources/develop-contribute/native-protocol/protocol#profileevents) إلى العميل.
 
 يمكن تعطيل هذا الخيار لتقليل حركة مرور الشبكة للعملاء الذين لا يحتاجون إلى أحداث ProfileEvents.
 
@@ -30,9 +28,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — معطّل.
 * 1 — مفعّل.
 
-<div id="send_progress_in_http_headers">
-  ## send_progress_in_http_headers
-</div>
+## send_progress_in_http_headers {#send_progress_in_http_headers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +41,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — معطّل.
 * 1 — مُمكّن.
 
-<div id="send_table_structure_on_insert_with_inline_data">
-  ## send_table_structure_on_insert_with_inline_data
-</div>
+## send_table_structure_on_insert_with_inline_data {#send_table_structure_on_insert_with_inline_data}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +49,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا كان هذا الإعداد معطّلًا وكان استعلام INSERT يتضمن بيانات مضمّنة، فلن يرسل الخادم إلى العميل، عبر البروتوكول الأصلي، بنية الجدول والقيم الافتراضية للأعمدة. وبدلًا من ذلك، سيحلّل الخادم البيانات المضمّنة بنفسه. ويمكن أن يحسّن ذلك الأداء عند تنفيذ عدد كبير من عمليات الإدراج الصغيرة عبر البروتوكول الأصلي.
 
-<div id="send_timeout">
-  ## send_timeout
-</div>
+## send_timeout {#send_timeout}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="300" />
 
