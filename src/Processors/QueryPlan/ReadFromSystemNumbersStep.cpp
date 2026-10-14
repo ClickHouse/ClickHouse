@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Core/ProtocolDefines.h>
+#include <Planner/Utils.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/numbersLikeUtils.h>
@@ -552,9 +553,14 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
     const auto metadata = storage->getInMemoryMetadataPtr(ctx.context, false);
     auto storage_snapshot = storage->getStorageSnapshot(metadata, ctx.context);
 
-    /// The query info is only read for a pushed-down LIMIT and for storage limits, both of which the
-    /// replica applies through its own plan, so an empty one is what the read needs here.
+    /// The query info is read for a pushed-down LIMIT, which the replica sets again when it optimizes the plan,
+    /// and for the storage limits. Those are not serialized, and `ISource` falls back to an empty list, so
+    /// without this the byte limits and the read-speed and timeout checks would not be enforced for this read
+    /// on a replica. Derive them from the settings that arrived with the query, as `ReadFromMergeTree::deserialize` does.
     SelectQueryInfo query_info;
+    auto storage_limits = std::make_shared<StorageLimitsList>();
+    storage_limits->emplace_back(buildStorageLimits(*ctx.context, SelectQueryOptions(QueryProcessingStage::FetchColumns)));
+    query_info.storage_limits = std::move(storage_limits);
 
     auto step_ptr = std::make_unique<ReadFromSystemNumbersStep>(
         Names{column_name}, query_info, storage_snapshot, ctx.context, storage, max_block_size, /*num_streams_=*/1);
