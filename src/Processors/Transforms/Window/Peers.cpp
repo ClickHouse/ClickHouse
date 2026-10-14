@@ -8,14 +8,10 @@ namespace DB
 namespace
 {
 
-int64_t peerGroupIndex(const SlidingBlocks & blocks, RowNumber row)
+/// Moves the end past the rows of the peer group, block by block in the stored peer group indexes, to the first row of the next group or to the partition end.
+void advancePeerGroupEnd(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, PeersBounds & peers)
 {
-    return blocks.blockAt(row.block).index.peer_group_indexes[row.row];
-}
-
-/// Moves `end` past the rows of the peer group, block by block in the stored peer group indexes, to the first row of the next group or to the partition end.
-void advancePeerGroupEnd(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, RowPoint & end)
-{
+    RowPoint & end = peers.end;
     const RowNumber partition_end = partition.end.location;
     while (end.location < partition_end)
     {
@@ -31,12 +27,14 @@ void advancePeerGroupEnd(const SlidingBlocks & blocks, const PartitionBounds & p
         {
             end.location.row = row;
             end.peer_group_index_in_partition = groups[row];
+            peers.fully_visible = true;
             return;
         }
         end.location = blocks.move(end.location, row - end.location.row);
     }
 
     end.peer_group_index_in_partition = group + 1;
+    peers.fully_visible = partition.fully_visible;
 }
 
 }
@@ -49,12 +47,17 @@ void Peers::enterPartition(const PartitionBounds & partition)
 
 void Peers::advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition)
 {
-    current_row.peer_group_index_in_partition = peerGroupIndex(blocks, current_row.location);
-    if (peers_bounds.start.peer_group_index_in_partition != current_row.peer_group_index_in_partition)
-        peers_bounds = PeersBounds{.start = current_row, .end = current_row, .fully_visible = false};
+    if (!peers_bounds.fully_visible)
+        advancePeerGroupEnd(blocks, partition, peers_bounds.start.peer_group_index_in_partition, peers_bounds);
 
-    advancePeerGroupEnd(blocks, partition, current_row.peer_group_index_in_partition, peers_bounds.end);
-    peers_bounds.fully_visible = peers_bounds.end.location < partition.end.location || partition.fully_visible;
+    if (current_row.row_index_in_partition == peers_bounds.end.row_index_in_partition)
+    {
+        current_row.peer_group_index_in_partition = peers_bounds.end.peer_group_index_in_partition;
+        peers_bounds.start = peers_bounds.end;
+        advancePeerGroupEnd(blocks, partition, current_row.peer_group_index_in_partition, peers_bounds);
+    }
+    else
+        current_row.peer_group_index_in_partition = peers_bounds.start.peer_group_index_in_partition;
 }
 
 void Peers::advanceCurrentRow(const SlidingBlocks & blocks)
