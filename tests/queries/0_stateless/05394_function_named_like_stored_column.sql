@@ -56,6 +56,7 @@ CREATE TABLE t_idx (a UInt8, b UInt8, `equals(a, b)` UInt8) ENGINE = MergeTree O
     SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_idx VALUES (1, 1, 0), (1, 2, 0), (3, 3, 1), (4, 5, 1), (6, 6, 2);
 SELECT ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_idx, `equals(a, b)` = 0 AND a = b);
+SELECT ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_idx, indexHint(`equals(a, b)` = 0 AND a = b));
 
 CREATE TABLE t_lam (a UInt8, arr Array(UInt8), `x UInt8 -> equals(x, a)` UInt8, d UInt8 DEFAULT arrayExists(x -> x = a, arr))
     ENGINE = MergeTree ORDER BY a;

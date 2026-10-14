@@ -448,6 +448,8 @@ public:
         return prefix + "." + name;
     }
 
+    const IsInputColumnName & getIsInputColumnName() const { return is_input_column_name; }
+
     static String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
     {
         auto constant_name = applyVisitor(FieldVisitorToString(), constant_literal);
@@ -1224,7 +1226,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set);
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set,
+        /*use_column_identifier_as_action_node_name_=*/ true, action_node_name_helper.getIsInputColumnName());
 
     for (const auto & argument : function_node.getArguments())
     {

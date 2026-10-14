@@ -10,5 +10,7 @@ CREATE TABLE t_rpart (a UInt8, b UInt8, k UInt64, `equals(a, b)` UInt8)
 INSERT INTO t_rpart VALUES (1, 1, 10, 0), (1, 2, 20, 1), (3, 3, 30, 1), (4, 5, 40, 0);
 ALTER TABLE t_rpart DELETE WHERE `equals(a, b)` = 0 AND a = b SETTINGS mutations_sync = 2;
 SELECT k FROM t_rpart ORDER BY k;
+SELECT arraySort(block_numbers.partition_id) FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_rpart' AND NOT is_killed;
 
 DROP TABLE t_rpart SYNC;
