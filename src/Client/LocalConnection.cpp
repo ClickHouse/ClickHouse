@@ -237,8 +237,14 @@ void LocalConnection::sendQuery(
     /// Apply only what the client changed, like `TCPHandler` does. Replacing the whole `Settings`
     /// would drop what the session context holds beyond the client's copy, e.g. the settings of
     /// a `SET profile`, which the client does not track.
+    /// The changes must be checked against the constraints, as the session may belong to a restricted
+    /// user (the embedded client of the web terminal and the SSH interface).
     if (query_settings)
-        query_context->applySettingsChanges(query_settings->changes());
+    {
+        SettingsChanges settings_changes = query_settings->changes();
+        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);
