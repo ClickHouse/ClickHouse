@@ -394,9 +394,11 @@ Token Lexer::nextTokenImpl()
         }
         case '%':
             return Token(TokenType::Percent, token_begin, ++pos);
-        case '=':   /// =, ==
+        case '=':   /// =, ==, =>
         {
             ++pos;
+            if (pos < end && *pos == '>')
+                return Token(TokenType::FatArrow, token_begin, ++pos);
             if (pos < end && *pos == '=')
                 ++pos;
             return Token(TokenType::Equals, token_begin, pos);
