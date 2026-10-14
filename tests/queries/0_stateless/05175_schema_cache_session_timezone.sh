@@ -25,6 +25,10 @@ AGE="2000-01-01 00:00:00"
 for suffix in a b c d; do
     printf '2020-06-01 12:00:00\n' > "${T}_${suffix}.csv"
 done
+for suffix in e f; do
+    printf '{"arr":["2020-06-01 12:00:00"],"tup":{"k":"2020-06-01 12:00:00"},"sub":"2020-06-01 12:00:00.123"}\n' > "${T}_${suffix}.jsonl"
+done
+$CLICKHOUSE_LOCAL -q "SELECT toDateTime64('2020-06-01 12:00:00.123', 3, 'UTC') AS t FORMAT RowBinaryWithNamesAndTypes" > "${T}_g.bin"
 touch -d "$AGE" "${T}"_*
 
 echo "-- the time zone of the type, Tokyo first"
@@ -55,5 +59,29 @@ $CLICKHOUSE_LOCAL -m -q "
     SELECT count(), countDistinct(additional_format_info) FROM system.schema_inference_cache;
     SELECT timeZoneOf(c1) FROM file('${T}_d.csv') SETTINGS session_timezone = 'America/New_York';
     SELECT count() FROM system.schema_inference_cache;"
+
+# A `DateTime` nested in an `Array` or a `Tuple` and the scale of a `DateTime64` go through the
+# same re-bind. `SchemaInferenceCacheSchemaHits` is asserted with them: re-inferring the file in
+# the reading session's own zone prints the very same output, so without that counter the probe
+# cannot tell a re-bound cached type from a cache that was never consulted.
+echo "-- a nested time zone and a scale, Tokyo first"
+$CLICKHOUSE_LOCAL -m -q "
+    SELECT timeZoneOf(arr[1]), timeZoneOf(tup.k), timeZoneOf(sub), toTypeName(sub) FROM file('${T}_e.jsonl', JSONEachRow) SETTINGS session_timezone = 'Asia/Tokyo';
+    SELECT timeZoneOf(arr[1]), timeZoneOf(tup.k), timeZoneOf(sub), toTypeName(sub) FROM file('${T}_e.jsonl', JSONEachRow) SETTINGS session_timezone = 'Europe/Berlin';
+    SELECT sum(value) > 0 FROM system.events WHERE event = 'SchemaInferenceCacheSchemaHits';"
+
+echo "-- a nested time zone and a scale, Berlin first"
+$CLICKHOUSE_LOCAL -m -q "
+    SELECT timeZoneOf(arr[1]), timeZoneOf(tup.k), timeZoneOf(sub), toTypeName(sub) FROM file('${T}_f.jsonl', JSONEachRow) SETTINGS session_timezone = 'Europe/Berlin';
+    SELECT timeZoneOf(arr[1]), timeZoneOf(tup.k), timeZoneOf(sub), toTypeName(sub) FROM file('${T}_f.jsonl', JSONEachRow) SETTINGS session_timezone = 'Asia/Tokyo';
+    SELECT sum(value) > 0 FROM system.events WHERE event = 'SchemaInferenceCacheSchemaHits';"
+
+# The other half: a type that carries an explicit time zone keeps it, it is not replaced by the
+# reading session's zone.
+echo "-- an explicit time zone survives the re-bind"
+$CLICKHOUSE_LOCAL -m -q "
+    SELECT timeZoneOf(t), toString(t) FROM file('${T}_g.bin', RowBinaryWithNamesAndTypes) SETTINGS session_timezone = 'Asia/Tokyo';
+    SELECT timeZoneOf(t), toString(t) FROM file('${T}_g.bin', RowBinaryWithNamesAndTypes) SETTINGS session_timezone = 'Europe/Berlin';
+    SELECT sum(value) > 0 FROM system.events WHERE event = 'SchemaInferenceCacheSchemaHits';"
 
 rm -f "${T}"_*

@@ -235,7 +235,7 @@ Finally, note the ability to pass a `Context` to the `Query` and `QueryRow` meth
 
 ## Async insert {#async-insert}
 
-Asynchronous inserts are supported through the Async method. This allows the user to specify whether the client should wait for the server to complete the insert or respond once the data has been received. This effectively controls the parameter [wait_for_async_insert](/reference/settings/session-settings/wait-for#wait_for_async_insert).
+Asynchronous inserts are supported through the Async method. This allows the user to specify whether the client should wait for the server to complete the insert or respond once the data has been received. This effectively controls the parameter [wait_for_async_insert](/reference/settings/session-settings#wait_for_async_insert).
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)
@@ -381,6 +381,67 @@ for i := 0; i < 1_000; i++ {
 ```
 
 [Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/append_struct.go)
+
+## Server-side query parameters {#server-side-query-parameters}
+
+ClickHouse server-side query parameters use typed placeholders in the form `{name:Type}`. The query and parameter values are sent separately, so parameter values are not interpolated into the SQL text.
+
+For the ClickHouse API, pass parameters through the query context:
+
+```go
+ctx := clickhouse.Context(context.Background(),
+    clickhouse.WithParameters(clickhouse.Parameters{
+        "user_id": "12345",
+        "message": `line 1\nline 2`,
+    }),
+)
+
+row := conn.QueryRow(ctx, `
+    SELECT *
+    FROM events
+    WHERE user_id = {user_id:UInt64}
+      AND message = {message:String}`)
+```
+
+You can also supply values with `clickhouse.Named`:
+
+```go
+row := conn.QueryRow(context.Background(),
+    "SELECT {user_id:UInt64}, {message:String}",
+    clickhouse.Named("user_id", uint64(12345)),
+    clickhouse.Named("message", `line 1\nline 2`),
+)
+```
+
+Server-side query parameters require ClickHouse 22.8 or later. `clickhouse.Named` also works with the client-side `@name` binding syntax; it is the placeholder in the query (`{name:Type}` or `@name`) that selects the mechanism.
+
+### String values and escape sequences {#query-parameter-escaping}
+
+How a string value is interpreted depends on how you supply it.
+
+**`clickhouse.Named` (or `sql.Named`) with a `string`/`*string` or `[]byte`/`*[]byte` value** treats the Go value as the literal parameter value. The driver escapes control characters automatically, so the value round-trips byte-for-byte on both protocols. An actual newline or tab in the value is fine:
+
+```go
+row := conn.QueryRow(context.Background(),
+    "SELECT {s:String}",
+    clickhouse.Named("s", "line 1\nline 2"), // literal newline — round-trips
+)
+```
+
+**`clickhouse.Parameters` / `WithParameters`** always contains already-serialized parameter text in ClickHouse's `Escaped` format. It is not auto-escaped. ClickHouse decodes backslash escape sequences while parsing the parameter: `\n` (newline), `\t` (tab), `\r` (carriage return), `\0` (null byte), and `\\` (a literal backslash). `\N` is the whole-value `NULL` marker for nullable types.
+
+Go processes interpreted string literals (`"..."`) before clickhouse-go sees them, while raw string literals (`` `...` ``) preserve backslashes. For `Parameters`, write the parameter text as follows:
+
+| Value received by ClickHouse | Go raw string literal | Go interpreted string literal |
+|---|---|---|
+| Newline and tab | `` `line 1\nline 2\tend` `` | `"line 1\\nline 2\\tend"` |
+| Literal `\n` and `\t` text | `` `line 1\\nline 2\\tend` `` | `"line 1\\\\nline 2\\\\tend"` |
+
+Do not use `"line 1\nline 2"` or `"column 1\tcolumn 2"` when constructing `Parameters`. Those Go literals already contain an actual newline or tab. In ClickHouse's `Escaped` format, actual newline and tab bytes delimit fields, so the server rejects the parameter because it was not parsed completely. Use `Named` instead when you want a Go string treated as a literal value.
+
+Parameter values are not SQL literals: for a top-level `String` via `Named`, pass the value without SQL quotes — use `hello`, not `'hello'`, because those quote characters would become part of the value. Composite types still use their text syntax, for example `['a', 'b']` for an `Array(String)`, which you may also pass through `Named` as long as the text contains no backslash escapes or raw control characters. If the composite text needs `\'` escape sequences for nested string values, pass it through `Parameters` instead.
+
+[Full native API example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/query_parameters.go)
 
 ## Parameter binding {#parameter-binding}
 

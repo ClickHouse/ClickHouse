@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-<div id="number_of_free_entries_in_pool_to_execute_mutation">
-  ## number_of_free_entries_in_pool_to_execute_mutation
-</div>
+## number_of_free_entries_in_pool_to_execute_mutation {#number_of_free_entries_in_pool_to_execute_mutation}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -34,9 +32,7 @@ part 变更。这样可以为常规合并保留空闲线程，
 与 [`background_merges_mutations_concurrency_ratio`](/zh/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) 的乘积。
 否则，ClickHouse 将抛出异常。
 
-<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
-  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
-</div>
+## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
@@ -49,15 +45,11 @@ part 变更。这样可以为常规合并保留空闲线程，
 * 正整数。
 
 `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-设置的值应小于
-[background&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_pool_size)
+设置的值不得超过 [`background_pool_size`](/zh/reference/settings/server-settings/settings/background#background_pool_size)
+与 [`background_merges_mutations_concurrency_ratio`](/zh/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) 的乘积。
+否则，ClickHouse 会抛出异常。
 
-* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/zh/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) 的值。
-  否则，ClickHouse 会抛出异常。
-
-<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
-  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
-</div>
+## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number_of_free_entries_in_pool_to_lower_max_size_of_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -71,9 +63,7 @@ part 变更。这样可以为常规合并保留空闲线程，
 
 * 任意正整数。
 
-<div id="number_of_mutations_to_delay">
-  ## number_of_mutations_to_delay
-</div>
+## number_of_mutations_to_delay {#number_of_mutations_to_delay}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -81,17 +71,13 @@ part 变更。这样可以为常规合并保留空闲线程，
 这么多未完成的变更，则会人为降低该表变更的速度。
 设置为 0 时禁用
 
-<div id="number_of_mutations_to_throw">
-  ## number_of_mutations_to_throw
-</div>
+## number_of_mutations_to_throw {#number_of_mutations_to_throw}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 如果表中至少有这么多未完成的变更，则会抛出“变更过多”异常。设置为 0 时则禁用
 
-<div id="number_of_partitions_to_consider_for_merge">
-  ## number_of_partitions_to_consider_for_merge
-</div>
+## number_of_partitions_to_consider_for_merge {#number_of_partitions_to_consider_for_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

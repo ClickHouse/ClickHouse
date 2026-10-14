@@ -11,3 +11,15 @@ Asia/Tokyo
 1	1
 America/New_York
 1
+-- a nested time zone and a scale, Tokyo first
+Asia/Tokyo	Asia/Tokyo	Asia/Tokyo	Nullable(DateTime64(9))
+Europe/Berlin	Europe/Berlin	Europe/Berlin	Nullable(DateTime64(9))
+1
+-- a nested time zone and a scale, Berlin first
+Europe/Berlin	Europe/Berlin	Europe/Berlin	Nullable(DateTime64(9))
+Asia/Tokyo	Asia/Tokyo	Asia/Tokyo	Nullable(DateTime64(9))
+1
+-- an explicit time zone survives the re-bind
+UTC	2020-06-01 12:00:00.123
+UTC	2020-06-01 12:00:00.123
+1

@@ -157,6 +157,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         }
     };
 
+    result.local_pool_exhausted = false;
+
     for (size_t tries = 0; ; ++tries)
     {
         /// Every distributed connection attempt passes through here, so this is the one place where a
@@ -206,6 +208,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             /// then reports `ALL_CONNECTION_TRIES_FAILED` instead of the cancellation.
             CurrentThread::checkIfNotCancelled();
 
+            result.local_pool_exhausted = e.code() == ErrorCodes::NO_FREE_CONNECTION;
+
             /// Report a soft failure, so the caller can retry on another replica instead of failing
             /// the whole distributed query.
             return;
@@ -213,7 +217,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     }
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     ConnectionPoolPtr pool_,

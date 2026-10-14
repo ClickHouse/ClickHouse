@@ -72,9 +72,9 @@ ALTER TABLE t_qcc_on_fly_where UPDATE v = 0 WHERE id >= 50;
 SYSTEM DROP QUERY CONDITION CACHE;
 
 -- apply_mutations_on_fly = 1 first: v = 0 for ids >= 50, so no row has v >= 50 -> 0.
-SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0;
 -- apply_mutations_on_fly = 0 must see the original values -> ids 50..99 -> 50.
-SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on_fly = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on_fly = 0, optimize_move_to_prewhere = 0;
 
 DROP TABLE t_qcc_on_fly_where;
 

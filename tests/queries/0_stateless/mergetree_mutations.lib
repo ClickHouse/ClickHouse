@@ -1,5 +1,29 @@
 #!/usr/bin/env bash
 
+# Every wait below is bounded by wall clock, not by an iteration count: a poll pays a client start
+# and round trip on top of its sleep, about a second in the slower jobs, so counting iterations does
+# not bound time; `timeout -k` on each client call keeps one ignoring SIGTERM from outlasting a wait.
+
+# The $SECONDS value at which a wait allowed $1 seconds must stop polling: never later than the cap,
+# less the 20s its own report needs.
+function mutation_wait_deadline()
+{
+    local deadline=$(( SECONDS + $1 ))
+    local report_by=$(( ${CLICKHOUSE_TEST_TIMEOUT:-600} - 20 ))
+    (( deadline > report_by )) && deadline=$report_by
+    echo "$deadline"
+}
+
+# Seconds the give-up dump may block: enough for a `system.mutations` read, and never past what is
+# left before the cap. 0 means there is no time for it.
+function mutation_dump_seconds()
+{
+    local left=$(( ${CLICKHOUSE_TEST_TIMEOUT:-600} - 3 - SECONDS ))
+    (( left > 15 )) && left=15
+    (( left < 0 )) && left=0
+    echo "$left"
+}
+
 function wait_for_mutation()
 {
     local table=$1
@@ -7,16 +31,30 @@ function wait_for_mutation()
     local database=$3
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
-    for _ in {1..300}
+    local deadline poll_s polls=0
+    deadline=$(mutation_wait_deadline 90)
+    while :
     do
+        poll_s=$(( deadline - SECONDS ))
+        if (( poll_s <= 0 )); then break; fi
         sleep 0.3
-        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -eq 1 ]]; then
+        polls=$((polls+1))
+        if [[ $(timeout --foreground -k 1 "$poll_s" ${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -eq 1 ]]; then
             return
         fi
     done
 
     echo "Timed out while waiting for mutation to execute!"
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND mutation_id='$mutation_id' AND is_done=0"
+    if (( polls == 0 ))
+    then
+        echo "No poll ran: the wait began with 20s or less of the ${CLICKHOUSE_TEST_TIMEOUT:-600}s per-test budget left."
+    fi
+    local dump_s
+    dump_s=$(mutation_dump_seconds)
+    if (( dump_s > 0 ))
+    then
+        timeout --foreground -k 1 "$dump_s" ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND mutation_id='$mutation_id' AND is_done=0"
+    fi
 }
 
 function wait_for_all_mutations()
@@ -25,16 +63,30 @@ function wait_for_all_mutations()
     local database=$2
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
-    for _ in {1..600}
+    local deadline poll_s polls=0
+    deadline=$(mutation_wait_deadline 180)
+    while :
     do
-        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT coalesce(minOrNull(is_done), 1) FROM system.mutations WHERE database='$database' AND table like '$table'") -eq 1 ]]; then
+        poll_s=$(( deadline - SECONDS ))
+        if (( poll_s <= 0 )); then break; fi
+        polls=$((polls+1))
+        if [[ $(timeout --foreground -k 1 "$poll_s" ${CLICKHOUSE_CLIENT} --query="SELECT coalesce(minOrNull(is_done), 1) FROM system.mutations WHERE database='$database' AND table like '$table'") -eq 1 ]]; then
             return
         fi
         sleep 0.3
     done
 
     echo "Timed out while waiting for mutation to execute!"
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
+    if (( polls == 0 ))
+    then
+        echo "No poll ran: the wait began with 20s or less of the ${CLICKHOUSE_TEST_TIMEOUT:-600}s per-test budget left."
+    fi
+    local dump_s
+    dump_s=$(mutation_dump_seconds)
+    if (( dump_s > 0 ))
+    then
+        timeout --foreground -k 1 "$dump_s" ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
+    fi
 }
 
 function wait_for_mutation_created()
@@ -44,16 +96,30 @@ function wait_for_mutation_created()
     local database=$3
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
-    for _ in {1..300}
+    local deadline poll_s polls=0
+    deadline=$(mutation_wait_deadline 90)
+    while :
     do
-        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -ge 1 ]]; then
+        poll_s=$(( deadline - SECONDS ))
+        if (( poll_s <= 0 )); then break; fi
+        polls=$((polls+1))
+        if [[ $(timeout --foreground -k 1 "$poll_s" ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -ge 1 ]]; then
             return
         fi
         sleep 0.3
     done
 
     echo "Timed out while waiting for mutation to be created!"
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table'"
+    if (( polls == 0 ))
+    then
+        echo "No poll ran: the wait began with 20s or less of the ${CLICKHOUSE_TEST_TIMEOUT:-600}s per-test budget left."
+    fi
+    local dump_s
+    dump_s=$(mutation_dump_seconds)
+    if (( dump_s > 0 ))
+    then
+        timeout --foreground -k 1 "$dump_s" ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table'"
+    fi
 }
 
 function wait_for_mutation_in_progress()
@@ -64,20 +130,27 @@ function wait_for_mutation_in_progress()
     local database=$4
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
-    for _ in {1..300}
+    local deadline poll_s length polls=0
+    deadline=$(mutation_wait_deadline 90)
+    while :
     do
+        poll_s=$(( deadline - SECONDS ))
+        if (( poll_s <= 0 )); then break; fi
         sleep 0.3
-        local length=$(${CLICKHOUSE_CLIENT} --query="SELECT length(parts_in_progress_names) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'")
-
-        if [[ $expect_non_empty -eq 0 ]]; then
-            # Expect parts_in_progress_names to be empty (length = 0)
-            if [[ $length -eq 0 ]]; then
-                return
-            fi
-        else
-            # Expect parts_in_progress_names to be non-empty (length > 0)
-            if [[ $length -gt 0 ]]; then
-                return
+        polls=$((polls+1))
+        # An unread length is not a length of zero, so the branches below only see a poll that ran.
+        if length=$(timeout --foreground -k 1 "$poll_s" ${CLICKHOUSE_CLIENT} --query="SELECT length(parts_in_progress_names) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'")
+        then
+            if [[ $expect_non_empty -eq 0 ]]; then
+                # Expect parts_in_progress_names to be empty (length = 0)
+                if [[ $length -eq 0 ]]; then
+                    return
+                fi
+            else
+                # Expect parts_in_progress_names to be non-empty (length > 0)
+                if [[ $length -gt 0 ]]; then
+                    return
+                fi
             fi
         fi
     done
@@ -87,7 +160,16 @@ function wait_for_mutation_in_progress()
     else
         echo "Timed out while waiting for mutation parts_in_progress to become non-empty!"
     fi
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'"
+    if (( polls == 0 ))
+    then
+        echo "No poll ran: the wait began with 20s or less of the ${CLICKHOUSE_TEST_TIMEOUT:-600}s per-test budget left."
+    fi
+    local dump_s
+    dump_s=$(mutation_dump_seconds)
+    if (( dump_s > 0 ))
+    then
+        timeout --foreground -k 1 "$dump_s" ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'"
+    fi
 }
 
 # vi: ft=bash
