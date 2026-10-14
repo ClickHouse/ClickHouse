@@ -44,7 +44,8 @@ SELECT count() FROM t_json WHERE j.kind = 'b' AND length(toString(j)) > 10 FORMA
 SELECT count() FROM t_json PREWHERE j.kind = 'b' AND length(toString(j)) > 10 FORMAT Null SETTINGS log_comment = 'json_whole_prewhere';
 SELECT count() FROM t_json WHERE j.kind = 'b' AND length(toString(j.payload)) > 10 FORMAT Null SETTINGS log_comment = 'json_other_path';
 SELECT count() FROM t_tuple WHERE t.kind = 'b' AND length(toString(t)) > 10 FORMAT Null SETTINGS log_comment = 'tuple_whole';
-SELECT count() FROM t_map WHERE length(m) = 3 AND m['k1'] != '' FORMAT Null SETTINGS log_comment = 'map_size_and_key';
+-- PREWHERE keeps the written order, which the WHERE optimizer may change based on the column sizes.
+SELECT count() FROM t_map PREWHERE length(m) = 3 AND m['k1'] != '' FORMAT Null SETTINGS log_comment = 'map_size_and_key';
 SELECT count() FROM t_maps WHERE c.left['k'] = 'b' AND c.right['k'] != '' FORMAT Null SETTINGS log_comment = 'maps_other_map';
 SELECT count() FROM t_map WHERE m['k1'] = 'x' AND length(toString(m)) > 10 FORMAT Null SETTINGS log_comment = 'map_key_and_whole';
 

@@ -100,7 +100,8 @@ steps_read_ahead=$(read_steps "$query_id_read_ahead" "
 ")
 
 # Only adjacent conditions over the same columns are merged, so the condition on gate keeps
-# the two Map conditions in separate steps and the query reads the rows three times.
+# the two Map conditions in separate steps. The last step takes the Map the first one read,
+# so the query reads the rows twice.
 steps_interleaved=$(read_steps "$query_id_interleaved" "
   SELECT count() FROM t_steps_group
   PREWHERE tags['k0'] != '' AND gate = 1 AND tags['k1'] != ''
@@ -151,8 +152,8 @@ ${CLICKHOUSE_CLIENT} -q "
          (SELECT ProfileEvents['ReadCompressedBytes'] AS b FROM system.query_log
            WHERE current_database = currentDatabase() AND query_id = '$query_id_group' AND type = 'QueryFinish') AS g;
 
-  -- Exactly three steps over three different columns, so each of them reads.
-  SELECT 'interleaved steps', '$steps_interleaved' = '3' AND ProfileEvents['RowsReadByPrewhereReaders'] = 300000
+  -- Three steps, but the last one reuses the Map read by the first, so only two of them read.
+  SELECT 'interleaved steps', '$steps_interleaved' = '3' AND ProfileEvents['RowsReadByPrewhereReaders'] = 200000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_interleaved' AND type = 'QueryFinish';
 
