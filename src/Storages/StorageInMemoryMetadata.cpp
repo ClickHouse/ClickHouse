@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
     extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_FUNCTION;
 }
 
@@ -1029,7 +1030,8 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             catch (const Exception & e)
             {
                 if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::INCORRECT_QUERY
-                    && e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_FUNCTION)
+                    && e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE
+                    && e.code() != ErrorCodes::UNKNOWN_FUNCTION)
                     throw;
             }
         }
