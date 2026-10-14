@@ -355,6 +355,10 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
         /// The job opens a session of its own, and the server accepts a one-time password once: ask for a fresh
         /// one here, on the thread that owns the terminal, because the worker cannot.
         ConnectionParameters background_connection_parameters = connection_parameters;
+#if USE_JWT_CPP && USE_SSL
+        /// Likewise an expired OAuth token is renewed here, where logging in again is allowed.
+        background_connection_parameters.refreshJWT();
+#endif
         if (!background_connection_parameters.renewSecondFactor())
         {
             error_stream << "A background job opens a new session, which needs a fresh one-time password, and none was entered"
@@ -611,6 +615,14 @@ bool Client::tryExecuteDetachableQuery(
             is_default_format,
             has_vertical_output_suffix))
         return false;
+
+#if USE_JWT_CPP && USE_SSL
+    /// The query is run by a worker, which must not log in (see `NonInteractiveAuthenticationScope`), while an
+    /// ordinary query may have to: with an expired access token and no refresh token, the login is the only way
+    /// forward. Renew the token here, on the thread that owns the terminal; the worker then finds a valid one.
+    if (jwt_provider)
+        jwt_provider->getJWT();
+#endif
 
     BackgroundQueryManager::Snapshot snapshot(
         client_context,

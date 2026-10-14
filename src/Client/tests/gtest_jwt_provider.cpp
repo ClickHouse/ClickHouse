@@ -62,6 +62,65 @@ protected:
     }
 };
 
+
+/// Has the structure of the real provider when there is no refresh token: a valid token is returned as it is, and
+/// otherwise the only way forward is a login, which only a thread that may ask the user can do.
+class ExpiringTokenProvider : public JWTProvider
+{
+public:
+    ExpiringTokenProvider() : JWTProvider(JWTProviderOptions{}, messages(), messages()) {}
+
+    int logins = 0;
+    bool token_valid = false;
+
+protected:
+    std::string fetchJWT() override
+    {
+        if (token_valid)
+            return "token";
+
+        if (NonInteractiveAuthenticationScope::isActive())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "cannot log in on a worker");
+
+        ++logins;
+        token_valid = true;
+        return "token";
+    }
+};
+
+}
+
+/// An ordinary foreground query is run by a worker (so that Ctrl+B can detach it). After the access token expired
+/// without a refresh token, the login has to happen on the main thread before the query is handed over; the worker
+/// then finds a valid token and does not need to log in.
+TEST(JWTProvider, MainThreadRenewsTokenForWorker)
+{
+    ExpiringTokenProvider provider;
+
+    /// Without the renewal on the main thread, the worker fails and nothing was done by it.
+    {
+        NonInteractiveAuthenticationScope scope;
+        EXPECT_THROW(provider.getJWT(), Exception);
+    }
+    EXPECT_EQ(provider.logins, 0);
+
+    /// The main thread logs in, and the worker gets the token.
+    EXPECT_EQ(provider.getJWT(), "token");
+    EXPECT_EQ(provider.logins, 1);
+    {
+        NonInteractiveAuthenticationScope scope;
+        EXPECT_EQ(provider.getJWT(), "token");
+    }
+    EXPECT_EQ(provider.logins, 1);
+
+    /// The token expires again: the worker still cannot log in, the main thread can.
+    provider.token_valid = false;
+    {
+        NonInteractiveAuthenticationScope scope;
+        EXPECT_THROW(provider.getJWT(), Exception);
+    }
+    EXPECT_EQ(provider.getJWT(), "token");
+    EXPECT_EQ(provider.logins, 2);
 }
 
 /// The foreground and the background jobs share one provider: its token state and a rotating refresh token

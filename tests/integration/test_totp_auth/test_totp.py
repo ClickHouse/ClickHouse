@@ -205,6 +205,20 @@ def test_interactive_totp_authentication(started_cluster):
         c.expect(expected_error)
 
 
+def wait_for_job(c, job_id):
+    """Wait until the background job is over. `\\fg` of a job that still runs returns at once and leaves its
+    output spooled, so a job is replayed only after `\\jobs` reports a final state."""
+    for _ in range(200):
+        c.send("\\jobs")
+        c.expect(rf"(?i)\[{job_id}\][^\r\n]*(starting|running|succeeded|completed|failed|cancel+ed)")
+        state = c.match.group(1).lower()
+        c.expect(prompt)
+        if state not in ("starting", "running"):
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"Background job {job_id} did not finish")
+
+
 def test_background_job_asks_for_fresh_totp(started_cluster):
     """A background job opens a session of its own, and the server accepts a code once, so the client has
     to ask for a new one instead of reusing the one of the login."""
@@ -219,6 +233,7 @@ def test_background_job_asks_for_fresh_totp(started_cluster):
         c.send(get_otp(user0, offset_steps=1), eol="\r")
         c.expect("Background job 1 started")
         c.expect(prompt)
+        wait_for_job(c, 1)
         c.send("\\fg 1")
         c.expect(f"{user0}42")
         c.expect(prompt)
