@@ -624,7 +624,14 @@
             return `${(n / 1000).toFixed(2)} s`;
         }
 
+        /// Bumped by every connection a host page hands over (see `applyConnectionFromHost`). `runQuery`
+        /// reads the connection fields afresh on every call, so a listing that was started on the
+        /// previous connection checks it after each `await` and stops, rather than profiling the query
+        /// it found there on the new server - which would send that query's text to it.
+        let connectionGeneration = 0;
+
         async function loadQueries() {
+            const myConnection = connectionGeneration;
             clearError();
             const picker = document.getElementById('query-picker');
             picker.innerHTML = '<option value="">loading…</option>';
@@ -653,6 +660,7 @@
 
             try {
                 const text = await runQuery(query);
+                if (myConnection !== connectionGeneration) return;
                 const parsed = parseTSVWithNames(text);
                 const rows = rowsToObjects(parsed);
                 populatePicker(rows);
@@ -663,6 +671,7 @@
                     await profileQuery(rows[0].query_id);
                 }
             } catch (e) {
+                if (myConnection !== connectionGeneration) return;
                 showError('Failed to load queries: ' + e.message);
                 picker.innerHTML = '<option value="">— failed to load —</option>';
             } finally {
@@ -1065,7 +1074,19 @@
         ///
         /// `url` is optional and defaults to the one already configured; the credentials are always
         /// replaced wholesale, so that none of them can outlive the connection they belong to.
+        ///
+        /// The work in flight is invalidated before the fields change: the listing by
+        /// `connectionGeneration`, the profiling by `profileGeneration`. Both check their generation
+        /// after every `await`, before the next request, so nothing started on the previous connection
+        /// sends a request to the new one. The profile of the previous server is cleared as well, so it
+        /// is not shown under the new connection when the new listing finds no queries.
         function applyConnectionFromHost(data) {
+            ++connectionGeneration;
+            ++profileGeneration;
+            document.getElementById('selected-query-id').textContent = '';
+            document.getElementById('selected-query-text').innerHTML = '';
+            document.getElementById('graph').innerHTML =
+                '<div class="placeholder">Select a query above to render its pipeline with <code>elapsed_us</code> heatmap.</div>';
             if (data.url !== undefined) document.getElementById('url').value = data.url;
             document.getElementById('user').value = data.user || '';
             document.getElementById('password').value = data.password || '';
