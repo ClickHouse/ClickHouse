@@ -26,8 +26,19 @@ built on the `system` tables.
   or with Node.js 24 or later (`npx @libredb/studio`), then open `http://localhost:3000`. On first
   run, the admin password is printed to the log.
 - Make sure the machine that runs LibreDB Studio can reach the ClickHouse HTTP or HTTPS port.
-- Create a ClickHouse user with access to the databases you want to query, and `SELECT` on the
-  `system` tables listed under [Monitor ClickHouse](#monitor-clickhouse) if you want the dashboard.
+- Create a ClickHouse user with access to the databases you want to query. The database browser
+  also needs `SELECT` on `system.dictionaries` and `system.data_skipping_indices`, and `dictGet` on
+  each database that holds dictionaries. For the dashboard, grant `SELECT` on the `system` tables
+  listed under [Monitor ClickHouse](#monitor-clickhouse).
+
+For example, for a user `reader` that queries the `uk` database:
+
+```sql
+GRANT SELECT ON uk.* TO reader;
+GRANT dictGet ON uk.* TO reader;
+GRANT SELECT ON system.dictionaries TO reader;
+GRANT SELECT ON system.data_skipping_indices TO reader;
+```
 
 | Deployment | Tested version | Notes |
 |------------|----------------|-------|
@@ -140,6 +151,14 @@ CA to the operating system's certificate store isn't enough on its own. Start th
 server with the `NODE_EXTRA_CA_CERTS` environment variable set to the path of a PEM file that
 holds your CA certificate, or the server's own certificate if it's self-signed. With Docker, mount
 the file into the container and pass, for example, `-e NODE_EXTRA_CA_CERTS=/certs/ca.pem`.
+</Accordion>
+
+<Accordion title="The database browser shows no objects, or a dictionary is listed as a table">
+The database browser reads `system.dictionaries` to sort each database's objects into kinds, and
+`system.data_skipping_indices` for a table's details. Without `SELECT` on `system.dictionaries`,
+no object list loads, and without `SELECT` on `system.data_skipping_indices`, a table's details
+don't open. A dictionary is listed under tables until the user has `dictGet` on its database.
+Grant these as shown under [Before you begin](#before-you-begin), then refresh the browser.
 </Accordion>
 
 <Accordion title="Some dashboard panels are empty">
