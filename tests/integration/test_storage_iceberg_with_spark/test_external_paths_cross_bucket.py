@@ -13,6 +13,7 @@ from .external_paths_utils import (
     _distribute_table_components,
     _download_table_for_relocation,
     _external_delete_files_in_another_bucket,
+    _move_files_to_bucket,
     _rewrite_manifests_and_reupload,
     external_bucket,
     find_files,
@@ -274,3 +275,58 @@ def test_lazy_materialization_rereads_external_data_file(started_cluster_iceberg
     assert instance.query(query, settings=settings) == "alpha\n"
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_file_filter_uses_resolved_file_name(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_file_filter_resolved_name_{get_uuid_str()}"
+    data_bucket = external_bucket(started_cluster_iceberg_with_spark)
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    # The query part is not part of the resolved key, so `_file` does not contain it.
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    _rewrite_manifests_and_reupload(
+        started_cluster_iceberg_with_spark, host_path, base_path,
+        lambda p: f"{minio_url}/{data_bucket}/{base_path}/data/{os.path.basename(p)}?X-Amz-Date=20261014T000000Z")
+    _move_files_to_bucket(
+        started_cluster_iceberg_with_spark, find_files(os.path.join(host_path, "data"), ".parquet"),
+        data_bucket, host_path, base_path)
+    shutil.rmtree(temp_dir)
+
+    args = get_query_args("s3", started_cluster_iceberg_with_spark, base_path)
+    file_names = instance.query(f"SELECT DISTINCT _file FROM icebergS3({args})").strip().splitlines()
+    assert file_names and all("?" not in name for name in file_names), file_names
+
+    in_list = ", ".join(f"'{name}'" for name in file_names)
+    assert instance.query(f"SELECT count() FROM icebergS3({args}) WHERE _file IN ({in_list})").strip() == "3"
+
+
+def test_dot_segments_in_s3_key_are_literal(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_dot_segments_key_{get_uuid_str()}"
+    bucket = started_cluster_iceberg_with_spark.minio_bucket
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    for mj in find_files(os.path.join(host_path, "metadata"), ".metadata.json"):
+        with open(mj) as f:
+            data = json.load(f)
+        data["location"] = f"s3a://{bucket}/{base_path}"
+        with open(mj, "w") as f:
+            json.dump(data, f)
+        started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(mj, f"{base_path}/{os.path.relpath(mj, host_path)}")
+
+    # `..` is a literal key segment, so these keys do not name the data files still present inside `location`.
+    _rewrite_manifests_and_reupload(
+        started_cluster_iceberg_with_spark, host_path, base_path,
+        lambda p: f"s3a://{bucket}/other/../{base_path}/data/{os.path.basename(p)}")
+    shutil.rmtree(temp_dir)
+
+    args = get_query_args("s3", started_cluster_iceberg_with_spark, base_path)
+    error = instance.query_and_get_error(f"SELECT * FROM icebergS3({args}) ORDER BY id")
+    assert "alpha" not in error, error

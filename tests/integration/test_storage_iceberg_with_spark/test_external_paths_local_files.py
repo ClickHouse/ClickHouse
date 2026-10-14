@@ -1,3 +1,6 @@
+import json
+import os
+
 import pytest
 
 from helpers.iceberg_utils import additional_upload_directory, default_upload_directory, get_uuid_str
@@ -8,6 +11,8 @@ from .external_paths_utils import (
     _create_iceberg_s3_table,
     _relocate_local_data_files_outside_table_directory,
     _rewrite_paths_to_local_uri,
+    find_files,
+    modify_avro_file,
 )
 
 
@@ -80,3 +85,39 @@ def test_trivial_count_rejects_path_outside_user_files(started_cluster_iceberg_w
     assert expected_error in instance.query_and_get_error(f"SELECT count() FROM {TABLE_NAME}")
 
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+def test_copied_local_table_reads_files_from_its_own_directory(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    TABLE_NAME = f"test_copied_local_table_{get_uuid_str()}"
+    host_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    copy_path = f"{host_path}_copy"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+
+    # Spell every path as a `file://` URI inside the source `location`.
+    metadata_dir = os.path.join(host_path, "metadata")
+    to_metadata_uri = lambda p: f"file://{host_path}/metadata/{os.path.basename(p)}"
+    for metadata_json in find_files(metadata_dir, ".metadata.json"):
+        with open(metadata_json) as f:
+            metadata = json.load(f)
+        metadata["location"] = f"file://{host_path}"
+        for snapshot in metadata.get("snapshots", []):
+            snapshot["manifest-list"] = to_metadata_uri(snapshot["manifest-list"])
+        with open(metadata_json, "w") as f:
+            json.dump(metadata, f)
+    for avro_file in find_files(metadata_dir, ".avro"):
+        if os.path.basename(avro_file).startswith("snap-"):
+            modify_avro_file(avro_file, ["manifest_path"], to_metadata_uri)
+        else:
+            modify_avro_file(avro_file, ["data_file", "file_path"], lambda p: f"file://{host_path}/data/{os.path.basename(p)}")
+
+    default_upload_directory(started_cluster_iceberg_with_spark, "local", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+
+    # The copy keeps the source `location` and file URIs, while the source loses its data files.
+    instance.exec_in_container(["bash", "-c", f"cp -r {host_path} {copy_path} && rm -f {host_path}/data/*.parquet"])
+
+    assert instance.query(f"SELECT * FROM icebergLocal(local, path = '{copy_path}', format=Parquet) ORDER BY id") == ALL_ROWS

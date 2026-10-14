@@ -86,13 +86,14 @@ bool isPrefixScopedScheme(const std::string & normalized_scheme)
     return normalized_scheme == "file" || normalized_scheme == "hdfs";
 }
 
-bool keyIsInsidePrefix(const std::string & base_key, const std::string & target_key)
+/// Object keys are compared literally: `.` and `..` are ordinary key segments there, not directory traversal.
+bool keyIsInsidePrefix(const std::string & base_key, const std::string & target_key, bool is_filesystem_path)
 {
     if (base_key.empty())
         return true;
 
-    auto base = std::filesystem::path(base_key).lexically_normal().string();
-    const auto target = std::filesystem::path(target_key).lexically_normal().string();
+    auto base = is_filesystem_path ? std::filesystem::path(base_key).lexically_normal().string() : base_key;
+    const auto target = is_filesystem_path ? std::filesystem::path(target_key).lexically_normal().string() : target_key;
     if (base.empty())
         return true;
     if (!base.ends_with('/'))
@@ -418,7 +419,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     {
         const bool base_is_local = base_storage->getType() == ObjectStorageType::Local;
 
-        if (!base_is_local || keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key))
+        if (!base_is_local || keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true))
             return std::nullopt;
 
         target_decomposed.scheme = "file";
@@ -442,6 +443,11 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 "filesystem. Only an empty authority (`file:///path`) or `localhost` is supported",
                 path,
                 remote_authority);
+
+        /// Re-rooted at the queried table directory, where the base storage validates the translated path.
+        if (base_scheme_normalized == "file" && table_location_decomposed.authority == target_decomposed.authority
+            && keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true))
+            return std::nullopt;
 
         check_local_path_inside_user_files(target_decomposed.key);
     }
@@ -503,7 +509,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             auto base_s3_uri = parseMetadataS3URI(table_location, table_location_decomposed);
 
             if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized, provider_families_compatible)
-                && keyIsInsidePrefix(base_s3_uri.key, key_to_use))
+                && keyIsInsidePrefix(base_s3_uri.key, key_to_use, /*is_filesystem_path*/ false))
                 return std::nullopt;
         }
 
@@ -727,16 +733,16 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
                 std::string target_endpoint = target_scheme_normalized + "://" + target_decomposed.authority;
 
-                const bool inside_table_prefix = keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key);
+                const bool inside_table_prefix
+                    = keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true);
+
+                /// A table copied without rewriting metadata still uses its old `location`; re-root paths inside it.
+                if (base_scheme_normalized == "hdfs" && inside_table_prefix
+                    && table_location_decomposed.authority == target_decomposed.authority)
+                    return std::nullopt;
 
                 if (base_endpoint == target_endpoint && inside_table_prefix)
                     use_base_storage = true;
-
-                if (!use_base_storage && base_scheme_normalized == "hdfs" && inside_table_prefix)
-                {
-                    if (table_location_decomposed.authority == target_decomposed.authority)
-                        use_base_storage = true;
-                }
             }
         }
 
@@ -747,17 +753,14 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
     if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority)
     {
-        const bool inside_table_location = keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key);
+        const bool is_prefix_scoped = isPrefixScopedScheme(target_scheme_normalized);
 
-        /// Prefix-scoped backends accept full keys; other backends need paths inside `location` re-rooted.
-        if (isPrefixScopedScheme(target_scheme_normalized))
-        {
-            if (inside_table_location)
-                return std::make_pair(base_storage, target_decomposed.key);
-        }
-        else if (inside_table_location)
+        /// Paths inside `location` are re-rooted at the queried table directory.
+        if (keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ is_prefix_scoped))
             return std::nullopt;
-        else
+
+        /// Prefix-scoped backends cannot serve a path outside the table directory; it gets its own storage below.
+        if (!is_prefix_scoped)
         {
             check_access();
             if (access_check != nullptr)

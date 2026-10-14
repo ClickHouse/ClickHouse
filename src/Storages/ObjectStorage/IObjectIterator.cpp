@@ -80,12 +80,19 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             /// evaluated against that column's values.
             auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
 
+            /// `_path` exposes the metadata URI, while `_file` comes from the resolved key, which can differ
+            /// from the URI suffix (e.g. a query part that is not part of the key).
+            std::optional<std::vector<std::string>> file_names;
             if (auto metadata_path = object->getPathInDataLakeMetadata())
+            {
                 path = *metadata_path;
+                file_names.emplace(std::vector<std::string>{object->getFileName()});
+            }
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,
-                virtual_columns, hive_partition_columns, getContext());
+                virtual_columns, hive_partition_columns, getContext(),
+                /*format_settings=*/std::nullopt, file_names ? &*file_names : nullptr);
 
             if (keys.empty())
             {
