@@ -318,8 +318,11 @@ scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
 
     auto lk = lock();
 
-    if (download_state != State::PARTIALLY_DOWNLOADED || !getDownloaderUnlocked(lk).empty())
+    if (download_state != State::PARTIALLY_DOWNLOADED)
         return {};
+
+    /// Every transition to `PARTIALLY_DOWNLOADED` resets the downloader under the same lock.
+    chassert(getDownloaderUnlocked(lk).empty());
 
     getOrCreateDownloadDataUnlocked(lk).downloader_id = getCallerId();
     setDownloadState(State::DOWNLOADING, lk);
