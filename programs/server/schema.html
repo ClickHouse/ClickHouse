@@ -2301,17 +2301,7 @@ window.addEventListener('keydown', (e) => {
 /// visit, which auto-loads `https://proxy.example/a/`. The path is compared verbatim except for the
 /// root, where the URL parser already yields `/` for both `origin` and `origin/`.
 function isOwnServerTarget(value) {
-    try {
-        const target = new URL(value, window.location.href);
-        const own = new URL(defaultServerAddress());
-        const rootNormalized = (p) => (p === '/' || p === '') ? '/' : p;
-        return target.protocol === own.protocol
-            && target.host === own.host
-            && rootNormalized(target.pathname) === rootNormalized(own.pathname)
-            && target.search === own.search;
-    } catch (e) {
-        return false;
-    }
+    return sameServerAddress(value, defaultServerAddress());
 }
 /// Auto-load the same-origin default on open. First give the browser a chance to supply a
 /// remembered same-origin login: `storeCredentials` saves one via the Credential Management API,
@@ -2386,6 +2376,45 @@ function isTrustedHostOrigin(origin) {
     return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
 }
 
+/// Whether two server addresses name the same endpoint. The path and the query string are part of the
+/// endpoint: both are sent verbatim with every request, and a path-routed reverse proxy serves
+/// unrelated backends under one origin (`https://proxy.example/a/` and `https://proxy.example/b/`), or
+/// selects one with `?cluster=a`. Only the root path is normalized, where the URL parser already yields
+/// `/` for both `origin` and `origin/`. Relative addresses are resolved against this page.
+function sameServerAddress(a, b) {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    try {
+        const ua = new URL(a, location.href);
+        const ub = new URL(b, location.href);
+        const rootNormalized = (p) => (p === '/' || p === '') ? '/' : p;
+        return ua.protocol === ub.protocol
+            && ua.host === ub.host
+            && rootNormalized(ua.pathname) === rootNormalized(ub.pathname)
+            && ua.search === ub.search;
+    } catch (e) {
+        return false;
+    }
+}
+
+/// The server address the last `clickhouse-credentials` handover from the host page left configured,
+/// or `null` if no connection was handed over.
+let host_handed_server = null;
+
+/// Whether a `clickhouse-credentials` message that carries no `url` may be applied.
+///
+/// Leaving out `url` keeps the server already configured, and that server may have been chosen by
+/// whoever linked to this page, through its query string. A trusted host embedding such a page - say,
+/// a Cloud console framing `/play?url=https://attacker.example/` - would then send its credentials to
+/// a server it never named. So the credentials alone are accepted only while the page still points at
+/// the endpoint it was served from, or at the server the host itself handed over earlier; for any
+/// other server the host has to name it in `url`.
+function acceptsHandoverWithoutURL() {
+    const current = $('url').value;
+    return sameServerAddress(current, defaultServerAddress())
+        || (host_handed_server !== null && sameServerAddress(current, host_handed_server));
+}
+
 /// Adopt a connection handed over by the host page and load the graph against it. Assigning
 /// `.value` fires no listeners, so the `input` events are replayed to drop the credential status
 /// left over from the previous connection, exactly as a typed edit does.
@@ -2403,6 +2432,7 @@ function applyConnectionFromHost(data) {
     if (data.url !== undefined) $('url').value = data.url;
     $('user').value = data.user || '';
     $('password').value = data.password || '';
+    host_handed_server = $('url').value;
     for (const id of ['url', 'user', 'password']) $(id).dispatchEvent(new Event('input'));
     loadAll();
 }
@@ -2415,6 +2445,7 @@ function applyConnectionFromHost(data) {
             if (event.source !== host_window) return;
             if (!isTrustedHostOrigin(event.origin)) return;
             if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            if (event.data.url === undefined && !acceptsHandoverWithoutURL()) return;
             applyConnectionFromHost(event.data);
         });
         /// Broadcast, because the host's location cannot be read cross-origin. The message carries

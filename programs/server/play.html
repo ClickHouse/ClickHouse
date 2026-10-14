@@ -10936,13 +10936,28 @@ function pageAcceptsHandover(target_origin) {
     return TRUSTED_HOST_ORIGINS.includes(window.location.origin) && handed_server;
 }
 
+/// Whether a `clickhouse-credentials` message that carries no `url` may be applied.
+///
+/// Leaving out `url` keeps the server already configured, and that server may have been chosen by
+/// whoever linked to this page, through its query string. A trusted host embedding such a page - say,
+/// a Cloud console framing `/play?url=https://attacker.example/` - would then send its credentials to
+/// a server it never named. So the credentials alone are accepted only while the page still points at
+/// the endpoint it was served from, or at the server the host itself handed over earlier; for any
+/// other server the host has to name it in `url`.
+function acceptsHandoverWithoutURL() {
+    const current = url_elem.value;
+    return sameServerAddress(current, defaultServerAddress())
+        || (host_handed_server !== null && sameServerAddress(current, host_handed_server));
+}
+
 /// Adopt a connection handed over by the host page.
 ///
 /// `url` is optional and defaults to the one already configured, so a host embedding a page served
-/// by the very server it wants queried can send the credentials alone. The credentials themselves
-/// are always replaced wholesale: keeping a user or password the message did not carry would attach
-/// the credentials of one connection - possibly ones the browser's password manager filled in for
-/// this page's origin - to another server the message names through `url`.
+/// by the very server it wants queried can send the credentials alone - while the page still points
+/// at that server (see `acceptsHandoverWithoutURL`). The credentials themselves are always replaced
+/// wholesale: keeping a user or password the message did not carry would attach the credentials of
+/// one connection - possibly ones the browser's password manager filled in for this page's origin -
+/// to another server the message names through `url`.
 function applyConnectionFromHost(data) {
     if (data.url !== undefined) url_elem.value = data.url;
     user_elem.value = data.user || '';
@@ -10967,6 +10982,7 @@ function applyConnectionFromHost(data) {
             if (event.source !== host_window) return;
             if (!isTrustedHostOrigin(event.origin)) return;
             if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            if (event.data.url === undefined && !acceptsHandoverWithoutURL()) return;
             applyConnectionFromHost(event.data);
         });
         host_window.postMessage({type: 'clickhouse-hello'}, '*');

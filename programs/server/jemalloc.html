@@ -3737,11 +3737,51 @@ function isTrustedHostOrigin(origin) {
     return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
 }
 
+/// Whether two server addresses name the same endpoint. The path and the query string are part of the
+/// endpoint: both are sent verbatim with every request, and a path-routed reverse proxy serves
+/// unrelated backends under one origin (`https://proxy.example/a/` and `https://proxy.example/b/`), or
+/// selects one with `?cluster=a`. Only the root path is normalized, where the URL parser already yields
+/// `/` for both `origin` and `origin/`. Relative addresses are resolved against this page.
+function sameServerAddress(a, b) {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    try {
+        const ua = new URL(a, location.href);
+        const ub = new URL(b, location.href);
+        const rootNormalized = (p) => (p === '/' || p === '') ? '/' : p;
+        return ua.protocol === ub.protocol
+            && ua.host === ub.host
+            && rootNormalized(ua.pathname) === rootNormalized(ub.pathname)
+            && ua.search === ub.search;
+    } catch (e) {
+        return false;
+    }
+}
+
+/// The server address the last `clickhouse-credentials` handover from the host page left configured,
+/// or `null` if no connection was handed over.
+let host_handed_server = null;
+
+/// Whether a `clickhouse-credentials` message that carries no `url` may be applied.
+///
+/// Leaving out `url` keeps the server already configured, and that server may have been chosen by
+/// whoever linked to this page, through its query string. A trusted host embedding such a page - say,
+/// a Cloud console framing `/play?url=https://attacker.example/` - would then send its credentials to
+/// a server it never named. So the credentials alone are accepted only while the page still points at
+/// the endpoint it was served from, or at the server the host itself handed over earlier; for any
+/// other server the host has to name it in `url`.
+function acceptsHandoverWithoutURL() {
+    const current = document.getElementById('url').value;
+    return sameServerAddress(current, defaultServerAddress())
+        || (host_handed_server !== null && sameServerAddress(current, host_handed_server));
+}
+
 /// Adopt a connection handed over by the host page and reload the statistics from it. The connection
 /// inputs are what `readConnectionParams` reads, so filling them is what switches the connection.
 ///
-/// `url` is optional and defaults to the one already configured; the credentials are always replaced
-/// wholesale, so that none of them can outlive the connection they belong to.
+/// `url` is optional and defaults to the one already configured, as far as
+/// `acceptsHandoverWithoutURL` allows; the credentials are always replaced wholesale, so that none
+/// of them can outlive the connection they belong to.
 ///
 /// Everything that belongs to the previous connection goes first: its requests in flight are aborted,
 /// a profile being fetched included, and the panels derived from it - the profiler status and any
@@ -3757,6 +3797,7 @@ function applyConnectionFromHost(data) {
     if (data.url !== undefined) document.getElementById('url').value = data.url;
     document.getElementById('user').value = data.user || '';
     document.getElementById('password').value = data.password || '';
+    host_handed_server = document.getElementById('url').value;
     loadStats(true);
 }
 
@@ -3768,6 +3809,7 @@ function applyConnectionFromHost(data) {
             if (event.source !== host_window) return;
             if (!isTrustedHostOrigin(event.origin)) return;
             if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            if (event.data.url === undefined && !acceptsHandoverWithoutURL()) return;
             applyConnectionFromHost(event.data);
         });
         /// Broadcast, because the host's location cannot be read cross-origin. The message carries

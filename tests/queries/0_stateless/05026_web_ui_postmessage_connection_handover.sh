@@ -86,7 +86,14 @@ do
     routing_query=$(echo "$content" | grep -qF "PAGE_URL_PARAMETERS" \
         && ! echo "$content" | sed -n '/function defaultServerAddress()/,/^ *}$/p' | grep -qF "url.search = '';" \
         && echo preserved || echo dropped)
-    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint} routing_query=${routing_query} credentials=${credentials}"
+    # A handover without `url` keeps the server already configured, and that server may come from a link
+    # to the page (`/play?url=...`, `/binary?host=...`, a `/dashboard#...` state). A trusted host that
+    # frames such a link and sends the credentials alone would send them to a server it never named, so
+    # the page applies such a message only while it points at its own endpoint or at a handed-over one.
+    implicit_url=$(echo "$content" | grep -qF "if (event.data.url === undefined && !acceptsHandoverWithoutURL()) return;" \
+        && echo "$content" | grep -qF "sameServerAddress(current, defaultServerAddress())" \
+        && echo gated || echo open)
+    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint} routing_query=${routing_query} credentials=${credentials} implicit_url=${implicit_url}"
 done
 
 content=$(fetch_page webterminal)

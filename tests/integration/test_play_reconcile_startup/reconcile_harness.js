@@ -1664,6 +1664,9 @@ async function main() {
         const configured = vm.runInContext('url_elem.value', r.sandbox);
         check('proxied-endpoint', 'the default connection keeps the path prefix and the routing query',
             configured === 'https://proxy.example/clickhouse/?cluster=a', configured);
+        /// A host embedding the page served by the very server it wants queried may send the credentials alone.
+        check('proxied-endpoint', 'a handover without url is accepted for the endpoint the page was served from',
+            vm.runInContext('acceptsHandoverWithoutURL()', r.sandbox) === true, configured);
         /// `writeHistoryEntry` is the one place that rebuilds the query string from scratch. The
         /// routing parameter has to survive it: otherwise the very next read of `defaultServerAddress`
         /// resolves to a different endpoint, and a reload lands on the proxy's default backend. It must
@@ -1843,6 +1846,7 @@ async function main() {
             r.sandbox.document.dispatchEvent(ev);
             return ev;
         };
+        const url_value = () => vm.runInContext('url_elem.value', r.sandbox);
         /// The Documentation button follows the same rule: the docs page of another origin accepts the
         /// credentials from this trusted host, so a plain click opens the relay that hands them over -
         /// but only for the server the host handed over.
@@ -1867,8 +1871,16 @@ async function main() {
                 && !opened[0].href.includes('autofilled') && embedded().length === 0,
             { opened, embedded: embedded() });
 
+        /// The host page itself must not be able to aim its credentials at that foreign server either: a
+        /// `clickhouse-credentials` message without `url` keeps the configured server, so it is ignored
+        /// while that server is one a link chose.
+        check('trusted-host-terminal', 'a handover without url is refused for a foreign ?url= server',
+            vm.runInContext('acceptsHandoverWithoutURL()', r.sandbox) === false, url_value());
+
         vm.runInContext("applyConnectionFromHost({ url: 'https://b.example/', user: 'bob', password: 'secret' });", r.sandbox);
         await sleep(50);
+        check('trusted-host-terminal', 'a handover without url is accepted for the server the host handed over',
+            vm.runInContext('acceptsHandoverWithoutURL()', r.sandbox) === true, url_value());
         const handed_click = plain_click();
         check('trusted-host-terminal', 'a plain click embeds the terminal of the server the host handed over',
             handed_click.defaultPrevented && embedded().length === 1 && embedded()[0] === 'https://b.example/webterminal'
