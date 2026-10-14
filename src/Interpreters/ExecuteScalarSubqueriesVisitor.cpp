@@ -336,9 +336,10 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
     const Settings & settings = data.getContext()->getSettingsRef();
 
-    // Always convert to literals when there is no query context.
-    if (data.only_analyze || !settings[Setting::enable_scalar_subquery_optimization] || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
-        || !data.getContext()->hasQueryContext())
+    /// Always convert to literals when there is no query context, and for a local scalar: only global scalars are saved
+    /// in the query context, where `__getScalar` looks them up.
+    if (data.only_analyze || is_local || !settings[Setting::enable_scalar_subquery_optimization]
+        || worthConvertingScalarToLiteral(scalar, data.max_literal_size) || !data.getContext()->hasQueryContext())
     {
         auto lit = make_intrusive<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = subquery_alias;

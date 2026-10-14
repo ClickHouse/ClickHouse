@@ -17,9 +17,9 @@ $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS mv_merge;
 DROP TABLE IF EXISTS mv_loop;
 DROP TABLE IF EXISTS mv_row_policy;
-DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_merge_policy, mv_loop_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf;
-DROP ROW POLICY IF EXISTS policy_05388 ON policy_child, pin, pudf, pmerge, ploop, pn1, pn2;
-DROP TABLE IF EXISTS policy_child, pin, pudf, pmerge, ploop, pn1, pn2, pns, patf, src_atf, pmatf;
+DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_merge_policy, mv_loop_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy;
+DROP ROW POLICY IF EXISTS policy_05388 ON policy_child, pin, pudf, pmerge, ploop, pn1, pn2, parr;
+DROP TABLE IF EXISTS policy_child, pin, pudf, pmerge, ploop, pn1, pn2, pns, patf, src_atf, pmatf, parr;
 DROP FUNCTION IF EXISTS ${UDF};
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS dist;
@@ -62,10 +62,12 @@ CREATE TABLE ploop ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM 
 CREATE TABLE pn1 ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE TABLE pn2 ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE TABLE pns ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE TABLE parr ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
 CREATE FUNCTION ${UDF} AS (v) -> v IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src);
 CREATE ROW POLICY policy_05388 ON pin, pmerge, ploop, pn2 USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src) TO ALL;
 CREATE ROW POLICY policy_05388 ON pudf USING ${UDF}(x) TO ALL;
 CREATE ROW POLICY policy_05388 ON pn1 USING x <= (SELECT max(x) FROM ${CLICKHOUSE_DATABASE}.pn2) TO ALL;
+CREATE ROW POLICY policy_05388 ON parr USING has((SELECT groupArray(x) FROM ${CLICKHOUSE_DATABASE}.src), x) TO ALL;
 
 CREATE MATERIALIZED VIEW mv_policy_in TO dst AS
     SELECT 'policy in' AS name, count() AS block_rows, (SELECT max(x) FROM pin) AS value FROM src;
@@ -74,6 +76,11 @@ CREATE MATERIALIZED VIEW mv_policy_udf TO dst AS
 CREATE MATERIALIZED VIEW mv_merge_policy TO dst AS
     SELECT 'merge policy' AS name, count() AS block_rows,
         (SELECT max(x) FROM merge(${CLICKHOUSE_DATABASE}, '^pmerge\$')) AS value
+    FROM src;
+-- An 'Array' scalar in the standalone-analyzed policy of a 'Merge' child.
+CREATE MATERIALIZED VIEW mv_merge_array_policy TO dst AS
+    SELECT 'merge array policy' AS name, count() AS block_rows,
+        (SELECT max(x) FROM merge(${CLICKHOUSE_DATABASE}, '^parr\$')) AS value
     FROM src;
 CREATE MATERIALIZED VIEW mv_loop_policy TO dst AS
     SELECT 'loop policy' AS name, count() AS block_rows,
@@ -113,9 +120,9 @@ SELECT * FROM dst ORDER BY name, value;
 DROP TABLE mv_merge;
 DROP TABLE mv_loop;
 DROP TABLE mv_row_policy;
-DROP TABLE mv_policy_in, mv_policy_udf, mv_merge_policy, mv_loop_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf;
-DROP ROW POLICY policy_05388 ON policy_child, pin, pudf, pmerge, ploop, pn1, pn2;
-DROP TABLE policy_child, pin, pudf, pmerge, ploop, pn1, pn2, pns, patf, src_atf, pmatf;
+DROP TABLE mv_policy_in, mv_policy_udf, mv_merge_policy, mv_loop_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf, mv_merge_array_policy;
+DROP ROW POLICY policy_05388 ON policy_child, pin, pudf, pmerge, ploop, pn1, pn2, parr;
+DROP TABLE policy_child, pin, pudf, pmerge, ploop, pn1, pn2, pns, patf, src_atf, pmatf, parr;
 DROP FUNCTION ${UDF};
 DROP TABLE dst;
 DROP TABLE dist;
