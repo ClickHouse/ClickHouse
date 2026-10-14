@@ -1825,6 +1825,12 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         ///
         /// A correlated reference from inside a subquery is replaced too, by a bare constant: it is
         /// not part of the child plan header, so it needs no pinned action name.
+        ///
+        /// The replacement runs right here, before the child's `ALIAS` columns are expanded below:
+        /// an alias expression of the child is the child's own, so a `_database`/`_table` it reads
+        /// is the child's column (e.g. a physical one), not the Merge virtual column, and once it is
+        /// rebound to the child table expression it can no longer be told apart by name.
+        std::unordered_map<std::string, QueryTreeNodePtr> virtual_column_name_to_node;
         std::unordered_map<std::string, QueryTreeNodePtr> virtual_column_name_to_constant;
 
         auto add_child_name_constant = [&](const String & column_name, const String & value)
@@ -1840,12 +1846,24 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             function_node->getArguments().getNodes().push_back(std::move(action_name_node));
             function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", modified_context));
 
-            column_name_to_node.emplace(column_name, std::move(function_node));
+            virtual_column_name_to_node.emplace(column_name, std::move(function_node));
             virtual_column_name_to_constant.emplace(column_name, std::move(value_node));
         };
 
         add_child_name_constant("_database", database_name);
         add_child_name_constant("_table", table_name);
+
+        if (!virtual_column_name_to_node.empty())
+        {
+            replaceColumns(modified_query_info.query_tree,
+                replacement_table_expression,
+                virtual_column_name_to_node);
+
+            /// `replaceColumns` does not descend into subqueries, and a correlated reference to a
+            /// Merge virtual column must see the child's name as well.
+            ReplaceColumnsEverywhereVisitor visitor(replacement_table_expression, std::move(virtual_column_name_to_constant));
+            visitor.visit(modified_query_info.query_tree);
+        }
 
         /// Replace references to columns that don't exist in this child table with default values.
         /// This happens when merge() is used over tables with different schemas and the processing
@@ -1853,7 +1871,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// is sent to the child for processing).
         for (const auto & column_name : required_column_names)
         {
-            if (column_name_to_node.contains(column_name))
+            if (column_name_to_node.contains(column_name) || virtual_column_name_to_node.contains(column_name))
                 continue;
 
             if (storage_snapshot_->tryGetColumn(get_column_options, column_name))
@@ -1995,14 +2013,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             replaceColumns(modified_query_info.query_tree,
                 replacement_table_expression,
                 column_name_to_node);
-        }
-
-        /// `replaceColumns` does not descend into subqueries, and a correlated reference to a Merge
-        /// virtual column must see the child's name as well.
-        if (!virtual_column_name_to_constant.empty())
-        {
-            ReplaceColumnsEverywhereVisitor visitor(replacement_table_expression, std::move(virtual_column_name_to_constant));
-            visitor.visit(modified_query_info.query_tree);
         }
 
         modified_query_info.query = queryNodeToSelectQuery(modified_query_info.query_tree);
