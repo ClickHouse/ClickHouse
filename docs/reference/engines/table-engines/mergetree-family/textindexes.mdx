@@ -314,7 +314,7 @@ For an optimal user experience, we therefore recommend using preprocessor expres
 </Note>
 
 Functions [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens), and [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
-Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
+The preprocessor is part of the index definition, so it applies wherever these functions are evaluated: in the `WHERE`/`PREWHERE` filter, in the `SELECT` list, and independently of whether the index is read (e.g. `SETTINGS use_skip_indexes = 0`).
 
 For example,
 
@@ -571,6 +571,7 @@ Storing positions increases the on-disk size of the index and the write cost, so
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
 Creating an index with `support_phrase_search = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) to be enabled.
 Set `support_phrase_search = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
+The stored positions can be inspected in the column `positions` of the table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex).
 
 <Warning>
 This argument is experimental and should only be used for testing.
@@ -1653,7 +1654,7 @@ If index is not materialized in the source part, it is built, written into a tem
 
 **Debugging**
 
-Table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) can be used to introspect text indexes.
+Table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) can be used to introspect text indexes: their dictionaries, posting lists and positions.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
