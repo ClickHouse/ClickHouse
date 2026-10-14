@@ -47,7 +47,7 @@ std::vector<std::pair<UUID, UUID>> getUUIDsOfDataStorages(
 
 /// Whether a table created by `create_query`, or one of the inner tables of the view it creates, is on a storage policy
 /// marked `backup_metadata_only`.
-bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context);
+bool isAnyCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context);
 
 }
 

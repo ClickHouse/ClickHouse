@@ -650,9 +650,8 @@ void BackupEntriesCollector::gatherTablesMetadata()
         /// Naming a partition of an engine that has none is a user error in each of those cases, and
         /// answering it by silently ignoring the clause is worse than refusing the query.
         auto it = database_info.tables.find(qualified_name.table);
-        const bool hasSomethingToBackup = it != database_info.tables.end() && it->second.anyElementNamedPartitions();
-        if (it != database_info.tables.end() && it->second.anyElementNamedPartitions() && res_table_info.storage
-            && !res_table_info.storage->supportsBackupPartition())
+        const bool partitions_named = it != database_info.tables.end() && it->second.anyElementNamedPartitions();
+        if (partitions_named && res_table_info.storage && !res_table_info.storage->supportsBackupPartition())
         {
             throw Exception(
                 ErrorCodes::CANNOT_BACKUP_TABLE,
@@ -663,7 +662,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
 
         /// The data of a table on a storage policy marked `backup_metadata_only` is never backed up, the storage provides
         /// it. A backup of some of its partitions would be restored as the whole table, so refuse it.
-        if (hasSomethingToBackup && res_table_info.storage
+        if (partitions_named && res_table_info.storage
             && BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(res_table_info.storage, context))
         {
             throw Exception(

@@ -1282,6 +1282,7 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     # A table on a storage policy marked `backup_metadata_only` keeps its data on the storage: `BACKUP` stores only its
     # metadata, and `RESTORE` recreates it with its UUID from the backup, so it finds its data on the storage again.
     # The inner table of a materialized view is backed up and restored through the view, and it is covered too.
+    # An `Alias` of such a table keeps no data, so it is backed up and restored like any other `Alias`.
     instance = cluster.instances["node"]
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
@@ -1289,6 +1290,8 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
 
     instance.query(
         """
+        DROP TABLE IF EXISTS sample_alias SYNC;
+        DROP TABLE IF EXISTS sample_alias_copy SYNC;
         DROP TABLE IF EXISTS sample SYNC;
         DROP TABLE IF EXISTS mv SYNC;
         DROP TABLE IF EXISTS src SYNC;
@@ -1340,10 +1343,12 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
         SETTINGS storage_policy = '{policy}', index_granularity = 8192 AS SELECT key FROM src;
         """
     )
+    instance.query("CREATE TABLE sample_alias ENGINE = Alias(sample)")
     assert instance.query("SELECT count() FROM sample") == "100\n"
     assert instance.query("SELECT count() FROM mv") == "10\n"
+    assert instance.query("SELECT count() FROM sample_alias") == "100\n"
 
-    instance.query(f"BACKUP TABLE sample, TABLE mv TO {backup_destination}")
+    instance.query(f"BACKUP TABLE sample, TABLE mv, TABLE sample_alias TO {backup_destination}")
 
     # The backup has the definitions of the tables, but none of their data.
     backup_manifest = (
@@ -1364,6 +1369,7 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     )
     assert "CANNOT_RESTORE_TABLE" in err and "already has this UUID" in err, err
 
+    instance.query("DROP TABLE sample_alias SYNC")
     instance.query("DROP TABLE sample SYNC")
     instance.query("DROP TABLE mv SYNC")
 
@@ -1419,6 +1425,14 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     assert instance.query("SELECT count(), sum(key) FROM sample") == "100\t4950\n"
     assert instance.query("SELECT count(), sum(key) FROM mv") == "10\t45\n"
 
+    # The `Alias` gets a new UUID like any table without data on such a policy, also when it is restored under another name.
+    instance.query(f"RESTORE TABLE sample_alias FROM {backup_destination}")
+    instance.query(f"RESTORE TABLE sample_alias AS sample_alias_copy FROM {backup_destination}")
+    assert instance.query("SELECT count(), sum(key) FROM sample_alias") == "100\t4950\n"
+    assert instance.query("SELECT count(), sum(key) FROM sample_alias_copy") == "100\t4950\n"
+
+    instance.query("DROP TABLE sample_alias SYNC")
+    instance.query("DROP TABLE sample_alias_copy SYNC")
     instance.query("DROP TABLE sample SYNC")
     instance.query("DROP TABLE mv SYNC")
     instance.query("DROP TABLE src SYNC")

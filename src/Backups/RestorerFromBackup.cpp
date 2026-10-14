@@ -866,7 +866,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 "as a mount, or restore the selected partitions without mount_readonly_parts_from_snapshot.");
 #endif
 
-        if (create_table_query->uuid != UUIDHelpers::Nil && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
+        if (create_table_query->uuid != UUIDHelpers::Nil && BackupUtils::isAnyCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
         {
             /// `RESTORE` doesn't restore the data of a table on a `backup_metadata_only` storage policy, the table finds it on
             /// its storage under a path derived from its UUID. So the table keeps the UUID it has in the backup.

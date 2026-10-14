@@ -10,6 +10,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
@@ -167,16 +168,25 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
 namespace
 {
 
-/// The storages that keep the data of `storage`, each with the kind of the inner table it is, if it is one.
+/// The storages that keep the data of `storage` on a storage policy, each with the kind of the inner table it is, if it
+/// is one. Of the tables that keep their data, only `MergeTreeData` keeps it on a storage policy. Other storages that
+/// report a policy keep no data of their own: `Alias`, `Distributed` and the `StorageProxy` wrappers report the policy of
+/// another table, or of their insert queue.
 std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStorages(const StoragePtr & storage, const ContextPtr & context)
 {
     std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> data_storages;
+    auto add_if_keeps_data = [&](std::optional<ViewTarget::Kind> target_kind, const StoragePtr & data_storage)
+    {
+        if (dynamic_cast<const MergeTreeData *>(data_storage.get()))
+            data_storages.emplace_back(target_kind, data_storage);
+    };
+
     if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
     {
         if (materialized_view->hasInnerTable())
         {
             if (auto target = materialized_view->tryGetTargetTable())
-                data_storages.emplace_back(ViewTarget::To, target);
+                add_if_keeps_data(ViewTarget::To, target);
         }
     }
     else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
@@ -186,13 +196,13 @@ std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStora
             if (time_series->isInnerTable(target_kind))
             {
                 if (auto target = time_series->tryGetTargetTable(target_kind, context))
-                    data_storages.emplace_back(target_kind, target);
+                    add_if_keeps_data(target_kind, target);
             }
         }
     }
     else
     {
-        data_storages.emplace_back(std::nullopt, storage);
+        add_if_keeps_data(std::nullopt, storage);
     }
     return data_storages;
 }
@@ -237,13 +247,16 @@ std::vector<std::pair<UUID, UUID>> getUUIDsOfDataStorages(
     return res;
 }
 
-bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
+bool isAnyCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
 {
     auto is_on_backup_metadata_only_policy = [&](const ASTStorage * storage)
     {
+        if (!storage || !storage->engine || !storage->settings)
+            return false;
+
         /// Only an explicit `storage_policy` matters: a policy marked `backup_metadata_only` is read-only, so it can't be
         /// the default one of tables, which have to be written.
-        const auto * policy_name = storage && storage->engine && storage->settings ? storage->settings->changes.tryGet("storage_policy") : nullptr;
+        const auto * policy_name = storage->settings->changes.tryGet("storage_policy");
         if (!policy_name)
             return false;
 
