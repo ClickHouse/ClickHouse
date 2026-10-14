@@ -35,3 +35,21 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_left
 SELECT count() FROM t_bf_left_aj LEFT ARRAY JOIN tags AS tag WHERE tag GLOBAL IN (SELECT arrayJoin(['t3', '']));
 
 DROP TABLE t_bf_left_aj;
+
+SELECT '-- an index on the padded array keeps the default element';
+DROP TABLE IF EXISTS t_bf_padded_aj;
+CREATE TABLE t_bf_padded_aj
+(
+    tags Array(String),
+    INDEX idx_padded emptyArrayToSingle(tags) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 1;
+INSERT INTO t_bf_padded_aj SELECT if(number < 8, ['t' || toString(number)], []) FROM numbers(10);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_padded_aj ARRAY JOIN emptyArrayToSingle(tags) AS tag WHERE tag IN ('t3')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+SELECT count() FROM t_bf_padded_aj ARRAY JOIN emptyArrayToSingle(tags) AS tag WHERE tag IN ('t3');
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_padded_aj ARRAY JOIN emptyArrayToSingle(tags) AS tag WHERE tag IN ('t3', '')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+SELECT count() FROM t_bf_padded_aj ARRAY JOIN emptyArrayToSingle(tags) AS tag WHERE tag IN ('t3', '');
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_padded_aj LEFT ARRAY JOIN tags AS tag WHERE tag IN ('t3', '')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+SELECT count() FROM t_bf_padded_aj LEFT ARRAY JOIN tags AS tag WHERE tag IN ('t3', '');
+DROP TABLE t_bf_padded_aj;

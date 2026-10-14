@@ -12,3 +12,13 @@ Granules: 1/10
 2
 3
 3
+-- an index on the padded array keeps the default element
+Name: idx_padded
+Granules: 1/10
+1
+Name: idx_padded
+Granules: 3/10
+3
+Name: idx_padded
+Granules: 3/10
+3

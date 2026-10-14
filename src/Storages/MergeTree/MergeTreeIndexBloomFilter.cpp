@@ -640,13 +640,13 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
-/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in the index
-static RPNBuilderTreeNode unwrapArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded)
+/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
+static String getArrayJoinColumnName(const RPNBuilderTreeNode & node, const Block & header, bool & padded)
 {
-    if (!node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
-        return node;
+    if (header.has(node.getColumnName()) || !node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
+        return node.getColumnName();
     padded = true;
-    return node.toFunctionNode().getArgumentAt(0);
+    return node.toFunctionNode().getArgumentAt(0).getColumnName();
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
@@ -835,7 +835,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     bool padded = false;
-    auto array_column_name = unwrapArrayJoinArgument(*array_join_argument, padded).getColumnName();
+    auto array_column_name = getArrayJoinColumnName(*array_join_argument, header, padded);
     if (!header.has(array_column_name))
         return false;
 
@@ -1104,7 +1104,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (auto array_join_argument = key_node.getArrayJoinArgument())
         {
             bool padded = false;
-            auto array_column_name = unwrapArrayJoinArgument(*array_join_argument, padded).getColumnName();
+            auto array_column_name = getArrayJoinColumnName(*array_join_argument, header, padded);
             if (header.has(array_column_name))
             {
                 size_t position = header.getPositionByName(array_column_name);
