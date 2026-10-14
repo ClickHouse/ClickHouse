@@ -135,7 +135,9 @@ std::vector<Document> ListCollectionsHandler::handle(
     String namespace_name = database + ".$cmd.listCollections";
     BSON_APPEND_UTF8(&cursor, "ns", namespace_name.c_str());
 
-    bson_t * result_doc = bson_new();
+    /// Owned until the reply is built, so a request refused half-way through does not leak it.
+    std::unique_ptr<bson_t, decltype(&bson_destroy)> result_doc_holder(bson_new(), &bson_destroy);
+    bson_t * result_doc = result_doc_holder.get();
     BSON_APPEND_DOCUMENT(result_doc, "cursor", &cursor);
     BSON_APPEND_DOUBLE(result_doc, "ok", 1.0);
     bson_destroy(&cursor);
@@ -150,7 +152,7 @@ std::vector<Document> ListCollectionsHandler::handle(
     }
 
     std::vector<Document> result;
-    result.emplace_back(result_doc);
+    result.emplace_back(result_doc_holder.release());
     return result;
 }
 

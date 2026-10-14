@@ -50,7 +50,9 @@ std::vector<Document> ListDatabasesHandler::handle(
             non_empty_databases.insert(std::move(database));
     }
 
-    bson_t * bson_doc = bson_new();
+    /// Owned until the reply is built, so a request refused half-way through does not leak it.
+    std::unique_ptr<bson_t, decltype(&bson_destroy)> bson_doc_holder(bson_new(), &bson_destroy);
+    bson_t * bson_doc = bson_doc_holder.get();
 
     {
         static constexpr std::string_view key_identifier = "databases";
@@ -103,7 +105,7 @@ std::vector<Document> ListDatabasesHandler::handle(
     }
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(bson_doc_holder.release());
     return result;
 }
 

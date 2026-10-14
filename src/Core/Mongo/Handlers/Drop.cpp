@@ -36,13 +36,15 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
     validateWriteConcern(documents[0].documents[0].getRapidJSONRepresentation(), "drop");
     String namespace_name = collection.database + "." + collection.collection;
 
-    bson_t * bson_doc = bson_new();
-
+    /// The reply is allocated only after the fallible work, so an error thrown by the probe or by
+    /// the `DROP TABLE` - a missing grant, an unauthenticated session - does not leak it.
+    bool dropped = false;
     if (objectExists(executor, "TABLE", collection.getQualifiedName()))
     {
         try
         {
             executor->execute(fmt::format("DROP TABLE {}", collection.getQualifiedName()));
+            dropped = true;
         }
         catch (const Exception & e)
         {
@@ -51,12 +53,12 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
             /// namespace is gone either way, so answer what the probe would have answered.
             if (!failedOnMissingCollection(e, executor, collection))
                 throw;
-            appendNamespaceNotFound(bson_doc);
-            std::vector<Document> result;
-            result.emplace_back(bson_doc);
-            return result;
         }
+    }
 
+    bson_t * bson_doc = bson_new();
+    if (dropped)
+    {
         BSON_APPEND_INT32(bson_doc, "nIndexesWas", 1);
         BSON_APPEND_UTF8(bson_doc, "ns", namespace_name.c_str());
         BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);

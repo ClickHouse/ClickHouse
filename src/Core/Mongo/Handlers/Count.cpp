@@ -107,7 +107,9 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
         }
     }
 
-    bson_t * bson_doc = bson_new();
+    /// Owned until the reply is built, so a request refused half-way through does not leak it.
+    std::unique_ptr<bson_t, decltype(&bson_destroy)> bson_doc_holder(bson_new(), &bson_destroy);
+    bson_t * bson_doc = bson_doc_holder.get();
 
     if (count <= INT32_MAX)
         BSON_APPEND_INT32(bson_doc, "n", static_cast<int32_t>(count));
@@ -116,7 +118,7 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(bson_doc_holder.release());
     return result;
 }
 

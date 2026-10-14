@@ -91,7 +91,9 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     /// The 'delete' command carries one or more delete specs, each with its own 'q' filter.
     /// Execute every spec. Each spec is translated before it is run, so a malformed filter is
     /// still an error for a collection that does not exist.
-    bson_t * bson_doc = bson_new();
+    /// Owned until the reply is built, so a request refused half-way through does not leak it.
+    std::unique_ptr<bson_t, decltype(&bson_destroy)> bson_doc_holder(bson_new(), &bson_destroy);
+    bson_t * bson_doc = bson_doc_holder.get();
     bson_t write_errors;
     bool has_write_errors = false;
     size_t error_count = 0;
@@ -185,7 +187,7 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(bson_doc_holder.release());
     return result;
 }
 
