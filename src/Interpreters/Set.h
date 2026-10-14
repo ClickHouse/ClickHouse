@@ -149,28 +149,28 @@ public:
 
     /// Whether the cast that `execute` applies to a value of `column_type` before looking it up in a set of
     /// `set_type` can map two different values onto one element, so that the element matches more values than
-    /// its own conversion into `column_type`. Only the casts known to keep values apart answer false:
+    /// its own conversion into `column_type`. `execute` builds the cast without the query settings, so the
+    /// settings that change a conversion do not apply, such as `check_conversion_from_numbers_to_enum` and
+    /// `cast_string_to_variant_use_inference`. Only the casts known to keep values apart answer false:
+    /// - a value cast into a `Dynamic`, which stores it under its own type, or into a `Variant` that has its
+    ///   type as an alternative. A string is stored as it is, since no type is inferred from its spelling;
     /// - a string-ish value cast into `String`, which drops nothing but the padding of a `FixedString`. Any
-    ///   other target parses, and many spellings name one value: `s IN (SELECT toUInt8(2))` matches both
-    ///   `'2'` and `'02'`, `s IN (SELECT toDateTime64(...))` matches `'2023-02-01 12:00:00'` as well as
-    ///   `'2023-02-01 12:00:00.000'`, and casting into `FixedString` pads `'abc'` and `'abc\0'` alike. A
-    ///   `Dynamic`, `Variant` or `JSON` target parses as well: `JSON` accepts only objects, a `Variant`
-    ///   infers an alternative from the spelling (`CAST('42', 'Variant(Date)')` throws), and a `Dynamic` does
-    ///   so under `cast_string_to_dynamic_use_inference`;
+    ///   other target parses, `JSON` included, and many spellings name one value: `s IN (SELECT toUInt8(2))`
+    ///   matches both `'2'` and `'02'`, `s IN (SELECT toDateTime64(...))` matches `'2023-02-01 12:00:00'`
+    ///   as well as `'2023-02-01 12:00:00.000'`, and casting into `FixedString` pads `'abc'` and `'abc\0'`
+    ///   alike;
     /// - a `Tuple`, `Array` or `Map` whose elements keep apart, including an `Array` of pairs cast into a
     ///   `Map`. As `CAST` does, two named tuples with a common name pair their elements by name, and a source
     ///   element without a counterpart is dropped;
-    /// - any other value cast into a `Dynamic`, `Variant` or `JSON`, which keeps it under its own type;
     /// - integers and floats, which the cast converts exactly or not at all: a scalar that does not fit
     ///   becomes NULL, and one inside a composite throws. `Bool` is the exception: it takes every nonzero
-    ///   number to `true`. An `Enum` is not such a number. `execute` builds its cast without the query
-    ///   settings, so `check_conversion_from_numbers_to_enum` does not apply, and a value converts into or
-    ///   out of an `Enum` by `static_cast`. An `Enum8` element of value 1 thus matches both 1 and 257 of an
-    ///   `Int64` column;
+    ///   number to `true`. An `Enum` is not such a number: a value converts into or out of an `Enum` by
+    ///   `static_cast`, so an `Enum8` element of value 1 matches both 1 and 257 of an `Int64` column;
     /// - a conversion that keeps values apart whatever the cast (`conversionPreservesOrder`,
     ///   `canBeSafelyCast`), such as an `Enum` into an integer that holds all its values.
     /// Any other cast answers true. Many of them truncate: `ts IN (SELECT toDate(...))` matches every time of
-    /// a day, and a `DateTime64(6)` value matches the `DateTime64(3)` element it truncates to.
+    /// a day, and a `DateTime64(6)` value matches the `DateTime64(3)` element it truncates to. A cast that
+    /// throws answers true as well, such as one of a string into `Variant(Date)` or of a number into `JSON`.
     static bool lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTypePtr & set_type);
 
     /// Limitations on the maximum size of the set

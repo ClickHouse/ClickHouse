@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Utils.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -392,6 +393,11 @@ bool Set::lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTy
     if (isNothing(to) || from->equals(*to))
         return false;
 
+    if (isDynamic(to))
+        return false;
+    if (const auto * to_variant = typeid_cast<const DataTypeVariant *>(to.get()))
+        return !to_variant->tryGetVariantDiscriminator(from->getName());
+
     if (isStringOrFixedString(from))
         return !isString(to);
 
@@ -443,9 +449,6 @@ bool Set::lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTy
         return !to_map || lookupCastMayMergeValues(from_map->getKeyType(), to_map->getKeyType())
             || lookupCastMayMergeValues(from_map->getValueType(), to_map->getValueType());
     }
-
-    if (isDynamic(to) || isVariant(to) || isObject(to))
-        return false;
 
     if ((isInteger(from) || isFloat(from)) && (isInteger(to) || isFloat(to)))
         return false;

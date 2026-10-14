@@ -87,3 +87,10 @@ CREATE TABLE t_wide (x Int64) ENGINE = MergeTree ORDER BY x
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_wide SELECT 1 + 256 * number FROM numbers(8);
 {{ check('t_wide', "x IN (SELECT e FROM t_enum WHERE e = 'a')") }}
+
+-- A `Dynamic` stores the key under its own type, and so does a `Variant` that has the key's type as an
+-- alternative, so such a set prunes. The cast into any other `Variant` throws, and the query raises that
+-- error as a full scan does, although no granule holds the element 100.
+{{ check('t_bool', "x IN (SELECT CAST(toUInt8(5), 'Dynamic'))") }}
+{{ check('t_bool', "x IN (SELECT CAST(toUInt8(5), 'Variant(UInt8, String)'))") }}
+SELECT count() FROM t_bool WHERE x IN (SELECT CAST(toInt64(100), 'Variant(Int64, String)')); -- { serverError CANNOT_CONVERT_TYPE }
