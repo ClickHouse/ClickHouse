@@ -129,10 +129,8 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         # Metadata statements are exempt from workload scheduling.
         run(node_off, "create table t2 (x UInt64) engine=MergeTree order by x", workload="regular")
         run(node_off, "alter table t2 add column y UInt64", workload="regular")
-        run(node_off, "create view v as select x from t2", workload="regular")
         run(node_off, "rename table t2 to t3", workload="regular")
         run(node_off, "truncate table t3", workload="regular")
-        run(node_off, "drop view v sync", workload="regular")
         run(node_off, "drop table t3 sync", workload="regular")
         run(node_off, "alter table t drop partition tuple()", workload="regular")
         run(node_off, "system reload config", workload="regular")
@@ -145,6 +143,7 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         # Statements that may move a lot of data stay under `workload`.
         run_times_out(node_off, "create table t2 engine=MergeTree order by x as select 1 as x", workload="regular")
         run_times_out(node_off, "create table t2 as numbers(10)", workload="regular")
+        run_times_out(node_off, "create view v as select x from t", workload="regular")
         run_times_out(node_off, "create view v2 as select * from numbers(10)", workload="regular")
         run_times_out(node_off, "create table t2 engine=URL('http://localhost:8123/?query=select+1', 'TSV')", workload="regular")
         run_times_out(node_off, "optimize table t final", workload="regular")
