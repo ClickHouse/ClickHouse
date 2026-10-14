@@ -1906,7 +1906,7 @@ class JobConfigs:
     # No `requires`: the wrapper downloads both binaries from S3.
     nightly_extended_performance_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
-        runs_on=RunnerLabels.ARM_LARGE_STORAGE,
+        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
         command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
         # Default seccomp blocks `io_uring` (`io_uring.xml`)
         run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",

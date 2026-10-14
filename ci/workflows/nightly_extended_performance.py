@@ -1,6 +1,6 @@
 """NightlyExtendedPerformance: nightly `long` performance tests on master, ARM only.
 
-Schedule: 05:13 UTC daily on `arm-large-storage` (m8g.8xlarge, 500 GB). The pre-hook
+Schedule: 05:13 UTC daily on `arm-medium-storage` (r8g.4xlarge, 500 GB). The pre-hook
 `ci/jobs/nightly_extended_performance.py --resolve` picks the binaries: tested = the newest published
 `Build (arm_release)` on the first-parent chain from the trigger commit (on a branch, the master commits below its merge
 base with master); reference = the tested binary of the last master run of this workflow in the past three nights, so

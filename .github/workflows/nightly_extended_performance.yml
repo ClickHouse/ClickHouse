@@ -50,7 +50,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyExtendedPerformance" --ci --timestamp
 
   performance_comparison_arm_release_master_head_nightly_1_4:
-    runs-on: [self-hosted, arm-large-storage]
+    runs-on: [self-hosted, arm-medium-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, master_head, nightly, 1/4)"
     timeout-minutes: 965
@@ -84,7 +84,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, nightly, 1/4)' --workflow "NightlyExtendedPerformance" --ci --timestamp
 
   performance_comparison_arm_release_master_head_nightly_2_4:
-    runs-on: [self-hosted, arm-large-storage]
+    runs-on: [self-hosted, arm-medium-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, master_head, nightly, 2/4)"
     timeout-minutes: 965
@@ -118,7 +118,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, nightly, 2/4)' --workflow "NightlyExtendedPerformance" --ci --timestamp
 
   performance_comparison_arm_release_master_head_nightly_3_4:
-    runs-on: [self-hosted, arm-large-storage]
+    runs-on: [self-hosted, arm-medium-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, master_head, nightly, 3/4)"
     timeout-minutes: 965
@@ -152,7 +152,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, nightly, 3/4)' --workflow "NightlyExtendedPerformance" --ci --timestamp
 
   performance_comparison_arm_release_master_head_nightly_4_4:
-    runs-on: [self-hosted, arm-large-storage]
+    runs-on: [self-hosted, arm-medium-storage]
     needs: [config_workflow]
     name: "Performance Comparison (arm_release, master_head, nightly, 4/4)"
     timeout-minutes: 965

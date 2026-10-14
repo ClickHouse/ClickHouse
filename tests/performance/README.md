@@ -149,7 +149,7 @@ To get the text of a reported `query_index` (0-based, after substitutions), chec
 
 Nightly results are comparable only under the same conditions. Append a dated line whenever any of them changes:
 
-* YYYY-MM-DD (first scheduled night): instance type `m8g.8xlarge`, image `clickhouse/performance-comparison`, pool `arm-large-storage`.
+* YYYY-MM-DD (first scheduled night): instance type `r8g.4xlarge`, image `clickhouse/performance-comparison`, pool `arm-medium-storage`.
 
 Each job log also carries the resolved docker image digest (printed by the praktika runner) and the host identity (kernel, OS, CPU, memory, instance).
 
