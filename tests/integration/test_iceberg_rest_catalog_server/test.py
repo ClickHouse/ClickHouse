@@ -762,9 +762,8 @@ def test_malformed_create_table(started_cluster):
     assert_error_shape(response, "NoSuchNamespaceException")
 
 
-def test_pyiceberg_client(started_cluster):
-    ns = f"pyiceberg_{uuid.uuid4().hex[:8]}"
-    catalog = load_catalog(
+def pyiceberg_catalog():
+    return load_catalog(
         "ch",
         **{
             "uri": catalog_url(""),
@@ -776,6 +775,11 @@ def test_pyiceberg_client(started_cluster):
             "s3.secret-access-key": minio_secret_key,
         },
     )
+
+
+def test_pyiceberg_client(started_cluster):
+    ns = f"pyiceberg_{uuid.uuid4().hex[:8]}"
+    catalog = pyiceberg_catalog()
 
     catalog.create_namespace(ns)
     assert (ns,) in catalog.list_namespaces()
@@ -799,6 +803,36 @@ def test_pyiceberg_client(started_cluster):
     catalog.drop_table(f"{ns}.events")
     assert catalog.list_tables(ns) == []
     assert not catalog.table_exists(f"{ns}.events")
+
+
+def test_names_with_slash(started_cluster):
+    # pyiceberg sends `/` inside a name as `%2F`.
+    catalog = pyiceberg_catalog()
+    ns = f"slash_{uuid.uuid4().hex[:8]}"
+    catalog.create_namespace((ns, "x/y"))
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=True))
+
+    for identifier in [(ns, "a/b"), (ns, "x/y", "a/b")]:
+        catalog.create_table(identifier, schema=schema)
+        assert catalog.table_exists(identifier)
+        assert catalog.load_table(identifier).schema().as_struct() == schema.as_struct()
+        assert catalog.list_tables(identifier[:-1]) == [identifier]
+        catalog.drop_table(identifier)
+        assert catalog.list_tables(identifier[:-1]) == []
+
+    assert catalog.namespace_exists((ns, "x/y"))
+    assert catalog.load_namespace_properties((ns, "x/y")) == {}
+
+
+def test_slash_at_name_edge_does_not_retarget(started_cluster):
+    # An encoded `/` at the edge of a name must not address the table without it.
+    ns = f"edge_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "a")
+    for name in ["a%2F", "%2Fa"]:
+        response = drop_table(ns, name, expected_code=404)
+        assert_error_shape(response, "NoSuchTableException")
+    assert table_exists(ns, "a")
 
 
 def test_unsupported_format_is_refused(started_cluster):
