@@ -1,0 +1,1658 @@
+---
+sidebarTitle: 'بروتوكول TCP الأصلي'
+keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'native', 'tcp']
+slug: /integrations/csharp/tcp
+description: 'عميل C# الرسمي للاتصال بـ ClickHouse عبر بروتوكول TCP الأصلي.'
+title: 'عميل ClickHouse للغة C# عبر بروتوكول TCP الأصلي'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-cs'
+---
+
+## الحالة التجريبية {#experimental-status}
+
+<Warning>
+  واجهة برمجة تطبيقات عميل البروتوكول الأصلي تجريبية. وقد تتغير واجهتها العامة في إصدار مستقبلي.
+</Warning>
+
+تُصدر واجهات العميل الرئيسي ومصدر البيانات وsession والعمليات، إلى جانب امتدادات حقن التبعيات،
+تحذير المصرّف `CHTCP0001`. للإقرار بهذا التحذير أثناء تقييم واجهة برمجة التطبيقات، أضفه
+إلى `NoWarn` في ملف مشروعك:
+
+```xml
+<PropertyGroup>
+  <NoWarn>$(NoWarn);CHTCP0001</NoWarn>
+</PropertyGroup>
+```
+
+لا تُخفِ التحذير إلا بعد أن تتقبّل احتمال الحاجة إلى تعديل الشيفرة التي تستخدم واجهة برمجة التطبيقات في
+إصدار مستقبلي.
+
+## إصدارات .NET المدعومة {#supported-net-versions}
+
+يدعم العميل الذي يعمل عبر البروتوكول الأصلي إصدارات .NET التالية:
+
+* .NET 8.0
+* .NET 9.0
+* .NET 10.0
+
+## إصدارات ClickHouse المدعومة {#supported-clickhouse-versions}
+
+يدعم عميل TCP رسميًا أحدث إصدارين من إصدارات الدعم طويل الأمد (LTS)، وأحدث ثلاثة إصدارات من خادم ClickHouse.
+
+## التثبيت {#installation}
+
+يتوفر عميل البروتوكول الأصلي عبر TCP ضمن حزمة `ClickHouse.Driver`. ثبّت الحزمة من NuGet:
+
+```bash
+dotnet add package ClickHouse.Driver
+```
+
+أو باستخدام مدير الحزم NuGet Package Manager:
+
+```bash
+Install-Package ClickHouse.Driver
+```
+
+## البدء السريع {#quick-start}
+
+```csharp
+using ClickHouse.Driver.Tcp;
+
+// Create and reuse a client. It is thread-safe and owns a connection pool.
+await using var client = new ClickHouseTcpClient(
+    "Host=my.clickhouse;Port=9000;Username=user");
+
+// Execute a query
+object version = await client.ExecuteScalarAsync("SELECT version()");
+Console.WriteLine(version);
+```
+
+## الترحيل من عميل HTTP {#migrating-from-http}
+
+واجهة برمجة تطبيقات TCP مستقلة عن `IClickHouseClient`؛ فهي ليست خيارًا لوسيلة النقل في
+`ClickHouseClient` أو `ClickHouseConnection`. يمكن إعادة استخدام معظم شيفرات SQL، لكن عليك إنشاء
+`ClickHouseTcpClient` وترحيل كل عملية إلى نظيرتها عبر TCP.
+
+### الطرق المكافئة {#migrating-methods}
+
+| عميل HTTP                                                                         | عميل TCP                                                        | الفرق المهم                                                                                                                                                              |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `new ClickHouseClient(...)`                                                       | `new ClickHouseTcpClient(...)`                                  | استخدم `ClickHouseTcpClientOptions` أو سلسلة اتصال TCP مع المنفذ الأصلي، وهو عادةً 9000 دون TLS. أعد استخدام العميل نفسه في جميع العمليات، أيًّا كان نوعه.               |
+| `ExecuteNonQueryAsync(...)`                                                       | `ExecuteAsync(...)`                                             | تكتمل طريقة TCP بمجرد أن يؤكد ClickHouse استلام العبارة، ولا تُرجع عدد الصفوف المتأثرة.                                                                                  |
+| `ExecuteScalarAsync(...)`                                                         | `ExecuteScalarAsync(...)`                                       | تُرجع كلتاهما القيمة الأولى، أو `null` إذا كانت النتيجة فارغة. وتقرأ طريقة TCP الاستجابة كاملةً قبل الإرجاع حتى يتسنى إعادة استخدام الاتصال.                             |
+| `ExecuteReaderAsync(...)`                                                         | `QueryAsync(...)` أو `QueryAsync<T>(...)` أو `StreamAsync(...)` | لا يتوفر `DbDataReader` في TCP. اختر بين صفوف `object[]` مخصصة، أو كائنات POCO مربوطة، أو كتل عمودية مستعارة.                                                            |
+| `QueryAsync<T>(...)`                                                              | `QueryAsync<T>(...)`                                            | يُنشئ TCP ربط POCO ويخزنه مؤقتًا تلقائيًا، دون الحاجة إلى أي استدعاء للتسجيل. استخدم `ClickHouseTcpColumn` و`ClickHouseTcpNotMapped` بدلًا من سمات الربط الخاصة بـ HTTP. |
+| `InsertBinaryAsync(table, columns, rows)`                                         | `InsertRowsAsync(sql, rows)`                                    | مرّر `IReadOnlyList<object[]>` مُجسَّدة، ويجب أن تنتهي عبارة SQL عند `VALUES`. ولا تُرجع طريقة TCP عدد الصفوف المُدرجة.                                                  |
+| `InsertBinaryAsync<T>(table, rows)`                                               | `InsertRowsAsync<T>(sql, rows)`                                 | لا يتطلب TCP تسجيل POCO، لكن يجب أن يقابل كل عمود مذكور في العبارة خاصيةً عامة متوافقة.                                                                                  |
+| —                                                                                 | `InsertAsync(sql, columns)`                                     | استخدم قيم `IColumn` محددة النوع لتجنّب تحويل الصفوف إلى أعمدة وتغليف أنواع القيم (boxing) اللذين تنطوي عليهما عمليات إدراج الصفوف.                                      |
+| `PingAsync(...)`                                                                  | `PingAsync(...)`                                                | يُرجع HTTP القيمة `false` عند فشل الفحص، أما TCP فيكتمل بنجاح عند تلقي `Pong` ويرفع استثناءً فيما عدا ذلك.                                                               |
+| `ExecuteRawResultAsync(...)`, `InsertRawStreamAsync(...)`, `PostStreamAsync(...)` | لا يوجد مكافئ                                                   | استمر في استخدام عميل HTTP للتدفقات الخام والصيغ مثل CSV وJSONEachRow وParquet.                                                                                          |
+| `CreateConnection()` أو أنواع ADO.NET                                             | لا يوجد مكافئ                                                   | استمر في استخدام عميل HTTP مع ADO.NET وأطر ORM.                                                                                                                          |
+
+على سبيل المثال، حلقة قارئ HTTP:
+
+```csharp
+using var reader = await http.ExecuteReaderAsync(
+    "SELECT id, name FROM events ORDER BY id");
+
+while (reader.Read())
+{
+    Console.WriteLine($"{reader.GetFieldValue<ulong>(0)}: {reader.GetString(1)}");
+}
+```
+
+يصبح دفقًا غير متزامن لصفوف TCP:
+
+```csharp
+await foreach (object[] row in tcp.QueryAsync(
+    "SELECT id, name FROM events ORDER BY id"))
+{
+    Console.WriteLine($"{row[0]}: {row[1]}");
+}
+```
+
+### الخيارات والمعلمات {#migrating-options-parameters}
+
+لا يمكن استخدام `QueryOptions` و`ClickHouseParameterCollection` الخاصّين بـ HTTP بالتبادل مع نظيريهما في TCP.
+انقل القيم إلى `ClickHouseTcpQueryOptions`، حيث تكون الإعدادات سلاسل نصية
+وتكون المعلمات جزءًا من كائن الخيارات نفسه:
+
+```csharp
+var options = new ClickHouseTcpQueryOptions
+{
+    QueryId = "events-by-score",
+    Settings = new Dictionary<string, string>
+    {
+        ["max_execution_time"] = "30",
+    },
+    Parameters = new ClickHouseTcpParameterCollection
+    {
+        { "minimum", 18.0 },
+    },
+};
+
+await foreach (object[] row in client.QueryAsync(
+    "SELECT id, score FROM events WHERE score >= {minimum:Float64}",
+    options))
+{
+    Console.WriteLine($"{row[0]}: {row[1]}");
+}
+```
+
+يدعم عميل TCP العناصر النائبة الأصلية في ClickHouse بصيغة `{name:Type}`، لكنه لا يعيد كتابة
+العناصر النائبة بنمط ADO.NET مثل `@name`. كما أنه لا يتيح تحديد قاعدة بيانات أو دور أو رمز Bearer أو ترويسة
+مخصصة أو محلّل معلمات أو منسّق أو محوّل قراءة على مستوى كل استعلام. راجع [القيود](#limitations) للاطلاع على
+الميزات التي لا تزال مقتصرة على HTTP.
+
+### دورة حياة الاتصال والنتيجة {#migrating-lifetime}
+
+كلا العميلين عاليَي المستوى آمن للاستخدام عبر خيوط تنفيذ متعددة، وينبغي إعادة استخدامهما. يحتفظ عميل TCP باتصالات أصلية دائمة
+بدلًا من اتصالات HTTP، وينفّذ `IAsyncDisposable`، وينبغي عادةً
+التخلّص منه بصورة غير متزامنة عند إيقاف تشغيل التطبيق.
+
+صفوف `QueryAsync` مملوكة للجهة المستدعية. أما كتل `StreamAsync` وأعمدتها فهي مُعارة، ولا تبقى صالحة
+إلا خلال التكرار الحالي؛ انسخ أي قيم تحتاج إليها بعد انتهائه. احرص دائمًا على إكمال التعداد أو التخلّص منه
+ليعود الاتصال إلى مجمّع الاتصالات. استخدم `OpenSessionAsync` عندما يلزم تنفيذ عدة عمليات
+على الاتصال نفسه مع الاحتفاظ بحالة session.
+
+راجع
+[المثال الكامل للترحيل من HTTP إلى TCP](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/Tcp/Core/Tcp_004_MigratingFromHttp.cs)
+للاطلاع على استخدام كلا العميلين مع الجدول نفسه.
+
+## التهيئة {#configuration}
+
+يمكن تهيئة عميل يستخدم البروتوكول الأصلي عبر TCP بطريقتين:
+
+* **سلسلة الاتصال:** أزواج مفاتيح وقيم تفصل بينها فواصل منقوطة، تحدد نقطة نهاية الخادم،
+  وبيانات اعتماد المصادقة، وخيارات الاتصال الأخرى.
+* **كائن `ClickHouseTcpClientOptions`:** كائن تهيئة محدد الأنواع وغير قابل للتغيير، يُعرَّف في
+  الشيفرة.
+
+مرّر أيًا منهما إلى مُنشئ `ClickHouseTcpClient`. استخدم
+`ClickHouseTcpConnectionStringBuilder` لتحليل سلسلة اتصال أو إنشائها وتحويلها إلى
+`ClickHouseTcpClientOptions`.
+
+```csharp
+var builder = new ClickHouseTcpConnectionStringBuilder
+{
+    Host = "my.clickhouse",
+    Username = "user",
+    UseTls = true,
+    Compression = "zstd",
+};
+
+await using var client = new ClickHouseTcpClient(builder.ToOptions());
+```
+
+توضح الأقسام التالية الإعدادات المتاحة وقيمها الافتراضية وتأثير كل منها.
+
+### إعدادات الاتصال {#connection-settings}
+
+تُحدَّد قيم خصائص `TimeSpan` في سلسلة الاتصال بالثواني.
+
+| الخاصية     | النوع      | القيمة الافتراضية | مفتاح سلسلة الاتصال | الوصف                                                                                           |
+| ----------- | ---------- | ----------------- | ------------------- | ----------------------------------------------------------------------------------------------- |
+| Host        | `string`   | `"localhost"`     | `Host`              | اسم المضيف لخادم ClickHouse أو عنوان IP الخاص به                                                |
+| Port        | `int?`     | `null`            | `Port`              | منفذ البروتوكول الأصلي؛ وعند عدم تحديده يُستخدم المنفذ 9000 بدون TLS أو 9440 مع TLS             |
+| Username    | `string`   | `"default"`       | `Username`          | اسم المستخدم للمصادقة                                                                           |
+| Password    | `string`   | `""`              | `Password`          | كلمة المرور للمصادقة                                                                            |
+| Database    | `string`   | `"default"`       | `Database`          | قاعدة البيانات الافتراضية للعمليات                                                              |
+| QuotaKey    | `string`   | `""`              | `QuotaKey`          | المفتاح المستخدم مع حصة ClickHouse القائمة على مفتاح                                            |
+| DialTimeout | `TimeSpan` | 30 ثانية          | `DialTimeout`       | مهلة إنشاء اتصال المقبس والتفاوض على TLS ومصافحة البروتوكول الأصلي                              |
+| ReadTimeout | `TimeSpan` | 5 دقائق           | `ReadTimeout`       | الحد الأقصى لمدة كل عملية قراءة من طبقة النقل أثناء تنفيذ العملية؛ وتعطّل القيمة صفر هذه المهلة |
+
+### صيغة البيانات والتسلسل {#data-format-serialization}
+
+| الخاصية                                 | النوع                   | القيمة الافتراضية       | مفتاح سلسلة الاتصال                       | الوصف                                                                                                                                                                                             |
+| --------------------------------------- | ----------------------- | ----------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SendJsonAndDynamicSerializationSettings | `bool`                  | `true`                  | `SendJsonAndDynamicSerializationSettings` | يطلب تنسيقات wire الخاصة بـ `JSON` و`Dynamic` التي يدعمها العميل. اضبطه على `false` عند استخدام مستخدم للقراءة فقط لا يملك صلاحية تعديل الإعدادات، مع العلم أن قراءة هذين النوعين قد تفشل حينئذٍ. |
+| MaxSendBufferBytes                      | `int`                   | 1 MiB                   | `MaxSendBufferBytes`                      | حدٌّ مرن لبيانات الإدراج المخزنة مؤقتًا. يتحقق العميل من هذا الحد بعد كل عمود، لذا قد يؤدي عمود واحد إلى تجاوز المخزن المؤقت له.                                                                  |
+| Compressor                              | `IClickHouseCompressor` | `Lz4Compressor.Default` | `Compression`                             | يضغط الكتل التي يكتبها العميل ويطلب نتائج مضغوطة. تقبل سلاسل الاتصال القيم `lz4` أو `zstd` أو `none`، أما الضاغط المخصص فلا يمكن تعيينه إلا من خلال الخيارات.                                     |
+
+### تجميع الاتصالات {#connection-pooling}
+
+ينفّذ الاتصال الواحد عملية واحدة في كل مرة. ويتيح مجمّع الاتصالات تشغيل العمليات بشكل متزامن، مع إعادة استخدام
+الاتصالات فيما بينها.
+
+| الخاصية               | النوع                          | القيمة الافتراضية | مفتاح سلسلة الاتصال     | الوصف                                                                                                                                   |
+| --------------------- | ------------------------------ | ----------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| MinPoolSize           | `int`                          | `0`               | `MinPoolSize`           | عدد الاتصالات التي يُبقيها مجمّع الاتصالات مفتوحة متى أمكن ذلك، بما فيها الاتصالات المستخدمة حاليًا                                     |
+| MaxPoolSize           | `int`                          | `20`              | `MaxPoolSize`           | الحد الأقصى الصارم لعدد الاتصالات المفتوحة والعمليات المتزامنة؛ وتنتظر أي عمليات إضافية إلى أن يتوفر اتصال                              |
+| PoolTimeout           | `TimeSpan`                     | 30 ثانية          | `PoolTimeout`           | أقصى مدة انتظار للحصول على اتصال عندما يكون مجمّع الاتصالات ممتلئًا؛ أما إنشاء اتصال جديد فيخضع لحد مستقل يحدده `DialTimeout`           |
+| MaxConnectionLifetime | `TimeSpan`                     | 30 دقيقة          | `MaxConnectionLifetime` | أقصى عمر للاتصال يمكن خلاله إعادة استخدامه؛ وتعطّل القيمة صفر هذا الحد؛ ولا تُقاطَع العمليات الجارية أبدًا                              |
+| IdleTimeout           | `TimeSpan`                     | 5 دقائق           | `IdleTimeout`           | أقصى مدة يظل خلالها الاتصال غير المستخدم صالحًا لإعادة الاستخدام؛ وتعطّل القيمة صفر هذا الحد                                            |
+| SweepInterval         | `TimeSpan?`                    | `null` (مشتقة)    | `SweepInterval`         | الفاصل الزمني بين عمليات سحب الاتصالات منتهية الصلاحية من الخدمة واستعادة `MinPoolSize`؛ وتُشتق القيمة الافتراضية من حدّي العمر والخمول |
+| PoolReusePolicy       | `ClickHouseTcpPoolReusePolicy` | `Lifo`            | `PoolReusePolicy`       | تحدد ما إذا كان سيُختار الاتصال الخامل الأحدث إعادةً إلى المجمّع (`Lifo`) أو الأقدم إعادةً (`Fifo`)                                     |
+
+### الأمان {#security}
+
+| الخاصية                     | النوع                                    | القيمة الافتراضية | مفتاح سلسلة الاتصال           | الوصف                                                                                                                                                  |
+| --------------------------- | ---------------------------------------- | ----------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| UseTls                      | `bool`                                   | `false`           | `UseTls`                      | يفعّل TLS قبل مصافحة البروتوكول الأصلي. إذا لم يُحدَّد `Port`، يؤدي تفعيل TLS إلى تغيير المنفذ الافتراضي من 9000 إلى 9440.                             |
+| TlsServerName               | `string`                                 | `null`            | `TlsServerName`               | اسم المضيف المُرسَل عبر SNI والذي يُقارَن بشهادة الخادم؛ عند ضبطه على `null`، تُستخدم قيمة `Host`                                                      |
+| TlsAllowInvalidCertificates | `bool`                                   | `false`           | `TlsAllowInvalidCertificates` | يقبل شهادة لا تجتاز التحقق من صلاحيتها؛ استخدمه للتطوير المحلي فقط                                                                                     |
+| TlsCaCertificatePath        | `string`                                 | `null`            | `TlsCaCertificatePath`        | مسار ملف PEM يحتوي على شهادة جذر موثوقة واحدة على الأقل؛ يحل محل مخزن الشهادات الموثوقة لدى المضيف، ولا يمكن استخدامه مع `TlsAllowInvalidCertificates` |
+| ConfigureTls                | `Action<SslClientAuthenticationOptions>` | `null`            | —                             | يضبط خيارات TLS قبل كل مصافحة، بعد تطبيق خصائص TLS الأخرى؛ ولا يتوفر إلا عبر `ClickHouseTcpClientOptions`                                              |
+
+<Warning>
+  من دون TLS، تنتقل كلمة المرور وجميع بيانات الاستعلام عبر الشبكة بلا تشفير. أبقِ
+  `TlsAllowInvalidCertificates` مضبوطًا على `false` خارج بيئات التطوير المحلية.
+</Warning>
+
+للبروتوكول الأصلي الآمن نقطة نهاية منفصلة على الخادم، ولا يُفعَّل بترقية الاتصال القائم. يجب على عميل TLS
+الاتصال بمنفذ آمن للبروتوكول الأصلي؛ ولا يتحول تلقائيًا إلى اتصال بنص صريح. يُطبَّق `ConfigureTls`
+أخيرًا، ويمكنه تجاوز التحقق من صلاحية الشهادة واسم المضيف، لذا راجع دوال رد الاتصال المخصصة
+بعناية.
+
+### التسجيل وتصحيح الأخطاء {#logging-debugging}
+
+| الخاصية                  | النوع            | القيمة الافتراضية | مفتاح سلسلة الاتصال | الوصف                                                                                                                  |
+| ------------------------ | ---------------- | ----------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| LoggerFactory            | `ILoggerFactory` | `null`            | —                   | يوفّر مسجّلات لأحداث دورة حياة الاتصال ومجمّع الاتصالات والعمليات ضمن فئات `ClickHouse.Driver.Tcp.*`                   |
+| IncludeSqlInActivityTags | `bool`           | `false`           | —                   | يضيف نص العبارة إلى سمة OpenTelemetry ‏`db.query.text`، مع تقييد طوله وفقًا للقيمة `StatementMaxLength`                |
+| StatementMaxLength       | `int`            | `5`               | —                   | الحد الأقصى لعدد محارف العبارة التي تظهر في سجلات تصحيح الأخطاء ووسوم النشاط؛ وإذا كانت قيمته صفرًا أو أقل، يُحذف النص |
+
+يسجّل مسجّل العميل أحداث دورة الحياة والعمليات من جهة العميل. أما حزم سجل الخادم فتُرسل
+إلى `ClickHouseTcpQueryCallbacks.OnLog` بدلًا من ذلك. قد يحتوي نص العبارة على بيانات حساسة، لذا لا يُضاف
+إلى وسوم النشاط افتراضيًا، ويُقتطع معظمه في سجلات تصحيح الأخطاء.
+
+### إعدادات مخصصة {#custom-settings}
+
+تُطبّق `ClickHouseTcpClientOptions.CustomSettings` إعدادات خادم ClickHouse على كل استعلام وعملية
+إدراج. وتحلّ قيم `ClickHouseTcpQueryOptions.Settings` المحددة لكل عملية محلّ القيم المحددة على مستوى العميل إذا كانت
+تحمل الاسم نفسه.
+
+```csharp
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    CustomSettings = new Dictionary<string, string>
+    {
+        ["max_threads"] = "4",
+    },
+};
+```
+
+في سلسلة الاتصال، أضف البادئة `set_` إلى بداية كل إعداد من إعدادات الخادم:
+
+```text
+Host=my.clickhouse;set_max_threads=4;set_max_memory_usage=10000000000
+```
+
+لا تُضف البادئة `set_` عند إضافة إعداد إلى `CustomSettings` أو إلى
+`Settings` الخاصة بكل عملية.
+
+### ClickHouseTcpQueryOptions {#query-options}
+
+تحدّد `ClickHouseTcpQueryOptions` إعدادات خاصة بكل عملية. جميع الخصائص اختيارية.
+
+| الخاصية    | النوع                                 | القيمة الافتراضية | الوصف                                                                                                                       |
+| ---------- | ------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| QueryId    | `string`                              | `null`            | معرّف يُستخدم في `system.query_log` والسجلات ووحدات التتبّع span؛ إذا كانت قيمته `null` أو فارغة، يُنشأ GUID جديد لكل عملية |
+| Settings   | `IReadOnlyDictionary<string, string>` | `null`            | إعدادات الخادم الخاصة بهذه العملية؛ وتكون لقيمها الأولوية على القيم المطابقة في `CustomSettings` على مستوى العميل           |
+| Parameters | `ClickHouseTcpParameterCollection`    | `null`            | القيم المرتبطة بالعناصر النائبة `{name:Type}` في عبارة SQL                                                                  |
+| Callbacks  | `ClickHouseTcpQueryCallbacks`         | `null`            | دوال الاستدعاء الراجعة المتزامنة للتقدّم، ومعلومات ملف التعريف، وسجلات الخادم، وأحداث ملف التعريف، والمجاميع، والقيم القصوى |
+
+```csharp
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    QueryId = $"report-{Guid.NewGuid():N}",
+    Settings = new Dictionary<string, string>
+    {
+        ["max_threads"] = "4",
+    },
+};
+
+object count = await client.ExecuteScalarAsync(
+    "SELECT count() FROM numbers(1000)",
+    queryOptions);
+```
+
+### ClickHouseTcpInsertOptions {#insert-options}
+
+يوسّع `ClickHouseTcpInsertOptions` الصنف `ClickHouseTcpQueryOptions` بإعدادات خاصة بعمليات الإدراج باستخدام كتل
+Native. كما تتوفر فيه جميع خصائص خيارات الاستعلام.
+
+| الخاصية            | النوع    | القيمة الافتراضية | الوصف                                                                                                                                                                                                                                  |
+| ------------------ | -------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MaxRowsPerBlock    | `int?`   | `50,000`          | الحد الأقصى لعدد الصفوف في كل كتلة مُرسَلة عبر الشبكة؛ وعند تعيين القيمة `null` تُكتب عملية الإدراج بأكملها ككتلة واحدة. كما تقلّل القيم الأصغر من الذاكرة المؤقتة التي تستهلكها عمليات الإدراج القائمة على الصفوف وعمليات إدراج POCO. |
+| DeduplicationToken | `string` | `null`            | يحدّد دفعة واحدة بعينها لإزالة تكرار الإدراج على جانب الخادم. استخدم الرمز نفسه في كل إعادة محاولة لتلك الدفعة، ورمزًا مختلفًا لكل دفعة جديدة.                                                                                         |
+
+```csharp
+var insertOptions = new ClickHouseTcpInsertOptions
+{
+    MaxRowsPerBlock = 10_000,
+    DeduplicationToken = batchContentHash,
+};
+
+await client.InsertRowsAsync(
+    "INSERT INTO events (id, name) VALUES",
+    rows,
+    insertOptions);
+```
+
+## ClickHouseTcpClient {#clickhouse-tcp-client}
+
+`ClickHouseTcpClient` هي واجهة برمجة التطبيقات عالية المستوى لبروتوكول TCP الأصلي. تنفّذ عبارات SQL واستعلامات
+تُرجع قيمة مفردة، وتُتيح النتائج على شكل كتل منظّمة حسب الأعمدة أو صفوف أو كائنات POCO، وتُدرج بيانات منظّمة حسب الأعمدة أو الصفوف،
+وتفتح sessions مرتبطة باتصال ثابت.
+
+يمكن استخدام هذا العميل بأمان من خيوط تنفيذ متعددة، وله مجمّع اتصالات خاص به. أنشئ عميلًا واحدًا لكل نقطة نهاية، وشاركه
+بين أجزاء التطبيق، وتخلّص منه عند إيقاف التشغيل. يمكن تنفيذ العمليات بالتزامن حتى الحدّ
+`MaxPoolSize`؛ أما العمليات الإضافية فتنتظر توفر اتصال لمدة لا تتجاوز `PoolTimeout`.
+
+### إنشاء عميل {#creating-a-client}
+
+أنشئ عميلًا من سلسلة اتصال أو من `ClickHouseTcpClientOptions`. راجع
+[التهيئة](#configuration) لمعرفة الإعدادات المتاحة.
+
+باستخدام سلسلة اتصال:
+
+```csharp
+using ClickHouse.Driver.Tcp;
+
+await using var client = new ClickHouseTcpClient(
+    "Host=localhost;Port=9000;Username=default");
+```
+
+باستخدام خيارات ذات أنواع محددة بوضوح:
+
+```csharp
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    Username = "user",
+    UseTls = true,
+    MaxPoolSize = 20,
+};
+
+await using var client = new ClickHouseTcpClient(options);
+```
+
+يُفضَّل تحرير موارد العميل بطريقة غير متزامنة. يؤدي ذلك إلى إغلاق الاتصالات غير النشطة والانتظار مدةً تصل إلى
+`PoolTimeout` حتى تكتمل العمليات الجارية، ثم إيقاف ما لم يكتمل منها.
+
+### حقن التبعيات {#dependency-injection}
+
+تسجّل `AddClickHouseTcpDataSource` مصدر بيانات واحدًا يُعاد استخدام مثيله، وتوفّر عميله المشترك عبر
+`IClickHouseTcpClient` و`IClickHouseTcpOperations`:
+
+```csharp
+using ClickHouse.Driver.Tcp;
+using Microsoft.Extensions.DependencyInjection;
+
+services.AddClickHouseTcpDataSource(
+    "Host=my.clickhouse;UseTls=true;Username=user");
+
+public sealed class ReportService(IClickHouseTcpClient client)
+{
+    public async Task<object> CountAsync(CancellationToken cancellationToken) =>
+        await client.ExecuteScalarAsync(
+            "SELECT count() FROM events",
+            cancellationToken: cancellationToken);
+}
+```
+
+يتولّى موفّر الخدمة إدارة مصدر البيانات ومجمّع الاتصالات. لا تحرّر موارد العميل المحقون؛
+بل حرّر موارد الموفّر عند إيقاف تشغيل التطبيق. إذا لم تحدّد الخيارات `LoggerFactory`،
+يستخدم التسجيل `ILoggerFactory` الخاص بالحاوية. ويمكن تسجيل عدة
+مصادر بيانات مستقلة باستخدام `serviceKey`.
+
+### تنفيذ الاستعلامات {#executing-queries}
+
+استخدم `ExecuteAsync` لتنفيذ العبارات التي لا تُرجع صفوفًا، مثل عبارات DDL وعمليات التعديل:
+
+```csharp
+await client.ExecuteAsync("TRUNCATE TABLE events");
+```
+
+تكتمل الطريقة بعد أن يؤكد الخادم تنفيذ العبارة. وإذا أعادت العبارة صفوفًا،
+يقرأها `ExecuteAsync` ويتجاهلها. عند استخدام
+`INSERT INTO ... VALUES`، استخدم `InsertAsync` أو `InsertRowsAsync` وأنهِ عبارة SQL عند
+`VALUES` من دون إدراج قيم مباشرةً فيها.
+
+### قراءة البيانات {#reading-data}
+
+اختر واجهة برمجة تطبيقات القراءة المناسبة لشكل البيانات الذي يحتاجه التطبيق:
+
+| واجهة برمجة التطبيقات | النتيجة                         | المفاضلة                                                                      |
+| --------------------- | ------------------------------- | ----------------------------------------------------------------------------- |
+| `ExecuteScalarAsync`  | العمود الأول من الصف الأول      | الأبسط للاستعلامات التي تُرجع قيمة واحدة؛ لكنها تُصرِّف النتيجة كاملةً مع ذلك |
+| `QueryAsync`          | مصفوفة `object[]` مملوكة لكل صف | لا تتطلب نموذجًا؛ لكنها تخصص مصفوفة لكل صف وتُغلِّف أنواع القيم (boxing)      |
+| `QueryAsync<T>`       | كائن POCO مملوك لكل صف          | تعيين صارم الأنواع؛ لكنها تخصص كائنًا لكل صف وتملؤه بالبيانات                 |
+| `StreamAsync`         | قيم `Block` عمودية مستعارة      | الأسرع؛ إذ تتجنب تخصيص الذاكرة والنسخ والتجسيد لكل صف على حدة                 |
+
+#### قراءة القيم المفردة {#scalar-reads}
+
+تُعيد `ExecuteScalarAsync` قيمة العمود الأول من الصف الأول على هيئة `object`:
+
+```csharp
+object value = await client.ExecuteScalarAsync("SELECT count() FROM events");
+ulong count = (ulong)value;
+```
+
+تقرأ هذه الطريقة الاستجابة كاملةً وتتجاهل كل القيم التي تلي القيمة الأولى. لذا اكتب استعلامًا
+يُرجع صفًا واحدًا، ولا تعتمد عليها لإيقاف نتيجة كبيرة مبكرًا. وتكون النتيجة `null` سواء كانت القيمة الأولى `NULL` أو كان الاستعلام
+لا يُرجع أي صفوف.
+
+#### قراءة الصفوف {#row-reads}
+
+تُمرّر `QueryAsync` الصفوف تباعًا، كلًّا منها في مصفوفة `object[]` مستقلة، وتُرتّب القيم فيها بحسب ترتيب أعمدة النتيجة:
+
+```csharp
+await foreach (object[] row in client.QueryAsync(
+    "SELECT id, name, score FROM events ORDER BY id"))
+{
+    Console.WriteLine($"{row[0]}: {row[1]} ({row[2]})");
+}
+```
+
+تظل مصفوفة الصف صالحة بعد الانتقال إلى العنصر التالي في التعداد. ويُعدّ هذا المستوى مناسبًا عند عدم وجود
+نموذج للنتائج، لكنه يخصّص مصفوفة لكل صف ويغلّف أنواع القيم في كائنات.
+
+#### قراءة البيانات باستخدام POCO {#poco-reads}
+
+تُطابِق `QueryAsync<T>` الأعمدة مع الخصائص العامة التي يمكن تعيين قيم لها. وتُطابَق الأسماء بصرف النظر عن حالة الأحرف أو
+الشرطات السفلية؛ استخدم `ClickHouseTcpColumn` لتحديد اسم صريح، و`ClickHouseTcpNotMapped` لاستبعاد خاصية.
+
+```csharp
+public sealed class Event
+{
+    public ulong Id { get; set; }
+
+    [ClickHouseTcpColumn(Name = "event_name")]
+    public string Name { get; set; } = string.Empty;
+
+    public DateTime RecordedAt { get; set; }
+}
+
+await foreach (Event row in client.QueryAsync<Event>(
+    "SELECT id, event_name, recorded_at FROM events ORDER BY id"))
+{
+    Console.WriteLine($"{row.Id}: {row.Name} at {row.RecordedAt:O}");
+}
+```
+
+يتضمّن تحويل الصفوف إلى كائنات POCO إجراء تحويلات وتخصيص كائن واحد لكل صف.
+
+#### قراءة كتل البيانات المخزّنة بالأعمدة {#columnar-block-reads}
+
+تتيح `StreamAsync` الوصول إلى النتيجة بتنسيقها العمودي الأصلي كسلسلة من قيم `Block`. وهي أسرع طريقة لقراءة البيانات.
+
+```csharp
+await foreach (Block block in client.StreamAsync(
+    "SELECT id, score FROM events ORDER BY id"))
+{
+    ReadOnlySpan<ulong> ids = block.Column<ulong>("id").Values;
+    ReadOnlySpan<double> scores = block.Column<double>("score").Values;
+
+    for (int row = 0; row < block.RowCount; row++)
+    {
+        Console.WriteLine($"{ids[row]}: {scores[row]}");
+    }
+}
+```
+
+الكتل مستعارة. ولا تظل الكتلة وأعمدتها ومقاطع قيمها صالحة إلا خلال التكرار الحالي.
+لا تحرّرها أو تحتفظ بها؛ وأي بيانات يجب أن تبقى بعد انتهاء تنفيذ متن الحلقة، انسخها صراحةً إلى ذاكرة تملكها.
+
+<Note>
+  أكمل التعداد دائمًا أو حرّر المُعدِّد ليعود اتصاله إلى مجمّع الاتصالات.
+</Note>
+
+تتيح `Block.Column<T>` الوصول إلى نوع CLR الذي تنتجه أداة فك الترميز. استخدم `Block.ReadAs<T>` أو
+واجهة متخصصة مثل `IDateTimeColumn` عند الحاجة إلى التحويل.
+
+### إدراج البيانات {#inserting-data}
+
+ترسل عمليات الإدراج بالتنسيق الأصلي البيانات في كتل عمودية بصيغة ثنائية. يجب أن تكون عبارة SQL بصيغة `INSERT INTO ... VALUES`
+من دون قائمة قيم مضمّنة. استخدم أعمدة ذات أنواع محددة لتقليل المعالجة على جهة العميل، أو الصيغ التي تقبل الصفوف
+وكائنات POCO إذا كانت بيانات التطبيق منظّمة بالفعل حسب الصفوف.
+
+#### الإدراج حسب الأعمدة {#columnar-inserts}
+
+تقبل `InsertAsync` البيانات المنظَّمة مسبقًا في أعمدة ذات أنواع محددة. وهي أسرع طريقة لإدراج البيانات.
+
+```csharp
+var columns = new IColumn[]
+{
+    ClickHouseTcpColumn.Create("id", new ulong[] { 1, 2, 3 }),
+    ClickHouseTcpColumn.Create("name", new[] { "Ada", "Grace", "Alan" }),
+    ClickHouseTcpColumn.Create("score", new[] { 99.5, 97.25, 91.0 }),
+};
+
+await client.InsertAsync(
+    "INSERT INTO events (id, name, score) VALUES",
+    columns);
+```
+
+تُطابَق الأعمدة مع قائمة أعمدة SQL حسب الاسم لا حسب ترتيب الوسائط، ويجب أن يكون عدد الصفوف
+متساويًا في جميع الأعمدة. يوفّر الخادم القيم الافتراضية لأعمدة الجدول غير المذكورة في العبارة. لا تُعدّل
+المصفوفات المملوكة للجهة المستدعية قبل اكتمال عملية الإدراج.
+
+تُغني واجهة برمجة التطبيقات هذه عن تحويل الصفوف إلى أعمدة وتغليف أنواع القيم، وهما مطلوبان عند إدراج الصفوف. ويمكن أيضًا
+تمرير عمود مقروء من كتلة نتائج مستعارة مباشرةً إلى `InsertAsync`، شريطة أن
+تكتمل عملية الإدراج قبل تحرير تلك الكتلة.
+
+#### إدراج الصفوف {#row-inserts}
+
+تقبل `InsertRowsAsync` صفوفًا من النوع `object[]`. وتقابل القيم الأعمدة في قائمة أعمدة SQL بحسب ترتيبها:
+
+```csharp
+var rows = new[]
+{
+    new object[] { 1UL, "Ada", 99.5 },
+    new object[] { 2UL, "Grace", 97.25 },
+};
+
+await client.InsertRowsAsync(
+    "INSERT INTO events (id, name, score) VALUES",
+    rows);
+```
+
+تُحوَّل الصفوف إلى أعمدة كتلةً تلو الأخرى. يجب أن يتضمن كل صف قيمةً واحدةً لكل عمود
+مذكور في العبارة، وأن تكون قيم العمود الواحد من نوع CLR واحد، إلا إذا كان
+النوع الهدف هو `Variant` أو `Dynamic`. لا تعدّل الصفوف قبل اكتمال العملية.
+
+#### عمليات الإدراج باستخدام POCO {#poco-inserts}
+
+يطابق التحميل الزائد العام للدالة `InsertRowsAsync<T>` أعمدة الهدف مع الخصائص العامة التي يمكن قراءتها، وفق
+قواعد التسمية والسمات نفسها المستخدمة عند قراءة POCO:
+
+```csharp
+public sealed class EventToInsert
+{
+    public ulong Id { get; set; }
+
+    [ClickHouseTcpColumn(Name = "event_name")]
+    public string Name { get; set; } = string.Empty;
+
+    public DateTime RecordedAt { get; set; }
+
+    [ClickHouseTcpNotMapped]
+    public string? ImportBatch { get; set; }
+}
+
+var rows = new[]
+{
+    new EventToInsert
+    {
+        Id = 1,
+        Name = "Ada",
+        RecordedAt = DateTime.UtcNow,
+        ImportBatch = "batch-42",
+    },
+    new EventToInsert
+    {
+        Id = 2,
+        Name = "Grace",
+        RecordedAt = DateTime.UtcNow,
+        ImportBatch = "batch-42",
+    },
+};
+
+await client.InsertRowsAsync(
+    "INSERT INTO events (id, event_name, recorded_at) VALUES",
+    rows);
+```
+
+يجب أن يقابل كل column مذكور في العبارة دالة جلب عامة متوافقة. تُحوَّل صفوف POCO
+كتلةً واحدةً من بيانات النقل في كل مرة، لذا قد تُكتشف قيمة غير صالحة في كتلة لاحقة بعد أن تكون الكتل السابقة
+قد أُرسلت بالفعل. يستبعد `ClickHouseTcpNotMapped` الخصائص التي يقتصر استخدامها على التطبيق، مثل
+`ImportBatch`، من عملية الربط.
+
+### معلمات SQL {#sql-parameters}
+
+يربط العميل الأصلي القيم بالعناصر النائبة `{name:Type}` الأصلية في ClickHouse. ولا يعيد كتابة
+العناصر النائبة `@name` المستخدمة وفق أسلوب ADO.NET.
+
+```csharp
+var parameters = new ClickHouseTcpParameterCollection
+{
+    { "minimum", 18.0 },
+    { "ids", new ulong[] { 1, 2 } },
+};
+
+var options = new ClickHouseTcpQueryOptions { Parameters = parameters };
+
+await foreach (object[] row in client.QueryAsync(
+    "SELECT id, score FROM events " +
+    "WHERE score >= {minimum:Float64} AND id IN {ids:Array(UInt64)}",
+    options))
+{
+    Console.WriteLine($"{row[0]}: {row[1]}");
+}
+```
+
+تتطلب كل معلمة تحديد نوعها، إما في العنصر النائب المقابل لها في SQL أو في الخاصية
+`ClickHouseTcpParameter.ClickHouseType`. استخدم النوع `Identifier` لأسماء الجداول والأعمدة.
+إذا كانت قيمة `DateTime` أو `DateTimeOffset` تمثّل لحظة زمنية محددة، فأدرج منطقة زمنية مثل
+`{timestamp:DateTime('UTC')}`؛ وإلا فقد يتغيّر معنى القيمة بحسب المنطقة الزمنية لـsession الخادم.
+
+### معرّف الاستعلام {#query-id}
+
+لكل عملية معرّف استعلام تستخدمه جداول النظام في ClickHouse وسجلات العميل ووحدات span للتتبّع. إذا كانت
+قيمة `QueryId` تساوي null أو كانت فارغة، ينشئ العميل معرّف GUID جديدًا. حدّد قيمته إذا كان لا بد من ربط العملية
+بمعرّف التطبيق:
+
+```csharp
+var options = new ClickHouseTcpQueryOptions
+{
+    QueryId = $"report-{Guid.NewGuid():N}",
+};
+
+await client.ExecuteAsync("OPTIMIZE TABLE events FINAL", options);
+```
+
+### تقدّم الاستعلام والبيانات الوصفية {#query-progress-metadata}
+
+اضبط `ClickHouseTcpQueryOptions.Callbacks` لتلقّي البيانات الوصفية أثناء تلقّي الاستجابة:
+
+```csharp
+ClickHouseTcpProgress total = default;
+
+var options = new ClickHouseTcpQueryOptions
+{
+    Callbacks = new ClickHouseTcpQueryCallbacks
+    {
+        OnProgress = progress => total += progress,
+        OnProfileInfo = profile =>
+            Console.WriteLine($"{profile.Rows} rows in {profile.Blocks} blocks"),
+    },
+};
+
+await foreach (object[] _ in client.QueryAsync(
+    "SELECT number FROM numbers(1000000)",
+    options))
+{
+}
+```
+
+قيم التقدّم تمثّل زيادات، لا إجماليات تراكمية. تُنفَّذ دوال الاستدعاء الراجع تزامنيًا على
+خيط التنفيذ الذي يقرأ الاستجابة، وبترتيب الحزم؛ لذا اجعل تنفيذها سريعًا ولا تدعها ترفع استثناءات. الكتل المُمرَّرة إلى
+`OnLog` و`OnProfileEvents` و`OnTotals` و`OnExtremes` مستعارة، ويجب ألّا يُحتفظ بها خارج
+دالة الاستدعاء الراجع.
+
+لا يرسل ClickHouse حزم تقدّم الاستعلام للصفوف التي تُحمَّل أثناء الإدراج. استخدم
+`OnBlockWritten` لمراقبة الكتل التي يرسلها العميل؛ فهو يُبلّغ عن تقدّم النقل، لا عن
+تثبيت الخادم لعملية الإدراج.
+
+### الإلغاء {#cancellation}
+
+تقبل كل عملية `CancellationToken`:
+
+```csharp
+using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+try
+{
+    await foreach (object[] row in client.QueryAsync(
+        "SELECT number, sleepEachRow(0.1) FROM numbers(100)",
+        cancellationToken: cancellation.Token))
+    {
+        Console.WriteLine(row[0]);
+    }
+}
+catch (OperationCanceledException)
+{
+    Console.WriteLine("Query cancelled.");
+}
+```
+
+يؤدي إلغاء نتيجة تُقرأ تدريجيًا أو التخلّي عنها إلى جعل اتصالها غير آمن لإعادة الاستخدام، لذا يُغلق العميل
+ذلك الاتصال بدلًا من إعادته إلى مجمّع الاتصالات. ويظل العميل قابلًا للاستخدام، فيفتح اتصالًا آخر أو
+يعيد استخدام اتصال موجود للعمليات اللاحقة. لذلك، قد يؤدي الإلغاء في session مثبّتة إلى
+إنهاء تلك الـsession وفقدان جداولها المؤقتة وإعداداتها.
+
+### معلومات الخادم وفحوصات حالته {#server-information-health-checks}
+
+تُعيد `GetServerInfoAsync` هوية الخادم وإصداره ومنطقته الزمنية ومعلومات البروتوكول التي جرى التفاوض عليها
+أثناء مصافحة الاتصال وفق البروتوكول الأصلي:
+
+```csharp
+ClickHouseTcpServerInfo server = await client.GetServerInfoAsync();
+
+Console.WriteLine($"ClickHouse {server.Version}");
+Console.WriteLine($"Protocol revision: {server.ProtocolRevision}");
+Console.WriteLine($"Server timezone: {server.Timezone}");
+```
+
+اربط إتاحة الميزات على مستوى نقل البيانات بـ`ProtocolRevision`، وهو رقم المراجعة الذي يتفق عليه العميل
+والخادم. واربط إتاحة ميزات SQL، مثل أنواع البيانات والدوال، بـ`Version`. تستخدم الطريقة اتصالًا قائمًا
+إذا توفر، وتفتح اتصالًا جديدًا إذا كان مجمّع الاتصالات فارغًا.
+
+استخدم `PingAsync` للتحقق من الجاهزية عبر البروتوكول الأصلي:
+
+```csharp
+await client.PingAsync(cancellationToken);
+```
+
+يؤكد نجاح اختبار الاتصال (ping) إمكانية الاتصال عبر البروتوكول الأصلي وصحة بيانات المصادقة. لكنه لا يؤكد إمكانية الوصول إلى
+جدول خاص بالتطبيق.
+
+### مزيد من الأمثلة {#more-examples}
+
+للاطلاع على أمثلة مكتملة وجاهزة للتشغيل تشمل قراءة البيانات، وإدراجها، وأنواع البيانات، والجلسات، وTLS، وإمكانية المراقبة،
+ومعالجة الأخطاء، راجع
+[أمثلة البروتوكول الأصلي](https://github.com/ClickHouse/clickhouse-cs/tree/main/examples/Tcp) في
+مستودع GitHub.
+
+## sessions {#sessions}
+
+تستعير عمليات العميل المعتادة أي اتصال متاح من مجمّع الاتصالات، لذا فإن الحالة الخاصة بالاتصال
+ليست معزولة، ولا يُضمن بقاؤها بين الاستدعاءات. وقد تتصل اتصالات مختلفة من المجمّع بخوادم مختلفة.
+افتح session إذا كان لا بد للجداول المؤقتة أو عبارات `SET` أو أي سلسلة أخرى من العمليات من استخدام اتصال واحد.
+
+```csharp
+await using IClickHouseTcpSession session = await client.OpenSessionAsync();
+
+await session.ExecuteAsync("SET max_threads = 2");
+await session.ExecuteAsync("""
+    CREATE TEMPORARY TABLE session_events
+    (
+        id UInt64,
+        name String
+    )
+    ENGINE = Memory
+    """);
+
+await session.InsertRowsAsync(
+    "INSERT INTO session_events (id, name) VALUES",
+    new[]
+    {
+        new object[] { 1UL, "Ada" },
+        new object[] { 2UL, "Grace" },
+    });
+
+object count = await session.ExecuteScalarAsync(
+    "SELECT count() FROM session_events");
+```
+
+تتيح `IClickHouseTcpSession` واجهات برمجة التطبيقات نفسها التي يتيحها العميل للاستعلام والتنفيذ والإدراج واختبار الاتصال والحصول على معلومات الخادم.
+ولا تدعم الـsession الاستخدام المتزامن عبر خيوط تنفيذ متعددة. وتُنفَّذ عملياتها بالتتابع: يُرفض بدء عملية جديدة قبل
+انتهاء العملية الحالية. وتظل الـsession مشغولة بنتيجة تُقرأ تدريجيًا حتى يكتمل تعداد عناصر النتيجة أو يُتخلّص من
+كائن المُعدِّد الخاص بها.
+
+تشغل كل session خانة واحدة من `MaxPoolSize` طوال فترة وجودها. ويمكن للعميل مواصلة استخدام اتصالات أخرى من
+مجمّع الاتصالات، لكن إذا لم يضمّ المجمّع سوى اتصال واحد، تنتظر عمليات العميل الأخرى
+حتى يُتخلّص من الـsession أو تنقضي المهلة المحددة في `PoolTimeout`.
+
+تخلّص من الـsession قبل التخلّص من العميل التابع له. ويؤدي التخلّص منها إلى إغلاق
+الاتصال المخصّص لها بدلًا من إعادته إلى المجمّع، ما يمنع الجهات التي تستخدمه لاحقًا من وراثة
+جداولها المؤقتة أو إعداداتها. وقد تصبح الـsession غير قابلة للاستخدام بسبب فشل الاتصال أو البروتوكول، أو الإلغاء، أو عدم اكتمال
+دفق النتائج؛ وعندما تصبح قيمة `IsOpen` هي `false`، افتح session جديدة.
+
+## أفضل الممارسات {#best-practices}
+
+### عمر العميل وتجميع الاتصالات {#best-practices-client-lifetime}
+
+أنشئ مثيلًا واحدًا من `ClickHouseTcpClient` أو `ClickHouseTcpDataSource` لكل نقطة نهاية
+وتهيئة مميزتين، وأعد استخدامه طوال عمر التطبيق. يمكن استخدام العميل بأمان عبر خيوط تنفيذ متعددة، وهو يدير
+مجمّع اتصالاته؛ أما إنشاء عميل لكل عملية فينشئ مجمّعًا جديدًا في كل مرة ويحول دون إعادة استخدام الاتصالات.
+
+في التطبيقات التي تستخدم حقن التبعيات، سجّل `AddClickHouseTcpDataSource` مرة واحدة واحقن
+`IClickHouseTcpClient`. يتولى موفّر الخدمات إدارة عمر العميل، لذا يجب ألا تتخلص المكوّنات التي تستخدمه من المثيل
+المحقون. أما خارج نطاق حقن التبعيات، فتخلّص من العميل عند إيقاف التطبيق باستخدام `await using`.
+
+يعالج كل اتصال عبر البروتوكول الأصلي عملية واحدة في كل مرة. لذلك، يحدّ `MaxPoolSize` من عدد الاتصالات المفتوحة
+والعمليات المتزامنة معًا؛ وينتظر المستدعون الآخرون توفّر خانة شاغرة لمدة تصل إلى `PoolTimeout`.
+اختر قيمة تستوعب التزامن الفعلي في التطبيق دون تجاوز حدود الاتصالات والاستعلامات على جانب الخادم.
+زيادة هذه القيمة لا تسرّع الاستعلام الواحد.
+
+ضع في اعتبارك كيفية استخدام المكوّنات التالية لمجمّع الاتصالات:
+
+* تحتفظ النتيجة التي تُقرأ تدريجيًا باتصالها حتى يُتخلَّص من معدِّدها.
+* تحتفظ session باتصال واحد طوال عمرها، ولا تقبل إلا عملية واحدة في
+  كل مرة.
+* يؤدي ترك نتيجة دون إكمال قراءتها، أو إلغاء عملية قيد التنفيذ، أو حدوث فشل في البروتوكول أو الاتصال، إلى
+  إغلاق الاتصال بدلًا من إعادة استخدامه.
+
+تخلّص من sessions فور انتهاء استخدامها، واحرص دائمًا على تعداد النتائج غير المتزامنة حتى النهاية أو التخلّص من
+معدِّدها. استخدم فئة التسجيل `ClickHouse.Driver.Tcp.Pool` لتشخيص استنفاد مجمّع الاتصالات،
+أو إغلاق الاتصالات على نحو غير متوقع، أو تكرار إنشاء اتصالات جديدة.
+
+### المهلات الزمنية والإلغاء {#best-practices-timeouts}
+
+يحدد عميل TCP مهلة مستقلة لكل نوع من الانتظار:
+
+| الآلية               | ما تحدّه                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `DialTimeout`        | إنشاء اتصال بالمقبس، والتفاوض على TLS، والمصافحة وفق البروتوكول الأصلي لاتصال جديد |
+| `PoolTimeout`        | انتظار توفر خانة في مجمّع الاتصالات عندما تكون جميع الاتصالات قيد الاستخدام        |
+| `ReadTimeout`        | فترة واحدة من صمت الخادم أثناء قراءة الاستجابة، لا المدة الإجمالية للاستعلام       |
+| `CancellationToken`  | العملية بأكملها تحت تحكم المستدعي، بما فيها انتظار المجمّع واستعراض النتائج        |
+| `max_execution_time` | وقت تنفيذ الاستعلام على جانب الخادم                                                |
+
+قد تستغرق عملية الحصول على اتصال من المجمّع، إذا انتظرت توفر خانة أولًا ثم أنشأت اتصالًا، ما يصل إلى
+`PoolTimeout + DialTimeout`. تُحتسب مهلة `ReadTimeout` من جديد مع كل قراءة عبر طبقة النقل، لذا قد يستمر استعلام طويل
+يتواصل خلاله إرسال معلومات التقدم أو البيانات مدةً تتجاوز هذه القيمة. اضبطها على قيمة تكفي لتغطية
+فترات صمت الخادم المتوقعة؛ ولا تضبطها على `TimeSpan.Zero` إلا إذا كانت مهلة أخرى تقيّد مدة
+العملية على نحو موثوق.
+
+استخدم رمز إلغاء عندما تحتاج إلى مهلة تشمل العملية من بدايتها إلى نهايتها:
+
+```csharp
+using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Settings = new Dictionary<string, string>
+    {
+        ["max_execution_time"] = "25",
+    },
+};
+
+await foreach (Block block in client.StreamAsync(
+    "SELECT * FROM large_report",
+    queryOptions,
+    timeout.Token))
+{
+    // Process each block before advancing.
+}
+```
+
+يحاول العميل إرسال حزمة Cancel عبر البروتوكول الأصلي عندما يكون ذلك آمنًا، ثم يغلق
+اتصالًا لم تُصرَّف استجابته بالكامل. وتظل العمليات اللاحقة على العميل المرتبط بمجمّع الاتصالات
+ممكنة، لكن الإلغاء قد يجعل session المثبّتة غير قابلة للاستخدام. وقد لا تُعرف نتيجة عملية إدراج أُلغيت أو انتهت مهلتها؛
+لذا اتبع [إرشادات إعادة محاولة الإدراج](#error-handling-retries) بدلًا من
+إعادة تنفيذها دون التحقق من نتيجتها.
+
+### التعامل مع التاريخ والوقت {#best-practices-datetime}
+
+يُفضّل استخدام `DateTime('UTC')` أو `DateTime64(S, 'UTC')` للطوابع الزمنية، واستخدام `DateTimeOffset` أو
+`DateTime` بقيمة `Kind` تساوي `Utc` في شيفرة التطبيق. فهذا يحدّد اللحظة الزمنية المقصودة بوضوح
+ويجنّب الاعتماد على المنطقة الزمنية للخادم أو الـsession.
+
+يطبّق عميل TCP القواعد التالية عند كتابة قيم `DateTime`:
+
+| `DateTime.Kind` | التفسير                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Utc`           | تُحفَظ اللحظة الزمنية بتوقيت UTC.                                                                                        |
+| `Local`         | تُحوَّل القيمة إلى اللحظة الزمنية المقابلة لها بتوقيت UTC.                                                               |
+| `Unspecified`   | يُفسَّر الوقت كما يظهر على الساعة وفق المنطقة الزمنية للعمود، أو المنطقة الزمنية للـsession إذا لم يحدّد العمود منطقة زمنية. |
+
+يُرفَض الوقت غير المحدّد الذي يُتخطّى عند الانتقال إلى التوقيت الصيفي لأنه لا يقابل أي
+لحظة زمنية. أما الوقت الملتبس عند العودة إلى التوقيت السابق، فيُختار ظهوره الأول. استخدم `DateTimeOffset` عندما
+يجب تحديد الاختيار صراحةً.
+
+عند استخدام معلمات SQL لتمثيل لحظة زمنية، أدرج المنطقة الزمنية في العنصر النائب:
+
+```csharp
+var parameters = new ClickHouseTcpParameterCollection
+{
+    new ClickHouseTcpParameter(
+        "captured_at",
+        DateTimeOffset.UtcNow,
+        "DateTime64(3, 'UTC')"),
+};
+
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Parameters = parameters,
+};
+
+await client.ExecuteAsync(
+    "INSERT INTO events (captured_at) VALUES ({captured_at:DateTime64(3, 'UTC')})",
+    queryOptions);
+```
+
+عند قراءة البيانات المخزّنة بالأعمدة، يُظهر `DateTime` و`DateTime64` أعدادهما الخام من نوع `uint` أو `long` افتراضيًا.
+استخدم `Block.ReadAs<DateTimeOffset>` أو `IDateTimeColumn.GetDateTimeOffset` أو خاصية POCO مطابقة
+إذا كان التعامل مع قيمة تقويمية أنسب. واحتفظ بالعدد الخام عندما تكون كل خانة مهمة:
+تبلغ أصغر وحدة زمنية في `DateTimeOffset` مقدار 100 نانوثانية، لذا فإن قراءة `DateTime64` بمقياس 8 أو 9 من خلاله
+تؤدي إلى فقدان الدقة دون تلك الوحدة.
+
+استخدم `DateOnly` مع `Date` و`Date32`. واستخدم `TimeSpan` مع قيم `Time` و`Time64` التي قد تكون
+سالبة أو تتجاوز 24 ساعة؛ ولا يكون `TimeOnly` مناسبًا إلا إذا كانت قيم العمود تقتصر على
+وقت من اليوم.
+
+### البث وعمر النتائج {#best-practices-streaming}
+
+استخدم `StreamAsync` والأعمدة محددة الأنواع لمعالجة البيانات بمعدل نقل مرتفع. يتماشى ذلك مع تنظيم البيانات
+حسب الأعمدة في ClickHouse، ويجنّب إنشاء مصفوفات لكل صف وتغليف القيم وتخصيص كائنات POCO. استخدم `QueryAsync<T>` عندما تكون
+الحاجة إلى نموذج يمتلكه التطبيق أهم من تقليل عمليات تخصيص الذاكرة إلى أدنى حد، واستخدم الإصدار غير محدد النوع
+`QueryAsync` فقط عندما لا يكون المخطط معروفًا وقت التصريف.
+
+الكتل التي يعيدها `StreamAsync` مستعارة. لا تبقى الكتلة وأعمدتها وأعمدتها الفرعية المركّبة وجميع
+وحدات span صالحة إلا أثناء التكرار الحالي للحلقة. عالجها في موضعها أو انسخ القيم التي
+يجب الاحتفاظ بها بعد انتهاء التكرار:
+
+```csharp
+ulong[] retained;
+
+await foreach (Block block in client.StreamAsync("SELECT id FROM events"))
+{
+    ReadOnlySpan<ulong> ids = block.Column<ulong>("id").Values;
+    retained = ids.ToArray();
+}
+```
+
+لا تتولَّ تحرير كتلة أعادها المُعدِّد بنفسك. اترك لـ`await foreach` مهمة تحرير المُعدِّد. إذا كنت تحتاج إلى جزء فقط من
+النتيجة، فحدّد ذلك في SQL باستخدام `LIMIT`، واختر الأعمدة المطلوبة فقط. يؤدي التوقف
+مبكرًا إلى إلغاء بقية الاستجابة، ويمنع إعادة استخدام ذلك الاتصال.
+
+### بنية عملية الإدراج وتجميع الدُفعات {#best-practices-inserts}
+
+فضّل استخدام `InsertAsync` مع الأعمدة محددة الأنواع إذا كانت البيانات منظّمة في أعمدة أصلًا، فهو يتطلب أقل قدر من
+التحويل من جهة العميل. ويُعدّ `InsertRowsAsync<T>` الخيار الأنسب لبيانات POCO؛ أما صفوف `object[]` غير محددة الأنواع
+فهي الأكثر مرونة، لكنها تنشئ مصفوفات وتغلّف أنواع القيم.
+
+أرسل عددًا كافيًا من الصفوف في كل استدعاء إدراج بدلًا من تنفيذ عمليات إدراج صغيرة كثيرة. وضمن الاستدعاء الواحد،
+يقسّم `MaxRowsPerBlock` البيانات إلى كتل بصيغة النقل الأصلية. كما تضع قيمته الافتراضية، البالغة 50,000 صف، حدًا
+لحجم مخازن الأعمدة المؤقتة المستخدمة عند تحويل مدخلات الصفوف وPOCO. وقد تؤدي زيادة هذه القيمة إلى
+تحسين معدل النقل للصفوف قليلة الأعمدة، لكنها ترفع ذروة استهلاك الذاكرة؛ أما ضبطها على `null` فيؤدي إلى كتابة عملية
+الإدراج كاملةً في كتلة واحدة وتحويل جميع المدخلات المنظّمة في صفوف لتلك الكتلة معًا.
+
+يحدّ `MaxSendBufferBytes`، على نحو مستقل، من كمية البيانات المُرمَّزة المخزّنة مؤقتًا قبل تفريغها إلى
+المقبس. وهو حدّ مرن يُفحَص بين الأعمدة، لذا يمكن أن يتجاوزه عمود عريض واحد.
+
+تُحوَّل مدخلات الصفوف وPOCO كتلةً تلو الأخرى. لذا قد لا تُكتشف قيمة غير صالحة في كتلة لاحقة
+إلا بعد إرسال الكتل السابقة. تحقّق من السماح بالقيم الفارغة ومن أنواع CLR قبل
+الإدراج إذا لم تكن جودة البيانات مضمونة، واضبط `DeduplicationToken` على قيمة مشتقة من البيانات كلما
+كان من الممكن إعادة محاولة إدراج الدفعة المنطقية.
+
+## أنواع البيانات المدعومة {#supported-data-types}
+
+توضّح الجداول أدناه الفرق بين النوع الذي يعيده `IColumn<T>` مفكك الترميز والأنواع الإضافية
+المتاحة بالتحويل عبر `Block.ReadAs<T>`، أو بربط كائنات POCO عبر `QueryAsync<T>`، أو بعمليات الإدراج. ويمكنك الاستعلام من
+محلّل الربط نفسه الذي تستخدمه هذه العمليات عمّا إذا كان ربط معيّن مدعومًا:
+
+```csharp
+bool canRead = ClickHouseTcpTypes.CanRead("Array(Nullable(DateTime))", typeof(DateTime?[]));
+bool canWrite = ClickHouseTcpTypes.CanWrite("FixedString(8)", typeof(byte[]));
+```
+
+تُطبَّق قواعد الربط الخاصة بـ`Nullable` و`Array` و`Tuple` و`Map` و`LowCardinality` تعاوديًا على
+الأنواع الداخلية لكلٍّ منها.
+
+### مطابقة الأنواع: القراءة من ClickHouse {#type-map-reading}
+
+يشير `Default .NET type` إلى النوع `T` الذي تتيحه `Block.Column<T>` و`IColumn<T>`. ويمكن قراءة الأنواع المدرجة في العمود
+`Also readable as` باستخدام `Block.ReadAs<T>` وخصائص POCO.
+
+#### أنواع الأعداد الصحيحة {#type-map-reading-integer}
+
+| نوع ClickHouse | نوع ‎.NET الافتراضي |
+| -------------- | ------------------- |
+| `Int8`         | `sbyte`             |
+| `UInt8`        | `byte`              |
+| `Int16`        | `short`             |
+| `UInt16`       | `ushort`            |
+| `Int32`        | `int`               |
+| `UInt32`       | `uint`              |
+| `Int64`        | `long`              |
+| `UInt64`       | `ulong`             |
+| `Int128`       | `Int128`            |
+| `UInt128`      | `UInt128`           |
+| `Int256`       | `Int256`            |
+| `UInt256`      | `UInt256`           |
+
+#### أنواع الأعداد ذات الفاصلة العائمة {#type-map-reading-floating-point}
+
+| نوع ClickHouse | نوع .NET الافتراضي |
+| -------------- | ------------------ |
+| `Float32`      | `float`            |
+| `Float64`      | `double`           |
+| `BFloat16`     | `float`            |
+
+#### الأنواع العشرية {#type-map-reading-decimal}
+
+| نوع ClickHouse                 | نوع .NET الافتراضي     |
+| ------------------------------ | ---------------------- |
+| `Decimal(P, S)`، حيث `P <= 18` | `decimal`              |
+| `Decimal(P, S)`، حيث `P > 18`  | `ClickHouseTcpDecimal` |
+| `Decimal32(S)`                 | `decimal`              |
+| `Decimal64(S)`                 | `decimal`              |
+| `Decimal128(S)`                | `ClickHouseTcpDecimal` |
+| `Decimal256(S)`                | `ClickHouseTcpDecimal` |
+
+يخزّن `ClickHouseTcpDecimal` الجزء الدالّ بوصفه عددًا صحيحًا بأي حجم، إلى جانب مقياسه، مما يتيح الاحتفاظ بالقيم
+التي تتجاوز دقتها النطاق الذي يدعمه `decimal`.
+
+#### النوع المنطقي {#type-map-reading-boolean}
+
+| نوع ClickHouse | نوع .NET الافتراضي |
+| -------------- | ------------------ |
+| `Bool`         | `bool`             |
+
+#### أنواع String {#type-map-reading-strings}
+
+| نوع ClickHouse   | نوع .NET الافتراضي | يمكن قراءته أيضًا بالنوع |
+| ---------------- | ------------------ | ------------------------ |
+| `String`         | `string`           | `byte[]`                 |
+| `FixedString(N)` | `byte[]`           | `string`                 |
+
+استخدم `IStringColumn.GetBytes(row)` أو اقرأ البيانات بالنوع `byte[]` إذا كانت قد لا تكون بترميز UTF-8 صالح.
+يحتفظ `FixedString(N)` بجميع البايتات الـ`N`، بما فيها البايتات الصفرية في نهايتها.
+
+#### أنواع التاريخ والوقت {#type-map-reading-datetime}
+
+| نوع ClickHouse                               | نوع .NET الافتراضي         | يمكن قراءته أيضًا بوصفه      |
+| -------------------------------------------- | -------------------------- | ---------------------------- |
+| `Date`                                       | `DateOnly`                 | —                            |
+| `Date32`                                     | `DateOnly`                 | —                            |
+| `DateTime`, `DateTime('timezone')`           | `uint` ثوانٍ منذ حقبة Unix | `DateTimeOffset`, `DateTime` |
+| `DateTime64(S)`, `DateTime64(S, 'timezone')` | `long` عدد بدقة `S`        | `DateTimeOffset`, `DateTime` |
+| `Time`                                       | `int` ثوانٍ                | `TimeSpan`, `TimeOnly`       |
+| `Time64(S)`                                  | `long` عدد بدقة `S`        | `TimeSpan`, `TimeOnly`       |
+| `IntervalNanosecond` إلى `IntervalYear`      | `long`                     | —                            |
+
+التمثيل الافتراضي هو العدد الصحيح الخام، حتى تحتفظ القراءة العمودية بالقيمة كما تُنقل تمامًا. وتستخدم
+التحويلات إلى قيم التاريخ والوقت المنطقة الزمنية المحددة في النوع، أو المنطقة الزمنية للجلسة إذا لم يحدد النوع
+منطقة زمنية. ترفع قراءة `Time` أو `Time64` بوصفه `TimeOnly` استثناءً إذا كانت القيمة سالبة أو بلغت
+24 ساعة فأكثر؛ استخدم `TimeSpan` لتمثيل نطاق قيم ClickHouse كاملًا.
+
+#### أنواع التعداد {#type-map-reading-enum}
+
+| نوع ClickHouse | نوع .NET الافتراضي | يمكن قراءته أيضًا على هيئة |
+| -------------- | ------------------ | -------------------------- |
+| `Enum8(...)`   | `sbyte`            | تسمية من نوع `string`      |
+| `Enum16(...)`  | `short`            | تسمية من نوع `string`      |
+
+تُتيح `IEnumColumn` أيضًا الاطلاع على الربط المُعلَن بين تسميات التعداد وقيمها الرقمية.
+
+#### أنواع قياسية أخرى {#type-map-reading-other-scalar}
+
+| نوع ClickHouse | نوع .NET الافتراضي         |
+| -------------- | -------------------------- |
+| `UUID`         | `Guid`                     |
+| `IPv4`         | `IPAddress`                |
+| `IPv6`         | `IPAddress`                |
+| `Nothing`      | `object` (`null` في كل صف) |
+
+#### الأنواع المركبة {#type-map-reading-composite}
+
+| نوع ClickHouse       | نوع .NET الافتراضي     | العرض العمودي              |
+| -------------------- | ---------------------- | -------------------------- |
+| `Nullable(T)`        | `T?`                   | `INullableColumn<T>`       |
+| `Array(T)`           | `T[]`                  | `IArrayColumn<T>`          |
+| `Tuple(T1, ..., Tn)` | `(T1, ..., Tn)`        | `ITupleColumn`             |
+| `Map(K, V)`          | `KeyValuePair<K, V>[]` | `IMapColumn<K, V>`         |
+| `LowCardinality(T)`  | مثل `T`                | `ILowCardinalityColumn<T>` |
+| `Nested(...)`        | `object[][]`           | `INestedColumn`            |
+
+يمكن أن تضمّ المجموعات المرتبة ما يصل إلى سبعة عناصر. لا يتقيّد عمود `Nested` بعدد محدد من العناصر، ويُفضّل قراءته
+عبر `INestedColumn`، الذي يتيح الوصول إلى أعمدة الحقول المسطّحة المسماة وإزاحات الصفوف المشتركة دون
+تخصيص سجلات مغلّفة. ومع الإعداد الافتراضي `flatten_nested = 1` في ClickHouse، تصل الحقول المتداخلة بدلًا من ذلك
+في أعمدة `Array(T)` منفصلة، تتضمن أسماؤها نقاطًا.
+
+#### أنواع Variant وDynamic وJSON {#type-map-reading-variant-dynamic-json}
+
+| نوع ClickHouse         | نوع .NET الافتراضي | العرض العمودي     |
+| ---------------------- | ------------------ | ----------------- |
+| `Variant(T1, ..., Tn)` | `object`           | `IVariantColumn`  |
+| `Dynamic`              | `object`           | `IDynamicColumn`  |
+| `JSON`                 | `string`           | `IColumn<string>` |
+
+تُرجع `Variant` و`Dynamic` قيمة CLR للنوع المختار في كل صف، أو `null`. وتُتيح عروضهما
+العمودية الوصول إلى دفق المميّز وعمود فرعي محدد النوع لكل نوع أثناء التنفيذ، مما يغني عن
+تغليف القيم عند معالجة البيانات عموديًا.
+
+يقرأ عميل TCP بيانات `JSON` عبر آلية تسلسل String في ClickHouse. ويُفعّل العميل الإعداد
+`output_format_native_write_json_as_string = 1` افتراضيًا؛ وتعطيله يجعل قراءة JSON
+غير مدعومة. يحلّل ClickHouse بيانات JSON ويوحّد صيغتها، لذا قد يختلف النص الناتج عن النص المُدرج
+في ترتيب المفاتيح والمسافات البيضاء وصيغة الأرقام.
+
+#### الأنواع الهندسية {#type-map-reading-geometry}
+
+| نوع ClickHouse    | نوع .NET الافتراضي       |
+| ----------------- | ------------------------ |
+| `Point`           | `(double, double)`       |
+| `Ring`            | `(double, double)[]`     |
+| `LineString`      | `(double, double)[]`     |
+| `Polygon`         | `(double, double)[][]`   |
+| `MultiLineString` | `(double, double)[][]`   |
+| `MultiPolygon`    | `(double, double)[][][]` |
+| `Geometry`        | `object`                 |
+
+يُقدَّم `Geometry` في صورة `IVariantColumn` يشمل الأنواع الهندسية الستة.
+
+#### نوع QBit {#type-map-reading-qbit}
+
+| نوع ClickHouse      | نوع .NET الافتراضي |
+| ------------------- | ------------------ |
+| `QBit(Int8, N)`     | `sbyte[]`          |
+| `QBit(BFloat16, N)` | `float[]`          |
+| `QBit(Float32, N)`  | `float[]`          |
+| `QBit(Float64, N)`  | `double[]`         |
+
+يدعم عميل TCP صيغة `QBit(T, N)` ذات الوسيطين، من دون stride. أما تخطيط
+التخزين ذو الوسائط الثلاثة الذي يستخدم stride فغير مدعوم.
+
+#### أنواع AggregateFunction {#type-map-reading-aggregate-function}
+
+| نوع ClickHouse                         | نوع .NET                   |
+| -------------------------------------- | -------------------------- |
+| `SimpleAggregateFunction(function, T)` | النوع نفسه الذي يمثّله `T` |
+| `AggregateFunction(function, ...)`     | غير مدعوم                  |
+
+يحتوي العمود من نوع `AggregateFunction` على حالة وسيطة خاصة بالدالة. استخرج قيمتها النهائية على
+الخادم، مثلًا باستخدام `sumMerge(column)`، ثم اقرأ القيمة الناتجة بدلًا من الحالة الوسيطة.
+
+### مطابقة الأنواع: الكتابة إلى ClickHouse {#type-map-writing}
+
+يمثّل كل إدخال نوع CLR لصف واحد ضمن `IColumn` المُمرَّر إلى `InsertAsync`. وهذه المطابقات
+دقيقة تمامًا: لا يُجري عميل TCP تحويلات ضمنية على غرار `Convert`.
+
+#### أنواع الأعداد الصحيحة {#type-map-writing-integer}
+
+| نوع البيانات في ClickHouse | نوع البيانات المقبول في ‎.NET |
+| -------------------------- | ----------------------------- |
+| `Int8`                     | `sbyte`                       |
+| `UInt8`                    | `byte`                        |
+| `Int16`                    | `short`                       |
+| `UInt16`                   | `ushort`                      |
+| `Int32`                    | `int`                         |
+| `UInt32`                   | `uint`                        |
+| `Int64`                    | `long`                        |
+| `UInt64`                   | `ulong`                       |
+| `Int128`                   | `Int128`                      |
+| `UInt128`                  | `UInt128`                     |
+| `Int256`                   | `Int256`                      |
+| `UInt256`                  | `UInt256`                     |
+
+#### أنواع الأعداد ذات الفاصلة العائمة {#type-map-writing-floating-point}
+
+| نوع ClickHouse | نوع .NET المقبول |
+| -------------- | ---------------- |
+| `Float32`      | `float`          |
+| `Float64`      | `double`         |
+| `BFloat16`     | `float`          |
+
+عند كتابة `BFloat16`، تُقتطع كل قيمة `float` لتلائم تمثيل Brain Floating Point ذي 16 بت.
+
+#### الأنواع العشرية {#type-map-writing-decimal}
+
+| نوع ClickHouse                 | نوع .NET المقبول       |
+| ------------------------------ | ---------------------- |
+| `Decimal(P, S)`، حيث `P <= 18` | `decimal`              |
+| `Decimal(P, S)`، حيث `P > 18`  | `ClickHouseTcpDecimal` |
+| `Decimal32(S)`                 | `decimal`              |
+| `Decimal64(S)`                 | `decimal`              |
+| `Decimal128(S)`                | `ClickHouseTcpDecimal` |
+| `Decimal256(S)`                | `ClickHouseTcpDecimal` |
+
+ترفع عملية الكتابة استثناء `OverflowException` إذا تجاوز الجزء الدالّ من العدد، بعد تطبيق المقياس، الدقة المعلنة.
+
+#### النوع المنطقي {#type-map-writing-boolean}
+
+| نوع ClickHouse | نوع .NET المقبول |
+| -------------- | ---------------- |
+| `Bool`         | `bool`           |
+
+#### أنواع String {#type-map-writing-strings}
+
+| نوع ClickHouse   | أنواع .NET المقبولة | ملاحظات                                                              |
+| ---------------- | ------------------- | -------------------------------------------------------------------- |
+| `String`         | `string`, `byte[]`  | تُرمَّز السلاسل النصية بترميز UTF-8؛ وتُكتب مصفوفات البايتات كما هي. |
+| `FixedString(N)` | `byte[]`            | يجب أن تحتوي كل قيمة على `N` بايت بالضبط.                            |
+
+لا يقبل `FixedString(N)` النوع `string` عمدًا؛ لذا رمِّز القيمة وأكملها بحشو مناسب صراحةً حتى يكون
+تمثيلها الثنائي المحدد واضحًا بلا لبس.
+
+#### أنواع التاريخ والوقت {#type-map-writing-datetime}
+
+| نوع ClickHouse                               | أنواع .NET المقبولة                  |
+| -------------------------------------------- | ------------------------------------ |
+| `Date`, `Date32`                             | `DateOnly`                           |
+| `DateTime`, `DateTime('timezone')`           | `uint`, `DateTimeOffset`, `DateTime` |
+| `DateTime64(S)`, `DateTime64(S, 'timezone')` | `long`, `DateTimeOffset`, `DateTime` |
+| `Time`                                       | `int`, `TimeSpan`, `TimeOnly`        |
+| `Time64(S)`                                  | `long`, `TimeSpan`, `TimeOnly`       |
+| `IntervalNanosecond` إلى `IntervalYear`      | `long`                               |
+
+تُفسَّر الأعداد الصحيحة الأولية وفق الوحدات الموضحة في جدول القراءة. يحافظ `DateTimeOffset` على اللحظة الزمنية نفسها.
+ويُفسَّر `DateTime` بحسب قيمة `Kind` الخاصة به؛ فإذا كانت القيمة `Unspecified`، فتُفسَّر على أنها الوقت المحلي بحسب المنطقة الزمنية
+للعمود، أو بحسب المنطقة الزمنية للجلسة إذا لم يحدد العمود منطقة زمنية.
+
+#### أنواع التعداد {#type-map-writing-enum}
+
+| نوع ClickHouse | أنواع .NET المقبولة               |
+| -------------- | --------------------------------- |
+| `Enum8(...)`   | `sbyte`، أو تسمية من نوع `string` |
+| `Enum16(...)`  | `short`، أو تسمية من نوع `string` |
+
+تُرفض التسميات غير المعروفة قبل إرسال البيانات.
+
+#### أنواع البيانات القياسية الأخرى {#type-map-writing-other-scalar}
+
+| نوع بيانات ClickHouse | نوع ‎.NET المقبول |
+| --------------------- | ----------------- |
+| `UUID`                | `Guid`            |
+| `IPv4`                | `IPAddress`       |
+| `IPv6`                | `IPAddress`       |
+| `Nothing`             | غير مدعوم         |
+
+#### الأنواع المركبة {#type-map-writing-composite}
+
+البنية المقبولة تعاودية، لذا يقبل `Array(Nullable(DateTime))` قيمة من النوع `DateTime?[]` لكل
+صف، ويقبل `Map(String, UInt32)` قيمة من النوع `KeyValuePair<string, uint>[]`.
+
+| نوع ClickHouse       | نوع .NET المقبول لصف واحد                       |
+| -------------------- | ----------------------------------------------- |
+| `Nullable(T)`        | الصيغة التي تقبل القيم الخالية من نوع يقبله `T` |
+| `Array(T)`           | `T[]`                                           |
+| `Tuple(T1, ..., Tn)` | `(T1, ..., Tn)`                                 |
+| `Map(K, V)`          | `KeyValuePair<K, V>[]`                          |
+| `LowCardinality(T)`  | ما يقبله `T` نفسه                               |
+| `Nested(...)`        | لا توجد بنية CLR موجهة بالصفوف                  |
+
+تستخدم الكتابة المباشرة إلى `Nested` بنية الأعمدة الكثيفة الناتجة عن قراءة سابقة. أما عند إنشاء عمليات الإدراج
+في التطبيق، فاحتفظ بالتمثيل الافتراضي `flatten_nested = 1`، واكتب كل حقل `Array(T)` يتضمن اسمه نقطةً
+كعمود مستقل.
+
+#### أنواع Variant وDynamic وJSON {#type-map-writing-variant-dynamic-json}
+
+| نوع ClickHouse         | نوع .NET المقبول | ملاحظات                                                      |
+| ---------------------- | ---------------- | ------------------------------------------------------------ |
+| `Variant(T1, ..., Tn)` | `object`         | يحدد نوع كل قيمة غير معدومة وقت التشغيل أحد الأنواع البديلة. |
+| `Dynamic`              | `object`         | يُستنتج نوع كل قيمة غير معدومة وقت التشغيل.                  |
+| `JSON`                 | `string`         | يجب أن تكون القيمة نص JSON صالحًا.                           |
+
+في `Variant`، يجب أن يطابق نوع القيمة وقت التشغيل نوع CLR الافتراضي لأحد الأنواع البديلة دون لبس. ولا تُستخدم داخل النوع البديل
+تعيينات تسهيلية، مثل كتابة قيمة `DateTime` إلى بديل من نوع `DateTime`؛
+بل استخدم النوع الخام الافتراضي لذلك البديل. يدعم `Dynamic` القيم المفردة وقيم
+المصفوفات والخرائط والصفوف التي تدعمها البنية تعاوديًا.
+
+#### الأنواع الهندسية {#type-map-writing-geometry}
+
+| نوع ClickHouse    | نوع .NET المقبول         |
+| ----------------- | ------------------------ |
+| `Point`           | `(double, double)`       |
+| `Ring`            | `(double, double)[]`     |
+| `LineString`      | `(double, double)[]`     |
+| `Polygon`         | `(double, double)[][]`   |
+| `MultiLineString` | `(double, double)[][]`   |
+| `MultiPolygon`    | `(double, double)[][][]` |
+| `Geometry`        | `object`                 |
+
+في عمود `Geometry` يُنشئه التطبيق، لا يكون شكل CLR مميزًا إلا لـ`Point` و`MultiPolygon`.
+فكلٌّ من `Ring` و`LineString` له الشكل نفسه، وكذلك `Polygon` و`MultiLineString`، لذا لا يستطيع العميل
+استنتاج النوع الذي تمثّله قيمة `object`. أما عمود `Geometry` بعد فك ترميزه، فيحتفظ
+بمميّزات أنواعه ويمكن إعادة إدراجه دون هذا الالتباس.
+
+#### نوع QBit {#type-map-writing-qbit}
+
+| نوع ClickHouse      | نوع .NET المقبول    |
+| ------------------- | ------------------- |
+| `QBit(Int8, N)`     | `sbyte[]` بطول `N`  |
+| `QBit(BFloat16, N)` | `float[]` بطول `N`  |
+| `QBit(Float32, N)`  | `float[]` بطول `N`  |
+| `QBit(Float64, N)`  | `double[]` بطول `N` |
+
+#### أنواع AggregateFunction {#type-map-writing-aggregate-function}
+
+| نوع ClickHouse                         | نوع .NET المقبول |
+| -------------------------------------- | ---------------- |
+| `SimpleAggregateFunction(function, T)` | النوع نفسه `T`   |
+| `AggregateFunction(function, ...)`     | غير مدعوم        |
+
+## الضغط {#compression}
+
+يُفعّل العميل الضغط افتراضيًا ويستخدم LZ4 لضغط الكتل التي يكتبها؛ ويستخدم ClickHouse أيضًا LZ4 افتراضيًا
+لكتل الاستجابة. يُطبَّق الضغط على كتل النتائج والكتل التي تُحمَّل أثناء عمليات الإدراج،
+بينما يحتفظ نص الاستعلام ومعلومات التقدّم والاستثناءات وحزم البروتوكول الأخرى بترميزها المعتاد أثناء النقل.
+
+استخدم مفتاح `Compression` في سلسلة الاتصال لاختيار المرمِّز الذي يستخدمه العميل:
+
+```csharp
+await using var lz4 = new ClickHouseTcpClient(
+    "Host=my.clickhouse;Compression=lz4"); // Default
+
+await using var zstd = new ClickHouseTcpClient(
+    "Host=my.clickhouse;Compression=zstd");
+
+await using var uncompressed = new ClickHouseTcpClient(
+    "Host=my.clickhouse;Compression=none");
+```
+
+تستخدم التهيئة المكافئة ذات الأنواع المحددة صراحةً `IClickHouseCompressor`:
+
+```csharp
+using ClickHouse.Driver.Compression;
+using ClickHouse.Driver.Tcp;
+
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    Compressor = ZstdCompressor.Default,
+};
+
+await using var client = new ClickHouseTcpClient(options);
+```
+
+اضبط `Compressor = null` لتعطيل الضغط. يجب أن يدعم الضاغط المخصّص تأطير الكتل الأصلي؛
+وتُرفض الضواغط التي لا تدعم سوى متون HTTP عند إنشاء العميل.
+
+### اختيار مرمِّز الاستجابة {#compression-response-codec}
+
+يحدّد `Compressor` كيفية ضغط الكتل التي يكتبها العميل. تطلب حزمة الاستعلام بالتنسيق الأصلي
+من الخادم ضغط الاستجابة، لكنها لا تحدّد مرمِّزًا بعينه؛ لذلك يختار ClickHouse مرمِّز الاستجابة
+وفقًا لإعداد `network_compression_method`. ‏LZ4 هو المرمِّز الافتراضي للخادم.
+
+حدّد مرمِّز الاستجابة لكل عملية عند الحاجة:
+
+```csharp
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Settings = new Dictionary<string, string>
+    {
+        ["network_compression_method"] = "ZSTD",
+    },
+};
+
+await foreach (Block block in client.StreamAsync(
+    "SELECT * FROM events",
+    queryOptions))
+{
+    // Process the block.
+}
+```
+
+يستهلك LZ4 عمومًا قدرًا أقل من موارد CPU، وهو الخيار الافتراضي الأنسب للشبكات السريعة. وينتج ZSTD عمومًا
+إطارات أصغر مقابل استهلاك أعلى قليلًا لموارد CPU. وقد يفيد تعطيل الضغط إذا كان الخادم على المضيف نفسه
+أو متصلًا عبر وصلة أخرى فائقة السرعة. قِس الأداء باستخدام بيانات ممثلة قبل تغيير الإعداد الافتراضي.
+
+## معالجة الأخطاء {#error-handling}
+
+تُمثَّل حالات الفشل التي يُبلغ عنها ClickHouse أو الاتصال الأصلي باستثناءات ترث من `ClickHouseTcpException`،
+الذي يرث بدوره من `DbException`:
+
+| الاستثناء                          | المعنى                                                                                                                                                                                                           |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickHouseTcpServerException`     | رفض ClickHouse المصافحة الأولية أو العملية، أو تعذّر عليه تنفيذها.                                                                                                                                           |
+| `ClickHouseTcpConnectionException` | فشل المقبس أو التفاوض على TLS أو الاتصال القائم، أو انقضت المهلة المحددة في `DialTimeout` أو `ReadTimeout`. يمكن معرفة السبب عبر `InnerException`؛ وإذا كان السبب انقضاء المهلة، فتكون قيمته `TimeoutException`. |
+| `ClickHouseTcpProtocolException`   | لم تتوافق الاستجابة مع البروتوكول الأصلي، أو احتوت على نوع أو تمثيل ثنائي لا يستطيع العميل التعامل معه.                                                                                                          |
+
+يوفّر `ClickHouseTcpServerException` الخاصيتين `RawCode`، التي تحتوي على الرمز الرقمي كما أرسله الخادم،
+و`Code`، التي تحتوي على قيمة `ClickHouseErrorCode` المقابلة إذا كان المشغّل يعرّفها. ويتضمّن أيضًا
+اسم استثناء الخادم في `Name`، وتتبع مكدسه في `ServerStackTrace`، وأي استثناءات متداخلة من الخادم عبر
+`InnerException`.
+
+```csharp
+try
+{
+    await client.ExecuteAsync("SELECT * FROM missing_table");
+}
+catch (ClickHouseTcpServerException ex)
+    when (ex.Code == ClickHouseErrorCode.UnknownTable)
+{
+    Console.WriteLine($"ClickHouse error {ex.RawCode}: {ex.Message}");
+}
+catch (ClickHouseTcpConnectionException ex)
+{
+    Console.WriteLine($"Connection failed: {ex.InnerException?.Message}");
+}
+catch (ClickHouseTcpException ex)
+{
+    Console.WriteLine($"Native client failure: {ex.Message}");
+}
+```
+
+الرموز غير الممثَّلة في `ClickHouseErrorCode` تحمل القيمة `Code == ClickHouseErrorCode.Unknown`؛ لذا افحص
+`RawCode` ولا تفترض أن التعداد يشمل جميع رموز error في ClickHouse.
+
+تحتفظ أخطاء التحقق من الوسائط وأخطاء دورة حياة الكائنات بأنواع الاستثناءات المعتادة في ‎.NET.
+يؤدي الإلغاء إلى إطلاق `OperationCanceledException`. ويؤدي `DialTimeout` و`ReadTimeout` إلى إطلاق
+`ClickHouseTcpConnectionException` يتضمن استثناءً داخليًا من نوع `TimeoutException`، ويُستبعَد الاتصال.
+أما `PoolTimeout` فيؤدي إلى إطلاق `TimeoutException` عادي، وليس `ClickHouseTcpException`: إذ لم يفشل أي اتصال،
+والحل هو تقليل العمليات المتزامنة، أو زيادة حجم مجمّع الاتصالات، أو إكمال تعداد النتائج.
+
+### إعادة محاولة العمليات {#error-handling-retries}
+
+إذا فشل الاتصال أو انتهت المهلة أثناء إدراج الصفوف، فلن يُعرف ما إذا نجحت العملية: إذ ربما
+ثبّت الخادم الصفوف قبل أن يفقد العميل الاستجابة. عيّن قيمة ثابتة
+لـ`DeduplicationToken` للدفعة المنطقية قبل إعادة محاولتها:
+
+```csharp
+var insertOptions = new ClickHouseTcpInsertOptions
+{
+    DeduplicationToken = batchContentHash,
+};
+
+await client.InsertAsync(
+    "INSERT INTO events (id, payload) VALUES",
+    columns,
+    insertOptions);
+```
+
+استخدم الرمز نفسه عند تكرار محاولة إرسال تلك الدفعة، ورمزًا مختلفًا للبيانات الجديدة. أما العمليات الأخرى،
+فلا تُعِد المحاولة إلا إذا كان تكرار العبارة آمنًا وكان الإخفاق المعني عارضًا؛
+إذ تتطلب معظم أخطاء الخادم تعديل الاستعلام أو التهيئة بدلًا من إعادة المحاولة.
+
+## التسجيل والتشخيص {#logging-and-diagnostics}
+
+يتكامل عميل TCP مع `Microsoft.Extensions.Logging`. التسجيل اختياري؛ وعند عدم توفّر
+`LoggerFactory`، لا ينشئ العميل أي مسجّلات ولا ينسّق أي رسائل سجل.
+
+```csharp
+using ClickHouse.Driver.Tcp;
+using Microsoft.Extensions.Logging;
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConsole()
+        .SetMinimumLevel(LogLevel.Debug);
+});
+
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    LoggerFactory = loggerFactory,
+    StatementMaxLength = 100,
+};
+
+await using var client = new ClickHouseTcpClient(options);
+```
+
+عند تسجيل العميل باستخدام ملحقات حقن التبعيات، يستخدم `ILoggerFactory` الخاص بالحاوية
+ما لم تكن الخيارات المقدَّمة قد حدّدت واحدًا بالفعل.
+
+### فئات التسجيل {#logging-categories}
+
+| الفئة                              | الأحداث والمستويات                                                                                                                                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ClickHouse.Driver.Tcp.Client`     | بدء العملية واكتمالها وإلغاؤها والتخلي عنها، وأعداد الصفوف والبايتات عند مستوى `Debug`؛ والإخفاقات عند مستوى `Error`.                                                          |
+| `ClickHouse.Driver.Tcp.Connection` | إنشاء الاتصال وTLS والمصافحة وإصدار الخادم ومراجعة البروتوكول والمنطقة الزمنية عند مستوى `Debug`؛ وإخفاقات الاتصال عند مستوى `Warning`.                                        |
+| `ClickHouse.Driver.Tcp.Pool`       | إعادة الاستخدام عند مستوى `Trace`؛ وفتح الاتصالات وإخراجها من الخدمة واستبعادها وتصريفها عند مستوى `Debug`؛ ونفاد الاتصالات المتاحة والإخفاقات في الخلفية عند مستوى `Warning`. |
+
+هيّئ الفئات باستخدام تهيئة التسجيل القياسية في .NET:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Warning",
+      "ClickHouse.Driver.Tcp.Client": "Debug",
+      "ClickHouse.Driver.Tcp.Connection": "Debug",
+      "ClickHouse.Driver.Tcp.Pool": "Debug"
+    }
+  }
+}
+```
+
+تُسجَّل رسالة بدء العملية بمستوى `Debug`، وتتضمن من نص SQL ما لا يزيد على `StatementMaxLength` محرفًا.
+القيمة الافتراضية هي خمسة محارف. اضبط القيمة على صفر أو أقل لاستبعاد نص العبارة من السجلات،
+ولا ترفعها إلا بعد مراعاة أن المعلمات والقيم الحرفية قد تحتوي على بيانات حساسة.
+
+### رسائل سجل الخادم {#logging-server-messages}
+
+يرصد تكامل تسجيل الأحداث سلوك جهة العميل. أما حزم سجل الاستعلامات الخاصة بـ ClickHouse، فهي
+منفصلة وتُرسَل إلى `ClickHouseTcpQueryCallbacks.OnLog`. فعِّل إرسالها باستخدام
+إعداد الخادم `send_logs_level`:
+
+```csharp
+var serverLogger = loggerFactory.CreateLogger("ClickHouse.Server");
+
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Settings = new Dictionary<string, string>
+    {
+        ["send_logs_level"] = "warning",
+    },
+    Callbacks = new ClickHouseTcpQueryCallbacks
+    {
+        OnLog = block =>
+        {
+            IColumn<string> messages = block.Column<string>("text");
+            for (int row = 0; row < block.RowCount; row++)
+            {
+                serverLogger.LogWarning("{ClickHouseMessage}", messages[row]);
+            }
+        },
+    },
+};
+```
+
+تُستعار كتلة السجل وتُحرَّر عند انتهاء دالة الاستدعاء. عالجها بالتزامن أو
+انسخ منها القيم التي يلزم الاحتفاظ بها. احرص على سرعة تنفيذ دوال الاستدعاء وألّا ترفع استثناءات؛ فأي استثناء ترفعه دالة الاستدعاء
+يُنهي العملية واتصالها.
+
+## OpenTelemetry {#opentelemetry}
+
+يُصدر عميل TCP وحدات span للتتبّع الموزّع عبر واجهة برمجة التطبيقات `System.Diagnostics.Activity` في ‎.NET.
+اشترك في مصدر نشاط TCP باستخدام موفّر تتبّع OpenTelemetry:
+
+```csharp
+using ClickHouse.Driver.Tcp;
+using OpenTelemetry.Trace;
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddSource(ClickHouseTcpDiagnostics.ActivitySourceName)
+        .AddAspNetCoreInstrumentation()
+        .AddOtlpExporter());
+```
+
+لتطبيق يعمل على وحدة التحكم أو للإعداد اليدوي:
+
+```csharp
+using OpenTelemetry;
+using OpenTelemetry.Trace;
+
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .AddSource(ClickHouseTcpDiagnostics.ActivitySourceName)
+    .AddConsoleExporter()
+    .Build();
+```
+
+اسم مصدر النشاط هو `ClickHouse.Driver.Tcp`، وهو منفصل عن مصدر عميل HTTP، لذا
+يمكن جمع بيانات أيٍّ من وسيلتَي النقل على حدة. وإذا لم يشترك أي مستمع، فلن تُنشئ العمليات
+أي أنشطة.
+
+### وحدات span والسمات {#opentelemetry-spans-attributes}
+
+يُصدر العميل وحدات span لعمليات SQL وطلبات التحقق من الاتصال والاتصالات الجديدة. وتُسمّى وحدة span الخاصة بعبارة SQL باسم
+أول كلمة مفتاحية فيها، مثل `SELECT` أو `INSERT`؛ أما العبارات التي لا يمكن التعرّف على
+كلمتها المفتاحية الأولى، فتُسمّى وحدات span الخاصة بها `query`. وتغطي وحدة span المسماة `connect` إنشاء اتصال المقبس والتفاوض على TLS
+والمصافحة وفق البروتوكول الأصلي. وتشمل وحدات span الخاصة بالعبارات أيضًا الوقت المستغرق في انتظار اتصال متاح من مجمع الاتصالات.
+
+| السمة                         | الوصف                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| `db.system.name`              | `clickhouse`                                                                            |
+| `db.namespace`                | قاعدة البيانات المُهيّأة                                                                |
+| `db.operation.name`           | أول كلمة مفتاحية في عبارة SQL، إن أمكن تحديدها                                          |
+| `db.user`                     | اسم مستخدم ClickHouse المُهيّأ                                                          |
+| `server.address`              | اسم مضيف الخادم أو عنوانه                                                               |
+| `server.port`                 | منفذ البروتوكول الأصلي بعد تحديده                                                       |
+| `db.clickhouse.query_id`      | معرّف الاستعلام المُنشأ أو الذي قدّمه المستدعي                                          |
+| `db.query.text`               | عبارة SQL اختيارية ومقتطعة                                                              |
+| `db.clickhouse.read_rows`     | الصفوف التي أبلغ عنها الخادم في حزم التقدم                                              |
+| `db.clickhouse.read_bytes`    | وحدات البايت التي أبلغ عنها الخادم في حزم التقدم                                        |
+| `db.clickhouse.written_rows`  | الصفوف التي أبلغ عنها الخادم، أو الصفوف التي أرسلها العميل في عملية إدراج من جهة العميل |
+| `db.clickhouse.written_bytes` | وحدات البايت المكتوبة، إذا أبلغ عنها الخادم                                             |
+| `db.clickhouse.elapsed_ns`    | وقت التنفيذ على الخادم وفقًا لحزم التقدم                                                |
+| `db.clickhouse.result_rows`   | صفوف النتائج الواردة في ملخص ملف تعريف الخادم                                           |
+| `db.clickhouse.result_bytes`  | وحدات بايت النتائج الواردة في ملخص ملف تعريف الخادم                                     |
+| `error.type`                  | نوع الاستثناء لعملية فاشلة                                                              |
+| `db.response.status_code`     | رمز خطأ ClickHouse الرقمي لاستثناء صادر عن الخادم                                       |
+
+لا تظهر العدادات إلا إذا كانت لدى الخادم أو العميل قيمة ذات معنى للإبلاغ عنها. فعلى سبيل المثال،
+تُبلّغ عملية الإدراج التي تُحمّل كتل بيانات عن الصفوف التي أرسلها العميل، لكنها لا تتلقى من
+الخادم أي عدادات للقراءة. وتتضمن وحدات span الفاشلة أيضًا حدث `exception` يضم نوع الاستثناء ورسالته وتتبّع
+المكدس.
+
+### نص SQL والبيانات الحساسة {#opentelemetry-sql-text}
+
+يُستبعَد نص SQL من spans افتراضيًا. ولتضمينه، فعِّله صراحةً واضبط حدًا مناسبًا:
+
+```csharp
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    IncludeSqlInActivityTags = true,
+    StatementMaxLength = 1_000,
+};
+```
+
+يحدّ `StatementMaxLength` طول نص SQL في كلٍّ من السمة `db.query.text` وسجلات تصحيح الأخطاء. وإذا كانت قيمته صفرًا
+أو أقل، يُحذف نص SQL من كليهما. راجع أيضًا رسائل الاستثناء المُصدَّرة وتتبّعات المكدس، إذ قد
+تتضمن أخطاء الخادم تفاصيل الاستعلام.
+
+### تمرير سياق التتبع {#opentelemetry-trace-context}
+
+عندما يستخدم `Activity.Current` صيغة معرّف W3C، يضمّن العميل معرّف التتبع ومعرّف span وعلامات التتبع
+وحالة التتبع في حزمة الاستعلام الأصلية. ويمكن لـ ClickHouse بعد ذلك إنشاء وحدات span للخادم ضمن
+التتبع الموزّع نفسه. ويظل جمع وحدات span على جانب الخادم وأخذ العينات منها محكومَين بتهيئة ClickHouse؛
+فعلى سبيل المثال، يمكن ضبط احتمال أخذ العينات لكل استعلام:
+
+```csharp
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Settings = new Dictionary<string, string>
+    {
+        ["opentelemetry_start_trace_probability"] = "1",
+    },
+};
+
+await client.ExecuteAsync("SELECT count() FROM events", queryOptions);
+```
+
+يمكن استخدام معرّف الاستعلام المُمرَّر مع معرّف التتبّع لربط span العميل بجدول
+`system.query_log`، وكذلك بجدول `system.opentelemetry_span_log` في ClickHouse عند تهيئته.
+
+## القيود {#limitations}
+
+لا يزال عميل TCP تجريبيًا، ولا يوفّر جميع الميزات المتاحة في عميل HTTP.
+
+### الميزات المتاحة عبر HTTP فقط {#limitations-http-only}
+
+واجهة برمجة تطبيقات TCP ليست موفّر ADO.NET، ولا يمكن استخدامها مع أدوات ربط الكائنات بقواعد البيانات (ORMs). وهي لا تدعم أيضًا
+الإدخال والإخراج بصيغ CSV أو JSONEachRow أو Parquet أو عبر تدفّق بيانات خام؛ أو المصادقة باستخدام رمز حامل أو ترويسات HTTP
+مخصّصة؛ أو تخصيص تحديد أنواع المعلمات أو تنسيقها أو تحويلها عند القراءة؛ أو تعيين قاعدة بيانات
+أو دور لكل استعلام. استخدم [عميل HTTP](./http) إذا كان التطبيق يحتاج إلى
+أيٍّ من هذه الميزات.
+
+### معلمات SQL {#limitations-sql-parameters}
+
+لا تُدعَم سوى العناصر النائبة `{name:Type}` الأصلية في ClickHouse؛ ولا يعيد عميل TCP كتابة
+العناصر النائبة `@name` وفق صيغة ADO.NET. في إصدارات ClickHouse من 25.8 إلى 26.6، قد تُعامَل أسماء المعلمات التي تطابق
+إعدادات الخادم، مثل `limit` أو `offset`، على أنها إعدادات، ومن ثم تُرفَض. أعد تسمية
+هذه المعلمات، مثلًا إلى `row_limit`، إذا كنت تدعم تلك الإصدارات.
+
+### تغطية أنواع البيانات {#limitations-data-types}
+
+يوضّح قسم [أنواع البيانات المدعومة](#supported-data-types) جميع حالات المطابقة. وللمرمِّز
+الأصلي الحالي القيود المهمة التالية:
+
+* يمكن أن تضمّ أنواع Tuple سبعة عناصر على الأكثر.
+* الحالات الوسيطة لـ`AggregateFunction(function, ...)` غير مدعومة. احسب قيمها النهائية على
+  الخادم، مثلًا باستخدام `sumMerge(column)`، واقرأ النتيجة بدلًا منها.
+* لا يُدعم سوى تخطيط `QBit(T, N)` ذي الوسيطين، من دون تقسيم الأبعاد إلى مجموعات ثابتة الحجم.
+* يستخدم `JSON` تسلسل String الخاص بـClickHouse، ويتطلب
+  `output_format_native_write_json_as_string = 1`، وهي قيمة يطلبها العميل افتراضيًا.
+* لا تتوفّر لعمليات الإدراج التي ينشئها التطبيق بنية موجّهة للصفوف لـ`Nested(...)` عندما تكون
+  `flatten_nested = 0`. استخدم بدلًا منها أعمدة `Array(T)` المسطّحة ذات الأسماء المنقّطة، وهي الخيار الافتراضي.
+* لا يمكن لعمود `Geometry` ينشئه التطبيق التمييز تلقائيًا بين بدائل تشترك في بنية CLR
+  نفسها، مثل `Ring` و`LineString`. أدرج النوع الهندسي المحدّد، أو أعِد إدراج عمود
+  `Geometry` مفكك الترميز الذي يحتفظ بمميّزاته.
+
+### إعادة المحاولة تلقائيًا {#limitations-retries}
+
+لا يعيد العميل محاولة تنفيذ العمليات الفاشلة تلقائيًا. أعد محاولة تنفيذ العمليات التي يمكن تكرارها بأمان فقط،
+وحدّد قيمة ثابتة لـ`DeduplicationToken` قبل إعادة محاولة عملية إدراج لم تُعرف نتيجتها.
+راجع [إعادة محاولة تنفيذ العمليات](#error-handling-retries) لمزيد من التفاصيل.
