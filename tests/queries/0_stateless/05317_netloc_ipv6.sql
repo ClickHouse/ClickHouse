@@ -29,7 +29,11 @@ FROM values('case_id String, url String',
     ('valid20', 'http://[::1]:8080'),
     ('valid21', 'http://[::1]:8080?query'),
     ('valid22', 'http://[::1]:8080#fragment'),
-    ('valid23', 'http://[::1]/')
+    ('valid23', 'http://[::1]/'),
+    ('valid24', '[v1.a]:80'),
+    ('valid25', '[v1.a]:80/'),
+    ('valid26', '[v1.a]:80?q=@host/path'),
+    ('valid27', '[v1.a]:80#fragment')
 )
 ORDER BY case_id
 FORMAT CSV;
@@ -70,7 +74,6 @@ FROM values('case_id String, url String',
     ('compat18', 'http://user@paypal.com@[::1]:80/'),
     ('compat19', 'http://example.com/path@[::1]'),
     ('compat20', 'http://example.com?q=@[::1]'),
-    ('compat21', '[v1.a]:80'),
     ('compat22', '1://[::1]'),
     ('compat23', 'http://[fe80::1%25eth0]/'),
     ('compat24', 'http://example.com/a/b'),
@@ -78,7 +81,8 @@ FROM values('case_id String, url String',
     ('compat26', 'http://example.com?q=@x/y'),
     ('compat27', 'http://example.com/a?x=@y#f'),
     ('compat28', 'http://example.com?q?x'),
-    ('compat29', 'http://user:pass@example.com:8080/a/b?x=@y#f')
+    ('compat29', 'http://user:pass@example.com:8080/a/b?x=@y#f'),
+    ('compat30', '[://example.com/path')
 )
 ORDER BY case_id
 FORMAT CSV;

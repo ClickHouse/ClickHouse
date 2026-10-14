@@ -21,12 +21,20 @@ struct ExtractNetloc
         Pos pos = data;
         Pos end = data + size;
 
+        std::string_view leading_ip_literal;
+        if (size > 1 && data[0] == '[')
+        {
+            const auto host = getURLHostRFC(data, size);
+            if (!host.empty() && host.data() == data + 1 && host.size() < size - 1 && data[host.size() + 1] == ']')
+                leading_ip_literal = host;
+        }
+
         /// Skip scheme.
         if (pos + 2 < end && pos[0] == '/' && pos[1] == '/')
         {
             pos += 2;
         }
-        else
+        else if (leading_ip_literal.empty())
         {
             Pos scheme_end = data + std::min(size, 16UL);
             for (++pos; pos < scheme_end; ++pos)
@@ -81,9 +89,9 @@ struct ExtractNetloc
             if (*pos == '[')
             {
                 /// Recognize only a validated IP-literal at this exact bracket.
-                const auto host = getURLHostRFC(data, size);
-                if (!host.empty() && host.data() == pos + 1
-                    && host.size() < static_cast<size_t>(end - host.data()) && host.data()[host.size()] == ']')
+                const auto host = pos == data ? leading_ip_literal : getURLHostRFC(data, size);
+                if (!host.empty() && host.data() == pos + 1 && host.size() < static_cast<size_t>(end - host.data())
+                    && data[static_cast<size_t>(host.data() - data) + host.size()] == ']')
                 {
                     pos = host.data() + host.size();
                     has_ip_literal = true;
