@@ -324,7 +324,8 @@ DirectoryWatchReactor::DirectoryWatchReactor()
     if (::kevent(kqueue_fd, &change, 1, nullptr, 0, nullptr) == -1)
     {
         const int saved_errno = errno;
-        ::close(kqueue_fd);
+        int err = ::close(kqueue_fd);
+        chassert(!err || errno == EINTR);
         errno = saved_errno;
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot register the control pipe of the directory watch reactor");
     }
@@ -336,7 +337,7 @@ DirectoryWatchReactor::~DirectoryWatchReactor()
 {
     stop();
 
-    [[maybe_unused]] int err = ::close(kqueue_fd);
+    int err = ::close(kqueue_fd);
     chassert(!err || errno == EINTR);
 }
 
