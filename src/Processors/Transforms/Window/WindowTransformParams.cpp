@@ -14,6 +14,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -52,7 +53,16 @@ std::optional<T> shift(T value, T offset, bool preceding)
     }
 }
 
-template <typename T>
+/// -1, 0 or 1 for two values of which either may be missing(NULL or NaN).
+int compareMissing(bool lhs_is_missing, bool rhs_is_missing, bool missing_is_greater)
+{
+    if (lhs_is_missing == rhs_is_missing)
+        return 0;
+
+    return lhs_is_missing == missing_is_greater ? 1 : -1;
+}
+
+template <typename T, bool missing_is_greater>
 int compareRangeOffset(
     const IColumn * lhs_column, size_t lhs_row,
     const IColumn * rhs_column, size_t rhs_row,
@@ -61,8 +71,15 @@ int compareRangeOffset(
 {
     const T lhs_value = assert_cast<const ColumnVector<T> &>(*lhs_column).getData()[lhs_row];
     const T rhs_value = assert_cast<const ColumnVector<T> &>(*rhs_column).getData()[rhs_row];
-    const std::optional<T> shifted_rhs = shift(rhs_value, static_cast<T>(offset.safeGet<T>()), offset_is_preceding);
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        const bool lhs_is_nan = isNaN(lhs_value);
+        const bool rhs_is_nan = isNaN(rhs_value);
+        if (lhs_is_nan || rhs_is_nan)
+            return compareMissing(lhs_is_nan, rhs_is_nan, missing_is_greater);
+    }
 
+    const std::optional<T> shifted_rhs = shift(rhs_value, static_cast<T>(offset.safeGet<T>()), offset_is_preceding);
     if (!shifted_rhs)
         return offset_is_preceding ? 1 : -1;
     else if (lhs_value < *shifted_rhs)
@@ -108,8 +125,8 @@ int compareCalendarRangeOffset(
         return 1;
 }
 
-/// A comparator over a Nullable column: NULL sorts before every value and equals NULL.
-template <RangeOffsetComparator compare_nested>
+/// A comparator over a Nullable column: NULL equals NULL and sorts as the ORDER BY key puts it.
+template <RangeOffsetComparator compare_nested, bool missing_is_greater>
 int compareNullableRangeOffset(
     const IColumn * lhs_column, size_t lhs_row,
     const IColumn * rhs_column, size_t rhs_row,
@@ -122,64 +139,74 @@ int compareNullableRangeOffset(
     const bool lhs_is_null = lhs.isNullAt(lhs_row);
     const bool rhs_is_null = rhs.isNullAt(rhs_row);
     if (lhs_is_null || rhs_is_null)
-        return lhs_is_null == rhs_is_null ? 0 : (lhs_is_null ? -1 : 1);
+        return compareMissing(lhs_is_null, rhs_is_null, missing_is_greater);
 
     return compare_nested(&lhs.getNestedColumn(), lhs_row, &rhs.getNestedColumn(), rhs_row, offset, offset_is_preceding, time_zone);
 }
 
-template <bool nullable, RangeOffsetComparator compare>
+template <bool nullable, bool missing_is_greater, RangeOffsetComparator compare>
 RangeOffsetComparator maybeNullable()
 {
     if constexpr (nullable)
-        return compareNullableRangeOffset<compare>;
+        return compareNullableRangeOffset<compare, missing_is_greater>;
     else
         return compare;
 }
 
 /// The comparator specialised for the value type of `column`, which is the nested column for a Nullable key.
-template <bool nullable>
+template <bool nullable, bool missing_is_greater>
 RangeOffsetComparator chooseRangeOffsetComparatorForValueType(const IColumn & column)
 {
     switch (column.getDataType())
     {
-        case TypeIndex::UInt8: return maybeNullable<nullable, compareRangeOffset<UInt8>>();
-        case TypeIndex::UInt16: return maybeNullable<nullable, compareRangeOffset<UInt16>>();
-        case TypeIndex::UInt32: return maybeNullable<nullable, compareRangeOffset<UInt32>>();
-        case TypeIndex::UInt64: return maybeNullable<nullable, compareRangeOffset<UInt64>>();
-        case TypeIndex::Int8: return maybeNullable<nullable, compareRangeOffset<Int8>>();
-        case TypeIndex::Int16: return maybeNullable<nullable, compareRangeOffset<Int16>>();
-        case TypeIndex::Int32: return maybeNullable<nullable, compareRangeOffset<Int32>>();
-        case TypeIndex::Int64: return maybeNullable<nullable, compareRangeOffset<Int64>>();
-        case TypeIndex::Int128: return maybeNullable<nullable, compareRangeOffset<Int128>>();
-        case TypeIndex::Float32: return maybeNullable<nullable, compareRangeOffset<Float32>>();
-        case TypeIndex::Float64: return maybeNullable<nullable, compareRangeOffset<Float64>>();
+        case TypeIndex::UInt8: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<UInt8, missing_is_greater>>();
+        case TypeIndex::UInt16: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<UInt16, missing_is_greater>>();
+        case TypeIndex::UInt32: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<UInt32, missing_is_greater>>();
+        case TypeIndex::UInt64: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<UInt64, missing_is_greater>>();
+        case TypeIndex::Int8: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<Int8, missing_is_greater>>();
+        case TypeIndex::Int16: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<Int16, missing_is_greater>>();
+        case TypeIndex::Int32: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<Int32, missing_is_greater>>();
+        case TypeIndex::Int64: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<Int64, missing_is_greater>>();
+        case TypeIndex::Int128: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<Int128, missing_is_greater>>();
+        case TypeIndex::Float32: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<Float32, missing_is_greater>>();
+        case TypeIndex::Float64: return maybeNullable<nullable, missing_is_greater, compareRangeOffset<Float64, missing_is_greater>>();
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", column.getName());
     }
 }
 
 /// The same for a calendar INTERVAL offset, whose key was already checked to be a Date or Date32.
-template <bool nullable>
+template <bool nullable, bool missing_is_greater>
 RangeOffsetComparator chooseCalendarRangeOffsetComparatorForValueType(const IColumn & column)
 {
     switch (column.getDataType())
     {
-        case TypeIndex::UInt16: return maybeNullable<nullable, compareCalendarRangeOffset<UInt16>>();
-        case TypeIndex::Int32: return maybeNullable<nullable, compareCalendarRangeOffset<Int32>>();
+        case TypeIndex::UInt16: return maybeNullable<nullable, missing_is_greater, compareCalendarRangeOffset<UInt16>>();
+        case TypeIndex::Int32: return maybeNullable<nullable, missing_is_greater, compareCalendarRangeOffset<Int32>>();
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Calendar interval offset is not supported for ORDER BY column {}", column.getName());
     }
 }
 
-RangeOffsetComparator chooseRangeOffsetComparator(const IColumn & column, bool is_calendar)
+template <bool missing_is_greater>
+RangeOffsetComparator chooseRangeOffsetComparatorForMissingOrder(const IColumn & column, bool is_calendar)
 {
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
     {
         const IColumn & nested = nullable->getNestedColumn();
-        return is_calendar ? chooseCalendarRangeOffsetComparatorForValueType<true>(nested) : chooseRangeOffsetComparatorForValueType<true>(nested);
+        return is_calendar ? chooseCalendarRangeOffsetComparatorForValueType<true, missing_is_greater>(nested)
+                           : chooseRangeOffsetComparatorForValueType<true, missing_is_greater>(nested);
     }
 
-    return is_calendar ? chooseCalendarRangeOffsetComparatorForValueType<false>(column) : chooseRangeOffsetComparatorForValueType<false>(column);
+    return is_calendar ? chooseCalendarRangeOffsetComparatorForValueType<false, missing_is_greater>(column)
+                       : chooseRangeOffsetComparatorForValueType<false, missing_is_greater>(column);
+}
+
+/// `missing_is_greater` tells whether NULL and NaN keys sort after the other values.
+RangeOffsetComparator chooseRangeOffsetComparator(const IColumn & column, bool is_calendar, bool missing_is_greater)
+{
+    return missing_is_greater ? chooseRangeOffsetComparatorForMissingOrder<true>(column, is_calendar)
+                              : chooseRangeOffsetComparatorForMissingOrder<false>(column, is_calendar);
 }
 
 bool isRangeOffsetFrame(const WindowFrame & frame)
@@ -318,7 +345,8 @@ struct RangeOffsets
 /// Converts the offsets to the units of the ORDER BY key, so that the comparators can shift the key by them,
 /// and chooses a comparator for each bound. Null comparators for every frame but RANGE OFFSET, which has
 /// exactly one ORDER BY key.
-RangeOffsets prepareRangeOffsets(const Block & header, const WindowFrame & frame, const std::vector<size_t> & order_by_indices)
+RangeOffsets prepareRangeOffsets(
+    const Block & header, const WindowFrame & frame, const SortDescription & order_by, const std::vector<size_t> & order_by_indices)
 {
     RangeOffsets result;
     result.frame = frame;
@@ -327,7 +355,8 @@ RangeOffsets prepareRangeOffsets(const Block & header, const WindowFrame & frame
 
     chassert(order_by_indices.size() == 1);
     const auto & key = header.getByPosition(order_by_indices[0]);
-    const RangeOffsetComparator arithmetic_comparator = chooseRangeOffsetComparator(*key.column, /*is_calendar=*/false);
+    const bool missing_is_greater = order_by[0].nulls_direction > 0;
+    const RangeOffsetComparator arithmetic_comparator = chooseRangeOffsetComparator(*key.column, /*is_calendar=*/false, missing_is_greater);
 
     const DataTypePtr key_type = removeNullable(key.type);
     /// The time zone of a DateTime key decides whether a day is always 24 hours. Month arithmetic on a Date key
@@ -351,7 +380,7 @@ RangeOffsets prepareRangeOffsets(const Block & header, const WindowFrame & frame
             }
 
             result.time_zone = &time_zone;
-            return chooseRangeOffsetComparator(*key.column, /*is_calendar=*/true);
+            return chooseRangeOffsetComparator(*key.column, /*is_calendar=*/true, missing_is_greater);
         }
 
         offset = convertFieldToTypeOrThrow(offset, *key.type, nullptr, {}, /*convert_inexact_floats=*/true);
@@ -381,7 +410,7 @@ WindowTransformParams WindowTransformParams::create(
     auto partition_by_indices = findPositions(header, window_description.partition_by);
     auto order_by_indices = findPositions(header, window_description.order_by);
     auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
-    auto range_offsets = prepareRangeOffsets(header, applyFunctionDefaultFrame(window_description.frame, functions), order_by_indices);
+    auto range_offsets = prepareRangeOffsets(header, applyFunctionDefaultFrame(window_description.frame, functions), window_description.order_by, order_by_indices);
 
     WindowDescription description = window_description;
     description.frame = std::move(range_offsets.frame);

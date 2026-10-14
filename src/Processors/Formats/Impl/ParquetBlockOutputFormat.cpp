@@ -63,6 +63,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
     options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
     options.write_geometadata = format_settings.parquet.write_geometadata;
+    options.write_file_logical_type = format_settings.parquet.write_file_logical_type;
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
@@ -73,7 +74,13 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         /// max definition level from the schema, while the writer takes the level bit width from the
         /// state the data path builds, so the two would desynchronize.
         iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
-        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding(), iceberg_optionality);
+        /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
+        const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
+        schema = convertSchema(
+            *header_,
+            options,
+            column_encoding.empty() ? std::nullopt : std::optional(column_encoding),
+            iceberg_optionality);
     }
     else
         schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);

@@ -94,7 +94,15 @@ Nullable Date key, INTERVAL MONTH
 2024-03-01	5	8
 2024-03-31	6	11
 2025-01-31	7	7
-\N	4	11
+\N	4	4
+Nullable Date key, INTERVAL MONTH, NULLS FIRST
+\N	4	4
+2024-01-30	1	1
+2024-01-31	2	3
+2024-02-01	3	6
+2024-03-01	5	8
+2024-03-31	6	11
+2025-01-31	7	7
 Windows differing only by unit are not merged
 2024-01-30	1	1	1
 2024-01-31	2	3	3

@@ -63,6 +63,10 @@ SELECT 'Nullable Date key, INTERVAL MONTH';
 SELECT dt, val, sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS rolling
 FROM (SELECT if(val = 4, NULL, dt) AS dt, val FROM test_window_interval_offset);
 
+SELECT 'Nullable Date key, INTERVAL MONTH, NULLS FIRST';
+SELECT dt, val, sum(val) OVER (ORDER BY dt NULLS FIRST RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS rolling
+FROM (SELECT if(val = 4, NULL, dt) AS dt, val FROM test_window_interval_offset);
+
 SELECT 'Windows differing only by unit are not merged';
 SELECT dt, val,
     sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS by_day,
