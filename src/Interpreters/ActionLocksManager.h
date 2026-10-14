@@ -8,7 +8,9 @@
 
 #include <mutex>
 #include <optional>
+#include <memory>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -51,15 +53,22 @@ private:
         /// The storage that owns the blockers behind `locks`: differs from the key when the locks
         /// were taken through a forwarding storage. Only compared, never dereferenced.
         StorageRawPtr owner = nullptr;
+        /// The same storage, recorded when the lock was taken, to notify it on removal without
+        /// resolving the forwarding storage again (its target may be remote and unavailable).
+        std::weak_ptr<IStorage> owner_storage;
         Locks locks;
     };
 
     using StorageLocks = std::unordered_map<StorageRawPtr, StorageLocksEntry>;
+    /// The keys of `storage_locks` grouped by `StorageLocksEntry::owner`.
+    using OwnedStorages = std::unordered_map<StorageRawPtr, std::unordered_set<StorageRawPtr>>;
 
     bool hasImpl(StorageRawPtr table, std::optional<StorageActionBlockType> action_type) const;
+    void eraseEntry(StorageLocks::iterator it);
 
     mutable std::mutex mutex;
     StorageLocks storage_locks;
+    OwnedStorages owned_storages;
 };
 
 }
