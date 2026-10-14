@@ -180,6 +180,9 @@ SQLQueryPiece applyLabelManipulationFunction(
         auto & src_label = arguments[3].string_value;
         if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(src_label.data()), src_label.size()))
             src_label.clear();
+
+        /// Prometheus compiles the regex as `^(?s:` + regex + `)$`. The tag function anchors it to the whole value.
+        arguments[4].string_value = "(?s:" + arguments[4].string_value + ")";
     }
 
     chassert(arguments.size() >= 2);
@@ -274,13 +277,35 @@ SQLQueryPiece applyLabelManipulationFunction(
             ///
             /// Series which get the same `new_group` are merged step by step. An exception is thrown only if two of them
             /// have values at the same step.
-            /// A write of `__name__` removes the pending-drop marker. `label_replace` does that only when the regex matches.
+            ///
+            /// A write of `__name__` removes the marker of a dropped metric name. `label_replace` writes only when the regex
+            /// matches, so the same regex first writes an empty value to the marker, which removes it:
+            /// timeSeriesReplaceTag(timeSeriesReplaceTag(group, '', '', src_label, regex), '__name__', replacement, src_label, regex)
             ASTPtr label_replacing_query;
             {
                 SelectQueryBuilder builder;
 
+                ASTPtr group = make_intrusive<ASTIdentifier>(ColumnNames::Group);
+                if (dest_label == kMetricName)
+                {
+                    if (function_name == "label_replace")
+                    {
+                        group = makeASTFunction(
+                            impl_info->ch_function_name,
+                            std::move(group),
+                            make_intrusive<ASTLiteral>(kDroppedMetricNameMarker),
+                            make_intrusive<ASTLiteral>(String{}),
+                            make_intrusive<ASTLiteral>(arguments[3].string_value),
+                            make_intrusive<ASTLiteral>(arguments[4].string_value));
+                    }
+                    else
+                    {
+                        group = makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
+                    }
+                }
+
                 ASTs group_function_args;
-                group_function_args.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                group_function_args.push_back(std::move(group));
 
                 size_t array_argument_index = impl_info->array_argument_index;
                 insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
@@ -290,55 +315,7 @@ SQLQueryPiece applyLabelManipulationFunction(
                 auto group_function = makeASTFunction(impl_info->ch_function_name);
                 group_function->arguments->children = std::move(group_function_args);
 
-                ASTPtr new_group = std::move(group_function);
-                if (dest_label == kMetricName)
-                {
-                    ASTPtr written_group = new_group->clone();
-                    ASTPtr without_marker = makeASTFunction(
-                        "timeSeriesRemoveTag",
-                        std::move(written_group),
-                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
-
-                    if (function_name == "label_replace")
-                    {
-                        /// The tag function anchors the regex to the whole source value.
-                        const String anchored_regex = "^(?:" + arguments[4].string_value + ")$";
-                        /// An empty source name is a missing label.
-                        /// `timeSeriesExtractTag` would return the drop marker stored under that name.
-                        ASTPtr source_value;
-                        if (arguments[3].string_value.empty())
-                        {
-                            source_value = make_intrusive<ASTLiteral>(String{});
-                        }
-                        else
-                        {
-                            source_value = makeASTFunction(
-                                "ifNull",
-                                makeASTFunction(
-                                    "timeSeriesExtractTag",
-                                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                                    make_intrusive<ASTLiteral>(arguments[3].string_value)),
-                                make_intrusive<ASTLiteral>(String{}));
-                        }
-
-                        ASTPtr regex_matched = makeASTFunction(
-                            "match",
-                            std::move(source_value),
-                            make_intrusive<ASTLiteral>(anchored_regex));
-
-                        new_group = makeASTFunction(
-                            "if",
-                            std::move(regex_matched),
-                            std::move(without_marker),
-                            make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                    }
-                    else
-                    {
-                        new_group = std::move(without_marker);
-                    }
-                }
-
-                builder.select_list.push_back(std::move(new_group));
+                builder.select_list.push_back(std::move(group_function));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
                 builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));

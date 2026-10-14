@@ -1,0 +1,11 @@
+-- series with and without a dropped metric name aggregate into one bucket, which drops the name
+[]	31
+[]	20
+[('__name__','foo'),('job','b')]	20
+1
+-- a bucket without a dropped metric name keeps the name
+[('__name__','foo')]	30
+-- the regex of label_replace matches a newline in the source label
+[('__name__','renamed'),('job','a\nb')]	6
+-- a metric name with a newline is dropped
+[]	2

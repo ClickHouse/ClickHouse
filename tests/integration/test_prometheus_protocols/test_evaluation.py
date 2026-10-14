@@ -6135,7 +6135,7 @@ def test_label_manipulation_functions():
         'label_replace(up, "x", "y", "job", "((")',
         1753176757.89,
         "invalid regular expression",
-        "Invalid regular expression '(('",
+        "Invalid regular expression '(?s:(()'",
     )
 
     # Join two source labels with a separator.

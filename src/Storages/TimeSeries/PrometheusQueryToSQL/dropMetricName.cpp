@@ -54,22 +54,32 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             /// finalizeSQL removes both `__name__` and the marker, and throws an exception if series collide after that.
 
             /// Step 1:
-            /// SELECT timeSeriesReplaceTag(group, '', '1', '__name__', '.+') AS new_group,
+            /// SELECT if(isNotNull(timeSeriesExtractTag(group, '__name__')), timeSeriesReplaceTag(group, '', '1', '', ''), group) AS new_group,
             ///        values
             /// FROM <vector_grid>
             ///
-            /// The regular expression '.+' doesn't match an empty string, so a series without a metric name is left unchanged.
+            /// The empty source tag is a missing tag, and the empty regular expression matches its empty value,
+            /// so the marker is written to every series which has a metric name, whatever bytes that name contains.
             ASTPtr metric_name_marking_query;
             {
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(makeASTFunction(
-                    "timeSeriesReplaceTag",
-                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                    make_intrusive<ASTLiteral>(kDroppedMetricNameMarker),
-                    make_intrusive<ASTLiteral>(kDroppedMetricNameMarkerValue),
-                    make_intrusive<ASTLiteral>(kMetricName),
-                    make_intrusive<ASTLiteral>(".+")));
+                    "if",
+                    makeASTFunction(
+                        "isNotNull",
+                        makeASTFunction(
+                            "timeSeriesExtractTag",
+                            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                            make_intrusive<ASTLiteral>(kMetricName))),
+                    makeASTFunction(
+                        "timeSeriesReplaceTag",
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarker),
+                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarkerValue),
+                        make_intrusive<ASTLiteral>(String{}),
+                        make_intrusive<ASTLiteral>(String{})),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group)));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
