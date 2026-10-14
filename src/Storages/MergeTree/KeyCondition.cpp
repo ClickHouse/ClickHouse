@@ -3048,6 +3048,30 @@ String findKeySubexpressionName(const RPNBuilderTreeNode & node, const NameSet &
     return {};
 }
 
+/// Whether `dag` maps both float zeros to one key value. A key function can tell the two signs apart:
+/// `toString(-0.0)` is `'-0'`, and `cityHash64` differs. The zeros are built in `input_type`, the type the
+/// constant was converted to, so the DAG consumes them the same way it consumes the constant. A zero nested
+/// in a container, such as `(0.0, 1.0)` or `[0.0, 1.0]`, would require probing every combination of signs, so
+/// a non-float `input_type` answers `false`, and so does a DAG that cannot be applied to the zeros.
+bool deterministicTransformMapsFloatZerosAlike(
+    const DeterministicKeyTransformDag & dag, const DataTypePtr & input_type, const String & input_name)
+{
+    if (!isFloat(removeLowCardinalityAndNullable(input_type)))
+        return false;
+
+    auto zeros_column = input_type->createColumn();
+    zeros_column->insert(Float64(0.0));
+    zeros_column->insert(Float64(-0.0));
+
+    ColumnPtr transformed_zeros_column;
+    DataTypePtr transformed_zeros_type;
+    if (!executeDeterministicDag(
+            dag, std::move(zeros_column), input_type, input_name, transformed_zeros_column, transformed_zeros_type))
+        return false;
+
+    return (*transformed_zeros_column)[0] == (*transformed_zeros_column)[1];
+}
+
 }
 
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicKeyFunctions(
@@ -3122,35 +3146,13 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             }
         }
 
-        /// A float zero equals the zero of the other sign, which a key function can tell apart
-        /// (`toString(-0.0)` is `'-0'`, and `cityHash64` differs). The transformed constant then
-        /// describes only one of the two zeros, so `x = 0` does not imply `f(x) = f(0)`, and not
-        /// even a relaxed atom would be a superset of the matching rows. For a scalar float input,
-        /// compare the images of both signs and keep only transforms that do not distinguish them.
-        /// A zero nested in a container, such as `(0.0, 1.0)` or `[0.0, 1.0]`, would require probing
-        /// every combination of signs, so that candidate cannot constrain the key column.
-        if (anyFieldSatisfies((*transform_input_column)[0], isFloatZeroField))
-        {
-            const auto key_input_type = removeLowCardinalityAndNullable(transform_input_type);
-            if (!isFloat(key_input_type))
-                continue;
-
-            auto zeros_column = key_input_type->createColumn();
-            zeros_column->insert(Float64(0.0));
-            zeros_column->insert(Float64(-0.0));
-
-            ColumnPtr transformed_zeros_column;
-            DataTypePtr transformed_zeros_type;
-            /// The zeros are already values of the input type of the DAG, so there is no cast to judge.
-            bool zeros_cast_is_exact = true;
-            if (!applyDeterministicDagToColumn(
-                    std::move(zeros_column), key_input_type, expr_name, candidate.dag,
-                    transformed_zeros_column, transformed_zeros_type, zeros_cast_is_exact))
-                continue;
-
-            if ((*transformed_zeros_column)[0] != (*transformed_zeros_column)[1])
-                continue;
-        }
+        /// A float zero equals the zero of the other sign. When the transform tells the two apart, the
+        /// transformed constant describes only one of them, so `x = 0` does not imply `f(x) = f(0)`, and not
+        /// even a relaxed atom would be a superset of the matching rows. Such a candidate cannot constrain
+        /// the key column.
+        if (anyFieldSatisfies((*transform_input_column)[0], isFloatZeroField)
+            && !deterministicTransformMapsFloatZerosAlike(candidate.dag, transform_input_type, expr_name))
+            continue;
 
         ColumnPtr transformed_const_column;
         DataTypePtr transformed_const_type;
