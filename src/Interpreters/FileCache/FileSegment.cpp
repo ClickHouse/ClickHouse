@@ -13,6 +13,7 @@
 #include <Common/Hex.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -320,7 +321,12 @@ scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
 
     getOrCreateDownloadDataUnlocked(lk).downloader_id = getCallerId();
     setDownloadState(State::DOWNLOADING, lk);
-    return [this] { resetDownloader(); };
+    return [this]
+    {
+        /// The guard runs in a destructor, and `resetDownloader` does small allocations.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        resetDownloader();
+    };
 }
 
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
