@@ -56,8 +56,6 @@ void Peers::advancePeerGroupBounds(const SlidingBlocks & blocks, const Partition
         peers_bounds.start = peers_bounds.end;
         advancePeerGroupEnd(blocks, partition, current_row.peer_group_index_in_partition, peers_bounds);
     }
-    else
-        current_row.peer_group_index_in_partition = peers_bounds.start.peer_group_index_in_partition;
 }
 
 void Peers::advanceCurrentRow(const SlidingBlocks & blocks)
