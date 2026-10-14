@@ -1924,17 +1924,56 @@ UInt64 estimateNeededMemoryForMerge(
     /// The marks chain adds its own worst case on top: on multipart storage the marks file's ceiling
     /// (sized by the marks it receives) plus the marks compressor block; on a local disk the marks block
     /// plus the marks file buffer.
-    const UInt64 marks_worst_case_write_buffer_size = remote_write_buffer_size != 0
-        ? saturatingAdd(marks_remote_write_buffer_size, marks_compress_block_size)
-        : marks_compress_block_size + MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
-    const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size)
+    /// The multipart terms above are replayed from the write settings of the merge, but the wide writer
+    /// decides where each stream's upload buffers start: MergeTreeDataPartWriterWide::addStreams overrides
+    /// use_adaptive_write_buffer PER STREAM, so an adaptive stream starts both its data and its marks file
+    /// from adaptive_write_buffer_initial_size, while a non-adaptive one starts its data file from its
+    /// compressor block size (the buf_size MergeTreeWriterStream opens it with) and its marks file from
+    /// MARKS_FILE_BUFFER_SIZE. Replay each stream from its real start when the destination disk is known;
+    /// the pre-disk-selection guess keeps its worst case (`guessed_size`).
+    const UInt64 adaptive_initial_size = settings[MergeTreeSetting::adaptive_write_buffer_initial_size];
+    const auto stream_remote_write_buffer_size = [&](UInt64 buf_size, bool adaptive_stream, UInt64 written_bytes, UInt64 guessed_size) -> UInt64
+    {
+        if (remote_write_buffer_memories.empty())
+            return guessed_size;
+        UInt64 result = 0;
+        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
+            result = std::max(
+                result,
+                getMultipartUploadMemoryCeilingForWrittenBytes(
+                    getMultipartUploadMemoryForStream(remote_write_buffer_memory.memory, buf_size, adaptive_stream, adaptive_initial_size),
+                    written_bytes));
+        return result;
+    };
+    const auto marks_worst_case_write_buffer_size = [&](bool adaptive_stream) -> UInt64
+    {
+        if (remote_write_buffer_size == 0)
+            return marks_compress_block_size + MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
+        return saturatingAdd(
+            stream_remote_write_buffer_size(
+                MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE, adaptive_stream, output_marks_bytes_per_stream, marks_remote_write_buffer_size),
+            marks_compress_block_size);
+    };
+    const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size, bool adaptive_stream)
     {
         const UInt64 data_worst_case = remote_write_buffer_size != 0
-            ? saturatingAdd(remote_write_buffer_size, max_compress_block_size)
+            ? saturatingAdd(
+                stream_remote_write_buffer_size(max_compress_block_size, adaptive_stream, multipart_written_bytes, remote_write_buffer_size),
+                max_compress_block_size)
             : 2 * max_compress_block_size;
-        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size);
+        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size(adaptive_stream));
     };
-    const UInt64 write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size);
+    /// The worst case of a non-adaptive stream, also used where the adaptive split is not known.
+    const UInt64 write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ false);
+    const UInt64 adaptive_write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ true);
+    /// The worst case of a wide writer's streams, split by the per-stream adaptive decision.
+    const auto wide_worst_case = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_size, UInt64 adaptive_size)
+    {
+        const size_t non_adaptive = non_adaptive_stream_count(counts);
+        return saturatingAdd(
+            saturatingStreamsTimesBuffer(non_adaptive, non_adaptive_size),
+            saturatingStreamsTimesBuffer(counts.total - non_adaptive, adaptive_size));
+    };
 
     /// A compact part writer is not one stream of the wide writer's shape. Its single `data.bin` file
     /// buffer is opened at the writer's table-level `max_compress_block_size` - column-level overrides only
@@ -1977,10 +2016,14 @@ UInt64 estimateNeededMemoryForMerge(
     const auto compact_worst_case = [&](UInt64 compact_block_size, size_t compressors)
     {
         const UInt64 compressors_size = saturatingStreamsTimesBuffer(compressors, DBMS_DEFAULT_BUFFER_SIZE);
+        /// The compact writer does not take the per-stream adaptive decision: its data file starts from
+        /// compact_block_size, the buf_size it is opened with.
         const UInt64 data_worst_case = remote_write_buffer_size != 0
-            ? saturatingAdd(remote_write_buffer_size, compressors_size)
+            ? saturatingAdd(
+                stream_remote_write_buffer_size(compact_block_size, /*adaptive_stream=*/ false, multipart_written_bytes, remote_write_buffer_size),
+                compressors_size)
             : saturatingAdd(compact_block_size, compressors_size);
-        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size);
+        return saturatingAdd(data_worst_case, marks_worst_case_write_buffer_size(/*adaptive_stream=*/ false));
     };
     const UInt64 output_compact_block_size = resolve_compact_block_size(settings);
     const size_t output_compact_compressors = output_is_compact
@@ -1989,7 +2032,7 @@ UInt64 estimateNeededMemoryForMerge(
 
     const UInt64 output_worst_case = output_is_compact
         ? compact_worst_case(output_compact_block_size, output_compact_compressors)
-        : saturatingStreamsTimesBuffer(output_streams, write_buffer_size);
+        : wide_worst_case(output_stream_counts, write_buffer_size, adaptive_write_buffer_size);
 
     /// A stream whose data volume this estimate cannot derive from the source parts - a rebuilt projection,
     /// a variable-size DEFAULT-filled column, a delayed vertical stream - is priced at the buffers its
@@ -2626,8 +2669,10 @@ UInt64 estimateNeededMemoryForMerge(
                 {
                     return is_compact
                         ? compact_worst_case(projection_compact_block_size, projection_compact_compressors)
-                        : saturatingStreamsTimesBuffer(
-                            projection_wide_stream_counts.total, worst_case_write_buffer_size(projection_max_compress_block_size));
+                        : wide_worst_case(
+                            projection_wide_stream_counts,
+                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ false),
+                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ true));
                 };
                 const UInt64 projection_worst_case = std::max(
                     projection_format_worst_case(temp_projection_is_compact),

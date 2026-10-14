@@ -91,6 +91,14 @@ UInt64 getMultipartUploadInitialBufferSize(bool use_adaptive_write_buffer, UInt6
 /// constructors. Otherwise `memory` is returned unchanged.
 MultipartUploadMemory getMultipartUploadMemoryForBufferSize(const MultipartUploadMemory & memory, UInt64 buf_size);
 
+/// `memory` for one stream of a MergeTree wide part writer. MergeTreeDataPartWriterWide::addStreams overrides
+/// use_adaptive_write_buffer and adaptive_write_buffer_initial_size of the write settings PER STREAM, so the
+/// first buffer of the stream's writer does not follow the write settings `memory` was derived from: it is
+/// min(adaptive_write_buffer_initial_size, DBMS_DEFAULT_BUFFER_SIZE) for an adaptive stream and
+/// min(buf_size, DBMS_DEFAULT_BUFFER_SIZE) otherwise.
+MultipartUploadMemory getMultipartUploadMemoryForStream(
+    const MultipartUploadMemory & memory, UInt64 buf_size, bool use_adaptive_write_buffer, UInt64 adaptive_write_buffer_initial_size);
+
 /// Like MultipartUploadMemory::ceiling, but does not charge a buffer tier that cannot be reached after
 /// writing `bytes_written` through one stream. The returned value still includes all simultaneously live
 /// buffers at that reachable tier.
