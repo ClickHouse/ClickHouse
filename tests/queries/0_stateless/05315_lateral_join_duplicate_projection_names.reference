@@ -1,0 +1,12 @@
+inner first
+0	10	10
+1	10	10
+outer first
+0	0	0
+1	1	1
+qualified
+0	10
+1	10
+same expression twice
+0	0	0
+1	10	10

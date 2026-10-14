@@ -15,6 +15,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Common/escapeForFileName.h>
+#include <IO/Operators.h>
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -221,11 +222,11 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
 {
     bridge_helper->startBridgeSync();
 
-    auto write_body_callback = [required_sample_block, query](std::ostream & os)
+    auto write_body_callback = [required_sample_block, query](WriteBuffer & out)
     {
-        os << "sample_block=" << escapeForFileName(required_sample_block.getNamesAndTypesList().toString());
-        os << "&";
-        os << "query=" << escapeForFileName(query);
+        out << "sample_block=" << escapeForFileName(required_sample_block.getNamesAndTypesList().toString());
+        out << "&";
+        out << "query=" << escapeForFileName(query);
     };
 
     auto buf = BuilderRWBufferFromHTTP(uri)
@@ -279,7 +280,8 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
     };
-    factory.registerSource("odbc", create_table_source, Documentation{
+    /// The connection string goes to the driver verbatim and can carry the password (`PWD=...`).
+    factory.registerSource("odbc", create_table_source, SecretArgumentsSpec{.secret_keys = {"connection_string"}}, Documentation{
         .description = R"DOCS_MD(
 # ODBC dictionary source
 
@@ -328,7 +330,7 @@ Setting fields:
 | `connection_string` | Connection string. |
 | `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
 | `background_reconnect` | Reconnect to replica in background if connection fails. Optional. |
-| `query` | The custom query. Optional. |
+| `query` | The custom query. Optional. Its columns are taken by position, so it must return them in the [order the dictionary expects](/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
 
 <Note>
 The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
@@ -584,7 +586,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.");
     };
-    factory.registerSource("jdbc", create_table_source, Documentation{
+    factory.registerSource("jdbc", create_table_source, SecretArgumentsSpec{.secret_keys = {"datasource"}}, Documentation{
         .description = "Reads dictionary data from an external database over JDBC, via the `clickhouse-jdbc-bridge` program. Currently disabled, pending consistent support for nullable fields.",
         .syntax = "SOURCE(JDBC(datasource '...' table 'table'))",
         .related = {"odbc"}});

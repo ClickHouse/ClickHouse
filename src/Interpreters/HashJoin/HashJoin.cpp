@@ -63,7 +63,6 @@ extern const Metric HashJoinDestroyThreadsScheduled;
 
 namespace ProfileEvents
 {
-extern const Event HashJoinBuildMicroseconds;
 extern const Event HashJoinPartitionedBuildMicroseconds;
 extern const Event HashJoinPartitionedBuildFillMicroseconds;
 extern const Event HashJoinPartitionedBuildInsertMicroseconds;
@@ -695,7 +694,7 @@ void HashJoin::destroyStoredBlocksInParallel()
             pool.scheduleOrThrowOnError(
                 [&slice, thread_group = CurrentThread::getGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_DESTRUCTION);
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_DTOR);
                     slice.clear();
                 });
         pool.wait();
@@ -864,7 +863,7 @@ HashJoin::FillLane & HashJoin::getFillLane(size_t worker_id)
     return *fresh;
 }
 
-bool HashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, size_t worker_id, bool check_limits)
+bool HashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, JoinBuildContext context)
 {
     /// `num_rows` only matters for the columnless CROSS blocks this algorithm never plans.
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
@@ -913,7 +912,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, s
         if (!any_row_stored && !nullmap_saved)
             dropLastStoredBlock();
 
-        if (!check_limits)
+        if (!context.joinChecksLimits())
             return true;
         return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
@@ -944,10 +943,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, s
         for (auto & clause : clauses)
             clause.insertSingleLaneBlock(fill);
 
-        return !check_limits || checkFillLimits();
+        return !context.joinChecksLimits() || checkFillLimits();
     }
 
-    FillLane & lane = getFillLane(worker_id);
+    FillLane & lane = getFillLane(context.getStream());
     if (max_bytes_before_external_join || table_join->sizeLimits().max_rows)
     {
         /// A sketch merge waits for this block's rank updates before reading the lane.
@@ -970,7 +969,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, s
     accumulated_bytes.fetch_add(fill.stored.allocatedBytes() + fill.routeBytes(), std::memory_order_relaxed);
     lane.blocks.push_back(std::move(fill));
 
-    return !check_limits || checkFillLimits();
+    return !context.joinChecksLimits() || checkFillLimits();
 }
 
 size_t HashJoin::rowCountForLimit(size_t max_rows) const
@@ -1862,7 +1861,36 @@ size_t HashJoin::getRightTableRowCount() const
     return accumulated_rows.load(std::memory_order_relaxed);
 }
 
-void HashJoin::drainStoredBlocksInto(IJoin & target)
+UInt64 HashJoin::getJoinTableRowCount() const
+{
+    UInt64 rows = 0;
+    std::visit(
+        [&](const auto & shape)
+        {
+            auto count_rows = [&](const auto & table)
+            {
+                if constexpr (requires { table.begin()->getMapped().rows(); })
+                    for (auto it = table.begin(); it != table.end(); ++it)
+                        rows += it->getMapped().rows();
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The table of a Join table mode does not keep every row of a key");
+            };
+            switch (storedData().type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
+        if (shape.TYPE) \
+            count_rows(*shape.TYPE); \
+        break;
+                APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
+#undef M
+            }
+        },
+        clauses.front().tableMaps().maps);
+    return rows;
+}
+
+void HashJoin::drainStoredBlocksInto(IJoin & target, JoinBuildContext context)
 {
     chassert(stored_blocks_released);
 
@@ -1871,7 +1899,7 @@ void HashJoin::drainStoredBlocksInto(IJoin & target)
     if (workers <= 1)
     {
         for (Block block = releaseNextStoredBlock(); !block.empty(); block = releaseNextStoredBlock())
-            target.addBlockToJoin(block, block.rows(), /*worker_id=*/0, /*check_limits=*/false);
+            target.addBlockToJoin(block, block.rows(), context.callerChecksLimits());
         return;
     }
 
@@ -1880,6 +1908,7 @@ void HashJoin::drainStoredBlocksInto(IJoin & target)
     std::mutex pop_mutex;
     auto drain = [&](size_t worker_id)
     {
+        const auto worker_context = JoinBuildContext::forStream(worker_id, std::max(context.getNumStreams(), workers)).callerChecksLimits();
         while (true)
         {
             Block block;
@@ -1889,7 +1918,7 @@ void HashJoin::drainStoredBlocksInto(IJoin & target)
             }
             if (block.empty())
                 return;
-            target.addBlockToJoin(block, block.rows(), worker_id, /*check_limits=*/false);
+            target.addBlockToJoin(block, block.rows(), worker_context);
         }
     };
 
@@ -2091,6 +2120,10 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
     return JoinCommon::materializeColumnsFromRightBlock(std::move(block), savedBlockSample());
 }
 
+/// A row store is worth building when reading one output row's payload from it takes at least this
+/// many fewer cache misses than reading it column by column.
+static constexpr size_t MIN_CACHE_MISSES_SAVED_BY_ROW_STORE = 2;
+
 void HashJoin::initRowStore(const Block & block)
 {
     /// Skip initializing if it's already initialized or disabled.
@@ -2101,6 +2134,7 @@ void HashJoin::initRowStore(const Block & block)
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     const auto & columns = block_to_save.getColumns();
     const auto types = block_to_save.getDataTypes();
+    const String asof_key_name = strictness == JoinStrictness::Asof ? rightAsofKeyColumn().name : String{};
     ColumnAccessIndexes access_indexes;
     access_indexes.reserve(columns.size());
     Columns row_store_columns;
@@ -2108,7 +2142,9 @@ void HashJoin::initRowStore(const Block & block)
     size_t remaining_columns = 0;
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        if (isRowStorageUseful(columns[i]))
+        /// Only add columns that will be later reconstructed in the output.
+        const String & saved_name = block_to_save.getByPosition(i).name;
+        if (isRowStorageUseful(columns[i]) && (sample_block_with_columns_to_add.has(saved_name) || saved_name == asof_key_name))
         {
             access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_columns.size()});
             row_store_columns.push_back(columns[i]);
@@ -2127,6 +2163,13 @@ void HashJoin::initRowStore(const Block & block)
 
     /// Add each field's offset, size and nullability to the row store access indexes.
     RowDataStore::RowLayoutPtr layout = RowDataStore::computeLayout(row_store_columns, row_store_types);
+
+    if (RowDataStore::cacheMissReduction(*layout) < MIN_CACHE_MISSES_SAVED_BY_ROW_STORE)
+    {
+        data->row_store_state = RowStoreState::Disabled;
+        return;
+    }
+
     for (auto & access_index : access_indexes)
     {
         if (access_index.type != ColumnAccessIndex::Type::RowStore)
@@ -2137,9 +2180,9 @@ void HashJoin::initRowStore(const Block & block)
         access_index.is_nullable = field.is_nullable;
     }
 
+    data->row_store_state = RowStoreState::Initialized;
     data->row_store_layout = std::move(layout);
     data->column_access_indexes = std::move(access_indexes);
-    data->row_store_state = RowStoreState::Initialized;
 
     LOG_DEBUG(log, "Initialized Row store with {} columns", row_store_columns.size());
 }
@@ -2270,7 +2313,8 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
             });
     }
 
-    used_flags->setUnsetOffsetCount(data->keys_to_join.load(std::memory_order_relaxed));
+    if (matched_rows_stats)
+        matched_rows_stats->prepareRightFlagsIfNeeded(data->columns);
 }
 
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
@@ -2369,8 +2413,6 @@ void HashJoin::reinitUsedFlagsForMaps()
                     map_.getBufferSizeInCells(data->type) + 1);
             });
     }
-
-    used_flags->setUnsetOffsetCount(data->keys_to_join.load(std::memory_order_relaxed));
 }
 
 bool HashJoin::isRowStoreSupported() const
@@ -2389,8 +2431,6 @@ bool HashJoin::recordsRowRefsForStats() const
 
 void HashJoin::finishMapsBuild()
 {
-    ProfileEventTimeIncrement<Microseconds> build_watch(ProfileEvents::HashJoinBuildMicroseconds);
-
     reinitUsedFlagsForMaps();
 
     if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind) && data->maps.size() == 1)

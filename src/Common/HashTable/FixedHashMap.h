@@ -1,46 +1,8 @@
 #pragma once
 
-#include <Common/CacheLine.h>
 #include <Common/HashTable/FixedHashTable.h>
 #include <Common/HashTable/HashMap.h>
 
-
-/// Smallest size >= `size` that divides `line`. A larger `size` rounds up to a multiple of `line`.
-constexpr size_t roundUpToCacheLineDivisor(size_t size, size_t line)
-{
-    if (size == 0 || line == 0)
-        return size;
-
-    if (size > line)
-    {
-        const size_t remainder = size % line;
-        return remainder == 0 ? size : size + (line - remainder);
-    }
-
-    for (size_t candidate = size; candidate <= line; ++candidate)
-        if (line % candidate == 0)
-            return candidate;
-
-    return line;
-}
-
-template <typename TMapped>
-struct FixedHashMapCellFields
-{
-    bool full;
-    TMapped mapped;
-};
-
-template <size_t N>
-struct FixedHashMapCellPad
-{
-    char bytes[N];
-};
-
-template <>
-struct FixedHashMapCellPad<0>
-{
-};
 
 template <typename Key, typename TMapped, typename TState = HashTableNoState>
 struct FixedHashMapCell
@@ -51,23 +13,12 @@ struct FixedHashMapCell
     using value_type = PairNoInit<Key, Mapped>;
     using mapped_type = TMapped;
 
-    static constexpr size_t fields_size = sizeof(FixedHashMapCellFields<Mapped>);
-    static constexpr size_t padded_size = roundUpToCacheLineDivisor(fields_size, DB::CH_CACHE_LINE_SIZE);
-
     bool full;
     Mapped mapped;
-    /// Tail bytes so the cell divides the cache line. Two keys that start on one line then share a bucket lock.
-    [[no_unique_address]] FixedHashMapCellPad<padded_size - fields_size> padding{};
 
     FixedHashMapCell() {} /// NOLINT
     FixedHashMapCell(const Key &, const State &) : full(true) {}
     FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) {}
-    FixedHashMapCell(const FixedHashMapCell & other, const State &)
-        : full(other.full)
-        , mapped(other.mapped)
-        , padding(other.padding)
-    {
-    }
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
@@ -275,5 +226,15 @@ using FixedHashMapWithSizeBits = FixedHashMap<
     Mapped,
     FixedHashMapCell<Key, Mapped>,
     FixedHashTableStoredSize<FixedHashMapCell<Key, Mapped>>,
+    HashTableAllocator,
+    size_bits>;
+
+/// Keeps no element counter, so `size` walks all cells. Cheaper for a table that several threads fill at once.
+template <typename Key, typename Mapped, size_t size_bits, typename Cell = FixedHashMapCell<Key, Mapped>>
+using FixedHashMapWithSizeBitsAndCalculatedSize = FixedHashMap<
+    Key,
+    Mapped,
+    Cell,
+    FixedHashTableCalculatedSize<Cell>,
     HashTableAllocator,
     size_bits>;

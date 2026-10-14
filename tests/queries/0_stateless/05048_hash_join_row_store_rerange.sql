@@ -1,5 +1,6 @@
--- Row store must stay disabled when right-table rerange can fire: `initRowStore` must run after
--- `maps.resize`, or `isRightTableRerangeEnabled` sees no maps and the check is skipped.
+-- An INNER `hash` join that may sort its right table by key
+-- (`allow_experimental_join_right_table_sorting`) while `enable_hash_join_row_store` is on must
+-- return each right row with its own `p1` and `p2`.
 
 SELECT r.p1, r.p2
 FROM (SELECT number % 4 AS k FROM numbers(8)) AS l

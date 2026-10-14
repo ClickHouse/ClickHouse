@@ -72,9 +72,17 @@ struct AggregateFunctionVarianceData
 
     void mergeWith(const AggregateFunctionVarianceData & source)
     {
-        UInt64 total_count = count + source.count;
-        if (total_count == 0)
+        if (source.count == 0)
             return;
+
+        /// With an empty side, `delta * delta * factor` is `x * 0`, which is NaN when `delta * delta` overflows.
+        if (count == 0)
+        {
+            *this = source;
+            return;
+        }
+
+        UInt64 total_count = count + source.count;
 
         Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 delta = mean - source.mean;
@@ -139,8 +147,6 @@ private:
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        if (count == 1)
-            return 0.0;
         return m2 / static_cast<Float64>(count);
     }
 
@@ -316,9 +322,17 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 
     void mergeWith(const CovarianceData & source)
     {
-        UInt64 total_count = count + source.count;
-        if (total_count == 0)
+        if (source.count == 0)
             return;
+
+        /// With an empty side, `left_delta * right_delta * factor` is `x * 0`, which is NaN when `left_delta * right_delta` overflows.
+        if (count == 0)
+        {
+            *this = source;
+            return;
+        }
+
+        UInt64 total_count = count + source.count;
 
         Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 left_delta = left_mean - source.left_mean;
@@ -399,8 +413,6 @@ private:
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        if (count == 1)
-            return 0.0;
         return co_moment / static_cast<Float64>(count);
     }
 

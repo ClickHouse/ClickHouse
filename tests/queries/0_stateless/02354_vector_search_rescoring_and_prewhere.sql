@@ -54,16 +54,14 @@ FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS query_plan_optimize_prewhere = 0,
-         optimize_move_to_prewhere = 0;
+SETTINGS optimize_move_to_prewhere = 0;
 
 SELECT id
 FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS query_plan_optimize_prewhere = 1,
-         optimize_move_to_prewhere = 1;
+SETTINGS optimize_move_to_prewhere = 1;
 
 SELECT 'Test with enabled rescoring';
 -- Expect 16 & 19.

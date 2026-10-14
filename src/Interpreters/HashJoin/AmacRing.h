@@ -59,8 +59,8 @@ enum class AmacStepResult : UInt8
 /// (`key8`/`key16`) has no collision chain to pipeline.
 template <typename T>
 inline constexpr bool is_low_cardinality_join_key_getter = false;
-template <typename BaseMethod, typename Mapped, bool use_offset>
-inline constexpr bool is_low_cardinality_join_key_getter<LowCardinalityKeyGetterForJoin<BaseMethod, Mapped, use_offset>> = true;
+template <typename BaseMethod, typename Mapped>
+inline constexpr bool is_low_cardinality_join_key_getter<LowCardinalityKeyGetterForJoin<BaseMethod, Mapped>> = true;
 
 template <typename T>
 inline constexpr bool is_hashed_join_key_getter = false;

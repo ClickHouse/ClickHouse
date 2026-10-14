@@ -1,5 +1,4 @@
 Algorithm: SpillingHashJoin(HashJoin)
-Algorithm: SpillingHashJoin(HashJoin)
 inner join small
 100	49500
 left join small
@@ -47,8 +46,8 @@ concurrent full join spill non-joined
 profile events
 query_03915_01	0	0	0	0	0
 query_03915_02	0	0	0	0	0
-query_03915_03	0	0	0	0	0
-query_03915_04	0	0	0	0	0
+query_03915_03	1	50	0	0	0
+query_03915_04	1	50	0	0	0
 query_03915_05	0	0	1	1	1
 query_03915_06	0	0	1	1	1
 query_03915_07	0	0	1	1	1

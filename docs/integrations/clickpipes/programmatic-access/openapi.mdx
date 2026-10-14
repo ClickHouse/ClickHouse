@@ -151,11 +151,16 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     "name": "My Kinesis ClickPipe",
     "source": {
       "kinesis": {
-        "format": "JSONEachRow",
+        "format": "AvroConfluent",
         "streamName": "my-stream",
         "region": "us-east-1",
         "iteratorType": "TRIM_HORIZON",
         "authentication": "IAM_USER",
+        "schemaRegistry": {
+          "type": "glue",
+          "glueRegion": "us-east-1",
+          "glueRegistryName": "my-registry"
+        },
         "accessKey": {
           "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
           "secretKey": "<secret_key>"
@@ -176,6 +181,8 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
+
+This example configures Avro with AWS Glue Schema Registry. To decode Protobuf using Glue, set `format` to `Protobuf` and retain `schemaRegistry`. To upload a Protobuf schema instead, set `format` to `Protobuf` and provide the base64-encoded `.proto` file or serialized `FileDescriptorSet` in `protobufSchema`; do not include `schemaRegistry` in that request.
 
 ### Amazon S3 {#create-s3}
 

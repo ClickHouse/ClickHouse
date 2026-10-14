@@ -147,9 +147,11 @@ void ReadPipeline::needMemoryCache(
         .custom_file_version = std::move(custom_file_version)};
 }
 
-void ReadPipeline::needDistributedCache(bool include_credentials_in_cache_key)
+void ReadPipeline::needDistributedCache(bool include_credentials_in_cache_key, bool include_etag_in_cache_key)
 {
-    distributed_cache = DistributedCacheStage{.include_credentials_in_cache_key = include_credentials_in_cache_key};
+    distributed_cache = DistributedCacheStage{
+        .include_credentials_in_cache_key = include_credentials_in_cache_key,
+        .include_etag_in_cache_key = include_etag_in_cache_key};
 }
 
 void ReadPipeline::needAsyncPrefetch(
@@ -330,6 +332,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
             .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
             .block_size = settings.reader_executor.block_size,
             .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
+            .plan_look_ahead = settings.reader_executor.plan_look_ahead,
             .long_connection_limit = long_connection_limit,
             /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).
             .encryption_header_cache = encryption_header_cache,
@@ -485,7 +488,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
             *dc_obj_source->storage,
             use_external_buffer,
             std::move(fallback_creator),
-            distributed_cache->include_credentials_in_cache_key);
+            distributed_cache->include_credentials_in_cache_key,
+            distributed_cache->include_etag_in_cache_key);
         chassert(impl, "readWithDistributedCache must return a valid buffer or throw");
         return impl;
     }
@@ -578,7 +582,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             *dc_obj_source->storage,
             use_ext_buf,
             std::move(fallback_creator),
-            distributed_cache->include_credentials_in_cache_key);
+            distributed_cache->include_credentials_in_cache_key,
+            distributed_cache->include_etag_in_cache_key);
         chassert(impl, "readWithDistributedCache must return a valid buffer or throw");
         return impl;
     }

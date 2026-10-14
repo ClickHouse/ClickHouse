@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="prefer_column_name_to_alias">
-  ## prefer_column_name_to_alias
-</div>
+## prefer_column_name_to_alias {#prefer_column_name_to_alias}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -26,6 +24,22 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 0 — 列名会被替换为别名。
 * 1 — 列名不会被替换为别名。
+
+如果列名在被连接的表之间存在歧义，且存在同名的别名，则使用该别名：
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+这里 `id AS x` 中的 `id` 同时是 `t1` 和 `t3` 的列，因此它会解析为别名 `t1.id + 10`。
 
 **示例**
 
@@ -60,9 +74,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 └────────┴─────────────┘
 ```
 
-<div id="prefer_external_sort_block_bytes">
-  ## prefer_external_sort_block_bytes
-</div>
+## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -70,9 +82,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 外部排序时优先使用最大块字节数，以减少合并期间的内存使用量。
 
-<div id="prefer_global_in_and_join">
-  ## prefer_global_in_and_join
-</div>
+## prefer_global_in_and_join {#prefer_global_in_and_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +105,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 * [分布式子查询](/zh/reference/statements/in#distributed-subqueries)，了解有关如何使用 `GLOBAL IN`/`GLOBAL JOIN` 的更多信息
 
-<div id="prefer_localhost_replica">
-  ## prefer_localhost_replica
-</div>
+## prefer_localhost_replica {#prefer_localhost_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -114,9 +122,22 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   如果它用于只有单个 сегмент 但包含多个副本的集群，禁用此设置会带来负面影响。
 </Note>
 
-<div id="prefer_warmed_unmerged_parts_seconds">
-  ## prefer_warmed_unmerged_parts_seconds
-</div>
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置：与 `force_optimize_projection` 类似，无论预估代价如何都选用可用的 projection，但在未使用任何 projection 时不会导致查询失败。"}]}]} />
+
+在启用 projection 优化的情况下 (参见 [optimize&#95;use&#95;projections](/zh/reference/settings/session-settings/optimize-use#optimize_use_projections) 设置) ，让 projection 优化在 `SELECT` 查询中优先使用 [projections](/zh/reference/engines/table-engines/mergetree-family/mergetree#projections) 而非表本身。
+
+启用后，只要某个 projection 能够满足该查询，即使读取的 marks 比表本身更多，也会被使用；这一点与 [force&#95;optimize&#95;projection](/zh/reference/settings/session-settings/force-optimize#force_optimize_projection) 相同，但在无可用 projection 时查询不会失败。
+
+可能的取值：
+
+* 0 — 按预估代价选择 projection。
+* 1 — 无论预估代价如何，都选择可用的 projection。
+
+## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
 

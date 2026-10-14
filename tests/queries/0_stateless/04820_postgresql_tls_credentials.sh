@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-replicated-database
+# Tags: no-fasttest, no-replicated-database
 # no-fasttest: the PostgreSQL integration is not available in the fast test build.
-# no-parallel, no-replicated-database: a named collection is used.
+# no-replicated-database: a named collection is used.
 
 # TLS credentials of a PostgreSQL source that are given as the contents of a certificate or a key
 # file (`sslrootcert_pem`, `sslcert_pem`, `sslkey_pem`) must be redacted as [HIDDEN] when a query is
@@ -74,20 +74,20 @@ expect_error() {
 }
 
 echo "--- paths from SQL are rejected"
-$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS postgresql_04820"
+$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS postgresql_04820_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT --query "
-    CREATE NAMED COLLECTION postgresql_04820 AS
+    CREATE NAMED COLLECTION postgresql_04820_${CLICKHOUSE_DATABASE} AS
         host = '127.0.0.1', port = 5432, user = 'u', password = 'p', database = 'd', sslrootcert = '/etc/ssl/certs/ca.crt'"
 
 MESSAGE="can only be specified in a named collection defined in the server configuration file"
 
 # Stored in a collection created with SQL.
-expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query "SELECT * FROM postgresql(postgresql_04820, table = 't')"
+expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query "SELECT * FROM postgresql(postgresql_04820_${CLICKHOUSE_DATABASE}, table = 't')"
 
 # Passed as a query argument.
 for key in sslrootcert sslcert sslkey; do
     expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query \
-        "SELECT * FROM postgresql(postgresql_04820, table = 't', ${key} = '/etc/ssl/certs/ca.crt')"
+        "SELECT * FROM postgresql(postgresql_04820_${CLICKHOUSE_DATABASE}, table = 't', ${key} = '/etc/ssl/certs/ca.crt')"
 done
 
 # Passed as a query argument without a named collection.
@@ -95,7 +95,7 @@ for key in sslrootcert sslcert sslkey; do
     expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query \
         "SELECT * FROM postgresql('127.0.0.1:5432', 'd', 't', 'u', 'p', ${key} = '/etc/ssl/certs/ca.crt')"
     expect_error "$MESSAGE" $CLICKHOUSE_CLIENT --query \
-        "CREATE DATABASE db_04820 ENGINE = PostgreSQL('127.0.0.1:5432', 'd', 'u', 'p', ${key} = '/etc/ssl/certs/ca.crt')"
+        "CREATE DATABASE db_04820_${CLICKHOUSE_DATABASE} ENGINE = PostgreSQL('127.0.0.1:5432', 'd', 'u', 'p', ${key} = '/etc/ssl/certs/ca.crt')"
 done
 
 # The contents are accepted in the same place: the query gets as far as connecting, which is a
@@ -121,5 +121,5 @@ expect_error "cannot be specified in a dictionary created with a DDL query" bash
     $CLICKHOUSE_CLIENT --query 'SYSTEM RELOAD DICTIONARY dict_04820'"
 
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_04820"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS db_04820"
-$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION postgresql_04820"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS db_04820_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION postgresql_04820_${CLICKHOUSE_DATABASE}"

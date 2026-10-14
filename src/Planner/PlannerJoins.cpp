@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -681,7 +682,7 @@ static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     const FunctionNode & function_node)
 {
     const auto & join_algorithms = planner_context->getQueryContext()->getSettingsRef()[Setting::join_algorithm];
-    const auto is_hash_join_enabled = TableJoin::isHashFamilyEnabled(join_algorithms)
+    const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
     if (is_hash_join_enabled && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_planning])
     {
@@ -832,7 +833,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
     bool is_join_with_special_storage = false;
     if (const auto * right_table_node = join_node.getRightTableExpressionNode()->as<TableNode>())
     {
-        is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
+        is_join_with_special_storage = castStorage<StorageJoin>(right_table_node->getStorage(), DeferredTable::Load).get();
     }
 
     for (auto & join_clause : result.join_clauses)
@@ -1029,7 +1030,7 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
     else if (auto * table_function = table_expression->as<TableFunctionNode>())
         storage = table_function->getStorage();
 
-    auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage);
+    auto storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
     if (storage_join)
     {
         table_join->setStorageJoin(storage_join);
@@ -1041,8 +1042,9 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
 
     if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
         storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
         table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
-    else if (auto storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_key_value)
+    else if (auto storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load); storage_key_value)
         table_join->setStorageJoin(storage_key_value);
 }
 
@@ -1206,6 +1208,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
     table_join->setRowStoreEnabled(enable_row_store);
 
+    /// A known-empty right side counts as 0 rows for the joins that then return nothing and stop reading the left side.
+    /// The other kinds still probe every left row, and the parallel layout spreads that probe over more streams.
+    const bool rhs_empty = params.rhs_known_empty
+        && (isInnerOrRight(table_join->kind()) || (isLeft(table_join->kind()) && table_join->strictness() == JoinStrictness::Semi));
+    const auto rhs_rows = rhs_empty ? std::optional<UInt64>(0) : params.rhs_size_estimation;
     const bool spill_to_disk
         = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join);
     /// The estimate goes to the join as its build-rows hint: below `parallel_hash_join_threshold` it
@@ -1225,7 +1232,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.max_threads,
                 stats_collecting_params,
                 params.join_any_take_last_row,
-                params.rhs_size_estimation);
+                rhs_rows);
         return std::make_shared<HashJoin>(
             table_join,
             right_table_expression_header,
@@ -1233,7 +1240,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             params.join_any_take_last_row,
             stats_collecting_params,
             /*max_bytes_before_external_join_=*/0,
-            params.rhs_size_estimation);
+            rhs_rows);
     };
 
     if (table_join->kind() == JoinKind::Paste)
@@ -1256,7 +1263,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (algorithm == JoinAlgorithm::HASH ||
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
-        algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
         if (HashJoin::isSupported(*table_join))
@@ -1319,7 +1325,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.join_any_take_last_row,
                 stats_collecting_params,
                 params.max_threads,
-                params.rhs_size_estimation);
+                rhs_rows);
         return make_hash_join();
     }
 
@@ -1390,7 +1396,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     SharedHeader right_table_expression_header,
     const JoinAlgorithmParams & params)
 {
-    if (table_join->getMixedJoinExpression() && !table_join->isHashFamilyEnabled()
+    if (table_join->getMixedJoinExpression()
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -1427,10 +1434,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (isCrossOrComma(table_join->kind()) || table_join->isJoinWithConstant())
         return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
-    if (!table_join->oneDisjunct() && !table_join->isHashFamilyEnabled() && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Only `hash` and `parallel_hash` joins support multiple ORs for keys in JOIN ON section");
+            ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {

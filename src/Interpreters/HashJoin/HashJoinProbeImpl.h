@@ -1068,7 +1068,7 @@ JoinResultPtr HashJoin::probeImpl(Block block, size_t lane, const Block * join_g
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using Map = const typename decltype(HashJoinTables::TYPE)::element_type; \
-        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map, join_features.need_flags>::Type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map>::Type; \
         if (clauses.size() == 1) \
             processed_rows = joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>( \
                 *std::get<HashJoinTables>(clauses.front().tableMaps().maps).TYPE, added_columns, scattered_block, lane); \

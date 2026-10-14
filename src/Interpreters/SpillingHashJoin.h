@@ -21,22 +21,22 @@ class HashJoin;
 
 /// An IJoin wrapper that automatically switches to GraceHashJoin to spill to disk when memory limits are exceeded.
 ///
-/// The build phase feeds one in-memory HashJoin, which builds its table only at the
-/// barrier, so the overflow check reads `predictedResidentBytes` instead of `getTotalByteCount`. On
-/// overflow the fill lanes are handed to GraceHashJoin one block at a time (`tryConvertFillLanes`).
-/// A build that stays under the threshold runs its barrier and asks `planPostBuild`: a `MustSpill`
-/// verdict still switches, otherwise the HashJoin becomes chosen_join with no rework at all.
+/// The build phase feeds one in-memory HashJoin, possibly from multiple threads concurrently.
+/// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock, while
+/// switchToGraceHashJoin takes an exclusive lock.
 ///
-/// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition.
-/// `addBlockToJoin` takes a shared lock; `switchToGraceHashJoin` takes an exclusive lock.
-/// That way no block can land in a join that is being drained.
+/// The in-memory join builds its table only at the barrier, so the overflow check reads `predictedResidentBytes`
+/// instead of `getTotalByteCount`. On overflow a GraceHashJoin is created and the fill lanes are handed to it one
+/// block at a time (`tryConvertFillLanes`). A build that stays under the threshold runs its barrier and asks
+/// `planPostBuild`: a `MustSpill` verdict still switches, otherwise the HashJoin is promoted to
+/// chosen_join with zero rework.
 ///
-/// `hasDelayedBlocks` always returns true so that the pipeline includes the delayed-block
-/// transforms needed by `GraceHashJoin`. When the in-memory join is kept, `getDelayedBlocks` returns
-/// nullptr and the delayed transforms finish instantly.
-/// Because `hasDelayedBlocks` returns true, the read-in-order-through-join optimisation
-/// in `optimizeReadInOrder.cpp` does not propagate through `SpillingHashJoin` (same as
-/// `GraceHashJoin`). Spilling may reorder rows.
+/// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
+/// transforms needed by GraceHashJoin. When the in-memory join is kept,
+/// getDelayedBlocks returns nullptr and the delayed transforms finish instantly.
+/// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
+/// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
+/// GraceHashJoin), since spilling may reorder rows.
 class SpillingHashJoin final : public IJoin
 {
 public:
@@ -56,10 +56,11 @@ public:
     ~SpillingHashJoin() override;
 
     std::string getName() const override;
+    std::string getAlgorithm() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
-    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     void initialize(const Block & sample_block) override;
     JoinResultPtr joinBlock(Block block) override;
@@ -76,7 +77,7 @@ public:
 
     bool supportParallelJoin() const override;
     bool emitsSizedOutputBlocks() const override;
-    size_t getMaxBuildThreads() const override { return max_threads; }
+    size_t getMaxBuildThreads() const override;
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool isParallelNonJoinedProcessingEnabled() const override;
 
@@ -96,16 +97,18 @@ public:
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
-    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`.
-    /// After a spill `chosen_join` is a `GraceHashJoin`. That class does not override these methods.
-    /// Forwarding keeps the spilled path exactly as it is today.
-    /// `GraceHashJoin` itself runs the post-build phase only when the right table ended up in a
-    /// single bucket. Multi-bucket spills skip it: a hash table holding one bucket cannot produce
-    /// a runtime filter valid for the whole right table.
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;
-    void requestSpill() override;
+    void requestSpill(JoinBuildContext context) override;
 
+    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory join still
+    /// gets its post-build optimizations (right-table reranging, conversion to a fixed hash map,
+    /// publishing the shared runtime filter).
+    /// After a spill `chosen_join` is a `GraceHashJoin`, which does not override these methods, so
+    /// forwarding keeps the spilled path exactly as it is today: `GraceHashJoin` itself runs the
+    /// post-build phase only when the right table ended up in a single bucket. Multi-bucket spills
+    /// skip it, because a hash table holding one bucket cannot produce a runtime filter valid for
+    /// the whole right table.
     bool hasPostBuildPhase() const override;
     void runPostBuildPhase() override;
 
@@ -121,14 +124,14 @@ private:
 
     /// `spill_immediately` is for the memory-pressure path: the new GraceHashJoin repartitions as it
     /// takes the data over, instead of holding all of it in bucket 0 until the next spill request.
-    void switchToGraceHashJoin(size_t worker_id, bool spill_immediately = false);
+    void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
     /// Shared by the overflow switch and the `MustSpill` case after the build. The `MustSpill` case must
     /// not call `switchToGraceHashJoin`: that would drain build lanes `onBuildPhaseFinish` already consumed.
     /// A non-zero `initial_buckets_hint` raises the starting bucket count; `GraceHashJoin` rounds it up to
     /// a power of two and clamps it to the maximum.
     void createGraceJoin(size_t initial_buckets_hint = 0);
     /// Hands the in-memory join's fill lanes to `grace_join`.
-    void tryConvertFillLanes(size_t worker_id);
+    void tryConvertFillLanes(JoinBuildContext context);
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -139,7 +142,7 @@ private:
     size_t max_num_buckets;
     bool any_take_last_row;
     size_t max_bytes_before_external_join;
-    const size_t max_threads;
+    size_t max_threads = 1;
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_fill_lane_to_convert{0};

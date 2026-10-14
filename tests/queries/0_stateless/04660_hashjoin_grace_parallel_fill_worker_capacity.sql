@@ -1,8 +1,6 @@
--- Parallel right-side fill of a spilling `HashJoin` must not throw
--- `LOGICAL_ERROR` from `HashJoin::addBlockToJoin` when `GraceHashJoin`'s
--- in-memory join is filled from several pipeline threads. Inserts are
--- serialized under `hash_join_mutex`, but each fill stream still owns a
--- worker slot passed as `worker_id`.
+-- The right side of this `hash` join is larger than `max_bytes_before_external_join`, so the join
+-- spills to disk and continues as a grace hash join. Several threads fill its in-memory part. The
+-- join must finish without a `LOGICAL_ERROR` exception and find all 2000000 matches.
 
 SET max_threads = 8;
 SET max_block_size = 8192;
