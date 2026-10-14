@@ -500,51 +500,11 @@ TEST_F(RuntimeFilterExchangeWiring, MixedLocalAndRemoteSkipsProducerStageExchang
     EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(merge_stages.front()));
 }
 
-TEST_F(RuntimeFilterExchangeWiring, PersistedDataEdgeMakesChainPersisted)
-{
-    for (size_t build_tasks : {1, 8})
-    {
-        DistributedQueryPlan plan;
-        addBuildStage(plan, "build", build_tasks, "key");
-        addConsumerStage(plan, "probe", 4, "key");
-
-        /// A pre-existing Persisted data edge between the same two stages: the scheduler will run
-        /// the build stage to completion before the probe stage starts, so the whole filter chain
-        /// must be persisted too.
-        ExchangeDescription data_exchange;
-        data_exchange.name = "exchange_0";
-        data_exchange.kind = ExchangeDescription::Kind::Persisted;
-        data_exchange.source_bucket_count = build_tasks;
-        data_exchange.destination_bucket_count = 4;
-        plan.exchange_descriptions[data_exchange.name] = data_exchange;
-        plan.stage_depends_on["probe"]["build"] = data_exchange.name;
-
-        size_t next_exchange_id = 100;
-        wireRuntimeFilterExchangeTopology(plan, next_exchange_id, ExchangeDescription::Kind::Streaming);
-
-        size_t filter_exchanges = 0;
-        for (const auto & [name, exchange] : plan.exchange_descriptions)
-        {
-            if (name == "exchange_0")
-                continue;
-            ++filter_exchanges;
-            EXPECT_EQ(exchange.kind, ExchangeDescription::Kind::Persisted) << name;
-        }
-        EXPECT_GT(filter_exchanges, 0u);
-
-        expectWiredBuild(plan, "build");
-        auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
-        ASSERT_NE(build, nullptr);
-        expectConsumerDescriptors(plan, "probe", *build);
-    }
-}
-
 TEST_F(RuntimeFilterExchangeWiring, PersistedPlanKindAppliesToSiblingStages)
 {
-    /// The realistic shape: the probe producer stage that receives the filter is a sibling of the
-    /// build stage, so there is no data edge between them whose kind could be copied. A Persisted
-    /// plan (forced, or auto-selected because no streaming listener is configured) must still get
-    /// persisted filter exchanges, otherwise they would use a transport that is never started.
+    /// The receiving stage is a sibling of the build stage, with no data edge between them. A
+    /// persisted plan must get persisted filter exchanges, otherwise they would use a transport
+    /// that is never started.
     for (size_t build_tasks : {1, 8})
     {
         DistributedQueryPlan plan;

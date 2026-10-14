@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <limits>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -129,6 +128,7 @@ void collectStepApplications(const IQueryPlanStep & step, std::vector<RuntimeFil
 
 struct FilterProducer
 {
+    String key; /// The rendezvous key of the filter.
     BuildRuntimeFilterStep * step = nullptr;
     String stage;
 };
@@ -139,16 +139,93 @@ struct FilterConsumerSite
     String key_column;
 };
 
+/// Filter key -> stage -> apply sites in that stage.
+using FilterConsumerSites = std::unordered_map<String, std::map<String, std::vector<FilterConsumerSite>>>;
+
+/// Collects the filters that can be sent to other tasks and the sites that apply each filter. The
+/// producers keep the plan traversal order: the filter keys are random, and ordering by them would
+/// give different exchange names on each run.
+void collectProducersAndSites(DistributedQueryPlan & distributed_plan, std::vector<FilterProducer> & producers, FilterConsumerSites & sites)
+{
+    std::unordered_map<String, size_t> producer_index;
+    for (auto & [stage_name, stage] : distributed_plan.stages)
+    {
+        std::vector<QueryPlan::Node *> stack = {stage.query_plan_fragment.getRootNode()};
+        while (!stack.empty())
+        {
+            auto * node = stack.back();
+            stack.pop_back();
+            for (auto * child : node->children)
+                stack.push_back(child);
+
+            /// Only over-approximating filters may cross tasks: an exclusion (anti-join) filter built
+            /// from a subset of the keys would wrongly drop rows, and only the bloom-style state can
+            /// be merged across tasks.
+            auto * build = typeid_cast<BuildRuntimeFilterStep *>(node->step.get());
+            if (build && !build->getFilterKey().empty() && build->allowsNotExactFilter()
+                && AdaptiveSetRuntimeFilter::isDataTypeSupported(build->getFilterColumnType()))
+            {
+                FilterProducer producer{.key = build->getFilterKey(), .step = build, .stage = stage_name};
+                auto [it, inserted] = producer_index.emplace(producer.key, producers.size());
+                if (inserted)
+                    producers.push_back(std::move(producer));
+                else
+                    producers[it->second] = std::move(producer);
+            }
+
+            std::vector<RuntimeFilterApplication> applications;
+            collectStepApplications(*node->step, applications);
+            /// Keep every site: the stage is admitted if any site admits. The filter is still
+            /// delivered once per stage and read by all its sites.
+            for (const auto & application : applications)
+                sites[application.filter_key][stage_name].push_back(
+                    FilterConsumerSite{.node = node, .key_column = application.key_column});
+        }
+    }
+}
+
+struct TransportBudget
+{
+    RuntimeFilterGeometry geometry;
+    /// Estimated count of build-side rows. Without it no admission check runs.
+    std::optional<UInt64> estimated_keys;
+    /// `geometry.exact_bytes_limit` is above its settings value.
+    bool is_upsized = false;
+};
+
+/// Estimated keys are the build-side rows, not the column NDV: HyperLogLog sketches undershoot, and
+/// a low `exact_values_limit` would turn a complete key set into a bloom filter.
+///
+/// With an estimate, the exact-set byte limit grows to the estimated keys times the key width (a
+/// variable-width key counts as an 8-byte hash), up to `MAX_RUNTIME_BLOOM_FILTER_BYTES`, and the row
+/// limit grows to the estimate. Neither limit drops below its settings value. If the estimate is too
+/// low, the partial changes to the bloom filter of the settings size.
+TransportBudget makeTransportBudget(const BuildRuntimeFilterStep & step)
+{
+    TransportBudget budget{.geometry = step.getGeometry(), .estimated_keys = step.getEstimatedBuildRows()};
+    if (!budget.estimated_keys)
+        return budget;
+
+    const UInt64 estimated_keys = *budget.estimated_keys;
+    const auto & key_type = step.getFilterColumnType();
+    const UInt64 key_width = key_type->haveMaximumSizeOfValue() ? key_type->getMaximumSizeOfValueInMemory() : sizeof(UInt64);
+    const UInt64 exact_transport_bytes = estimated_keys > MAX_RUNTIME_BLOOM_FILTER_BYTES / key_width
+        ? MAX_RUNTIME_BLOOM_FILTER_BYTES
+        : estimated_keys * key_width;
+    if (exact_transport_bytes > budget.geometry.exact_bytes_limit)
+    {
+        budget.geometry.exact_bytes_limit = exact_transport_bytes;
+        budget.is_upsized = true;
+    }
+    budget.geometry.exact_values_limit = std::max(budget.geometry.exact_values_limit, estimated_keys);
+    return budget;
+}
+
 /// True when sending the filter to this apply site can prune rows: the build key set must be
 /// smaller than the site's key set and row count, and a raised budget needs a known site row count.
-/// `geometry` is the transport budget, possibly raised from the estimate.
-bool siteAdmitsRuntimeFilterTransport(
-    const FilterConsumerSite & site,
-    const BuildRuntimeFilterStep & producer,
-    UInt64 estimated_keys,
-    bool budget_is_upsized,
-    const RuntimeFilterGeometry & geometry)
+bool siteAdmitsRuntimeFilterTransport(const FilterConsumerSite & site, const BuildRuntimeFilterStep & producer, const TransportBudget & budget)
 {
+    const UInt64 estimated_keys = *budget.estimated_keys;
     /// The estimate runs on the cut fragment and cannot see across exchange boundaries;
     /// sites above a nested exchange (and Cloud worker-scan steps) yield no estimate and
     /// take the no-estimate admission path.
@@ -177,7 +254,7 @@ bool siteAdmitsRuntimeFilterTransport(
             site.key_column);
         return false;
     }
-    if (budget_is_upsized && !site_stats.estimated_rows)
+    if (budget.is_upsized && !site_stats.estimated_rows)
     {
         LOG_TRACE(
             getLogger("joinRuntimeFilter"),
@@ -185,7 +262,7 @@ bool siteAdmitsRuntimeFilterTransport(
             "unknown",
             producer.getFilterName(),
             site.node->step->getName(),
-            geometry.exact_bytes_limit);
+            budget.geometry.exact_bytes_limit);
         return false;
     }
     LOG_TRACE(
@@ -195,325 +272,256 @@ bool siteAdmitsRuntimeFilterTransport(
         producer.getFilterName(),
         site.node->step->getName(),
         estimated_keys,
-        geometry.exact_bytes_limit,
-        geometry.exact_values_limit);
+        budget.geometry.exact_bytes_limit,
+        budget.geometry.exact_values_limit);
     return true;
 }
 
-}
-
-void wireRuntimeFilterExchangeTopology(
-    DistributedQueryPlan & distributed_plan, size_t & next_exchange_id, ExchangeDescription::Kind default_kind)
+struct ReceivingStage
 {
-    std::unordered_map<String, FilterProducer> producers; /// by rendezvous key
-    std::unordered_map<String, std::map<String, std::vector<FilterConsumerSite>>> consumers; /// key -> stage -> apply sites
+    String name;
+    /// The stage depends on the merge root, so the scheduler runs the chain before it.
+    bool has_completion_edge = true;
+};
 
-    for (auto & [stage_name, stage] : distributed_plan.stages)
+/// The stages, other than the build stage, that get the filter. A stage gets it if any of its sites
+/// admits it. A tiny or stats-less site must not veto a sibling that would prune.
+std::vector<ReceivingStage> selectReceivingStages(
+    const DistributedQueryPlan & distributed_plan,
+    const FilterProducer & producer,
+    const std::map<String, std::vector<FilterConsumerSite>> & sites_by_stage,
+    const TransportBudget & budget,
+    ExchangeDescription::Kind kind)
+{
+    std::vector<ReceivingStage> receivers;
+    for (const auto & [stage_name, sites] : sites_by_stage)
     {
-        std::vector<QueryPlan::Node *> stack = {stage.query_plan_fragment.getRootNode()};
-        while (!stack.empty())
-        {
-            auto * node = stack.back();
-            stack.pop_back();
-            for (auto * child : node->children)
-                stack.push_back(child);
-
-            if (auto * build = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
-            {
-                /// Only over-approximating filters may cross tasks: an exclusion (anti-join) filter built
-                /// from a subset of the keys would wrongly drop rows, and only the bloom-style state can
-                /// be merged across tasks.
-                if (!build->getFilterKey().empty() && build->allowsNotExactFilter()
-                    && AdaptiveSetRuntimeFilter::isDataTypeSupported(build->getFilterColumnType()))
-                    producers[build->getFilterKey()] = FilterProducer{.step = build, .stage = stage_name};
-            }
-
-            std::vector<RuntimeFilterApplication> applications;
-            collectStepApplications(*node->step, applications);
-            for (const auto & application : applications)
-            {
-                /// Keep every site: the stage is admitted if any site admits. The filter is still
-                /// delivered once per stage and read by all its sites.
-                consumers[application.filter_key][stage_name].push_back(
-                    FilterConsumerSite{.node = node, .key_column = application.key_column});
-            }
-        }
-    }
-
-    for (auto & [key, producer] : producers)
-    {
-        std::map<String, std::vector<FilterConsumerSite>> consuming_stages;
-        if (auto consumers_it = consumers.find(key); consumers_it != consumers.end())
-        {
-            for (const auto & [stage_name, sites] : consumers_it->second)
-            {
-                /// The build stage itself needs no exchange: its sites read the filter from the
-                /// task's own lookup.
-                if (stage_name == producer.stage)
-                    continue;
-                consuming_stages.emplace(stage_name, sites);
-            }
-        }
-        if (consuming_stages.empty())
+        /// The build stage reads the filter from the task's own lookup.
+        if (stage_name == producer.stage)
             continue;
 
-        /// Estimated count of build-side rows. Do not tighten by column NDV: HyperLogLog
-        /// sketches undershoot, and `exact_values_limit` is a hard cap. A low NDV would
-        /// overflow a complete key set into a bloom filter. `exact_bytes_limit` still bounds
-        /// the exact phase when there are fewer distinct keys than rows.
-        std::optional<UInt64> estimated_keys = producer.step->getEstimatedBuildRows();
-
-        /// With an estimate, the exact-phase byte budget grows to the estimated key count times the key
-        /// width (a variable-width key counts as an 8-byte hash), capped at `MAX_RUNTIME_BLOOM_FILTER_BYTES`,
-        /// and the row cap grows to the estimate. Neither limit drops below its settings value, and
-        /// `exact_bytes_limit` stays a hard cap. If the estimate is too low, the partial degrades to the
-        /// settings-sized bloom filter; a degraded partial never exceeds that size on the wire.
-        RuntimeFilterGeometry geometry = producer.step->getGeometry();
-        bool budget_is_upsized = false;
-        if (estimated_keys)
-        {
-            const auto & key_type = producer.step->getFilterColumnType();
-            const UInt64 key_width = key_type->haveMaximumSizeOfValue() ? key_type->getMaximumSizeOfValueInMemory() : sizeof(UInt64);
-            if (*estimated_keys > std::numeric_limits<UInt64>::max() / key_width)
-                continue;
-            const UInt64 exact_transport_bytes = std::min(*estimated_keys * key_width, MAX_RUNTIME_BLOOM_FILTER_BYTES);
-            if (exact_transport_bytes > geometry.exact_bytes_limit)
-            {
-                geometry.exact_bytes_limit = exact_transport_bytes;
-                budget_is_upsized = true;
-            }
-            geometry.exact_values_limit = std::max(geometry.exact_values_limit, *estimated_keys);
-        }
-
-        std::vector<String> remote_stages;
-        /// The filter goes to every stage that uses it. Each receiving stage also depends on the merge
-        /// root, unless that would form a cycle (a join delivering to the scans below it); such a stage
-        /// applies the filter when it arrives.
-        std::unordered_set<String> stages_without_completion_edge;
-        for (const auto & [stage_name, sites] : consuming_stages)
-        {
-            /// Ship the stage if any apply site passes. A tiny or stats-less first site must
-            /// not veto a sibling that would prune. Without a build-row estimate there is no admission check.
-            if (estimated_keys)
-            {
-                bool admitted = false;
-                for (const auto & site : sites)
-                {
-                    if (siteAdmitsRuntimeFilterTransport(site, *producer.step, *estimated_keys, budget_is_upsized, geometry))
-                    {
-                        admitted = true;
-                        break;
-                    }
-                }
-                if (!admitted)
-                    continue;
-            }
-
-            if (stageDependsOnTransitively(distributed_plan.stage_depends_on, producer.stage, stage_name))
-            {
-                stages_without_completion_edge.insert(stage_name);
-                LOG_TRACE(getLogger("joinRuntimeFilter"),
-                    "Filter '{}' delivery to stage '{}' is wired without a stage dependency: "
-                    "the producing stage '{}' depends on that stage, so an entry would create a cycle",
-                    producer.step->getFilterName(), stage_name, producer.stage);
-            }
-            remote_stages.push_back(stage_name);
-        }
-        if (remote_stages.empty())
+        if (budget.estimated_keys
+            && std::ranges::none_of(sites, [&](const auto & site) { return siteAdmitsRuntimeFilterTransport(site, *producer.step, budget); }))
             continue;
 
-        producer.step->setGeometry(geometry);
-
-        auto & send_tasks = distributed_plan.stages.at(producer.stage).tasks;
-        Strings source_buckets;
-        for (const auto & task : send_tasks)
-            source_buckets.push_back(taskBucketId(task));
-
-        /// Every transported filter goes through its own merge stages, even from one build task, so
-        /// that only a filter-only task waits for slow or absent receivers. The stages form a tree of
-        /// fan-in `fan_in`; its root sends the union to every receiving task.
-        const size_t fan_in = RUNTIME_FILTER_MERGE_FAN_IN;
-
-        /// The chain uses one exchange kind. It is persisted if a receiving stage reads the build stage
-        /// over a persisted edge; a streaming chain would deadlock there.
-        auto chain_kind = default_kind;
-        for (const auto & receive_stage : remote_stages)
+        /// If the build stage already depends on this stage (a join that sends its filter to the
+        /// scans below it), the completion edge would form a cycle. A streaming chain works without
+        /// the edge: the stage applies the filter when it arrives. A persisted chain does not: the
+        /// stage would read before the filter is written, so it gets no filter.
+        ReceivingStage receiver{.name = stage_name};
+        if (stageDependsOnTransitively(distributed_plan.stage_depends_on, producer.stage, stage_name))
         {
-            auto dependencies = distributed_plan.stage_depends_on.find(receive_stage);
-            if (dependencies == distributed_plan.stage_depends_on.end())
-                continue;
-            auto edge = dependencies->second.find(producer.stage);
-            if (edge != dependencies->second.end()
-                && distributed_plan.exchange_descriptions.at(edge->second).kind == ExchangeDescription::Kind::Persisted)
-                chain_kind = ExchangeDescription::Kind::Persisted;
-        }
-
-        /// A persisted chain needs the stage dependency: it is what orders the receiver's read
-        /// after the blob write. A receiving stage that cannot have one would just miss the blob,
-        /// so delivery to it is dropped (its sites read no filter and pass all rows) and the
-        /// other stages keep theirs.
-        if (chain_kind == ExchangeDescription::Kind::Persisted && !stages_without_completion_edge.empty())
-        {
-            for (const auto & stage_name : stages_without_completion_edge)
+            if (kind == ExchangeDescription::Kind::Persisted)
+            {
                 LOG_TRACE(getLogger("joinRuntimeFilter"),
                     "Filter '{}' is not delivered to stage '{}': the exchange chain is persisted and "
                     "the required stage dependency would create a cycle",
                     producer.step->getFilterName(), stage_name);
-            std::erase_if(remote_stages, [&](const String & stage_name) { return stages_without_completion_edge.contains(stage_name); });
-            stages_without_completion_edge.clear();
-            if (remote_stages.empty())
                 continue;
+            }
+            LOG_TRACE(getLogger("joinRuntimeFilter"),
+                "Filter '{}' delivery to stage '{}' is wired without a stage dependency: "
+                "the producing stage '{}' depends on that stage, so an entry would create a cycle",
+                producer.step->getFilterName(), stage_name, producer.stage);
+            receiver.has_completion_edge = false;
         }
+        receivers.push_back(std::move(receiver));
+    }
+    return receivers;
+}
 
-        /// Every exchange of the chain has the chain's kind.
-        auto add_chain_exchange = [&](const String & name, size_t source_bucket_count, size_t destination_bucket_count)
-        {
-            distributed_plan.exchange_descriptions[name] = ExchangeDescription{
-                .name = name,
-                .kind = chain_kind,
-                .source_bucket_count = source_bucket_count,
-                .destination_bucket_count = destination_bucket_count};
-        };
+/// Adds the merge stages of one filter and connects them. The build tasks send their partials to
+/// the first level; each level has `RUNTIME_FILTER_MERGE_FAN_IN` times fewer tasks than the one
+/// below, and the last level (the root) has one task, which sends the union to every task of every
+/// receiving stage. One build task still gets a root merge stage, so that only a filter-only task
+/// waits for slow or absent receivers.
+class RuntimeFilterMergeTree
+{
+public:
+    static constexpr size_t fan_in = RUNTIME_FILTER_MERGE_FAN_IN;
 
-        std::vector<size_t> level_sizes;
-        for (size_t tasks = send_tasks.size(); tasks > 1;)
+    RuntimeFilterMergeTree(
+        DistributedQueryPlan & distributed_plan_,
+        size_t & next_exchange_id,
+        const FilterProducer & producer_,
+        const RuntimeFilterGeometry & geometry_,
+        ExchangeDescription::Kind kind_,
+        std::vector<ReceivingStage> receivers_)
+        : distributed_plan(distributed_plan_)
+        , producer(producer_)
+        , geometry(geometry_)
+        , kind(kind_)
+        , receivers(std::move(receivers_))
+    {
+        for (size_t tasks = buildTasks().size(); tasks > 1;)
         {
             tasks = (tasks + fan_in - 1) / fan_in;
             level_sizes.push_back(tasks);
         }
-        /// One build task still gets a root merge stage (a chain with a single level of one task).
         if (level_sizes.empty())
             level_sizes.push_back(1);
 
-        std::vector<String> level_exchange(level_sizes.size());
-        std::vector<String> level_stage(level_sizes.size());
         for (size_t level = 0; level < level_sizes.size(); ++level)
         {
-            level_exchange[level] = "exchange_" + std::to_string(next_exchange_id);
-            /// The filter name in the stage (and thus task) name lets one string follow a filter
+            const String id = toString(next_exchange_id++);
+            level_exchanges.push_back("exchange_" + id);
+            /// The filter name in the stage and task names lets one string follow a filter
             /// through plans, logs and profiling tables.
-            level_stage[level] = "rf_merge_" + std::to_string(next_exchange_id) + "_" + producer.step->getFilterName();
-            ++next_exchange_id;
+            level_stages.push_back("rf_merge_" + id + "_" + producer.step->getFilterName());
         }
-        Strings broadcast_exchange(remote_stages.size());
-        for (auto & name : broadcast_exchange)
-        {
-            name = "exchange_" + std::to_string(next_exchange_id);
-            ++next_exchange_id;
-        }
+        for (size_t index = 0; index < receivers.size(); ++index)
+            broadcast_exchanges.push_back("exchange_" + toString(next_exchange_id++));
+    }
 
-        {
-            add_chain_exchange(level_exchange[0], send_tasks.size(), level_sizes[0]);
-
-            for (size_t source = 0; source < send_tasks.size(); ++source)
-                send_tasks[source].output_exchange_streams.emplace_back(
-                    ExchangeStreamId(level_exchange[0], source_buckets[source], toString(source / fan_in)));
-
-            producer.step->setTreeExchange(level_exchange[0], source_buckets, fan_in);
-            distributed_plan.stage_depends_on[level_stage[0]][producer.stage] = level_exchange[0];
-        }
-
-        Strings child_buckets = source_buckets;
+    void wire()
+    {
+        Strings child_buckets = connectBuildTasks();
         for (size_t level = 0; level < level_sizes.size(); ++level)
+            child_buckets = addMergeLevel(level, child_buckets);
+        connectReceivers();
+    }
+
+private:
+    DistributedQueryPlan & distributed_plan;
+    const FilterProducer & producer;
+    const RuntimeFilterGeometry & geometry;
+    const ExchangeDescription::Kind kind;
+    const std::vector<ReceivingStage> receivers;
+
+    std::vector<size_t> level_sizes;
+    Strings level_exchanges; /// The input exchange of each level.
+    Strings level_stages;
+    Strings broadcast_exchanges; /// One per receiving stage.
+
+    static String parentBucket(size_t index) { return toString(index / fan_in); }
+
+    std::vector<DistributedQueryTask> & buildTasks() { return distributed_plan.stages.at(producer.stage).tasks; }
+
+    void addExchange(const String & name, size_t source_bucket_count, size_t destination_bucket_count)
+    {
+        distributed_plan.exchange_descriptions[name] = ExchangeDescription{
+            .name = name, .kind = kind, .source_bucket_count = source_bucket_count, .destination_bucket_count = destination_bucket_count};
+    }
+
+    /// Returns the buckets of the build tasks.
+    Strings connectBuildTasks()
+    {
+        auto & tasks = buildTasks();
+        Strings buckets;
+        for (size_t index = 0; index < tasks.size(); ++index)
         {
-            const bool is_root = level + 1 == level_sizes.size();
-            chassert(!is_root || level_sizes[level] == 1);
-
-            std::vector<MergeRuntimeFiltersStep::Output> outputs;
-            if (!is_root)
-            {
-                outputs.push_back({level_exchange[level + 1], /*destination_buckets=*/{}});
-            }
-            else
-            {
-                for (size_t receive_index = 0; receive_index < remote_stages.size(); ++receive_index)
-                {
-                    Strings destination_buckets;
-                    for (const auto & task : distributed_plan.stages.at(remote_stages[receive_index]).tasks)
-                        destination_buckets.push_back(taskBucketId(task));
-                    outputs.push_back({broadcast_exchange[receive_index], std::move(destination_buckets)});
-                }
-            }
-
-            Strings level_buckets;
-            for (size_t task_index = 0; task_index < level_sizes[level]; ++task_index)
-                level_buckets.push_back(toString(task_index));
-
-            DistributedQueryStage stage;
-            stage.filter_only = true;
-            stage.query_plan_fragment.addStep(
-                std::make_unique<MergeRuntimeFiltersStep>(
-                    producer.step->getFilterName(),
-                    producer.step->getFilterColumnType(),
-                    geometry,
-                    level_exchange[level],
-                    child_buckets,
-                    fan_in,
-                    outputs));
-
-            for (size_t task_index = 0; task_index < level_sizes[level]; ++task_index)
-            {
-                DistributedQueryTask task;
-                task.task_id = level_stage[level] + "_" + level_buckets[task_index];
-                task.parameters.parameters["bucket_id"] = Field(level_buckets[task_index]);
-
-                const size_t children_begin = task_index * fan_in;
-                const size_t children_end = std::min(children_begin + fan_in, child_buckets.size());
-                for (size_t child = children_begin; child < children_end; ++child)
-                    task.input_exchange_streams.emplace_back(
-                        ExchangeStreamId(level_exchange[level], child_buckets[child], level_buckets[task_index]));
-
-                if (!is_root)
-                {
-                    task.output_exchange_streams.emplace_back(
-                        ExchangeStreamId(level_exchange[level + 1], level_buckets[task_index], toString(task_index / fan_in)));
-                }
-                else
-                {
-                    for (const auto & output : outputs)
-                        for (const String & destination_bucket : output.destination_buckets)
-                            task.output_exchange_streams.emplace_back(
-                                ExchangeStreamId(output.exchange_id, level_buckets[task_index], destination_bucket));
-                }
-
-                stage.tasks.emplace_back(std::move(task));
-            }
-
-            distributed_plan.stages[level_stage[level]] = std::move(stage);
-
-            if (!is_root)
-            {
-                add_chain_exchange(level_exchange[level + 1], level_sizes[level], level_sizes[level + 1]);
-                distributed_plan.stage_depends_on[level_stage[level + 1]][level_stage[level]] = level_exchange[level + 1];
-            }
-
-            child_buckets = std::move(level_buckets);
+            buckets.push_back(taskBucketId(tasks[index]));
+            tasks[index].output_exchange_streams.emplace_back(level_exchanges[0], buckets.back(), parentBucket(index));
         }
+        producer.step->setTreeExchange(level_exchanges[0], buckets, fan_in);
+        return buckets;
+    }
 
-        /// The root broadcasts the complete union to every task of every receiving stage. Each receiving
-        /// stage depends on the root, and through it on the whole chain down to the build stage, so the
-        /// scheduler orders the chain for both kinds. A stage in `stages_without_completion_edge` gets no
-        /// such entry, because it would close a cycle; only a streaming chain keeps such stages.
-        const String & root_stage = level_stage.back();
-        for (size_t receive_index = 0; receive_index < remote_stages.size(); ++receive_index)
+    /// Returns the buckets of the new level.
+    Strings addMergeLevel(size_t level, const Strings & child_buckets)
+    {
+        const String & child_stage = level == 0 ? producer.stage : level_stages[level - 1];
+        addExchange(level_exchanges[level], child_buckets.size(), level_sizes[level]);
+        distributed_plan.stage_depends_on[level_stages[level]][child_stage] = level_exchanges[level];
+
+        auto outputs = levelOutputs(level);
+        DistributedQueryStage stage;
+        stage.filter_only = true;
+        stage.query_plan_fragment.addStep(std::make_unique<MergeRuntimeFiltersStep>(
+            producer.step->getFilterName(), producer.step->getFilterColumnType(), geometry, level_exchanges[level], child_buckets, fan_in, outputs));
+
+        Strings buckets;
+        for (size_t index = 0; index < level_sizes[level]; ++index)
         {
-            const auto & receive_stage = remote_stages[receive_index];
-            auto & receive_tasks = distributed_plan.stages.at(receive_stage).tasks;
+            buckets.push_back(toString(index));
+            stage.tasks.push_back(makeMergeTask(level, index, child_buckets, outputs));
+        }
+        distributed_plan.stages[level_stages[level]] = std::move(stage);
+        return buckets;
+    }
 
-            add_chain_exchange(broadcast_exchange[receive_index], 1, receive_tasks.size());
+    /// An inner level sends to its parent level; the root sends to every receiving task.
+    std::vector<MergeRuntimeFiltersStep::Output> levelOutputs(size_t level) const
+    {
+        if (level + 1 < level_sizes.size())
+            return {{level_exchanges[level + 1], /*destination_buckets=*/{}}};
 
-            for (auto & task : receive_tasks)
+        chassert(level_sizes[level] == 1);
+        std::vector<MergeRuntimeFiltersStep::Output> outputs;
+        for (size_t index = 0; index < receivers.size(); ++index)
+        {
+            Strings destination_buckets;
+            for (const auto & task : distributed_plan.stages.at(receivers[index].name).tasks)
+                destination_buckets.push_back(taskBucketId(task));
+            outputs.push_back({broadcast_exchanges[index], std::move(destination_buckets)});
+        }
+        return outputs;
+    }
+
+    DistributedQueryTask makeMergeTask(
+        size_t level, size_t index, const Strings & child_buckets, const std::vector<MergeRuntimeFiltersStep::Output> & outputs) const
+    {
+        const String bucket = toString(index);
+        DistributedQueryTask task;
+        task.task_id = level_stages[level] + "_" + bucket;
+        task.parameters.parameters["bucket_id"] = Field(bucket);
+
+        const size_t children_begin = index * fan_in;
+        const size_t children_end = std::min(children_begin + fan_in, child_buckets.size());
+        for (size_t child = children_begin; child < children_end; ++child)
+            task.input_exchange_streams.emplace_back(level_exchanges[level], child_buckets[child], bucket);
+
+        for (const auto & output : outputs)
+        {
+            if (output.destination_buckets.empty())
+                task.output_exchange_streams.emplace_back(output.exchange_id, bucket, parentBucket(index));
+            for (const auto & destination_bucket : output.destination_buckets)
+                task.output_exchange_streams.emplace_back(output.exchange_id, bucket, destination_bucket);
+        }
+        return task;
+    }
+
+    void connectReceivers()
+    {
+        for (size_t index = 0; index < receivers.size(); ++index)
+        {
+            const auto & receiver = receivers[index];
+            auto & tasks = distributed_plan.stages.at(receiver.name).tasks;
+            addExchange(broadcast_exchanges[index], 1, tasks.size());
+            for (auto & task : tasks)
             {
-                std::vector<ExchangeStreamId> streams;
-                streams.emplace_back(broadcast_exchange[receive_index], "0", taskBucketId(task));
+                ExchangeStreamId stream(broadcast_exchanges[index], "0", taskBucketId(task));
                 task.runtime_filter_descriptors.push_back(
-                    {key, producer.step->getFilterName(), producer.step->getFilterColumnType(), geometry, streams});
-                task.input_exchange_streams.insert(task.input_exchange_streams.end(), streams.begin(), streams.end());
+                    {producer.key, producer.step->getFilterName(), producer.step->getFilterColumnType(), geometry, {stream}});
+                task.input_exchange_streams.push_back(std::move(stream));
             }
-
-            if (!stages_without_completion_edge.contains(receive_stage))
-                distributed_plan.stage_depends_on[receive_stage][root_stage] = broadcast_exchange[receive_index];
+            if (receiver.has_completion_edge)
+                distributed_plan.stage_depends_on[receiver.name][level_stages.back()] = broadcast_exchanges[index];
         }
+    }
+};
+
+}
+
+void wireRuntimeFilterExchangeTopology(DistributedQueryPlan & distributed_plan, size_t & next_exchange_id, ExchangeDescription::Kind kind)
+{
+    std::vector<FilterProducer> producers;
+    FilterConsumerSites sites;
+    collectProducersAndSites(distributed_plan, producers, sites);
+
+    for (const auto & producer : producers)
+    {
+        auto stage_sites = sites.find(producer.key);
+        if (stage_sites == sites.end())
+            continue;
+
+        auto budget = makeTransportBudget(*producer.step);
+        auto receivers = selectReceivingStages(distributed_plan, producer, stage_sites->second, budget, kind);
+        if (receivers.empty())
+            continue;
+
+        producer.step->setGeometry(budget.geometry);
+        RuntimeFilterMergeTree(distributed_plan, next_exchange_id, producer, budget.geometry, kind, std::move(receivers)).wire();
     }
 }
 
