@@ -500,6 +500,11 @@ public:
     /// behind a `getExtremes` bound. Weaker on purpose: it keeps the exact-range machinery intact.
     void relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types);
 
+    /// Whether an atom can claim a key value that carries a nested `NULL` or `NaN` as matching, see
+    /// `mayReadNullKeyValue`. Such a value can sit anywhere inside a range, so the analysis never answers
+    /// `can_be_false = false` for it, whatever the range is, and no range of marks can be exact.
+    bool mayClaimNestedNullOrNaN(const DataTypes & key_types) const;
+
     bool isSinglePoint() const { return single_point; }
 
     /// Does the filter condition have any ORs?
