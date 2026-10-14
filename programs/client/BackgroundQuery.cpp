@@ -1,6 +1,7 @@
 #include <BackgroundQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Client/NonInteractiveAuthentication.h>
 #include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/InternalTextLogs.h>
@@ -882,6 +883,9 @@ struct BackgroundQueryManager::Impl
 
     static void run(const std::shared_ptr<Job> & job) noexcept
     {
+        /// Nothing on this thread may ask the user, see `NonInteractiveAuthenticationScope`.
+        NonInteractiveAuthenticationScope non_interactive_authentication;
+
         std::unique_ptr<RedirectableStreamBuf> output_stream_buffer;
         std::unique_ptr<RedirectableStreamBuf> error_stream_buffer;
         std::unique_ptr<std::ostream> attached_output_stream;

@@ -13,6 +13,7 @@
 #include <Common/DNSResolver.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/JWTProvider.h>
+#include <Client/NonInteractiveAuthentication.h>
 
 #include <readpassphrase/readpassphrase.h>
 
@@ -27,6 +28,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int SSH_AGENT_ERROR;
     extern const int SUPPORT_IS_DISABLED;
@@ -110,6 +112,14 @@ String readPublicKeyBlob(const String & private_key_filename)
 
 String askPassphrase(const String & key_name)
 {
+    /// A background job must not read the terminal of the prompt. It has no passphrase to use, so it fails.
+    if (NonInteractiveAuthenticationScope::isActive())
+        throw Exception(
+            ErrorCodes::AUTHENTICATION_FAILED,
+            "The SSH key {} is encrypted and the ssh-agent could not sign with it, so its passphrase is needed. "
+            "A background job cannot ask for it: use --ssh-key-passphrase, or load the key into the ssh-agent",
+            key_name);
+
     String prompt = fmt::format("Enter the passphrase for the SSH key {}: ", key_name);
     char buf[1000] = {};
     if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
@@ -170,7 +180,9 @@ SSHKey::FallbackKeyLoader makeKeyFileFallback(const String & filename, const std
 
     return [filename, passphrase](const String & agent_error)
     {
-        fmt::print(stderr, "The ssh-agent could not sign with the selected key ({}). Using the key file {} instead.\n", agent_error, filename);
+        /// The message goes to the terminal of the prompt, which only the main thread may write to.
+        if (!NonInteractiveAuthenticationScope::isActive())
+            fmt::print(stderr, "The ssh-agent could not sign with the selected key ({}). Using the key file {} instead.\n", agent_error, filename);
         return loadPrivateKey(filename, passphrase);
     };
 }

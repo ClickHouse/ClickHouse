@@ -6,6 +6,9 @@
 
 #include <Client/ConnectionParameters.h>
 #include <Client/JWTProvider.h>
+#include <Client/NonInteractiveAuthentication.h>
+#include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
 
 #include <atomic>
 #include <sstream>
@@ -13,6 +16,12 @@
 #include <vector>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+extern const int AUTHENTICATION_FAILED;
+extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -132,6 +141,62 @@ TEST(JWTProvider, RefreshLeavesOtherAuthenticationAlone)
     EXPECT_EQ(without_provider.jwt, "static-token");
 
     EXPECT_EQ(provider->calls.load(), 0);
+}
+
+/// A background job must not start the device code login: it writes to the terminal of the prompt and waits for
+/// the user without any way to cancel it. Without a token and without a refresh token that is the only way forward,
+/// so the job fails with an explicit error. The main thread is not affected.
+TEST(JWTProvider, BackgroundThreadDoesNotStartDeviceLogin)
+{
+    JWTProvider provider(JWTProviderOptions{}, messages(), messages());
+    messages().str("");
+
+    {
+        NonInteractiveAuthenticationScope scope;
+        EXPECT_TRUE(NonInteractiveAuthenticationScope::isActive());
+        try
+        {
+            provider.getJWT();
+            FAIL() << "the login must not start";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::AUTHENTICATION_FAILED);
+        }
+
+        /// Not even a line was written to the streams of the main client.
+        EXPECT_TRUE(messages().str().empty());
+    }
+
+    /// The scope ends with its object: the same call now reaches the login (and stops at the missing client id,
+    /// before any network access).
+    EXPECT_FALSE(NonInteractiveAuthenticationScope::isActive());
+    try
+    {
+        provider.getJWT();
+        FAIL() << "the login must start";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
+/// The restriction is per thread: the main thread keeps asking while a background thread does not.
+TEST(JWTProvider, NonInteractiveScopeIsPerThread)
+{
+    NonInteractiveAuthenticationScope scope;
+
+    bool other_thread_is_restricted = true;
+    std::thread other([&] { other_thread_is_restricted = NonInteractiveAuthenticationScope::isActive(); });
+    other.join();
+    EXPECT_FALSE(other_thread_is_restricted);
+
+    {
+        NonInteractiveAuthenticationScope nested;
+        EXPECT_TRUE(NonInteractiveAuthenticationScope::isActive());
+    }
+    EXPECT_TRUE(NonInteractiveAuthenticationScope::isActive());
 }
 
 #endif

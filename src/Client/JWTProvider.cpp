@@ -2,6 +2,7 @@
 
 #if USE_JWT_CPP && USE_SSL
 #include <Client/JWTProvider.h>
+#include <Client/NonInteractiveAuthentication.h>
 #include <Client/OAuthDeviceFlow.h>
 #include <Common/Exception.h>
 
@@ -226,6 +227,14 @@ void JWTProvider::ensureOAuthEndpointsResolved()
 
 void JWTProvider::deviceCodeLogin()
 {
+    /// The login prints instructions to the terminal and polls until the user authorizes, ignoring cancellation,
+    /// while the token mutex is held. Only the main thread may start it.
+    if (NonInteractiveAuthenticationScope::isActive())
+        throw Exception(
+            ErrorCodes::AUTHENTICATION_FAILED,
+            "The access token has expired and cannot be renewed without logging in again, which a background job "
+            "cannot do. Run a query at the prompt to log in again, then retry");
+
     if (oauth_client_id.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error: --oauth-client-id is required for --login.");
 
