@@ -1174,6 +1174,20 @@ private:
         return c_res;
     }
 
+    bool acceptsArgumentTypes(const DataTypes & arguments, const DataTypePtr & result_type) const
+    {
+        try
+        {
+            return getReturnTypeImpl(arguments)->equals(*result_type);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                return false;
+            throw;
+        }
+    }
+
     ColumnPtr executeWithConstString(
             const DataTypePtr & result_type, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
             const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
@@ -1217,7 +1231,14 @@ private:
 
         DataTypePtr type_of_converted = type_to_compare;
         if (converted.isNull())
+        {
             converted = convertFieldToTypeWithWiderIntegers(string_value, type_of_converted, type_string, params.format_settings);
+            const DataTypes wider_arguments
+                = left_const ? DataTypes{type_of_converted, type_to_compare} : DataTypes{type_to_compare, type_of_converted};
+            /// `executeImpl` is safe only for argument types that `getReturnTypeImpl` accepts.
+            if (!converted.isNull() && !acceptsArgumentTypes(wider_arguments, result_type))
+                converted = Field();
+        }
 
         /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range.
         if (converted.isNull())

@@ -355,10 +355,12 @@ IntegerLiteralRange classifyAgainstIntegerType(bool negative, const UInt256 & ma
     return IntegerLiteralRange::InRange;
 }
 
-/// The 256-bit integer an integer element is read as: the one of its own signedness, or always the signed or the unsigned one.
+/// The 256-bit integer an integer element is read as: the one of its own signedness, the signed one unless the element is `UInt256`
+/// (every element then keeps a common type with its original, which comparing a `Map` needs), or always the signed or the unsigned one.
 enum class WideIntegerCarrier : uint8_t
 {
     SameSignedness,
+    SignedExceptUInt256,
     Signed,
     Unsigned,
 };
@@ -412,7 +414,9 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     if (type->getCustomSerialization() || (!which.isInt() && !which.isUInt()))
         return nullptr;
 
-    const bool to_signed = carrier == WideIntegerCarrier::Signed || (carrier == WideIntegerCarrier::SameSignedness && which.isInt());
+    const bool to_signed = carrier == WideIntegerCarrier::Signed
+        || (carrier == WideIntegerCarrier::SignedExceptUInt256 && !which.isUInt256())
+        || (carrier == WideIntegerCarrier::SameSignedness && which.isInt());
     if (to_signed)
         return which.isInt256() ? nullptr : std::make_shared<DataTypeInt256>();
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
@@ -1337,7 +1341,8 @@ Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type,
     if (!which.isArray() && !which.isTuple() && !which.isMap())
         return {};
 
-    for (auto carrier : {WideIntegerCarrier::SameSignedness, WideIntegerCarrier::Signed, WideIntegerCarrier::Unsigned})
+    for (auto carrier : {WideIntegerCarrier::SameSignedness, WideIntegerCarrier::SignedExceptUInt256, WideIntegerCarrier::Signed,
+                         WideIntegerCarrier::Unsigned})
     {
         auto wider = widenIntegerElements(type, carrier);
         if (!wider)

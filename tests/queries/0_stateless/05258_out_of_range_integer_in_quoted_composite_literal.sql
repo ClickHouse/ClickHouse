@@ -23,6 +23,13 @@ SELECT map(toUInt8(1), toUInt8(1)) <= '{300:1}';
 SELECT CAST((toUInt8(43), toUInt8(1)) AS Nullable(Tuple(UInt8, UInt8))) >= '(300,1)';
 SELECT [toUInt8(1), toUInt8(5)] < '[1,300]', [toUInt8(2), toUInt8(5)] < '[1,300]';
 SELECT [toUInt8(0)] > '[-1]', [toUInt8(0)] = '[-1]';
+SELECT map(toUInt8(0), toUInt256(0)) > '{-1:0}', map(toUInt8(0), toUInt256(0)) > map(-1, 0);
+SELECT map(toUInt8(0), toUInt256(0)) = '{-1:0}', map(toUInt8(0), toUInt256(0)) = map(-1, 0);
+SELECT [(toUInt256(0), toNullable(toUInt8(1)))] = '[(-1,1)]', [(toUInt256(0), toNullable(toUInt8(1)))] = [(-1,1)];
+
+-- a pair of types that cannot be ordered, quoted or not
+SELECT [(toUInt256(0), toNullable(toUInt8(1)))] < '[(-1,1)]'; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT [(toUInt256(0), toNullable(toUInt8(1)))] < [(-1,1)]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- a 256-bit element of either signedness holds the integer
 SELECT [toUInt8(0)] < '[57896044618658097711785492504343953926634992332820282019728792003956564819968]', [toUInt256(0)] > '[-1]';
