@@ -376,22 +376,9 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
         if (!records)
             continue;
 
-        UInt64 bytes = 0;
-        partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
-        auto & spilled = shared.spilled_partitions[partition];
-        {
-            std::lock_guard lock(spilled.mutex);
-            if (!spilled.stream)
-                spilled.stream = std::make_unique<TemporaryDataBuffer>(shared.spill_scope);
-            auto & out = *spilled.stream;
-
-            writeBinaryLittleEndian(bytes, out);
-            partitions.forEachChunk(partition, [&](std::string_view chunk) { out.write(chunk.data(), chunk.size()); });
-            spilled.records += records;
-        }
+        spilled_bytes += shared.spilled_partitions[partition].append(shared.spill_scope, partitions, partition);
         partitions.releasePartition(partition);
         spilled_records += records;
-        spilled_bytes += bytes;
     }
 
     partitions.clear();
@@ -400,6 +387,21 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpilledRecords, spilled_records);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpilledBytes, spilled_bytes);
     LOG_TRACE(log, "Adaptive aggregation: spilled {} staged records ({} bytes)", spilled_records, spilled_bytes);
+}
+
+UInt64 AdaptiveAggregationSession::SpilledPartition::append(
+    const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition)
+{
+    UInt64 bytes = 0;
+    partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
+
+    std::lock_guard lock(mutex);
+    if (!stream)
+        stream = std::make_unique<TemporaryDataBuffer>(scope);
+    writeBinaryLittleEndian(bytes, *stream);
+    partitions.forEachChunk(partition, [&](std::string_view chunk) { stream->write(chunk.data(), chunk.size()); });
+    record_count += partitions.recordsOf(partition);
+    return bytes;
 }
 
 void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback)

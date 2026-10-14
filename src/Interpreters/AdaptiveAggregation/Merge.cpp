@@ -293,7 +293,7 @@ namespace
         /// The record count of partition `sub` of the bucket, in the producers' chunks and in its spill stream.
         size_t recordsOf(size_t sub) const
         {
-            size_t records = spilledOf(sub).records;
+            size_t records = spilledOf(sub).recordCount();
             for (const auto & producer : session.producer_buffers)
                 records += producer->recordsOf(first_partition + sub);
             return records;
@@ -320,7 +320,7 @@ namespace
         {
             for (const auto & producer : session.producer_buffers)
                 producer->releasePartition(first_partition + sub);
-            spilledOf(sub).stream.reset();
+            spilledOf(sub).release();
         }
 
     private:

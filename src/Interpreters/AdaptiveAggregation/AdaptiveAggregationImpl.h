@@ -177,20 +177,32 @@ struct AdaptiveAggregationSession
     /// first spill into it, so that a merge unit reads back the records of its own partitions only. A stream is a
     /// sequence of blocks, one per spill into the partition, {UInt64 bytes, the records}; the merge task of the
     /// partition's bucket reads it back after the finish barrier, a block at a time.
-    struct SpilledPartition
+    class SpilledPartition
     {
+    public:
+        /// Appends the records of partition `partition` of `partitions` to the stream as one block, creating the stream
+        /// in `scope` on the first append, and returns the block's bytes. Producers append concurrently.
+        UInt64 append(const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition);
+
         /// Reads the stream back in the order the producers wrote it and calls `callback(block)` with the records of
         /// each block in a padded buffer like a chunk's. Every block comes in the same buffer, which the next block
         /// overwrites, so the records of a block are valid only during its call. The read stops when `callback`
         /// returns false. The stream stays, so a merge unit that passes over its records twice reads it again; the
         /// merge removes it once the unit no longer needs it. Called by the one task that merges the partition's
-        /// bucket, after the finish barrier, so no producer writes to the stream any more.
+        /// bucket, after the finish barrier, so no producer appends any more.
         void readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback);
 
+        /// The records appended to the stream, which the merge counts before it reads them back.
+        size_t recordCount() const { return record_count; }
+
+        /// Removes the stream, read back or not.
+        void release() { stream.reset(); }
+
+    private:
+        /// Serializes the producers' appends and the creation of the stream.
         std::mutex mutex;
         std::unique_ptr<TemporaryDataBuffer> stream;
-        /// The records written to the stream, which the merge counts before it reads them back.
-        size_t records = 0;
+        size_t record_count = 0;
     };
     /// One per partition of the layout.
     std::vector<SpilledPartition> spilled_partitions;
