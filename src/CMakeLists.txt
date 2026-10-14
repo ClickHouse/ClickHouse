@@ -151,6 +151,7 @@ add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/SpaceShared)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/TimeShared)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
+add_headers_and_sources(clickhouse_common_io IO/HTTP)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
@@ -355,6 +356,7 @@ endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::heks)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
 endif()
@@ -556,6 +558,7 @@ set_property(SOURCE
     Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
     Processors/Transforms/Window/Partition.cpp  # window functions
+    Processors/Transforms/Window/Frame.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
     WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
@@ -1046,6 +1049,8 @@ if (ENABLE_TESTS)
         # `gtest_lz4_decompress_branchless` includes `<lz4.h>` directly; the include path only
         # propagates transitively in full-library builds, so declare the dependency explicitly.
         ch_contrib::lz4)
+
+    target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)

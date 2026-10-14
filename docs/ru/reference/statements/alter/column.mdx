@@ -19,6 +19,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 В запросе укажите список из одного или нескольких действий, разделённых запятыми.
 Каждое действие — операция над столбцом.
 
+Например, в одном операторе можно удалить один столбец и добавить другой:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+Вернёт ли такой запрос управление до завершения работы с существующими данными, определяется настройкой [`alter_sync`](/ru/reference/settings/session-settings/alter#alter_sync), которая также распространяется на мутацию, создаваемую `DROP COLUMN` или изменением типа через `MODIFY COLUMN`; к [MATERIALIZE COLUMN](#materialize-column), который выполняется как мутация, применяется настройка [`mutations_sync`](/ru/reference/settings/session-settings/mutations#mutations_sync). Обе настройки описаны в разделе [Синхронность запросов ALTER](/ru/reference/statements/alter/index#synchronicity-of-alter-queries).
+
 Поддерживаются следующие действия:
 
 * [ADD COLUMN](#add-column) — Добавляет новый столбец в таблицу.
@@ -34,9 +42,7 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 * [MATERIALIZE COLUMN](#materialize-column) — Материализует столбец в частях, где он отсутствует.
   Эти действия подробно описаны ниже.
 
-<div id="add-column">
-  ## ADD COLUMN
-</div>
+## ADD COLUMN {#add-column}
 
 ```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
@@ -72,9 +78,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-<div id="drop-column">
-  ## DROP COLUMN
-</div>
+## DROP COLUMN {#drop-column}
 
 ```sql
 DROP COLUMN [IF EXISTS] name
@@ -94,9 +98,7 @@ DROP COLUMN [IF EXISTS] name
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-<div id="rename-column">
-  ## RENAME COLUMN
-</div>
+## RENAME COLUMN {#rename-column}
 
 ```sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -112,9 +114,7 @@ RENAME COLUMN [IF EXISTS] name to new_name
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-<div id="clear-column">
-  ## CLEAR COLUMN
-</div>
+## CLEAR COLUMN {#clear-column}
 
 ```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -130,9 +130,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-<div id="comment-column">
-  ## COMMENT COLUMN
-</div>
+## COMMENT COLUMN {#comment-column}
 
 ```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -150,9 +148,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
-<div id="modify-column">
-  ## MODIFY COLUMN
-</div>
+## MODIFY COLUMN {#modify-column}
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
@@ -187,7 +183,7 @@ ALTER COLUMN [IF EXISTS] name
 
 Если указано условие `IF EXISTS`, запрос не вернёт ошибку, если столбец отсутствует.
 
-При изменении типа значения преобразуются так, как если бы к ним были применены функции [toType](/ru/reference/functions/regular-functions/type-conversion-functions). Если изменяется только выражение по умолчанию, запрос не выполняет никаких сложных операций и завершается почти мгновенно.
+При изменении типа значения преобразуются так, как если бы к ним были применены функции [toType](/ru/reference/functions/regular-functions/type-conversion-functions). Если изменяется только выражение по умолчанию, запрос изменяет только метаданные.
 
 Пример:
 
@@ -195,7 +191,9 @@ ALTER COLUMN [IF EXISTS] name
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-Изменение типа столбца — единственное сложное действие: при этом меняется содержимое файлов с данными. Для больших таблиц это может занять много времени.
+Некоторые изменения типа затрагивают только метаданные, поскольку представление данных на диске при этом не меняется. К ним относятся расширение enum и преобразования между `Date` и `UInt16` или между `DateTime` и `UInt32`; то же правило рекурсивно применяется внутри типов `Array` и `Nullable`. Некоторые изменения подсказок типов JSON и добавление элементов в именованные кортежи также могут обойтись без немедленной перезаписи данных, если включены соответствующие настройки.
+
+Прочие изменения типа создают мутацию `READ_COLUMN`, которая перезаписывает затронутый столбец в существующих частях. Будет ли запрос ожидать её завершения, определяется настройкой [`alter_sync`](/ru/reference/settings/session-settings/alter#alter_sync): по умолчанию она равна `1` в ClickHouse и `0` в ClickHouse Cloud. Отслеживать ход выполнения можно в [`system.mutations`](/ru/reference/system-tables/mutations).
 
 Запрос также может изменять порядок столбцов с помощью предложения `FIRST | AFTER`, см. описание [ADD COLUMN](#add-column), но в этом случае указание типа столбца обязательно.
 
@@ -239,9 +237,7 @@ DESCRIBE users;
   Будьте осторожны при изменении столбца Nullable на Non-Nullable. Убедитесь, что в нём нет значений NULL, иначе это вызовет проблемы при чтении. В таком случае можно прервать мутацию и вернуть столбцу тип Nullable.
 </Note>
 
-<div id="modify-column-remove">
-  ## MODIFY COLUMN REMOVE
-</div>
+## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 Удаляет одно из свойств столбца: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
 
@@ -263,9 +259,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 * [REMOVE TTL](/ru/reference/statements/alter/ttl).
 
-<div id="modify-column-modify-setting">
-  ## MODIFY COLUMN MODIFY SETTING
-</div>
+## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
 Изменяет настройку столбца.
 
@@ -283,9 +277,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING name=value,...;
 ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
-<div id="modify-column-reset-setting">
-  ## MODIFY COLUMN RESET SETTING
-</div>
+## MODIFY COLUMN RESET SETTING {#modify-column-reset-setting}
 
 Сбрасывает настройку столбца, а также удаляет объявление этой настройки из выражения столбца в CREATE-запросе таблицы.
 
@@ -303,9 +295,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING name,...;
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
-<div id="modify-column-add-enum-values">
-  ## MODIFY COLUMN ADD ENUM VALUES
-</div>
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
 
 Добавляет новые значения в столбец типа `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` или `Nullable(Enum16)`
 
@@ -323,9 +313,7 @@ ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName
 ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
-<div id="materialize-column">
-  ## MATERIALIZE COLUMN
-</div>
+## MATERIALIZE COLUMN {#materialize-column}
 
 Материализует столбец с выражением для значения `DEFAULT` или `MATERIALIZED`. При добавлении материализованного столбца с помощью `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED` существующие строки без материализованных значений автоматически не заполняются. Оператор `MATERIALIZE COLUMN` можно использовать, чтобы перезаписать существующие данные столбца после добавления или обновления выражения `DEFAULT` или `MATERIALIZED` (при этом обновляются только метаданные, а существующие данные не изменяются). Обратите внимание, что материализация столбца, входящего в ключ сортировки, — недопустимая операция, поскольку она может нарушить порядок сортировки.
 Реализовано как [мутация](/ru/reference/statements/alter/index#mutations).
@@ -396,9 +384,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 * [MATERIALIZED](/ru/reference/statements/create/view#materialized-view).
 * [MATERIALIZE INDEX](/ru/reference/statements/alter/skipping-index#materialize-index).
 
-<div id="limitations">
-  ## Ограничения
-</div>
+## Ограничения {#limitations}
 
 Запрос `ALTER` позволяет создавать и удалять отдельные элементы (столбцы) во вложенных структурах данных, но не целые вложенные структуры данных. Чтобы добавить вложенную структуру данных, можно добавить столбцы с именем вида `name.nested_name` и типом `Array(T)`. Вложенная структура данных эквивалентна нескольким столбцам типа Array, имя которых имеет одинаковый префикс до точки.
 
