@@ -13,8 +13,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool run_access_check,
-        bool run_local_paths_check,
+        bool skip_access_check,
         bool run_remote_host_filter_check)>;
 
     static ObjectStorageFactory & instance();
@@ -26,8 +25,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool run_access_check,
-        bool run_local_paths_check,
+        bool skip_access_check,
         bool run_remote_host_filter_check) const;
 
     void clearRegistry();

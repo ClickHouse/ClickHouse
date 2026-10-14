@@ -17,7 +17,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <limits>
 #include <utility>
 #include <math.h>
 #include <string.h>
@@ -1491,37 +1490,6 @@ public:
     size_t getBufferSizeInBytes() const
     {
         return grower.bufSize() * sizeof(Cell);
-    }
-
-    /// Estimates the additional memory charged while inserting this many new keys. Each resize charges
-    /// its replacement before releasing the old buffer's accounting, even when allocation grows in place.
-    /// Capacity gained by preceding resizes remains charged throughout subsequent resizes.
-    /// Saturates at the maximum of `size_t` when the projected capacity or memory is not representable.
-    size_t estimateGrowthMemory(size_t additional_keys) const noexcept
-    {
-        auto projected_grower = grower;
-        const size_t initial_bytes = getBufferSizeInBytes();
-        constexpr size_t max_size = std::numeric_limits<size_t>::max();
-        size_t projected_size = 0;
-        if (common::addOverflow(m_size, additional_keys, projected_size))
-            return max_size;
-        size_t buffer_bytes = initial_bytes;
-        size_t peak_extra_bytes = 0;
-        while (projected_grower.overflow(projected_size))
-        {
-            /// The largest representable power-of-two capacity cannot grow further.
-            if (projected_grower.bufSize() > max_size / 2)
-                return max_size;
-            projected_grower.increaseSize();
-            size_t next_bytes = 0;
-            size_t extra_bytes = 0;
-            if (common::mulOverflow(projected_grower.bufSize(), sizeof(Cell), next_bytes)
-                || common::addOverflow(buffer_bytes - initial_bytes, next_bytes, extra_bytes))
-                return max_size;
-            peak_extra_bytes = std::max(peak_extra_bytes, extra_bytes);
-            buffer_bytes = next_bytes;
-        }
-        return peak_extra_bytes;
     }
 
     size_t getBufferSizeInCells() const

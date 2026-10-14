@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
@@ -49,7 +48,7 @@ public:
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it has type {}.",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it  has type {}.",
                 getName(), arguments[0]->getName());
 
         auto nested_type = removeNullable(array_type->getNestedType());
@@ -126,10 +125,6 @@ ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & argu
         || executeNumber<Int64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeNumber<Float32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeNumber<Float64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-        || executeNumber<Decimal32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-        || executeNumber<Decimal64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-        || executeNumber<Decimal128>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-        || executeNumber<Decimal256>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
         executeHashed(*inner_col, offsets, res_data, res_offsets, nullable_col);
 
@@ -144,9 +139,7 @@ bool FunctionArrayDistinct::executeNumber(
     ColumnArray::Offsets & res_offsets,
     const ColumnNullable * nullable_col)
 {
-    using ColVecType = ColumnVectorOrDecimal<T>;
-
-    const ColVecType * src_data_concrete = checkAndGetColumn<ColVecType>(&src_data);
+    const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
 
     if (!src_data_concrete)
     {
@@ -154,7 +147,7 @@ bool FunctionArrayDistinct::executeNumber(
     }
 
     const PaddedPODArray<T> & values = src_data_concrete->getData();
-    PaddedPODArray<T> & res_data = typeid_cast<ColVecType &>(res_data_col).getData();
+    PaddedPODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
