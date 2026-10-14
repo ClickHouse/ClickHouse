@@ -98,6 +98,16 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Пороговое значение для файлов данных, участвующих в компактации, в Iceberg.
 
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "Новая настройка. `remove_orphan_files` отклоняет значение `older_than`, отстоящее от текущего момента менее чем на указанное число секунд, и тем самым сохраняет файлы записи, которая началась менее этого времени назад и ещё не закоммичена. Установка `compatibility` на версию ниже 26.10 восстанавливает прежнее поведение (без минимума)."}]}]} />
+
+Минимальный возраст (в секундах) файлов, которые `ALTER TABLE ... EXECUTE remove_orphan_files` может удалить из таблицы Iceberg. Значение `older_than` (заданное явно или вычисленное из `iceberg_orphan_files_older_than_seconds`), которое ближе к текущему моменту, чем это значение, отклоняется: файлы ещё не закоммиченной записи не упоминаются в метаданных таблицы и были бы удалены, а это повредит таблицу, когда запись будет закоммичена. Задавайте значение больше максимального времени, которое может занять коммит записи в таблицу. 0 отключает проверку.
+
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />

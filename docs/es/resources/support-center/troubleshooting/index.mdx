@@ -22,14 +22,12 @@ description: 'Encuentre soluciones para los problemas más comunes de ClickHouse
 
 ¿Tiene problemas con ClickHouse? Aquí encontrará soluciones a los problemas más comunes.
 
-<div id="performance-and-errors">
-  ## Rendimiento y errores
-</div>
+## Rendimiento y errores {#performance-and-errors}
 
 Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory limit exceeded&quot; o &quot;Connection refused.&quot;
 
 <Accordion title="Mostrar soluciones para rendimiento y errores">
-  ### Rendimiento de las consultas
+  ### Rendimiento de las consultas {#query-performance}
 
   * [Identifica qué consultas usan más recursos](/es/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
   * [Guía completa de optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization)
@@ -38,14 +36,14 @@ Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory li
 
   <br />
 
-  ### Rendimiento de la inserción de datos
+  ### Rendimiento de la inserción de datos {#data-insertion-performance}
 
   * [Acelera la inserción de datos](/es/concepts/features/operations/insert/bulkinserts)
   * [Configura inserciones asíncronas](/es/concepts/features/operations/insert/asyncinserts)
 
   <br />
 
-  ### Herramientas avanzadas de análisis
+  ### Herramientas avanzadas de análisis {#advanced-analysis-tools}
 
   {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
 
@@ -54,7 +52,7 @@ Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory li
 
   <br />
 
-  ### Mensajes de error
+  ### Mensajes de error {#error-messages}
 
   * **&quot;Memory limit exceeded&quot;** → [Depura errores por límite de memoria](/es/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * **&quot;Connection refused&quot;** → [Soluciona problemas de conexión](#connections-and-authentication)
@@ -65,14 +63,12 @@ Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory li
   * **&quot;Other issues&quot;** → [Rastrea errores en todo tu clúster](/es/reference/system-tables/errors)
 </Accordion>
 
-<div id="memory-and-resources">
-  ## Memoria y recursos
-</div>
+## Memoria y recursos {#memory-and-resources}
 
 Si tienes un uso elevado de memoria, errores por falta de memoria o necesitas ayuda para dimensionar tu implementación de ClickHouse.
 
 <Accordion title="Mostrar soluciones para memoria">
-  ### Depuración y supervisión de memoria:
+  ### Depuración y supervisión de memoria: {#memory-debugging-and-monitoring}
 
   * [Identifica qué está usando memoria](/es/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * [Comprueba el uso actual de memoria](/es/reference/system-tables/processes)
@@ -81,7 +77,7 @@ Si tienes un uso elevado de memoria, errores por falta de memoria o necesitas ay
 
   <br />
 
-  ### Configuración de memoria:
+  ### Configuración de memoria: {#memory-configuration}
 
   * [Configura los límites de memoria](/es/concepts/features/configuration/settings/memory-overcommit)
   * [Ajustes de memoria del servidor](/es/reference/settings/server-settings/settings)
@@ -89,20 +85,18 @@ Si tienes un uso elevado de memoria, errores por falta de memoria o necesitas ay
 
   <br />
 
-  ### Escalado y dimensionamiento:
+  ### Escalado y dimensionamiento: {#scaling-and-sizing}
 
   * [Dimensiona correctamente tu servicio](/es/guides/oss/best-practices/tips)
   * [Configura el escalado automático](/es/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-<div id="connections-and-authentication">
-  ## Conexiones y autenticación
-</div>
+## Conexiones y autenticación {#connections-and-authentication}
 
 No se puede conectar a ClickHouse, hay errores de autenticación, errores de certificado SSL o problemas de configuración del cliente.
 
 <Accordion title="Mostrar soluciones de conexión">
-  ### Problemas básicos de conexión
+  ### Problemas básicos de conexión {#basic-connection-issues}
 
   * [Solucionar problemas de la interfaz HTTP](/es/concepts/features/interfaces/http)
   * [Resolver problemas de certificados SSL](/es/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
@@ -110,7 +104,7 @@ No se puede conectar a ClickHouse, hay errores de autenticación, errores de cer
 
   <br />
 
-  ### Interfaces de cliente
+  ### Interfaces de cliente {#client-interfaces}
 
   * [Clientes nativos de ClickHouse](/es/concepts/features/interfaces/native-clients-interfaces-index)
   * [Problemas de la interfaz MySQL](/es/concepts/features/interfaces/mysql)
@@ -120,20 +114,18 @@ No se puede conectar a ClickHouse, hay errores de autenticación, errores de cer
 
   <br />
 
-  ### Red y datos
+  ### Red y datos {#network-and-data}
 
   * [Configuración de seguridad de red](/es/reference/settings/server-settings/settings)
   * [Problemas al analizar formatos de datos](/es/reference/formats/index)
 </Accordion>
 
-<div id="setup-and-configuration">
-  ## Instalación y configuración
-</div>
+## Instalación y configuración {#setup-and-configuration}
 
 Instalación inicial, configuración del servidor, creación de bases de datos, problemas de ingestión de datos o configuración de la replicación.
 
 <Accordion title="Mostrar soluciones de instalación y configuración">
-  ### Configuración inicial
+  ### Configuración inicial {#initial-setup}
 
   * [Configurar los ajustes del servidor](/es/reference/settings/server-settings/settings)
   * [Configurar la seguridad y el control de acceso](/es/concepts/features/security/access-rights)
@@ -141,7 +133,7 @@ Instalación inicial, configuración del servidor, creación de bases de datos, 
 
   <br />
 
-  ### Gestión de bases de datos
+  ### Gestión de bases de datos {#database-management}
 
   * [Crear y gestionar bases de datos](/es/reference/statements/create/database)
   * [Elegir el motor de tabla adecuado](/es/reference/engines/table-engines/index)
@@ -150,7 +142,7 @@ Instalación inicial, configuración del servidor, creación de bases de datos, 
 
   <br />
 
-  ### Operaciones de datos
+  ### Operaciones de datos {#data-operations}
 
   * [Optimizar la inserción masiva de datos](/es/concepts/features/operations/insert/bulkinserts)
   * [Resolver problemas de formato de datos](/es/reference/formats/index)
@@ -159,7 +151,7 @@ Instalación inicial, configuración del servidor, creación de bases de datos, 
 
   <br />
 
-  ### Configuración avanzada
+  ### Configuración avanzada {#advanced-configuration}
 
   * [Configurar la replicación de datos](/es/reference/engines/table-engines/mergetree-family/replication)
   * [Configurar tablas distribuidas](/es/reference/engines/table-engines/special/distributed)
@@ -170,9 +162,7 @@ Instalación inicial, configuración del servidor, creación de bases de datos, 
   * [Configurar la supervisión](/es/reference/system-tables/overview)
 </Accordion>
 
-<div id="still-need-help">
-  ## ¿Aún necesitas ayuda?
-</div>
+## ¿Aún necesitas ayuda? {#still-need-help}
 
 Si no encuentras una solución:
 

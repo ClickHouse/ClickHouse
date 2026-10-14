@@ -153,6 +153,8 @@ La configuración solo afecta a las consultas con `JOIN`, en las que los lados d
 
 El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel&#95;replicas&#95;local&#95;plan está habilitado
 
+Esto se refiere al análisis de índices que selecciona los rangos de marcas que anuncia una lectura y que constituyen la base a partir de la cual el coordinador realiza las asignaciones. No abarca la poda que se produce durante la lectura de los datos, como la poda de gránulos de `enable_join_runtime_filters_index_analysis`: un filtro en tiempo de ejecución de JOIN solo existe una vez que se ha leído el lado de construcción, por lo que cada réplica evalúa el suyo y descarta su propia parte, y ningún coordinador podría hacerlo por ellas.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

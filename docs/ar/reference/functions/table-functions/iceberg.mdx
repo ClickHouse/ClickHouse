@@ -132,16 +132,16 @@ ENGINE = IcebergS3(
 ### الاستخدام الأساسي {#basic-usage}
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_timestamp_ms = 1714636800000
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_snapshot_id = 3547395809148285433
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
-ملاحظة: لا يمكنك تحديد المعلَمين `iceberg_timestamp_ms` و`iceberg_snapshot_id` معًا في الاستعلام نفسه.
+ملاحظة: لا يمكنك تحديد المعلمتين `iceberg_timestamp_ms` و`iceberg_snapshot_id` معًا في الاستعلام نفسه.
 
 ### اعتبارات مهمة {#important-considerations}
 
@@ -162,39 +162,39 @@ ENGINE = IcebergS3(
 تأمل تسلسل العمليات التالي:
 
 ```sql
- -- Create a table with two columns
-  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-  order_number bigint, 
-  product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+-- Create a table with two columns
+ CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+ order_number bigint, 
+ product_code string
+ ) 
+ USING iceberg 
+ OPTIONS ('format-version'='2')
 
 - - Insert data into the table
-  INSERT INTO spark_catalog.db.time_travel_example VALUES 
-    (1, 'Mars')
+ INSERT INTO spark_catalog.db.time_travel_example VALUES 
+   (1, 'Mars')
 
-  ts1 = now() // A piece of pseudo code
+ ts1 = now() // A piece of pseudo code
 
 - - Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
- 
-  ts2 = now()
+ ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+
+ ts2 = now()
 
 - - Insert data into the table
-  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+ INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-   ts3 = now()
+  ts3 = now()
 
 - - Query the table at each timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
 +------------+------------+
 |order_number|product_code|
@@ -202,7 +202,7 @@ ENGINE = IcebergS3(
 |           1|        Mars|
 +------------+------------+
 
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -415,13 +415,13 @@ y: 993
 
 ### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
-يزيل الأمر `ALTER TABLE ... DROP PARTITION <value>` جميع ملفات البيانات التابعة لتقسيم واحد، وينشئ لقطة جديدة لا تشير إليها. وتُدعم هذه العملية حاليًا لجداول Iceberg المحلية والجداول المخزّنة في تخزين الكائنات، لكنها غير مدعومة للجداول التي تعتمد على كتالوج.
+يزيل الأمر `ALTER TABLE ... DROP PARTITION <value>` جميع ملفات البيانات التابعة لتقسيم واحد، وينشئ لقطة جديدة لا تشير إليها. وتُدعم هذه العملية لجداول Iceberg المحلية والجداول المخزّنة في تخزين الكائنات، وكذلك للجداول الموجودة في قاعدة بيانات `DataLakeCatalog` التي يكون نوع catalog فيها `rest` أو `onelake` أو `biglake` أو `delta_sharing` أو `horizon` أو `s3tables` أو `unity` (مع ضبط `use_unity_catalog_v2 = 1`).
 
 فعّل `allow_insert_into_iceberg` لاستخدام هذه العملية.
 
 لا تُدعم العملية إلا لجداول Iceberg ذات `format-version` 2 التي تستخدم مواصفة تقسيم واحدة لم تتغير. ويجب ألا يحتوي أي ملف بيان يضمّ التقسيم المحدد على ملفات تابعة لتقسيمات أخرى. وإذا اشترك التقسيم المحدد وتقسيم آخر في ملف بيان، تفشل العملية دون أن يتغير الجدول. وترفض العملية أيضًا ملفات البيان المعنية إذا احتوت على ملفات حذف بالمساواة.
 
-تخضع قيمة التقسيم للقواعد نفسها المتبعة في `MergeTree`. إذا كان التقسيم قائمًا على عمود واحد، فمرّر قيمة حرفية مفردة؛ وإذا كان قائمًا على عدة أعمدة، فمرّر مجموعة مرتبة من القيم:
+تخضع قيمة التقسيم للقواعد نفسها المتبعة في `MergeTree`. إذا كان التقسيم قائمًا على عمود واحد، فمرّر قيمة حرفية مفردة؛ وإذا كان قائمًا على عدة أعمدة، فمرّر مجموعة مرتبة (Tuple) من القيم:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 2;
@@ -672,7 +672,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 
 ### إزالة الملفات اليتيمة {#iceberg-remove-orphan-files}
 
-الملفات اليتيمة هي ملفات موجودة في التخزين لا تشير إليها أي لقطة في البيانات الوصفية لجدول Iceberg. وتتراكم بسبب عمليات الكتابة الفاشلة، والتنظيف الجزئي بعد الدمج، والعمليات المنقطعة، مما يؤدي إلى نمو غير محدود في مساحة التخزين. يحدِّد الأمر `remove_orphan_files` هذه الملفات اليتيمة ويزيلها.
+الملفات اليتيمة هي ملفات موجودة في التخزين لا تشير إليها أي لقطة في البيانات الوصفية لجدول Iceberg. وتتراكم بسبب عمليات الكتابة الفاشلة، والتنظيف الجزئي بعد الدمج، والعمليات المنقطعة، مما يؤدي إلى نمو غير محدود في مساحة التخزين. يحدِّد الأمر `remove_orphan_files` هذه الملفات اليتيمة ويزيلها.
 
 **الصيغة:**
 
@@ -693,11 +693,11 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
 
 **المعلمات:**
 
-| المعلمة      | النوع                | الافتراضي                                                               | الوصف                                                                                                                                                                               |
-| ------------ | -------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `older_than` | `String` (طابع زمني) | قبل 3 أيام (قابل للتهيئة عبر `iceberg_orphan_files_older_than_seconds`) | لا تُعدّ ملفات يتيمة محتملة إلا الملفات التي يعود وقت آخر تعديل لها إلى ما قبل هذا الطابع الزمني. هذا إجراء احترازي لتجنّب حذف الملفات الناتجة عن عمليات كتابة لا تزال قيد التنفيذ. |
-| `location`   | `String`             | موقع الجدول                                                             | يقيّد الفحص بدليل فرعي محدد ضمن موقع الجدول (على سبيل المثال، `'data/'` أو `'metadata/'`).                                                                                          |
-| `dry_run`    | `UInt64`             | `0`                                                                     | عند ضبطه على `1`، يحدّد الملفات اليتيمة ويُرجع ملخصًا بالنتائج دون حذف أي شيء فعليًا.                                                                                               |
+| المعلمة      | النوع                | الافتراضي                                                               | الوصف                                                                                                                                                                                                                                                                                                  |
+| ------------ | -------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `older_than` | `String` (طابع زمني) | قبل 3 أيام (قابل للتهيئة عبر `iceberg_orphan_files_older_than_seconds`) | لا تُعدّ ملفات يتيمة محتملة إلا الملفات التي يعود وقت آخر تعديل لها إلى ما قبل هذا الطابع الزمني. هذا إجراء احترازي لتجنّب حذف الملفات الناتجة عن عمليات كتابة لا تزال قيد التنفيذ. يجب أن يسبق هذا الطابع الزمني الوقت الحالي بمدة لا تقل عن `iceberg_orphan_files_min_retention_seconds` (يوم واحد). |
+| `location`   | `String`             | موقع الجدول                                                             | يقيّد الفحص بدليل فرعي محدد ضمن موقع الجدول (على سبيل المثال، `'data/'` أو `'metadata/'`).                                                                                                                                                                                                             |
+| `dry_run`    | `UInt64`             | `0`                                                                     | عند ضبطه على `1`، يحدّد الملفات اليتيمة ويُرجع ملخصًا بالنتائج دون حذف أي شيء فعليًا.                                                                                                                                                                                                                  |
 
 **أمثلة:**
 
@@ -723,7 +723,7 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
 
 **المخرجات:**
 
-يعيد الأمر جدولًا يحتوي على العمودين `metric_name` و`metric_value`، ويعرض عدد الملفات المحذوفة (أو التي كان سيُحذفها في وضع dry&#95;run) حسب الفئة. تُصنَّف فئات الملفات باستخدام أساليب استدلالية بأفضل جهد استنادًا إلى اصطلاحات تسمية الملفات؛ أما الملفات التي لا تطابق أي نمط محدد فتُدرج افتراضيًا ضمن `deleted_data_files_count`:
+يعيد الأمر جدولًا يحتوي على العمودين `metric_name` و`metric_value`، ويعرض عدد الملفات المحذوفة (أو التي كان سيُحذفها في وضع dry&#95;run) حسب الفئة. تُصنَّف فئات الملفات باستخدام أساليب استدلالية بأفضل جهد استنادًا إلى اصطلاحات تسمية الملفات؛ أما الملفات التي لا تطابق أي نمط محدد فتُدرج افتراضيًا ضمن `deleted_data_files_count`:
 
 | metric&#95;name                                     | metric&#95;value |
 | --------------------------------------------------- | ---------------- |
@@ -739,17 +739,18 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
 
 **الإعدادات:**
 
-| الإعداد                                   | النوع    | الافتراضي         | الوصف                                                       |
-| ----------------------------------------- | -------- | ----------------- | ----------------------------------------------------------- |
-| `allow_iceberg_remove_orphan_files`       | `Bool`   | `false`           | إعداد تحكّم لتمكين الميزة (تجريبية).                        |
-| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 أيام) | عتبة `older_than` الافتراضية بالثواني عند عدم تمرير الوسيط. |
+| الإعداد                                      | النوع    | الافتراضي          | الوصف                                                                                                                                       |
+| -------------------------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow_iceberg_remove_orphan_files`          | `Bool`   | `false`            | إعداد تحكّم لتمكين الميزة (تجريبية).                                                                                                        |
+| `iceberg_orphan_files_older_than_seconds`    | `UInt64` | `259200` (3 أيام)  | عتبة `older_than` الافتراضية بالثواني عند عدم تمرير الوسيط.                                                                                 |
+| `iceberg_orphan_files_min_retention_seconds` | `UInt64` | `86400` (يوم واحد) | الحد الأدنى للفارق بالثواني بين `older_than` والوقت الحالي؛ وتُرفض أي قيمة `older_than` أحدث من ذلك. ضبط القيمة على `0` يُعطِّل هذا التحقق. |
 
 <Note>
   * **يتطلب Iceberg format version 2 (أو أعلى).** تُرفض جداول الإصدار 1 لأنها تفتقر إلى مؤشرات `manifest-list` في لقطات، وهي مطلوبة لتحديد مجموعة الملفات القابلة للوصول بأمان. ويؤدي تشغيل الأمر على جدول v1 إلى إرجاع خطأ `BAD_ARGUMENTS`.
-  * يتطلب تمكين كلٍّ من الإعدادين `allow_insert_into_iceberg` و`allow_iceberg_remove_orphan_files`
-  * يُوصى بتشغيل `expire_snapshots` قبل `remove_orphan_files` حتى تُنظَّف أولًا الملفات المشار إليها بشكل فريد من خلال لقطات منتهية الصلاحية
+  * يتطلب تمكين كلٍّ من الإعدادين `allow_insert_into_iceberg` و`allow_iceberg_remove_orphan_files`
+  * يُوصى بتشغيل `expire_snapshots` قبل `remove_orphan_files` حتى تُنظَّف أولًا الملفات المشار إليها بشكل فريد من خلال لقطات منتهية الصلاحية
   * استخدم `dry_run = 1` لمعاينة orphan files قبل حذفها
-  * تحمي عتبة `older_than` من حذف الملفات الناتجة عن عمليات كتابة لا تزال قيد التنفيذ — وتوفّر العتبة الافتراضية البالغة 3 أيام هامش أمان مريحًا
+  * تُرفض قيمة `older_than` إذا كانت أقرب إلى الوقت الحالي من `iceberg_orphan_files_min_retention_seconds`، لأن ملفات عملية الكتابة التي لم تُثبَّت بعد لا تشير إليها البيانات الوصفية للجدول، فتبدو كأنها ملفات يتيمة؛ لذا احرص على أن تتجاوز قيمة هذا الإعداد أطول مدة قد تستغرقها أي عملية كتابة إلى الجدول حتى تُثبَّت
 </Note>
 
 ## راجع أيضًا {#see-also}

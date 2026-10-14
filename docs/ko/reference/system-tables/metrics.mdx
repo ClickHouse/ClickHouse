@@ -30,6 +30,14 @@ QueryProfiler의 활성 스레드 로컬 타이머 수
 
 연결 풀에서 연결을 생성할 때 문제가 있는 것으로 판단되어 차단된 주소의 총개수
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+스택 트레이스 심볼화에 사용되는 해석된 소스 코드 위치(file:line:column) 캐시가 사용하는 근사 메모리 양으로, 바이트 단위입니다.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+system.trace&#95;log, system.errors, system.error&#95;log의 스택 트레이스를 심볼화하는 데 사용되는 해석된 소스 코드 위치(file:line:column) 캐시에 저장된 코드 주소 수입니다.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Aggregator 스레드 풀에 있는 스레드 수입니다.
@@ -2125,6 +2133,10 @@ JOIN에 대해 생성된 임시 파일 수
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 수직 병합용 임시 파일 수
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+외부 메모리에서 `IN` 집합(set)용으로 생성된 임시 파일 수
 
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 

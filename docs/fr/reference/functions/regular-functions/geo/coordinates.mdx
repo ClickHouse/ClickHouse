@@ -6,9 +6,7 @@ title: 'Fonctions de manipulation des coordonnées géographiques'
 doc_type: 'reference'
 ---
 
-<div id="greatcircledistance">
-  ## greatCircleDistance
-</div>
+## greatCircleDistance {#greatcircledistance}
 
 Calcule la distance entre deux points à la surface de la Terre à l’aide de [la formule du grand cercle](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -43,9 +41,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS grea
 └─────────────────────┘
 ```
 
-<div id="geodistance">
-  ## geoDistance
-</div>
+## geoDistance {#geodistance}
 
 Semblable à `greatCircleDistance`, mais calcule la distance sur l’ellipsoïde WGS-84 plutôt que sur la sphère. Il s’agit d’une approximation plus précise du géoïde terrestre.
 Les performances sont les mêmes que pour `greatCircleDistance` (sans perte de performances). Il est recommandé d’utiliser `geoDistance` pour calculer les distances à la surface de la Terre.
@@ -83,9 +79,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 └─────────────┘
 ```
 
-<div id="greatcircleangle">
-  ## greatCircleAngle
-</div>
+## greatCircleAngle {#greatcircleangle}
 
 Calcule l’angle au centre entre deux points situés à la surface de la Terre à l’aide de [la formule du grand cercle](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -116,9 +110,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-<div id="geotoutm">
-  ## geoToUTM
-</div>
+## geoToUTM {#geotoutm}
 
 Convertit des coordonnées géographiques WGS84 `(longitude, latitude)` en coordonnées [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
 
@@ -150,9 +142,7 @@ SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
 (448251.5978370684,5411935.125629659,31,'U')
 ```
 
-<div id="utmtogeo">
-  ## UTMToGeo
-</div>
+## UTMToGeo {#utmtogeo}
 
 Convertit les coordonnées [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) en coordonnées géographiques WGS84 `(longitude, latitude)`. Il s’agit de l’opération inverse de [`geoToUTM`](#geotoutm).
 
@@ -181,9 +171,7 @@ SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
 (2.2944970289079203,48.85822204127082)
 ```
 
-<div id="geotomgrs">
-  ## geoToMGRS
-</div>
+## geoToMGRS {#geotomgrs}
 
 Convertit des coordonnées géographiques WGS84 `(longitude, latitude)` en chaîne [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System).
 
@@ -215,9 +203,7 @@ SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3)
 └─────────────────┴─────────────┘
 ```
 
-<div id="mgrstogeo">
-  ## MGRSToGeo
-</div>
+## MGRSToGeo {#mgrstogeo}
 
 Décode une chaîne [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) en coordonnées géographiques WGS84 `(longitude, latitude)`. Il s’agit de l’inverse de [`geoToMGRS`](#geotomgrs).
 
@@ -245,9 +231,7 @@ SELECT MGRSToGeo('31UDQ4825111935') AS coord;
 (2.294495618908297,48.85822536113692)
 ```
 
-<div id="pointinellipses">
-  ## pointInEllipses
-</div>
+## pointInEllipses {#pointinellipses}
 
 Vérifie si le point appartient à au moins une des ellipses.
 Les coordonnées sont géométriques dans le système de coordonnées cartésien.
@@ -280,9 +264,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-<div id="pointinpolygon">
-  ## pointInPolygon
-</div>
+## pointInPolygon {#pointinpolygon}
 
 Vérifie si le point appartient au polygone dans le plan.
 
@@ -317,7 +299,7 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
-Le polygone peut également être fourni à l’aide des types de données géométriques nommés, y compris en tant que colonne de table :
+Le polygone peut également être fourni à l’aide des types de données géométriques nommés, y compris en tant que colonne de table :
 
 ```sql
 CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
@@ -334,4 +316,5 @@ SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
 > **Remarque**
 > • Vous pouvez définir `validate_polygons = 0` pour contourner la validation de la géométrie.
 > • `pointInPolygon` suppose que chaque polygone est bien formé. Si l’entrée se recoupe, comporte des anneaux mal ordonnés ou des arêtes qui se chevauchent, les résultats deviennent peu fiables, en particulier pour les points situés exactement sur une arête, un sommet ou à l’intérieur d’une auto-intersection, où la notion de &quot;à l’intérieur&quot; ou &quot;à l’extérieur&quot; n’est pas définie.
+> • Les coordonnées du polygone ne doivent pas dépasser `1e150` en valeur absolue ; la fonction lève une exception si elle doit effectuer un calcul avec une valeur supérieure.
 > • Lorsque l’argument polygone est constant et que le point est exprimé à l’aide de colonnes de clé indexées (par exemple, `pointInPolygon((x, y), constant_polygon)` sur une table où `x, y` font partie de la `PRIMARY KEY` ou sont couverts par un index `minmax`), ClickHouse peut utiliser à la fois la clé primaire et les index de data-skipping `minmax` pour écarter les granules non pertinentes.

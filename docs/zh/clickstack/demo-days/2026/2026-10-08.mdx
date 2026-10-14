@@ -1,0 +1,110 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-08
+title: '演示日 - 2026-10-08'
+sidebarTitle: '2026-10-08'
+description: 'ClickStack 演示日（2026-10-08）'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## 热力图数据系列模式、PromQL 热力图与显式粒度 {#heatmap-series-mode-promql-heatmaps-and-explicit-granularity}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，热力图只能展示数值分布：y 轴是分桶后的值 (例如 span 时长) ，颜色表示每个桶中的事件数量。现在我们新增了数据系列模式：y 轴显示 group-by 的值，颜色则表示每个时间桶中所选聚合的结果。其效果与多数据系列折线图非常相似，只是改用颜色而非高度来表示数值。构建器和生成的查询均沿用时间图表的实现方式。
+
+在演示中，我们按服务名称对过去一天的数据进行分组。在错误计数热力图中，演示环境里预设的故障一目了然，可以清楚看到两个明显升高的单元；而旁边使用非错误类聚合的同一图表则几乎没有起伏。如果 group-by 返回的数据系列超过 50 个，系统会显示警告并只绘制前 50 个，其客户端限制逻辑与时间图表相同。数据系列模式同样可以通过外部仪表盘 API 和 MCP 使用。
+
+对于 PromQL source，热力图提供三种模式。数据系列模式的工作方式同上，使用范围查询，并支持宏、变量和图例模板。在演示中，我们用它来展示每个端点的 p95 延迟。
+
+直方图模式使用 Prometheus 已完成分桶的指标。桶的范围取自 `le` 标签，累积值会被转换为各个桶各自的值。可使用 `sum by (le) (...)` 合并桶范围相同的数据系列。
+
+分布模式适用于非直方图数据、但仍希望查看数值分布的场景。在每个时间戳上，返回的样本会在客户端进行分桶，桶可在图表设置中选择线性间隔或对数间隔。颜色表示每个桶中的样本数量。在演示中，我们使用 `sum by (system_cpu_logical_number) (system_cpu_utilization{system_cpu_state!="idle"})` 展示 14 个 CPU 核心的利用率随时间的变化。直方图模式和分布模式相关的 PR 目前尚未合并。
+
+我们还修复了粒度选择的问题。此前热力图会忽略显式选择的粒度，始终使用自动模式 (目标为 245 个时间桶) 。现在热力图会采用您所选的粒度，因此可以与仪表盘上其他图表的粒度保持一致。自动模式也会遵守指标 source 的最小粒度。
+
+计数和值表达式输入项已从显示设置移至图表编辑器，仪表盘和 Chart Explorer 中均已同步调整。此外，热力图现在也支持数值格式化。
+
+最后，悬停高亮现在会居中显示在单元上，不再向右下方偏移。它会选取范围落在光标边距内的最近单元，而不再要求单元中心必须位于边距内。当光标仍停留在图表上时，若数据刷新，悬停状态也会随之更新。
+
+**相关 PR：** [#3273](https://github.com/hyperdxio/hyperdx/pull/3273) 改进热力图悬停状态的对齐与可靠性，[#3277](https://github.com/hyperdxio/hyperdx/pull/3277) 将热力图输入项移至编辑器表单，[#3291](https://github.com/hyperdxio/hyperdx/pull/3291) 在构建器热力图中支持数据系列模式，[#3298](https://github.com/hyperdxio/hyperdx/pull/3298) 在 API 和 MCP 中支持数据系列模式热力图，[#3305](https://github.com/hyperdxio/hyperdx/pull/3305) 热力图遵循显式粒度，[#3313](https://github.com/hyperdxio/hyperdx/pull/3313) 支持 PromQL 热力图 (数据系列模式) ，[#3326](https://github.com/hyperdxio/hyperdx/pull/3326) 新增基于 PromQL 值计算的分布热力图 (未合并) ，[#3332](https://github.com/hyperdxio/hyperdx/pull/3332) 支持基于 Prometheus 直方图的热力图 (未合并)
+
+## 单选仪表盘变量 {#single-select-dashboard-variables}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=208" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，所有仪表盘变量均为多选。现在可以将变量配置为单选，选择其他值时会替换当前值。如果 URL 中包含单选变量的多个值，则取第一个值。
+
+这一功能对 PromQL 尤其有用。多选变量会展开为正则表达式的“或”分支 (alternation) ，这种形式可用于 `=~`，但不能用于 `=`，因此此前无法很好地将变量与相等匹配器搭配使用。
+
+我们还新增了 `promql` 变量格式。在 PromQL 表达式中引用变量且未指定格式时，它将取代 `regex` 成为默认格式。其行为与 `regex` 相同，唯一区别是单选值不会进行正则转义。因此，单选变量可以直接使用 `field="$var"`。多选值仍会进行正则转义，应使用 `field=~"$var"`。
+
+**相关 PR：** [#3295](https://github.com/hyperdxio/hyperdx/pull/3295) 支持单选仪表盘筛选条件，[#3297](https://github.com/hyperdxio/hyperdx/pull/3297) 新增 promql 变量格式以实现灵活转义
+
+## 堆叠折线图 {#stacked-line-charts}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=271" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+继 `stacked_bar` 之后，我们又新增了 `stacked_line` 时间序列图表类型。您可以在 Chart Explorer 或仪表盘中将折线图切换为堆叠折线图。该类型会将各数据系列逐层叠加，并填充每个数据系列下方的面积，让您既能看到总量，也能看出每个数据系列的占比。
+
+在命令行客户端中，这类图表会渲染为堆叠条形图。两种呈现方式所传达的信息大体相同，而在终端中，用条形图展示堆叠和填充效果更加直观易读。
+
+**相关 PR：** [#3290](https://github.com/hyperdxio/hyperdx/pull/3290) 支持堆叠折线图
+
+## 将 ClickHouse 查询归因到发起它们的界面 {#attributing-clickhouse-queries-to-the-surface-that-issued-them}
+
+*演示者：[@tommyzli](https://github.com/tommyzli)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=526" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+现在，ClickStack 发送到 ClickHouse 的每条 SQL 查询都会附带一个 JSON 格式的 `log_comment`，以及形如 `hdx-<surface>-<uuid>` 的 `query_id`。借此，您可以将 `system.query_log` 中的某一行追溯到发起该查询的仪表板面板、已保存的搜索、告警或 MCP 工具。后续的一项更新还为 PromQL 查询加上了同样的标记，此前这类查询在发出时并不带任何标记。
+
+在演示中，从搜索页面查询查询日志时，可以看到所有标记为来自搜索的查询，其中包括 `EXPLAIN` 查询以及直方图柱状图发出的查询。打开内置的 ClickHouse 仪表盘后，可以看到仪表盘查询带有 `clickhouse` 标签，用于标识该预构建仪表板。对于用户自建的仪表盘，每条查询都包含仪表盘 ID，以及发起该查询的图表所在面板的 ID。
+
+如果 ClickStack 与其他工作负载共用您的 ClickHouse 集群，此功能可以帮助您更轻松地识别 ClickStack 发出的查询、查看它们来自应用的哪个部分，并按界面统计查询成本。在内部，我们可以借此在分析用量时将查询日志与仪表盘配置关联起来。这也为实现自动查询优化迈出了一步，因为我们现在可以将慢查询与生成它的面板一一对应。
+
+**相关 PR：** [#3155](https://github.com/hyperdxio/hyperdx/pull/3155) 将 ClickHouse 查询归因到发起它们的界面，[#3300](https://github.com/hyperdxio/hyperdx/pull/3300) PromQL 查询归因
+
+## 用于命名对象的内联名称输入框 {#inline-name-inputs-for-naming-objects}
+
+*演示者 [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=296" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，应用中不同位置的命名方式各不相同。仪表盘和保存的搜索使用点击即可编辑的标题：悬停时显示铅笔图标，或双击进入编辑，然后点击 **Save Name** 按钮保存。其他位置则使用带边框的文本字段。由于缺少成文的统一模式，新页面往往各自实现一套。现在，我们提供了共享的 `InlineNameInput` 组件，作为命名对象的标准方式。
+
+未悬停时，它看起来就是一个普通标题；悬停时会显示浅色边框，点击即可原地编辑。按 `Enter` 或点击其他位置即保存，按 `Escape` 或将名称留空则撤销修改。界面上不再有铅笔图标，也没有单独的保存按钮。保存后显示已保存的值。如果重命名失败，或被并发的仪表盘保存操作覆盖，显示的名称也会随之恢复，而不会在屏幕上残留未保存的名称。
+
+过长的名称会被截断。该组件提供 `xs`、`sm` 和 `md` 三种尺寸。页面标题使用 `md`，字号为 18px，此前约为 22px。标题仍渲染在 heading 元素内，便于屏幕阅读器识别。
+
+仪表盘和保存的搜索页面现已采用该组件，旧的 `EditablePageName` 组件已移除。此外还提供了 `InlineNameInputControlled` 变体，它会随所在表单一同保存，适用于整页卡片编辑器中的草稿，但目前尚未在应用中使用。图表编辑器暂时保留现有的 **Chart Name** 字段，因为需要先调整布局，才能换用内联版本。
+
+该模式记录在 `agent_docs/naming_objects.md`、`naming-objects` agent 技能，以及 Storybook 的 Guidelines 和 Components 部分中。这样，在仓库中工作的编码 agent 在新增需要命名的位置时，就能轻松找到并复用该组件。
+
+**相关 PR：** [#3278](https://github.com/hyperdxio/hyperdx/pull/3278) Add InlineNameInput as the one way to name objects
+
+## 将保存的搜索嵌套到“搜索”下 {#nesting-saved-searches-under-search}
+
+*演示者 [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=389" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**这是一项探索性工作，并不承诺最终发布。**
+
+目前，保存的搜索有独立的列表页和侧边栏入口，与“搜索”彼此分开。用户在一个地方保存搜索，却要去另一个地方查找和管理。如果用户想从列表中为某个搜索创建副本，必须先打开它，再从中创建副本。独立列表对仪表盘来说合情合理，但用于保存的搜索就显得不太自然。
+
+此草案将保存的搜索整合进“搜索”。顶层的 **保存的搜索** 侧边栏入口将被移除，收藏的搜索会像仪表盘那样显示在“搜索”下。点击工具栏中的 **保存的搜索** 按钮会在右侧打开一个抽屉面板，其中包含搜索框、**All** 和 **Favorites** 选项卡、标签筛选，每一行还提供重命名、创建副本和删除操作。抽屉面板从右侧打开，因此不会遮挡应用导航。现有的 `/search/list` 链接同样会打开该抽屉面板。
+
+选中某个保存的搜索后，按钮上会显示其名称。旁边的徽章会显示 **Unsaved**、**Saved** 或 **Edited**，运行修改后的查询后即显示 **Edited**。比较依据的是 URL 中的搜索 config，并将空值和缺失值视为等价，因此仅加载保存的搜索不会被标记为已编辑。
+
+原先独立的保存的搜索标题栏已被移除，包括面包屑导航、标题以及创建/更新时间行。收藏、标签、Terraform 和操作菜单移至工具栏，创建/更新详情则改为按钮上的工具提示。这样，已保存和未保存的搜索布局就能保持一致。双击标题重命名的功能随标题栏一并取消，但仍可通过抽屉面板中的行菜单或 **Update** 弹窗进行重命名。更新是否需要弹窗仍有待讨论。理想情况下，更新应当只是一个单独的操作，而不必附带重命名。
+
+该功能仍处于草案阶段，欢迎大家就其行为提出反馈。抽屉面板测试套件中仍有四个端到端测试未通过，需要修复后才能结束草案状态。
+
+**相关 PR：** [#3213](https://github.com/hyperdxio/hyperdx/pull/3213) 将保存的搜索以抽屉面板形式嵌套到“搜索”下 (未合并) 。 (草案) 。这是一项探索，而非已发布的功能。

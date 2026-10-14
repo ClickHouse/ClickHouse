@@ -922,6 +922,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المرات التي لا تكون فيها البيانات بعد التعديل متطابقة على مستوى البايت مع البيانات الموجودة على النسخ المتماثلة الأخرى. بالإضافة إلى الأسباب الموضحة في &#39;DataAfterMergeDiffersFromReplica&#39;، قد يحدث هذا أيضًا بسبب تعديل غير حتمي.
 
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+عدد الجداول التي قدّمتها قاعدة البيانات عبر مُكرِّر الجداول الخاص بها، سواء إلى `SHOW TABLES` أو إلى جداول النظام التي تستعرض الجداول أو إلى أي شيء آخر يتنقّل بين محتويات قاعدة البيانات. ويؤدي وضع شرط على اسم الجدول في استعلام على جدول نظام كهذا إلى تضييق نطاق الترقيم، ويُبيّن هذا العداد مقدار هذا التضييق.
+
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
 عدد الصفوف التي عالجتها آلية التنفيذ الافتراضية للقيم nulls أثناء تنفيذ الدالة
@@ -1982,6 +1986,26 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 كمية البيانات (غير المضغوطة، قبل تطبيق الضغط) التي تكتبها المعالجة الخارجية (الفرز/التجميع/الربط)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+عدد البايتات المضغوطة المكتوبة لمجموعات `IN` في الذاكرة الخارجية.
+
+### ExternalSetMerge {#externalsetmerge}
+
+عدد مرات دمج الملفات المؤقتة الخاصة بمجموعة `IN` في الذاكرة الخارجية.
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+عدد الكتل المقروءة من الملفات المؤقتة لمجموعات `IN` المخزّنة في الذاكرة الخارجية، وذلك للبحث عن المفاتيح.
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+حجم البيانات (غير المضغوطة، أي قبل الضغط) المكتوبة لمجموعات `IN` في الذاكرة الخارجية.
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+عدد المرات التي كُتب فيها ملف مؤقت على القرص لمجموعة `IN` عند استخدام الذاكرة الخارجية.
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 عدد البايتات المضغوطة التي كُتبت لعمليات الفرز في الذاكرة الخارجية.
@@ -2630,6 +2654,14 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد الصفوف التي يُخرجها DelayedJoinedBlocksWorkerTransform.
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+عدد المرات التي فحص فيها الربط بالتجزئة من نوع RIGHT أو FULL جدول التجزئة الخاص به بحثًا عن الصفوف غير المنضمّة.
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+عدد المرات التي تخطّى فيها الربط بالتجزئة من النوع RIGHT أو FULL فحص جدول التجزئة الخاص به بحثًا عن الصفوف غير المنضمّة، وذلك لأن جميع مفاتيح الجانب الأيمن في جزء البيانات الذي جرى فحصه قد تطابقت.
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 عدد الكتل الناتجة عن NonJoinedBlocksTransform.
@@ -3253,6 +3285,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### LoadedPrimaryIndexRows {#loadedprimaryindexrows}
 
 عدد صفوف المفتاح الأساسي المُحمَّلة.
+
+### LoadedStatistics {#loadedstatistics}
+
+عدد أجزاء البيانات التي حُمِّلت إحصاءات أعمدتها
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -4202,6 +4238,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 إجمالي عدد مجموعات الصفوف التي تم استبعادها من بيانات Parquet
 
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+عدد ملفات Parquet التي حُسبت قيم `min` / `max` الخاصة بها من إحصاءات مقاطع الأعمدة بدلًا من قراءة البيانات (راجع `optimize_min_max_from_files`)
+
 ### ParquetReadPages {#parquetreadpages}
 
 إجمالي عدد صفحات بيانات Parquet التي تمت قراءتها
@@ -4578,6 +4618,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد الاستثناءات عند القراءة من Azure
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+عدد البايتات المقروءة من واصفات الملفات باستخدام `pread` المتزامن، والتي تبيّن أنها قُدِّمت من ذاكرة التخزين المؤقت لصفحات نظام التشغيل (لا يتم ذلك إلا في عمليات القراءة التي تستخدم مُقيِّد المعدّل لعرض النطاق الترددي).
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 عدد عمليات القراءة (`read`/`pread`) من واصف ملف. ولا يشمل ذلك مقابس الشبكة.
@@ -4601,6 +4645,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 الوقت المستغرق للقراءة من S3.
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+عدد الطلبات الصادرة من أقراص S3 التي جرى اقتطاعها لتقتصر على عملية ملء واحدة للذاكرة المؤقتة، وذلك لأن مجموعة الاتصالات الخاصة بهذه الأقراص بلغت قيمة `disk_connections_soft_limit` أو تجاوزتها.
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4942,6 +4990,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد الحبيبات التي تم استبعادها عند القراءة بواسطة مرشح وقت التشغيل الخاص بـ JOIN
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+عدد عمليات القراءة المُهيَّأة لاستبعاد حبيبات البيانات باستخدام مرشّح JOIN أثناء التنفيذ في وقت القراءة. يُحتسب هذا العدد عندما تصل عملية القراءة إلى مسار تنفيذ الاستعلام الخاص بها حاملةً الواصفات، ويتوفر لها مفتاح أساسي أو فهرس تخطٍّ تستبعد به الحبيبات، سواء فُحِصت أي حبيبة لاحقًا أم لا. ولذلك يدل هذا العدد على أن الواصفات صمدت أمام جميع عمليات إعادة البناء التي خضعت لها خطوة القراءة.
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 عدد الكتل التي جرى البحث عنها في مرشح وقت التشغيل الخاص بـ JOIN لم يكتمل جانب البناء الخاص به بعد، فتمرّ دون تصفية
@@ -5253,6 +5305,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 عدد مجموعات `IN`/`JOIN` التي جرى ملؤها بتنفيذ الاستعلام الفرعي الخاص بها. أما المجموعة المأخوذة من ذاكرة التخزين المؤقت للمجموعات المُعدّة مسبقًا، أو التي سبق بناؤها وأُعيد استخدامها، فلا تُحتسب.
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+عدد مجموعات `IN` التي رُحِّلت إلى القرص أثناء بنائها من الاستعلام الفرعي الخاص بها.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6250,6 +6306,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد مصافحات TLS المكتملة للاتصالات الواردة إلى الخادم، عبر بروتوكولات الخادم التي تستخدم تنفيذ Poco لبروتوكول TLS: البروتوكول الأصلي عبر TCP وHTTPS وMySQL وPostgreSQL. يستخدم gRPC مكدس TLS خاصًا به، ولذلك لا تُحتسب مصافحاته ضمن هذا العدد. ويتضمن استئناف الجلسة إجراء مصافحة أيضًا، لذا تُحتسب مصافحاته هنا.
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+عدد حبيبات البيانات التي تم تجاهلها أثناء القراءة لأن الفهرس الأساسي يُظهر أن جميع صفوفها تقع خارج عتبة top-K الجارية، والتي ينشرها التجميع (راجع `enable_group_by_top_k_dynamic_filtering`) أو الفرز (راجع `use_top_k_dynamic_filtering`).
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 عدد المرات التي جرى فيها العثور على كتلة بيانات في ذاكرة التخزين المؤقت غير المضغوطة (وبذلك جرى تجنّب فك الضغط).
@@ -6421,6 +6481,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### الوقت الذي يقضيه WriteBufferFromS3 في انتظار الطلبات قيد التنفيذ، بالميكروثانية {#writebufferfroms3waitinflightlimitmicroseconds}
 
 الوقت المستغرَق في الانتظار حتى يكتمل بعض الطلبات الحالية عندما يصل عددها إلى الحد المحدد بواسطة `s3_max_inflight_parts_for_one_file`.
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+عدد طلبات البحث المُرسلة إلى YTsaurus التي خضعت لتحديد المعدل
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

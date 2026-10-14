@@ -452,12 +452,11 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   Если для текстового индекса настроено выражение [постпроцессор](/ru/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional), постпроцессор применяется к токенам `needle` и токенам `input` (то есть к обоим после токенизации).
 
 Повторяющиеся токены игнорируются.
-Например, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] обрабатывается так же, как [&#39;ClickHouse&#39;].
+Например, искомые шаблоны = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] обрабатывается так же, как [&#39;ClickHouse&#39;].
 
 <Note>
   Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasAllTokens` применяет его к `input` и, если `needles` имеет тип [String](/ru/reference/data-types/string), к `needles` перед токенизацией. Когда `needles` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы передаются как есть, и предобработчик к ним не применяется.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Эта несогласованность допускается для повышения удобства полнотекстового поиска.
+  Предобработчик является частью определения индекса, поэтому он применяется везде, где вычисляется функция: в фильтре `WHERE`/`PREWHERE`, в списке `SELECT` — и независимо от того, читается ли индекс (например, при `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 **Синтаксис**
@@ -476,7 +475,7 @@ hasAllTokens(input, needles[, tokenizer])
 
 **Возвращаемое значение**
 
-Возвращает 1, если все искомые элементы совпадают. 0 в противном случае. [`UInt8`](/ru/reference/data-types/int-uint)
+Возвращает 1, если все искомые шаблоны совпадают. 0 в противном случае. [`UInt8`](/ru/reference/data-types/int-uint)
 
 **Примеры**
 
@@ -698,8 +697,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   Если для текстового индекса определён [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasAnyTokens` применяет его к `input` и, если `needles` имеет тип [String](/ru/reference/data-types/string), к `needles` перед токенизацией. Если `needles` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы передаются как есть, и предобработчик к ним не применяется.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Такая несогласованность допускается для повышения удобства полнотекстового поиска.
+  Предобработчик является частью определения индекса, поэтому он применяется везде, где вычисляется функция: в фильтре `WHERE`/`PREWHERE`, в списке `SELECT` — и независимо от того, читается ли индекс (например, при `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 **Синтаксис**
@@ -746,7 +744,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Укажите в массиве искомые строки, которые будут искаться КАК ЕСТЬ (без токенизации)**
+**Укажите в массиве искомые шаблоны, которые нужно искать КАК ЕСТЬ (без токенизации)**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -770,7 +768,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**Сгенерируйте needle с помощью функции `tokens`**
+**Сгенерируйте искомые шаблоны с помощью функции `tokens`**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -923,8 +921,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasPhrase` применяет его к `input` и `phrase` перед токенизацией.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Эта несогласованность допускается для повышения удобства полнотекстового поиска.
+  Предобработчик является частью определения индекса, поэтому он применяется везде, где вычисляется функция: в фильтре `WHERE`/`PREWHERE`, в списке `SELECT`, — и независимо от того, читается ли индекс (например, `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 В отличие от [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) и [`hasAllTokens`](#hasAllTokens), `hasPhrase` требует, чтобы токены шли в том же порядке

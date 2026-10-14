@@ -922,6 +922,10 @@ Nombre de fois où les données après fusion ne sont pas identiques octet pour 
 
 Nombre de fois où les données après mutation ne sont pas identiques, octet pour octet, à celles des autres répliques. En plus des raisons décrites dans « DataAfterMergeDiffersFromReplica », cela peut également être dû à une mutation non déterministe.
 
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+Nombre de tables qu&#39;une base de données a fournies via son itérateur de tables, que ce soit à `SHOW TABLES`, aux tables système qui listent les tables ou à tout autre élément qui parcourt une base de données. Une condition sur le nom de table dans une requête portant sur une telle table système restreint l&#39;énumération, et ce compteur permet d&#39;en mesurer l&#39;ampleur.
+
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
 Nombre de lignes traitées par l’implémentation par défaut des valeurs nulles lors de l’exécution de la fonction
@@ -1982,6 +1986,26 @@ Nombre de fichiers utilisés pour le traitement externe (tri/agrégation/jointur
 
 Quantité de données (non compressées, avant toute compression) écrites par le traitement externe (tri/agrégation/jointure)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+Nombre d&#39;octets compressés écrits pour les sets `IN` en mémoire externe.
+
+### ExternalSetMerge {#externalsetmerge}
+
+Nombre de fois où des fichiers temporaires ont été fusionnés pour un set `IN` en mémoire externe.
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+Nombre de blocs lus depuis les fichiers temporaires des sets `IN` en mémoire externe pour rechercher des clés.
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+Volume de données (non compressées, avant compression) écrites en mémoire externe pour les sets `IN`.
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+Nombre de fois où un fichier temporaire a été écrit sur disque pour un set `IN` en mémoire externe.
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 Nombre d’octets compressés écrits lors du tri en mémoire externe.
@@ -2630,6 +2654,14 @@ Nombre de blocs produits par DelayedJoinedBlocksWorkerTransform.
 
 Nombre de lignes émises par DelayedJoinedBlocksWorkerTransform.
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+Nombre de fois où une jointure de hachage RIGHT ou FULL a parcouru sa table de hachage à la recherche de lignes non appariées.
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+Nombre de fois où une jointure de hachage RIGHT ou FULL n&#39;a pas parcouru sa table de hachage à la recherche de lignes non appariées, car chaque clé de droite de la partie de données parcourue avait trouvé une correspondance.
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 Nombre de blocs générés par NonJoinedBlocksTransform.
@@ -3253,6 +3285,10 @@ Nombre de fichiers d’index primaire chargés.
 ### LoadedPrimaryIndexRows {#loadedprimaryindexrows}
 
 Nombre de lignes de la clé primaire chargées.
+
+### LoadedStatistics {#loadedstatistics}
+
+Nombre de parts pour lesquelles les statistiques de colonne ont été chargées
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -4202,6 +4238,10 @@ Le nombre total de pages élaguées des données Parquet grâce à l&#39;index d
 
 Le nombre total de groupes de lignes écartés dans les données Parquet
 
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+Nombre de fichiers Parquet dont les valeurs `min` / `max` ont été calculées à partir des statistiques des fragments de colonnes, sans lire les données (voir `optimize_min_max_from_files`)
+
 ### ParquetReadPages {#parquetreadpages}
 
 Le nombre total de pages de données Parquet lues
@@ -4578,6 +4618,10 @@ Temps consacré à la lecture depuis Azure.
 
 Nombre d’exceptions lors de la lecture à partir d’Azure
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+Nombre d’octets lus depuis des descripteurs de fichiers via l’appel synchrone `pread` et dont la lecture a été identifiée comme servie par le cache de pages du système d’exploitation (cette détection n’est effectuée que pour les lectures soumises à un throttler de débit).
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 Nombre d’opérations de lecture (read/pread) à partir d’un descripteur de fichier. N’inclut pas les sockets.
@@ -4601,6 +4645,10 @@ Temps consacré à l&#39;initialisation de la connexion à S3.
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 Temps consacré à la lecture depuis S3.
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+Nombre de requêtes issues de disques S3 tronquées à un seul remplissage de tampon, car le groupe de connexions des disques avait atteint ou dépassé `disk_connections_soft_limit`.
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4942,6 +4990,10 @@ Nombre de granules examinés pour le pruning à la lecture par les JOIN Runtime 
 
 Nombre de granules éliminés au moment de la lecture par les JOIN Runtime Filters
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+Nombre de lectures configurées pour élaguer des granules à l’aide d’un filtre d&#39;exécution JOIN au moment de la lecture. Ce compteur est incrémenté lorsque la lecture atteint son pipeline avec les descripteurs et dispose d’une clé primaire ou d’un index de saut permettant d’élaguer ces granules, qu’un granule soit ensuite examiné ou non. Il indique donc que les descripteurs ont été conservés à chaque reconstruction de l’étape de lecture.
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 Nombre de blocs ayant fait l&#39;objet d&#39;une recherche dans un JOIN Runtime Filter dont le côté construction n&#39;était pas encore terminé, et qui sont donc transmis sans filtrage
@@ -5253,6 +5305,10 @@ Temps écoulé entre le démarrage du serveur et la mise en écoute des sockets,
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 Nombre de sets `IN`/`JOIN` remplis par l&#39;exécution de leur sous-requête. Un set provenant du cache des sets préparés, ou déjà construit puis réutilisé, n&#39;est pas comptabilisé.
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+Nombre de sets `IN` déversés sur le disque lors de leur construction à partir de leur sous-requête.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6250,6 +6306,10 @@ Temps total consacré aux négociations TLS pour les connexions entrantes (côt�
 
 Nombre de négociations TLS effectuées pour les connexions entrantes (côté serveur), sur l&#39;ensemble des protocoles serveur reposant sur l&#39;implémentation TLS de Poco : TCP natif, HTTPS, MySQL et PostgreSQL. gRPC embarque sa propre pile TLS et n&#39;est donc pas comptabilisé. Une reprise de session donne tout de même lieu à une négociation, qui est comptabilisée ici.
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+Nombre de granules ignorés lors de la lecture, car l&#39;index primaire indique que toutes leurs lignes se situent au-delà du seuil top-K courant publié par l&#39;agrégation (voir `enable_group_by_top_k_dynamic_filtering`) ou par le tri (voir `use_top_k_dynamic_filtering`).
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 Nombre de fois où un bloc de données a été trouvé dans le cache décompressé, évitant ainsi la décompression.
@@ -6421,6 +6481,10 @@ Nombre d’exceptions lors de l’écriture sur S3.
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 Temps passé à attendre que certaines requêtes en cours se terminent lorsque leur nombre atteint la limite définie par s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file.
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+Nombre de requêtes de lookup vers YTsaurus ayant été bridées
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

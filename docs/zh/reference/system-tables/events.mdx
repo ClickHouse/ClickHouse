@@ -921,6 +921,10 @@ Context 锁等待时长 (微秒)
 
 变更后数据与其他副本上的数据在字节级别不一致的次数。除了“DataAfterMergeDiffersFromReplica”中所述的原因外，也可能是由非确定性变更导致的。
 
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+数据库通过其表迭代器返回的表数量，返回对象包括 `SHOW TABLES`、用于列出表的系统表，以及其他所有遍历数据库的操作。在查询此类系统表时，对表名添加条件可以缩小枚举范围，此计数器即反映了范围缩小的程度。
+
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
 函数执行时，由用于处理 NULL 的默认实现处理的行数
@@ -1981,6 +1985,26 @@ JOIN 使用外部内存时将临时 File 写入磁盘的次数。
 
 外部处理 (排序/聚合/连接) 写入的未压缩数据量 (压缩前)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+为 `IN` 集合写入外部内存的压缩后字节数。
+
+### ExternalSetMerge {#externalsetmerge}
+
+在外部内存中为 `IN` 集合合并临时 File 的次数。
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+为查找键，从外部内存中 `IN` 集合的临时 File读取的块数。
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+为 `IN` 集合写入外部内存的数据量 (未压缩，即压缩前的大小) 。
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+在外部内存中处理 `IN` 集合时，临时 File 被写入磁盘的次数。
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 在外部内存中排序时写入的压缩字节数。
@@ -2629,6 +2653,14 @@ DelayedJoinedBlocksWorkerTransform 输出的块数。
 
 DelayedJoinedBlocksWorkerTransform 输出的行数。
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+RIGHT 或 FULL 哈希连接为查找未匹配行而扫描其哈希表的次数。
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+RIGHT 或 FULL 哈希连接因已扫描 part 中的所有右侧键均已匹配，从而跳过扫描其哈希表以查找未匹配行的次数。
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 NonJoinedBlocksTransform 输出的块数。
@@ -3252,6 +3284,10 @@ MergeTree 表在初始化过程中加载数据分区片段所耗费的微秒数�
 ### LoadedPrimaryIndexRows {#loadedprimaryindexrows}
 
 已加载的主键行数。
+
+### LoadedStatistics {#loadedstatistics}
+
+已加载列统计信息的数据分区片段数量
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -4201,6 +4237,10 @@ DB::Parquet::Prefetcher 以 ReadMode::SeekAndRead 模式进行读取的总次数
 
 从 Parquet 数据中剪枝掉的行组总数
 
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+直接根据列块统计信息 (而非读取数据) 计算 `min` / `max` 的 Parquet 文件数量 (参见 `optimize_min_max_from_files`)
+
 ### ParquetReadPages {#parquetreadpages}
 
 读取的 Parquet 数据页总数
@@ -4577,6 +4617,10 @@ QueryProfiler 的运行次数。
 
 从 Azure 读取时发生的异常次数
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+通过同步 `pread` 从文件描述符读取、且经检测由 OS 页面缓存提供的字节数 (仅对配置了带宽限流器的读取执行此检测) 。
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 从文件描述符读取 (`read`/`pread`) 的次数。不包括套接字。
@@ -4600,6 +4644,10 @@ QueryProfiler 的运行次数。
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 从 S3 读取耗费的时间。
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+由于磁盘所属连接组的连接数已达到或超过 `disk_connections_soft_limit`，而被截断为仅执行一次缓冲区填充的 S3 磁盘请求数。
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4941,6 +4989,10 @@ JOIN 运行时过滤器为进行读取时裁剪而检查的粒度数
 
 读取时被 JOIN 运行时过滤器裁剪掉的粒度数量
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+已配置为在读取时利用 JOIN 运行时过滤器对粒度进行剪枝的读取次数。当某次读取携带描述符到达其管道，且存在可用于剪枝的主键或跳过索引时即计数，无论之后是否实际检查任何粒度。因此，该计数表明描述符在读取步骤的每次重建后均得以保留。
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 在 JOIN 运行时过滤器的构建端尚未完成时对其执行查找的块数量，这些块将不经过滤直接通过
@@ -5252,6 +5304,10 @@ SELECT 查询的总耗时。
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 通过运行子查询填充的 `IN`/`JOIN` Set 数量。从预构建 Set 缓存中获取的 Set，以及已构建并被复用的 Set，不计入此项。
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+基于子查询构建 `IN` 集合期间溢写到磁盘的集合数量。
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6249,6 +6305,10 @@ ThreadPoolReader 内部未从 页缓存 读取、而是转交给线程池处理�
 
 使用 Poco TLS 实现的服务器协议 (原生 TCP、HTTPS、MySQL 和 PostgreSQL) 中，传入连接 (服务器端连接) 完成 TLS 握手的次数。gRPC 使用独立的 TLS 技术栈，其握手不计入此项。会话恢复也会执行握手，因此计入此项。
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+读取过程中被跳过的粒度数量。跳过这些粒度的原因是：主索引表明其中所有行均超出了当前动态更新的 top-K 阈值。该阈值由聚合 (参见 `enable_group_by_top_k_dynamic_filtering`) 或排序 (参见 `use_top_k_dynamic_filtering`) 发布。
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 在未压缩缓存中命中数据块的次数 (从而避免了解压) 。
@@ -6420,6 +6480,10 @@ WriteBufferFromHTTP 发送的 HTTP 请求数
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 当当前请求数达到 s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file 定义的上限时，等待其中部分请求完成所花费的时间。
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+发往 YTsaurus 的查找请求中被限流的数量
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

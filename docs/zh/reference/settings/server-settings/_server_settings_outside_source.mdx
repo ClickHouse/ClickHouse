@@ -1192,8 +1192,8 @@ DDL 查询只会等待同一组中的副本。
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(finish_date)
-        order by (finish_date, finish_time_us, trace_id)
+        partition by toYYYYMM(event_date)
+        order by (event_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1223,7 +1223,7 @@ SSL 支持由 `libpoco` 库提供。可用的配置选项请参见 [SSLManager.h
 | `cipherList`                  | OpenSSL 支持的加密套件。                                                                                                                                                                                                                                                                                                                                                           | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
 | `cipherSuites`                | 支持的 TLS 1.3 密码套件，采用 OpenSSL 表示法。值为空时，沿用 OpenSSL 的默认套件。`cipherList` 仅适用于 TLS 1.2 及更低版本。OpenSSL 无法识别的套件名称会被忽略；如果配置的值中没有任何可识别的套件，则会报错，并导致 TLS 上下文初始化失败。                                                                                                                                                                                                                       |                                                                                            |
 | `disableProtocols`            | 禁止使用的协议。                                                                                                                                                                                                                                                                                                                                                                   |                                                                                            |
-| `extendedVerification`        | 启用后，验证证书的 CN 或 SAN 是否与对端主机名匹配。                                                                                                                                                                                                                                                                                                                                             | `openSSL.client` 为 `true`，`openSSL.server` 为 `false`                                       |
+| `extendedVerification`        | 启用后，验证证书的 CN 或 SAN 是否与对端主机名匹配。                                                                                                                                                                                                                                                                                                                                             | `false`                                                                                    |
 | `fips`                        | 启用 OpenSSL FIPS 模式。如果该库使用的 OpenSSL 版本支持 FIPS，则支持此功能。                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
 | `invalidCertificateHandler`   | 用于处理无效证书验证的类 (CertificateHandler 的子类) 。例如：`<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>`。                                                                                                                                                                                                                                | `RejectCertificateHandler`                                                                 |
 | `loadDefaultCAFile`           | 是否使用 OpenSSL 的内置 CA 证书。ClickHouse 假定内置 CA 证书位于文件 `/etc/ssl/cert.pem` (对应的目录为 `/etc/ssl/certs`) ，或位于环境变量 `SSL_CERT_FILE` (对应的目录变量为 `SSL_CERT_DIR`) 指定的文件 (或目录) 中。                                                                                                                                                                                                           | `true`                                                                                     |
@@ -1801,6 +1801,7 @@ curl 127.0.0.1:9363/metrics
 * 适用于端点由多方共享的场景，例如路径风格的 AWS endpoint `s3.us-west-2.amazonaws.com`：此时若放行整个主机，该主机上的所有桶都会被放行。
 * 桶名取自解析后的 S3 URL，因此该条目可同时匹配 `https://s3.us-west-2.amazonaws.com/my-bucket/...` 和 `https://my-bucket.s3.us-west-2.amazonaws.com/...`。
 * 仅适用于 S3 URL：`s3` 表函数和引擎、`S3` 数据库引擎、到 `S3` 的 `BACKUP`/`RESTORE`，以及在 SQL 中通过 `disk` 函数创建的 S3 磁盘。
+* 在 SQL 中创建的 S3 磁盘会在执行创建它的查询时接受检查。对于在设置该列表之前就已存在的磁盘，或由不含此检查的版本创建的磁盘，服务端启动时仍会照常加载 (包括已删除但尚未被彻底清除的表) ，因此 `UNDROP TABLE` 依然可用；服务端会在日志和 `system.warnings` 中报告此类磁盘。
 * S3 返回的永久重定向 (301) 同样会依据桶条目进行检查，但临时重定向 (307) 仅按主机检查，因此当列表中只包含 `\<s3_bucket\>` 条目时，此类重定向会被拒绝。
 
 例如：
@@ -1934,10 +1935,11 @@ curl 127.0.0.1:9363/metrics
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `enable_read_write_grants`                      | 启用针对外部数据源 (如 `S3`、`HDFS`、`Kafka` 等) 的 `READ` 和 `WRITE` 特权分离。自 25.7 版本起可用。设为 `true` 时，可以为数据源分别授予 `READ` 和 `WRITE`，而不是使用同时涵盖两者的单一授权。                                                                                                                                      | `false` |
 | `on_cluster_queries_require_cluster_grant`      | 设置 `ON CLUSTER` 查询是否需要 `CLUSTER` 授权。                                                                                                                                                                                                                                    | `true`  |
+| `readonly_restricts_set_role`                   | 设置当会话或查询处于 readonly 状态时，是否拒绝执行 `SET ROLE` 语句。设为 `false` 时，`readonly` 不会限制 `SET ROLE`。`role` HTTP 查询参数不受影响。                                                                                                                                                              | `false` |
 | `role_cache_expiration_time_seconds`            | 设置角色自上次访问后在角色缓存中保留的秒数。                                                                                                                                                                                                                                                  | `600`   |
 | `select_from_information_schema_requires_grant` | 设置 `SELECT * FROM information_schema.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON information_schema.<table>`，与普通表相同。                                                                                                                                   | `true`  |
-| `select_from_system_db_requires_grant`          | 设置 `SELECT * FROM system.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON system.<table>`，与非系统表相同。例外情况：少数系统表 (`tables`、`columns`、`databases`，以及一些常量表，如 `one`、`contributors`) 仍对所有人开放；此外，如果已授予 `SHOW` 权限 (例如 `SHOW USERS`) ，则对应的系统表 (即 `system.users`) 也可访问。 | `true`  |
-| `settings_constraints_replace_previous`         | 设置 settings profile 中某个设置的约束，是否会覆盖该设置之前的约束 (定义于其他 profile 中) 的作用，包括新约束未设置的字段。它还会启用 `changeable_in_readonly` 约束类型。                                                                                                                                                       | `true`  |
+| `select_from_system_db_requires_grant`          | 设置 `SELECT * FROM system.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON system.<table>`，与非系统表相同。例外情况：少数系统表 (`tables`、`columns`、`databases`，以及一些常量表，如 `one`、`contributors`) 仍对所有人开放；此外，如果已授予 `SHOW` 特权 (例如 `SHOW USERS`) ，则对应的系统表 (即 `system.users`) 也可访问。 | `true`  |
+| `settings_constraints_replace_previous`         | 设置设置配置文件中某个设置的约束，是否会覆盖该设置之前的约束 (定义于其他配置文件中) 的作用，包括新约束未设置的字段。它还会启用 `changeable_in_readonly` 约束类型。                                                                                                                                                       | `true`  |
 | `table_engines_require_grant`                   | 设置使用特定表引擎创建表时是否需要授权。ClickHouse Cloud 不支持此功能。                                                                                                                                                                                                                            | `false` |
 | `throw_on_unmatched_row_policies`               | 设置当表存在行策略，但当前用户没有任何匹配的行策略时，从该表读取是否应抛出异常。                                                                                                                                                                                                                                | `false` |
 | `users_without_row_policies_can_read_rows`      | 设置没有允许型行策略的用户是否仍可通过 `SELECT` 查询读取行。例如，如果有两个用户 A 和 B，且仅为 A 定义了行策略，那么当此设置为 true 时，用户 B 将看到所有行；当此设置为 false 时，用户 B 将看不到任何行。                                                                                                                                                 | `true`  |
@@ -1953,6 +1955,7 @@ curl 127.0.0.1:9363/metrics
     <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
+    <readonly_restricts_set_role>false</readonly_restricts_set_role>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>

@@ -153,6 +153,8 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 索引分析仅在副本协调器上执行，其他副本则跳过。仅在启用 parallel&#95;replicas&#95;local&#95;plan 时生效
 
+此设置所涉及的索引分析，是指用于选出读取操作所声明的标记范围的那部分索引分析，协调器正是基于这些标记范围进行分配的。它不涵盖读取数据过程中发生的裁剪，例如 `enable_join_runtime_filters_index_analysis` 的粒度剪枝：JOIN 运行时过滤器要等构建侧读取完成后才会生成，因此每个副本都需自行评估各自的过滤器，并对自己负责的那部分数据进行剪枝，协调器无法代劳。
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

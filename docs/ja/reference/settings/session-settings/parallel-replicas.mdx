@@ -153,6 +153,8 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 索引解析は replica-coordinator でのみ実行され、他のレプリカではスキップされます。parallel&#95;replicas&#95;local&#95;plan が有効な場合にのみ適用されます
 
+この設定の対象となるのは、読み取り時に通知されるマーク範囲を選択する索引解析です。コーディネーターはこのマーク範囲をもとに割り当てを行います。`enable_join_runtime_filters_index_analysis` によるグラニュールの枝刈りのように、データの読み取り中に行われる枝刈りは対象外です。JOINランタイムフィルタはビルド側の読み取りが完了して初めて生成されるため、各レプリカが自身のフィルタを評価し、自身の担当分を除外します。これをコーディネーターが代行することはできません。
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

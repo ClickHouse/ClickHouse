@@ -13,9 +13,7 @@ doc_type: 'reference'
 
 我们建议将该引擎与 `MergeTree` 搭配使用。将完整数据存储在 `MergeTree` 表中，并使用 `SummingMergeTree` 存储聚合数据，例如在生成报表时。这样可以避免因主键设计不当而丢失宝贵数据。
 
-<div id="creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,22 +30,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 有关请求参数的说明，请参见[请求描述](/zh/reference/statements/create/table)。
 
-<div id="parameters-of-summingmergetree">
-  ### SummingMergeTree 的参数
-</div>
+### SummingMergeTree 的参数 {#parameters-of-summingmergetree}
 
-<div id="columns">
-  #### 列
-</div>
+#### 列 {#columns}
 
 `columns` - 一个元组，包含需要求和值的列名。可选参数。
 这些列必须是数值类型，且不能位于分区或排序键中。
 
 如果未指定 `columns`，ClickHouse 会对所有不在排序键中且具有数值数据类型的列的值求和。
 
-<div id="query-clauses">
-  ### 查询子句
-</div>
+### 查询子句 {#query-clauses}
 
 创建 `SummingMergeTree` 表时，所需的[子句](/zh/reference/engines/table-engines/mergetree-family/mergetree)与创建 `MergeTree` 表时相同。
 
@@ -72,9 +64,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   * `columns` — 包含要进行求和的列名的元组。可选参数。有关说明，请参见上文。
 </details>
 
-<div id="usage-example">
-  ## 使用示例
-</div>
+## 使用示例 {#usage-example}
 
 考虑下面这张表：
 
@@ -107,35 +97,27 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-<div id="data-processing">
-  ## 数据处理
-</div>
+## 数据处理 {#data-processing}
 
 当数据插入表中时，会按原样保存。ClickHouse 会定期合并已插入的数据分区片段，而在此过程中，具有相同主键的行会被求和，并在每个生成的数据分区片段中合并为一行。
 
 ClickHouse 在合并数据分区片段时，不同的结果数据分区片段中仍可能包含具有相同主键的行，也就是说，求和可能并不完整。因此，应像上面的示例所示，在查询中使用聚合函数 [sum()](/zh/reference/functions/aggregate-functions/sum) 和 `GROUP BY` 子句。
 
-<div id="common-rules-for-summation">
-  ### 求和的通用规则
-</div>
+### 求和的通用规则 {#common-rules-for-summation}
 
-数值类型列中的值会被求和。列集合由参数 `columns` 定义。
+数值数据类型列中的值会被求和。列集合由参数 `columns` 定义。
 
-如果所有参与求和的列中的值都为 0，则删除该行。
+如果所有参与求和的列中的值都为 0，则在合并时删除该行。带有 [FINAL](/zh/reference/statements/select/from#final-modifier) 修饰符的查询会对行进行求和，但不会删除此类行，因此其返回的行集合与查询读取了哪些列无关。请注意，对于名称以 `Map` 结尾的[嵌套结构](#nested-structures)，只有当查询读取了该结构的所有列时，`FINAL` 才会按照与合并相同的方式对其进行合并。
 
 如果某列不在主键中且未参与求和，则会从现有值中任意选取一个值。
 
 主键中的列值不会被求和。
 
-<div id="the-summation-in-the-aggregatefunction-columns">
-  ### AggregateFunction 列中的求和
-</div>
+### AggregateFunction 列中的求和 {#the-summation-in-the-aggregatefunction-columns}
 
 对于 [AggregateFunction type](/zh/reference/data-types/aggregatefunction) 类型的列，ClickHouse 的行为类似于 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 引擎，会按该函数进行聚合。
 
-<div id="nested-structures">
-  ### 嵌套结构
-</div>
+### 嵌套结构 {#nested-structures}
 
 表可以包含以特殊方式处理的嵌套数据结构。
 
@@ -206,9 +188,7 @@ ARRAY JOIN
 
 对于嵌套数据结构，无需在用于求和的列元组中显式指定其列。
 
-<div id="tuple-element-aggregation">
-  ### Tuple 元素聚合
-</div>
+### Tuple 元素聚合 {#tuple-element-aggregation}
 
 启用 `allow_tuple_element_aggregation` 设置后，`Tuple` 列会被递归展平，因此每个叶子元素都会独立参与求和。这样，你就可以在单个 `Tuple` 列中存储多个指标，并在合并过程中按元素分别求和。
 
@@ -217,7 +197,7 @@ ARRAY JOIN
 * 只有数值型子列会被求和。
 * 属于排序键或分区键中的 `Tuple` 的子列不会参与求和。
 * 如果指定了 `columns`，则只会对所列 `Tuple` 列的子列求和。
-* 如果一行中所有数值型子列在求和后都为零，则该行会被删除。
+* 如果一行中所有数值型子列在求和后都为零，则该行会在合并过程中被删除 (但使用 `FINAL` 的查询不会删除该行) 。
 
 <Note>
   此设置不可变，必须在创建表时指定。
@@ -252,9 +232,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
 └─────┴─────────────────────┴────────────────┴────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[在 ClickHouse 中使用聚合组合器](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 

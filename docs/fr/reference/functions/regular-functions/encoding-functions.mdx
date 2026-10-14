@@ -404,6 +404,84 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+Introduit dans : v26.10.0
+
+Décode une string encodée en [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), conformément à la [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
+
+`=XX` (chiffres hexadécimaux, en majuscules ou en minuscules) est remplacé par l’octet qu’il encode.
+Un `=` suivi de `\r` ou de `\n` constitue un saut de ligne souple : il est supprimé avec le reste de la ligne, jusqu’au `\n` suivant inclus.
+Les autres séquences d’échappement mal formées (comme `=ZZ`, ou `=4` en fin de string) sont conservées telles quelles, à ceci près qu’un `=` isolé situé tout à la fin de la string est supprimé.
+Ce comportement correspond à celui de `quopri.decodestring` en Python.
+
+**Syntaxe**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**Arguments**
+
+* `s` — String encodée en Quoted-Printable. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie la string décodée. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+Introduit dans : v26.10.0
+
+Encode une string à l’aide de l’encodage [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), conformément à la [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7), tel qu’utilisé dans les e-mails.
+
+Les caractères ASCII imprimables, à l’exception de `=`, sont conservés tels quels ; les autres octets sont écrits sous la forme `=XX`, avec des chiffres hexadécimaux en majuscules.
+Un saut de ligne `\r\n` est conservé, tandis qu’un `\r` ou un `\n` isolé est encodé. Un espace ou une tabulation est encodé s’il se trouve en fin de ligne.
+Les lignes sont limitées à 76 caractères au maximum à l’aide de sauts de ligne souples (`=\r\n`).
+`decodeQuotedPrintable(encodeQuotedPrintable(s))` renvoie la string d’origine `s`, quelle que soit la valeur de `s`.
+
+**Syntaxe**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**Arguments**
+
+* `s` — String à encoder. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie la string encodée en Quoted-Printable. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 Introduit dans : v1.1.0

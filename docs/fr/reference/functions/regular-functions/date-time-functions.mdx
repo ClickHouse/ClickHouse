@@ -934,7 +934,7 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 
 ## age {#age}
 
-Introduit dans : v23.1.0
+Introduit dans : v23.1.0
 
 Renvoyer le composant d’unité de la différence entre `startdate` et `enddate`.
 La différence est calculée avec une précision de 1 nanoseconde.
@@ -969,7 +969,7 @@ age('unit', startdate, enddate[, timezone])
 | year        | `year`, `years`, `yyyy`, `yy`            |
 
 * `startdate` — Première valeur temporelle à soustraire (le terme soustrait). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
-* `enddate` — Deuxième valeur temporelle à partir de laquelle soustraire (le terme duquel on soustrait). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `enddate` — Deuxième valeur temporelle à partir de laquelle soustraire (le terme diminué). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `timezone` — Facultatif. Nom du fuseau horaire. S’il est spécifié, il s’applique à `startdate` et à `enddate`. S’il n’est pas spécifié, les fuseaux horaires de `startdate` et `enddate` sont utilisés. S’ils ne sont pas identiques, le résultat n’est pas défini. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -1207,7 +1207,7 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 
 ## dateDiff {#dateDiff}
 
-Introduit dans : v23.4.0
+Introduit dans : v23.4.0
 
 Renvoyer le nombre de limites de `unit` spécifié franchies entre `startdate` et `enddate`.
 La différence est calculée à l’aide d’unités relatives. Par exemple, la différence entre 2021-12-29 et 2022-01-01 est de 3 jours pour l’unité day
@@ -1225,7 +1225,7 @@ Pour une alternative à `dateDiff`, voir la fonction [`age`](#age).
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**Alias** : `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**Alias** : `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
 
 **Arguments**
 
@@ -1255,7 +1255,7 @@ Renvoie la différence entre `enddate` et `startdate`, exprimée en `unit`. [`In
 
 **Exemples**
 
-**Calculer la différence entre deux dates en heures**
+**Calculer la différence entre dates en heures**
 
 ```sql title=Query
 SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
@@ -1267,7 +1267,7 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 └─────┘
 ```
 
-**Calculer l’écart entre deux dates dans différentes unités**
+**Calculer la différence entre dates dans différentes unités**
 
 ```sql title=Query
 SELECT
@@ -5735,12 +5735,12 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## today {#today}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie la date du jour au moment de l’analyse de la requête. Équivalent à `toDate(now())`.
 
 <Note>
-  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -5749,7 +5749,7 @@ Renvoie la date du jour au moment de l’analyse de la requête. Équivalent à 
 today()
 ```
 
-**Alias** : `current_date`, `curdate`
+**Alias** : `curdate`, `current_date`
 
 **Arguments**
 

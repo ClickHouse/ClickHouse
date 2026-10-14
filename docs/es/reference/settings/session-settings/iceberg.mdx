@@ -98,6 +98,16 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 Umbral para los archivos de datos de compactación en Iceberg.
 
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "Nuevo ajuste. `remove_orphan_files` rechaza un `older_than` que esté a menos de esta cantidad de segundos del momento actual, de modo que conserva los archivos de una escritura que comenzó hace menos de ese tiempo y todavía no ha hecho commit. Establecer `compatibility` con versiones anteriores a la 26.10 restaura el comportamiento anterior (sin mínimo)."}]}]} />
+
+Antigüedad mínima, en segundos, de los archivos que `ALTER TABLE ... EXECUTE remove_orphan_files` puede eliminar de una tabla Iceberg. Se rechaza cualquier `older_than` (indicado explícitamente o derivado de `iceberg_orphan_files_older_than_seconds`) que esté más cerca del momento actual que este valor, ya que los archivos de una escritura que todavía no ha hecho commit no están referenciados en la metadata de la tabla y se eliminarían, lo que dejaría la tabla corrupta en el momento en que la escritura hiciera commit. Configúrelo con un valor superior al tiempo máximo que una escritura en la tabla puede tardar en hacer commit. Con el valor 0 se deshabilita la comprobación.
+
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />

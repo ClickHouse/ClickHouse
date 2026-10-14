@@ -56,6 +56,21 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا تم تعيينه إلى قيمة غير صفرية وكانت قيمة `join_algorithm` هي `hash` أو `parallel_hash` أو `default` أو `auto`، فسيتم تلقائيًا تحويل الربط بالتجزئة إلى الربط بالتجزئة من نوع grace لتمكين الكتابة إلى القرص عندما تتجاوز البيانات الموجودة على الجانب الأيمن هذا العدد من البايتات. ويشكّل هذا الإعداد، مع `max_bytes_ratio_before_external_join`، مُحفّز الكتابة إلى القرص القائم على العتبة لكل `join_algorithm` قائم على التجزئة، بما في ذلك `grace_hash` الذي يتطلب أن يكون أحد الإعدادين غير صفري. وبمجرد أن تجعل عتبة غير صفرية عملية الربط قابلة للكتابة إلى القرص، يمكن لـ `enable_adaptive_memory_spill_scheduler` أن يجبرها على الكتابة إلى القرص تحت ضغط الذاكرة قبل بلوغ العتبة. وعند تعيينه إلى `0` (القيمة الافتراضية)، يتم تعطيل عتبة البايتات المطلقة هذه، ولكن قد تظل الكتابة التلقائية إلى القرص تحدث عبر `max_bytes_ratio_before_external_join` (الذي تبلغ قيمته الافتراضية `0.5`). أما إذا كان كلا الإعدادين `0` فلن تكتب عملية الربط إلى القرص أبدًا، ومن ثم لا يكون لدى المجدول ما يحفّزه. والاستثناء هو `legacy_join_size_limits_trigger_spilling`: فعند تفعيله، يتجاهل `grace_hash` المستقل كلا الإعدادين ويكتب إلى القرص بناءً على `max_rows_in_join` / `max_bytes_in_join` بدلًا منهما. وهو يمنع تحسين القراءة بالترتيب عبر join. كما تحدّ هذه العتبة من حجم الجانب الأيمن الذي يجسّده [الربط بالحلقات المتداخلة للكتل](/ar/reference/statements/select/join#join-with-an-arbitrary-on-condition)، أيًّا كانت قيمة `join_algorithm`.
 
+## max_bytes_before_external_set {#max_bytes_before_external_set}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين كتابة مجموعة `IN` المقترنة باستعلام فرعي إلى القرص عندما يتجاوز استخدام الذاكرة العتبة المحددة بالبايتات. إذا كانت القيمة 0، فلا يُطبَّق إلا `max_bytes_ratio_before_external_set`."}]}]} />
+
+عتبة ذاكرة الاستعلام، بالبايتات، التي تُكتب عندها مجموعة `IN` المقترنة باستعلام فرعي إلى القرص، سواء أثناء بناء المجموعة
+أو أثناء استخدام الاستعلام لها. قد يتجاوز استخدام الذاكرة الفعلي هذه العتبة. أما المجموعة التي تشغل
+ذاكرةً أقل من هذه العتبة أو من 16 MiB، أيهما أصغر، فتبقى في الذاكرة.
+
+تؤدي القيمة `0` إلى تعطيل هذه العتبة. وإذا حدّد `max_bytes_ratio_before_external_set` عتبةً هو الآخر،
+فتُستخدم العتبة الأصغر. اضبط كلا الإعدادين على `0` لتعطيل الكتابة إلى القرص.
+
+راجع [IN في الذاكرة الخارجية](/ar/reference/statements/in#in-in-external-memory).
+
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -179,6 +194,21 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 إذا جرى تعيين كلٍّ من `max_bytes_before_external_join` و`max_bytes_ratio_before_external_join`، فستُستخدم عتبة النتيجة الأصغر. وإذا كانت النسبة `0`، فلن يُطبَّق إلا الإعداد المطلق.
 
 يكون له تأثير مع كل `join_algorithm` قائم على التجزئة، بما في ذلك `grace_hash`، شريطة أن يكون قد جرى تهيئة مسار بيانات مؤقت.
+
+## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين كتابة مجموعة `IN` المقترنة باستعلام فرعي إلى القرص عندما يتجاوز استخدام الذاكرة النسبة المحددة من الذاكرة المتاحة. إذا كانت القيمة 0، فلا يُطبَّق إلا `max_bytes_before_external_set`."}]}]} />
+
+نسبة من الذاكرة المتاحة للخادم أو للمستخدم، تُستخدم عند بدء التنفيذ لحساب عتبة كتابة مجموعة `IN`
+المقترنة باستعلام فرعي إلى القرص. على سبيل المثال، تعني القيمة `0.5` استخدام نصف الذاكرة المتاحة.
+
+يجب ألا تقل القيم عن `0` وأن تكون أقل من `1`. وتؤدي القيمة `0` إلى تعطيل هذه العتبة. وإذا لم يكن هناك حد أقصى للذاكرة
+مطبَّق على الخادم أو المستخدم، فلا يكون لهذه النسبة أي أثر.
+
+لا يؤثر `max_memory_usage` في هذا الحساب. ولتهيئة الكتابة إلى القرص بالنسبة إلى ذلك الحد،
+استخدم `max_bytes_before_external_set` مع ترك هامش كافٍ لأي استخدام إضافي للذاكرة.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

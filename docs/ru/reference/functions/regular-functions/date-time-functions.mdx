@@ -936,11 +936,11 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 
 Добавленный в: v23.1.0
 
-Возвращает компонент указанной единицы в разнице между `startdate` и `enddate`.
+Возвращает компонент указанной единицы измерения в разнице между `startdate` и `enddate`.
 Разница вычисляется с точностью до 1 наносекунды.
 
-Например, разница между 2021-12-29 и 2022-01-01 составляет 3 дня для единицы day,
-0 месяцев для единицы month и 0 лет для единицы year.
+Например, разница между 2021-12-29 и 2022-01-01 составляет 3 дня для единицы измерения day,
+0 месяцев для единицы измерения month и 0 лет для единицы измерения year.
 
 В качестве альтернативы age см. функцию [`dateDiff`](#dateDiff).
 
@@ -954,7 +954,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `unit` — Тип интервала результата.
 
-| Единица     | Возможные значения                       |
+| Единица измерения     | Возможные значения                       |
 | ----------- | ---------------------------------------- |
 | nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
@@ -970,11 +970,11 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — Первое значение времени для вычитания (вычитаемое). [`Date`](/ru/reference/data-types/date) или [`Date32`](/ru/reference/data-types/date32) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 * `enddate` — Второе значение времени, из которого вычитается первое (уменьшаемое). [`Date`](/ru/reference/data-types/date) или [`Date32`](/ru/reference/data-types/date32) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
-* `timezone` — Необязательно. Название часового пояса. Если указано, применяется и к startdate, и к enddate. Если не указано, используются часовые пояса startdate и enddate. Если они не совпадают, результат не определён. [`String`](/ru/reference/data-types/string)
+* `timezone` — Необязательно. Имя часового пояса. Если указано, применяется и к startdate, и к enddate. Если не указано, используются часовые пояса startdate и enddate. Если они не совпадают, результат не определён. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
-Возвращает разность между enddate и startdate, выраженную в единицах unit. [`Int32`](/ru/reference/data-types/int-uint)
+Возвращает разность между enddate и startdate, выраженную в единицах измерения unit. [`Int32`](/ru/reference/data-types/int-uint)
 
 **Примеры**
 
@@ -990,7 +990,7 @@ SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Расчет возраста в разных единицах**
+**Расчет возраста в разных единицах измерения**
 
 ```sql title=Query
 SELECT
@@ -1209,12 +1209,12 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 
 Добавленный в: v23.4.0
 
-Возвращает количество границ указанной единицы `unit`, пересечённых между `startdate` и `enddate`.
-Разница вычисляется с использованием относительных единиц. Например, разница между 2021-12-29 и 2022-01-01 составляет 3 дня для единицы day
-(см. [`toRelativeDayNum`](#toRelativeDayNum)), 1 месяц для единицы month (см. [`toRelativeMonthNum`](#toRelativeMonthNum)) и 1 год для единицы year
+Возвращает количество границ указанной единицы измерения `unit`, пересечённых между `startdate` и `enddate`.
+Разница вычисляется с использованием относительных единиц измерения. Например, разница между 2021-12-29 и 2022-01-01 составляет 3 дня для единицы измерения day
+(см. [`toRelativeDayNum`](#toRelativeDayNum)), 1 месяц для единицы измерения month (см. [`toRelativeMonthNum`](#toRelativeMonthNum)) и 1 год для единицы измерения year
 (см. [`toRelativeYearNum`](#toRelativeYearNum)).
 
-Если указана единица `week`, то `dateDiff` считает, что недели начинаются в понедельник.
+Если указана единица измерения `week`, то `dateDiff` считает, что недели начинаются в понедельник.
 Обратите внимание, что это поведение отличается от функции `toWeek()`, в которой недели по умолчанию начинаются в воскресенье.
 
 В качестве альтернативы `dateDiff` см. функцию [`age`](#age).
@@ -1231,7 +1231,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `unit` — Тип интервала, в котором выражается результат.
 
-| Unit        | Возможные значения                       |
+| Единица измерения        | Возможные значения                       |
 | ----------- | ---------------------------------------- |
 | nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
@@ -1267,7 +1267,7 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 └─────┘
 ```
 
-**Вычислить разницу между датами в разных единицах**
+**Вычислить разницу между датами в разных единицах измерения**
 
 ```sql title=Query
 SELECT
@@ -5749,7 +5749,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 today()
 ```
 
-**Псевдонимы**: `current_date`, `curdate`
+**Псевдонимы**: `curdate`, `current_date`
 
 **Аргументы**
 

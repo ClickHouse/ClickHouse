@@ -404,6 +404,84 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+أُضيف في: v26.10.0
+
+يفك ترميز string مُرمَّز بصيغة [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) وفقًا لـ [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
+
+يُستبدَل `=XX` (أرقام سداسية عشرية بأحرف كبيرة أو صغيرة) بالبايت الذي يمثّله.
+يُعد `=` المتبوع بـ `\r` أو `\n` فاصل أسطر مرنًا، إذ يُزال مع بقية السطر حتى `\n` التالي، بما في ذلك `\n` نفسه.
+أما تسلسلات الهروب المشوّهة الأخرى (مثل `=ZZ`، أو `=4` في نهاية الـ string) فتُترك كما هي، باستثناء علامة `=` المنفردة في آخر الـ string تمامًا، إذ تُحذف.
+يطابق هذا السلوك سلوك الدالة `quopri.decodestring` في بايثون.
+
+**الصيغة**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**الوسيطات**
+
+* `s` — string مُرمَّز بترميز Quoted-Printable. [`String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُعيد الـ string بعد فك ترميزه. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+أُضيف في: v26.10.0
+
+يُشفِّر string باستخدام ترميز [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) وفقًا لـ [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7)، وهو الترميز المستخدم في البريد الإلكتروني.
+
+تُترك محارف ASCII القابلة للطباعة كما هي باستثناء `=`، أما بقية البايتات فتُكتب بالصيغة `=XX` بأرقام سداسية عشرية بأحرف كبيرة.
+يُحتفظ بفاصل الأسطر `\r\n` كما هو، بينما يُرمَّز `\r` أو `\n` إذا ورد منفردًا. وتُرمَّز المسافة أو علامة الجدولة إذا كانت ستقع في نهاية السطر.
+لا يتجاوز طول السطر 76 محرفًا، ويُضمن ذلك باستخدام فواصل الأسطر المرنة (`=\r\n`).
+تُعيد `decodeQuotedPrintable(encodeQuotedPrintable(s))` قيمة string الأصلية `s` أيًّا كانت قيمة `s`.
+
+**الصيغة**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**الوسيطات**
+
+* `s` — السلسلة النصية المراد ترميزها. [`String`](/ar/reference/data-types/string)
+
+**القيمة المُعادة**
+
+تُعيد السلسلة النصية مُرمَّزةً بترميز Quoted-Printable. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 أُضيفت في: v1.1.0

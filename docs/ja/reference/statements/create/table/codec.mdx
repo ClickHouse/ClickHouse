@@ -43,6 +43,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 コーデックはパイプラインとして組み合わせることができます。例: `CODEC(Delta, Default)`。
 
+コーデック名は大文字と小文字を区別しないため、`CODEC(ZSTD)`、`CODEC(zstd)`、`CODEC(ZStd)` はいずれも同じコーデックを指します。
+
 <Tip>
   `lz4` などの外部ユーティリティでは、ClickHouse のデータベースファイルを展開できません。代わりに、専用の [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) ユーティリティを使用してください。
 </Tip>

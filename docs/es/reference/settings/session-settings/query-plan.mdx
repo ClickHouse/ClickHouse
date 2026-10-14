@@ -180,11 +180,17 @@ Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizati
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "Nueva opción"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilitado de forma predeterminada. Un JOIN `full_sorting_merge` o `parallel_full_sorting_merge` entre dos tablas MergeTree cuyas claves contienen un prefijo de ambas claves primarias ahora se ejecuta como uniones por mezcla independientes y en paralelo sobre rangos de clave primaria, en lugar de una única unión por mezcla single-threaded. Las uniones hash solo se ven afectadas cuando no están activos ni los filtros de JOIN en tiempo de ejecución ni el volcado a disco."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
-Aplica la segmentación para JOIN si las claves de JOIN incluyen un prefijo de PRIMARY KEY en ambas tablas. Se admite para los algoritmos hash, parallel&#95;hash, full&#95;sorting&#95;merge y parallel&#95;full&#95;sorting&#95;merge. Normalmente no acelera las consultas, pero puede reducir el consumo de memoria.
+Ejecuta un JOIN entre dos tablas MergeTree como uniones independientes sobre rangos de clave primaria cuando las claves de join contienen un prefijo de la clave primaria de ambas tablas. Ambas tablas se dividen en los mismos rangos según los valores de ese prefijo (del mismo modo en que `FINAL` divide las partes en capas no superpuestas), de forma que las claves iguales caen en el mismo rango y cada rango se une en su propio thread.
+
+Para `full_sorting_merge` y `parallel_full_sorting_merge`, esto sustituye una única unión por mezcla single-threaded sobre ambas tablas por una unión por mezcla en streaming por cada rango, ejecutadas en paralelo, lo que suele ser varias veces más rápido y consumir varias veces menos memoria.
+
+Para `hash` y `parallel_hash`, cada rango dispone de su propia tabla hash. Solo se aplica cuando no están activos ni los filtros de JOIN en tiempo de ejecución (`enable_join_runtime_filters`) ni el volcado a disco (`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`), ya que ambos hacen que la unión resulte opaca para esta optimización; en ese caso, normalmente no acelera las consultas, pero puede reducir el consumo de memoria. Los rangos se asignan a los threads de forma estática, por lo que un filtro que solo es selectivo en una parte del rango de la clave primaria deja algunos threads inactivos.
+
+No se aplica a `FINAL`, `ASOF`, joins con varias disyunciones en `ON`, ni cuando se lee con réplicas paralelas.
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 

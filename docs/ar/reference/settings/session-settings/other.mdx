@@ -138,6 +138,14 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 المهلة الزمنية بالثواني لطلب Arrow Flight الواحد. وتسري هذه المهلة على الطلب بأكمله: ففي عمليات القراءة، تشمل دفق النتائج كاملًا، لا مجرد فترة انتظار أول دفعة من السجلات. وتعني القيمة 0 عدم وجود مهلة زمنية، وفي هذه الحالة يظل الاستعلام معلّقًا إذا قبل خادم Flight طلبًا ولم يرد عليه أبدًا، وذلك إلى أن يُغلق الاتصال.
 
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "إعادة محاولة طلبات النسخ الاحتياطي والاستعادة إلى S3 بعد انتهاء صلاحية الرمز المميز؛ وتعيد القيمة 0 السلوك السابق."}]}]} />
+
+الحد الأقصى للمدة، بالمللي ثانية، لإعادة محاولة طلب S3 تشير استجابته إلى `ExpiredToken` أثناء النسخ الاحتياطي أو الاستعادة. وتتوقف إعادة المحاولة كذلك عند بلوغ الحد المحدد في `backup_restore_s3_retry_attempts`. وتؤدي القيمة صفر إلى تعطيل إعادة المحاولة هذه. ونظرًا إلى أن استجابات `HEAD` في AWS S3 لا تُظهر سوى رمز حالة HTTP عام، فإن إعادة المحاولة هذه لا تشمل طلبات البيانات الوصفية من نوع `HEAD`.
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -315,7 +323,8 @@ SETTINGS convert_query_to_cnf = true;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-يسمح بأن تكون أنواع البيانات في تعريفات الأعمدة التي لا تتضمن مُعدِّلات صريحة [NULL or NOT NULL](/ar/reference/statements/create/table#null-or-not-null-modifiers) من النوع [Nullable](/ar/reference/data-types/nullable).
+يسمح بأن تكون أنواع البيانات في تعريفات الأعمدة التي لا تتضمن مُعدِّلات صريحة [NULL or NOT NULL](/ar/reference/statements/create/table#null-or-not-null-modifiers) من النوع [Nullable](/ar/reference/data-types/nullable).
+ينطبق ذلك على `CREATE TABLE` و`ALTER TABLE ... ADD COLUMN` و`ALTER TABLE ... MODIFY COLUMN`.
 
 القيم الممكنة:
 
@@ -389,13 +398,13 @@ SETTINGS convert_query_to_cnf = true;
 القيم المدعومة:
 
 * `clickhouse` (افتراضي) — ClickHouse SQL القياسية.
-* `kusto` — Kusto Query Language. يتطلب الإعداد التجريبي `allow_experimental_kusto_dialect`.
+* `kusto` — Kusto Query Language. يتطلب الإعداد التجريبي (Beta) `allow_experimental_kusto_dialect`.
 * `prql` — PRQL. يتطلب الإعداد التجريبي `allow_experimental_prql_dialect`.
 * `polyglot` — يترجم SQL من لهجات أخرى، مثل MySQL وPostgreSQL، إلى ClickHouse SQL. يتطلب الإعداد التجريبي `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (لغة استعلام Prometheus)، ويُقيَّم على جدول TimeSeries ويُضبط من خلال الإعدادات `promql_database` و`promql_table` و`promql_evaluation_time`.
 * `clickhouse_json` — بدلًا من نص SQL، يُفسَّر الاستعلام على أنه JSON AST (ناتج `parseQueryToJSON`). يظل استعلام `SET` معروفًا بصيغته العادية، بحيث يمكن التبديل مجددًا إلى لهجة أخرى. يتطلب الإعداد التجريبي `enable_json_ast_dialect`.
 * `logsql` — LogsQL، لغة استعلام السجلات في VictoriaLogs، وتُترجَم إلى استعلامات `SELECT` على جدول السجلات المُهيَّأ عبر الإعدادين `logsql_database` و`logsql_table`. يتطلب الإعداد التجريبي `enable_logsql_dialect`.
-* `trino` — Trino SQL: يترجم صياغة Trino (`ARRAY[...]` و`TRY_CAST` و`UNNEST` وغيرها) ويطابق أسماء دوال Trino مع نظيراتها في ClickHouse. يتطلب الإعداد التجريبي `enable_trino_dialect`.
+* `trino` — Trino SQL: يترجم صياغة Trino (`ARRAY[...]` و`TRY_CAST` و`UNNEST` وغيرها) ويطابق أسماء دوال Trino مع نظيراتها في ClickHouse. يتطلب الإعداد التجريبي (Beta) `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -461,6 +470,22 @@ SETTINGS convert_query_to_cnf = true;
 
 * 0 — يُطلق `SELECT` استثناءً إذا كان الملف الفارغ غير متوافق مع التنسيق المطلوب.
 * 1 — يعيد `SELECT` نتيجة فارغة للملف الفارغ.
+
+## exact_division_for_integers {#exact_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين القسمة الصحيحة الدقيقة في `\/` و`divide`."}]}]} />
+
+يجعل `/` و`divide` تُعيدان عددًا صحيحًا عندما يكون كلا المعاملين من أنواع الأعداد الصحيحة، بما في ذلك `Int128` و`UInt128` و`Int256` و`UInt256`.
+يُقتطع خارج القسمة باتجاه الصفر. ويكون عرض النتيجة مساويًا لعرض المعامل الأول، وتكون ذات إشارة إذا كان أيٌّ من المعاملين ذا إشارة.
+تؤدي القسمة على صفر، أو تجاوز خارج القسمة نطاقَ نوع النتيجة، إلى رفع استثناء. أما المعاملات من النوع `Nullable` فتنقل القيمة `NULL` إلى النتيجة.
+
+افتراضيًا، تُعيد قسمة عددين صحيحين قيمة من النوع `Float64`. ولا يؤثر هذا الإعداد في القسمة التي تتضمن معاملات من النوع `Decimal` أو معاملات ذات فاصلة عائمة،
+ولا في الدوال الصريحة `intDiv` و`divideDecimal` و`divideOrNull`.
+
+يُسجَّل هذا الاختيار في استعلامات SQL المُرسلة حديثًا قبل تخزين التعبيرات في البيانات الوصفية للجداول، أو في العروض، أو دوال SQL، أو عمليات التعديل.
+أما التعريفات الموجودة مسبقًا واستعلامات `ATTACH` فتحتفظ بدلالات القسمة الأصلية الخاصة بها، بصرف النظر عن هذا الإعداد.
 
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
@@ -921,6 +946,18 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 يُعيّن الوضع الافتراضي في استعلام INTERSECT. القيم الممكنة: سلسلة فارغة، &#39;ALL&#39;، &#39;DISTINCT&#39;. إذا كانت القيمة فارغة، فسيؤدي الاستعلام بدون وضع إلى إثارة استثناء.
 
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد يجعل عائلة `JSONExtract` تملأ قيم Tuple المسمّاة من كائنات JSON فقط، بدلاً من الملء الموضعي المعتاد سابقاً من المصفوفات. تُملأ قيم Tuple غير المسمّاة دائماً بشكل موضعي، ولا يتأثر الاستخراج من عمود من نوع البيانات `JSON`."}]}]} />
+
+يملأ قيم Tuple المسمّاة من كائنات JSON فقط، ضمن عائلة دوال `JSONExtract`. عند تعطيل هذا الإعداد، تملأ مصفوفة JSON الـ Tuple المسمّى بشكل موضعي (وهو السلوك المعتاد سابقاً)، ومن ثَمّ يتوقف الحقل المسمّى الذي يستقر فيه كل عنصر مصفوفة على ترتيب التصريح عن الـ Tuple. أما قيم Tuple غير المسمّاة فتُملأ دائماً بشكل موضعي من المصفوفات بغض النظر عن هذا الإعداد.
+
+ينطبق هذا الإعداد على JSON المُمرَّر على هيئة string. ولا يتأثر به الاستخراج من عمود من نوع البيانات `JSON`، سواء أكانت المسارات محددة النوع أم غير محددة النوع: إذ يقرأ الاستخراج الأعمدة الفرعية للعمود بدلاً من إجراء التحليل النحوي لمستند JSON، ولذلك لا يبلغ أبداً الشيفرة التي يتحكم فيها هذا الإعداد. أما *أعمدة* Tuple المسمّاة في تنسيقات إدخال JSON فيتحكم فيها إعداد مستقل هو [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/ar/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects)؛ في حين يقتصر هذا الإعداد على دوال الاستخراج فقط.
+
+معطّل افتراضياً.
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1277,6 +1314,16 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 عند استدعاء إحدى دوال المسافة الخاصة بـ `QBit` (`L2DistanceTransposed` و`cosineDistanceTransposed` و`dotProductTransposed` وبدائلها `...Quantized`) بدقة 1، يُختزَل المتجه المرجعي هو الآخر إلى إشارات عناصره، وتُشتق النتيجة من مسافة هامينغ بين متجهَي الإشارات، التي تُحسب باستخدام XOR وpopcount.
 
 افتراضيًا، يحتفظ المتجه المرجعي بدقته الكاملة عند الدقة 1، ولا يُختزَل إلى إشارات سوى المتجه المخزَّن (مسافة غير متناظرة). المسافة المتناظرة أسرع بعدة أضعاف، لكنها تتجاهل مقادير عناصر المتجه المرجعي، إذ يكون للبُعد الذي تكون فيه قيمة المرجع كبيرة الوزن نفسه الذي يكون للبُعد الذي تقترب فيه من الصفر.
+
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد: خطوة الشبكة المستخدمة عند اشتقاق شروط حتمية من الشروط التي تتضمن الوقت الحالي في ذاكرة التخزين المؤقت لشروط الاستعلام، معبَّرًا عنها كنسبة من المسافة بين الثابت الزمني والوقت الحالي."}]}]} />
+
+بالنسبة إلى الشروط التي تتضمن الوقت الحالي في [ذاكرة التخزين المؤقت لشروط الاستعلام](/ar/concepts/features/performance/caches/query-condition-cache) لجداول `MergeTree` (راجع [`use_query_condition_cache_for_time_conditions`](/ar/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions))، يحدد هذا الإعداد حجم الشبكة التي تُقرَّب إليها الثوابت الزمنية، معبَّرًا عنه كنسبة من المسافة بين الثابت والوقت الحالي. على سبيل المثال، عند استخدام المعامل الافتراضي 1.0، يُقرَّب الثابت في `WHERE time >= now() - INTERVAL 10 DAY` إلى شبكة بخطوة يوم واحد (بحد أقصى يوم واحد)، بينما يُقرَّب الثابت في `WHERE time >= now() - INTERVAL 1 HOUR` إلى شبكة بخطوة ساعة واحدة.
+
+تُبقي القيم الأصغر الشرط المشتق أقرب إلى الشرط الأصلي (مع تقليل over-read بالقرب من الحدود)، لكن ذلك يأتي على حساب تغيُّر مفتاح ذاكرة التخزين المؤقت بوتيرة أعلى. تُقيَّد خطوة الشبكة بحد أدنى قدره ثانية واحدة، لذا فإن المعامل الصغير يجعل الشرط المشتق يقترب من الشرط الأصلي بدلاً من تعطيله. أما القيم الأقل من 0 أو المساوية له فتعطّل عملية الاشتقاق كليًا.
 
 ## query_metric_log_interval {#query_metric_log_interval}
 

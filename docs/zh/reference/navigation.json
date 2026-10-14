@@ -78,6 +78,7 @@
                         "zh/reference/statements/create/dictionary/layouts/range-hashed",
                         "zh/reference/statements/create/dictionary/layouts/hierarchical",
                         "zh/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "zh/reference/statements/create/dictionary/layouts/xgboost",
                         "zh/reference/statements/create/dictionary/layouts/polygon",
                         "zh/reference/statements/create/dictionary/layouts/ip-trie",
                         "zh/reference/statements/create/dictionary/layouts/regexp-tree"

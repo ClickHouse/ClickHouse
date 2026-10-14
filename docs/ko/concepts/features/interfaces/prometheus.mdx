@@ -109,14 +109,15 @@ remote_write:
 
 Prometheus는 샘플을 `prometheus.metrics` 테이블로 전송합니다.
 
-동시에 발생하는 여러 remote-write 요청의 데이터를 더 적은 수의 파트로 일괄 처리하려면 URL에 `async_insert` 설정을 추가하여 [비동기 삽입](/ko/reference/settings/session-settings/async-insert#async_insert)을 활성화하십시오(또는 사용자 프로필에서 활성화하십시오):
-
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
-```
+동시에 발생하는 여러 remote-write 요청의 데이터를 더 적은 수의 파트로 일괄 처리하기 위해 ClickHouse는 [비동기 삽입](/ko/reference/settings/session-settings/async-insert#async_insert)을 사용합니다. 비동기 삽입은 기본적으로 활성화되어 있으며, URL(또는 사용자 프로필)의 `async_insert` 설정으로 켜거나 끌 수 있습니다.
 
 ClickHouse는 [`wait_for_async_insert`](/ko/reference/settings/session-settings/wait-for#wait_for_async_insert) 설정과 관계없이 데이터가 `TimeSeries` 테이블의 모든 내부 테이블에 플러시된 후에만 비동기 remote-write 요청을 승인합니다. remote-write 프로토콜은 승인된 쓰기를 영속성이 보장된 것으로 간주합니다. 플러시에 실패하면 요청에서 오류가 반환되고 Prometheus가 재시도합니다.
+
+각 요청은 자신의 플러시가 끝날 때까지 기다리므로, 비동기 삽입을 사용하면 단일 송신자의 쓰기 속도가 제한됩니다. Prometheus는 remote-write 세그먼트당 한 번에 하나의 요청만 전송합니다. 여러 세그먼트가 동시에 전송하면, 대기 중인 요청이 먼저 [`async_insert_max_data_size`](/ko/reference/settings/session-settings/async-insert#async_insert_max_data_size)에 도달하지 않는 한 적응형 플러시 타임아웃이 [`async_insert_busy_timeout_max_ms`](/ko/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)까지 늘어납니다. 요청은 자신이 속한 배치가 플러시될 때까지 대기하며, 플러시는 배치가 시작된 후 최대 이 시간이 지난 뒤에 이루어집니다. 따라서 부하가 지속되는 상황에서 각 세그먼트의 쓰기 속도는 대략 `samples per request / async_insert_busy_timeout_max_ms`이며, Prometheus는 기본적으로 요청당 최대 2,000개의 샘플을 전송합니다. 이 속도를 높이는 방법은 다음과 같습니다.
+
+* [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write)의 `queue_config`에서 `max_shards`(기본값 50) 또는 `max_samples_per_send`를 늘리십시오. Prometheus는 처리가 뒤처지면 `max_shards`까지 자동으로 세그먼트를 추가합니다.
+* URL 또는 사용자 프로필에서 `async_insert_busy_timeout_max_ms`를 낮추십시오(예: `&async_insert_busy_timeout_max_ms=50`). 이렇게 하면 플러시가 더 자주 발생하며, 플러시할 때마다 내부 테이블에 새 파트가 생성됩니다.
+* `async_insert=0`으로 비동기 삽입을 비활성화하십시오. 이 경우 요청마다 내부 테이블에 별도의 파트가 생성됩니다.
 
 ## PromQL로 쿼리 {#promql-query-support}
 
@@ -254,3 +255,35 @@ remote_read:
       username: default
       password: <password>
 ```
+
+## 기록 규칙(Recording rules) {#recording-rules}
+
+ClickHouse는 Prometheus 규칙 파일을 평가하지 않습니다. 대신 [갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)를 사용하면 [기록 규칙(recording rule)](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)의 역할을 대신할 수 있습니다. 갱신 가능 구체화 뷰는 정해진 일정에 따라 PromQL 표현식을 평가하고 그 결과를 `TimeSeries` 테이블에 추가합니다. 다음 뷰는 `sum by (job) (rate(http_requests_total[5m]))`를 1분마다 `job:http_requests:rate5m`으로 기록합니다.
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+갱신할 때마다 현재 분의 시작 시점을 기준으로 표현식을 평가하고, `mapUpdate`로 메트릭 이름을 설정한 다음, 결과의 각 시계열마다 샘플(sample)을 하나씩 추가합니다. 같은 맵에 추가 레이블을 넣을 수도 있습니다(예: `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`). 이렇게 기록된 시계열은 다른 메트릭과 동일한 방식으로 쿼리할 수 있습니다:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+마지막 평가 시간과 오류는 [`system.view_refreshes`](/ko/reference/system-tables/view_refreshes)에서 확인할 수 있습니다.
+
+뷰(view)는 다음과 같은 점에서 Prometheus 기록 규칙(recording rule)과 다릅니다.
+
+* 평가 시점은 갱신이 실행되는 시점의 `now()`입니다. 뷰는 일정에 따른 갱신 외에도 다음과 같은 경우에 갱신됩니다. 생성 직후(`EMPTY`로 생성한 경우 제외), 갱신이 조정되지 않는 뷰의 서버 재시작 후(Replicated 또는 Shared 데이터베이스(database) 외부의 뷰나 `all_replicas = 1`로 설정된 뷰는 마지막 갱신을 기억하지 않음), 그리고 예정된 갱신을 놓친 뒤 `SYSTEM START VIEW`로 재개될 때입니다. 이러한 갱신으로 인해 예정된 갱신 사이에 샘플이 추가되지 않도록, 예시처럼 `now()`를 인터벌 단위로 내림하십시오. 다만 이렇게 하더라도 추가 갱신이 동일한 반올림된 타임스탬프에 두 번째 샘플을 기록할 수 있습니다. 5분 단위 규칙이라면 `toStartOfInterval(now(), INTERVAL 5 MINUTE)`를 사용하십시오.
+* 누락된 평가는 나중에 보충되지 않습니다. 서버가 중단되었거나 뷰가 중지되었던 경우, 이후 뷰는 현재 인터벌만 평가하며 그 이전 인터벌은 빈 상태로 남습니다. 갱신에 걸리는 시간이 인터벌보다 긴 경우에도 마찬가지입니다.
+* 결과에서 빠진 시계열에는 staleness 마커가 붙지 않습니다. 따라서 쿼리는 룩백 기간(기본값 5분) 동안 해당 시계열의 마지막 기록 값을 계속 반환합니다.
+* 별도의 규칙 파일은 없으며, 각 규칙이 하나의 독립된 뷰입니다. 또한 규칙은 `/api/v1/rules`에 나열되지 않습니다.

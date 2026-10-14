@@ -180,11 +180,17 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "デフォルトで有効化されました。結合キーが両方の主キーのプレフィックスを含む 2 つの MergeTree テーブルに対する `full_sorting_merge` または `parallel_full_sorting_merge` の JOIN は、シングルスレッドのマージ結合ではなく、主キーの範囲ごとに独立したマージ結合として並列に実行されるようになりました。ハッシュ結合が影響を受けるのは、JOINランタイムフィルタとディスクへの退避のどちらも有効でない場合に限られます。"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-両方のテーブルで、結合キーに PRIMARY KEY のプレフィックスが含まれている場合は、JOIN に対して分片化を適用します。hash、parallel&#95;hash、full&#95;sorting&#95;merge、parallel&#95;full&#95;sorting&#95;merge アルゴリズムでサポートされています。通常、クエリの高速化にはつながりませんが、メモリ消費量を抑えられる場合があります。
+結合キーが両方のテーブルの主キーのプレフィックスを含む場合、2 つの MergeTree テーブルの JOIN を主キーの範囲ごとに独立した結合として実行します。両テーブルはそのプレフィックスの値に基づいて同じ範囲に分割されるため (`FINAL` がパーツを交差しないレイヤーに分割するのと同じ方法です) 、等しいキーは必ず同じ範囲に入り、各範囲はそれぞれ専用のスレッドで結合されます。
+
+`full_sorting_merge` および `parallel_full_sorting_merge` の場合、両テーブル全体に対するシングルスレッドのマージ結合が、範囲ごとのストリーミングマージ結合に置き換えられ、これらが並列に実行されます。通常、数倍高速になり、メモリ使用量も数分の一に抑えられます。
+
+`hash` および `parallel_hash` の場合、範囲ごとに個別のハッシュテーブルが作成されます。ただし、これが適用されるのは JOINランタイムフィルタ (`enable_join_runtime_filters`) とディスクへの退避 (`max_bytes_ratio_before_external_join`、`max_bytes_before_external_join`) のどちらも有効でない場合に限られます。いずれもこの最適化から結合の内部を隠してしまうためです。この場合、通常クエリは高速化されませんが、メモリ消費量を削減できる可能性があります。範囲はスレッドに静的に割り当てられるため、主キーの範囲の一部でのみ選択性が高いフィルタを使用すると、一部のスレッドがアイドル状態になります。
+
+`FINAL`、`ASOF`、`ON` に複数の選言を含む結合、および並列レプリカを使用した読み取りには適用されません。
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 
@@ -368,8 +374,8 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 クエリプランの最適化時に試行する JOIN 順序アルゴリズムを指定します。利用可能なアルゴリズムは次のとおりです。
 
 * &#39;greedy&#39; - 基本的な貪欲アルゴリズムです。高速に動作しますが、最適な JOIN 順序にならない場合があります
-* &#39;dpsize&#39; - 現時点では INNER JOIN のみに対応する DPsize アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 条件が多いクエリでは遅くなることがあります。
-* &#39;dpsub&#39; - INNER JOIN と INNER JOIN 以外の JOIN の両方に対応する DPsub アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 条件が多いクエリでは遅くなることがあります。
+* &#39;dpsize&#39; - 現時点では INNER JOIN のみに対応する DPsize アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 述語が多いクエリでは遅くなることがあります。
+* &#39;dpsub&#39; - INNER JOIN と INNER JOIN 以外の JOIN の両方に対応する DPsub アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 述語が多いクエリでは遅くなることがあります。
 * &#39;dphyp&#39; - 現時点では INNER JOIN のみに対応する DPhyp (ハイパーグラフ分割による動的計画法) アルゴリズムを実装します。`dpsize` と同じ探索空間を調べますが、連結された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな JOIN グラフでは中間 JOIN の数を減らせます
   複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストで指定できます。指定した順に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば OUTER JOIN や非連結なコンポーネントがある場合) は、フォールバックとして次のアルゴリズムが使用されます。
 
@@ -381,7 +387,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 `dpsub` JOIN 順序アルゴリズムにのみ影響します。DPsub がどの JOIN の並べ替えを有効とみなすかを判定するために使用する conflict detector を選択します。指定できる値は次のとおりです。
 
-* `''` (デフォルト)  - conflict detector を使用せず、DPsub は relation ごとの `ON` 句による制限を使用します
+* `''` (デフォルト) - conflict detector を使用せず、DPsub は relation ごとの `ON` 句による制限を使用します
 * `'a'` - CD-A conflict detector。正しいが不完全です
 * `'c'` - CD-C conflict detector。正しく完全です
 

@@ -75,6 +75,57 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 فإنها تعطّل تلك الآلية الاستدلالية في النطاقات التي لا يقل فيها عمر كل جزء بيانات عن هذا العدد من الثواني. القيمة `0` تعطّل هذا الفحص.
 يعمل هذا الإعداد مع محدِّدَي الدمج Simple وStochasticSimple.
 
+## merge_selector_small_parts_max_age {#merge_selector_small_parts_max_age}
+
+<SettingsInfoBlock type="UInt64" default_value="600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "600"},{"label": "الحد الأقصى للعمر في قيد دمج أجزاء البيانات الصغيرة"}]}]} />
+
+الحد الأقصى للعمر بالثواني في قيد أجزاء البيانات الصغيرة: بمجرد أن يتجاوز عمر أي جزء بيانات في النطاق
+هذا الحد، يُرفع القيد الذي يفرضه `merge_selector_small_parts_min_count`،
+مما يتيح دمج أجزاء البيانات الصغيرة المتقادمة المتراكمة حتى لو كان النطاق أقصر من
+`merge_selector_small_parts_min_count`. يعمل هذا الإعداد مع مُحدِّدَي الدمج Simple وStochasticSimple،
+ويقتصر على اختيار الأجزاء للدمج في الخلفية، إذ يتجاهل الاختيار الصارم (`OPTIMIZE` بدون `FINAL`)
+إعدادات `small_parts_*`.
+
+## merge_selector_small_parts_min_count {#merge_selector_small_parts_min_count}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "الحد الأدنى لعدد أجزاء البيانات اللازم للسماح بدمج أجزاء البيانات الصغيرة الحديثة (0 = معطّل)"}]}]} />
+
+عندما تكون جميع أجزاء البيانات ضمن نطاق الدمج صغيرة (أقل من `merge_selector_small_parts_threshold`)
+وحديثة (أقل من `merge_selector_small_parts_max_age`)، يُشترط ألا يقل عدد أجزاء البيانات عن هذه القيمة
+للسماح بالدمج. يحدّ ذلك من عدد عمليات الدمج عند إدراج أجزاء بيانات صغيرة بوتيرة سريعة.
+القيمة 0 تعني أن الإعداد معطّل. يعمل مع مُحدِّدات الدمج Simple وStochasticSimple.
+
+ينطبق هذا الشرط على اختيار الأجزاء للدمج في الخلفية فقط. أما الاختيار الصارم - أي `OPTIMIZE`
+بدون `FINAL` - فهو طلب صريح من المستخدم لا يراعي حداثة أجزاء البيانات، ولذا يتجاهل هذا
+الإعداد ويدمج أجزاء البيانات الصغيرة الحديثة بغض النظر عن عددها.
+
+لا يأخذ المحدِّد في الحسبان أبدًا المرشّحين للدمج الذين يتجاوز عرضهم `max_parts_to_merge_at_once`، ولا
+المرشّحين الذين يمتدون إلى أبعد من `merge_selector_window_size` من أجزاء البيانات، لذا فإن ضبط
+أيٍّ منهما على قيمة أقل من هذا الحد الأدنى يُعدّ تهيئة متناقضة: إذ لن تُدمج أجزاء البيانات الصغيرة الحديثة حينئذٍ
+إلا بعد انقضاء `merge_selector_small_parts_max_age` (أو قبل ذلك، بمجرد تطبيق الدمج القسري وفقًا لـ
+`min_age_to_force_merge_seconds` أو `min_partition_age_to_force_merge_seconds`). احرص على إبقاء كليهما
+مساويًا لهذا الحد الأدنى أو أعلى منه.
+(إذا خفّضت آلية الامتلاء الاستدلالية المدمجة الحدَّ الأعلى الفعلي مؤقتًا إلى ما دون هذا الحد الأدنى،
+فسيظل المحدِّد يأخذ في الحسبان أول مرشّح بهذا العرض تكون جميع أجزائه صغيرة وحديثة. أما المرشّحون المتقادمون أو
+الكبار، والمرشّحون المؤهلون أصلًا للدمج القسري وفقًا لـ
+`min_age_to_force_merge_seconds` أو `min_partition_age_to_force_merge_seconds`، فيبقى
+الحد الأعلى المخفَّض ساريًا عليهم.)
+
+## merge_selector_small_parts_threshold {#merge_selector_small_parts_threshold}
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "10485760"},{"label": "عتبة الحجم للآلية الاستدلالية الخاصة بتجميع أجزاء البيانات الصغيرة في دفعات ضمن مُحدِّد الدمج"}]}]} />
+
+عتبة الحجم بالبايتات: يُعدّ نطاق الدمج &quot;مكوّنًا بالكامل من أجزاء بيانات صغيرة&quot; إذا كان حجم كل جزء بيانات فيه
+أقل من هذه القيمة. يُستخدم هذا الإعداد مع `merge_selector_small_parts_min_count`.
+يعمل مع مُحدِّدَي الدمج Simple وStochasticSimple، ويقتصر على اختيار الدمج في الخلفية
+فقط، إذ يتجاهل الاختيار الصارم (`OPTIMIZE` بدون `FINAL`) إعدادات `small_parts_*`.
+
 ## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />

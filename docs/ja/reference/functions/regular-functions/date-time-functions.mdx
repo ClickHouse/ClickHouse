@@ -970,7 +970,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — 減算される最初の時刻値 (減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `enddate` — そこから減算する 2 番目の時刻値 (被減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 任意。タイムゾーン名です。指定した場合は、startdate と enddate の両方に適用されます。指定しない場合は、startdate と enddate のタイムゾーンが使用されます。両者が同一でない場合、結果は未定です。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。タイムゾーン名です。指定した場合は、startdate と enddate の両方に適用されます。指定しない場合は、startdate と enddate のタイムゾーンが使用されます。両者が同一でない場合、結果は未規定です。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -1247,7 +1247,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `startdate` — 減算される最初の時刻値 (減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `enddate` — 減算元となる 2 番目の時刻値 (被減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 任意。タイムゾーン名。指定した場合は、`startdate` と `enddate` の両方に適用されます。指定しない場合は、`startdate` と `enddate` のタイムゾーンが使用されます。両者が同一でない場合、結果は未定義です。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。タイムゾーン名。指定した場合は、`startdate` と `enddate` の両方に適用されます。指定しない場合は、`startdate` と `enddate` のタイムゾーンが使用されます。両者が同一でない場合、結果は未規定です。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -5748,7 +5748,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 today()
 ```
 
-**別名**: `current_date`, `curdate`
+**別名**: `curdate`, `current_date`
 
 **引数**
 

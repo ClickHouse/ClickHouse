@@ -31,6 +31,14 @@ Número total de direcciones que se utilizan para crear conexiones con pools de 
 
 Recuento total de direcciones bloqueadas por considerarse defectuosas al crear conexiones con pools de conexiones
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+Memoria aproximada, en bytes, utilizada por la caché de ubicaciones resueltas en el código fuente (file:line:column) que se usa para simbolizar trazas de pila.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+Número de direcciones de código en la caché de ubicaciones resueltas en el código fuente (file:line:column) que se utiliza para simbolizar las trazas de pila en system.trace&#95;log, system.errors y system.error&#95;log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Número de hilos del pool de hilos de Aggregator.
@@ -2126,6 +2134,10 @@ Número de archivos temporales creados durante un JOIN
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 Número de archivos temporales de la fusión vertical
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+Número de archivos temporales creados para conjuntos `IN` en memoria externa
 
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 

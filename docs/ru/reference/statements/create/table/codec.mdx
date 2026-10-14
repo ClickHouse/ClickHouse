@@ -43,6 +43,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Кодеки можно объединять в конвейер, например: `CODEC(Delta, Default)`.
 
+Имена кодеков регистронезависимы, поэтому `CODEC(ZSTD)`, `CODEC(zstd)` и `CODEC(ZStd)` обозначают один и тот же кодек.
+
 <Tip>
   Файлы базы данных ClickHouse нельзя распаковать с помощью внешних утилит, таких как `lz4`. Вместо этого используйте специальную утилиту [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
 </Tip>

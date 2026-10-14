@@ -32,10 +32,10 @@ ENGINE = <Engine>
 ```
 
 Le codec `Default` peut être spécifié pour utiliser la compression par défaut, qui peut dépendre de différents paramètres (et des propriétés des données) au moment de l’exécution.
-Exemple : `value UInt64 CODEC(Default)` — équivaut à l’absence de spécification de codec.
+Exemple : `value UInt64 CODEC(Default)` — équivaut à l’absence de spécification de codec.
 Voir aussi [Sélection adaptative de codec](#adaptive-codec-selection).
 
-Vous pouvez également supprimer le CODEC actuel de la colonne et utiliser la compression par défaut définie dans config.xml :
+Vous pouvez également supprimer le CODEC actuel de la colonne et utiliser la compression par défaut définie dans config.xml :
 
 ```sql
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
@@ -43,11 +43,13 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Les codecs peuvent être combinés dans un pipeline de codecs, par exemple `CODEC(Delta, Default)`.
 
+Les noms de codecs sont case-insensitive : `CODEC(ZSTD)`, `CODEC(zstd)` et `CODEC(ZStd)` désignent donc tous le même codec.
+
 <Tip>
   Vous ne pouvez pas décompresser les fichiers de base de données ClickHouse à l’aide d’utilitaires externes tels que `lz4`. Utilisez plutôt l’utilitaire dédié [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
 </Tip>
 
-La compression est prise en charge par les moteurs de table suivants :
+La compression est prise en charge par les moteurs de table suivants :
 
 * Famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Prend en charge les codecs de compression de colonnes et la sélection de la méthode de compression par défaut via les paramètres de [compression](/fr/reference/settings/server-settings/settings/other#compression).
 * Famille [Log](/fr/reference/engines/table-engines/log-family/index). Utilise par défaut la méthode de compression `lz4` et prend en charge les codecs de compression de colonnes.

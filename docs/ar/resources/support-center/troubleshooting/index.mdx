@@ -22,14 +22,12 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
 هل تواجه مشكلات في ClickHouse؟ ستجد هنا حلولًا للمشكلات الشائعة.
 
-<div id="performance-and-errors">
-  ## الأداء والأخطاء
-</div>
+## الأداء والأخطاء {#performance-and-errors}
 
 الاستعلامات التي تعمل ببطء، أو حالات انتهاء المهلة، أو ظهور رسائل خطأ محددة مثل &quot;Memory limit exceeded&quot; أو &quot;Connection refused.&quot;
 
 <Accordion title="عرض حلول الأداء والأخطاء">
-  ### أداء الاستعلامات
+  ### أداء الاستعلامات {#query-performance}
 
   * [تعرّف على الاستعلامات التي تستهلك أكبر قدر من الموارد](/ar/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
   * [الدليل الكامل لتحسين الاستعلامات](/ar/guides/clickhouse/performance-and-monitoring/query-optimization)
@@ -38,14 +36,14 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### أداء إدراج البيانات
+  ### أداء إدراج البيانات {#data-insertion-performance}
 
   * [سرّع إدراج البيانات](/ar/concepts/features/operations/insert/bulkinserts)
   * [أعِدّ عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts)
 
   <br />
 
-  ### أدوات التحليل المتقدمة
+  ### أدوات التحليل المتقدمة {#advanced-analysis-tools}
 
   {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
 
@@ -54,7 +52,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### رسائل الخطأ
+  ### رسائل الخطأ {#error-messages}
 
   * **&quot;Memory limit exceeded&quot;** → [شخّص أخطاء تجاوز حد الذاكرة](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * **&quot;Connection refused&quot;** → [أصلِح مشكلات الاتصال](#connections-and-authentication)
@@ -65,14 +63,12 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
   * **مشكلات أخرى** → [تتبّع الأخطاء عبر العنقود لديك](/ar/reference/system-tables/errors)
 </Accordion>
 
-<div id="memory-and-resources">
-  ## الذاكرة والموارد
-</div>
+## الذاكرة والموارد {#memory-and-resources}
 
 ارتفاع استهلاك الذاكرة، أو الأعطال الناتجة عن نفادها، أو الحاجة إلى مساعدة في تحديد الحجم المناسب لنشر ClickHouse.
 
 <Accordion title="عرض حلول الذاكرة">
-  ### تصحيح أخطاء الذاكرة ومراقبتها:
+  ### تصحيح أخطاء الذاكرة ومراقبتها: {#memory-debugging-and-monitoring}
 
   * [تحديد ما يستهلك الذاكرة](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * [التحقق من استهلاك الذاكرة الحالي](/ar/reference/system-tables/processes)
@@ -81,7 +77,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### إعدادات الذاكرة:
+  ### إعدادات الذاكرة: {#memory-configuration}
 
   * [ضبط حدود الذاكرة](/ar/concepts/features/configuration/settings/memory-overcommit)
   * [إعدادات ذاكرة الخادم](/ar/reference/settings/server-settings/settings)
@@ -89,20 +85,18 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### التوسيع وتحديد الحجم:
+  ### التوسيع وتحديد الحجم: {#scaling-and-sizing}
 
   * [حدّد الحجم المناسب لخدمتك](/ar/guides/oss/best-practices/tips)
   * [ضبط التوسيع التلقائي](/ar/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-<div id="connections-and-authentication">
-  ## الاتصالات والمصادقة
-</div>
+## الاتصالات والمصادقة {#connections-and-authentication}
 
 تعذّر الاتصال بـ ClickHouse، أو حدثت حالات فشل في المصادقة، أو ظهرت أخطاء في شهادة SSL، أو كانت هناك مشكلات في إعداد العميل.
 
 <Accordion title="عرض حلول الاتصال">
-  ### مشكلات الاتصال الأساسية
+  ### مشكلات الاتصال الأساسية {#basic-connection-issues}
 
   * [إصلاح مشكلات واجهة HTTP](/ar/concepts/features/interfaces/http)
   * [معالجة مشكلات شهادة SSL](/ar/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
@@ -110,7 +104,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### واجهات العميل
+  ### واجهات العميل {#client-interfaces}
 
   * [عملاء ClickHouse الأصليون](/ar/concepts/features/interfaces/native-clients-interfaces-index)
   * [مشكلات واجهة MySQL](/ar/concepts/features/interfaces/mysql)
@@ -120,20 +114,18 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### الشبكة والبيانات
+  ### الشبكة والبيانات {#network-and-data}
 
   * [إعدادات أمان الشبكة](/ar/reference/settings/server-settings/settings)
   * [مشكلات تحليل تنسيق البيانات](/ar/reference/formats/index)
 </Accordion>
 
-<div id="setup-and-configuration">
-  ## الإعداد والتهيئة
-</div>
+## الإعداد والتهيئة {#setup-and-configuration}
 
 التثبيت الأولي، تهيئة الخادم، إنشاء قاعدة البيانات، مشكلات إدخال البيانات، أو إعداد النسخ المتماثل.
 
 <Accordion title="عرض حلول الإعداد والتهيئة">
-  ### الإعداد الأولي
+  ### الإعداد الأولي {#initial-setup}
 
   * [تهيئة إعدادات الخادم](/ar/reference/settings/server-settings/settings)
   * [إعداد الأمان والتحكم في الوصول](/ar/concepts/features/security/access-rights)
@@ -141,7 +133,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### إدارة قواعد البيانات
+  ### إدارة قواعد البيانات {#database-management}
 
   * [إنشاء قواعد البيانات وإدارتها](/ar/reference/statements/create/database)
   * [اختيار محرك الجدول المناسب](/ar/reference/engines/table-engines/index)
@@ -150,7 +142,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### عمليات البيانات
+  ### عمليات البيانات {#data-operations}
 
   * [تحسين الإدراج المجمّع للبيانات](/ar/concepts/features/operations/insert/bulkinserts)
   * [معالجة مشكلات تنسيق البيانات](/ar/reference/formats/index)
@@ -159,7 +151,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
 
   <br />
 
-  ### التهيئة المتقدمة
+  ### التهيئة المتقدمة {#advanced-configuration}
 
   * [إعداد النسخ المتماثل للبيانات](/ar/reference/engines/table-engines/mergetree-family/replication)
   * [تهيئة الجداول الموزعة](/ar/reference/engines/table-engines/special/distributed)
@@ -170,9 +162,7 @@ description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيو
   * [تهيئة المراقبة](/ar/reference/system-tables/overview)
 </Accordion>
 
-<div id="still-need-help">
-  ## هل ما زلت بحاجة إلى مساعدة؟
-</div>
+## هل ما زلت بحاجة إلى مساعدة؟ {#still-need-help}
 
 إذا لم تتمكن من العثور على حل:
 

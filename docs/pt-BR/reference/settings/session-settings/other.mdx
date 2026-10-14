@@ -138,6 +138,14 @@ Valores possíveis:
 
 Tempo limite, em segundos, para uma única requisição do Arrow Flight. Esse limite abrange a requisição inteira: no caso de uma leitura, inclui todo o fluxo de resultados, não apenas a espera pelo primeiro lote de registros. O valor 0 desativa o tempo limite; nesse caso, um servidor Flight que aceita uma requisição e nunca responde bloqueia a consulta até que a conexão seja encerrada.
 
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "Tenta novamente requisições S3 de backup e restauração após um token expirado; 0 restaura o comportamento anterior."}]}]} />
+
+Tempo máximo, em milissegundos, durante o qual se tenta novamente uma requisição s3 cuja resposta indique `ExpiredToken` durante o backup ou a restauração. As retentativas também são interrompidas ao atingir `backup_restore_s3_retry_attempts`. O valor zero desativa essas retentativas. Como as respostas `HEAD` do AWS S3 expõem apenas um status HTTP genérico, essa retentativa não se aplica a requisições de metadados `HEAD`.
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -316,6 +324,7 @@ Use INNER JOIN em vez de junção por vírgula/CROSS JOIN se houver expressões 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite que tipos de dados sem modificadores explícitos [NULL ou NOT NULL](/pt-BR/reference/statements/create/table#null-or-not-null-modifiers) na definição de coluna sejam do tipo [Nullable](/pt-BR/reference/data-types/nullable).
+Aplica-se a `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN` e `ALTER TABLE ... MODIFY COLUMN`.
 
 Valores possíveis:
 
@@ -380,7 +389,7 @@ Valores possíveis:
 
 Se true, inclui apenas os nomes e tipos das colunas no resultado da consulta DESCRIBE
 
-## dialeto {#dialect}
+## dialect {#dialect}
 
 <SettingsInfoBlock type="Dialect" default_value="clickhouse" />
 
@@ -389,13 +398,13 @@ Define qual dialeto será usado para analisar a consulta.
 Valores compatíveis:
 
 * `clickhouse` (padrão) — SQL padrão do ClickHouse.
-* `kusto` — Kusto Query Language. Requer a configuração experimental `allow_experimental_kusto_dialect`.
+* `kusto` — Kusto Query Language. Requer a configuração beta `allow_experimental_kusto_dialect`.
 * `prql` — PRQL. Requer a configuração experimental `allow_experimental_prql_dialect`.
 * `polyglot` — transpila SQL de outros dialetos (MySQL, PostgreSQL etc.) para ClickHouse SQL. Requer a configuração experimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (Prometheus Query Language) avaliada em uma tabela TimeSeries, configurada pelas opções `promql_database`, `promql_table` e `promql_evaluation_time`.
 * `clickhouse_json` — em vez de texto SQL, a consulta é interpretada como um AST JSON (a saída de `parseQueryToJSON`). A consulta `SET` continua sendo reconhecida em formato simples para permitir a reversão para outro dialeto. Requer a configuração experimental `enable_json_ast_dialect`.
 * `logsql` — LogsQL, a linguagem de consulta de logs do VictoriaLogs, traduzida em consultas `SELECT` sobre a tabela de logs configurada pelas opções `logsql_database` e `logsql_table`. Requer a configuração experimental `enable_logsql_dialect`.
-* `trino` — Trino SQL: traduz a sintaxe do Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) e mapeia os nomes das funções do Trino para seus equivalentes no ClickHouse. Requer a configuração experimental `enable_trino_dialect`.
+* `trino` — Trino SQL: traduz a sintaxe do Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) e mapeia os nomes das funções do Trino para seus equivalentes no ClickHouse. Requer a configuração beta `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -461,6 +470,22 @@ Valores possíveis:
 
 * 0 — `SELECT` lança uma exceção se o arquivo vazio não for compatível com o formato solicitado.
 * 1 — `SELECT` retorna um resultado vazio para arquivo vazio.
+
+## exact_division_for_integers {#exact_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar a divisão inteira exata para `\/` e `divide`."}]}]} />
+
+Faz com que `/` e `divide` retornem um inteiro quando ambos os operandos forem de tipos inteiros, incluindo `Int128`, `UInt128`, `Int256` e `UInt256`.
+O quociente é truncado em direção a zero. O resultado tem a largura do primeiro operando e é com sinal se algum dos operandos for com sinal.
+Uma divisão por zero ou um quociente fora do intervalo do tipo de resultado lança uma exceção. Operandos `Nullable` propagam `NULL`.
+
+Por padrão, a divisão de dois inteiros retorna `Float64`. Esta configuração não altera divisões que envolvam operandos `Decimal` ou de ponto flutuante,
+nem as funções explícitas `intDiv`, `divideDecimal` e `divideOrNull`.
+
+A escolha fica registrada no SQL recém-enviado antes que as expressões sejam armazenadas em metadados de tabela, visões, funções SQL ou mutações.
+Definições existentes e consultas `ATTACH` mantêm a semântica de divisão original, independentemente desta configuração.
 
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
@@ -922,6 +947,18 @@ O intervalo, em microssegundos, para verificar se a execução da requisição f
 
 Define o modo padrão da consulta INTERSECT. Valores possíveis: string vazia, &#39;ALL&#39;, &#39;DISTINCT&#39;. Se estiver vazio, a consulta sem modo gerará uma exceção.
 
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração que faz com que a família `JSONExtract` preencha tuplas nomeadas apenas a partir de objetos JSON, em vez do preenchimento posicional histórico a partir de arrays. Tuplas não nomeadas são sempre preenchidas posicionalmente, e a extração a partir de uma coluna do tipo de dado `JSON` não é afetada."}]}]} />
+
+Na família de funções `JSONExtract`, preenche tuplas nomeadas apenas a partir de objetos JSON. Quando desabilitada, um array JSON preenche uma tupla nomeada posicionalmente (o comportamento histórico), de modo que o campo nomeado que recebe cada elemento do array depende da ordem de declaração da tupla. Tuplas não nomeadas são sempre preenchidas posicionalmente a partir de arrays, independentemente desta configuração.
+
+Esta configuração se aplica a JSON passado como string. A extração a partir de uma coluna do tipo de dado `JSON` não é afetada, seja para caminhos tipados ou não tipados: ela lê as subcolunas da coluna em vez de fazer o parsing de um documento JSON e, portanto, nunca chega ao código controlado por esta configuração. *Colunas* de tupla nomeada em formatos de entrada JSON são controladas por outra configuração, [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/pt-BR/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects); esta configuração abrange apenas as funções de extração.
+
+Desabilitada por padrão.
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1278,6 +1315,16 @@ Habilita o envio das roles do usuário do nó de origem para outros nós durante
 Quando uma função de distância `QBit` (`L2DistanceTransposed`, `cosineDistanceTransposed`, `dotProductTransposed` ou uma de suas variantes `...Quantized`) é chamada com precisão 1, o vetor de referência também é reduzido aos sinais de seus elementos. O resultado é então calculado a partir da distância de Hamming entre os dois vetores de sinais, usando XOR e popcount.
 
 Por padrão, com precisão 1, o vetor de referência mantém a precisão total, enquanto apenas o vetor armazenado é reduzido aos sinais de seus elementos (uma distância assimétrica). A distância simétrica é várias vezes mais rápida, mas ignora as magnitudes dos elementos do vetor de referência: uma dimensão em que o valor de referência é alto tem o mesmo peso que outra em que ele está próximo de zero.
+
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração: o passo da grade usado ao derivar condições determinísticas a partir de condições que envolvem o horário atual no cache de condições de consulta, expresso como fração da distância entre a constante de tempo e o horário atual."}]}]} />
+
+Para condições que envolvem o horário atual no [cache de condições de consulta](/pt-BR/concepts/features/performance/caches/query-condition-cache) de tabelas `MergeTree` (veja [`use_query_condition_cache_for_time_conditions`](/pt-BR/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions)): define o tamanho da grade para a qual as constantes de tempo são arredondadas, expresso como fração da distância entre a constante e o horário atual. Por exemplo, com o fator padrão 1.0, a constante em `WHERE time >= now() - INTERVAL 10 DAY` é arredondada para uma grade de um dia (limitada a um dia), e a constante em `WHERE time >= now() - INTERVAL 1 HOUR`, para uma grade de uma hora.
+
+Valores menores mantêm a condição derivada mais próxima da original (com menos sobreleitura perto da fronteira), ao custo de a chave do cache mudar com mais frequência. O passo da grade é limitado a no mínimo um segundo; assim, um fator pequeno faz a condição derivada convergir para a original em vez de desativá-la. Valores menores ou iguais a 0 desativam completamente a derivação.
 
 ## query_metric_log_interval {#query_metric_log_interval}
 

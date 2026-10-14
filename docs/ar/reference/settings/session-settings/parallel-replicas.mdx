@@ -153,6 +153,8 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel&#95;replicas&#95;local&#95;plan
 
+يخص هذا الإعداد تحليل الفهرس الذي يحدد نطاقات العلامات التي تُعلنها عملية القراءة، وهي النطاقات التي يوزّعها المنسّق. ولا يشمل الاستبعاد الذي يجري أثناء قراءة البيانات، مثل استبعاد حبيبات التخزين في `enable_join_runtime_filters_index_analysis`؛ إذ لا يتكوّن مرشّح JOIN أثناء التنفيذ إلا بعد قراءة جانب البناء، ولذلك تُقيّم كل نسخة متماثلة مرشّحها الخاص وتستبعد حصتها بنفسها، ولا يستطيع أي منسّق أن يتولى ذلك نيابةً عنها.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

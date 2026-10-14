@@ -921,6 +921,10 @@ ReplicatedMergeTree에서 파트 변경을 위한 로그 항목을 성공적으�
 
 mutation 이후 데이터가 다른 레플리카의 데이터와 바이트 단위까지 동일하지 않은 횟수입니다. &#39;DataAfterMergeDiffersFromReplica&#39;에 설명된 이유 외에도, 비결정적인 mutation으로 인해 발생할 수도 있습니다.
 
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+데이터베이스가 테이블 반복자(iterator)를 통해 넘겨준 테이블 수입니다. 여기에는 `SHOW TABLES`, 테이블 목록을 보여주는 시스템 테이블, 그 밖에 데이터베이스를 순회하는 모든 작업이 포함됩니다. 이러한 시스템 테이블을 대상으로 하는 쿼리에서 테이블 이름(table name)에 조건을 지정하면 열거 범위가 좁혀지며, 이 카운터를 통해 범위가 얼마나 좁혀졌는지 확인할 수 있습니다.
+
 ### NULL에 대한 기본 구현이 처리한 행 수 {#defaultimplementationfornullsrows}
 
 함수 실행 중 NULL에 대한 기본 구현이 처리한 행 수
@@ -1981,6 +1985,26 @@ File/S3/URL/HDFS처럼 파일을 사용하는 테이블 엔진에서 읽은 파�
 
 외부 처리(정렬/집계/조인) 중 기록된 데이터의 양(비압축 상태, Compression 적용 전)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+외부 메모리에 `IN` 집합(set)용으로 기록된 압축된 바이트 수입니다.
+
+### ExternalSetMerge {#externalsetmerge}
+
+외부 메모리에서 `IN` 집합(set)을 처리하는 동안 임시 파일이 머지된 횟수입니다.
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+키 조회를 위해 외부 메모리에 있는 `IN` 집합(set)의 임시 파일에서 읽은 블록(blocks) 수입니다.
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+`IN` 집합(set)을 위해 외부 메모리에 기록된 데이터의 양(압축 전 비압축 크기 기준)입니다.
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+외부 메모리를 사용하는 `IN` 집합(set)의 임시 파일이 디스크에 기록된 횟수입니다.
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 외부 메모리(external memory)를 사용하는 정렬 과정에서 기록된 압축 바이트 수입니다.
@@ -2629,6 +2653,14 @@ DelayedJoinedBlocksWorkerTransform이 내보낸 블록 수입니다.
 
 DelayedJoinedBlocksWorkerTransform에서 출력된 행 수입니다.
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+RIGHT 또는 FULL 해시 조인에서 조인되지 않은 행(rows)을 찾기 위해 해시 테이블을 스캔한 횟수입니다.
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+스캔한 파트에서 오른쪽 키가 모두 매칭되어, RIGHT 또는 FULL 해시 조인이 조인되지 않은 행을 찾기 위한 해시 테이블 스캔을 건너뛴 횟수입니다.
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 NonJoinedBlocksTransform에서 출력된 블록 수입니다.
@@ -3252,6 +3284,10 @@ Keeper가 배치 단위로 처리한 쓰기 요청의 총 개수
 ### LoadedPrimaryIndexRows {#loadedprimaryindexrows}
 
 기본 키가 로드된 행 수입니다.
+
+### LoadedStatistics {#loadedstatistics}
+
+컬럼 통계(Column Statistics)가 로드된 데이터 파트(data part) 수
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -4201,6 +4237,10 @@ DB::Parquet::Prefetcher에서 ReadMode::SeekAndRead로 수행된 총 읽기 횟�
 
 Parquet 데이터에서 프루닝으로 제외된 row group의 총개수
 
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+데이터를 읽지 않고 컬럼 청크 통계로부터 `min` / `max`를 계산한 Parquet 파일 수입니다(`optimize_min_max_from_files` 참조).
+
 ### ParquetReadPages {#parquetreadpages}
 
 읽은 Parquet 데이터 페이지의 총 개수
@@ -4577,6 +4617,10 @@ Azure에서 읽는 데 소요되는 시간입니다.
 
 Azure에서 읽는 중 발생한 예외 수
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+동기식 `pread`로 파일 디스크립터에서 읽은 데이터 중 OS 페이지 캐시에서 제공된 것으로 감지된 바이트 수입니다(이 감지는 대역폭 스로틀러가 적용된 읽기에서만 수행됩니다).
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 파일 디스크립터에서 수행된 읽기(read/pread) 횟수입니다. 소켓은 포함되지 않습니다.
@@ -4600,6 +4644,10 @@ S3 연결을 초기화하는 데 걸린 시간입니다.
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 S3에서 읽기에 소요된 시간입니다.
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+디스크의 연결 그룹이 `disk_connections_soft_limit` 이상이어서 버퍼 1회 채우기 분량으로 잘린 S3 디스크 요청 수입니다.
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4941,6 +4989,10 @@ JOIN Runtime Filters가 읽기 시점 프루닝을 위해 검사한 그래뉼 �
 
 JOIN Runtime Filters에 의해 읽기 시점에 프루닝된 그래뉼 수
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+읽기 시점에 JOIN Runtime Filter로 그래뉼을 프루닝하도록 설정된 읽기 작업의 수입니다. 읽기 작업이 디스크립터를 가진 채 해당 파이프라인에 도달하고, 그래뉼을 프루닝하는 데 사용할 프라이머리 키 또는 스킵 인덱스가 있으면 집계됩니다. 이후 그래뉼이 실제로 검사되는지와 관계없이 집계되므로, 이 값은 읽기 단계가 재구성될 때마다 디스크립터가 유실되지 않고 유지되었음을 나타냅니다.
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 빌드 측이 아직 완료되지 않은 상태에서 JOIN 런타임 필터(JOIN Runtime Filter)를 조회하여 필터링되지 않고 그대로 통과한 블록 수
@@ -5252,6 +5304,10 @@ ReplicatedMergeTree 테이블에 INSERT된 블록에서 자체 중복 제거된 
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 서브쿼리를 실행하여 채워진 `IN`/`JOIN` Set의 개수입니다. 준비된 Set 캐시에서 가져온 Set이나 이미 빌드되어 재사용된 Set은 집계되지 않습니다.
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+서브쿼리로부터 생성되는 동안 디스크로 유출된 `IN` 집합(set)의 수입니다.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6249,6 +6305,10 @@ ThreadPoolReader 내부의 읽기 작업이 페이지 캐시(page cache)에서 �
 
 Poco TLS 구현을 사용하는 서버 프로토콜(네이티브 TCP, HTTPS, MySQL, PostgreSQL)에서 수신 연결 시 완료된 TLS 핸드셰이크 횟수입니다. gRPC는 자체 TLS 스택을 사용하므로 집계 대상에서 제외됩니다. 세션을 재개할 때도 핸드셰이크가 수행되므로 이 횟수에 포함됩니다.
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+집계(`enable_group_by_top_k_dynamic_filtering` 참조) 또는 정렬(sorting)(`use_top_k_dynamic_filtering` 참조)에서 발행하는 실행 중 top-K 임계값과 비교했을 때, 프라이머리 인덱스상 모든 행(rows)이 임계값 범위 밖에 있는 것으로 확인되어 읽기 중에 건너뛴 그래뉼 수입니다.
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 데이터 블록이 비압축 캐시에서 발견되어 압축 해제를 피한 횟수입니다.
@@ -6420,6 +6480,10 @@ S3에 쓰기 작업 중 발생한 예외 수입니다.
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 현재 요청 수가 s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file에 정의된 한도에 도달했을 때, 진행 중인 요청 일부가 완료될 때까지 대기하는 데 소요된 시간입니다.
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+YTsaurus에 대한 조회(lookup) 요청 중 스로틀링된 요청 수
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

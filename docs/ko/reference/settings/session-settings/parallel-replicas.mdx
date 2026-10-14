@@ -153,6 +153,8 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 인덱스 분석은 레플리카 코디네이터에서만 수행되며 다른 레플리카에서는 생략됩니다. `parallel_replicas_local_plan`이 활성화된 경우에만 적용됩니다.
 
+이 설정은 읽기 작업이 알리는 마크 범위를 선택하는 인덱스 분석에 적용되며, 코디네이터는 이렇게 선택된 마크 범위를 기준으로 작업을 할당합니다. `enable_join_runtime_filters_index_analysis`의 그래뉼 가지치기(Granule pruning)처럼 데이터를 읽는 도중에 수행되는 프루닝은 이 설정의 대상이 아닙니다. JOIN 런타임 필터는 빌드 측(build side)을 모두 읽은 후에야 생성되므로 각 레플리카가 자체 필터를 평가하여 자신이 맡은 부분을 직접 프루닝해야 하며, 코디네이터가 이를 대신할 수는 없습니다.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -78,6 +78,7 @@
                         "ko/reference/statements/create/dictionary/layouts/range-hashed",
                         "ko/reference/statements/create/dictionary/layouts/hierarchical",
                         "ko/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "ko/reference/statements/create/dictionary/layouts/xgboost",
                         "ko/reference/statements/create/dictionary/layouts/polygon",
                         "ko/reference/statements/create/dictionary/layouts/ip-trie",
                         "ko/reference/statements/create/dictionary/layouts/regexp-tree"

@@ -944,13 +944,13 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 
 كبديل للدالة age، راجع الدالة [`dateDiff`](#dateDiff).
 
-**البنية**
+**الصيغة**
 
 ```sql
 age('unit', startdate, enddate[, timezone])
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `unit` — نوع الفاصل الزمني للنتيجة.
 
@@ -970,11 +970,11 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — أول قيمة زمنية للطرح (المطروح). [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `enddate` — ثاني قيمة زمنية يُطرح منها (المطروح منه). [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
-* `timezone` — اختياري. اسم المنطقة الزمنية. إذا تم تحديده، فسيُطبَّق على كلٍّ من startdate و enddate. وإذا لم يتم تحديده، فستُستخدم المنطقتان الزمنيتان لـ startdate و enddate. وإذا لم تكونا متماثلتين، فالنتيجة غير محددة. [`String`](/ar/reference/data-types/string)
+* `timezone` — اختياري. اسم المنطقة الزمنية. إذا تم تحديده، فسيُطبَّق على كلٍّ من startdate و enddate. وإذا لم يتم تحديده، فستُستخدم المنطقتان الزمنيتان لـ startdate و enddate. وإذا لم تكونا متماثلتين، فالنتيجة غير محددة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تعيد الفرق بين enddate و startdate معبَّرًا عنه بوحدة unit. [`Int32`](/ar/reference/data-types/int-uint)
+تعيد الفرق بين enddate و startdate معبَّرًا عنه بوحدة unit. [`Int32`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -1207,7 +1207,7 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 
 ## dateDiff {#dateDiff}
 
-تم تقديمه في: v23.4.0
+أُضيف في: v23.4.0
 
 يعيد عدد حدود `unit` المحددة التي جرى تجاوزها بين `startdate` و`enddate`.
 يُحسب الفرق باستخدام الوحدات النسبية. على سبيل المثال، الفرق بين 2021-12-29 و2022-01-01 هو 3 أيام للوحدة day
@@ -1219,7 +1219,7 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 
 كبديل لـ `dateDiff`، راجع الدالة [`age`](#age).
 
-**البنية**
+**الصيغة**
 
 ```sql
 dateDiff(unit, startdate, enddate[, timezone])
@@ -1227,7 +1227,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 **الأسماء المستعارة**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
 
-**المعاملات**
+**الوسيطات**
 
 * `unit` — نوع الفاصل الزمني المستخدم في النتيجة.
 
@@ -1247,11 +1247,11 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `startdate` — القيمة الزمنية الأولى التي تُطرح (المطروح). [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `enddate` — القيمة الزمنية الثانية التي يُطرح منها (المطروح منه). [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
-* `timezone` — اختياري. اسم المنطقة الزمنية. إذا تم تحديده، فسيُطبَّق على كلٍّ من `startdate` و`enddate`. وإذا لم يتم تحديده، فستُستخدم المنطقتان الزمنيتان لـ `startdate` و`enddate`. وإذا لم تكونا متماثلتين، فستكون النتيجة غير محددة. [`String`](/ar/reference/data-types/string)
+* `timezone` — اختياري. اسم المنطقة الزمنية. إذا تم تحديده، فسيُطبَّق على كلٍّ من `startdate` و`enddate`. وإذا لم يتم تحديده، فستُستخدم المنطقتان الزمنيتان لـ `startdate` و`enddate`. وإذا لم تكونا متماثلتين، فستكون النتيجة غير محددة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تعيد الفرق بين `enddate` و`startdate` معبَّرًا عنه بوحدة `unit`. [`Int64`](/ar/reference/data-types/int-uint)
+تعيد الفرق بين `enddate` و`startdate` معبَّرًا عنه بوحدة `unit`. [`Int64`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -5741,16 +5741,16 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 يعيد التاريخ الحالي وقت تحليل الاستعلام. وهو مطابق لـ `toDate(now())`.
 
 <Note>
-  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
 </Note>
 
-**البنية**
+**الصيغة**
 
 ```sql
 today()
 ```
 
-**الأسماء البديلة**: `current_date`, `curdate`
+**الأسماء البديلة**: `curdate`, `current_date`
 
 **الوسيطات**
 
@@ -5776,7 +5776,7 @@ SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FO
 └────────────┴────────────┴──────────────┘
 ```
 
-**صياغة SQL القياسية بدون أقواس**
+**صيغة SQL القياسية بدون أقواس**
 
 ```sql title=Query
 SELECT TODAY, CURDATE,CURRENT_DATE

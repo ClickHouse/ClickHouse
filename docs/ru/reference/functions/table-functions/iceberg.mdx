@@ -132,13 +132,13 @@ ClickHouse также поддерживает чтение [векторов у
 ### Базовое использование {#basic-usage}
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_timestamp_ms = 1714636800000
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_snapshot_id = 3547395809148285433
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
 Примечание: В одном запросе нельзя одновременно указывать параметры `iceberg_timestamp_ms` и `iceberg_snapshot_id`.
@@ -162,47 +162,47 @@ ClickHouse также поддерживает чтение [векторов у
 Рассмотрим следующую последовательность операций:
 
 ```sql
- -- Создать таблицу с двумя столбцами
-  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-  order_number bigint, 
-  product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+-- Create a table with two columns
+ CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+ order_number bigint, 
+ product_code string
+ ) 
+ USING iceberg 
+ OPTIONS ('format-version'='2')
 
-- - Вставить данные в таблицу
-  INSERT INTO spark_catalog.db.time_travel_example VALUES 
-    (1, 'Mars')
+- - Insert data into the table
+ INSERT INTO spark_catalog.db.time_travel_example VALUES 
+   (1, 'Mars')
 
-  ts1 = now() // Фрагмент псевдокода
+ ts1 = now() // A piece of pseudo code
 
-- - Изменить таблицу, добавив новый столбец
-  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
- 
-  ts2 = now()
+- - Alter table to add a new column
+ ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
-- - Вставить данные в таблицу
-  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+ ts2 = now()
 
-   ts3 = now()
+- - Insert data into the table
+ INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-- - Запросить таблицу на каждой временной метке
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+  ts3 = now()
 
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+- - Query the table at each timestamp
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -415,7 +415,7 @@ y: 993
 
 ### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` удаляет все файлы данных указанной партиции и создаёт новый снимок, в котором больше нет ссылок на эти файлы. Сейчас операция поддерживается для таблиц Iceberg в локальном и объектном хранилищах, но не для таблиц, управляемых каталогом.
+`ALTER TABLE ... DROP PARTITION <value>` удаляет все файлы данных указанной партиции и создаёт новый снимок, в котором больше нет ссылок на эти файлы. Операция поддерживается для таблиц Iceberg в локальном и объектном хранилищах, а также для таблиц в базе данных `DataLakeCatalog` с типом каталога `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables` или `unity` (при `use_unity_catalog_v2 = 1`).
 
 Чтобы использовать эту операцию, включите `allow_insert_into_iceberg`.
 
@@ -677,44 +677,44 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 **Синтаксис:**
 
 ```sql
--- Позиционная форма: единственный безымянный аргумент older_than
+-- Positional form: single unnamed older_than argument
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
 
--- Именованная форма
+-- Named form
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     older_than = 'timestamp',
     location = 'path',
     dry_run = 0|1
 )
 
--- Без аргументов: используются все значения по умолчанию (older_than = 3 дня назад)
+-- No arguments: use all defaults (older_than = 3 days ago)
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
 ```
 
 **Параметры:**
 
-| Parameter    | Type                       | Default                                                                     | Description                                                                                                                                                                                            |
-| ------------ | -------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `older_than` | `String` (временная метка) | 3 дня назад (настраивается через `iceberg_orphan_files_older_than_seconds`) | Рассматривать как потенциально осиротевшие только файлы, время последнего изменения которых старше этой временной метки. Это позволяет избежать удаления файлов из ещё не завершённых операций записи. |
-| `location`   | `String`                   | Расположение таблицы                                                        | Ограничить сканирование конкретным подкаталогом в каталоге таблицы (например, `'data/'` или `'metadata/'`).                                                                                            |
-| `dry_run`    | `UInt64`                   | `0`                                                                         | Если указано `1`, определить осиротевшие файлы и вернуть сводку результатов, ничего не удаляя.                                                                                                         |
+| Parameter    | Type                       | Default                                                                     | Description                                                                                                                                                                                                                                                                                                              |
+| ------------ | -------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `older_than` | `String` (временная метка) | 3 дня назад (настраивается через `iceberg_orphan_files_older_than_seconds`) | Рассматривать как потенциально осиротевшие только файлы, время последнего изменения которых старше этой временной метки. Это позволяет избежать удаления файлов из ещё не завершённых операций записи. Значение должно быть не позднее чем за `iceberg_orphan_files_min_retention_seconds` (1 день) до текущего момента. |
+| `location`   | `String`                   | Расположение таблицы                                                        | Ограничить сканирование конкретным подкаталогом в каталоге таблицы (например, `'data/'` или `'metadata/'`).                                                                                                                                                                                                              |
+| `dry_run`    | `UInt64`                   | `0`                                                                         | Если указано `1`, определить осиротевшие файлы и вернуть сводку результатов, ничего не удаляя.                                                                                                                                                                                                                           |
 
 **Примеры:**
 
 ```sql
--- Удалить осиротевшие файлы старше указанной временной метки
+-- Remove orphan files older than a specific timestamp
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
 
--- Пробный запуск: просмотр файлов, которые будут удалены
+-- Dry run: preview which files would be deleted
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
 
--- Сканировать только каталог данных
+-- Scan only the data directory
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     older_than = '2026-03-01 00:00:00',
     location = 'data/'
 );
 
--- Совместное использование позиционного аргумента older_than с именованными аргументами
+-- Combine positional older_than with named arguments
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     '2026-03-01 00:00:00',
     dry_run = 1
@@ -739,17 +739,18 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
 
 **Настройки:**
 
-| Настройка                                 | Тип      | По умолчанию     | Описание                                                             |
-| ----------------------------------------- | -------- | ---------------- | -------------------------------------------------------------------- |
-| `allow_iceberg_remove_orphan_files`       | `Bool`   | `false`          | Настройка-флаг, включающая эту возможность (экспериментальную).      |
-| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 дня) | Порог `older_than` по умолчанию в секундах, если аргумент не указан. |
+| Настройка                                    | Тип      | По умолчанию     | Описание                                                                                                                                                     |
+| -------------------------------------------- | -------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `allow_iceberg_remove_orphan_files`          | `Bool`   | `false`          | Настройка-флаг, включающая эту возможность (экспериментальную).                                                                                              |
+| `iceberg_orphan_files_older_than_seconds`    | `UInt64` | `259200` (3 дня) | Порог `older_than` по умолчанию в секундах, если аргумент не указан.                                                                                         |
+| `iceberg_orphan_files_min_retention_seconds` | `UInt64` | `86400` (1 день) | Минимальный интервал в секундах между `older_than` и текущим моментом; более позднее значение `older_than` отклоняется. Значение `0` отключает эту проверку. |
 
 <Note>
   * **Требуется формат Iceberg версии 2 (или выше).** Таблицы версии 1 отклоняются, поскольку в их снимках отсутствуют указатели `manifest-list`, необходимые для безопасного определения набора достижимых файлов. Выполнение команды для таблицы v1 возвращает ошибку `BAD_ARGUMENTS`.
   * Обе настройки `allow_insert_into_iceberg` и `allow_iceberg_remove_orphan_files` должны быть включены
   * Рекомендуется запускать `expire_snapshots` перед `remove_orphan_files`, чтобы сначала очищались файлы, на которые ссылаются только истёкшие снимки
   * Используйте `dry_run = 1`, чтобы предварительно просмотреть осиротевшие файлы перед удалением
-  * Порог `older_than` защищает от удаления файлов из ещё не завершённых операций записи — значение по умолчанию, равное 3 дням, обеспечивает достаточный запас безопасности
+  * Значение `older_than`, отстоящее от текущего момента менее чем на `iceberg_orphan_files_min_retention_seconds`, отклоняется: на файлы ещё не закоммиченной операции записи нет ссылок в метаданных таблицы, и они выглядят как осиротевшие. Задавайте значение этой настройки больше максимального времени, которое может потребоваться для коммита записи в таблицу
 </Note>
 
 ## См. также {#see-also}

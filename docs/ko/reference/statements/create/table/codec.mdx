@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 기본적으로 ClickHouse는 자가 관리형 버전에서 `lz4` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다.
 
-`MergeTree` 엔진 패밀리에서는 서버 구성의 [compression](/ko/reference/settings/server-settings/settings/other#compression) 섹션에서 기본 압축 메서드를 변경할 수 있습니다.
+`MergeTree` 엔진 계열에서는 서버 구성의 [compression](/ko/reference/settings/server-settings/settings/other#compression) 섹션에서 기본 압축 메서드를 변경할 수 있습니다.
 
 개별 컬럼마다 [`CREATE TABLE`](/ko/reference/statements/create/table) 쿼리에서 압축 메서드를 정의할 수도 있습니다.
 
@@ -42,6 +42,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
 코덱은 예를 들어 `CODEC(Delta, Default)`와 같이 파이프라인으로 결합할 수 있습니다.
+
+코덱 이름은 대소문자를 구분하지 않으므로 `CODEC(ZSTD)`, `CODEC(zstd)`, `CODEC(ZStd)`는 모두 같은 코덱을 가리킵니다.
 
 <Tip>
   `lz4`와 같은 외부 유틸리티로는 ClickHouse 데이터베이스 파일의 압축을 해제할 수 없습니다. 대신 전용 [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 유틸리티를 사용하십시오.

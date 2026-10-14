@@ -78,6 +78,7 @@
                         "ar/reference/statements/create/dictionary/layouts/range-hashed",
                         "ar/reference/statements/create/dictionary/layouts/hierarchical",
                         "ar/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "ar/reference/statements/create/dictionary/layouts/xgboost",
                         "ar/reference/statements/create/dictionary/layouts/polygon",
                         "ar/reference/statements/create/dictionary/layouts/ip-trie",
                         "ar/reference/statements/create/dictionary/layouts/regexp-tree"

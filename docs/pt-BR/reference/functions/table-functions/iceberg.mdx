@@ -132,13 +132,13 @@ O ClickHouse também oferece suporte à leitura de [vetores de exclusão](https:
 ### Uso básico {#basic-usage}
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_timestamp_ms = 1714636800000
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_snapshot_id = 3547395809148285433
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
 Observação: não é possível especificar os parâmetros `iceberg_timestamp_ms` e `iceberg_snapshot_id` na mesma consulta.
@@ -162,47 +162,47 @@ Estes cenários usam Spark para ilustrar alterações de esquema feitas por uma 
 Considere esta sequência de operações:
 
 ```sql
- -- Criar uma tabela com duas colunas
-  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-  order_number bigint, 
-  product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+-- Create a table with two columns
+ CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+ order_number bigint, 
+ product_code string
+ ) 
+ USING iceberg 
+ OPTIONS ('format-version'='2')
 
-- - Inserir dados na tabela
-  INSERT INTO spark_catalog.db.time_travel_example VALUES 
-    (1, 'Mars')
+- - Insert data into the table
+ INSERT INTO spark_catalog.db.time_travel_example VALUES 
+   (1, 'Mars')
 
-  ts1 = now() // Um trecho de pseudocódigo
+ ts1 = now() // A piece of pseudo code
 
-- - Alterar a tabela para adicionar uma nova coluna
-  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
- 
-  ts2 = now()
+- - Alter table to add a new column
+ ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
-- - Inserir dados na tabela
-  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+ ts2 = now()
 
-   ts3 = now()
+- - Insert data into the table
+ INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-- - Consultar a tabela em cada timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+  ts3 = now()
 
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+- - Query the table at each timestamp
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -415,7 +415,7 @@ y: 993
 
 ### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` remove todos os arquivos de dados de uma única partição e cria um novo snapshot que deixa de fazer referência a eles. Atualmente, a operação é compatível com tabelas Iceberg locais e armazenadas em armazenamento de objetos, mas não com tabelas vinculadas a um catálogo.
+`ALTER TABLE ... DROP PARTITION <value>` remove todos os arquivos de dados de uma única partição e cria um novo snapshot que deixa de fazer referência a eles. A operação é compatível com tabelas Iceberg locais e armazenadas em armazenamento de objetos, bem como com tabelas em um banco de dados `DataLakeCatalog` com o tipo de catálogo `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables` ou `unity` (com `use_unity_catalog_v2 = 1`).
 
 Habilite `allow_insert_into_iceberg` para usar esta operação.
 
@@ -677,44 +677,44 @@ Arquivos órfãos são arquivos no armazenamento que não são referenciados por
 **Sintaxe:**
 
 ```sql
--- Forma posicional: único argumento older_than sem nome
+-- Positional form: single unnamed older_than argument
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
 
--- Forma nomeada
+-- Named form
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     older_than = 'timestamp',
     location = 'path',
     dry_run = 0|1
 )
 
--- Sem argumentos: usa todos os padrões (older_than = 3 dias atrás)
+-- No arguments: use all defaults (older_than = 3 days ago)
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
 ```
 
 **Parâmetros:**
 
-| Parâmetro    | Tipo                 | Padrão                                                                    | Descrição                                                                                                                                                                                          |
-| ------------ | -------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `older_than` | `String` (timestamp) | 3 dias atrás (configurável por `iceberg_orphan_files_older_than_seconds`) | Considera como candidatos a órfãos apenas os arquivos cuja hora da última modificação seja anterior a este timestamp. É uma proteção para evitar a exclusão de arquivos de gravações em andamento. |
-| `location`   | `String`             | Localização da tabela                                                     | Restringe a varredura a um subdiretório específico dentro da localização da tabela (por exemplo, `'data/'` ou `'metadata/'`).                                                                      |
-| `dry_run`    | `UInt64`             | `0`                                                                       | Quando `1`, identifica arquivos órfãos e retorna um resumo dos resultados sem excluir nada de fato.                                                                                                |
+| Parâmetro    | Tipo                 | Padrão                                                                    | Descrição                                                                                                                                                                                                                                                                                              |
+| ------------ | -------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `older_than` | `String` (timestamp) | 3 dias atrás (configurável por `iceberg_orphan_files_older_than_seconds`) | Considera como candidatos a órfãos apenas os arquivos cuja hora da última modificação seja anterior a este timestamp. É uma proteção para evitar a exclusão de arquivos de gravações em andamento. Deve ser pelo menos `iceberg_orphan_files_min_retention_seconds` (1 dia) anterior ao momento atual. |
+| `location`   | `String`             | Localização da tabela                                                     | Restringe a varredura a um subdiretório específico dentro da localização da tabela (por exemplo, `'data/'` ou `'metadata/'`).                                                                                                                                                                          |
+| `dry_run`    | `UInt64`             | `0`                                                                       | Quando `1`, identifica arquivos órfãos e retorna um resumo dos resultados sem excluir nada de fato.                                                                                                                                                                                                    |
 
 **Exemplos:**
 
 ```sql
--- Remove arquivos órfãos mais antigos que um timestamp específico
+-- Remove orphan files older than a specific timestamp
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
 
--- Dry run: visualize quais arquivos seriam excluídos
+-- Dry run: preview which files would be deleted
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
 
--- Escanear apenas o diretório de dados
+-- Scan only the data directory
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     older_than = '2026-03-01 00:00:00',
     location = 'data/'
 );
 
--- Combinar older_than posicional com argumentos nomeados
+-- Combine positional older_than with named arguments
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     '2026-03-01 00:00:00',
     dry_run = 1
@@ -739,17 +739,18 @@ O comando retorna uma tabela com as colunas `metric_name` e `metric_value`, most
 
 **Configurações:**
 
-| Configuração                              | Tipo     | Padrão            | Descrição                                                                 |
-| ----------------------------------------- | -------- | ----------------- | ------------------------------------------------------------------------- |
-| `allow_iceberg_remove_orphan_files`       | `Bool`   | `false`           | Configuração de controle para habilitar o recurso (experimental).         |
-| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | Limite padrão de `older_than`, em segundos, quando o argumento é omitido. |
+| Configuração                                 | Tipo     | Padrão            | Descrição                                                                                                                                    |
+| -------------------------------------------- | -------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow_iceberg_remove_orphan_files`          | `Bool`   | `false`           | Configuração de controle para habilitar o recurso (experimental).                                                                            |
+| `iceberg_orphan_files_older_than_seconds`    | `UInt64` | `259200` (3 days) | Limite padrão de `older_than`, em segundos, quando o argumento é omitido.                                                                    |
+| `iceberg_orphan_files_min_retention_seconds` | `UInt64` | `86400` (1 dia)   | Distância mínima, em segundos, entre `older_than` e o momento atual; um `older_than` mais recente é rejeitado. `0` desabilita a verificação. |
 
 <Note>
   * **Requer o Iceberg format version 2 (ou superior).** Tabelas da versão 1 são rejeitadas porque não têm ponteiros `manifest-list` em snapshots, que são necessários para determinar com segurança o conjunto de arquivos alcançáveis. Executar o comando em uma tabela v1 retorna um erro `BAD_ARGUMENTS`.
   * Requer que as configurações `allow_insert_into_iceberg` e `allow_iceberg_remove_orphan_files` estejam habilitadas
   * Recomenda-se executar `expire_snapshots` antes de `remove_orphan_files`, para que os arquivos referenciados exclusivamente por snapshots expirados sejam removidos primeiro
   * Use `dry_run = 1` para visualizar os arquivos órfãos antes da exclusão
-  * O limite `older_than` protege contra a exclusão de arquivos de gravações em andamento — o limite padrão de 3 dias oferece uma margem de segurança generosa
+  * Um valor de `older_than` mais próximo do momento atual do que `iceberg_orphan_files_min_retention_seconds` é rejeitado, porque os arquivos de uma gravação cujo commit ainda não foi concluído não são referenciados pelos metadados da tabela e parecem órfãos; mantenha essa configuração acima do tempo máximo que uma gravação na tabela pode levar para concluir o commit
 </Note>
 
 ## Veja também {#see-also}

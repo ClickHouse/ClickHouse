@@ -970,7 +970,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — 뺄 값인 첫 번째 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `enddate` — 여기에서 빼는 대상인 두 번째 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
-* `timezone` — 선택 사항입니다. 시간대 이름입니다. 지정하면 startdate와 enddate 모두에 적용됩니다. 지정하지 않으면 startdate와 enddate의 시간대가 사용됩니다. 두 값의 시간대가 같지 않으면 결과는 지정되지 않습니다. [`String`](/ko/reference/data-types/string)
+* `timezone` — 선택 사항입니다. 시간대 이름입니다. 지정하면 startdate와 enddate 모두에 적용됩니다. 지정하지 않으면 startdate와 enddate의 시간대가 사용됩니다. 두 값의 시간대가 같지 않으면 결과는 명시되지 않습니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -1231,7 +1231,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `unit` — 결과를 표현할 인터벌 유형입니다.
 
-| Unit        | 가능한 값                                    |
+| 단위        | 가능한 값                                    |
 | ----------- | ---------------------------------------- |
 | nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
@@ -1247,7 +1247,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `startdate` — 빼는 값인 첫 번째 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `enddate` — 여기에서 빼기를 수행하는 두 번째 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
-* `timezone` — 선택 사항입니다. 시간대 이름입니다. 지정하면 `startdate`와 `enddate` 모두에 적용됩니다. 지정하지 않으면 `startdate`와 `enddate`의 시간대가 사용됩니다. 두 값의 시간대가 서로 다르면 결과는 정의되지 않습니다. [`String`](/ko/reference/data-types/string)
+* `timezone` — 선택 사항입니다. 시간대 이름입니다. 지정하면 `startdate`와 `enddate` 모두에 적용됩니다. 지정하지 않으면 `startdate`와 `enddate`의 시간대가 사용됩니다. 두 값의 시간대가 서로 다르면 결과는 명시되지 않습니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -5747,7 +5747,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 today()
 ```
 
-**별칭**: `current_date`, `curdate`
+**별칭**: `curdate`, `current_date`
 
 **인수**
 

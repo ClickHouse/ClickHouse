@@ -109,10 +109,11 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 上述数据类型映射适用于读取操作。ClickHouse 创建或演进 Iceberg schema 并写入数据时，存在以下限制：
 
-* ClickHouse 无法创建包含 `Bool`、`Decimal`、`FixedString`、`Int8`、`UInt8`、`Int16` 或 `UInt16` 的 Iceberg schema，也无法将列添加为或修改为上述类型之一。操作会因不支持的类型异常而失败。但这并不妨碍向现有 Iceberg 列中插入 `Bool` 或 `Decimal` 值。
+* ClickHouse 无法创建包含 `Bool`、`FixedString`、`Int8`、`UInt8`、`Int16` 或 `UInt16` 的 Iceberg schema，也无法将列添加为或修改为上述类型之一。操作会因不支持的类型异常而失败。但这并不妨碍向现有 Iceberg 列中插入 `Bool` 值。
+* ClickHouse 同样无法创建包含 `UInt64` 的 Iceberg schema：Iceberg 中最宽的整数类型是有符号 64 位的 `long`，无法表示所有 `UInt64` 值。请改用 `Int64` 或 `Decimal(20, 0)`。创建包含 `UInt64` 列 (包括 `Array(UInt64)` 这类嵌套列) 的表时，即使该路径下已存在 Iceberg 表，操作也会抛出异常并失败。出于同样的原因，`UInt32` 列会被扩宽为 Iceberg `long`，因此读回时为 `Int64`。
 * 当 ClickHouse 创建或演进 Iceberg schema 时，会将所有 `DateTime` 和 `DateTime64` 列映射为 Iceberg `timestamp`，后者具有微秒精度且不带时区。ClickHouse 无法生成 `timestamptz`、`timestamp_ns` 或 `timestamptz_ns` schema 类型，因此 Iceberg schema 无法表示更高精度和时区语义。
 * ClickHouse 无法向使用 `decimal`、`fixed`、`timestamp_ns` 或 `timestamptz_ns` 列作为直接分区字段的 Iceberg 表写入数据。操作会因不支持的类型异常而失败。
-* 对于包含 ClickHouse 无法序列化其边界值的类型 (包括 `Bool` 和 `Decimal`) 的数据文件，ClickHouse 会在 Iceberg 清单条目中省略所有列的下界和上界。仍会包含列大小和 NULL 计数，且数据保持正确，但读取器无法对这些文件使用清单级 min-max pruning。
+* 对于包含 ClickHouse 无法序列化其边界值的类型 (包括 `Bool` 和 `Decimal`) 的数据文件，ClickHouse 会在 Iceberg 清单条目中省略所有列的下界和上界。仍会包含列大小和 NULL 计数，且数据保持正确，但读取器无法对这些文件使用清单级 min-max 裁剪。
 
 ## Schema 演进 {#schema-evolution}
 
@@ -132,7 +133,7 @@ ClickHouse 支持在针对 Iceberg 表的 SELECT 查询中进行分区裁剪，�
 
 ## `DROP PARTITION` {#drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` 会删除某个分区下的所有数据文件，并创建一个不再引用这些文件的新快照。目前，该操作支持本地和对象存储中的 Iceberg 表，但不支持基于目录的表。
+`ALTER TABLE ... DROP PARTITION <value>` 会删除某个分区下的所有数据文件，并创建一个不再引用这些文件的新快照。该操作支持本地和对象存储中的 Iceberg 表，以及 `DataLakeCatalog` 数据库中目录类型为 `rest`、`onelake`、`biglake`、`delta_sharing`、`horizon`、`s3tables` 或 `unity` (需设置 `use_unity_catalog_v2 = 1`) 的表。
 
 要使用此操作，请启用 `allow_insert_into_iceberg`。
 

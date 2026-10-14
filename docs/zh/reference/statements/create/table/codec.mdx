@@ -43,8 +43,10 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 编解码器可以组合成管道，例如 `CODEC(Delta, Default)`。
 
+编解码器名称不区分大小写，因此 `CODEC(ZSTD)`、`CODEC(zstd)` 和 `CODEC(ZStd)` 指的都是同一个编解码器。
+
 <Tip>
-  无法使用 `lz4` 等外部工具解压 ClickHouse 数据库文件。请改用专用的 [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 工具。
+  无法使用 `lz4` 等外部工具解压缩 ClickHouse 数据库文件。请改用专用的 [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 工具。
 </Tip>
 
 以下表引擎支持压缩：

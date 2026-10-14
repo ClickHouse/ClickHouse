@@ -84,6 +84,29 @@ TLS 位于传输层，处于协议之下。启用 TLS 后，整个 TCP 流都会
 
 在分布式查询执行中，服务器之间通过证明自己知晓共享密钥来相互进行身份验证，而无需在线上传输该密钥。每个 Query 都会在 [`Query`](#query) 的第 4 个字段中携带一个 32 字节的 SHA-256 `auth_hash`，该值由盐值、随机数 (nonce) 、已配置的密钥以及查询共同计算得出，接收方服务器会重新计算该值并进行比对。此机制受 `INTERSERVER_SECRET` 特性 (v54441) 控制。外部客户端在此处始终发送空字符串。参见[服务器间身份验证](#inter-server-authentication)。
 
+### 接收端大小限制 {#receiver-side-size-limits}
+
+在线上传输中，几乎所有字符串和集合都带有长度前缀，接收方可能在后续数据到达之前就按声明的大小分配内存。因此，对端必须根据数据实际可能的合理大小来限制可接受的输入——在 inter-server 模式下，服务器会在验证查询的 `auth_hash` *之前*读取该查询的 `ClientInfo`、设置以及外部授予的角色，因此这些限制作用于未经身份验证的输入。
+
+ClickHouse 服务器和 `clickhouse-client` 强制执行的限制如下，实现方应预期超出这些限制的输入会被拒绝：
+
+| 字段                                                                                                      | 限制                                                                                                 |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [`ClientHello`](#clienthello) 中的每个 `String`——用户、密码、数据库、客户端名称——以及 [`Query`](#query) 的查询 ID               | 64 KiB                                                                                             |
+| [`ClientInfo`](#clientinfo) 中的每个 `String`——用户、查询 ID、主机名和客户端名称、配额键、User-Agent、referer、URL、tracestate、JWT | 1 GiB——即通用上限，但随字节到达逐步读取，而非预先分配内存；`ClientInfo` 由其他接口转发而来，这些接口中的值可能更长，且会持久化到异步 `Distributed` 插入队列文件中 |
+| [`ClientInfo`](#clientinfo) 中当前启用的角色数量，以及每个角色的名称                                                        | 65536 个条目，每个 64 KiB                                                                                |
+| [`Query`](#query) 中 [`Setting`](#setting) 条目和 [`Parameter`](#parameter) 条目的数量                           | 各 65536 个                                                                                          |
+| 每个 [`Setting`](#setting) 和每个 [`Parameter`](#parameter) 的名称                                              | 64 KiB                                                                                             |
+| [`Setting`](#setting) 或 [`Parameter`](#parameter) 的值，以及查询文本                                             | 1 GiB——即通用上限；参数属于与查询同等规模的数据，而查询文本本身必须先按此上限读取，才能校验覆盖它的 `auth_hash`                                  |
+| [`Query`](#query) 中已序列化的外部授予角色                                                                          | 总计 1 MiB，最多 65536 个角色名称，每个 64 KiB                                                                  |
+| `TablesStatusRequest` / `TablesStatusResponse` 中的表数量，以及每个数据库名和表名的长度                                     | 100000 个表，每个标识符 64 KiB                                                                             |
+| `PartUUIDs` 数据包中的 UUID 数量 (客户端)                                                                         | 1000000                                                                                            |
+| [`Data`](#data) 数据块的块信息中 `out_of_order_buckets` 的数量                                                     | 256——即两级聚合的桶数                                                                                      |
+| [`ServerHello`](#serverhello) 中 `password_complexity_rules` 的数量                                         | 参见[该处的说明](#serverhello)                                                                            |
+| 其他任何没有专门限制的 `String` 或集合                                                                                | 1 GiB                                                                                              |
+
+超出限制时，服务器会返回携带 `TOO_LARGE_ARRAY_SIZE` (128) 或 `TOO_LARGE_STRING_SIZE` (131) 的 [`Exception`](#exception)。上述数值是当前服务器实际执行的限制，并非协商确定的，客户端不应指望服务器会接受接近这些上限的内容。
+
 ## 版本控制与功能开关 {#versioning-and-feature-gates}
 
 ### 版本协商 {#version-negotiation}
@@ -160,6 +183,7 @@ negotiated_version = min(client_version, server_version)
 | QUANTILE&#95;DETERMINISTIC&#95;SKIP&#95;DEGREE               | 54491 | Block (Column)                   | 将 `AggregateFunction(quantileDeterministic, ...)` (及其 `quantiles`/`median` 变体写法) 的状态版本从 `0` 升至 `1`，即在每个序列化状态末尾追加一个 `UInt8 skip_degree`。仅该聚合函数的状态负载发生变化；列的封装结构不变，其他聚合函数仍沿用各自的版本。低于此修订版本时，写入方输出版本 `0` 的状态，因此旧版 peer 不受影响。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | STRING&#95;WITH&#95;SIZE&#95;STREAM&#95;SERIALIZATION        | 54492 | Block (Column)                   | `String` 列从逐值长度前缀布局改为单独的累计字节偏移量流 (与 `Array` 的偏移量布局相同) ，并按原样发送：`[UInt64 × num_rows offsets][data blob]`。是否启用由协商的修订版本决定；低于 54492 时，写入方使用逐值长度前缀。传输数据中没有针对此项的逐列标记——双方仅凭修订版本推断。参见 [String 列布局](/zh/resources/develop-contribute/native-protocol/format#string-type)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | UNIQ&#95;STATE&#95;VERSION&#95;1                             | 54493 | Block (Column)                   | 将 `AggregateFunction(uniq, ...)` 的状态版本从 `0` 升至 `1`。版本 `1` 的状态以一个标志字节开头，随后是采用版本 `0` 布局的主样本；若标志的比特 `0` 被置位，其后还会跟随一个由完整 64 位哈希组成的小样本，每个哈希都与常量 `0x9E3779B97F4A0000` 进行异或 (依次为 `UInt8 skip_degree`、`VarUInt count`，然后是 `count` 个 8 字节值) ——该样本最多精简至 16384 个值，可在基数超过二十亿时保持估算精度；在此量级下，32 位主样本的精度会下降，过去甚至会溢出而得出无意义的结果。比特 `1` 表示 64 位样本不完整 (该状态吸收过一个版本 `0` 的状态，而 64 位样本从未见过其中的元素) ：此时不写入该样本，估算值仅基于 32 位主样本。这两个比特互斥，且未定义其他比特；读取方必须拒绝同时设置这两个比特或设置了任何其他比特的标志字节。仅该聚合函数的状态负载发生变化；列的封装结构不变，其他聚合函数仍沿用各自的版本。基于 `uniq` 的透传组合器 (`uniqIf`、`uniqArray`、`uniqForEach`、`uniqMap`、`uniqArgMin` / `uniqArgMax`、`uniqOrNull` / `uniqOrDefault`、`uniqResample`，以及隐式的 `Nullable` 参数适配器) 遵循相同的版本控制，并将版本传递给其负载中嵌套的 `uniq` 状态。低于此修订版本时，写入方输出版本 `0` 的状态 (仅含主样本) ，因此旧版 peer 不受影响。 |
+| MERGE&#95;COMBINATOR&#95;STATE&#95;VERSION                   | 54494 | Block (Column)                   | `-Merge` 函数自身的状态 (而非其所合并的状态) 采用协商修订版本下被合并函数的状态版本，并由外层 `AggregateFunction` 声明该版本。例如，对于分布式的 `quantileDeterministicMerge(state)`，分片发送 `AggregateFunction(1, quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))`，且负载末尾带有 `skip_degree`。低于此修订版本时，外层版本为 `0`：类型字符串为 `AggregateFunction(quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))`，负载不含 `skip_degree`，这正是旧版本发送和期望的格式。负载始终以外层版本为准，而非参数类型内部的版本。仅状态负载发生变化；列的封装结构不变。                                                                                                                                                                                                                                                   |
 
 ## 数据包封装 {#packet-envelope}
 

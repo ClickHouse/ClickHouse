@@ -109,14 +109,15 @@ remote_write:
 
 يرسل Prometheus العينات إلى جدول `prometheus.metrics`.
 
-لتجميع البيانات من عدة طلبات كتابة عن بُعد متزامنة في عدد أقل من الأجزاء، فعّل [عمليات الإدراج غير المتزامنة](/ar/reference/settings/session-settings/async-insert#async_insert) بإضافة إعداد `async_insert` إلى عنوان URL (أو بتفعيله في ملف تعريف المستخدم):
-
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
-```
+لتجميع البيانات من عدة طلبات كتابة عن بُعد متزامنة في عدد أقل من الأجزاء، يستخدم ClickHouse [عمليات الإدراج غير المتزامنة](/ar/reference/settings/session-settings/async-insert#async_insert). وهي مفعّلة افتراضيًا، ويتحكم إعداد `async_insert` في عنوان URL (أو في ملف تعريف المستخدم) في تشغيلها أو إيقافها.
 
 لا يقرّ ClickHouse طلب الكتابة عن بُعد غير المتزامن إلا بعد تفريغ البيانات إلى جميع الجداول الداخلية لجدول `TimeSeries`، بغض النظر عن إعداد [`wait_for_async_insert`](/ar/reference/settings/session-settings/wait-for#wait_for_async_insert): إذ يتعامل بروتوكول الكتابة عن بُعد مع الكتابة المُقَرّ بها على أنها دائمة. وإذا أخفق التفريغ، يُرجع الطلب خطأً ويعيد Prometheus محاولة إرساله.
+
+ولأن كل طلب ينتظر اكتمال تفريغه، فإن عمليات الإدراج غير المتزامنة تحدّ من سرعة الكتابة لدى المُرسِل الواحد. يرسل Prometheus طلبًا واحدًا في كل مرة لكل مقطع كتابة عن بُعد. وعندما ترسل عدة مقاطع في الوقت نفسه، تزداد مهلة التفريغ التكيفية حتى تبلغ [`async_insert_busy_timeout_max_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)، ما لم يبلغ حجم الطلبات قيد الانتظار [`async_insert_max_data_size`](/ar/reference/settings/session-settings/async-insert#async_insert_max_data_size) أولًا. وينتظر الطلب حتى تُفرَّغ دفعته، وهو ما يحدث في غضون هذه المدة كحد أقصى من بدء الدفعة؛ لذا يكتب كل مقطع في ظل حمل مستمر ما يقارب `samples per request / async_insert_busy_timeout_max_ms`، علمًا بأن Prometheus يرسل افتراضيًا ما يصل إلى 2,000 عينة لكل طلب. ولزيادة هذا المعدل:
+
+* ارفع قيمة `max_shards` (القيمة الافتراضية 50) أو `max_samples_per_send` في `queue_config` ضمن [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write). يضيف Prometheus مقاطع تلقائيًا عندما يتأخر عن مواكبة البيانات، حتى يبلغ `max_shards`.
+* اخفض قيمة `async_insert_busy_timeout_max_ms` في عنوان URL أو في ملف تعريف المستخدم، مثل `&async_insert_busy_timeout_max_ms=50`. عندها تحدث عمليات التفريغ بوتيرة أعلى، وتُنشئ كل عملية تفريغ أجزاء بيانات جديدة في الجداول الداخلية.
+* عطّل عمليات الإدراج غير المتزامنة باستخدام `async_insert=0`. عندها يُنشئ كل طلب أجزاء البيانات الخاصة به في الجداول الداخلية.
 
 ## الاستعلام باستخدام PromQL {#promql-query-support}
 
@@ -254,3 +255,35 @@ remote_read:
       username: default
       password: <password>
 ```
+
+## قواعد التسجيل {#recording-rules}
+
+لا يُقيِّم ClickHouse ملفات قواعد Prometheus، لكن يمكن لـ[عرض مُجسَّد قابل للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view) أن يؤدي دور [قاعدة التسجيل](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)، إذ يُقيِّم تعبير PromQL وفق جدول زمني ويُلحق النتيجة بجدول `TimeSeries`. يسجّل العرض التالي `sum by (job) (rate(http_requests_total[5m]))` باسم `job:http_requests:rate5m` كل دقيقة:
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+في كل عملية تحديث، يُقيَّم التعبير عند بداية الدقيقة الحالية، ويُعيَّن اسم المقياس باستخدام `mapUpdate`، ثم تُلحَق عينة واحدة لكل سلسلة بيانات في النتيجة. ويمكن إضافة تسميات إضافية إلى الخريطة نفسها، مثل `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`. ويُستعلَم عن سلسلة البيانات المسجَّلة كما يُستعلَم عن أي مقياس آخر:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+يظهر وقت آخر تقييم والخطأ الناتج عنه في [`system.view_refreshes`](/ar/reference/system-tables/view_refreshes).
+
+يختلف العرض عن قاعدة التسجيل (recording rule) في Prometheus في الجوانب التالية:
+
+* وقت التقييم هو قيمة `now()` لحظة تشغيل التحديث. وإلى جانب الجدول الزمني، يُحدَّث العرض فور إنشائه (ما لم يُنشأ باستخدام `EMPTY`)، وبعد إعادة تشغيل الخادم إذا لم تكن تحديثاته منسَّقة (إذ إن العرض الموجود خارج قاعدة بيانات بمحرك Replicated أو Shared، أو العرض المُعدّ بـ `all_replicas = 1`، لا يحتفظ بآخر تحديث له)، وكذلك عندما يستأنفه الأمر `SYSTEM START VIEW` بعد أن فاته تحديث مجدول. قرِّب `now()` إلى بداية الفاصل الزمني كما في المثال، كي لا تضيف هذه التحديثات عينات بين العينات المجدولة. ومع ذلك، قد يكتب تحديث إضافي عينة ثانية عند الطابع الزمني المُقرَّب نفسه. فمثلًا، لقاعدة مدتها خمس دقائق، استخدم `toStartOfInterval(now(), INTERVAL 5 MINUTE)`.
+* لا تُستدرَك التقييمات الفائتة. فبعد توقف الخادم أو إيقاف العرض، لا يقيّم العرض إلا الفاصل الزمني الحالي، وتبقى الفترات الزمنية السابقة فارغة. ويحدث الأمر نفسه عندما يستغرق التحديث وقتًا أطول من الفاصل الزمني.
+* لا تحصل سلسلة البيانات التي تختفي من النتيجة على وسم تقادم البيانات، لذا تظل الاستعلامات تُرجع آخر قيمة مسجلة لها طوال فترة الاسترجاع، وهي 5 دقائق افتراضيًا.
+* لا يوجد ملف قواعد، بل كل قاعدة عبارة عن عرض مستقل. كما أن القواعد لا تظهر ضمن نتائج `/api/v1/rules`.

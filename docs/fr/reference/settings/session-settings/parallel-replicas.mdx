@@ -153,6 +153,8 @@ Ce paramètre ne concerne que les requêtes avec `JOIN`, dans lesquelles tous le
 
 L’analyse d’index n’est effectuée que sur la réplique coordinatrice et est ignorée sur les autres répliques. Prend effet uniquement lorsque parallel&#95;replicas&#95;local&#95;plan est activé
 
+Ce paramètre concerne l’analyse d’index qui sélectionne les plages de marks annoncées par une lecture, et à partir desquelles le coordinateur effectue ses affectations. Il ne couvre pas l’élagage effectué pendant la lecture des données, comme l’élagage des granules de `enable_join_runtime_filters_index_analysis` : un filtre d’exécution de JOIN n’existe qu’une fois le côté build lu ; chaque réplique évalue donc le sien et élague sa propre part, et aucun coordinateur ne pourrait le faire à leur place.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

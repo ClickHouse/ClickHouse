@@ -714,13 +714,13 @@ Vérifie la taille de la page toutes les N lignes. Envisagez de diminuer cette v
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "10.5"},{"label": "Nouveau paramètre."}]}]} />
 
-Nombre approximatif de bits à utiliser pour chaque valeur distincte dans les filtre de Bloom de Parquet. Taux de faux positifs estimés :
+Nombre approximatif de bits à utiliser pour chaque valeur distincte dans les filtre de Bloom de Parquet. Taux de faux positifs estimés :
 
-* 6   bits - 10 %
-* 10.5 bits -  1 %
-* 16.9 bits -  0.1 %
-* 26.4 bits -  0.01 %
-* 41   bits -  0.001 %
+* 6   bits - 10 %
+* 10.5 bits -  1 %
+* 16.9 bits -  0.1 %
+* 26.4 bits -  0.01 %
+* 41   bits -  0.001 %
 
 ## output_format_parquet_bloom_filter_flush_threshold_bytes {#output_format_parquet_bloom_filter_flush_threshold_bytes}
 
@@ -728,11 +728,11 @@ Nombre approximatif de bits à utiliser pour chaque valeur distincte dans les fi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "134217728"},{"label": "Nouveau paramètre."}]}]} />
 
-Emplacement des filtres de Bloom dans le fichier Parquet. Les filtres de Bloom seront écrits par groupes d&#39;environ cette taille. Plus précisément :
+Emplacement des filtres de Bloom dans le fichier Parquet. Les filtres de Bloom seront écrits par groupes d&#39;environ cette taille. Plus précisément :
 
 * si la valeur est 0, les filtres de Bloom de chaque groupe de lignes sont écrits immédiatement après le groupe de lignes,
-  * si elle est supérieure à la taille totale de tous les filtres de Bloom, les filtres de Bloom de tous les groupes de lignes seront accumulés en mémoire, puis écrits ensemble vers la fin du fichier,
-  * sinon, les filtres de Bloom seront accumulés en mémoire et écrits dès que leur taille totale dépasse cette valeur.
+* si elle est supérieure à la taille totale de tous les filtres de Bloom, les filtres de Bloom de tous les groupes de lignes seront accumulés en mémoire, puis écrits ensemble vers la fin du fichier,
+* sinon, les filtres de Bloom seront accumulés en mémoire et écrits dès que leur taille totale dépasse cette valeur.
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -845,6 +845,16 @@ Utiliser le type String de Parquet au lieu de Binary pour les colonnes de type S
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Nouveau paramètre."}]}]} />
 
 Insère des sommes de contrôle CRC32 dans les en-têtes de page Parquet.
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant d'écrire un `Tuple` nommé dont les champs correspondent au type logique Parquet `FILE` sous la forme d'un groupe annoté `FILE`."}]}]} />
+
+Écrit un `Tuple` nommé dont tous les noms d&#39;éléments sont des champs du type logique Parquet `FILE` (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline` ; n&#39;importe quel sous-ensemble non vide, dans un ordre quelconque) sous la forme d&#39;un groupe annoté avec le type logique `FILE`, qui représente une référence à une plage d&#39;octets stockés de manière intégrée ou dans un fichier externe. Les éléments `offset` et `size` doivent être des entiers (écrits en `INT64`) et les autres éléments de type `String` ou `FixedString` (`inline` est écrit en `BYTE_ARRAY` sans annotation, les autres en `STRING`). Comme l&#39;exige la spécification, chaque champ est écrit en `OPTIONAL`. Les valeurs sont écrites telles quelles, sans vérification de la validité de la référence qu&#39;elles forment.
+
+À la lecture, un groupe annoté `FILE` est toujours lu comme un `Tuple` de ce type, composé d&#39;éléments `Nullable`.
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

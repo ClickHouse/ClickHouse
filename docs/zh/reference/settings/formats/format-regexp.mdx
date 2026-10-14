@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置是根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h) 自动生成的。
 
-<div id="format_regexp">
-  ## format_regexp
-</div>
+## format_regexp {#format_regexp}
 
 正则表达式 (Regexp 格式)
 
-<div id="format_regexp_escaping_rule">
-  ## format_regexp_escaping_rule
-</div>
+## format_regexp_escaping_rule {#format_regexp_escaping_rule}
 
 <SettingsInfoBlock type="EscapingRule" default_value="Raw" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.10"},{"label": "Raw"},{"label": "将 Raw 设为 Regexp 格式的默认转义规则，使其行为更符合用户预期"}]}]} />
 
-用于 Regexp 格式的字段转义规则
+指定如何将 `format_regexp` 生成的每个捕获组解析为对应的目标列类型。可选值包括：`Raw` (默认) ，用于未转义的文本；`Escaped`，用于 TSV 风格的转义；`Quoted`，用于 Values 风格的带引号字段；`CSV`，用于 CSV 字段；`JSON`，用于 JSON 值。此设置在正则表达式匹配到某一行之后才生效，不会改变正则表达式本身。
 
-<div id="format_regexp_skip_unmatched">
-  ## format_regexp_skip_unmatched
-</div>
+## format_regexp_skip_unmatched {#format_regexp_skip_unmatched}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify's production renderer evaluates the exported component without
-  // preserving module-scope bindings. Lazy state keeps the generated data in
-  // that evaluation scope while constructing it only once per mount.
+  // Mintlify の本番レンダラーは、モジュールスコープのバインディングを保持せずに
+  // エクスポートされたコンポーネントを評価します。遅延初期化した state により、生成データを
+  // その評価スコープ内に保持しつつ、マウントごとに一度だけ構築します。
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -235,7 +235,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "apply_prewhere_after_final", path: "/apply#apply_prewhere_after_final", default: "0" },
         { name: "apply_row_policy_after_final", path: "/apply#apply_row_policy_after_final", default: "1" },
         { name: "apply_settings_from_server", path: "/apply#apply_settings_from_server", default: "1" },
-        { name: "apply_string_filters_during_scan", path: "/apply#apply_string_filters_during_scan", default: "0" }
+        { name: "apply_string_filters_during_scan", path: "/apply#apply_string_filters_during_scan", default: "1" }
       ],
       children: []
     },
@@ -297,8 +297,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "automatic_parallel_*",
-      count: 2,
+      count: 3,
       settings: [
+        { name: "automatic_parallel_replicas_max_duplicated_read_ratio", path: "/automatic-parallel#automatic_parallel_replicas_max_duplicated_read_ratio", default: "0.5" },
         { name: "automatic_parallel_replicas_min_bytes_per_replica", path: "/automatic-parallel#automatic_parallel_replicas_min_bytes_per_replica", default: "1048576" },
         { name: "automatic_parallel_replicas_mode", path: "/automatic-parallel#automatic_parallel_replicas_mode", default: "0" }
       ],
@@ -772,7 +773,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 55,
+      count: 58,
       settings: [
         { name: "enable_adaptive_aggregator", path: "/enable#enable_adaptive_aggregator", default: "1" },
         { name: "enable_adaptive_memory_spill_scheduler", path: "/enable#enable_adaptive_memory_spill_scheduler", default: "0" },
@@ -786,11 +787,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_function_early_short_circuit", path: "/enable#enable_function_early_short_circuit", default: "0" },
         { name: "enable_funnel_functions", path: "/enable#enable_funnel_functions", default: "0" },
         { name: "enable_global_with_statement", path: "/enable#enable_global_with_statement", default: "1" },
+        { name: "enable_group_by_top_k_dynamic_filtering", path: "/enable#enable_group_by_top_k_dynamic_filtering", default: "1" },
         { name: "enable_group_by_top_k_optimization", path: "/enable#enable_group_by_top_k_optimization", default: "1" },
         { name: "enable_hash_join_row_store", path: "/enable#enable_hash_join_row_store", default: "1" },
         { name: "enable_hdfs_pread", path: "/enable#enable_hdfs_pread", default: "1" },
         { name: "enable_http_compression", path: "/enable#enable_http_compression", default: "1" },
         { name: "enable_identifier_resolve_cache", path: "/enable#enable_identifier_resolve_cache", default: "1" },
+        { name: "enable_ipcrypt", path: "/enable#enable_ipcrypt", default: "0" },
         { name: "enable_job_stack_trace", path: "/enable#enable_job_stack_trace", default: "0" },
         { name: "enable_json_ast_dialect", path: "/enable#enable_json_ast_dialect", default: "0" },
         { name: "enable_json_lazy_type_hints", path: "/enable#enable_json_lazy_type_hints", default: "0" },
@@ -828,6 +831,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_writes_to_columns_cache", path: "/enable#enable_writes_to_columns_cache", default: "1" },
         { name: "enable_writes_to_query_cache", path: "/enable#enable_writes_to_query_cache", default: "1" },
         { name: "enable_writes_to_query_cache_on_disk", path: "/enable#enable_writes_to_query_cache_on_disk", default: "1" },
+        { name: "enable_xgboost", path: "/enable#enable_xgboost", default: "0" },
         { name: "enable_zxc_codec", path: "/enable#enable_zxc_codec", default: "0" }
       ],
       children: []
@@ -854,12 +858,13 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_join_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "enable_join_fixed_hash_table_conversion", path: "/enable-join#enable_join_fixed_hash_table_conversion", default: "1" },
         { name: "enable_join_key_only_hash_tables", path: "/enable-join#enable_join_key_only_hash_tables", default: "1" },
         { name: "enable_join_runtime_filters", path: "/enable-join#enable_join_runtime_filters", default: "1" },
         { name: "enable_join_runtime_filters_index_analysis", path: "/enable-join#enable_join_runtime_filters_index_analysis", default: "1" },
+        { name: "enable_join_seal_gated_reading", path: "/enable-join#enable_join_seal_gated_reading", default: "0" },
         { name: "enable_join_transitive_predicates", path: "/enable-join#enable_join_transitive_predicates", default: "1" }
       ],
       children: []
@@ -921,11 +926,12 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "external_storage_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "external_storage_connect_timeout_sec", path: "/external-storage#external_storage_connect_timeout_sec", default: "10" },
         { name: "external_storage_max_read_bytes", path: "/external-storage#external_storage_max_read_bytes", default: "0" },
         { name: "external_storage_max_read_rows", path: "/external-storage#external_storage_max_read_rows", default: "0" },
+        { name: "external_storage_push_down_limit", path: "/external-storage#external_storage_push_down_limit", default: "1" },
         { name: "external_storage_rw_timeout_sec", path: "/external-storage#external_storage_rw_timeout_sec", default: "300" }
       ],
       children: []
@@ -1147,13 +1153,14 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "iceberg_*",
-      count: 9,
+      count: 10,
       settings: [
         { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
         { name: "iceberg_file_entries_queue_size", path: "/iceberg#iceberg_file_entries_queue_size", default: "100" },
         { name: "iceberg_manifest_decode_concurrency", path: "/iceberg#iceberg_manifest_decode_concurrency", default: "4" },
         { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "100" },
         { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
+        { name: "iceberg_orphan_files_min_retention_seconds", path: "/iceberg#iceberg_orphan_files_min_retention_seconds", default: "86400" },
         { name: "iceberg_orphan_files_older_than_seconds", path: "/iceberg#iceberg_orphan_files_older_than_seconds", default: "259200" },
         { name: "iceberg_snapshot_id", path: "/iceberg#iceberg_snapshot_id", default: "0" },
         { name: "iceberg_timestamp_ms", path: "/iceberg#iceberg_timestamp_ms", default: "0" },
@@ -1529,11 +1536,12 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_bytes_*",
-      count: 17,
+      count: 19,
       settings: [
         { name: "max_bytes_before_external_distinct", path: "/max-bytes#max_bytes_before_external_distinct", default: "0" },
         { name: "max_bytes_before_external_group_by", path: "/max-bytes#max_bytes_before_external_group_by", default: "0" },
         { name: "max_bytes_before_external_join", path: "/max-bytes#max_bytes_before_external_join", default: "0" },
+        { name: "max_bytes_before_external_set", path: "/max-bytes#max_bytes_before_external_set", default: "0" },
         { name: "max_bytes_before_external_sort", path: "/max-bytes#max_bytes_before_external_sort", default: "0" },
         { name: "max_bytes_before_remerge_sort", path: "/max-bytes#max_bytes_before_remerge_sort", default: "1000000000" },
         { name: "max_bytes_for_lazy_final", path: "/max-bytes#max_bytes_for_lazy_final", default: "256000000" },
@@ -1543,6 +1551,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_bytes_ratio_before_external_distinct", path: "/max-bytes#max_bytes_ratio_before_external_distinct", default: "0.5" },
         { name: "max_bytes_ratio_before_external_group_by", path: "/max-bytes#max_bytes_ratio_before_external_group_by", default: "0.5" },
         { name: "max_bytes_ratio_before_external_join", path: "/max-bytes#max_bytes_ratio_before_external_join", default: "0.5" },
+        { name: "max_bytes_ratio_before_external_set", path: "/max-bytes#max_bytes_ratio_before_external_set", default: "0" },
         { name: "max_bytes_ratio_before_external_sort", path: "/max-bytes#max_bytes_ratio_before_external_sort", default: "0.5" },
         { name: "max_bytes_to_read", path: "/max-bytes#max_bytes_to_read", default: "0" },
         { name: "max_bytes_to_read_leaf", path: "/max-bytes#max_bytes_to_read_leaf", default: "0" },
@@ -2124,10 +2133,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "optimize_min_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "optimize_min_equality_disjunction_chain_length", path: "/optimize-min#optimize_min_equality_disjunction_chain_length", default: "3" },
-        { name: "optimize_min_inequality_conjunction_chain_length", path: "/optimize-min#optimize_min_inequality_conjunction_chain_length", default: "3" }
+        { name: "optimize_min_inequality_conjunction_chain_length", path: "/optimize-min#optimize_min_inequality_conjunction_chain_length", default: "3" },
+        { name: "optimize_min_max_from_files", path: "/optimize-min#optimize_min_max_from_files", default: "1" }
       ],
       children: []
     },
@@ -2333,10 +2343,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "promql_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "promql_database", path: "/promql#promql_database", default: '""' },
         { name: "promql_evaluation_time", path: "/promql#promql_evaluation_time", default: "auto" },
+        { name: "promql_push_down_label_matchers", path: "/promql#promql_push_down_label_matchers", default: "1" },
         { name: "promql_table", path: "/promql#promql_table", default: '""' }
       ],
       children: []
@@ -2380,7 +2391,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_filter_push_down", path: "/query-plan#query_plan_filter_push_down", default: "1" },
         { name: "query_plan_filter_push_down_below_limit_by", path: "/query-plan#query_plan_filter_push_down_below_limit_by", default: "1" },
         { name: "query_plan_fuse_filter_into_array_join", path: "/query-plan#query_plan_fuse_filter_into_array_join", default: "1" },
-        { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "0" },
+        { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "1" },
         { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
         { name: "query_plan_lift_up_array_join", path: "/query-plan#query_plan_lift_up_array_join", default: "1" },
         { name: "query_plan_lift_up_union", path: "/query-plan#query_plan_lift_up_union", default: "1" },
@@ -2881,13 +2892,15 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_*",
-      count: 22,
+      count: 24,
       settings: [
+        { name: "use_aggregation_memory_tracker", path: "/use#use_aggregation_memory_tracker", default: "1" },
         { name: "use_async_executor_for_materialized_views", path: "/use#use_async_executor_for_materialized_views", default: "0" },
         { name: "use_cache_for_count_from_files", path: "/use#use_cache_for_count_from_files", default: "1" },
         { name: "use_client_time_zone", path: "/use#use_client_time_zone", default: "0" },
         { name: "use_columns_cache", path: "/use#use_columns_cache", default: "0" },
         { name: "use_concurrency_control", path: "/use#use_concurrency_control", default: "1" },
+        { name: "use_concurrency_control_for_max_threads", path: "/use#use_concurrency_control_for_max_threads", default: "1" },
         { name: "use_constant_folding_in_index_analysis", path: "/use#use_constant_folding_in_index_analysis", default: "0" },
         { name: "use_hash_table_stats_for_join_reordering", path: "/use#use_hash_table_stats_for_join_reordering", default: "1" },
         { name: "use_hedged_requests", path: "/use#use_hedged_requests", default: "1" },
@@ -2958,10 +2971,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_query_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "use_query_cache", path: "/use-query#use_query_cache", default: "0" },
         { name: "use_query_condition_cache", path: "/use-query#use_query_condition_cache", default: "1" },
+        { name: "use_query_condition_cache_for_time_conditions", path: "/use-query#use_query_condition_cache_for_time_conditions", default: "1" },
         { name: "use_query_condition_cache_for_top_k", path: "/use-query#use_query_condition_cache_for_top_k", default: "1" }
       ],
       children: []
@@ -3083,7 +3097,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "その他",
-      count: 151,
+      count: 155,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "adaptive_aggregator_freeze_threshold_bytes", path: "/other#adaptive_aggregator_freeze_threshold_bytes", default: "4194304" },
@@ -3096,6 +3110,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "array_count_legacy_uint32_result", path: "/other#array_count_legacy_uint32_result", default: "0" },
         { name: "arrow_flight_request_descriptor_type", path: "/other#arrow_flight_request_descriptor_type", default: "path" },
         { name: "arrow_flight_request_timeout_sec", path: "/other#arrow_flight_request_timeout_sec", default: "300" },
+        { name: "backup_s3_expired_token_retry_timeout_ms", path: "/other#backup_s3_expired_token_retry_timeout_ms", default: "120000" },
         { name: "backup_slow_all_threads_after_retryable_s3_error", path: "/other#backup_slow_all_threads_after_retryable_s3_error", default: "0" },
         { name: "cache_warmer_threads", path: "/other#cache_warmer_threads", default: "4" },
         { name: "calculate_text_stack_trace", path: "/other#calculate_text_stack_trace", default: "1" },
@@ -3120,6 +3135,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "dynamic_throw_on_type_mismatch", path: "/other#dynamic_throw_on_type_mismatch", default: "1" },
         { name: "enforce_strict_identifier_format", path: "/other#enforce_strict_identifier_format", default: "0" },
         { name: "engine_url_skip_empty_files", path: "/other#engine_url_skip_empty_files", default: "0" },
+        { name: "exact_division_for_integers", path: "/other#exact_division_for_integers", default: "0" },
         { name: "exact_rows_before_limit", path: "/other#exact_rows_before_limit", default: "0" },
         { name: "except_default_mode", path: "/other#except_default_mode", default: "ALL" },
         { name: "exclude_materialize_skip_indexes_on_insert", path: "/other#exclude_materialize_skip_indexes_on_insert", default: '""' },
@@ -3154,6 +3170,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format", path: "/other#input_format", default: '""' },
         { name: "interactive_delay", path: "/other#interactive_delay", default: "100000" },
         { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
+        { name: "json_extract_named_tuples_as_objects", path: "/other#json_extract_named_tuples_as_objects", default: "0" },
         { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "0" },
         { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
         { name: "legacy_array_join_function_nondeterministic_evaluation", path: "/other#legacy_array_join_function_nondeterministic_evaluation", default: "0" },
@@ -3185,6 +3202,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "priority", path: "/other#priority", default: "0" },
         { name: "push_external_roles_in_interserver_queries", path: "/other#push_external_roles_in_interserver_queries", default: "1" },
         { name: "qbit_one_bit_symmetric_distance", path: "/other#qbit_one_bit_symmetric_distance", default: "0" },
+        { name: "query_condition_cache_time_condition_grid_factor", path: "/other#query_condition_cache_time_condition_grid_factor", default: "1" },
         { name: "query_metric_log_interval", path: "/other#query_metric_log_interval", default: "-1" },
         { name: "queue_max_wait_ms", path: "/other#queue_max_wait_ms", default: "0" },
         { name: "rabbitmq_max_wait_ms", path: "/other#rabbitmq_max_wait_ms", default: "5000" },
@@ -3381,7 +3399,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "設定" : "設定"}`
+    const countLabel = `${entry.count} 件の設定`
 
     return (
       <div key={key} className="min-w-max">
@@ -3472,7 +3490,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} 件の一致 {matchingCount === 1 ? "設定" : "設定"}
+            {matchingCount === 1 ? "一致する設定" : "一致する設定"}: {matchingCount} 件
           </span>
         </div>
       )}
@@ -3481,7 +3499,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           <div className="min-w-max font-semibold">/session-settings</div>
           <button
             type="button"
-            aria-label={allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}
+            aria-label={allGroupsExpanded ? "すべて折りたたむ" : "すべて展開する"}
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
@@ -3490,7 +3508,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
               {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
             </svg>
-            <span>{allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}</span>
+            <span>{allGroupsExpanded ? "すべて折りたたむ" : "すべて展開する"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? (

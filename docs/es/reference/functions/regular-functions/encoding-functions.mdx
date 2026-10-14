@@ -404,6 +404,84 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+Introducido en: v26.10.0
+
+Decodifica una cadena codificada en [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), conforme a la [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
+
+`=XX` (dígitos hexadecimales en mayúsculas o minúsculas) se reemplaza por el byte que codifica.
+Un `=` seguido de `\r` o `\n` es un salto de línea flexible: se elimina junto con el resto de la línea hasta el siguiente `\n`, inclusive.
+Las demás secuencias de escape mal formadas (como `=ZZ`, o `=4` al final de la cadena) se conservan tal cual, salvo un `=` aislado justo al final de la cadena, que se elimina.
+El comportamiento coincide con el de `quopri.decodestring` de Python.
+
+**Sintaxis**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**Argumentos**
+
+* `s` — Cadena codificada en Quoted-Printable. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve la cadena decodificada. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+Introducido en: v26.10.0
+
+Codifica una cadena mediante la codificación [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable), conforme a [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7), tal como se usa en el correo electrónico.
+
+Los caracteres ASCII imprimibles, salvo `=`, se conservan tal cual; el resto de bytes se escriben como `=XX` con dígitos hexadecimales en mayúsculas.
+Los saltos de línea `\r\n` se conservan, mientras que un `\r` o `\n` aislado se codifica. Un espacio o tabulador se codifica cuando quedaría al final de una línea.
+Las líneas se limitan a un máximo de 76 caracteres mediante saltos de línea flexibles (`=\r\n`).
+`decodeQuotedPrintable(encodeQuotedPrintable(s))` devuelve la cadena original `s` para cualquier valor de `s`.
+
+**Sintaxis**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**Argumentos**
+
+* `s` — Cadena que se va a codificar. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve la cadena codificada en Quoted-Printable. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 Introducido en: v1.1.0

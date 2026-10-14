@@ -954,7 +954,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `unit` — 结果的时间间隔类型。
 
-| 单位          | 可能的值                                     |
+| 单位          | 可选值                                     |
 | ----------- | ---------------------------------------- |
 | nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
@@ -970,7 +970,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — 相减时的第一个时间值 (减数) 。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 * `enddate` — 相减时的第二个时间值 (被减数) 。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
-* `timezone` — 可选。时区名称。如果指定，则同时应用于 startdate 和 enddate。如果未指定，则使用 startdate 和 enddate 各自的时区。如果两者不一致，则结果未定义。[`String`](/zh/reference/data-types/string)
+* `timezone` — 可选。时区名称。如果指定，则同时应用于 startdate 和 enddate。如果未指定，则使用 startdate 和 enddate 各自的时区。如果两者不一致，则结果未指定。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -1231,7 +1231,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `unit` — 结果所使用的时间间隔类型。
 
-| 单位          | 可能的值                                     |
+| 单位          | 可选值                                     |
 | ----------- | ---------------------------------------- |
 | nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
@@ -1267,7 +1267,7 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 └─────┘
 ```
 
-**按不同单位计算日期差**
+**按不同单位计算日期差值**
 
 ```sql title=Query
 SELECT
@@ -5733,7 +5733,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## today {#today}
 
-于 v1.1.0 中引入
+引入版本：v1.1.0
 
 返回查询分析时刻的当前日期。等同于 `toDate(now())`。
 
@@ -5747,7 +5747,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 today()
 ```
 
-**别名**：`current_date`, `curdate`
+**别名**：`curdate`, `current_date`
 
 **参数**
 
@@ -5759,7 +5759,7 @@ today()
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty

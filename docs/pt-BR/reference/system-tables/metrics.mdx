@@ -31,6 +31,14 @@ Número total de endereços usados para criar conexões com pools de conexões
 
 Número total de endereços banidos por apresentarem falha na criação de conexões com pools de conexões
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+Memória aproximada, em bytes, usada pelo cache de localizações no código-fonte já resolvidas (file:line:column), utilizado na simbolização de rastreamentos de pilha.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+Número de endereços de código no cache de localizações resolvidas no código-fonte (file:line:column) usadas para simbolizar rastreamentos de pilha em system.trace&#95;log, system.errors e system.error&#95;log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Número de threads no pool de threads do Aggregator.
@@ -2126,6 +2134,10 @@ Número de arquivos temporários criados para o JOIN
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 Número de arquivos temporários para a mesclagem vertical
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+Número de arquivos temporários criados para conjuntos `IN` em memória externa
 
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 

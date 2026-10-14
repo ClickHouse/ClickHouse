@@ -30,6 +30,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 إجمالي عدد العناوين المحظورة بسبب تعطلها عند إنشاء اتصالات مع مجمعات الاتصالات
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+الحجم التقريبي للذاكرة، بالبايتات، التي تستهلكها ذاكرة التخزين المؤقت للمواضع في الشفرة المصدرية المُحدَّد مسارها النهائي (file:line:column)، والمستخدمة في حلّ الرموز ضمن تتبّعات مكدس الاستدعاءات.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+عدد عناوين الشيفرة في ذاكرة التخزين المؤقت للمواضع المُحدَّدة في الشفرة المصدرية (file:line:column)، والتي تُستخدم لحلّ الرموز في تتبّعات مكدس الاستدعاءات في system.trace&#95;log وsystem.errors وsystem.error&#95;log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 عدد سلاسل التنفيذ في مجمّع خيوط التنفيذ الخاص بـ Aggregator.
@@ -2125,6 +2133,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 عدد الملفات المؤقتة المستخدمة في الدمج العمودي
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+عدد الملفات المؤقتة المُنشأة لمجموعات `IN` في الذاكرة الخارجية
 
 ### الملفات المؤقتة للفرز {#temporaryfilesforsort}
 

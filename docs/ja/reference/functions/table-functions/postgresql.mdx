@@ -56,7 +56,7 @@ PostgreSQL 側の `SELECT` クエリは、読み取り専用の PostgreSQL ト�
 
 `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN` などの単純な `WHERE` 句は、PostgreSQL サーバー上で実行されます。
 
-すべての JOIN、集計、ソート、`IN [ array ]` 条件、および `LIMIT` サンプリング制約は、PostgreSQL へのクエリが完了した後にのみ ClickHouse で実行されます。
+すべての JOIN、集計、ソート、`IN [ array ]` 条件は、PostgreSQL へのクエリが完了した後に ClickHouse で実行されます。`LIMIT` サンプリング制約は、安全に実行でき、かつ [external&#95;storage&#95;push&#95;down&#95;limit](/ja/reference/settings/session-settings/external-storage#external_storage_push_down_limit) が有効な場合にのみ PostgreSQL にプッシュダウンされます。それ以外の場合は ClickHouse で実行されます。
 
 ## テーブル名の代わりにクエリを渡す {#passing-a-query}
 

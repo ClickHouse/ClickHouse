@@ -109,7 +109,8 @@ A tabela a seguir mostra como os tipos de dados do Iceberg são mapeados para os
 
 Os mapeamentos de tipos de dados acima se aplicam às leituras. As limitações a seguir se aplicam quando o ClickHouse cria ou altera esquemas Iceberg e grava dados:
 
-* O ClickHouse não pode criar um esquema Iceberg que contenha `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16` ou `UInt16`, nem adicionar ou modificar uma coluna para um desses tipos. A operação falha com uma exceção de tipo sem suporte. Isso não impede a inserção de valores `Bool` ou `Decimal` em colunas Iceberg existentes.
+* O ClickHouse não pode criar um esquema Iceberg que contenha `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16` ou `UInt16`, nem adicionar ou modificar uma coluna para um desses tipos. A operação falha com uma exceção de tipo sem suporte. Isso não impede a inserção de valores `Bool` em colunas Iceberg existentes.
+* O ClickHouse também não pode criar um esquema Iceberg que contenha `UInt64`: o maior tipo inteiro do Iceberg é o `long` de 64 bits com sinal, que não consegue representar todos os valores `UInt64`. Use `Int64` ou `Decimal(20, 0)`. Criar uma tabela com uma coluna `UInt64`, inclusive aninhada, como `Array(UInt64)`, falha com uma exceção mesmo que a tabela Iceberg já exista no caminho. Pelo mesmo motivo, uma coluna `UInt32` é ampliada para `long` do Iceberg e, portanto, é lida como `Int64`.
 * Quando o ClickHouse cria ou altera um esquema Iceberg, ele mapeia todas as colunas `DateTime` e `DateTime64` para `timestamp` do Iceberg, que tem precisão de microssegundos e não inclui timezone. O ClickHouse não pode gerar os tipos de esquema `timestamptz`, `timestamp_ns` ou `timestamptz_ns`; portanto, maior precisão e a semântica de timezone não são representadas no esquema Iceberg.
 * O ClickHouse não pode gravar em uma tabela Iceberg que use uma coluna `decimal`, `fixed`, `timestamp_ns` ou `timestamptz_ns` como campo de partição direto. A operação falha com uma exceção de tipo sem suporte.
 * Para arquivos de dados que contêm tipos cujos limites o ClickHouse não consegue serializar, incluindo `Bool` e `Decimal`, o ClickHouse omite todos os limites inferiores e superiores das colunas na entrada do manifesto Iceberg. Os tamanhos das colunas e as contagens de valores nulos ainda são incluídos, e os dados permanecem corretos, mas os leitores não podem usar a poda min-max no nível do manifesto para esses arquivos.
@@ -132,7 +133,7 @@ O ClickHouse oferece suporte à poda de partições durante consultas SELECT em 
 
 ## `DROP PARTITION` {#drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` remove todos os arquivos de dados de uma única partição e cria um novo snapshot que não faz mais referência a eles. Atualmente, essa operação é compatível com tabelas Iceberg locais e em armazenamento de objetos, mas não com tabelas baseadas em catálogo.
+`ALTER TABLE ... DROP PARTITION <value>` remove todos os arquivos de dados de uma única partição e cria um novo snapshot que não faz mais referência a eles. Essa operação é compatível com tabelas Iceberg locais e em armazenamento de objetos, e com tabelas em um banco de dados `DataLakeCatalog` com o tipo de catálogo `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables` ou `unity` (com `use_unity_catalog_v2 = 1`).
 
 Habilite `allow_insert_into_iceberg` para usar essa operação.
 

@@ -731,8 +731,8 @@ Parquet ブルームフィルタで、個々の一意な値に使用するビッ
 Parquetファイル内でブルームフィルタをどこに配置するかを指定します。ブルームフィルタは、おおよそこのサイズごとにまとめて書き込まれます。具体的には、次のとおりです。
 
 * 0 の場合、各行グループのブルームフィルタは、その行グループの直後に書き込まれます。
-  * すべてのブルームフィルタの合計サイズより大きい場合、すべての行グループのブルームフィルタはメモリ内に蓄積され、その後ファイル末尾付近にまとめて書き込まれます。
-  * それ以外の場合、ブルームフィルタはメモリ内に蓄積され、合計サイズがこの値を超えるたびに書き出されます。
+* すべてのブルームフィルタの合計サイズより大きい場合、すべての行グループのブルームフィルタはメモリ内に蓄積され、その後ファイル末尾付近にまとめて書き込まれます。
+* それ以外の場合、ブルームフィルタはメモリ内に蓄積され、合計サイズがこの値を超えるたびに書き出されます。
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -845,6 +845,16 @@ Parquet ファイルにブルームフィルタを書き込みます。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
 Parquet のページヘッダーに crc32 チェックサムを書き込みます。
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Parquet の `FILE` 論理型のフィールドを持つ名前付き `Tuple` を、`FILE` アノテーション付きグループとして書き込むための新しい設定。"}]}]} />
+
+要素名がすべて Parquet の `FILE` 論理型のフィールド (`uri`、`offset`、`size`、`content_type`、`checksum`、`inline`。空でない任意の部分集合を任意の順序で指定可能) である名前付き `Tuple` を、`FILE` 論理型のアノテーションが付いたグループとして書き込みます。このグループは、インラインまたは外部ファイルに保存されたバイト範囲への参照を表します。`offset` 要素と `size` 要素は整数でなければならず (`INT64` として書き込まれます) 、その他の要素は `String` または `FixedString` でなければなりません (`inline` はアノテーションなしの `BYTE_ARRAY` として、それ以外は `STRING` として書き込まれます) 。仕様の要件に従い、すべてのフィールドは `OPTIONAL` として書き込まれます。値は有効な参照になっているかどうかを確認せず、そのまま書き込まれます。
+
+読み込み時には、`FILE` アノテーション付きグループは常に、`Nullable` 要素から成る上記のような `Tuple` として読み込まれます。
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

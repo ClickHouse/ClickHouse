@@ -160,6 +160,23 @@ Habilita las funciones para el análisis de funnel.
 
 Propagar las sentencias WITH a las consultas UNION y a todas las subconsultas
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración: `GROUP BY key [ORDER BY key] LIMIT n` publica el límite del montículo top-K en el paso de lectura de `MergeTree`, que lo usa para filtrar filas y omitir gránulos. Un valor de `compatibility` inferior a 26.10 lo deshabilita."}]}]} />
+
+Para [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/es/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): cuando la primera clave de `GROUP BY` usada para la clasificación es una columna leída de una tabla `MergeTree`, la agregación publica el límite de su montículo top-K en el paso de lectura en cuanto el montículo contiene `LIMIT` claves. A partir de ese momento, el paso de lectura descarta las filas cuya clave queda fuera de ese límite antes de leer las demás columnas (`PREWHERE`) y omite gránulos completos que quedan fuera de él mediante la clave primaria o un índice de omisión de datos `minmax` sobre esa columna.
+
+Esto se aplica a `GROUP BY key ORDER BY key LIMIT n` y a `GROUP BY key LIMIT n` sin `ORDER BY`, donde cualquier conjunto de `n` grupos es una respuesta válida.
+
+No se aplica a lecturas con `FINAL` ni con réplicas paralelas: `FINAL` debe ver todas las versiones de una fila, y el límite no se propaga a las lecturas en réplicas remotas.
+
+Valores posibles:
+
+* 0 — Deshabilitado.
+* 1 — Habilitado.
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -217,6 +234,16 @@ Valores posibles:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "Nueva opción de configuración para controlar la caché de resolución de identificadores en el analizador de consultas"}]}]} />
 
 Activa la caché de resolución de identificadores en el analizador de consultas. La caché comparte nodos de alias ya resueltos para evitar la explosión del AST cuando se hace referencia al mismo alias varias veces. Establézcalo en false para desactivar la caché si se sospecha que produce resultados incorrectos.
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar las funciones experimentales de cifrado de direcciones IP."}]}]} />
+
+Habilita las funciones experimentales de cifrado de direcciones IP (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -593,11 +620,11 @@ Permite crear los tipos de datos [Time](/es/reference/data-types/time) y [Time64
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para habilitar el valor `trino` de la configuración `dialect`, que traduce la sintaxis SQL de Trino y asigna los nombres de funciones de Trino a sus equivalentes en ClickHouse."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para habilitar el valor `trino` de la configuración `dialect`, que traduce la sintaxis SQL de Trino y asigna los nombres de funciones de Trino a sus equivalentes en ClickHouse."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "El dialecto `trino` pasó a Beta."}]}]} />
 
 Habilita el valor `trino` de la configuración `dialect`.
 
@@ -680,6 +707,16 @@ Valores posibles:
 
 * 0 - Deshabilitado
 * 1 - Habilitado
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar la integración experimental con XGBoost (la estructura del diccionario `XGBOOST` y la función `predictXGBoost`)."}]}]} />
+
+Habilita la integración experimental con XGBoost: la estructura del diccionario `XGBOOST` y la función `predictXGBoost`.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 
