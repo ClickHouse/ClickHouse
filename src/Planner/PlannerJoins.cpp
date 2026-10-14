@@ -684,7 +684,7 @@ static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     const FunctionNode & function_node)
 {
     const auto & join_algorithms = planner_context->getQueryContext()->getSettingsRef()[Setting::join_algorithm];
-    const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+    const auto is_hash_join_enabled = TableJoin::isHashFamilyEnabled(join_algorithms)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
     if (is_hash_join_enabled && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_planning])
     {
@@ -1442,7 +1442,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const JoinAlgorithmParams & params)
 {
     if (table_join->getMixedJoinExpression()
-        && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+        && !table_join->isHashFamilyEnabled()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

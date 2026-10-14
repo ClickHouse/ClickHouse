@@ -1318,7 +1318,7 @@ bool allowHashJoinCacheKeys(
     bool is_special_storage,
     bool one_disjunct)
 {
-    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
+    if (!TableJoin::isHashFamilyEnabled(join_algorithms))
         return false;
     if (kind != JoinKind::Left && kind != JoinKind::Inner
         && kind != JoinKind::Right && kind != JoinKind::Full)
