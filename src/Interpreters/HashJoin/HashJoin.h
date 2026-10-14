@@ -99,7 +99,6 @@ struct BuildResult
 {
     bool is_inserted = false;
     bool all_values_unique = true;
-    size_t new_keys = 0;
 };
 
 /** Data structure for implementation of hash JOIN.

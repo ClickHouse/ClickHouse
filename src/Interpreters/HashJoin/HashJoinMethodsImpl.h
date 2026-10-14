@@ -10,6 +10,7 @@
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
 #include <Common/ProfileEvents.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <type_traits>
@@ -339,6 +340,9 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
     {
         const ScatteredBlock::Selector & selector = per_slot[slot];
         const size_t bytes_before = slots.slotBytes(map, slot);
+        /// Under the slot lock so a concurrent limit check cannot miss this slot. Also when an insert throws: the
+        /// rows before it stay in the map, and `StorageJoin` keeps serving them.
+        SCOPE_EXIT({ table.addBytes(table.bucket_bytes, slots.slotBytes(map, slot) - bytes_before); });
 
         if (const size_t reserved = slots.reserveOnFirstInsert(map, map_idx, slot))
             ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
@@ -347,10 +351,6 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
         { return insertSlotRows(join, map, key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot)); };
         const BuildResult slot_result
             = selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
-
-        /// Under the slot lock so a concurrent limit check cannot miss this slot.
-        table.addBytes(table.bucket_bytes, slots.slotBytes(map, slot) - bytes_before);
-        table.keys_to_join.fetch_add(slot_result.new_keys, std::memory_order_relaxed);
 
         result.is_inserted |= slot_result.is_inserted;
         result.all_values_unique &= slot_result.all_values_unique;
@@ -396,6 +396,9 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
     [[maybe_unused]] const bool any_take_last_row = join.anyTakeLastRow();
 
     BuildResult result;
+    /// Also counts the keys inserted before a throw, as the caller does for the bytes.
+    size_t new_keys = 0;
+    SCOPE_EXIT({ join.data->keys_to_join.fetch_add(new_keys, std::memory_order_relaxed); });
 
     /// Software prefetch during the build phase.
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
@@ -434,15 +437,15 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
 
         if constexpr (is_asof_join)
             Inserter<HashMap, KeyGetter>::insertAsof(
-                asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, result.new_keys, *asof_column);
+                asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, new_keys, *asof_column);
         else if constexpr (is_set)
-            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool, result.new_keys);
+            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool, new_keys);
         else if constexpr (mapped_one)
             result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
-                any_take_last_row, map, key_getter, stored_block_no, ind, pool, result.new_keys);
+                any_take_last_row, map, key_getter, stored_block_no, ind, pool, new_keys);
         else
             result.all_values_unique
-                &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool, result.new_keys);
+                &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool, new_keys);
     }
     return result;
 }
