@@ -252,18 +252,25 @@ def test_deferred_list_write_preserves_session_fsync():
     instance.query(f"DROP USER IF EXISTS {user}")
 
 
-def test_deferred_list_write_preserves_fsync_of_name_preserving_update():
+def _mark_exists():
+    return instance.exec_in_container(
+        ["bash", "-c", f"test -e {ACCESS_DIR}/need_rebuild_lists.mark && echo 1 || echo 0"],
+        user="root",
+    ).strip() == "1"
+
+
+def test_name_preserving_update_fsync():
     """
-    A GRANT keeps the name, so it does not schedule a `.list` rewrite itself. Made at
-    fsync_metadata=1 while the rewrite scheduled by a CREATE USER at fsync_metadata=0 is
-    pending, it must still make that rewrite synced: the rewrite removes the mark which is
-    the only thing pointing a restart at the user's `.sql` file.
+    A GRANT keeps the name, but at fsync_metadata=1 it must still leave a synced mark until
+    the `.list` files are synced: they may be unsynced whether their rewrite is still pending
+    or already done, and the mark is what points a restart at the user's `.sql` file.
     """
     user = "u_deferred_grant_fsync"
     other = "u_deferred_grant_fsync_other"
     instance.query(f"DROP USER IF EXISTS {user}, {other}")
     instance.restart_clickhouse()
 
+    # The rewrite scheduled by a CREATE USER at fsync_metadata=0 is pending.
     instance.query(
         f"CREATE USER {user} IDENTIFIED WITH no_password",
         settings={"fsync_metadata": 0},
@@ -280,7 +287,18 @@ def test_deferred_list_write_preserves_fsync_of_name_preserving_update():
         f"FileSync={file_sync}"
     )
 
-    # The same sequence with the GRANT at fsync_metadata=0 does not sync.
+    # The rewrite is done: the restart wrote the lists and removed the mark.
+    instance.restart_clickhouse()
+    assert not _mark_exists()
+    file_sync, dir_sync = _run(f"GRANT SHOW ON default.* TO {user}", 1)
+    assert _mark_exists() and file_sync >= 2 and dir_sync >= 2, (
+        "GRANT at fsync_metadata=1 left no synced mark: "
+        f"FileSync={file_sync}, DirectorySync={dir_sync}"
+    )
+
+    # At fsync_metadata=0 a GRANT neither creates the mark nor makes a pending rewrite synced.
+    instance.restart_clickhouse()
+    assert _run(f"GRANT SHOW ON system.* TO {user}", 0) == (0, 0) and not _mark_exists()
     instance.query(
         f"CREATE USER {other} IDENTIFIED WITH no_password",
         settings={"fsync_metadata": 0},
