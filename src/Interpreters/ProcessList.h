@@ -270,8 +270,10 @@ public:
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
     /// Adds the increments of a `ProfileEvents` packet received from a remote server executing a part
-    /// of this query. Gauges and events unknown to this server are skipped.
-    void addRemoteProfileEvents(const Block & block);
+    /// of this query. Gauges and events unknown to this server are skipped. `from_insert` is set for the
+    /// packets of the remote side of a distributed `INSERT`, whose inserted rows and bytes are already
+    /// counted by this server, which sends them.
+    void addRemoteProfileEvents(const Block & block, bool from_insert = false);
 
     /// Returns the sum of the profile events reported by the remote servers, if any were reported.
     std::optional<ProfileEvents::Counters::Snapshot> getRemoteProfileEvents() const;

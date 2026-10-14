@@ -195,7 +195,7 @@ void RemoteInserter::onFinish()
 void RemoteInserter::processProfileEventsPacket(const Block & block)
 {
     if (process_list_element)
-        process_list_element->addRemoteProfileEvents(block);
+        process_list_element->addRemoteProfileEvents(block, /* from_insert = */ true);
 }
 
 RemoteInserter::~RemoteInserter()

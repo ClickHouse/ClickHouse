@@ -42,6 +42,8 @@ namespace ProfileEvents
     extern const Event AllUsersThrottlerSleepMicroseconds;
     extern const Event SelectedRows;
     extern const Event SelectedBytes;
+    extern const Event InsertedRows;
+    extern const Event InsertedBytes;
 }
 
 namespace DB
@@ -988,7 +990,7 @@ bool QueryStatus::updateProgressOut(const Progress & value)
 }
 
 
-void QueryStatus::addRemoteProfileEvents(const Block & block)
+void QueryStatus::addRemoteProfileEvents(const Block & block, bool from_insert)
 {
     const auto & types = typeid_cast<const ColumnInt8 &>(*block.getByName("type").column).getData();
     const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -1010,6 +1012,11 @@ void QueryStatus::addRemoteProfileEvents(const Block & block)
         /// These two are already incremented locally from the progress the remote servers report
         /// (see `ReadProgressCallback`), so taking them from here as well would count them twice.
         if (*event == ProfileEvents::SelectedRows || *event == ProfileEvents::SelectedBytes)
+            continue;
+
+        /// The same for a distributed `INSERT`: the rows and bytes sent to the remote servers are counted
+        /// locally (see `CountingTransform`) before they are sent.
+        if (from_insert && (*event == ProfileEvents::InsertedRows || *event == ProfileEvents::InsertedBytes))
             continue;
 
         if (!remote_profile_events)
