@@ -9560,8 +9560,7 @@ bool Context::canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel
 
 bool Context::canUseTaskBasedParallelReplicas() const
 {
-    /// The automatic mode is decided on the initiator. A follower's own value may differ, e.g. a replica drops a shipped
-    /// change of an `EXPERIMENTAL` setting under `allow_feature_tier`, so it reads the way the initiator decided.
+    /// A follower's own automatic mode can differ from the initiator's, e.g. `allow_feature_tier` drops the shipped change.
     return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/getClientInfo().collaborate_with_initiator);
 }
 
