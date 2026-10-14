@@ -39,10 +39,19 @@ SELECT * FROM {missing_table:Identifier}(name_pattern = 'A%'); -- { serverError 
 
 DESCRIBE TABLE {table:Identifier}(name_pattern = 'A%') SETTINGS describe_compact_output = 1;
 
--- `view`, `viewIfPermitted` and `eval` have their own grammar, which a placeholder does not take over.
+-- The bare `SELECT` argument grammar of `view`, `viewIfPermitted` and `eval` is not available through a placeholder.
 SELECT * FROM {table:Identifier}(SELECT 1); -- { clientError SYNTAX_ERROR }
 SET param_table = 'view';
 SELECT * FROM {table:Identifier}((SELECT 1)); -- { serverError BAD_ARGUMENTS }
+SET param_table = 'eval';
+SELECT * FROM {table:Identifier}('SELECT 42') SETTINGS allow_experimental_eval_table_function = 1;
+
+-- A stored parameterized view keeps the placeholder, so the function is unknown and every argument may be a secret.
+SET format_display_secrets_in_show_and_select = 0;
+CREATE VIEW test_05325_secret AS SELECT * FROM {f:Identifier}('localhost:9000', 'db', 't', 'u', 'secret');
+SHOW CREATE TABLE test_05325_secret;
+SELECT create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 'test_05325_secret';
+DROP VIEW test_05325_secret;
 
 SELECT count() FROM numbers(1);
 

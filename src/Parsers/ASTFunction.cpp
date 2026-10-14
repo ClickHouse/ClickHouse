@@ -18,6 +18,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -228,9 +229,15 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         if (!name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTFunction cannot have both a concrete 'name' and 'query_parameter_name' during AST JSON deserialization");
-        if (!query_parameter_name->as<ASTIdentifier>()->isParam())
+        const auto & identifier = query_parameter_name->as<ASTIdentifier &>();
+        if (!identifier.isParam())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTFunction 'query_parameter_name' must contain an Identifier query parameter during AST JSON deserialization");
+        /// `{f:Identifier} AS a(...)` cannot be parsed back; an alias belongs on the call, not on its name.
+        auto has_alias = [](const ASTWithAlias & node) { return !node.alias.empty() || node.parametrised_alias; };
+        if (has_alias(identifier) || std::ranges::any_of(query_parameter_name->children, [&](const auto & child) { return has_alias(child->template as<ASTQueryParameter &>()); }))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTFunction 'query_parameter_name' and its query parameters cannot have an alias during AST JSON deserialization");
         children.push_back(query_parameter_name);
     }
     else if (name.empty())
@@ -1086,7 +1093,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     {
         FunctionSecretArgumentsFinder::Result secret_arguments;
         if (!settings.show_secrets)
-            secret_arguments = FunctionSecretArgumentsFinderAST(*this).getResult();
+        {
+            if (query_parameter_name)
+            {
+                /// The table function is unknown until substitution, so any argument may be a secret.
+                secret_arguments.start = 0;
+                secret_arguments.count = arguments->children.size();
+            }
+            else
+                secret_arguments = FunctionSecretArgumentsFinderAST(*this).getResult();
+        }
 
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
@@ -1210,6 +1226,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
 bool ASTFunction::hasSecretParts() const
 {
+    /// An unresolved table function hides all its arguments, see `formatImplWithoutAlias`.
+    if (query_parameter_name && arguments && !arguments->children.empty())
+        return true;
     return (FunctionSecretArgumentsFinderAST(*this).getResult().hasSecrets()) || childrenHaveSecretParts();
 }
 

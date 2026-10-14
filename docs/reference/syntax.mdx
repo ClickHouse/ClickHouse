@@ -348,7 +348,7 @@ SET param_name_pattern = 'A%';
 SELECT * FROM {myview:Identifier}(name_pattern = {name_pattern:String});
 ```
 
-It cannot name a scalar function, such as `{f:Identifier}(1)`, nor the `view`, `viewIfPermitted` and `eval` table functions, which have their own grammar.
+It cannot name a scalar function, such as `{f:Identifier}(1)`. The bare `SELECT` argument form of `view`, `viewIfPermitted` and `eval`, such as `view(SELECT 1)`, is not available through a placeholder, while `eval('SELECT 1')` is. Inline insert data is not detected when the placeholder resolves to `input`, so `INSERT INTO t SELECT * FROM {f:Identifier}('x UInt64') FORMAT CSV` cannot read data that follows the query.
 </Accordion>
 
 <Accordion title="Example with the HTTP interface">

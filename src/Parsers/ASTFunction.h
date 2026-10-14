@@ -43,7 +43,9 @@ public:
     /// An unresolved function name containing one or more `Identifier` query parameters.
     /// Only `ASTTableExpression::table_function` may carry it, so after substitution the name
     /// resolves to a parameterized view or to a table function with ordinary argument syntax.
-    /// `view`, `viewIfPermitted` and `eval` have their own grammar and cannot be named this way.
+    /// Anything decided before substitution is out of reach: the bare `SELECT` argument grammar of
+    /// `view`, `viewIfPermitted` and `eval`, and inline insert data for `input`. While the name is
+    /// unresolved the arguments are formatted as secrets, because the function may take a password.
     /// `ReplaceQueryParameterVisitor` resolves it before query analysis and rejects it elsewhere.
     ASTPtr query_parameter_name;
     ASTPtr arguments;

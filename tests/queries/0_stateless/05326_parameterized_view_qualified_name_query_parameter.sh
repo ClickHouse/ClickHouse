@@ -35,3 +35,10 @@ $CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON('$JSON')" 2>&1 | grep -q BAD_A
 # The SQL parser accepts only `{name:Identifier}` inside an identifier, so the JSON reader must reject any other type.
 JSON=$($CLICKHOUSE_CLIENT -q "SELECT replaceOne(parseQueryToJSON('SELECT id FROM {view:Identifier}(id = 1)'), '\"param_type\":\"Identifier\"', '\"param_type\":\"String\"')")
 $CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON('$JSON')" 2>&1 | grep -q BAD_ARGUMENTS && echo "non-Identifier parameter type rejected"
+
+# An alias on the name identifier or on its placeholder would format as `{view:Identifier} AS a(...)`, which does not parse back.
+JSON=$($CLICKHOUSE_CLIENT -q "SELECT replaceOne(parseQueryToJSON('SELECT id FROM {view:Identifier}(id = 1)'), '\"query_parameter_name\":{\"type\":\"Identifier\"', '\"query_parameter_name\":{\"type\":\"Identifier\",\"alias\":\"a\"')")
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON('$JSON')" 2>&1 | grep -q BAD_ARGUMENTS && echo "alias on the name rejected"
+$CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --param_view=numbers -q "$JSON" 2>&1 | grep -q BAD_ARGUMENTS && echo "alias on the name rejected by the dialect"
+JSON=$($CLICKHOUSE_CLIENT -q "SELECT replaceOne(parseQueryToJSON('SELECT id FROM {view:Identifier}(id = 1)'), '\"type\":\"QueryParameter\",\"name\":\"view\"', '\"type\":\"QueryParameter\",\"alias\":\"a\",\"name\":\"view\"')")
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON('$JSON')" 2>&1 | grep -q BAD_ARGUMENTS && echo "alias on the placeholder rejected"
