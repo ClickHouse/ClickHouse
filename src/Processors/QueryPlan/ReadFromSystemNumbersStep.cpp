@@ -534,6 +534,15 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
 
     UInt64 step = 0;
     readBinaryLittleEndian(step, ctx.in);
+    if (step == 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromSystemNumbers step: step must be positive");
+
+    /// Only `numbers()`, `numbers_mt()` and `system.numbers` are unbounded, and they count up by 1;
+    /// only `generate_series` counts down, and it always has a range length.
+    if (!storage_limit && step != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromSystemNumbers step: an unbounded read must have step 1");
+    if (!storage_limit && descending)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromSystemNumbers step: a descending read must have a range length");
 
     const UInt64 max_block_size = ctx.settings[QueryPlanSerializationSetting::max_block_size];
 
