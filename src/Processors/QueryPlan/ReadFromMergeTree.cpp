@@ -2261,6 +2261,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         if (!settings[Setting::read_in_order_use_buffering])
             return false;
 
+        /// With `read_in_order_use_virtual_row_per_block`, the sources emit zero-row virtual-row
+        /// chunks carrying a primary key block in `ChunkInfo`, which `Chunk::allocatedBytes`
+        /// does not count, so the read-ahead budget would not bound them. `SortingStep` disables
+        /// its buffering in this case for the same reason.
+        if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
+            return false;
+
         /// Only enable PrefetchingConcat when there is per-chunk CPU work
         /// (a PREWHERE filter or a row-level security filter). The benefit
         /// of `PrefetchingConcat` is parallelizing that work across streams.
