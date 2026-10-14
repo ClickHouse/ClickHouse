@@ -30,6 +30,14 @@ marks: 25
 verdict: chosen
 real: ReadFromMergeTree (p_b)
 real: Granules: 25/50
+-- a stored Array(LowCardinality(String)) column
+Baseline (after PK + partition + existing indexes):
+marks: 158
+With p_sa (normal projection, hypothetical):
+marks: 79
+verdict: chosen
+real: ReadFromMergeTree (p_sa)
+real: Granules: 79/158
 -- a key with many distinct values
 Baseline (after PK + partition + existing indexes):
 marks: 72

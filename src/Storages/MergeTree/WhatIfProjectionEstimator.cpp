@@ -101,18 +101,32 @@ bool hasDictionary(const ColumnWithTypeAndName & column)
     return !recursiveRemoveLowCardinality(column.type)->equals(*column.type);
 }
 
-/// the bytes of the dictionaries in a column, at any depth
+/// the bytes of the dictionaries that a column owns at any depth, `byteSize` leaves out a shared one
 size_t dictionaryBytes(const IColumn & column)
 {
     size_t bytes = 0;
     auto add = [&](const IColumn & subcolumn)
     {
         if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&subcolumn))
-            bytes += low_cardinality->getDictionary().byteSize();
+            if (!low_cardinality->isSharedDictionary())
+                bytes += low_cardinality->getDictionary().byteSize();
     };
     add(column);
     column.forEachSubcolumnRecursively(add);
     return bytes;
+}
+
+/// an empty column takes a shared dictionary from the first range it gets, give each dictionary its own copy
+void ownDictionaries(IColumn & column)
+{
+    auto own = [](IColumn & subcolumn)
+    {
+        if (auto * low_cardinality = typeid_cast<ColumnLowCardinality *>(&subcolumn))
+            if (low_cardinality->isSharedDictionary())
+                low_cardinality->compactDictionaryInplace();
+    };
+    own(column);
+    column.forEachMutableSubcolumnRecursively(own);
 }
 
 /// per-row version of `getBlockSizeForGranularity`, without the dictionary columns
@@ -316,7 +330,11 @@ bool buildProjectionPart(
         return true;
 
     for (auto & [name, column] : dictionary_columns)
+    {
+        /// the blocks built from this column then get their own dictionaries, as in the writer
+        ownDictionaries(*column.second);
         out.dictionary_columns.emplace_back(std::move(column.second), column.first, name);
+    }
 
     out.rows = key_columns[0]->size();
     /// projection indexes also store the parent offset

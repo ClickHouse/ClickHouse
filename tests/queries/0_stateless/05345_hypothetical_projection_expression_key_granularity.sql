@@ -64,6 +64,22 @@ SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM s_real WHERE b < 50)
 WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
 
+-- a stored array of LowCardinality values, the read gives the array a shared dictionary
+CREATE TABLE sa_est (a UInt64, b UInt64, c Array(LowCardinality(String))) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 8192, use_const_adaptive_granularity = 0;
+CREATE TABLE sa_real AS sa_est;
+ALTER TABLE sa_real ADD PROJECTION p_sa (SELECT a, b, c ORDER BY b);
+INSERT INTO sa_est SELECT number, number % 100, [repeat(toString(number % 300), 100)] FROM numbers(3000);
+INSERT INTO sa_real SELECT number, number % 100, [repeat(toString(number % 300), 100)] FROM numbers(3000);
+CREATE HYPOTHETICAL PROJECTION p_sa ON sa_est (SELECT a, b, c ORDER BY b);
+SELECT '-- a stored Array(LowCardinality(String)) column';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line FROM (EXPLAIN WHATIF SELECT a, b, c FROM sa_est WHERE b < 50)
+WHERE match(line, '^(Baseline|With |marks:|verdict:)');
+SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM sa_real WHERE b < 50)
+WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
+
 -- with many distinct values the dictionary is a large part of the block, and the index needs two bytes
 CREATE TABLE t_est_many AS t_est;
 CREATE TABLE t_real_many AS t_est;
@@ -158,6 +174,8 @@ DROP TABLE t_real_lc;
 DROP TABLE t_real_arr;
 DROP TABLE s_est;
 DROP TABLE s_real;
+DROP TABLE sa_est;
+DROP TABLE sa_real;
 DROP TABLE t_est_many;
 DROP TABLE t_real_many;
 DROP TABLE m_est;
