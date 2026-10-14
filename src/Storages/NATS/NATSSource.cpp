@@ -8,8 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/NATS/INATSConsumer.h>
-#include <Common/FailPoint.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -17,16 +15,6 @@ namespace Setting
 {
     extern const SettingsMilliseconds rabbitmq_max_wait_ms;
     extern const SettingsUInt64 interactive_delay;
-}
-
-namespace ErrorCodes
-{
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char nats_fail_resubscribe_within_query[];
 }
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
@@ -71,7 +59,6 @@ NATSSource::NATSSource(
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
-    , log(getLogger("NATSSource (" + storage_.getStorageID().getFullTableName() + ")"))
     , column_names(columns)
     , max_block_size(max_block_size_)
     , handle_error_mode(handle_error_mode_)
@@ -87,27 +74,10 @@ NATSSource::~NATSSource()
     if (!consumer)
         return;
 
-    /// What a direct `SELECT` committed is acknowledged by `generate` already, so whatever it still
-    /// holds goes back to the broker while the subscription is alive; otherwise the broker hides it
-    /// until the ACK deadline.
+    consumer->dropConsumed();
+
     if (unsubscribe_on_destroy)
-    {
-        /// The subscription of a direct `SELECT` ends with it, together with its local queue.
-        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::ReturnToBroker);
-        consumer->unsubscribe();
-    }
-    else if (!background_streaming)
-    {
-        /// A direct `SELECT` that got a consumer still subscribed by the streaming task leaves it
-        /// subscribed, and its local queue to whoever takes the consumer next.
-        consumer->returnConsumed();
-    }
-    else
-    {
-        /// A streaming cycle keeps the subscription and the local queue for the next cycle. Its
-        /// insert failed if it did not acknowledge, and the messages are redelivered.
-        consumer->dropConsumed();
-    }
+        consumer->unsubscribe(/*finish_queue=*/false);
 
     storage.pushConsumer(consumer);
 }
@@ -198,44 +168,6 @@ Chunk NATSSource::generateImpl()
             return {};
         }
 
-        /// A direct read holds its consumer until it ends, so a subscription that stopped consuming
-        /// is recovered here rather than by `StorageNATS::resubscribeStaleConsumers`. Only a
-        /// consumer that holds no message which may still owe rows is recovered, because the
-        /// recovery returns everything it holds to the broker. A skipped message owes nothing:
-        /// a streaming cycle acknowledges it, as its skip is final, while a direct `SELECT` has not
-        /// reached its commit point in `generate` yet and returns it.
-        /// `unsubscribe_on_destroy` is kept: a streaming consumer stays subscribed for the next cycle.
-        if (total_rows == 0 && !consumer->hasConsumedMessages() && consumer->queueEmpty() && consumer->needsResubscribe())
-        {
-            LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing within a running query");
-            consumer->finishAndReturnUnprocessed(
-                background_streaming ? INATSConsumer::SkippedMessages::Acknowledge
-                                     : INATSConsumer::SkippedMessages::ReturnToBroker);
-            consumer->unsubscribe();
-
-            try
-            {
-                fiu_do_on(FailPoints::nats_fail_resubscribe_within_query,
-                {
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of resubscribing within a running query");
-                });
-                consumer->subscribe();
-            }
-            catch (...)
-            {
-                /// A consumer the streaming task subscribed no longer reports that it needs to be
-                /// recovered once it is unsubscribed, so `subscribeConsumers` has to subscribe it.
-                if (!unsubscribe_on_destroy)
-                    storage.markConsumersNotReady();
-                if (!background_streaming)
-                    throw;
-
-                /// Let the other sources of the cycle insert what they have.
-                tryLogCurrentException(log, "Cannot resubscribe a NATS consumer");
-                return {};
-            }
-        }
-
         if (consumer->isConsumerStopped() || !checkTimeLimit())
             break;
 
@@ -249,13 +181,7 @@ Chunk NATSSource::generateImpl()
             buf = consumer->consume();
 
         if (buf)
-        {
             new_rows = executor.execute(*buf);
-
-            /// Passed over by `nats_skip_broken_messages`.
-            if (new_rows == 0)
-                consumer->markLastConsumedSkipped();
-        }
         else if (!wait_for_flush_interval)
             break;
 
