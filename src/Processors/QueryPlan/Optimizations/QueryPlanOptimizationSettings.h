@@ -4,6 +4,7 @@
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/FutureSetSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <chrono>
@@ -89,6 +90,7 @@ struct QueryPlanOptimizationSettings
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
     bool top_k_through_join;
+    bool min_max_from_files;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
     bool enable_group_by_top_k_dynamic_filtering;
@@ -131,6 +133,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;
+    bool use_query_condition_cache_for_time_conditions;
+    double query_condition_cache_time_condition_grid_factor;
     bool read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
@@ -220,7 +224,7 @@ struct QueryPlanOptimizationSettings
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;
-    size_t use_index_for_in_with_subqueries_max_values;
+    FutureSetSettings set_settings;
     PreparedSetsCachePtr prepared_sets_cache;
 
     /// This is needed for conversion JoinLogical -> Join
@@ -262,6 +266,7 @@ struct QueryPlanOptimizationSettings
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
+    float automatic_parallel_replicas_max_duplicated_read_ratio;
 
     bool query_plan_optimize_primary_key = true;
 
@@ -277,7 +282,6 @@ struct QueryPlanOptimizationSettings
     /// of re-running the same subqueries.
     std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
-    bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
 };
 
