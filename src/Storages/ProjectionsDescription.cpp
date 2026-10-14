@@ -798,6 +798,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     Names visible_output_names;
     Names physical_output_names;
     Names resolved_output_names;
+    size_t analyzed_output_count = 0;
     {
         /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
         /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
@@ -807,34 +808,41 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         StoragePtr analyzer_storage
             = createProjectionQuerySource(ColumnsDescription(columns.getAll()), MergeTreeData::createVirtuals(partition_key));
 
-        ProjectionUnresolvedNodeNames unresolved_node_names;
-        auto query_tree = buildProjectionQueryTree(
-            result.query_ast, analyzer_storage, mut_context, declared_columns ? &unresolved_node_names : nullptr);
+        auto query_tree = buildProjectionQueryTree(result.query_ast, analyzer_storage, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
 
         if (declared_columns)
         {
-            const auto & resolved_outputs = query_node.getProjectionColumns();
-            const size_t visible_count = resolved_outputs.size() - (projection_order_by ? 1 : 0);
-            visible_output_names.reserve(visible_count);
-            physical_output_names.reserve(visible_count);
-            resolved_output_names.reserve(visible_count);
-            const auto & projection_nodes = query_node.getProjection().getNodes();
+            analyzed_output_count = query_node.getProjectionColumns().size();
+
+            /// The appended `ORDER BY` expression can expand to several columns (for example,
+            /// `COLUMNS('regex')`). Analyze the `SELECT` by itself to identify its visible outputs.
+            QueryTreeNodePtr visible_query_tree;
+            const QueryNode * visible_query_node = &query_node;
+            if (projection_order_by)
+            {
+                auto visible_query_ast = result.query_ast->clone();
+                auto & visible_select = visible_query_ast->as<ASTSelectQuery &>().select()->as<ASTExpressionList &>();
+                if (visible_select.children.size() < 2)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot bind codec declarations to the outputs of projection {}", backQuote(result.name));
+                visible_select.children.pop_back();
+                visible_query_tree = buildProjectionQueryTree(visible_query_ast, analyzer_storage, mut_context);
+                visible_query_node = &visible_query_tree->as<QueryNode &>();
+            }
+
+            const auto & resolved_outputs = visible_query_node->getProjectionColumns();
+            visible_output_names.reserve(resolved_outputs.size());
+            resolved_output_names.reserve(resolved_outputs.size());
+            const auto & projection_nodes = visible_query_node->getProjection().getNodes();
             if (projection_nodes.size() != resolved_outputs.size())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot bind codec declarations to the outputs of projection {}", backQuote(result.name));
-            for (size_t i = 0; i < visible_count; ++i)
+            for (size_t i = 0; i < resolved_outputs.size(); ++i)
             {
                 visible_output_names.push_back(resolved_outputs[i].name);
-
-                /// Resolution can fold constants or rename aggregate functions. The old
-                /// interpreter may store either spelling, so check its actual metadata below.
-                const QueryTreeNodePtr * unresolved_node = &projection_nodes[i];
-                if (const auto * constant_node = (*unresolved_node)->as<ConstantNode>();
-                    constant_node && constant_node->hasSourceExpression())
-                    unresolved_node = &constant_node->getSourceExpression();
 
                 ConvertToASTOptions ast_options;
                 ast_options.use_source_expression_for_constants = true;
@@ -843,11 +851,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
                 auto physical_expression = projection_nodes[i]->toAST(ast_options);
                 physical_expression->setAlias({});
                 resolved_output_names.push_back(physical_expression->getColumnName());
-
-                if (auto it = unresolved_node_names.find(*unresolved_node); it != unresolved_node_names.end())
-                    physical_output_names.push_back(it->second);
-                else
-                    physical_output_names.push_back(resolved_output_names.back());
             }
         }
 
@@ -982,6 +985,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     if (declared_columns)
     {
+        /// The legacy interpreter determines the names stored in the projection part. Its
+        /// rewritten `SELECT` has expanded table `ALIAS` columns, unlike the Analyzer source above.
+        const auto & stored_select = select.getQuery()->as<const ASTSelectQuery &>().select()->children;
+        if (stored_select.size() != analyzed_output_count || stored_select.size() < visible_output_names.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot bind codec declarations to the outputs of projection {}", backQuote(result.name));
+        physical_output_names.reserve(visible_output_names.size());
+        for (size_t i = 0; i < visible_output_names.size(); ++i)
+            physical_output_names.push_back(stored_select[i]->getColumnName());
+
         NameSet declared_names;
         for (const auto & child : declared_columns->children)
             declared_names.insert(child->as<const ASTColumnDeclaration &>().name);
