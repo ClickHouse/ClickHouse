@@ -10857,9 +10857,9 @@ Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
     DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
-Send join runtime filters between stages of a distributed query plan. Probe-side tasks prune before the exchange.
+With `make_distributed_plan`, send join runtime filters built in one stage to the stages that read the probe side, so those stages filter rows before sending them. If a filter does not arrive, rows pass unfiltered. Requires `enable_join_runtime_filters`.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New experimental setting: ship join runtime filters between distributed-plan stages."}) \
+        {"26.10", false, false, "New experimental setting."}) \
     DECLARE(UInt64, distributed_plan_max_buffered_log_rows, 100000, R"(
 When `send_logs_level` forwards stateless-worker task logs to the coordinator, each worker task buffers at most this many log lines between status polls. Lines beyond the bound are dropped and their count is reported to the client. `0` means unbounded (never drops, but a stalled status poll can grow the buffer without limit).
 )", EXPERIMENTAL, \

@@ -413,8 +413,7 @@ public:
     {
     }
 
-    /// `advisory` is ignored: when the reader detaches, the sink already drops chunks quietly, and
-    /// the exchange is cancelled only when the whole query stops.
+    /// `advisory` is ignored: this sink already drops chunks when its reader detaches.
     std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         auto file_name = exchange_stream_id.toString();
@@ -815,15 +814,10 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
-/// Runs the runtime filter receive branches of a task beside its data pipeline, each in its own
-/// executor thread. A branch waits for a filter that the producer builds only after reading its
-/// whole build side, so the filter can arrive late or never. Keeping the branches out of the data
-/// pipeline has three effects. The task finishes when its data work finishes, because `finish`
-/// cancels the branches that still wait. The exception is a branch still in the exchange handshake
-/// with an unresponsive producer: it holds `finish` until that handshake times out. A branch error
-/// never fails the task: the filter is not registered, and `__applyFilter` passes all rows. And a
-/// branch connects at once, not only when the consumer pulls the task's data (see
-/// `MergeRuntimeFiltersTransform`).
+/// Runs each runtime filter receive branch of a task in its own thread, beside the data pipeline.
+/// A branch starts reading at once, without waiting for the data pipeline. `finish` cancels the
+/// branches that still wait. A branch error is logged and the filter is skipped, so rows pass
+/// unfiltered.
 class RuntimeFilterReceiveBranches
 {
 public:
@@ -862,8 +856,7 @@ public:
         }
         catch (...)
         {
-            /// The pool threw before queueing the job, so the branch never ran. As when a branch fails to
-            /// connect, the filter is not registered and rows pass unfiltered.
+            /// The thread did not start: skip the filter.
             branches.pop_back();
             ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
             tryLogCurrentException(
@@ -1019,8 +1012,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     for (const auto & descriptor : task.runtime_filter_descriptors)
     {
         const auto partials_header = runtimeFilterPartialsHeader();
-        /// All streams of a descriptor belong to one exchange. The merge expects one state per
-        /// input, so the streams are not spread over threads and each input is one stream.
+        /// All streams of a descriptor belong to one exchange. One input per stream: the merge
+        /// expects one state from each.
         chassert(!descriptor.streams.empty());
         VectorWithMemoryTracking<ExchangeStreamId> streams(descriptor.streams.begin(), descriptor.streams.end());
         auto partials = receiveExchangeStreams(
@@ -1295,10 +1288,8 @@ protected:
         return true;
     }
 
-    /// An in-memory sink never waits for its reader, so a merge task ends soon after its inputs
-    /// and waiting for it does not hold up the query. Without this wait, a merge task that fails
-    /// after the data stages finish goes unreported, because `cleanup` drops the task futures
-    /// without reading them.
+    /// Merge tasks end soon after their inputs here, so waiting for them is cheap and reports
+    /// their errors.
     bool waitsForFilterOnlyStages() const override { return true; }
 
 private:

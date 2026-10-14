@@ -117,10 +117,8 @@ void collectStepApplications(const IQueryPlanStep & step, std::vector<RuntimeFil
             collectRuntimeFilterApplications(prewhere_info->prewhere_actions, out);
     }
 #if CLICKHOUSE_CLOUD
-    /// The worker scan is an `ISourceStep`, not a `SourceStepWithFilter`, so the cast above never
-    /// matches it. It still carries the pushed-down PREWHERE, and that is where a multi-key join
-    /// leaves its apply sites. Miss them and the filter has no consumer to deliver to, so the
-    /// transport is skipped as if the probe side had never applied it.
+    /// The worker scan is not a `SourceStepWithFilter` but carries the pushed-down PREWHERE.
+    /// Without this branch its apply sites are not found and the filter is not transported.
     else if (const auto * worker_scan = typeid_cast<const ReadFromMergeTreeAtWorker *>(&step))
     {
         if (const auto & prewhere_info = worker_scan->getQueryInfo().prewhere_info; prewhere_info)
@@ -141,10 +139,9 @@ struct FilterConsumerSite
     String key_column;
 };
 
-/// Checks the three transport admission gates at one apply site. A build key set at least as large
-/// as the site's key set (or its whole row count) is not expected to prune, so shipping it only
-/// costs. An upsized budget also needs a known site row count. `geometry` is the (possibly upsized)
-/// transport budget; the caller updates the step only if a stage ships.
+/// True when sending the filter to this apply site can prune rows: the build key set must be
+/// smaller than the site's key set and row count, and a raised budget needs a known site row count.
+/// `geometry` is the transport budget, possibly raised from the estimate.
 bool siteAdmitsRuntimeFilterTransport(
     const FilterConsumerSite & site,
     const BuildRuntimeFilterStep & producer,
@@ -235,9 +232,8 @@ void wireRuntimeFilterExchangeTopology(
             collectStepApplications(*node->step, applications);
             for (const auto & application : applications)
             {
-                /// Every apply site in the stage is kept for admission. Delivery is still once per
-                /// stage: the descriptor registers once per task, and extra sites share the
-                /// registered filter through the lookup.
+                /// Keep every site: the stage is admitted if any site admits. The filter is still
+                /// delivered once per stage and read by all its sites.
                 consumers[application.filter_key][stage_name].push_back(
                     FilterConsumerSite{.node = node, .key_column = application.key_column});
             }
@@ -251,9 +247,8 @@ void wireRuntimeFilterExchangeTopology(
         {
             for (const auto & [stage_name, sites] : consumers_it->second)
             {
-                /// Same-stage sites are not delivered over an exchange: a self-edge would cycle the
-                /// scheduler. Local `__applyFilter` uses this task's lookup (transport mode registers
-                /// the merged partial after serialize).
+                /// The build stage itself needs no exchange: its sites read the filter from the
+                /// task's own lookup.
                 if (stage_name == producer.stage)
                     continue;
                 consuming_stages.emplace(stage_name, sites);
@@ -291,12 +286,9 @@ void wireRuntimeFilterExchangeTopology(
         }
 
         std::vector<String> remote_stages;
-        /// A filter is delivered to every stage that uses it; the stage graph does not restrict
-        /// the delivery itself. Each receiving stage also gets a `stage_depends_on` entry below, an
-        /// ordering hint that only persisted chains require. The entry is skipped where it would
-        /// create a cycle: when the producing stage depends on the receiving stage, as in the common
-        /// case of a join delivering to the scans below it. Such a receiver applies the filter
-        /// whenever it arrives.
+        /// The filter goes to every stage that uses it. Each receiving stage also depends on the merge
+        /// root, unless that would form a cycle (a join delivering to the scans below it); such a stage
+        /// applies the filter when it arrives.
         std::unordered_set<String> stages_without_completion_edge;
         for (const auto & [stage_name, sites] : consuming_stages)
         {
@@ -337,19 +329,13 @@ void wireRuntimeFilterExchangeTopology(
         for (const auto & task : send_tasks)
             source_buckets.push_back(taskBucketId(task));
 
-        /// Every transported filter gets its own filter-only merge stages, even with a single build
-        /// task. The root's broadcast sink may wait until query end for a receiver that finished
-        /// early or never connected, and a data task must never hold that wait. A merge task takes
-        /// its inputs without waiting for its receivers (see `StreamingExchangeSink`), so the wait
-        /// stays in the root. The stages form a merge tree of fan-in `fan_in`: each build task
-        /// sends its partial to its parent merge task, each level merges complete child states, and
-        /// the single root task broadcasts the union to every task of every receiving stage.
+        /// Every transported filter goes through its own merge stages, even from one build task, so
+        /// that only a filter-only task waits for slow or absent receivers. The stages form a tree of
+        /// fan-in `fan_in`; its root sends the union to every receiving task.
         const size_t fan_in = RUNTIME_FILTER_MERGE_FAN_IN;
 
-        /// The whole chain uses one exchange kind, by default the plan's data-exchange kind. If a
-        /// receiving stage reads the build stage over a persisted data edge, the chain is persisted
-        /// too. A streaming chain would deadlock there: the build sink waits for a merge consumer
-        /// that starts only after the build completes (through the receiving stage).
+        /// The chain uses one exchange kind. It is persisted if a receiving stage reads the build stage
+        /// over a persisted edge; a streaming chain would deadlock there.
         auto chain_kind = default_kind;
         for (const auto & receive_stage : remote_stages)
         {

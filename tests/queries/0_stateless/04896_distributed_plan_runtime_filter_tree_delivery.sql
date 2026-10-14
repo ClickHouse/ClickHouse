@@ -15,29 +15,21 @@ SET distributed_plan_join_runtime_filters = 1;
 SET distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4;
 
 SELECT '-- tree delivery, streaming exchange';
-SELECT count() FROM big, small WHERE bid = sid SETTINGS log_comment = '04516_tree_streaming';
+SELECT count() FROM big, small WHERE bid = sid SETTINGS log_comment = '04896_tree_streaming';
 
 SELECT '-- tree delivery, persisted exchange';
 SELECT count() FROM big, small WHERE bid = sid
-SETTINGS log_comment = '04516_tree_persisted', distributed_plan_force_exchange_kind = 'Persisted';
+SETTINGS log_comment = '04896_tree_persisted', distributed_plan_force_exchange_kind = 'Persisted';
 
 SET make_distributed_plan = 0;
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
--- Every variant must have scheduled and finished a merge-tree stage task (`rf_merge_%`) and must
--- have shipped more than one partial into it, which is what makes the delivery a tree rather than
--- all-to-all. Both signals exist only on the transported path.
---
--- `BuildRuntimeFilterPartialTransform` serializes a build task's partial and appends it to the
--- task's exchange sink as one extra row, so `output_rows > input_rows` marks a task that put a
--- state on the tree's exchange; there are four of them here, one per build bucket, and `>= 2`
--- keeps the check off the exact bucket count. A filter that stays local is built by
--- `BuildRuntimeFilterTransform` straight into its own task's lookup and ships nothing.
---
--- Neither signal is on the receiving side: the merge -> probe broadcast is best-effort by design,
--- because a probe task cancels its receive branch once its data work is done and the filter may
--- never arrive.
+-- Each variant must run an `rf_merge_%` task and send it more than one partial state; this is
+-- what makes the delivery a tree. Each of the four build tasks sends its state as one extra row
+-- of `BuildRuntimeFilterPartialTransform`; `>= 2` does not depend on the exact bucket count.
+-- The receiver is not checked: a probe task stops waiting for the filter when its data work is
+-- done, so the filter may not arrive.
 SELECT '-- merge stage ran and the partials went through the tree';
 SELECT
     comment,
@@ -52,7 +44,7 @@ FROM
         -- One row per variant: the initiator's own row. The task rows join to it through
         -- `initial_query_id`.
         SELECT DISTINCT query_id, log_comment FROM system.query_log
-        WHERE type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '04516_tree_%'
+        WHERE type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '04896_tree_%'
             AND current_database = currentDatabase() AND event_date >= yesterday()
     ) AS initiators ON tasks.initial_query_id = initiators.query_id
     WHERE tasks.type = 'QueryFinish' AND tasks.event_date >= yesterday()
@@ -69,7 +61,7 @@ FROM
         INNER JOIN
         (
             SELECT DISTINCT query_id, log_comment FROM system.query_log
-            WHERE type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '04516_tree_%'
+            WHERE type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '04896_tree_%'
                 AND current_database = currentDatabase() AND event_date >= yesterday()
         ) AS roots ON tasks.initial_query_id = roots.query_id
         WHERE tasks.type = 'QueryFinish' AND tasks.event_date >= yesterday()

@@ -10,10 +10,8 @@ struct QueryPlanSerializationSettings;
 static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
 static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
 
-/// The global query-plan version of the release that introduced the runtime filter transport. Step
-/// version 1 of `BuildRuntimeFilter` (the filter exchange topology) is written from this plan version
-/// on, and so is the `join_runtime_filter_exact_bytes_limit` plan setting, which a peer below it does
-/// not know. This version also introduces the `MergeRuntimeFilters` step.
+/// First plan version that can carry runtime filter exchanges (step version 1 of `BuildRuntimeFilter`),
+/// the `MergeRuntimeFilters` step and the `join_runtime_filter_exact_bytes_limit` plan setting.
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES = 20;
 
 /// Sizing and self-disabling parameters of a runtime filter. Partials merge only when their geometry
@@ -36,8 +34,7 @@ struct RuntimeFilterGeometry
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
     static RuntimeFilterGeometry fromSettings(const QueryPlanSerializationSettings & settings);
 
-    /// Reject a serialized geometry the `BuildRuntimeFilterStep` constructor plus transport
-    /// sizing (settings floor, `MAX_RUNTIME_BLOOM_FILTER_BYTES`) could not have produced.
+    /// Throws if a geometry read from the wire is out of bounds.
     void validateTransported() const;
 };
 

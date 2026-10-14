@@ -229,8 +229,7 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     {
         size_t descriptors_size = 0;
         readVarUInt(descriptors_size, in);
-        /// An initiator emits one descriptor per admitted filter, each with one stream from the
-        /// filter's root merge task, so a legitimate task stays far below these bounds.
+        /// Limits against a corrupt task; real tasks are far below them.
         constexpr size_t max_runtime_filter_receive_descriptors = 1000;
         constexpr size_t max_streams_per_runtime_filter_descriptor = 1000;
         if (descriptors_size > max_runtime_filter_receive_descriptors)

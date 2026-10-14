@@ -35,9 +35,8 @@ SELECT count() FROM huge, tiny WHERE hid = tid SETTINGS distributed_plan_force_e
 SELECT '-- early close under LIMIT';
 SELECT count() FROM (SELECT hid FROM huge, tiny WHERE hid = tid LIMIT 10);
 
--- Independent join keys (hid vs hid2) keep the two dimension filters from collapsing into a
--- transitive `mid ⋈ tiny` bushy join. `mid` between `tiny` and `huge` keeps every admission
--- decision far from its estimate threshold, so randomized index-analysis jitter cannot flip the plan.
+-- Different keys (`hid`, `hid2`) keep the two filters separate. The size of `mid` keeps every
+-- admission decision far from its threshold, so random settings cannot change the plan.
 SELECT '-- two joins, each with its own filter';
 SELECT count() FROM huge AS h INNER JOIN mid AS t1 ON h.hid = t1.tid INNER JOIN tiny AS t2 ON h.hid2 = t2.tid
     SETTINGS log_comment = '04892_two_joins';
@@ -45,26 +44,13 @@ SELECT count() FROM huge AS h INNER JOIN mid AS t1 ON h.hid = t1.tid INNER JOIN 
 SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
--- Local distributed-plan tasks inherit `log_comment` and log as `stage_%` / `rf_merge_%` in
--- `system.query_log`, each under a `query_id` of its own with the initiator's id as
--- `initial_query_id`; their pipeline processors are recorded under those task ids.
--- Two things exist only on the transported path and are the transport signal here:
---
---   `BuildRuntimeFilterPartialTransform` serializes a build task's partial and appends it to the
---   task's exchange sink as one extra row, so `output_rows > input_rows` marks a task that put a
---   state on an exchange. It is counted where the state is serialized, so it does not depend on
---   whether anything received it.
---
---   `rf_merge_<bucket>_<filter>` is a task of that filter's merge tree, which is planned only for
---   a transported filter, so the distinct filter names in those task names are the transported
---   filters.
---
--- A filter that stays local is built by `BuildRuntimeFilterTransform` straight into its own
--- task's lookup and produces neither: that transform is present in equal numbers with the setting
--- on and off, which is why it cannot serve as the signal.
---
--- Nothing below asserts on the receiving side: the merge -> probe broadcast is best-effort by
--- design, because a probe task cancels its receive branch once its data work is done.
+-- Tasks of a local distributed plan log under their own `query_id`, with the initiator's id as
+-- `initial_query_id`. Signs that a filter was sent:
+--   * `BuildRuntimeFilterPartialTransform` with `output_rows > input_rows`: the task sent its
+--     filter state to an exchange. It is counted at the sender.
+--   * an `rf_merge_%` task: it exists only for a sent filter; its name ends with the filter name.
+-- A local filter shows neither. The receiver is not checked: a probe task stops waiting for the
+-- filter when its data work is done, so the filter may not arrive.
 SELECT '-- Nullable key sent no states';
 -- A `Nullable` join key is not transportable, so neither transported processor may appear.
 -- `count() > 0` keeps this from holding just because no task ran.

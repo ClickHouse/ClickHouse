@@ -110,7 +110,7 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 
 void BuildRuntimeFilterTransform::finish()
 {
-    /// Without a rendezvous key no `__applyFilter` can look the filter up, so there is nothing to register.
+    /// No `__applyFilter` can find a filter with an empty key, so do not register it.
     if (filter_key.empty())
         return;
     /// Already published.

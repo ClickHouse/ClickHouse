@@ -24,10 +24,8 @@ using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancella
 /// recorded there and reported by the source driving the plan (see `tryGenerate`). On a worker the
 /// state is null and a lost peer is a plain `EXCHANGE_PEER_DISCONNECTED` failure of the task.
 ///
-/// An advisory source reads a runtime filter, which the consumer can do without. If the producer
-/// is lost after the handshake, the source ends the stream early instead of failing. A failed
-/// connect or handshake still throws: the producer's sink waits for its receiver to connect without
-/// a timeout.
+/// `advisory`: the consumer can do without the data (a runtime filter). A producer lost after the
+/// handshake ends the stream early. A failed connect or handshake still throws.
 ///
 /// With `output_is_serialized` the source does not deserialize: it hands every packet on as one row
 /// of a `String` column, for the `StreamingExchangeDeserializingTransform` on every stream behind

@@ -20,11 +20,9 @@ constexpr size_t RUNTIME_FILTER_MERGE_FAN_IN = 16;
 /// at the tree root, to every task of every receiving stage. The fragment is complete on its own:
 /// exchange sources feed a `MergeRuntimeFiltersTransform` whose output ends in exchange sinks.
 ///
-/// The step itself is stage-invariant; which slice of child buckets a task consumes and which
-/// parent it feeds are derived from the task's `bucket_id` parameter: task `i` consumes child
-/// buckets `[i * fan_in, (i + 1) * fan_in)` of `source_buckets` and feeds parent `i / fan_in` at
-/// the next level. The wiring in `RuntimeFilterExchangeWiring.cpp` enumerates the exchange
-/// streams with the same rule, so the plan's stream lists and the built pipeline always agree.
+/// The step is the same for all tasks of a stage. Task `i` reads child buckets
+/// `[i * fan_in, (i + 1) * fan_in)` of `source_buckets` and feeds parent `i / fan_in`; the wiring
+/// uses the same rule for the plan's stream lists.
 class MergeRuntimeFiltersStep final : public IQueryPlanStep
 {
 public:

@@ -34,24 +34,13 @@ SELECT count() FROM big LEFT ANTI JOIN small ON bid = sid SETTINGS log_comment =
 
 SET make_distributed_plan = 0;
 
--- Local distributed-plan tasks inherit `log_comment` and log as `stage_%` / `rf_merge_%` in
--- `system.query_log`, each under a `query_id` of its own with the initiator's id as
--- `initial_query_id`; their pipeline processors are recorded under those task ids.
--- Two signals exist only on the transported path:
---
---   `BuildRuntimeFilterPartialTransform` serializes a build task's partial and appends it to the
---   task's exchange sink as one extra row, so `output_rows > input_rows` marks a task that put a
---   state on an exchange. It is counted where the state is serialized, so it does not depend on
---   whether anything received it.
---
---   `rf_merge_%` is a task of the merge tree, which is planned only for a transported filter.
---
--- A filter that stays local is built by `BuildRuntimeFilterTransform` straight into its own
--- task's lookup and produces neither. That transform appears in equal numbers with the setting
--- on and off, so it cannot serve as the signal.
---
--- Nothing below asserts on the receiving side: the merge -> probe broadcast is best-effort by
--- design, because a probe task cancels its receive branch once its data work is done.
+-- Tasks of a local distributed plan log under their own `query_id`, with the initiator's id as
+-- `initial_query_id`. Signs that a filter was sent:
+--   * `BuildRuntimeFilterPartialTransform` with `output_rows > input_rows`: the task sent its
+--     filter state to an exchange. It is counted at the sender.
+--   * an `rf_merge_%` task: it exists only for a sent filter.
+-- A local filter shows neither. The receiver is not checked: a probe task stops waiting for the
+-- filter when its data work is done, so the filter may not arrive.
 SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
 SELECT '-- shuffle join, setting on: states crossed the exchange';

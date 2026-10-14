@@ -392,11 +392,8 @@ struct DistributedQueryStage
     QueryPlan query_plan_fragment;   /// Common for all tasks
     std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
 
-    /// A stage whose only output is a runtime filter (an `rf_merge_*` merge stage). The remote
-    /// executor starts it like any other stage but does not wait for it to finish. Once the data
-    /// stages are done, an undelivered filter has nobody left to serve, and query cleanup cancels
-    /// the tasks (a clean finish for them, not an error). The local executor waits for it, see
-    /// `DistributedQueryPlanExecutorLocal::waitsForFilterOnlyStages`.
+    /// The stage only merges and sends a runtime filter (an `rf_merge_*` stage); it produces no
+    /// query data. See `waitsForFilterOnlyStages` for whether an executor waits for it.
     bool filter_only = false;
 };
 

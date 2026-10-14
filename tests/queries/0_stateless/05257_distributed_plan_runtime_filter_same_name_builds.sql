@@ -1,9 +1,8 @@
 -- Tags: no-old-analyzer
 
--- `vs` is joined twice, so one stage holds two `BuildRuntimeFilter` steps for the join inside `vs`.
--- Both steps have the same structural filter name. A deserialized build that is not transported
--- must stay inert. Giving both builds one rendezvous key by that name made the second
--- registration throw a `LOGICAL_ERROR`.
+-- `vs` is used twice, so one stage has two `BuildRuntimeFilter` steps with the same filter name.
+-- A build that is not sent must not register under that name; otherwise the second build throws
+-- a `LOGICAL_ERROR`.
 
 CREATE TABLE r1 (k UInt64, w UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE s (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;

@@ -251,10 +251,8 @@ public:
     /// sent to another server and merged there. Captures the state: further inserts and merges throw.
     void serialize(WriteBuffer & out);
 
-    /// Reads the state written by `serialize`. The geometry must match the serializing side; it is
-    /// taken from the plan, and the bloom filter parameters found in the data are validated against it.
-    /// The result is meant to be moved into a `RuntimeFilter`, which owns the build state and the
-    /// evaluation state a transported partial has none of.
+    /// Reads the state written by `serialize`. Throws if the bloom parameters in the data differ from
+    /// `geometry_`.
     static AdaptiveSetRuntimeFilter
     deserialize(ReadBuffer & in, const DataTypePtr & filter_column_target_type_, const RuntimeFilterGeometry & geometry_);
 
@@ -274,9 +272,8 @@ private:
         RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter) const;
 
     const DataTypePtr filter_column_target_type;
-    /// Size of the bloom filter the exact phase degrades to, from the geometry. It is not the exact-phase
-    /// byte bound (`RuntimeFilterGeometry::exact_bytes_limit`): transport may raise that bound from
-    /// estimates, but the bloom must be byte-identical on every node that merges a partial of one exchange.
+    /// Bloom size used after the exact set overflows. Every task that merges one filter must use the same
+    /// size, so it does not follow `exact_bytes_limit`.
     const UInt64 bloom_filter_bytes;
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;

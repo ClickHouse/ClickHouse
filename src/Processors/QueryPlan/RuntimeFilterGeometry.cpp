@@ -24,8 +24,8 @@ extern const QueryPlanSerializationSettingsDouble join_runtime_bloom_filter_max_
 void RuntimeFilterGeometry::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit] = exact_values_limit;
-    /// A peer below this version rejects the unknown name. Omitting it leaves such a peer bounding the exact
-    /// phase by the bloom size, which is correct: below this version a step has no filter exchanges, so it is a local build.
+    /// Older peers do not know this name. They never run filter exchanges, so their exact-set bound is the
+    /// bloom size anyway.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES)
         settings[QueryPlanSerializationSetting::join_runtime_filter_exact_bytes_limit] = exact_bytes_limit;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = bloom_filter_bytes;

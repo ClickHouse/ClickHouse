@@ -137,22 +137,14 @@ void MergeRuntimeFiltersTransform::consume()
     const auto & column = assert_cast<const ColumnString &>(*current_chunk.getColumns().front());
     for (size_t row = 0; row < column.size() && !skipped; ++row)
     {
-        /// Failing closed on a duplicate is sound because the exchange layer delivers each stream
-        /// at most once. A producer emits exactly one state row per stream. A build task is never
-        /// re-run: `sendTask` in `StatelessWorkerClient.cpp` does not retry a task start, and
-        /// `StatelessTaskExecutor::startTask` ignores a duplicate one. A stream pairs one producer
-        /// with one consumer, because `ExchangeConnections` drops a duplicate producer and refuses
-        /// a duplicate consumer. `StreamingExchangeSource` never reconnects or replays a broken
-        /// stream: it ends the input early or fails the query. A second state from the same source
-        /// therefore indicates a bug, not a benign redelivery.
+        /// Each stream carries one state and is never replayed, so a second state means a bug.
         if (received[current_input])
             throw Exception(
                 ErrorCodes::INCORRECT_DATA, "Received more than one partial runtime filter '{}' from the same source", filter_name);
         received[current_input] = true;
         ++states_received;
 
-        /// A view into the chunk's column; valid until `current_chunk` is released below. The state
-        /// is parsed straight from it, without materializing an intermediate copy.
+        /// Points into `current_chunk`; parsed in place.
         const std::string_view state = column.getDataAt(row);
 
         ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesReceived);
@@ -230,8 +222,7 @@ void MergeRuntimeFiltersTransform::finalize()
     accumulated->serialize(out);
     accumulated.reset();
 
-    /// The merged union must respect the same limit its receivers enforce; with a valid geometry
-    /// this cannot trigger, so it is pure defense in depth against a sizing bug.
+    /// Cannot trigger with a valid geometry; checks for a sizing bug.
     if (out.str().size() > max_received_state_bytes)
     {
         skipped = true;

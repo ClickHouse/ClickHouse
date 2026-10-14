@@ -53,15 +53,9 @@ WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
               AND current_database = currentDatabase() AND log_comment = '04948_mixed')
         AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'));
 
--- The filter for `p.id = d.id` is transported, so check that its producer shipped it.
--- `BuildRuntimeFilterPartialTransform` serializes the build task's partial and appends it to the
--- task's exchange sink as one extra row, so `output_rows > input_rows` marks a task that put a
--- state on an exchange. It exists only on the transported path: a filter that stays local is
--- built by `BuildRuntimeFilterTransform`, which appears in equal numbers either way.
---
--- It does not assert that the `local_probe` stage received the state: the merge -> probe
--- broadcast is best-effort by design, because a probe task cancels its receive branch once its
--- data work is done.
+-- The filter for `p.id = d.id` is sent, so its build task must show
+-- `BuildRuntimeFilterPartialTransform` with `output_rows > input_rows`. The `local_probe` stage
+-- is not checked: a probe task stops waiting for the filter when its data work is done.
 SELECT '-- the producer also shipped the filter over the exchange';
 SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 1
 FROM system.processors_profile_log

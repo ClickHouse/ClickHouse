@@ -10,13 +10,9 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET distributed_plan_join_runtime_filters = 1, function_sleep_max_microseconds_per_block = 20000000;
 
--- The build side sleeps ~10 seconds before the runtime filter can be built. The probe-scan tasks
--- finish their data work in milliseconds and must not stay alive waiting for the filter.
---
--- The sleep is this long because it sets the whole budget the probe side is allowed. A probe
--- task's duration grows with how contended the machine is - measured at 55ms idle and 432ms
--- under twelve concurrent copies of this query - while the sleep is fixed wall-clock time that
--- does not grow. Half of ten seconds leaves that growth an order of magnitude of headroom.
+-- The build side sleeps about 10 seconds before the filter is ready. The probe tasks finish their
+-- data work in milliseconds and must not wait for the filter. The long sleep leaves a large margin
+-- for slow probe tasks on a busy machine (measured 55 ms idle, 432 ms under heavy load).
 SELECT count() FROM big, (SELECT sid FROM small WHERE sleepEachRow(0.1) = 0) AS s WHERE bid = s.sid
 SETTINGS log_comment = '04949_no_lingering';
 
@@ -24,25 +20,13 @@ SET make_distributed_plan = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Three checks, so a failure says which part broke. The first is that the build side really did
--- sleep: a sleep that landed elsewhere or got split across buckets would otherwise read as a
--- lingering probe.
---
--- The second is that the probe tasks have a receive branch to linger on. A filter-merge task
--- (`rf_merge_%`) is planned only when a stage receives the transported filter, and here only the
--- probe stage does. Without a merge task, the third check would hold with nothing to cancel.
---
--- The third is the property itself. The probe tasks (stage_0) must finish much earlier than the
--- build-scan task holding the sleep (stage_1). Without the receive-branch cancellation a probe
--- task lives until the filter arrives, which cannot happen before the sleep ends, and both sides
--- show the same duration. Durations, not end timestamps: a task's duration does not depend on
--- when the scheduler got to it, and under load a probe can start late enough that its end time
--- approaches the merge task's while its duration stays in the milliseconds. `maxIf` over no rows
--- returns 0 and would let a check pass with no tasks, so each check also requires its stage to
--- have rows.
---
--- The fragments are selected through the root query, which carries the current database: every
--- task row carries the root query's id as `initial_query_id`.
+-- 1. The build task (stage_1) did sleep. Otherwise a slow probe task could not be told apart.
+-- 2. An `rf_merge_%` task exists, so the probe tasks do have a filter to wait for.
+-- 3. The probe tasks (stage_0) finish much faster than the build task. A probe task that waited
+--    for the filter would take as long as the sleep. Durations are compared, not end times,
+--    because a probe task can start late on a busy machine.
+-- Each check also requires rows, because `maxIf` over no rows returns 0. Tasks are found through
+-- `initial_query_id` of the root query, which has the current database.
 SELECT countIf(query LIKE 'stage_1_%') > 0 AND maxIf(query_duration_ms, query LIKE 'stage_1_%') > 5000,
        countIf(query LIKE 'rf_merge_%') > 0,
        countIf(query LIKE 'stage_0_%') > 0

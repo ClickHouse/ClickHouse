@@ -126,10 +126,8 @@ public:
     bool empty() const;
     size_t getTotalRowCount() const;
     size_t getTotalByteCount() const;
-    /// Byte size of the explicitly stored elements (see `fillSetElements`). Unlike
-    /// `getTotalByteCount`, which measures the hash table buffer and misses variable-width key
-    /// bytes (e.g. string data living outside the buffer), this measures the actual key columns.
-    /// Usable while the set is still being filled.
+    /// Bytes of the stored elements (see `fillSetElements`), including string data. Valid while the set
+    /// is being filled.
     size_t getSetElementsBytes() const;
 
     const DataTypes & getDataTypes() const { return data_types; }

@@ -211,10 +211,8 @@ public:
         /// Serialize first: the filter is moved into the lookup below, where `add` calls `finishInsert`.
         WriteBufferFromOwnString out;
         task_filter->filter->serialize(out);
-        /// Same-stage `__applyFilter` sites read this task's lookup: an exchange edge back to this stage
-        /// would cycle the scheduler. Every transported build registers here, whether or not its stage
-        /// has such a site. The filter is already built, so this only keeps it until the task ends.
-        /// Every stream has merged in, so the published filter expects no merges.
+        /// Register the finished filter in this task's lookup for the `__applyFilter` sites of the
+        /// same stage. All streams have merged in, so it expects no more merges.
         if (!filter_key.empty())
         {
             if (!query_context)

@@ -129,9 +129,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
-/// Version 20 also writes the runtime filter exchange topology and `join_runtime_filter_exact_bytes_limit`,
-/// and introduces the `MergeRuntimeFilters` step (see
-/// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES`).
+/// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
+/// plan setting.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -224,9 +223,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TO
 /// Version 3 added the error code of a failed task to its status reply.
 /// Version 4 added runtime filter receive descriptors to the task.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
-/// First distributed-task serialization version that carries the runtime filter receive
-/// descriptors. Gates writing and reading them; writing descriptors below this version is a
-/// logical error.
+/// First distributed-task serialization version that carries the runtime filter receive descriptors.
 static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS = 4;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;

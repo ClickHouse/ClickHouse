@@ -1,8 +1,7 @@
 -- Tags: no-old-analyzer
 
--- 20000 distinct short `String` keys under the default 10000-row exact-values limit.
--- Transport must raise the row bound from the cardinality estimate for variable-width
--- keys too, so the filter can arrive exact.
+-- 20000 distinct short `String` keys, above the default limit of 10000 exact values. A sent
+-- filter raises this limit from the row estimate, also for `String` keys, so it stays exact.
 
 CREATE TABLE big (bid String, v UInt64) ENGINE = MergeTree ORDER BY bid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE small (sid String) ENGINE = MergeTree ORDER BY sid;

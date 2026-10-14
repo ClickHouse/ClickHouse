@@ -15,17 +15,10 @@ SELECT count() FROM big, small WHERE bid = sid SETTINGS log_comment = '04893_run
 
 SET make_distributed_plan = 0;
 
--- `BuildRuntimeFilterPartialTransform` serializes a build task's partial and appends it to the
--- task's exchange sink as one extra row, so in `system.processors_profile_log`
--- `output_rows > input_rows` marks a task that put a state on an exchange. It exists only on the
--- transported path: a local filter is built by `BuildRuntimeFilterTransform`, which appears in
--- equal numbers with the setting on and off. So `>= 2` means two build tasks shipped a state, and
--- a local filter scores 0. The count is taken where the state is serialized, not where it
--- arrives.
---
--- Nothing here asserts on the receiving side. The merge -> probe broadcast is best-effort by
--- design: a probe task cancels its receive branch once its data work is done, so the filter may
--- never arrive, so a check on the probe side would depend on timing.
+-- `BuildRuntimeFilterPartialTransform` with `output_rows > input_rows` shows that a build task
+-- sent its filter state to an exchange (it is counted at the sender). A local filter does not
+-- show it, and here both build tasks must send. The receiver is not checked: a probe task stops waiting for the
+-- filter when its data work is done, so the filter may not arrive.
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 2
 FROM system.processors_profile_log

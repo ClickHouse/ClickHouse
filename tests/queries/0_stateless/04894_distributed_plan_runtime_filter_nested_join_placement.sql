@@ -58,8 +58,8 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'rf_merg
 -- exchange of that filter's `rf_merge_%` root among its inputs. All tasks that receive a filter
 -- must belong to one stage. Each must receive both filters and no other input exchange. Such a
 -- task has no data input exchange, so it reads storage. The only scan here that applies the
--- filters reads `fact`. The check does not look the stage up by its read step, because Cloud
--- builds name that step differently.
+-- filters reads `fact`. The stage is not found by its read step name, because that name is
+-- different in some builds.
 SELECT '-- every task that receives a filter is in one stage and receives both filters';
 WITH
     (

@@ -1,18 +1,12 @@
-"""Runtime-filter transport on a 3-node cluster.
+"""Runtime filter transport on a 3-node cluster.
 
-Shuffle joins ship partials through the merge tree (build -> `rf_merge_*` -> probe). Results
-equal the same query with `make_distributed_plan` off. Per-task `RuntimeFilterState*`
-ProfileEvents in `system.query_log` (worker tasks carry the initiator's query id as
-`initial_query_id`) check the stream and byte counts. With `N` build and `N` probe tasks a
-one-level tree sends at most `2 * N` states, against `N * N` for all-to-all delivery. A send is
-counted where the state is serialized. Total send counts are bounded rather than exact because
-the root skips serializing when every probe task has already closed its receive branch. Inside
-the merge tree every state normally arrives. The root's broadcast to the probe tasks is
-best-effort by design, so its arrivals are only bounded. A receiver consumes at most
-`RUNTIME_FILTER_MERGE_FAN_IN` (16) states, including in a 2-level tree (`N = 32` -> 2
-first-level merges -> root). Peak merge-task memory is compared across `N = 2 / 8 / 32` with
-equal bloom sizes. Persisted exchanges, cancellation, `LIMIT` early close, and a receive branch
-that fails before it connects are separate cases.
+Shuffle joins send filter states through the merge tree (build -> `rf_merge_*` -> probe), and the
+results must match the same query with `make_distributed_plan` off. The `RuntimeFilterState*`
+ProfileEvents of each task check the state and byte counts: with `N` build and `N` probe tasks a
+tree sends at most `2 * N` states, all-to-all would send `N * N`. No receiver reads more than
+`RUNTIME_FILTER_MERGE_FAN_IN` (16) states, also in a 2-level tree (`N = 32`). Other cases:
+merge task memory for `N = 2 / 8 / 32`, persisted exchanges, cancellation, `LIMIT`, and a receive
+branch that fails before it connects.
 """
 
 import logging
@@ -235,35 +229,21 @@ def _check_topology(tasks, buckets, levels):
     # send `N * N`.
     assert total_sent <= tree_edges + broadcast_edges, (total_sent, tree_edges, broadcast_edges)
 
-    # The build leg is the one exact per-state count here, and it is what separates a tree from
-    # all-to-all at the leaves: a tree has each build task serialize its partial once, for its one
-    # merge parent, where all-to-all would serialize once per destination.
-    # `BuildRuntimeFilterPartialTransform` reaches that serialize on its own input finishing, and
-    # bails out early only when its *data* output is gone -- never on the state of the merge
-    # parent -- so a merge task closing its inputs cannot suppress the count.
+    # Exact count: each build task sends its state once, to its one merge parent, even if that
+    # parent closes its inputs early. All-to-all would send once per destination.
     build_tasks = [t for t in tasks if not t["task"].startswith("rf_merge_")]
     assert all(t["states_sent"] <= 1 for t in build_tasks), tasks
     assert sum(t["states_sent"] for t in build_tasks) == buckets, tasks
 
-    # Tree-leg completeness holds whenever the root forwarded. A merge task publishes only after
-    # every input arrived (`MergeRuntimeFiltersTransform::finalize`), so a root that forwarded
-    # anything proves that each state it merged came from a merge task that consumed all of its
-    # own inputs.
-    #
-    # Without that condition it is a race, and losing it needs no cancellation. A probe task
-    # closes its receive branch as soon as its own scan ends. Once every destination has gone,
-    # `MergeRuntimeFiltersTransform::prepare` closes the merge task's inputs unread and discards a
-    # partial that had already arrived. At `N = 32` the probes normally finish first: each scans
-    # only `BIG_ROWS / N` rows while the build side moves `N` blooms through two merge levels.
+    # A merge task sends only after all of its inputs arrived, so if the root sent, every state of
+    # the tree arrived. Otherwise it is a race: when all probe tasks are done, merge tasks close
+    # their inputs unread. At `N = 32` the probe tasks normally finish first.
     root_published = any(t["states_sent"] == buckets for t in merge_tasks)
     if root_published:
         assert merge_received == tree_edges, (merge_received, tree_edges, tasks)
 
-    # The root's broadcast to the probe tasks is best-effort by design: a probe task cancels its
-    # receive branch once its data work is done (`RuntimeFilterReceiveBranches::finish`), and a
-    # filter that arrives after the scan it would have narrowed has nothing left to serve. So on
-    # that leg `received` may fall short of `sent`, but never exceeds it: delivery invents no
-    # states.
+    # A probe task stops waiting for the filter when its scan ends, so it can receive less than was
+    # sent to it, but never more.
     assert total_received <= total_sent, (total_received, total_sent, tasks)
 
     # Every state put on an exchange is the settings-sized bloom. On the send side that is exact:
@@ -277,10 +257,7 @@ def _check_topology(tasks, buckets, levels):
 
     assert all(t["oversized_rejected"] == 0 for t in tasks), tasks
 
-    # The fan-in bound: no receiving task consumes more states than the tree fan-in, whatever the
-    # total task count -- the receiver-side buffering cannot scale with the cluster. A final
-    # (probe) receiver consumes exactly one state, the complete global union, where all-to-all
-    # delivery would hand it one state per build task.
+    # No task reads more than `FAN_IN` states. A probe task reads at most one: the full union.
     for task in tasks:
         assert task["states_received"] <= FAN_IN, task
         if not task["task"].startswith("rf_merge_"):

@@ -373,10 +373,8 @@ void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 
     auto & set = getExactValues();
     set.insertFromColumns({values});
-    /// Cap actual key bytes, not the hash-table buffer. After growth the table can sit at
-    /// 1/8 fill; short keys would trip the byte check far below the row bound (at most
-    /// eight 24-byte cells per key). Receiver uses this cap to refuse payload before
-    /// materializing (`AdaptiveSetRuntimeFilter::deserialize`).
+    /// Bound the key bytes, not the hash table buffer: after a resize the buffer is mostly empty and
+    /// would trip the bound long before the row limit. The receiver checks the same bound.
     is_full = set.getTotalRowCount() > exact_values_limit || set.getSetElementsBytes() > bytes_limit;
 }
 
@@ -800,10 +798,8 @@ void AdaptiveSetRuntimeFilter::serialize(WriteBuffer & out)
 
     writeBinary(UInt8(0), out);
 
-    /// The Set stores its elements with LowCardinality stripped (see `Set::getElementTypes`),
-    /// so the block must be typed the same way; `insert` on the receiving side accepts full
-    /// columns. The row count goes first so the reader can reject an oversized declaration
-    /// before the column gets allocated.
+    /// Set elements have `LowCardinality` removed, so the block uses the same type. The row count goes
+    /// first so the reader can reject it before allocating.
     auto values = exact_filter->getValuesColumn();
     writeVarUInt(values->size(), out);
     Block block({ColumnWithTypeAndName(values, recursiveRemoveLowCardinality(filter_column_target_type), "values")});
@@ -845,10 +841,9 @@ AdaptiveSetRuntimeFilter AdaptiveSetRuntimeFilter::deserialize(
                 rows,
                 geometry_.exact_values_limit);
 
-        /// Declared row count does not bound variable-width keys. Reject before consuming payload if
-        /// remaining bytes exceed `exact_bytes_limit` plus Native framing (block info, column name,
-        /// serialization kind) plus the actual type-name length (`Enum` names are unbounded).
-        /// Hostile row counts still die on the memory limit, loudly.
+        /// The row count does not bound variable-width keys. Without this check a sender could make
+        /// us parse far more than `exact_bytes_limit`. The slack covers the Native block header and
+        /// the type name.
         const auto element_type = recursiveRemoveLowCardinality(filter_column_target_type_);
         constexpr size_t native_framing_slack_bytes = 64 * 1024;
         const size_t max_state_bytes = geometry_.exact_bytes_limit + element_type->getName().size() + native_framing_slack_bytes;
@@ -1055,10 +1050,7 @@ public:
         for (const auto & [filter_key, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
-            /// `filter_key` is the opaque random rendezvous key; the readable structural name comes
-            /// first, but the key stays in the line: several filter instances (e.g. a transported
-            /// union and a worker-re-added local pair) share one structural name and only the key
-            /// tells them apart.
+            /// Several filters can share one display name, so the key is logged too.
             auto name_it = display_names.find(filter_key);
             const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(

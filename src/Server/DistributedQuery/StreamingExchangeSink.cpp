@@ -157,8 +157,7 @@ void StreamingExchangeSink::sendToSocket()
             tryReceiveControlPacket();
             if (no_more_data_needed)
                 return;
-            /// An advisory stream carries a runtime filter, which the probe side can do without,
-            /// so a failed send abandons the delivery instead of failing the query.
+            /// The receiver can do without an advisory stream.
             if (advisory)
             {
                 abandonDelivery("send failed: " + e.displayText());
@@ -205,9 +204,7 @@ ISink::Status StreamingExchangeSink::prepare()
     {
         if (!connection_wait)
             connection_wait.emplace();
-        /// Ask for the input before the receiver connects (see the constructor). A build task
-        /// depends on it: `BuildRuntimeFilterPartialTransform` finishes its data output only after
-        /// it pushes the partial. The packet stays in the port until `work` extracts the socket.
+        /// Let the producer push its only chunk before the receiver connects; it waits in the port.
         if (advisory && !input.isFinished())
             input.setNeeded();
         return Status::Async;

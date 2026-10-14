@@ -1784,10 +1784,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         distributed_plan.stage_depends_on["main"] = main_stage_depends_on;
     }
 
-    /// Now that the stages and their tasks exist, wire exchanges for runtime filters whose build and
-    /// apply sites landed in different stages. The filter exchanges start from the same kind as the
-    /// data exchanges above, and the wiring switches a chain to `Persisted` when a receiving stage
-    /// reads the build stage over a persisted data edge.
+    /// Add exchanges for runtime filters whose build and apply sites are in different stages.
     if (optimization_settings.distributed_plan_join_runtime_filters)
         wireRuntimeFilterExchangeTopology(
             distributed_plan,

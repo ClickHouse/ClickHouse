@@ -22,18 +22,13 @@ SELECT count() FROM t_large, t_small WHERE lid = sid SETTINGS log_comment = '048
 SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
--- The admission decision is taken while the plan is optimized, on the initiator, and is read
--- from `system.text_log` below. Whether a state was then sent is read from
--- `system.processors_profile_log` instead: `BuildRuntimeFilterPartialTransform` serializes a
--- build task's partial and appends it to the task's exchange sink as one extra row, so
--- `output_rows > input_rows` marks a task that put a state on an exchange, and
--- `MergeRuntimeFiltersTransform` belongs to a merge-tree task. Both exist only on the transported
--- path; a filter that stays local is built by `BuildRuntimeFilterTransform`, which appears in
--- equal numbers whether transport is admitted or refused and so cannot serve as the signal.
---
--- These counts are taken where the state is serialized, not where it arrives. The merge -> probe
--- broadcast is best-effort by design (a probe task cancels its receive branch once its data work
--- is done), so an arrival count is not a property of this code and cannot be asserted.
+-- The admission decision is read from `system.text_log` (it is made on the initiator while the
+-- plan is optimized). Signs that a filter was sent:
+--   * `BuildRuntimeFilterPartialTransform` with `output_rows > input_rows`: the task sent its
+--     filter state to an exchange. It is counted at the sender.
+--   * `MergeRuntimeFiltersTransform`: it runs only for a sent filter.
+-- A local filter shows neither. The receiver is not checked: a probe task stops waiting for the
+-- filter when its data work is done, so the filter may not arrive.
 SELECT '-- refused: admission trace and no states sent';
 SELECT
     (
