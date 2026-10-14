@@ -456,7 +456,9 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
     if (mask.size() < _size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    auto res_offsets = offsets->cloneEmpty();
+    /// Every non-default value moves to the position of its row in the mask. The iterator reads the old offsets,
+    /// so the new ones go into a copy.
+    auto res_offsets = offsets->cloneResized(offsets->size());
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
 
     auto it = begin();
@@ -474,6 +476,10 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
         }
     }
 
+    if (it.getCurrentRow() != _size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+
+    offsets = std::move(res_offsets);
     _size = mask.size();
 }
 
