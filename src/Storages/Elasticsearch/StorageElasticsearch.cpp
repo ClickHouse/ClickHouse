@@ -308,6 +308,8 @@ The `Elasticsearch` engine allows reading documents from an index in [Elasticsea
 
 The engine is read-only. Documents are fetched with the `_search` API in pages, using a [point in time](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/paginate-search-results#search-after) so that a query sees a consistent snapshot of the index even while it is being modified.
 
+Elasticsearch 7.12 or later is required: the engine relies on the point in time API and on the `_shard_doc` sort field. OpenSearch is not supported, because it has no `_shard_doc` field. An older server rejects the first request with an error.
+
 ## Creating a table {#creating-a-table}
 
 ```sql

@@ -254,6 +254,7 @@ SELECT * FROM elasticsearch(my_elasticsearch, index = 'logs');
 - The function is read-only; `INSERT` is not supported.
 - Predicates are not pushed down. A `WHERE` condition is applied in ClickHouse after the documents have been downloaded; use the `query` argument to filter on the Elasticsearch side.
 - Each read opens a point in time, pages through the results with `search_after` sorted by `_shard_doc`, and closes the point in time at the end. A page request that fails on any shard, or that times out in Elasticsearch, raises an error instead of returning partial results.
+- Elasticsearch 7.12 or later is required: the function relies on the point in time API and on the `_shard_doc` sort field, so older versions and OpenSearch reject the first request.
 - `page_size` cannot exceed the `index.max_result_window` index setting of Elasticsearch (`10000` by default).
 
 ## Related {#related}
