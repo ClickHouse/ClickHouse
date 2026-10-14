@@ -858,6 +858,92 @@ void rejectUnsupportedOptions(const rapidjson::Value & json, const char * comman
     }
 }
 
+namespace
+{
+
+void rejectUnsupportedWriteConcern(const rapidjson::Value & write_concern, const String & command)
+{
+    if (!write_concern.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'writeConcern' of a '{}' command must be a document", command);
+
+    for (auto it = write_concern.MemberBegin(); it != write_concern.MemberEnd(); ++it)
+    {
+        const std::string_view name(it->name.GetString(), it->name.GetStringLength());
+        const auto & value = it->value;
+        if (value.IsNull())
+            continue;
+
+        if (name == "w")
+        {
+            if (value.IsNumber() && (value.GetDouble() == 0 || value.GetDouble() == 1))
+                continue;
+            if (value.IsString() && std::string_view(value.GetString(), value.GetStringLength()) == "majority")
+                continue;
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The 'writeConcern' of a '{}' command supports only 'w' equal to 0, 1 or 'majority'",
+                command);
+        }
+
+        if (name == "j" || name == "fsync")
+        {
+            /// A legacy driver may send the flag as a number.
+            if ((value.IsBool() && !value.GetBool()) || (value.IsNumber() && value.GetDouble() == 0))
+                continue;
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "The option '{}' of the 'writeConcern' of a '{}' command is not supported", name, command);
+        }
+
+        /// The time to wait for the acknowledgement of other members, of which there are none.
+        if (name == "wtimeout" || name == "wtimeoutMS")
+            continue;
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "The option '{}' of the 'writeConcern' of a '{}' command is not supported", name, command);
+    }
+}
+
+void rejectUnsupportedReadConcern(const rapidjson::Value & read_concern, const String & command)
+{
+    if (!read_concern.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'readConcern' of a '{}' command must be a document", command);
+
+    for (auto it = read_concern.MemberBegin(); it != read_concern.MemberEnd(); ++it)
+    {
+        const std::string_view name(it->name.GetString(), it->name.GetStringLength());
+        const auto & value = it->value;
+        if (value.IsNull())
+            continue;
+
+        if (name == "level")
+        {
+            if (value.IsString())
+            {
+                const std::string_view level(value.GetString(), value.GetStringLength());
+                if (level == "local" || level == "available" || level == "majority")
+                    continue;
+            }
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The 'readConcern' of a '{}' command supports only the levels 'local', 'available' and 'majority'",
+                command);
+        }
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "The option '{}' of the 'readConcern' of a '{}' command is not supported", name, command);
+    }
+}
+
+}
+
+void rejectUnsupportedConcerns(const rapidjson::Value & json, const String & command)
+{
+    if (auto it = json.FindMember("writeConcern"); it != json.MemberEnd() && !it->value.IsNull())
+        rejectUnsupportedWriteConcern(it->value, command);
+    if (auto it = json.FindMember("readConcern"); it != json.MemberEnd() && !it->value.IsNull())
+        rejectUnsupportedReadConcern(it->value, command);
+}
+
 ASTPtr parseMongoDialectCommand(const String & mongo_dialect_query, const CollectionRef & collection, const QueryExecutor & executor)
 {
     /// The limits of the authenticated user's profile, as for a query of the `clickhouse` dialect.
@@ -1119,6 +1205,10 @@ std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & se
     auto handler = HandlerRegitstry().getHandler(command);
     if (!handler)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command {} is not supported yet.", command);
+
+    /// Checked here rather than by each handler, so that no command, read or write, runs with a
+    /// concern it does not honour.
+    rejectUnsupportedConcerns(sections[0].documents[0].getRapidJSONRepresentation(), command);
 
     return handler->handle(sections, executor);
 }

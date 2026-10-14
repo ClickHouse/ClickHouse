@@ -62,6 +62,20 @@ void rejectUnorderedWriteBatch(const Document & command, const char * command_na
   */
 void rejectUnsupportedOptions(const rapidjson::Value & json, const char * command, std::initializer_list<std::string_view> options);
 
+/** Rejects a `writeConcern` or a `readConcern` of a command that this server cannot honour. It is
+  * a single server, the equivalent of a standalone `mongod`, which applies a write before it
+  * replies. So it honours the write concerns `w: 1` and `w: "majority"` - the majority of one
+  * server is the server itself - and `w: 0`, for which an acknowledged write is a stronger form.
+  * It does not honour a write concern that waits for other members (a `w` above 1 or a tag set)
+  * or for a flush to disk (`j: true`, `fsync: true`), because an insert is not synced to disk by
+  * default. The read concern levels `local`, `available` and `majority` all mean the committed
+  * data of a single server, which is what every query reads; `linearizable`, `snapshot` and the
+  * cluster time options (`afterClusterTime`, `atClusterTime`) are not implemented. Executing a
+  * command with a concern it cannot honour would answer with weaker guarantees than the ones the
+  * client asked for, so it is an error instead. An absent or null concern is accepted.
+  */
+void rejectUnsupportedConcerns(const rapidjson::Value & json, const String & command);
+
 /** The target of a Mongo command: the collection named by the command field itself and the
   * database taken from the `$db` field of the command document. Mongo databases are mapped
   * to ClickHouse databases, so collections with the same name in different Mongo databases

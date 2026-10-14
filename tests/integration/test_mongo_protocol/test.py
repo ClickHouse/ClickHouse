@@ -10,6 +10,8 @@ import time
 import bson
 import pymongo
 import pytest
+from pymongo.read_concern import ReadConcern
+from pymongo.write_concern import WriteConcern
 
 from helpers.cluster import ClickHouseCluster
 
@@ -2239,6 +2241,52 @@ def test_unsupported_command_options_are_rejected(started_cluster):
             database.command({"create": "with_options", **options})
         assert "is not supported" in str(error.value)
     assert "with_options" not in database.list_collection_names()
+
+    database.command("dropDatabase")
+
+
+def test_unsupported_concerns_are_rejected(started_cluster):
+    """The server is a single one, which applies a write before it replies. A `writeConcern` that
+    waits for other members or for a flush to disk, and a `readConcern` with stronger guarantees
+    than reading the committed data, cannot be honoured, so a command carrying one is an error,
+    whether it reads or writes. The concerns a single server honours are accepted."""
+    client = make_client()
+    database = client["db_concerns"]
+    collection = database["t"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "name": "foo"}, {"id": 2, "name": "bar"}])
+
+    for write_concern in [{"w": 2}, {"w": "tagged"}, {"j": True}, {"fsync": True}, {"w": 1, "x": 1}]:
+        for command in [
+            {"insert": "t", "documents": [{"id": 3, "name": "baz"}], "writeConcern": write_concern},
+            {"delete": "t", "deletes": [{"q": {"id": 1}, "limit": 0}], "writeConcern": write_concern},
+            {"update": "t", "updates": [{"q": {"id": 1}, "u": {"$set": {"name": "qux"}}, "multi": True}], "writeConcern": write_concern},
+            {"create": "other", "writeConcern": write_concern},
+        ]:
+            with pytest.raises(pymongo.errors.OperationFailure) as error:
+                database.command(command)
+            assert "is not supported" in str(error.value) or "supports only" in str(error.value)
+
+    for read_concern in [{"level": "linearizable"}, {"level": "snapshot"}, {"afterClusterTime": bson.Timestamp(1, 1)}]:
+        for command in [
+            {"find": "t", "filter": {}, "readConcern": read_concern},
+            {"count": "t", "query": {}, "readConcern": read_concern},
+            {"distinct": "t", "key": "name", "readConcern": read_concern},
+            {"aggregate": "t", "pipeline": [], "cursor": {}, "readConcern": read_concern},
+        ]:
+            with pytest.raises(pymongo.errors.OperationFailure) as error:
+                database.command(command)
+            assert "is not supported" in str(error.value) or "supports only" in str(error.value)
+
+    assert sorted(doc["id"] for doc in collection.find()) == [1, 2]
+    assert "other" not in database.list_collection_names()
+
+    for write_concern in [WriteConcern(w=1), WriteConcern(w="majority", wtimeout=1000), WriteConcern(w=1, j=False)]:
+        collection.with_options(write_concern=write_concern).insert_one({"id": 3, "name": "baz"})
+        collection.with_options(write_concern=write_concern).delete_many({"id": 3})
+    for level in ["local", "available", "majority"]:
+        assert collection.with_options(read_concern=ReadConcern(level)).count_documents({}) == 2
 
     database.command("dropDatabase")
 
