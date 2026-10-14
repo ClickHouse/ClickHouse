@@ -1,12 +1,14 @@
 4
 3
 1
+1
 2
 c0 AS x, c1	(c0) AS a
 1	(c0) AS s
 1	c0 AS x, c1
 Int32
 ['c0','d2','c3']
+['auto_minmax_index_b','auto_minmax_index_c0','auto_minmax_index_c1']
 1
 1
 1

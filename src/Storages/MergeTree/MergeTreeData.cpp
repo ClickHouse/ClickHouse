@@ -5989,22 +5989,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             check(old_metadata.sampling_key.definition_ast, new_metadata.sampling_key.definition_ast, "SAMPLE BY");
             check(old_metadata.table_ttl.definition_ast, new_metadata.table_ttl.definition_ast, "TTL");
 
-            for (const auto & index : new_metadata.secondary_indices)
-            {
-                const auto * old_index = old_metadata.secondary_indices.has(index.name)
-                    ? &old_metadata.secondary_indices.getByName(index.name) : nullptr;
-                check(old_index ? old_index->definition_ast : nullptr, index.definition_ast, "INDEX");
-            }
-
-            for (const auto & constraint : new_metadata.constraints.getConstraints())
-            {
-                ASTPtr old_constraint;
-                for (const auto & candidate : old_metadata.constraints.getConstraints())
-                    if (candidate->as<ASTConstraintDeclaration &>().name == constraint->as<ASTConstraintDeclaration &>().name)
-                        old_constraint = candidate;
-                check(old_constraint, constraint, "CONSTRAINT");
-            }
-
             /// The column each column was renamed from; a column the ALTER adds has none.
             std::unordered_map<String, std::optional<String>> old_names;
             for (const auto & column : old_metadata.columns)
@@ -6025,6 +6009,30 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         old_names.insert(std::move(node));
                     }
                 }
+            }
+
+            for (const auto & index : new_metadata.secondary_indices)
+            {
+                /// An implicit index is named after its column.
+                String old_name = index.name;
+                if (index.isImplicitlyCreated() && index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                {
+                    auto it = old_names.find(index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)));
+                    old_name = it != old_names.end() && it->second ? IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + *it->second : "";
+                }
+                const auto * old_index = old_metadata.secondary_indices.has(old_name)
+                    ? &old_metadata.secondary_indices.getByName(old_name) : nullptr;
+                check(old_index ? old_index->definition_ast : nullptr, index.definition_ast, "INDEX");
+                check(old_index ? old_index->expression_list_ast : nullptr, index.expression_list_ast, "INDEX " + index.name);
+            }
+
+            for (const auto & constraint : new_metadata.constraints.getConstraints())
+            {
+                ASTPtr old_constraint;
+                for (const auto & candidate : old_metadata.constraints.getConstraints())
+                    if (candidate->as<ASTConstraintDeclaration &>().name == constraint->as<ASTConstraintDeclaration &>().name)
+                        old_constraint = candidate;
+                check(old_constraint, constraint, "CONSTRAINT");
             }
 
             for (const auto & column : new_metadata.columns)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # A table that an older server stored with an alias in PRIMARY KEY, ORDER BY, SAMPLE BY, TTL, a skip index
-# or a constraint still loads and can be altered: only a new or changed definition is refused, including a
+# (also through an ALIAS column it uses) or a constraint still loads and can be altered: only a new or changed definition is refused, including a
 # full-definition ATTACH (05301_storage_key_alias_not_allowed covers CREATE and ALTER).
 #
 # Such a definition can no longer be written through SQL, so the stored metadata of tables
@@ -23,6 +23,7 @@ INSERT INTO db.t2 VALUES (1, '2100-01-01', 1);
 SET allow_deprecated_syntax_for_merge_tree = 1;
 CREATE TABLE db.t4 (d Date, c0 UInt64, c1 UInt64) ENGINE = MergeTree(d, (c0, c1), 8192);
 INSERT INTO db.t4 VALUES ('2100-01-01', 1, 1);
+CREATE TABLE db.t5 (c0 Int64, c1 Int64, a Int64 ALIAS c1 * 2) ENGINE = MergeTree ORDER BY c0 SETTINGS add_minmax_index_for_numeric_columns = 1;
 "
 
 metadata_file=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='t.sql')
@@ -31,10 +32,13 @@ metadata_file2=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='t2.sq
 sed -i 's/Int64 TTL d + /Int64 TTL (d AS e) + /; s/CHECK c0 >= 0/CHECK (c0 AS k0) >= 0/; s/^SAMPLE BY c0$/SAMPLE BY (c0 AS s)/' "${metadata_file2}"
 metadata_file4=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='t4.sql')
 sed -i 's/MergeTree(d, (c0, c1), 8192)/MergeTree(d, (c0 AS x, c1), 8192)/' "${metadata_file4}"
+metadata_file5=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='t5.sql')
+sed -i 's/ALIAS c1 \* 2/ALIAS (c1 * 2 AS k1)/' "${metadata_file5}"
 # Without this the load below would run against an unmodified definition, i.e. assert nothing.
 grep -c -F -e 'PRIMARY KEY (c0 AS a)' -e 'ORDER BY (c0 AS x, c1)' -e 'TTL (d AS e) + ' -e 'INDEX i (c1 AS b) ' "${metadata_file}"
 grep -c -F -e 'Int64 TTL (d AS e) + ' -e 'CHECK (c0 AS k0) >= 0' -e 'SAMPLE BY (c0 AS s)' "${metadata_file2}"
 grep -c -F -e 'MergeTree(d, (c0 AS x, c1), 8192)' "${metadata_file4}"
+grep -c -F -e 'ALIAS (c1 * 2 AS k1)' "${metadata_file5}"
 
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
 SELECT count() FROM db.t;
@@ -59,6 +63,8 @@ ALTER TABLE db.t2 RENAME COLUMN d TO d2;
 ALTER TABLE db.t2 RENAME COLUMN c1 TO c3;
 ALTER TABLE db.t2 RENAME COLUMN IF EXISTS missing TO c3;
 SELECT groupArray(name) FROM system.columns WHERE database = 'db' AND table = 't2';
+ALTER TABLE db.t5 RENAME COLUMN a TO b;
+SELECT arraySort(groupArray(name)) FROM system.data_skipping_indices WHERE database = 'db' AND table = 't5';
 "
 
 # An ALTER that changes such a definition, or writes another one, may not keep the alias in it.

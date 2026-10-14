@@ -23,6 +23,9 @@ CREATE TABLE t_key_alias (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d
 CREATE TABLE t_key_alias (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0 TTL d + INTERVAL 1 DAY WHERE c0 < ((SELECT 1) AS s); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, INDEX i (c1 AS a) TYPE minmax) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, c1 Int64, INDEX i (c1 * 1000 AS c0) TYPE minmax) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
+-- An index expression has the ALIAS columns it uses expanded, also for an implicit index.
+CREATE TABLE t_key_alias (c0 Int64, c1 Int64, a Int64 ALIAS (c1 * 1000 AS c0), INDEX i a TYPE minmax) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_key_alias (c0 Int64, c1 Int64, a Int64 ALIAS (c1 * 1000 AS c0)) ENGINE = MergeTree ORDER BY c0 SETTINGS add_minmax_index_for_numeric_columns = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 UInt64) ENGINE = MergeTree ORDER BY c0 SAMPLE BY (c0 AS s); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, d Date TTL (d AS x) + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, CONSTRAINT c CHECK (c0 AS a) >= 0) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
@@ -94,6 +97,11 @@ CREATE TABLE t_expr_alias
 )
 ENGINE = MergeTree ORDER BY c0;
 ALTER TABLE t_expr_alias ADD COLUMN c4 Int64 DEFAULT (c0 AS q) * q, ADD PROJECTION p2 (SELECT c0 % 3 AS m3, count() GROUP BY m3);
+-- But a skip index may not use such an ALIAS column.
+ALTER TABLE t_expr_alias ADD INDEX i c3 TYPE minmax; -- { serverError BAD_ARGUMENTS }
+CREATE HYPOTHETICAL INDEX h ON t_expr_alias (c3) TYPE minmax; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_expr_alias ADD COLUMN c5 Int64 ALIAS c0 * 2, ADD INDEX i5 c5 TYPE minmax;
+ALTER TABLE t_expr_alias MODIFY COLUMN c5 Int64 ALIAS (c0 * 2 AS x); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_ttl_subquery (c0 Int64, d Date) ENGINE = MergeTree ORDER BY c0
 TTL d + INTERVAL 1 DAY WHERE c0 < (SELECT count() AS n FROM {CLICKHOUSE_DATABASE:Identifier}.t_src AS s WHERE s.x > 0);
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('t_expr_alias', 't_ttl_subquery');
