@@ -951,7 +951,8 @@ private:
     bool unknownOrAlwaysTrue(bool unknown_any) const;
 
     /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
-      * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.
+      * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE. The hyperrectangles of the leaves of a conjunction
+      * are intersected, including those that stay atoms of a group.
       */
     void findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 

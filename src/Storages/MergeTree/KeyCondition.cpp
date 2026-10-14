@@ -6040,6 +6040,86 @@ void KeyCondition::extractBareColumnAtoms(const RPNBuilderTreeNode & node, const
 }
 
 
+namespace
+{
+
+/// Intersects the hyperrectangles that bound each conjunction of `rpn` and writes the intersection back into
+/// every hyperrectangle atom of the conjunction. `findHyperrectanglesForArgumentsOfSpaceFillingCurves`
+/// collapses two bare hyperrectangle atoms joined by `AND` into one, but a predicate leaf with several atoms
+/// keeps its hyperrectangle as an atom of its group, and other atoms can stand between the hyperrectangles of
+/// a conjunction. The conjunction reads each of its hyperrectangle atoms only through its `AND`, so bounding
+/// the whole conjunction is enough, and a hyperrectangle atom is relaxed, so a tighter one changes only
+/// `can_be_true`. With `ORDER BY (mortonEncode(x, y), x + 1, y + 1)`, both leaves of `x = 0 AND y = 0` then
+/// check [0, 0] × [0, 0] instead of a strip each.
+void intersectHyperrectanglesOfConjunctions(KeyCondition::RPN & rpn)
+{
+    using RPNElement = KeyCondition::RPNElement;
+
+    /// The hyperrectangle atoms that bound an operand on the evaluation stack, by the key column of their
+    /// curve. All atoms of one curve hold the same hyperrectangle. Only a conjunction of leaves has them: the
+    /// hyperrectangle of an operand of `OR` or `NOT` does not bound the result.
+    using CurveAtoms = std::map<size_t, std::vector<RPNElement *>>;
+    std::vector<CurveAtoms> operand_atoms;
+
+    /// Intersects the hyperrectangles of the same curve and writes the result into all their atoms.
+    /// Applies to both operands of a conjunction, and to the atoms of one leaf, which all bound that leaf.
+    auto merge = [](CurveAtoms & into, CurveAtoms from)
+    {
+        for (auto & [curve_key_column, atoms] : from)
+        {
+            auto [it, inserted] = into.try_emplace(curve_key_column, std::move(atoms));
+            if (inserted)
+                continue;
+
+            auto & merged = it->second;
+            const Hyperrectangle hyperrectangle = intersect(
+                merged.front()->space_filling_curve_args_hyperrectangle, atoms.front()->space_filling_curve_args_hyperrectangle);
+            merged.insert(merged.end(), atoms.begin(), atoms.end());
+            for (auto * atom : merged)
+                atom->space_filling_curve_args_hyperrectangle = hyperrectangle;
+        }
+    };
+
+    for (auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_AND)
+        {
+            chassert(operand_atoms.size() >= 2);
+            CurveAtoms right = std::move(operand_atoms.back());
+            operand_atoms.pop_back();
+            merge(operand_atoms.back(), std::move(right));
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            chassert(operand_atoms.size() >= 2);
+            operand_atoms.pop_back();
+            operand_atoms.back().clear();
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            chassert(!operand_atoms.empty());
+            operand_atoms.back().clear();
+        }
+        else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
+        {
+            operand_atoms.push_back(CurveAtoms{{element.getKeyColumn(), {&element}}});
+        }
+        else if (element.function == RPNElement::FUNCTION_ATOM_GROUP)
+        {
+            auto & atoms = operand_atoms.emplace_back();
+            for (auto & atom : element.group_atoms)
+                if (atom.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
+                    merge(atoms, CurveAtoms{{atom.getKeyColumn(), {&atom}}});
+        }
+        else
+        {
+            operand_atoms.emplace_back();
+        }
+    }
+}
+
+}
+
 void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 {
     /// Traverse chains of AND with conditions on arguments of a space filling curve, and construct hyperrectangles from them.
@@ -6099,8 +6179,8 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
         }
         if (elem.function == RPNElement::FUNCTION_ATOM_GROUP)
         {
-            /// The hyperrectangle stays an atom of its group, so it is not intersected with the conditions
-            /// of other predicate leaves below.
+            /// The hyperrectangle stays an atom of its group and is not collapsed with the conditions of
+            /// other leaves below; `intersectHyperrectanglesOfConjunctions` intersects it with them.
             auto & group = new_rpn.emplace_back(elem);
             for (auto & atom : group.group_atoms)
                 if (is_range_of_curve_argument(atom))
@@ -6142,6 +6222,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
     }
 
     rpn = std::move(new_rpn);
+    intersectHyperrectanglesOfConjunctions(rpn);
 }
 
 
