@@ -17,7 +17,7 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
@@ -185,7 +185,7 @@ UInt64 computeCountForPart(
         .part_info = part_info,
         .index = *index.index,
         .readable_ranges = nullptr,
-        .skip_postings_deserialization = single_token,
+        .text_index_read_postings = !single_token,
         .reader_settings = reader_settings,
     };
 

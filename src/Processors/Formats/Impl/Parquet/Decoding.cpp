@@ -519,6 +519,15 @@ struct PlainStringDecoder : public PageDecoder
                             ++values_replaced;
                             bytes_skipped += size_t(x);
                         }
+                        if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                        {
+                            active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                            values_checked = 0;
+                            values_replaced = 0;
+                            bytes_skipped = 0;
+                            if (!active_value_filter->isEnabled())
+                                active_value_filter = nullptr;
+                        }
                     }
                     else
                     {
@@ -916,6 +925,15 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
                             ++values_replaced;
                             bytes_skipped += len;
                         }
+                        if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                        {
+                            active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                            values_checked = 0;
+                            values_replaced = 0;
+                            bytes_skipped = 0;
+                            if (!active_value_filter->isEnabled())
+                                active_value_filter = nullptr;
+                        }
                     }
                     else
                     {
@@ -963,6 +981,8 @@ struct DeltaByteArrayDecoder : public PageDecoder
     /// This encoding is applicable for both BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY.
     std::shared_ptr<StringConverter> string_converter;
     std::shared_ptr<FixedSizeConverter> fixed_size_converter;
+    /// See PageDecoderInfo::makeDecoder. Used only for BYTE_ARRAY when the converter is trivial.
+    const StringValueFilter * value_filter = nullptr;
 
     PaddedPODArray<UInt64> prefixes;
     PaddedPODArray<UInt64> suffixes;
@@ -973,7 +993,15 @@ struct DeltaByteArrayDecoder : public PageDecoder
     MutableColumnPtr temp_column;
     PaddedPODArray<char> temp_buffer;
 
-    DeltaByteArrayDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> string_converter_, std::shared_ptr<FixedSizeConverter> fixed_size_converter_) : PageDecoder(data_), string_converter(std::move(string_converter_)), fixed_size_converter(fixed_size_converter_)
+    DeltaByteArrayDecoder(
+        std::span<const char> data_,
+        std::shared_ptr<StringConverter> string_converter_,
+        std::shared_ptr<FixedSizeConverter> fixed_size_converter_,
+        const StringValueFilter * value_filter_)
+        : PageDecoder(data_)
+        , string_converter(std::move(string_converter_))
+        , fixed_size_converter(fixed_size_converter_)
+        , value_filter(value_filter_)
     {
         for (auto * lengths : {&prefixes, &suffixes})
         {
@@ -992,9 +1020,9 @@ struct DeltaByteArrayDecoder : public PageDecoder
     void skip(size_t num_values) override
     {
         if (fixed_size_converter)
-            decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0);
+            decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
         else
-            decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0);
+            decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
     }
 
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
@@ -1009,7 +1037,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                     pass_count += filter[filter_offset + i];
                 if (pass_count == 0)
                 {
-                    decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0);
+                    decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
                     return;
                 }
             }
@@ -1027,13 +1055,17 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 to = std::span(temp_buffer.data(), temp_buffer.size());
             }
 
-            decodeImpl<false, true>(num_values, nullptr, to.data(), filter, filter_offset);
+            decodeImpl<false, true>(num_values, nullptr, to.data(), filter, filter_offset, nullptr);
 
             if (!direct)
                 fixed_size_converter->convertColumn(to, pass_count, col);
         }
         else
         {
+            /// The full values are reconstructed anyway (each one is a prefix of the previous one and a suffix),
+            /// but the values that do not match the string filter from PREWHERE are not materialized.
+            const StringValueFilter * active_value_filter
+                = value_filter && value_filter->isEnabled() && string_converter->isTrivial() ? value_filter : nullptr;
             if (!filter)
             {
                 bool direct = string_converter->isTrivial();
@@ -1050,7 +1082,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 }
                 size_t initial_size = col_str->size();
                 col_str->reserve(initial_size + num_values);
-                decodeImpl<false, false>(num_values, col_str, nullptr, nullptr, 0);
+                decodeImpl<false, false>(num_values, col_str, nullptr, nullptr, 0, active_value_filter);
                 chassert(col_str->size() == initial_size + num_values);
                 if (!direct)
                     string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, num_values, col);
@@ -1061,7 +1093,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 pass_count += filter[filter_offset + i];
             if (pass_count == 0)
             {
-                decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0);
+                decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
                 return;
             }
             bool direct = string_converter->isTrivial();
@@ -1080,18 +1112,27 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 col_str->getChars().clear();
             }
             col_str->reserve(col_str->size() + pass_count);
-            decodeImpl<false, false>(num_values, col_str, nullptr, filter, filter_offset);
+            decodeImpl<false, false>(num_values, col_str, nullptr, filter, filter_offset, active_value_filter);
             if (!direct)
                 string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, pass_count, col);
         }
     }
 
     template <bool skip, bool is_fixed_size>
-    void decodeImpl(size_t num_values, ColumnString * out_str, char * out_fixed_size, const UInt8 * filter, size_t filter_offset)
+    void decodeImpl(
+        size_t num_values,
+        ColumnString * out_str,
+        char * out_fixed_size,
+        const UInt8 * filter,
+        size_t filter_offset,
+        const StringValueFilter * active_value_filter)
     {
         if (num_values > prefixes.size() - idx)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
         size_t fixed_size = is_fixed_size ? fixed_size_converter->input_size : 0;
+        size_t values_checked = 0;
+        size_t values_replaced = 0;
+        size_t bytes_skipped = 0;
 
         for (size_t i = 0; i < num_values; ++i)
         {
@@ -1118,9 +1159,40 @@ struct DeltaByteArrayDecoder : public PageDecoder
             }
             else if (do_append)
             {
-                out_str->insertData(current_value.data(), current_value.size());
+                if (active_value_filter)
+                {
+                    /// Values that do not match the string filter from PREWHERE are decoded
+                    /// as empty strings (an empty string never matches the filter).
+                    ++values_checked;
+                    if (!current_value.empty() && active_value_filter->match(current_value.data(), current_value.size()))
+                    {
+                        out_str->insertData(current_value.data(), current_value.size());
+                    }
+                    else
+                    {
+                        out_str->insertDefault();
+                        ++values_replaced;
+                        bytes_skipped += current_value.size();
+                    }
+                    if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                    {
+                        active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                        values_checked = 0;
+                        values_replaced = 0;
+                        bytes_skipped = 0;
+                        if (!active_value_filter->isEnabled())
+                            active_value_filter = nullptr;
+                    }
+                }
+                else
+                {
+                    out_str->insertData(current_value.data(), current_value.size());
+                }
             }
         }
+
+        if (active_value_filter)
+            active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
     }
 };
 
@@ -1324,7 +1396,8 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             {
                 case parq::Type::BYTE_ARRAY:
                 case parq::Type::FIXED_LEN_BYTE_ARRAY:
-                    return std::make_unique<DeltaByteArrayDecoder>(data, string_converter, fixed_size_converter);
+                    return std::make_unique<DeltaByteArrayDecoder>(
+                        data, string_converter, fixed_size_converter, physical_type == parq::Type::BYTE_ARRAY ? string_value_filter : nullptr);
                 default: break;
             }
             break;
@@ -1488,20 +1561,47 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect dictionary page size: {} != {} * {}", data.size(), count, value_size);
 }
 
-void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter)
+void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter, size_t num_rows)
 {
     /// Other modes are not used together with the filter: it is attached only when
     /// the string converter is trivial, see Reader::preparePrewhere.
-    if (mode != Mode::StringPlain)
+    if (mode != Mode::StringPlain || count == 0)
         return;
+
+    /// Every entry is expected to be referenced by this many rows, and the mask skips the data of
+    /// a non-matching entry in all of them.
+    const double rows_per_entry = std::max(1.0, double(num_rows) / double(count));
 
     string_value_filter = &filter;
     string_value_filter_mask.resize(count);
+    size_t entries_checked = 0;
+    size_t bytes_skipped = 0;
     for (size_t i = 0; i < count; ++i)
     {
         size_t start = offsets[ssize_t(i) - 1] + 4; // offsets[-1] is ok because of padding
         size_t len = offsets[i] - start;
-        string_value_filter_mask[i] = len != 0 && filter.match(data.data() + start, len);
+        bool matches = len != 0 && filter.match(data.data() + start, len);
+        string_value_filter_mask[i] = matches;
+
+        ++entries_checked;
+        if (!matches)
+            bytes_skipped += len;
+
+        if (entries_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES || i + 1 == count)
+        {
+            filter.updateStatsOfDictionaryEntries(entries_checked, size_t(double(bytes_skipped) * rows_per_entry));
+            entries_checked = 0;
+            bytes_skipped = 0;
+
+            /// The mask would never be consulted, do not check the rest of the entries.
+            if (!filter.isEnabled())
+            {
+                string_value_filter_mask.clear();
+                string_value_filter_mask.shrink_to_fit();
+                string_value_filter = nullptr;
+                return;
+            }
+        }
     }
 }
 
@@ -1669,7 +1769,7 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 }
                 /// Report the observed selectivity to the shared filter, so that a non-selective
                 /// filter disables itself for all readers, same as in the non-dictionary paths.
-                string_value_filter->updateStats(n, values_replaced, bytes_skipped);
+                string_value_filter->updateStatsWithoutPerValueChecks(n, values_replaced, bytes_skipped);
                 break;
             }
             for (size_t i = 0; i < n; ++i)
@@ -1733,10 +1833,10 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
                 if (!string_value_filter_mask[idx])
                 {
                     c.insertManyDefaults(n);
-                    string_value_filter->updateStats(n, n, len * n);
+                    string_value_filter->updateStatsWithoutPerValueChecks(n, n, len * n);
                     break;
                 }
-                string_value_filter->updateStats(n, 0, 0);
+                string_value_filter->updateStatsWithoutPerValueChecks(n, 0, 0);
             }
             c.reserve(c.size() + n);
             for (size_t i = 0; i < n; ++i)
