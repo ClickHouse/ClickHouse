@@ -953,27 +953,12 @@ void StorageMaterializedView::alter(
             /// of the inner table are both held here, so guarding the inner table would be a lock inversion.
             DDLGuardPtr target_ddl_guard;
             target_table->alter(column_comment_commands, target_alter_context, target_alter_lock, target_ddl_guard);
+            /// Re-read, so that the copy below includes the comments just set.
+            target_table_metadata = target_table->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
         }
 
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
-        /// Except comments this statement sets, taken from the commands: a SharedCatalog replay (DROP plus
-        /// ADD COLUMN ... COMMENT) never reaches the inner table, and MODIFY QUERY drops the view's.
-        std::unordered_map<String, String> comments_set_here;
-        for (const auto & command : params)
-        {
-            if (command.ignore)
-                continue;
-            if (command.type == AlterCommand::COMMENT_COLUMN || (command.type == AlterCommand::MODIFY_COLUMN && command.comment))
-                comments_set_here[command.column_name] = *command.comment;
-            else if (command.type == AlterCommand::ADD_COLUMN)
-                comments_set_here[command.column_name] = command.comment.value_or("");
-        }
         new_metadata.columns = target_table_metadata->columns;
-        for (const auto & [name, comment] : comments_set_here)
-        {
-            if (new_metadata.columns.has(name))
-                new_metadata.columns.modify(name, [&](ColumnDescription & column) { column.comment = comment; });
-        }
     }
     else
     {
@@ -1318,6 +1303,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
             args.table_id, args.getLocalContext(), args.query,
             args.columns, args.mode, args.comment, args.is_restore_from_backup);
     },
+    SecretArgumentsSpec{},
     {},
     Documentation{
         .description = "Stores the result of a `SELECT` query and keeps it up to date. "

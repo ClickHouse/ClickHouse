@@ -11,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -57,6 +56,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -138,8 +138,6 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
@@ -173,6 +171,7 @@ namespace Setting
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -778,7 +777,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
         tmp_data_scope,
-        getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
+        getEffectiveMaxThreads(settings),
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
         settings[Setting::min_count_to_compile_aggregate_expression],
@@ -794,7 +793,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        settings[Setting::use_aggregation_memory_tracker]);
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
     return aggregator_params;
@@ -921,6 +921,7 @@ void applyTopKPushdownToPartialAggregation(
             .key_columns = sort_description.size(),
             .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
             .shared_boundary = settings[Setting::group_by_top_k_optimization_shared_boundary],
+            .threshold_tracker = nullptr,
         });
 }
 
@@ -987,12 +988,11 @@ void addAggregationStep(QueryPlan & query_plan,
         sort_description_for_merging = group_by_sort_description;
     }
 
-    const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
-        settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
-    auto merge_threads = memory_limited_max_threads;
+    const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+    auto merge_threads = effective_max_threads;
     auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
         ? static_cast<size_t>(settings[Setting::aggregation_memory_efficient_merge_threads])
-        : memory_limited_max_threads;
+        : effective_max_threads;
 
     bool storage_has_evenly_distributed_read = false;
     const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
@@ -1144,8 +1144,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
 
     /// For count() without parameters try to use just one thread
     /// Typically this will either be a trivial count or a really small number of states
-    size_t max_threads = getMaxThreadsForAvailableMemory(
-        settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+    size_t max_threads = getEffectiveMaxThreads(settings);
     if (keys.empty() && aggregation_analysis_result.aggregate_descriptions.size() == 1
         && aggregation_analysis_result.aggregate_descriptions[0].function->getName() == String{"count"}
         && aggregation_analysis_result.grouping_sets_parameters_list.empty())
@@ -1531,6 +1530,9 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             ActionsDAG rename_dag;
 
+            /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
+            std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
+
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
@@ -1551,16 +1553,16 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
-                if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
-                {
-                    interpolate_expression = &interpolate_actions_dag.addCast(*interpolate_expression,
-                        expression_to_interpolate->result_type,
-                        interpolate_expression->result_name,
-                        planner_context->getQueryContext());
-                }
+                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, interpolate_node_typed.getExpressionName());
+            }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
-                interpolate_actions_dag.getOutputs().push_back(alias_node);
+            for (const auto & [interpolate_expression, target_type, target_name] : interpolated_columns)
+            {
+                const auto * interpolated_column = interpolate_expression;
+                if (!interpolated_column->result_type->equals(*target_type))
+                    interpolated_column = &interpolate_actions_dag.addCast(*interpolated_column, target_type, {}, planner_context->getQueryContext());
+
+                interpolate_actions_dag.getOutputs().push_back(&interpolate_actions_dag.addAlias(*interpolated_column, target_name));
             }
 
             if (!rename_dag.getOutputs().empty())
@@ -1955,8 +1957,7 @@ void addWindowSteps(QueryPlan & query_plan,
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            const size_t effective_max_threads = getMaxThreadsForAvailableMemory(
-                settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+            const size_t effective_max_threads = getEffectiveMaxThreads(settings);
             need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
                 || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
@@ -2259,7 +2260,8 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     const QueryNode & query_node,
     const SelectQueryOptions & select_query_options,
-    PlannerContextPtr & planner_context
+    PlannerContextPtr & planner_context,
+    UsefulSets & useful_sets
 )
 {
     if (select_query_options.subquery_depth != 0)
@@ -2317,6 +2319,7 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.column_name,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
+    appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
     query_plan.addStep(std::move(filter_step));
 }
 
@@ -2745,8 +2748,7 @@ void Planner::buildPlanForUnionNode()
     Block union_common_header = buildCommonHeaderForUnion(
         query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
     addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
-    auto max_threads = getMaxThreadsForAvailableMemory(
-        settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+    auto max_threads = getEffectiveMaxThreads(settings);
 
     bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT
         || union_mode == SelectUnionMode::EXCEPT_DISTINCT;
@@ -2981,11 +2983,16 @@ void Planner::buildPlanForQueryNode()
         const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTreeNodeTyped(), true, true);
         for (const auto & it : table_expression_nodes)
         {
-            auto * table_node = it->as<TableNode>();
-            if (!table_node)
+            const std::optional<TableExpressionModifiers> * modifiers_ptr = nullptr;
+            if (const auto * table_node = it->as<TableNode>())
+                modifiers_ptr = &table_node->getTableExpressionModifiers();
+            else if (const auto * table_function_node = it->as<TableFunctionNode>())
+                modifiers_ptr = &table_function_node->getTableExpressionModifiers();
+
+            if (!modifiers_ptr)
                 continue;
 
-            const auto & modifiers = table_node->getTableExpressionModifiers();
+            const auto & modifiers = *modifiers_ptr;
             /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
             if (modifiers.has_value()
                 && (modifiers->hasFinal()
@@ -3459,7 +3466,7 @@ void Planner::buildPlanForQueryNode()
         }
 
         // For additional_result_filter setting
-        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
+        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context, useful_sets);
     }
 
     /// A header carrying nothing but row-count-only columns cannot express "N rows" across a

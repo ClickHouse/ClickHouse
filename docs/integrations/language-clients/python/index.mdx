@@ -33,7 +33,7 @@ The standard ClickHouse Connect clients use the HTTP interface. This supports HT
 | Component | Supported versions |
 |-----------|--------------------|
 | Python | 3.10 through 3.14. Free-threaded builds such as 3.14t are supported experimentally. |
-| ClickHouse | Actively supported ClickHouse releases. CI tests against recent LTS and stable server releases. |
+| ClickHouse | Actively supported ClickHouse releases. CI tests the [LTS and stable release series listed here](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
 | SQLAlchemy | 1.4.40 or later, below 3.0, for the synchronous dialect. 2.0.44 or later, below 3.0, for the async dialect. |
 | Pandas | 2.x and 3.x |
 | Polars | 1.0 or later |
@@ -61,7 +61,7 @@ pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
-pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
+pip install "clickhouse-connect[rust]"       # Experimental Rust codec
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 

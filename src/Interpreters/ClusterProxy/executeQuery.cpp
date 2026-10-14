@@ -29,6 +29,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
@@ -450,6 +451,12 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         else
             new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
     }
+
+    /// `clusterAllReplicas` already reads every replica as a shard of its own, so there is nothing left
+    /// for parallel replicas to split
+    if (context->canUseTaskBasedParallelReplicas() && cluster.replicasAsShards())
+        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+
     /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
     /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
     /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
@@ -575,6 +582,7 @@ void executeQuery(
     /// Tracker is shared between local-missing-table skip path in SelectStreamFactory and
     /// remote unavailable-shard skip path in ReadFromRemote so max_skip_unavailable_shards_num
     /// and max_skip_unavailable_shards_ratio are enforced uniformly across both paths.
+    /// Needed even with no limit set: it is also what notices that every shard was skipped.
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     {
         const auto & new_settings_ref = new_context->getSettingsRef();
@@ -582,8 +590,7 @@ void executeQuery(
         {
             size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
             Float64 max_ratio = static_cast<double>(new_settings_ref[Setting::max_skip_unavailable_shards_ratio]);
-            if (max_num > 0 || max_ratio > 0)
-                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
+            unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
         }
     }
 
@@ -1149,6 +1156,9 @@ void executeQueryWithParallelReplicas(
             query_plan = std::move(*local_plan);
             return;
         }
+
+        /// The replicas read these CTEs by name, so their writer must be gated above both branches.
+        removeDelayedMaterializingCTEsStepFor(*local_plan, collectMaterializedCTEsFromQueryTree(query_tree));
 
         std::shared_ptr<const QueryPlan> remote_query_plan;
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
