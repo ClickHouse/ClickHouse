@@ -37,8 +37,8 @@ set (SRCS
     "${LIBRARY_DIR}/src/fdr/fdr_confirm_compile.cpp"
     "${LIBRARY_DIR}/src/fdr/fdr_engine_description.cpp"
     "${LIBRARY_DIR}/src/fdr/flood_compile.cpp"
-    "${LIBRARY_DIR}/src/fdr/teddy.c"
-    "${LIBRARY_DIR}/src/fdr/teddy_avx2.c"
+    "${LIBRARY_DIR}/src/fdr/teddy.cpp"
+    "${LIBRARY_DIR}/src/fdr/teddy_fat.cpp"
     "${LIBRARY_DIR}/src/fdr/teddy_compile.cpp"
     "${LIBRARY_DIR}/src/fdr/teddy_engine_description.cpp"
 
