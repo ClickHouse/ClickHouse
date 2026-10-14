@@ -188,7 +188,7 @@ namespace
 
         BlockCodec block_codec;
         /// Scratch buffer for the `(weight - 1)` of the encoded block.
-        std::array<uint32_t, BLOCK_SIZE> values;
+        std::array<uint32_t, BLOCK_SIZE> values{};
     };
 
     template <>
