@@ -20,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/scope_guard_safe.h>
 
+#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
@@ -213,6 +214,7 @@ namespace Setting
     extern const SettingsBool log_query_settings;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -967,7 +969,8 @@ QueryLogElement logQueryStart(
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
 
         elem.log_comment = settings[Setting::log_comment];
-        if (elem.log_comment.size() > settings[Setting::max_query_size])
+        /// `max_query_size = 0` means "unlimited" everywhere else, so it must not truncate the comment to nothing.
+        if (settings[Setting::max_query_size] != 0 && elem.log_comment.size() > settings[Setting::max_query_size])
             elem.log_comment.resize(settings[Setting::max_query_size]);
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
@@ -1408,7 +1411,8 @@ void logExceptionBeforeStart(
     elem.http_request_url = httpRequestURLForLogging(context);
 
     elem.log_comment = settings[Setting::log_comment];
-    if (elem.log_comment.size() > settings[Setting::max_query_size])
+    /// `max_query_size = 0` means "unlimited" everywhere else, so it must not truncate the comment to nothing.
+    if (settings[Setting::max_query_size] != 0 && elem.log_comment.size() > settings[Setting::max_query_size])
         elem.log_comment.resize(settings[Setting::max_query_size]);
 
     if (auto txn = context->getCurrentTransaction())
@@ -2842,6 +2846,12 @@ static BlockIO executeQueryImpl(
 {
     if (flags.internal)
         context->getClientInfo().is_internal = true;
+    if (flags.parse_server_owned_query_without_limits)
+        context->setParseServerOwnedQueryWithoutLimits(true);
+    /// A context that already carries the flag re-executes the same server-owned text: `executeQueryInBackground`
+    /// hands a copy of the invoking query context to the background pool and re-parses the stored text there
+    /// (with `QueryFlags{ .background = true }` only), so the parse mode has to be taken from the context as well.
+    const bool parse_server_owned_query_without_limits = context->shouldParseServerOwnedQueryWithoutLimits();
 
     /// Gates concurrency limits, throttling, query-size limit, logging.
     const bool internal = flags.internal;
@@ -2925,8 +2935,28 @@ static BlockIO executeQueryImpl(
 
     size_t max_query_size = settings[Setting::max_query_size];
     /// Don't limit the size of internal queries or distributed subquery.
-    if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (internal || is_secondary_query)
         max_query_size = 0;
+    /// `max_parser_depth` / `max_parser_backtracks` are NOT lifted for a secondary query here: `query_kind`
+    /// arrives over the wire and can be spoofed by any native client, so keying the parser limits off it would
+    /// turn a handler-specific lift into a generic bypass. Instead, the initiator of a server-owned query
+    /// propagates the lifted limits to the shards through the ordinary settings channel (see below, after the
+    /// query-construction settings are applied), which the receiving node clamps to its own constraints.
+    const bool parse_without_limits = parse_server_owned_query_without_limits;
+    /// The text of a server-formatted query (see `QueryFlags::parse_server_formatted_query_text`) is not bounded
+    /// by `max_query_size` either, but the setting itself stays untouched.
+    size_t max_query_size_for_query_text = (parse_without_limits || flags.parse_server_formatted_query_text) ? 0 : max_query_size;
+    size_t max_parser_depth_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_depth];
+    size_t max_parser_backtracks_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_backtracks];
+
+    /// A server-owned query text is also parsed as ClickHouse SQL regardless of the caller's `dialect`.
+    /// The stored text is written by the server (a config-defined `predefined_query_handler`, or the
+    /// `formatWithSecretsOneLine` output of a `CREATE HANDLER ... AS` statement), so a request that asks for
+    /// `dialect = 'prql'`, `'kusto'`, `'promql'`, `'polyglot'` or `'clickhouse_json'` would otherwise feed it to
+    /// the wrong parser and make the handler uninvokable. Only the request-owned construction snippets
+    /// (`filter`/`select`/`order`/`page`) stay under the caller's settings; they are parsed elsewhere.
+    const bool use_request_dialect = !internal && !parse_server_owned_query_without_limits;
 
     bool vector_only_cache_query_plan = settings[Setting::vector_only_cache_query_plan];
     bool enable_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
@@ -2993,7 +3023,7 @@ static BlockIO executeQueryImpl(
                 /// Increment ProfileEvents::Query here because Interpreter is not created.
                 ProfileEvents::increment(ProfileEvents::Query);
             }
-            else if (settings[Setting::dialect] == Dialect::kusto && !internal)
+            else if (settings[Setting::dialect] == Dialect::kusto && use_request_dialect)
             {
                 const char * kql_pos = new_begin;
                 if (!settings[Setting::allow_experimental_kusto_dialect])
@@ -3002,56 +3032,56 @@ static BlockIO executeQueryImpl(
                     /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
                     /// (or turn the gate back on) instead of being stranded until reconnect.
                     out_ast = tryParseKQLSetStatement(
-                        kql_pos, new_end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                        kql_pos, new_end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
                     if (!out_ast)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
                 }
                 else
                     out_ast = parseKQLQuery(
-                        kql_pos, new_end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                        kql_pos, new_end, /*allow_multi_statements=*/false, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             }
-            else if (settings[Setting::dialect] == Dialect::prql && !internal)
+            else if (settings[Setting::dialect] == Dialect::prql && use_request_dialect)
             {
                 if (!settings[Setting::allow_experimental_prql_dialect])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
-                ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                ParserPRQLQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             }
-            else if (settings[Setting::dialect] == Dialect::promql && !internal)
+            else if (settings[Setting::dialect] == Dialect::promql && use_request_dialect)
             {
                 if (!settings[Setting::enable_time_series_table])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'enable_time_series_table')");
                 ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             }
-            else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
+            else if (settings[Setting::dialect] == Dialect::polyglot && use_request_dialect)
             {
                 /// Pass through to `ParserPolyglotQuery` which handles SET queries
                 /// internally (via the standard parser) even when the feature gate
                 /// is off.  This lets users recover from misconfigured profiles
                 /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
                 ParserPolyglotQuery parser(
-                    max_query_size,
-                    settings[Setting::max_parser_depth],
-                    settings[Setting::max_parser_backtracks],
+                    max_query_size_for_query_text,
+                    max_parser_depth_for_query_text,
+                    max_parser_backtracks_for_query_text,
                     settings[Setting::polyglot_dialect],
                     new_end,
                     settings[Setting::allow_experimental_polyglot_dialect]);
-                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             }
-            else if (settings[Setting::dialect] == Dialect::trino && !internal)
+            else if (settings[Setting::dialect] == Dialect::trino && use_request_dialect)
             {
                 /// Like `ParserPolyglotQuery`, `ParserTrinoQuery` handles SET queries and
                 /// the feature gate internally so users can always switch the dialect back.
                 ParserTrinoQuery parser(
-                    max_query_size,
-                    settings[Setting::max_parser_depth],
-                    settings[Setting::max_parser_backtracks],
+                    max_query_size_for_query_text,
+                    max_parser_depth_for_query_text,
+                    max_parser_backtracks_for_query_text,
                     new_end,
                     settings[Setting::enable_trino_dialect],
                     settings[Setting::allow_settings_after_format_in_insert],
                     settings[Setting::implicit_select]);
-                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
 
                 /// Settings that align the query semantics with Trino: outer joins
                 /// produce NULLs (not type defaults) and set operations use the numeric
@@ -3067,17 +3097,18 @@ static BlockIO executeQueryImpl(
                     context->setSetting("use_variant_as_common_type", false);
                 }
             }
-            else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
+            else if (settings[Setting::dialect] == Dialect::clickhouse_json && use_request_dialect)
             {
                 /// Allow `SET` queries in plain SQL so users can switch back to another dialect
                 /// without being locked into JSON-only input. The experimental gate must be
                 /// applied only to the JSON-deserialization branch — otherwise a session with
                 /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
                 /// cannot execute `SET dialect = 'clickhouse'` to recover.
-                if (isClickHouseJSONSetEscape(new_begin, new_end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]))
+                if (isClickHouseJSONSetEscape(
+                    new_begin, new_end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text))
                 {
-                    ParserQuery parser(new_end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-                    out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                    ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                    out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
                 }
                 else
                 {
@@ -3086,7 +3117,7 @@ static BlockIO executeQueryImpl(
                             "Support for clickhouse_json dialect is disabled "
                             "(turn on setting 'enable_json_ast_dialect')");
 
-                    if (max_query_size != 0 && static_cast<size_t>(new_end - new_begin) > max_query_size)
+                    if (max_query_size_for_query_text != 0 && static_cast<size_t>(new_end - new_begin) > max_query_size_for_query_text)
                         throw Exception(ErrorCodes::SYNTAX_ERROR,
                             "Max query size exceeded (can be increased with the `max_query_size` setting)");
 
@@ -3514,6 +3545,21 @@ static BlockIO executeQueryImpl(
                 visitor.visit(out_ast);
             }
 
+            /// A server-owned query lifted above the caller's parser limits must survive being formatted
+            /// back to SQL and re-parsed on another node: a `Distributed` / `remote()` fan-out sends the
+            /// AST as text, and the shard parses it with the settings this query context sends along.
+            /// Propagate the lifted limits through those settings — the trusted, initiator-authenticated
+            /// channel that the receiving node clamps to its own constraints (`TCPHandler` applies
+            /// `clampToSettingsConstraints` to a secondary query's passed settings), so a node that pins
+            /// the parser limits keeps them pinned. This must happen only after the query-construction
+            /// snippets above are parsed: they come with the *request* (`filter` / `select` / `order` /
+            /// `page`), not with the stored handler query, so they stay under the caller's limits.
+            if (parse_server_owned_query_without_limits)
+            {
+                context->setSetting("max_parser_depth", UInt64(0));
+                context->setSetting("max_parser_backtracks", UInt64(0));
+            }
+
             normalizeAnalyzerSettings(out_ast);
 
             if (!skip_ast_processing)
@@ -3535,12 +3581,17 @@ static BlockIO executeQueryImpl(
                     query_database = query_with_table_output->getDatabase();
                     query_table = query_with_table_output->getTable();
                 }
-
+                
+                /// Freeze the meaning of division before the AST can enter table metadata, a mutation
+                /// entry, a SQL UDF, or a distributed query. Replayed ASTs already carry that decision.
+                if (!internal && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
+                    && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                    normalizeDivision(*out_ast, context);
 
                 /// Propagate WITH statement to children ASTSelect.
                 if (settings[Setting::enable_global_with_statement])
                 {
-                    ApplyWithGlobalVisitor::visit(out_ast);
+                    ApplyWithGlobalVisitor::visit(out_ast, settings[Setting::max_expanded_ast_elements]);
                 }
 
                 {
