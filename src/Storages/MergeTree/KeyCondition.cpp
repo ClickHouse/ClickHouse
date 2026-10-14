@@ -4935,6 +4935,21 @@ static DataTypePtr tryGetActiveTypeOfErasedConstant(const RPNBuilderTreeNode & c
     return nullptr;
 }
 
+/// `Array`, `Map` and `Object` values compare with `IColumn::compareAt`, which orders a `NULL` element after
+/// every value, while `Field` order puts it first.
+static bool isContainerHoldingNull(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Array:
+        case Field::Types::Map:
+        case Field::Types::Object:
+            return anyFieldSatisfies(field, [](const Field & element) { return element.isNull(); });
+        default:
+            return false;
+    }
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -5524,8 +5539,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         }
 
         /// After every conversion above, this is the value that becomes a range endpoint. The `Field`
-        /// total order puts a `NaN` after all finite values, which SQL comparison does not follow.
-        if (anyFieldSatisfies(const_value, isNaNField))
+        /// total order puts a `NaN` after all finite values and a `NULL` nested in an `Array`, a `Map` or an
+        /// `Object` before all values, which SQL comparison does not follow.
+        if (anyFieldSatisfies(const_value, isNaNField) || anyFieldSatisfies(const_value, isContainerHoldingNull))
             return false;
 
         const auto atom_it = atom_map.find(func_name);
