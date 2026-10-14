@@ -36,6 +36,16 @@ namespace Setting
     extern const SettingsBool allow_statistics_optimize;
 }
 
+/// NDV of `column` if the statistics know it. Zero means unknown: a read adds an entry for every column it reads
+/// to carry the column width, with or without statistics, so an entry alone does not make the NDV known.
+static std::optional<UInt64> knownDistinctValues(const ExpressionStatistics & statistics, const String & column)
+{
+    auto it = statistics.column_statistics.find(column);
+    if (it == statistics.column_statistics.end() || it->second.num_distinct_values == 0)
+        return std::nullopt;
+    return it->second.num_distinct_values;
+}
+
 void StatisticsDerivation::deriveStatistics(GroupId group_id)
 {
     auto group = memo.getGroup(group_id);
@@ -132,11 +142,10 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
                     auto output_column = result.column_statistics.find(input_headers.at(0)->getByPosition(position).name);
                     if (output_column == result.column_statistics.end())
                         continue;
-                    auto other_column = other.column_statistics.find(input_headers.at(input_index)->getByPosition(position).name);
-                    if (other_column == other.column_statistics.end())
+                    auto other_ndv = knownDistinctValues(other, input_headers.at(input_index)->getByPosition(position).name);
+                    if (!other_ndv)
                         continue;
-                    output_column->second.num_distinct_values
-                        = std::min(output_column->second.num_distinct_values, other_column->second.num_distinct_values);
+                    output_column->second.num_distinct_values = std::min(output_column->second.num_distinct_values, *other_ndv);
                 }
             }
             /// Without the clamp a row-count reduction could leave a column NDV above the row count.
@@ -281,34 +290,22 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         bool left_already_bound = !left_bound_columns.insert(left_column).second;
         bool right_already_bound = !right_bound_columns.insert(right_column).second;
 
-        auto left_column_statistics = left_statistics.column_statistics.find(left_column);
-        auto right_column_statistics = right_statistics.column_statistics.find(right_column);
-
-        UInt64 left_number_of_distinct_values = 1;
-        UInt64 right_number_of_distinct_values = 1;
-        if (left_column_statistics != left_statistics.column_statistics.end())
-            left_number_of_distinct_values = left_column_statistics->second.num_distinct_values;
-        if (right_column_statistics != right_statistics.column_statistics.end())
-            right_number_of_distinct_values = right_column_statistics->second.num_distinct_values;
+        const auto left_number_of_distinct_values = knownDistinctValues(left_statistics, left_column);
+        const auto right_number_of_distinct_values = knownDistinctValues(right_statistics, right_column);
 
         /// Estimate `JOIN` equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities.
-        /// An empty relation or a supplied hint can carry NDV = 0; clamp to 1, otherwise the division
-        /// would produce an infinite selectivity that poisons every cost downstream.
-        UInt64 max_number_of_distinct_values = std::max<UInt64>({left_number_of_distinct_values, right_number_of_distinct_values, 1});
+        /// An unknown NDV - missing, or zero as for an empty relation or a supplied hint - counts as 1, which also
+        /// keeps the division from producing an infinite selectivity that poisons every cost downstream.
+        UInt64 max_number_of_distinct_values = std::max(left_number_of_distinct_values.value_or(1), right_number_of_distinct_values.value_or(1));
         Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
 
-        /// An input's key NDV is bounded by its own row count. The shared update then narrows only
-        /// sides whose rows can be filtered by this join.
-        statistics.column_statistics[left_column].num_distinct_values = std::min(
-            left_column_statistics != left_statistics.column_statistics.end()
-                ? left_column_statistics->second.num_distinct_values
-                : left_row_count,
-            left_row_count);
-        statistics.column_statistics[right_column].num_distinct_values = std::min(
-            right_column_statistics != right_statistics.column_statistics.end()
-                ? right_column_statistics->second.num_distinct_values
-                : right_row_count,
-            right_row_count);
+        /// An input's key NDV is bounded by its own row count, which also stands in for an unknown NDV: a zero would
+        /// erase the other side's NDV in the shared update. The shared update then narrows only sides whose rows can
+        /// be filtered by this join.
+        statistics.column_statistics[left_column].num_distinct_values
+            = std::min(left_number_of_distinct_values.value_or(left_row_count), left_row_count);
+        statistics.column_statistics[right_column].num_distinct_values
+            = std::min(right_number_of_distinct_values.value_or(right_row_count), right_row_count);
         QueryPlanOptimizations::updateJoinKeyDistinctCounts(
             statistics.column_statistics.at(left_column),
             statistics.column_statistics.at(right_column),
@@ -655,12 +652,13 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
 /// Fraction of the input rows assumed distinct for a key column without statistics.
 static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
 
-/// NDV of a group key in the input; without stats, fall back to `DEFAULT_DISTINCT_VALUES_RATIO`.
+/// NDV of a group key in the input; without a known NDV, fall back to `DEFAULT_DISTINCT_VALUES_RATIO`.
+/// Taking the zero NDV of a key without statistics as known would estimate a single group and a maximum
+/// of zero rows.
 static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
 {
-    auto column_stats = input_statistics.column_statistics.find(column);
-    if (column_stats != input_statistics.column_statistics.end())
-        return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
+    if (auto number_of_distinct_values = knownDistinctValues(input_statistics, column))
+        return std::min(Float64(*number_of_distinct_values), input_statistics.max_row_count);
     return DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count;
 }
 

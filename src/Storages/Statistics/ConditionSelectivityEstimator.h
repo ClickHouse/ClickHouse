@@ -13,6 +13,7 @@ class RPNBuilderTreeNode;
 
 struct ColumnStats
 {
+    /// Number of distinct values; 0 means unknown. An entry may exist only to carry `avg_bytes`.
     UInt64 num_distinct_values = 0;
     /// Average uncompressed size of one value; 0 means unknown.
     Float64 avg_bytes = 0;

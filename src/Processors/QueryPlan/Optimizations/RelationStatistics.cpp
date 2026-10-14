@@ -79,8 +79,11 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             continue;
 
         ColumnStats stats = stats_it->second;
-        /// Add the offset, guarding against overflow when the source NDV is near the maximum.
-        if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
+        /// Add the offset, guarding against overflow when the source NDV is near the maximum. A zero NDV is
+        /// unknown - the entry may only carry a width - and must stay unknown: with the offset it would turn
+        /// into a known NDV of 1.
+        if (stats.num_distinct_values != 0
+            && stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
             stats.num_distinct_values += output_lineage.input->ndv_delta;
         /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
         /// width to unknown.

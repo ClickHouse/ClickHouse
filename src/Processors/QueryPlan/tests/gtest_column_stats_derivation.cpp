@@ -166,6 +166,30 @@ TEST(ColumnStatsDerivation, NullAwareFunctionAddsOneToBound)
     EXPECT_EQ(stats["year"].num_distinct_values, distinct_dates);
 }
 
+/// A zero NDV is unknown: a Cascades read adds an entry for every column it reads to carry the width, with or
+/// without statistics. The +1 of a null-aware hop must not turn it into a known NDV of 1, which would estimate
+/// `GROUP BY assumeNotNull(x)` as a single group. The width still follows the column.
+TEST(ColumnStatsDerivation, NullAwareFunctionKeepsUnknownDistinctValuesUnknown)
+{
+    tryRegisterFunctions();
+
+    auto nullable_int_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+    ActionsDAG dag;
+    const auto & input = dag.addInput("x", nullable_int_type);
+    addOutputFunction(dag, "assumeNotNull", {&input}, "not_null");
+    addOutputFunction(dag, "isNull", {&input}, "is_null");
+
+    std::unordered_map<String, ColumnStats> stats;
+    stats["x"] = ColumnStats{.avg_bytes = 8};
+    remapColumnStats(stats, dag);
+
+    ASSERT_TRUE(stats.contains("not_null"));
+    EXPECT_EQ(stats.at("not_null").num_distinct_values, 0u);
+    EXPECT_EQ(stats.at("not_null").avg_bytes, 8);
+    ASSERT_TRUE(stats.contains("is_null"));
+    EXPECT_EQ(stats.at("is_null").num_distinct_values, 0u);
+}
+
 /// The +1 from a null-aware hop is carried along the rest of the chain, regardless of its position:
 /// a downstream null-preserving function keeps it, and an upstream one does not consume it.
 TEST(ColumnStatsDerivation, NullAwareFunctionInChainCarriesOffset)
