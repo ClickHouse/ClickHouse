@@ -20,11 +20,11 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <Processors/RowsBeforeStepCounter.h>
 
 #include <array>
 #include <bit>
 #include <cstring>
-#include <limits>
 #include <optional>
 
 
@@ -608,8 +608,9 @@ private:
         }
 
         switchToRouting(stream);
+        /// Mostly unique keys are not deduplicated until the stream grows to twice its previous size.
         if (hint->stream_keys <= stream_distinct * DEDUPLICATION_BUDGET_FACTOR * 2)
-            stream.deduplication_budget = std::numeric_limits<size_t>::max() / 2;
+            stream.deduplication_budget = std::max(INITIAL_DEDUPLICATION_BUDGET, hint->stream_keys * 2);
         else
             stream.deduplication_budget = std::max(INITIAL_DEDUPLICATION_BUDGET, stream_distinct * DEDUPLICATION_BUDGET_FACTOR);
     }
@@ -1076,6 +1077,9 @@ void RadixUniqExactRouteTransform::work()
         stream_finished = true;
         return;
     }
+
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(current_chunk.getNumRows());
 
     ColumnPtr column = current_chunk.getColumns()[key_position];
     /// A constant is routed once. An empty chunk of it routes nothing, so that the rows stay at zero.

@@ -134,10 +134,13 @@ public:
 
     const IRadixUniqExactState & getState() const { return *state; }
 
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
+
 private:
     RadixUniqExactStatePtr state;
     const size_t stream;
     const size_t key_position;
+    RowsBeforeStepCounterPtr rows_before_aggregation;
     Chunk current_chunk;
     bool has_chunk = false;
     bool stream_finished = false;
