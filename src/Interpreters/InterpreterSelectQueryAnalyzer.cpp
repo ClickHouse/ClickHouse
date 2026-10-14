@@ -24,6 +24,7 @@
 
 #include <Storages/IStorage.h>
 
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/IdentifierNode.h>
@@ -412,9 +413,16 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
         query_tree_pass_manager.runOnlyResolve(query_tree);
+        /// Not an optimization: a correlated subquery must not be read with parallel replicas. A shard is an
+        /// initiator for its replicas and plans here the body of a view the initiator never analyzed.
+        DisableParallelReplicasPass{}.run(query_tree, context);
+    }
     else
+    {
         query_tree_pass_manager.run(query_tree);
+    }
 
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
