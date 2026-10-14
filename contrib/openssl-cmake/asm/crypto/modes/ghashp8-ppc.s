@@ -146,13 +146,13 @@ gcm_gmult_p8:
 	.long	0x7C601E99
 
 	.long	0x7D682699
-
+	lvsl	12,0,0
 	.long	0x7D292699
-
+	vspltisb	5,0x07
 	.long	0x7D4A2699
-
+	vxor	12,12,5
 	.long	0x7D002699
-
+	vperm	3,3,3,12
 	vxor	4,4,4
 
 	.long	0x10035CC8
@@ -174,7 +174,7 @@ gcm_gmult_p8:
 	vxor	6,6,2
 	vxor	0,0,6
 
-
+	vperm	0,0,0,12
 	.long	0x7C001F99
 
 	or	12,12,12
@@ -200,15 +200,15 @@ gcm_ghash_p8:
 
 	.long	0x7D682699
 	li	8,0x40
-
+	lvsl	12,0,0
 	.long	0x7D292699
 	li	9,0x50
-
+	vspltisb	5,0x07
 	.long	0x7D4A2699
 	li	10,0x60
-
+	vxor	12,12,5
 	.long	0x7D002699
-
+	vperm	0,0,0,12
 	vxor	4,4,4
 
 	cmpldi	6,64
@@ -217,7 +217,7 @@ gcm_ghash_p8:
 	.long	0x7C602E99
 	addi	5,5,16
 	subic.	6,6,16
-
+	vperm	3,3,3,12
 	vxor	3,3,0
 	beq	.Lshort
 
@@ -226,12 +226,12 @@ gcm_ghash_p8:
 	.long	0x7E292699
 	add	9,5,6
 	.long	0x7E4A2699
-	b	.Loop_2x
+
 
 .align	5
 .Loop_2x:
 	.long	0x7E002E99
-
+	vperm	16,16,16,12
 
 	subic	6,6,32
 	.long	0x10039CC8
@@ -262,7 +262,7 @@ gcm_ghash_p8:
 
 	vsldoi	6,0,0,8
 	.long	0x100044C8
-
+	vperm	3,3,3,12
 	vxor	6,6,2
 	vxor	3,3,6
 	vxor	3,3,0
@@ -293,7 +293,7 @@ gcm_ghash_p8:
 
 .Leven:
 	vxor	0,0,6
-
+	vperm	0,0,0,12
 	.long	0x7C001F99
 
 	or	12,12,12
@@ -367,10 +367,10 @@ gcm_ghash_p8:
 	.long	0x7EC92E99
 	.long	0x7F8A2E99
 	addi	5,5,0x40
-
-
-
-
+	vperm	3,3,3,12
+	vperm	16,16,16,12
+	vperm	22,22,22,12
+	vperm	28,28,28,12
 
 	vxor	2,3,0
 
@@ -401,10 +401,10 @@ gcm_ghash_p8:
 	.long	0x7EC92E99
 	.long	0x7F8A2E99
 	addi	5,5,0x40
-
-
-
-
+	vperm	16,16,16,12
+	vperm	22,22,22,12
+	vperm	28,28,28,12
+	vperm	3,3,3,12
 
 	.long	0x1002ECC8
 	.long	0x1022F4C8
@@ -481,9 +481,9 @@ gcm_ghash_p8:
 
 .Lthree:
 	.long	0x7EC92E99
-
-
-
+	vperm	3,3,3,12
+	vperm	16,16,16,12
+	vperm	22,22,22,12
 
 	vxor	2,3,0
 	vor	29,23,23
@@ -502,8 +502,8 @@ gcm_ghash_p8:
 
 .align	4
 .Ltwo:
-
-
+	vperm	3,3,3,12
+	vperm	16,16,16,12
 
 	vxor	2,3,0
 	vperm	5,4,16,19
@@ -521,7 +521,7 @@ gcm_ghash_p8:
 
 .align	4
 .Lone:
-
+	vperm	3,3,3,12
 
 	vsldoi	29,4,9,8
 	vor	30,9,9
@@ -535,7 +535,7 @@ gcm_ghash_p8:
 	b	.Ltail_4x
 
 .Ldone_4x:
-
+	vperm	0,0,0,12
 	.long	0x7C001F99
 
 	li	10,63
