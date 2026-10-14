@@ -2086,18 +2086,20 @@ namespace DB
             }
             ++removed;
 
-            using KeyType = UInt128;
+            /// Keyed O(1) removal (instead of scanning the whole cache per deleted file),
+            /// keeping the generation guard so a file that re-failed meanwhile keeps its entry.
             using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
-            local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
-                [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
-                {
-                    if (status->path == file_path)
+            const auto snapshot_it = generations_snapshot.find(file_path);
+            if (snapshot_it != generations_snapshot.end())
+            {
+                const auto expected_generation = snapshot_it->second;
+                local_file_statuses.removeIfMatches(
+                    getMetadataCacheKey(file_path),
+                    [&file_path, expected_generation](const StatusPtr & status)
                     {
-                        auto it = generations_snapshot.find(file_path);
-                        return it != generations_snapshot.end() && status->generation.load() == it->second;
-                    }
-                    return false;
-                }));
+                        return status->path == file_path && status->generation.load() == expected_generation;
+                    });
+            }
         }
 
         LOG_TRACE(log, "Dropped {} failed file nodes (LIKE filter: '{}')", removed, like_pattern.value_or(String()));
