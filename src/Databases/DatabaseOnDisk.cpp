@@ -575,6 +575,11 @@ void DatabaseOnDisk::renameTable(
         }
     }
 
+    /// `rename` below moves the data of the table, which only the real storage can do, while the temporary
+    /// `detachTable` before it forbids a lazy-load stand-in to materialize the real storage from then on.
+    /// So materialize it beforehand.
+    resolveStorageProxyLoading(table);
+
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     detachTable(local_context, table_name);
