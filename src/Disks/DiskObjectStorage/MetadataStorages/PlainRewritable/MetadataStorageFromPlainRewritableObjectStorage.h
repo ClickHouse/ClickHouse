@@ -152,10 +152,24 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
     PlainRewritableRemoteLayout getCurrentLayout() const;
     static PlainRewritableRemoteLayout getLayoutOf(const FsSnapshot & tree);
 
-    /// Whether this disk writes the snapshot file: snapshots are enabled and the object storage is writable.
-    bool isSnapshotWriter() const;
-    /// Whether this disk loads its state from the snapshot file: snapshots are enabled and the object storage is read-only.
-    bool isSnapshotReader() const;
+    /// Whether the disk does not write to the object storage: either the object storage is read-only, or the disk is
+    /// attached with `read_only` (wrapped with `ReadOnlyDiskWrapper`), which does not make the object storage read-only.
+    bool isReadOnlyDisk() const { return read_only_disk || object_storage->isReadOnly(); }
+
+    /// The role of the disk regarding the snapshot file. It is chosen once when the disk is created: the task that writes
+    /// the snapshot exists only for a writer, and a reader must never publish its own state over the one of the writer.
+    /// Changing `readonly` of the object storage by `SYSTEM RELOAD CONFIG` does not change it, that requires a restart.
+    enum class SnapshotRole : uint8_t
+    {
+        None,
+        /// Snapshots are enabled and the disk is writable.
+        Writer,
+        /// Snapshots are enabled and the disk is read-only.
+        Reader,
+    };
+    SnapshotRole chooseSnapshotRole() const;
+    bool isSnapshotWriter() const { return snapshot_role == SnapshotRole::Writer; }
+    bool isSnapshotReader() const { return snapshot_role == SnapshotRole::Reader; }
     /// Called after the in-memory state was changed; writes the snapshot right away or schedules the write.
     void onLayoutChanged();
     /// Writes the current state to the snapshot file (or removes the file if the disk is empty) if there were changes.
@@ -169,7 +183,8 @@ public:
         ObjectStoragePtr object_storage_,
         std::string storage_path_prefix_,
         bool hard_links_enabled_,
-        PlainRewritableSnapshotSettings snapshot_settings_ = {});
+        PlainRewritableSnapshotSettings snapshot_settings_ = {},
+        bool read_only_disk_ = false);
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
     const std::string & getPath() const override { return storage_path_full; }
@@ -218,6 +233,9 @@ private:
     /// would read the setting from the wrong place. Changing it requires a restart, as a downgrade does anyway.
     const bool hard_links_enabled;
     const PlainRewritableSnapshotSettings snapshot_settings;
+    /// The disk is attached with `read_only`, see `isReadOnlyDisk`.
+    const bool read_only_disk;
+    const SnapshotRole snapshot_role;
 
     /// Transactions hold the locks for the paths they modify while they talk to the object storage and publish the result;
     /// full reloads of the metadata hold the lock for the root. Transactions on unrelated paths run concurrently.

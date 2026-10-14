@@ -2640,6 +2640,62 @@ TEST_F(MetadataPlainRewritableDiskTest, ReaderTrustsSnapshot)
     EXPECT_EQ(sorted(listing_reader.listDirectory("")), std::vector<std::string>({"A", "C"}));
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, ReadOnlyDiskOverWritableStorageDoesNotWriteSnapshot)
+{
+    /// A disk attached with `read_only` is wrapped with `ReadOnlyDiskWrapper`, but its object storage is writable.
+    const std::string test = "ReadOnlyDiskOverWritableStorageDoesNotWriteSnapshot";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = writer->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+
+    /// The snapshot of the writer lags behind the object storage, as if the writer had not written the latest one yet.
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_key, stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+    write_file("A/later", "test");
+    std::filesystem::copy_file(stale_snapshot, snapshot_key, std::filesystem::copy_options::overwrite_existing);
+    const auto snapshot_contents = readObject(object_storage, snapshot_key);
+
+    {
+        MetadataStorageFromPlainRewritableObjectStorage reader(
+            object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = true, .write_delay_ms = 0}, /*read_only_disk_=*/ true);
+
+        /// It loads the state from the snapshot as a reader instead of listing the object storage as a writer.
+        EXPECT_TRUE(reader.existsFile("A/file"));
+        EXPECT_FALSE(reader.existsFile("A/later"));
+
+        reader.refresh(0);
+        reader.shutdown();
+    }
+
+    /// And it does not publish its own state over the snapshot of the writer.
+    EXPECT_EQ(readObject(object_storage, snapshot_key), snapshot_contents);
+
+    /// Nor does it remove the snapshot when the snapshots are disabled for it.
+    {
+        MetadataStorageFromPlainRewritableObjectStorage reader(
+            object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = false}, /*read_only_disk_=*/ true);
+        EXPECT_TRUE(reader.existsFile("A/later"));
+        reader.shutdown();
+    }
+    EXPECT_EQ(readObject(object_storage, snapshot_key), snapshot_contents);
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, ReaderDoesNotRollBackAfterFailedSnapshotRead)
 {
     class FailingStorage : public LocalObjectStorage

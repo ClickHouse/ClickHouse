@@ -209,14 +209,11 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::get
     return result;
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::isSnapshotWriter() const
+MetadataStorageFromPlainRewritableObjectStorage::SnapshotRole MetadataStorageFromPlainRewritableObjectStorage::chooseSnapshotRole() const
 {
-    return snapshot_settings.enabled && !object_storage->isReadOnly();
-}
-
-bool MetadataStorageFromPlainRewritableObjectStorage::isSnapshotReader() const
-{
-    return snapshot_settings.enabled && object_storage->isReadOnly();
+    if (!snapshot_settings.enabled)
+        return SnapshotRole::None;
+    return isReadOnlyDisk() ? SnapshotRole::Reader : SnapshotRole::Writer;
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataStorageFromPlainRewritableObjectStorage::tryReadSnapshotFile(
@@ -473,8 +470,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
     if (!tombstones.empty())
         LOG_DEBUG(log, "Found {} removals that were not finished", tombstones.size());
 
-    const bool remove_orphaned_objects = is_initial_load && !object_storage->isReadOnly();
-    const bool roll_back_pending_operations = is_initial_load || object_storage->isReadOnly();
+    const bool remove_orphaned_objects = is_initial_load && !isReadOnlyDisk();
+    const bool roll_back_pending_operations = is_initial_load || isReadOnlyDisk();
 
     /// A pending replacement appears and disappears without a change to the `prefix.path` of the directory of its target,
     /// and the info of such a directory in the previous snapshot may describe the target as read from its backup. So a
@@ -1054,6 +1051,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
     LOG_DEBUG(log, "Loading metadata");
 
+    if (snapshot_role != chooseSnapshotRole())
+        LOG_WARNING(log, "The `readonly` setting of the disk was changed after the disk was created. The disk keeps working as a "
+            "{} of the metadata snapshot until the server is restarted", isSnapshotWriter() ? "writer" : "reader");
+
     /// The snapshot file (see `PlainRewritableSnapshotFile.h`) is written by the only writer of the disk for the readers.
     ///
     /// A reader (a disk with `readonly`) works on a delayed state anyway: it refreshes the state periodically and relies
@@ -1194,7 +1195,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
 
     /// A writer with snapshots disabled must not leave a snapshot written before (e.g. when snapshots were enabled) for the
     /// readers: they would trust the stale state forever instead of listing the object storage.
-    if (mode == LoadMode::Initial && has_metadata && !snapshot_settings.enabled && !object_storage->isReadOnly())
+    if (mode == LoadMode::Initial && has_metadata && !snapshot_settings.enabled && !isReadOnlyDisk())
     {
         const StoredObject snapshot_object(layout->constructSnapshotObjectKey());
         if (object_storage->exists(snapshot_object))
@@ -1293,13 +1294,19 @@ void MetadataStorageFromPlainRewritableObjectStorage::snapshotWriteTask()
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
-    ObjectStoragePtr object_storage_, String storage_path_prefix_, bool hard_links_enabled_, PlainRewritableSnapshotSettings snapshot_settings_)
+    ObjectStoragePtr object_storage_,
+    String storage_path_prefix_,
+    bool hard_links_enabled_,
+    PlainRewritableSnapshotSettings snapshot_settings_,
+    bool read_only_disk_)
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , hard_links_enabled(hard_links_enabled_)
     , snapshot_settings(snapshot_settings_)
+    , read_only_disk(read_only_disk_)
+    , snapshot_role(chooseSnapshotRole())
     , fs(metrics->directory_map_size, metrics->file_count)
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
 {
@@ -1427,7 +1434,7 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
         return std::nullopt;
 
     auto object_key = layout->constructBlobObjectKey(getBlobKey(*directory_remote_info, normalized_path.filename(), file_it->second));
-    if (object_storage->isReadOnly())
+    if (isReadOnlyDisk())
     {
         /// Taken from the same snapshot as the file, so that the size and the key of the blob come from the same load.
         if (const auto backups = tree->getBackupsOfPendingReplaceTargets())

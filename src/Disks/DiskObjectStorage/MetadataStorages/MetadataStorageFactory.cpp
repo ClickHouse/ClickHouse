@@ -230,7 +230,12 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
         snapshot_settings.enabled = config.getBool(config_prefix + ".metadata_snapshot_enabled", snapshot_settings.enabled);
         snapshot_settings.write_delay_ms = config.getUInt64(config_prefix + ".metadata_snapshot_write_delay_ms", snapshot_settings.write_delay_ms);
 
-        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(local_object_storage, key_compatibility_prefix, enable_hard_links, snapshot_settings);
+        /// A disk attached with `read_only` is wrapped with `ReadOnlyDiskWrapper` after the metadata storage is created,
+        /// and its object storage is writable. It has to consume the snapshot and never publish or remove it.
+        bool read_only_disk = config.getBool(config_prefix + ".read_only", false);
+
+        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(
+            local_object_storage, key_compatibility_prefix, enable_hard_links, snapshot_settings, read_only_disk);
     });
 }
 
