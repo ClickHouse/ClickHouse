@@ -1,5 +1,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
 #include <Common/CurrentMetrics.h>
@@ -223,6 +224,12 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows, size_t stre
     chassert(block.columns() == 0 || block.rows() == num_rows);
     if (num_rows == 0)
         return true;
+
+    /// Parts of the same table can be stored with and without automatic LowCardinality serialization,
+    /// so a column can arrive as a non-native ColumnLowCardinality while the header holds the full
+    /// column of its data type. Blocks from different parts must have the same representation.
+    for (auto & column : block)
+        column.column = recursiveRemoveNonNativeLowCardinality(column.column);
 
     assertCompatibleHeader(block, *build_header, "block nested loop join build side");
 
