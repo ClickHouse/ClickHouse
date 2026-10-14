@@ -264,6 +264,8 @@ common_stress_job_config = Job.Config(
             # covered by `./tests/config` above.
             "./ci/jobs/scripts/log_export.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+            # The tests read the test data from these submodules.
+            *test_data_submodules,
         ],
     ),
     timeout=3600 * 3,
