@@ -8957,20 +8957,26 @@ void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutatio
     mutation_initial_bytes.erase(mutation_id);
     /// Recorded even when nothing was cached: a reader whose snapshot predates this call may not
     /// have created the entry yet, and it must not create it afterwards either.
-    if (mutation_initial_bytes_readers > 0)
-        mutation_initial_bytes_dropped.insert(mutation_id);
+    if (!mutation_initial_bytes_readers.empty())
+        mutation_initial_bytes_dropped[mutation_id] = mutation_initial_bytes_next_reader;
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
+    UInt64 reader_generation;
     {
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-        ++mutation_initial_bytes_readers;
+        reader_generation = mutation_initial_bytes_next_reader++;
+        mutation_initial_bytes_readers.insert(reader_generation);
     }
     SCOPE_EXIT({
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-        if (--mutation_initial_bytes_readers == 0)
-            mutation_initial_bytes_dropped.clear();
+        mutation_initial_bytes_readers.erase(reader_generation);
+        /// A drop only matters to readers that started before it.
+        std::erase_if(mutation_initial_bytes_dropped, [&](const auto & dropped)
+        {
+            return mutation_initial_bytes_readers.empty() || dropped.second <= *mutation_initial_bytes_readers.begin();
+        });
     });
 
     auto statuses = queue.getMutationsStatus();
