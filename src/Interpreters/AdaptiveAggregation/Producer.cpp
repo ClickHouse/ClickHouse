@@ -396,7 +396,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         {
             if (!is_simple_count && params.aggregates_size)
             {
-                /// Local state growth belongs to this table, even while staging uses the shared tracker.
+                /// Local state growth belongs to this table, while the staging runs under the aggregator's tracker.
                 std::optional<MemoryTrackerSwitcher> local_scope;
                 if (local_memory_tracker)
                     local_scope.emplace(local_memory_tracker);

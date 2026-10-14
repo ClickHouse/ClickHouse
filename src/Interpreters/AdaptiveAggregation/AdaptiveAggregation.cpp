@@ -376,15 +376,15 @@ size_t Aggregator::spillAdaptiveProducer(
     AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, bool no_more_keys, size_t at_least_bytes) const
 {
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    MemoryTracker * session_shared_tracker = switchToOwnTracker(result, memory_tracker_switcher);
+    MemoryTracker * aggregator_tracker = switchToOwnTracker(result, memory_tracker_switcher);
 
     size_t released = 0;
     if (const size_t staged_bytes = adaptive.stagedBytes())
     {
         /// The staging runs under the aggregator's tracker (see `executeOnBlock`), and so does the release of its records.
-        std::optional<MemoryTrackerSwitcher> session_scope;
-        if (session_shared_tracker)
-            session_scope.emplace(session_shared_tracker);
+        std::optional<MemoryTrackerSwitcher> aggregator_scope;
+        if (aggregator_tracker)
+            aggregator_scope.emplace(aggregator_tracker);
         spillAdaptivePartitions(adaptive);
         released = staged_bytes - adaptive.stagedBytes();
     }
