@@ -163,7 +163,8 @@ namespace
     /// every `step`-th one from `first_bucket`, and merge each one as the adaptive merge does, a merge unit at a time
     /// (see `Aggregator::mergeAndConvertAdaptiveBucket`), into the destination they share: the table slot and the
     /// arena slot of a bucket belong to the source of the bucket. The records of a unit are freed once it is
-    /// converted, and the states of a chunk once the external merge has merged it.
+    /// converted, those read back from a spill as soon as they are drained, and the states of a chunk once the
+    /// external merge has merged it.
     ///
     /// The sources hold a throw-mode group limit against the staged groups of the buckets they merge, which
     /// they count together in `merged_groups`. The groups that only the parts of the producers' tables hold

@@ -440,8 +440,11 @@ public:
     /// `createAdaptiveMergeDestination`: in front of the adaptive sources (see `prepareVariantsToMerge`), or with no
     /// sources behind it for an external merge. The table is kept, emptied, from one unit to the next, and taken over
     /// from the slot of the bucket the task merged before, so a task allocates and faults in one table instead of one
-    /// per unit. Once the bucket's last unit converted, its arena slot retires. `full_group_count` receives the bucket's
-    /// group count over all its units, taken before any top-K truncation.
+    /// per unit. Once the bucket's last unit converted, its arena slot retires. A unit reads the spill streams of its
+    /// partitions back a block at a time and drains each block before the next, so the merge holds the unit's groups
+    /// instead of all its spilled records; a count-first unit, which passes over its records twice, loads them into
+    /// memory instead. `full_group_count` receives the bucket's group count over all its units, taken before any top-K
+    /// truncation.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
@@ -994,9 +997,11 @@ private:
 
     /// Drains one partition's records into `table`, only those whose routing hash `filter` takes: every record, those
     /// whose count bin the top-K pruning keeps alive (see `AdaptiveTopKPruning`), or those of the best groups of a
-    /// count-first unit. String-like keys are emplaced pointing into the records, which are freed only after the table
-    /// is converted or written. Returns how many records it skipped.
-    template <typename Method, typename Table, typename Filter>
+    /// count-first unit. New groups get their states in `arena`. String-like keys are emplaced pointing into the
+    /// records, which are freed only after the table is converted or written, unless `copy_keys`: records read back
+    /// from a spill are freed before, so their new keys are copied into `arena` too. Returns how many records it
+    /// skipped.
+    template <typename Method, bool copy_keys, typename Table, typename Filter>
     size_t drainAdaptivePartition(
         Table & table,
         Arena * arena,
@@ -1070,8 +1075,8 @@ private:
     void addMergeCountedTablesToBounds(
         ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const;
 
-    /// Writes the producer's staged records to the session's spill streams, a partition block at a time, and frees
-    /// them; the producer then keeps appending into new chunks. Called over the external-aggregation threshold.
+    /// Writes the producer's staged records to the session's spill streams, a block per partition, and frees them; the
+    /// producer then keeps appending into new chunks. Called over the external-aggregation threshold.
     void spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const;
 
     /// Writes the producer's frozen table to disk as a part of the ordinary external aggregation, then lets the

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <array>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string_view>
@@ -52,9 +52,9 @@ constexpr size_t adaptive_drain_range_prefetch_bytes = 4096;
 constexpr size_t adaptive_drain_prefetch_min_table_bytes = 512 << 10;
 /// A producer over the external-aggregation threshold spills its staged records only once it holds this much of
 /// them, or a share of the threshold where that is less: a spill writes one block per partition and takes a lock per
-/// bucket, so a producer that just spilled must not spill its few new records on every block that follows.
+/// partition, so a producer that just spilled must not spill its few new records on every block that follows.
 constexpr size_t adaptive_spill_min_bytes = 16 << 20;
-/// The spill streams of a session, one per bucket, are open together, and each holds about three buffers of the
+/// The spill streams of a session, one per partition, are open together, and each holds about three buffers of the
 /// streams' buffer size: the compression input, the compressed block and the file's write buffer. Their buffer size
 /// therefore follows the external-aggregation threshold, so that the streams together take at most an eighth of it,
 /// but not below this floor, under which the writes and the compressed blocks get too small, and not above the buffer
@@ -132,6 +132,7 @@ struct AdaptiveAggregationSession
         : layout(layout_)
         , spill_scope(std::move(spill_scope_))
         , top_k_pruning(std::move(top_k_pruning_))
+        , spilled_partitions(layout_.numPartitions())
     {
     }
 
@@ -172,28 +173,26 @@ struct AdaptiveAggregationSession
     size_t repeat_dominated_producers = 0;
 
     /// The staged records the producers spilled over the external-aggregation threshold (see
-    /// `Aggregator::spillAdaptivePartitions`): one raw stream per bucket, shared by the producers and created by the
-    /// first spill into it. A stream is a sequence of partition blocks, {UInt32 partition within the bucket, UInt64
-    /// records, UInt64 bytes, the records}; the merge task of the bucket reads it back after the finish barrier.
-    struct SpilledBucket
+    /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the
+    /// first spill into it, so that a merge unit reads back the records of its own partitions only. A stream is a
+    /// sequence of blocks, one per spill into the partition, {UInt64 bytes, the records}; the merge task of the
+    /// partition's bucket reads it back after the finish barrier, a block at a time.
+    struct SpilledPartition
     {
-        /// A partition block read back: the partition within the bucket, its record count and its records, in a padded
-        /// buffer like a chunk's.
-        struct Block
-        {
-            size_t sub = 0;
-            size_t records = 0;
-            PaddedPODArray<char> data;
-        };
-
-        /// Reads the stream back and removes it. Called by the one task that merges the bucket, after the finish
+        /// Reads the stream back in the order the producers wrote it, calls `callback(block)` with the records of each
+        /// block in a padded buffer like a chunk's, and removes the stream. Every block comes in the same buffer, which
+        /// the next block overwrites, so the records of a block are valid only during its call. The read stops when
+        /// `callback` returns false. Called by the one task that merges the partition's bucket, after the finish
         /// barrier, so no producer writes to the stream any more.
-        std::vector<Block> readBack();
+        void readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback);
 
         std::mutex mutex;
         std::unique_ptr<TemporaryDataBuffer> stream;
+        /// The records written to the stream, which the merge counts before it reads them back.
+        size_t records = 0;
     };
-    std::array<SpilledBucket, ADAPTIVE_AGGREGATION_NUM_BUCKETS> spilled_buckets;
+    /// One per partition of the layout.
+    std::vector<SpilledPartition> spilled_partitions;
 };
 
 /// One adaptive merge task, which merges a sequence of buckets one at a time (see

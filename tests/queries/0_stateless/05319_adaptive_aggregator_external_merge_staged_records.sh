@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # When a thread of the adaptive aggregator on the baseline path spills its table as an ordinary part, the merge goes
 # external, and the records the frozen threads staged join it as inputs of their own: one source per merging thread
 # merges its share of the buckets into chunks of aggregate states, reading the staged records of a bucket from memory
-# and from the bucket's spill stream.
+# and from the spill streams of the bucket's partitions.
 #
 # The streams repeat every key a hundred times, so the frozen tables stage records until the thaw verdict sends every
 # thread back to the baseline path. With a small external-aggregation threshold the threads spill the staged records

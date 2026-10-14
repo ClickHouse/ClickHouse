@@ -144,16 +144,17 @@ void Aggregator::accountStagedBatch(
 
 AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers) const
 {
+    const auto layout = AdaptivePartitionLayout::forProducers(producers, params.max_bytes_before_external_group_by);
     TemporaryDataOnDiskScopePtr spill_scope;
     if (tmp_data && params.max_bytes_before_external_group_by)
     {
-        /// An eighth of the threshold over the three buffers of each of the streams.
-        const size_t buffers_share = params.max_bytes_before_external_group_by / (8 * 3 * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+        /// An eighth of the threshold over the three buffers of each of the streams, one per partition.
+        const size_t buffers_share = params.max_bytes_before_external_group_by / (8 * 3 * layout.numPartitions());
         const size_t buffer_bytes = std::min(tmp_data->getSettings().buffer_size, std::max(buffers_share, adaptive_spill_min_buffer_bytes));
         spill_scope = tmp_data->childScope(tmp_data->getSettings().metrics, buffer_bytes);
     }
     return std::make_shared<AdaptiveAggregationSession>(
-        AdaptivePartitionLayout::forProducers(producers, params.max_bytes_before_external_group_by),
+        layout,
         std::move(spill_scope),
         params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k) : nullptr);
 }
@@ -360,54 +361,37 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
-    const size_t partitions_per_bucket = shared.layout.partitionsPerBucket();
     partitions.finishAppending();
 
-    /// The producers that cross the threshold together start at different buckets, so they do not queue on the same
-    /// stream's lock bucket after bucket.
-    const size_t first_bucket = (reinterpret_cast<uintptr_t>(&adaptive) >> 6) % ADAPTIVE_AGGREGATION_NUM_BUCKETS;
+    /// The producers that cross the threshold together start at different partitions, so they do not queue on the
+    /// same stream's lock partition after partition.
+    const size_t num_partitions = shared.layout.numPartitions();
+    const size_t first_partition = (reinterpret_cast<uintptr_t>(&adaptive) >> 6) % num_partitions;
     size_t spilled_records = 0;
     size_t spilled_bytes = 0;
-    for (size_t i = 0; i < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++i)
+    for (size_t i = 0; i < num_partitions; ++i)
     {
-        const size_t bucket = (first_bucket + i) % ADAPTIVE_AGGREGATION_NUM_BUCKETS;
-        const size_t first_partition = shared.layout.firstPartition(bucket);
-
-        bool has_records = false;
-        for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
-            has_records |= partitions.hasRecords(first_partition + sub);
-        if (!has_records)
+        const size_t partition = (first_partition + i) % num_partitions;
+        const UInt64 records = partitions.recordsOf(partition);
+        if (!records)
             continue;
 
-        auto & spilled = shared.spilled_buckets[bucket];
+        UInt64 bytes = 0;
+        partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
+        auto & spilled = shared.spilled_partitions[partition];
         {
             std::lock_guard lock(spilled.mutex);
             if (!spilled.stream)
                 spilled.stream = std::make_unique<TemporaryDataBuffer>(shared.spill_scope);
             auto & out = *spilled.stream;
 
-            for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
-            {
-                const size_t partition = first_partition + sub;
-                if (!partitions.hasRecords(partition))
-                    continue;
-
-                UInt64 bytes = 0;
-                partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
-                const UInt64 records = partitions.recordsOf(partition);
-
-                writeBinaryLittleEndian(static_cast<UInt32>(sub), out);
-                writeBinaryLittleEndian(records, out);
-                writeBinaryLittleEndian(bytes, out);
-                partitions.forEachChunk(partition, [&](std::string_view chunk) { out.write(chunk.data(), chunk.size()); });
-
-                spilled_records += records;
-                spilled_bytes += bytes;
-            }
+            writeBinaryLittleEndian(bytes, out);
+            partitions.forEachChunk(partition, [&](std::string_view chunk) { out.write(chunk.data(), chunk.size()); });
+            spilled.records += records;
         }
-
-        for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
-            partitions.releasePartition(first_partition + sub);
+        partitions.releasePartition(partition);
+        spilled_records += records;
+        spilled_bytes += bytes;
     }
 
     partitions.clear();
@@ -418,30 +402,24 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
     LOG_TRACE(log, "Adaptive aggregation: spilled {} staged records ({} bytes)", spilled_records, spilled_bytes);
 }
 
-std::vector<AdaptiveAggregationSession::SpilledBucket::Block> AdaptiveAggregationSession::SpilledBucket::readBack()
+void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<bool(const PaddedPODArray<char> &)> & callback)
 {
-    std::vector<Block> blocks;
     if (!stream)
-        return blocks;
+        return;
 
     stream->finishWriting();
     auto in = stream->read();
+    PaddedPODArray<char> block;
     while (!in->eof())
     {
-        UInt32 sub = 0;
-        UInt64 records = 0;
         UInt64 bytes = 0;
-        readBinaryLittleEndian(sub, *in);
-        readBinaryLittleEndian(records, *in);
         readBinaryLittleEndian(bytes, *in);
-        auto & block = blocks.emplace_back();
-        block.sub = sub;
-        block.records = records;
-        block.data.resize(bytes);
-        in->readStrict(block.data.data(), bytes);
+        block.resize(bytes);
+        in->readStrict(block.data(), bytes);
+        if (!callback(block))
+            break;
     }
     stream.reset();
-    return blocks;
 }
 
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const

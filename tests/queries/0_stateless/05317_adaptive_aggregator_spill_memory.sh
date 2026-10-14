@@ -5,14 +5,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Over the external-aggregation threshold, a frozen producer of the adaptive aggregator writes its
-# staged records to the session's spill streams, one per bucket, once it holds a share of the
-# threshold, and frees them; the merge task of every bucket reads the bucket's stream back and merges
-# it one unit of partitions at a time. The memory of the staged path therefore follows the threshold:
-# the records a producer holds before it spills, the first chunks of its partitions, the buffers of
-# the spill streams, which are sized from the threshold because all of them are open together, and
-# per merge task one bucket's spilled records and one unit's table. The aggregate states exist only
-# in the merge, so neither their width nor the heap memory they own outside the arenas weighs on the
-# producers.
+# staged records to the session's spill streams, one per partition, once it holds a share of the
+# threshold, and frees them; every merge unit reads the streams of its partitions back a block at a
+# time. The memory of the staged path therefore follows the threshold: the records a producer holds
+# before it spills, the first chunks of its partitions, the buffers of the spill streams, which are
+# sized from the threshold because all of them are open together, and per merge task one block of
+# spilled records and one unit's table. The aggregate states exist only in the merge, so neither
+# their width nor the heap memory they own outside the arenas weighs on the producers.
 #
 # Each shape stages its records in one of the three formats: general records with variable-width
 # parts (string keys with a narrow argument, with a wide string argument, a wide key, and states that

@@ -6,8 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Over the external-aggregation threshold a frozen producer writes its staged records to the
-# session's spill streams and frees them; the merge task of every bucket reads the bucket's stream
-# back and merges it with the records still in memory. Here nearly every one of the ~2.6M rows
+# session's spill streams and frees them; every merge unit reads the streams of its partitions back
+# and merges them with the records still in memory. Here nearly every one of the ~2.6M rows
 # misses the tiny frozen tables and is staged, and a threshold of one byte keeps the query over it
 # on every block, so the producers spill again and again and the merge reads almost every record
 # from disk. The cell compares the same query with the feature off (and no forced spilling) and
