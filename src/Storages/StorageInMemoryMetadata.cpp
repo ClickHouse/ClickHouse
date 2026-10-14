@@ -1016,10 +1016,12 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
 
         if (!minmax_index_exists)
         {
-            auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+            IndexDescription index;
             bool valid_index = true;
             try
             {
+                /// An index that cannot be built, e.g. over an ALIAS whose dictionary is gone, is not generated.
+                index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
                 static const MergeTreeSettings default_settings;
                 MergeTreeIndexFactory::instance().validate(index, false, default_settings);
             }
