@@ -33,7 +33,7 @@ bool isPartitionLastRow(const WindowTransform * transform)
     if (!transform->partition.bounds().fully_visible)
         return false;
 
-    return transform->blocks.next(transform->current.location) == transform->partition.bounds().end;
+    return transform->blocks.next(transform->current.location) == transform->partition.bounds().end.location;
 }
 
 }
