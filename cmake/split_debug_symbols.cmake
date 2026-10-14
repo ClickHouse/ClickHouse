@@ -23,7 +23,9 @@ macro(clickhouse_split_debug_symbols)
        list(APPEND GNU_DEBUGDATA_COMMANDS
            COMMAND "${OBJCOPY_PATH}" --strip-debug "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug" "${MINI_DEBUGINFO_PATH}"
            COMMAND "${XZ_PATH}" -9 -T1 -f "${MINI_DEBUGINFO_PATH}"
-           COMMAND "${OBJCOPY_PATH}" --add-section ".gnu_debugdata=${MINI_DEBUGINFO_PATH}.xz" --remove-section=.symtab --remove-section=.strtab "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
+           # GNU `objcopy` regenerates `.symtab` and `.strtab` on `--remove-section` while the symbols are still there, so drop them with `--strip-unneeded`.
+           # Not `--strip-all`: `llvm-objcopy` would also remove the non-allocated `.clickhouse.hash` and `.gnu_debuglink` sections.
+           COMMAND "${OBJCOPY_PATH}" --strip-unneeded --add-section ".gnu_debugdata=${MINI_DEBUGINFO_PATH}.xz" --remove-section=.symtab --remove-section=.strtab "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
            COMMAND "${CMAKE_COMMAND}" -E rm -f "${MINI_DEBUGINFO_PATH}" "${MINI_DEBUGINFO_PATH}.xz"
        )
    endif()
