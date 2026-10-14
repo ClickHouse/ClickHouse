@@ -543,6 +543,30 @@ TEST(IOTestAwsS3Client, DeleteObjectsRetriesWithSHA256AndRemembers)
     EXPECT_EQ(stub.getDigests().size(), md5_available ? 3u : 2u);
 }
 
+/// Stores that reject the automatic `MD5` request with a generic error code are retried with `SHA256` too.
+TEST(IOTestAwsS3Client, DeleteObjectsRetriesWithSHA256OnInvalidRequest)
+{
+    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
+    for (const String error_code : {"InvalidRequest", "InvalidArgument"})
+    {
+        DeleteObjectsStubServer stub(/*accept_sha256=*/ true, error_code);
+        DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+        auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+        DB::S3Capabilities capabilities;
+        DB::S3::S3RequestSettings automatic;
+
+        deleteTwoKeys(client, uri, capabilities, automatic);
+        if (md5_available)
+            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256})) << error_code;
+        else
+            EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256})) << error_code;
+        EXPECT_EQ(capabilities.isDeleteMD5Rejected(), md5_available) << error_code;
+        EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(true)) << error_code;
+        EXPECT_EQ(stub.getPlainDeleteCount(), 0u) << error_code;
+    }
+}
+
 /// The server accepts no digest. With `DeleteObjects` support still undecided, that means it is unsupported.
 TEST(IOTestAwsS3Client, DeleteObjectsFallsBackWhenNoDigestIsAccepted)
 {
