@@ -169,18 +169,14 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
 namespace
 {
 
-/// The storages that keep the data of `storage`, each with the kind of the inner table it is, if it is one. The data of a
-/// materialized view or a `TimeSeries` table is in its inner tables, which count whatever their engine: an inner table on
-/// no storage policy, e.g. `Memory`, keeps data that the storage policy doesn't provide. A standalone table counts only if
-/// it is a `MergeTreeData`, the only kind of table that keeps its data on a storage policy: other storages that report a
-/// policy keep no data of their own, `Alias`, `Distributed` and the `StorageProxy` wrappers report the policy of another
-/// table, or of their insert queue.
+/// The storages that keep the data of `storage`, each with the kind of the inner table it is, if it is one. Every inner
+/// table of a view or a `TimeSeries` table counts, whatever its engine. A standalone table counts only if it is a
+/// `MergeTreeData`: `Alias`, `Distributed` and `StorageProxy` report a storage policy but keep no data of their own.
 std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStorages(const StoragePtr & storage, const ContextPtr & context)
 {
     std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> data_storages;
 
-    /// A lazily loaded table is reached through `StorageTableProxy`, which reports no storage policy, so the loaded table
-    /// is used. Backing up or restoring the table loads it anyway.
+    /// Looks through the `StorageTableProxy` of a lazily loaded table, which reports no storage policy.
     auto add_inner_table = [&](ViewTarget::Kind target_kind, const StoragePtr & target)
     {
         if (auto merge_tree = castStorage<MergeTreeData>(target, DeferredTable::Load))
@@ -262,8 +258,7 @@ bool isAnyCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create
         if (!storage || !storage->engine || !storage->settings)
             return false;
 
-        /// Only an explicit `storage_policy` matters: a policy marked `backup_metadata_only` is read-only, so it can't be
-        /// the default one of tables, which have to be written.
+        /// Only an explicit `storage_policy` matters: a read-only policy can't be the default one.
         const auto * policy_name = storage->settings->changes.tryGet("storage_policy");
         if (!policy_name)
             return false;

@@ -39,9 +39,8 @@ bool isInnerTable(const String & database_name, const String & table_name);
 /// or a `TimeSeries` table is in its inner tables. Throws if only a part of the data is on such policies.
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context);
 
-/// For a table whose data is on such policies: the UUID of each table that keeps its data (the table itself, or the inner
-/// tables of a materialized view or a `TimeSeries` table), paired with the UUID that table has in `create_query_from_backup`.
-/// The data on the storage is the data of the backup only if they are equal.
+/// The UUID of each table that keeps the data of `storage`, paired with its UUID in `create_query_from_backup`. The data on
+/// the storage is the data of the backup only if they are equal.
 std::vector<std::pair<UUID, UUID>> getUUIDsOfDataStorages(
     const StoragePtr & storage, const ASTCreateQuery & create_query_from_backup, const ContextPtr & context);
 

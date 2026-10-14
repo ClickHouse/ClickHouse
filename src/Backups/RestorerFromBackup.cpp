@@ -868,8 +868,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
         if (create_table_query->uuid != UUIDHelpers::Nil && BackupUtils::isAnyCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
         {
-            /// `RESTORE` doesn't restore the data of a table on a `backup_metadata_only` storage policy, the table finds it on
-            /// its storage under a path derived from its UUID. So the table keeps the UUID it has in the backup.
+            /// The table finds its data on the storage under a path derived from its UUID, so it keeps its UUID from the backup.
             auto existing_table = DatabaseCatalog::instance().tryGetByUUID(create_table_query->uuid).second;
             if (existing_table)
             {
@@ -1094,12 +1093,8 @@ void RestorerFromBackup::skipTableDataOnBackupMetadataOnlyStoragePolicy(
             "all the data of its storage and the partition filter cannot be applied",
             tableNameWithTypeToString(table_name.database, table_name.table, false));
 
-    /// A table finds its data on the storage under a path derived from its UUID, so every table keeping the data (the table
-    /// itself, or the inner tables of a materialized view or a `TimeSeries` table) must have its UUID from the backup.
-    /// `createTable` keeps them when it sees the policy in the definition of the table, this catches the cases it doesn't,
-    /// e.g. an existing table restored with `create_table = 'must-exist'`. A table without a UUID, e.g. in an `Ordinary`
-    /// database, keeps its data under a path derived from its name, which `RESTORE ... AS` or a restore into another
-    /// database changes, so it is refused too.
+    /// Every table keeping the data must have its UUID from the backup, under which the storage keeps the data. This catches
+    /// what `createTable` doesn't, e.g. an existing table with `create_table = 'must-exist'`, or a database without UUIDs.
     const auto * create_query = create_table_query_from_backup ? create_table_query_from_backup->as<ASTCreateQuery>() : nullptr;
     if (!create_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup has no definition of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));

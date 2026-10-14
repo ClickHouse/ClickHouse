@@ -60,9 +60,8 @@ public:
     DiskPtr getDiskByName(const String & disk_name) const;
     /// Get free space from most free disk
     virtual UInt64 getMaxUnreservedFreeSpace() const = 0;
-    /// The data of tables on this policy is provided by the storage itself (e.g. a shared read-only dataset),
-    /// so `BACKUP` stores only their metadata and `RESTORE` recreates them without restoring data.
-    /// Set with `<backup_metadata_only>` in the policy configuration.
+    /// The storage provides the data of tables on this policy (`<backup_metadata_only>`), so `BACKUP` stores only their
+    /// metadata and `RESTORE` doesn't restore their data.
     virtual bool isBackupMetadataOnly() const = 0;
     /// Reserves space on any volume with index > min_volume_index or returns error
     virtual ReservationPtrOrError reserve(UInt64 bytes, size_t min_volume_index) const = 0;
