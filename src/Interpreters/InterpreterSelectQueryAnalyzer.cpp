@@ -415,8 +415,7 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         query_tree_pass_manager.runOnlyResolve(query_tree);
-        /// Not an optimization: a correlated subquery must not be read with parallel replicas. A shard is an
-        /// initiator for its replicas and plans here the body of a view the initiator never analyzed.
+        /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
         DisableParallelReplicasPass{}.run(query_tree, context);
     }
     else
