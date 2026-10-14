@@ -171,7 +171,7 @@ private:
         void detachSpillables();
         void registerSpillables(Node & node);
         void unregisterSpillables(Node & node);
-        bool scheduleSpill(Node & node, ISpillable * spillable, Queue & queue);
+        bool scheduleSpill(Node & node, ISpillable * spillable, Queue & queue) const;
         /// Caller holds the graph's `nodes_mutex` to keep candidate nodes alive.
         void scheduleSpills(Queue & queue);
 

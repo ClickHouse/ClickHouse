@@ -150,7 +150,7 @@ void ExecutingGraph::SpillState::unregisterSpillables(Node & node)
     }
 }
 
-bool ExecutingGraph::SpillState::scheduleSpill(Node & node, ISpillable * spillable, Queue & queue)
+bool ExecutingGraph::SpillState::scheduleSpill(Node & node, ISpillable * spillable, Queue & queue) const
 {
     /// Caller owns `status_mutex`. The owning status excludes both `prepare` and `work`.
     if (!memory_reservation || node.status != ExecStatus::Idle
