@@ -9,6 +9,10 @@ SET materialize_statistics_on_insert = 1;
 -- The printed conditions are mirrored when the join order optimizer swaps the sides
 -- (e.g. under randomized `query_plan_optimize_join_order_randomize`); disable it to keep them stable.
 SET query_plan_optimize_join_order_limit = 0;
+-- Keep the ORDER BY/LIMIT subqueries as explicit plan steps. An injected `__topKFilter`
+-- is itself a row-subset transformation, so its provenance intentionally invalidates value ranges.
+SET use_top_k_dynamic_filtering = 0;
+SET use_skip_indexes_for_top_k = 0;
 
 DROP TABLE IF EXISTS t_sel_edge_l;
 DROP TABLE IF EXISTS t_sel_edge_r;
@@ -65,13 +69,56 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 ) WHERE explain LIKE '%Conditions:%';
 
--- The row estimate cannot prove a limit does not truncate (e.g. a TopN read is already
--- scaled down by its `__topKFilter` prewhere), so even a limit above the table size drops
--- the value ranges.
-SELECT '-- limit above the table size also drops value ranges';
+-- Exact row tracking proves that an ORDER BY ... LIMIT above the table size does not truncate.
+-- The sort keeps the read exact, so the value ranges remain valid for selecting the most selective conditions.
+SELECT '-- ORDER BY and limit above the table size preserve value ranges';
 SELECT extract(explain, 'Conditions: .*') FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_r ORDER BY b3 LIMIT 1000000) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+-- Any predicate-filtered input fails closed even when the predicate happens to retain every row:
+-- whole-part ranges do not describe the produced relation.
+SELECT '-- WHERE on a join input drops value ranges: syntax order';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_r WHERE b2 < 5000) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT count(), sum(a1 + a3 + b1 + b3) FROM t_sel_edge_l AS l
+JOIN (SELECT * FROM t_sel_edge_r WHERE b2 < 5000) AS r
+ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3;
+
+SELECT count(), sum(a1 + a3 + b1 + b3) FROM t_sel_edge_l AS l,
+    (SELECT * FROM t_sel_edge_r WHERE b2 < 5000) AS r
+WHERE l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+SETTINGS join_algorithm = 'hash';
+
+-- Pin both PREWHERE optimizer modes because the stateless-test randomizer changes this setting.
+SELECT '-- the same filter as PREWHERE with optimization enabled';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l
+    JOIN (SELECT * FROM t_sel_edge_r WHERE b2 < 5000 SETTINGS optimize_move_to_prewhere = 1) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- the same filter as PREWHERE with optimization disabled';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l
+    JOIN (SELECT * FROM t_sel_edge_r WHERE b2 < 5000 SETTINGS optimize_move_to_prewhere = 0) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+-- Without ORDER BY, a trivial LIMIT is pushed into the read. Even when it equals the table size,
+-- the read cannot prove non-truncation and its whole-part ranges do not describe the produced relation.
+SELECT '-- trivial LIMIT equal to the table size still drops value ranges';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_r LIMIT 1000) AS r
     ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 ) WHERE explain LIKE '%Conditions:%';
 

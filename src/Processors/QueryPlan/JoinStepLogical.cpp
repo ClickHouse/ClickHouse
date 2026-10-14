@@ -50,6 +50,7 @@
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1105,11 +1106,13 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
         return {};
 
+    /// Uniform interpolation is valid only while the recorded range remains representative.
     auto get_range = [](const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand)
         -> std::optional<IEJoinOperandRange>
     {
         auto it = column_stats.find(operand.getColumnName());
-        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value
+            || !QueryPlanOptimizations::isRepresentativeValueRange(it->second.range_provenance))
             return {};
         auto min_value = statisticsFieldToFloat64(*it->second.min_value);
         auto max_value = statisticsFieldToFloat64(*it->second.max_value);

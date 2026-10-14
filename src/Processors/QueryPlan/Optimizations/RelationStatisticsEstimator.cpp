@@ -1,16 +1,16 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 
 #include <algorithm>
-#include <ranges>
-
-#include <fmt/ranges.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -20,7 +20,12 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -41,18 +46,6 @@ namespace QueryPlanOptimizations
 
 namespace
 {
-
-String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format(
-        "{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
-            ", "));
-}
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -78,12 +71,10 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
             continue;
         }
 
-        UInt64 key_number_of_distinct_values = key_stats->second.num_distinct_values;
-
-        if (input_stats.estimated_rows)
-            key_number_of_distinct_values = std::min(key_number_of_distinct_values, *input_stats.estimated_rows);
-
-        aggregation_stats.column_stats[key].num_distinct_values = key_number_of_distinct_values;
+        ColumnStats grouping_key_stats = QueryPlanOptimizations::makeGroupingKeyStats(
+            key_stats->second, input_stats.estimated_rows, input_stats.rows_exact);
+        const UInt64 key_number_of_distinct_values = grouping_key_stats.num_distinct_values;
+        aggregation_stats.column_stats.emplace(key, std::move(grouping_key_stats));
 
         /// For now assume that aggregation columns are independent, so multiply their NDVs
         if (total_number_of_distinct_values)
@@ -97,26 +88,167 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
 
     aggregation_stats.estimated_rows = total_number_of_distinct_values;
 
+    if (aggregating_step.isGroupingSets() || aggregator_params.overflow_row)
+        addTransformation(aggregation_stats.column_stats, Unsupported);
+
+    /// `max_rows_to_group_by` with overflow mode ANY keeps the first keys seen and BREAK stops reading:
+    /// either way the output key set is an order-dependent subset of the input's distinct keys.
+    if (aggregator_params.max_rows_to_group_by && aggregator_params.group_by_overflow_mode != OverflowMode::THROW)
+        addTransformation(aggregation_stats.column_stats, NonUniformRowSubset);
+
     return aggregation_stats;
 }
 
-/// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
-/// sorted range), so the child's value ranges and NULL fraction do not describe the output.
-/// Applied whenever a limit is present: the row estimate cannot prove the limit does not
-/// truncate (e.g. a TopN read is already scaled down by its `__topKFilter` prewhere).
-void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
+enum class UnaryStepStatsKind : UInt8
 {
-    for (auto & [_, stats] : column_stats)
+    Unsupported,
+    Limit,
+    Expression,
+    Filter,
+    Aggregating,
+    Sorting,
+    LogicalExchange,
+    ValuePreservingTransform,
+    PreservingTransform,
+};
+
+UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const LimitStep *>(&step))
+        return UnaryStepStatsKind::Limit;
+
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
     {
-        stats.min_value.reset();
-        stats.max_value.reset();
-        stats.null_fraction.reset();
+        /// ARRAY JOIN changes the number of rows. Keep this explicit instead of relying on the
+        /// generic transforming-step traits so the supported set cannot silently widen.
+        return expression_step->getExpression().hasArrayJoin()
+            ? UnaryStepStatsKind::Unsupported
+            : UnaryStepStatsKind::Expression;
     }
+
+    if (typeid_cast<const FilterStep *>(&step))
+        return UnaryStepStatsKind::Filter;
+    if (typeid_cast<const AggregatingStep *>(&step))
+        return UnaryStepStatsKind::Aggregating;
+    if (typeid_cast<const SortingStep *>(&step))
+        return UnaryStepStatsKind::Sorting;
+    if (dynamic_cast<const LogicalExchangeStep *>(&step))
+        return UnaryStepStatsKind::LogicalExchange;
+
+    /// Tees the same rows and columns to multiple consumers.
+    if (typeid_cast<const CommonSubplanStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Copies selected columns to a buffer while passing the input through unchanged.
+    if (typeid_cast<const SaveSubqueryResultToBufferStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Adds an extremes port without changing the main stream.
+    if (typeid_cast<const ExtremesStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Appends window result columns while leaving existing columns unchanged.
+    if (typeid_cast<const WindowStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Builds a runtime filter while passing the input through unchanged.
+    if (typeid_cast<const BuildRuntimeFilterStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Writes to the query-result cache while passing the input through unchanged.
+    if (typeid_cast<const StreamInQueryResultCacheStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+
+    if (const auto * transform = dynamic_cast<const ITransformingStep *>(&step);
+        transform && transform->getTransformTraits().preserves_number_of_rows)
+        return UnaryStepStatsKind::PreservingTransform;
+    return UnaryStepStatsKind::Unsupported;
 }
 
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step, RelationStats input_stats)
+{
+    switch (classifyUnaryStepStats(step))
+    {
+        case UnaryStepStatsKind::Limit:
+        {
+            const auto & limit_step = static_cast<const LimitStep &>(step);
+            const auto limit = limit_step.getLimit();
+            const auto offset = limit_step.getOffset();
+            const bool preserves_all_rows = input_stats.rows_exact && input_stats.estimated_rows && offset == 0
+                && *input_stats.estimated_rows <= limit;
+            if (preserves_all_rows)
+                return input_stats;
+
+            if (input_stats.rows_exact && input_stats.estimated_rows && !limit_step.withTies())
+            {
+                const UInt64 rows_after_offset = *input_stats.estimated_rows > offset ? *input_stats.estimated_rows - offset : 0;
+                input_stats.estimated_rows = std::min<UInt64>(rows_after_offset, limit);
+            }
+            else
+            {
+                if (!input_stats.estimated_rows || input_stats.estimated_rows > limit)
+                    input_stats.estimated_rows = limit;
+                input_stats.rows_exact = false;
+            }
+            addTransformation(input_stats.column_stats, NonUniformRowSubset);
+            return input_stats;
+        }
+        case UnaryStepStatsKind::Expression:
+        {
+            const auto & expression_step = static_cast<const ExpressionStep &>(step);
+            remapColumnStats(input_stats.column_stats, expression_step.getExpression());
+            return input_stats;
+        }
+        case UnaryStepStatsKind::Filter:
+        {
+            const auto & filter_step = static_cast<const FilterStep &>(step);
+            remapColumnStats(input_stats.column_stats, filter_step.getExpression());
+            addTransformation(input_stats.column_stats, RowSubset);
+            input_stats.rows_exact = false;
+            return input_stats;
+        }
+        case UnaryStepStatsKind::Aggregating:
+            return estimateAggregatingStepStats(static_cast<const AggregatingStep &>(step), input_stats);
+        case UnaryStepStatsKind::Sorting:
+        {
+            const auto & sorting_step = static_cast<const SortingStep &>(step);
+            if (sorting_step.getLimit())
+            {
+                const bool may_truncate_rows = !input_stats.rows_exact || !input_stats.estimated_rows
+                    || *input_stats.estimated_rows > sorting_step.getLimit();
+                /// A synthesized limit is not an exact row count when the input count is unknown.
+                if (!input_stats.estimated_rows)
+                    input_stats.rows_exact = false;
+                if (!input_stats.estimated_rows || input_stats.estimated_rows > sorting_step.getLimit())
+                    input_stats.estimated_rows = sorting_step.getLimit();
+                if (may_truncate_rows)
+                    addTransformation(input_stats.column_stats, NonUniformRowSubset);
+            }
+            return input_stats;
+        }
+        case UnaryStepStatsKind::LogicalExchange:
+            /// Estimates must see through exchanges: they do not change rows or values, and an
+            /// already-distributed subtree would otherwise report unknown cardinality, degrading
+            /// broadcast-vs-shuffle and join order decisions.
+            return input_stats;
+        case UnaryStepStatsKind::ValuePreservingTransform:
+            return input_stats;
+        case UnaryStepStatsKind::PreservingTransform:
+            /// Preserving row count alone does not prove that the key values are preserved. Known
+            /// value-preserving steps are allow-listed in `classifyUnaryStepStats`; anything else
+            /// fails closed. Keep observed values for diagnostics and record that they are unsupported.
+            addTransformation(input_stats.column_stats, Unsupported);
+            return input_stats;
+        case UnaryStepStatsKind::Unsupported:
+            return std::nullopt;
+    }
+    UNREACHABLE();
+}
+
+namespace
+{
+
+/// Statistics of a node that is estimated without first estimating a child: a read step or an
+/// already optimized logical join. Returns `std::nullopt` for every other step.
+std::optional<RelationStats>
+estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -145,7 +277,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// analysis results can be placeholders for deferred work, so only propagate zero
         /// when `has_exact_ranges` is set.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
-            return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
+            return RelationStats{.estimated_rows = 0, .table_name = table_display_name, .rows_exact = true};
 
         /// `STREAM` defers range analysis until execution. Its placeholder result has zero
         /// selected rows but does not mean that the relation is empty.
@@ -158,23 +290,54 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .source = RowEstimateSource::NoStatistics};
         }
 
+        auto prewhere_info = reading->getPrewhereInfo();
+        const ActionsDAG::Node * prewhere_node = prewhere_info
+            ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+            : nullptr;
+        const auto & query_info = reading->getQueryInfo();
+        const bool has_final = query_info.isFinal();
+        const bool has_lightweight_deleted_rows
+            = analyzed_result
+            && std::ranges::any_of(
+                  analyzed_result->parts_with_ranges,
+                  [](const auto & part)
+                  { return part.data_part->hasLightweightDelete() || (part.parent_part && part.parent_part->hasLightweightDelete()); });
+        const auto mutations_snapshot = reading->getMutationsSnapshot();
+        const bool has_on_fly_data_changes = mutations_snapshot
+            && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts());
+        const bool has_masking_policy = reading->getMergeTreeData().hasEnabledMaskingPolicies(reading->getContext());
+        /// These transformations can rewrite values, so the on-disk NDVs and ranges are no longer bounds.
+        /// In particular, FINAL can synthesize values in SummingMergeTree, AggregatingMergeTree and
+        /// GraphiteMergeTree. Treat every FINAL read conservatively so new merge modes fail closed.
+        const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy || has_final;
+        /// Predicates cover explicit, deferred and row-policy filters; query modifiers cover `FINAL`,
+        /// `SAMPLE`, stream reads and trivial limits; deleted rows, vector-index selection and the
+        /// top-k skip-index threshold can prune rows without a filter step in the plan. A transaction
+        /// snapshot is deliberately absent: the visible parts are the exact input for that read.
+        const bool has_row_subset = filter || prewhere_info || reading->getRowLevelFilter() || reading->getFilterActionsDAG()
+            || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || has_final || query_info.isStream()
+            || query_info.trivial_limit || has_lightweight_deleted_rows || reading->getVectorSearchParameters().has_value()
+            || reading->isSelectedForTopKFilterOptimization()
+            || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio());
+        const bool has_inexact_row_count = has_row_subset || has_on_fly_data_changes;
+
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
-                auto prewhere_info = reading->getPrewhereInfo();
-                const ActionsDAG::Node * prewhere_node = prewhere_info
-                    ? static_cast<const ActionsDAG::Node *>(
-                          prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
-                    : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
+                    .rows_exact = !has_inexact_row_count,
                     .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                if (has_row_subset)
+                    addTransformation(stats.column_stats, RowSubset);
+                if (has_unsupported_value_changes)
+                    addTransformation(stats.column_stats, Unsupported);
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return stats;
             }
         }
@@ -208,7 +371,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             if (is_filtered_by_index)
                 break;
         }
-        bool has_filter = filter || reading->getPrewhereInfo();
+        bool has_filter = filter || prewhere_info;
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
@@ -223,6 +386,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .estimated_rows = analyzed_result->selected_rows,
             .table_name = table_display_name,
             .imprecise_estimate = true,
+            .rows_exact = !has_inexact_row_count,
             .source = RowEstimateSource::PrimaryIndex};
     }
 
@@ -241,86 +405,56 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// which is not linked to current module
     if (step->getName() == "ReadFromSystemOne")
     {
-        /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
-        return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
-    }
-
-    if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
-    {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
-    }
-
-    if (node.children.size() != 1)
-        return {};
-
-    if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
-    {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
-        auto limit = limit_step->getLimit();
-        if (!estimated.estimated_rows || estimated.estimated_rows > limit)
-            estimated.estimated_rows = limit;
-        clearColumnValueRanges(estimated.column_stats);
-        return estimated;
-    }
-
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
-        expression_step && !expression_step->getExpression().hasArrayJoin())
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        remapColumnStats(stats.column_stats, expression_step->getExpression());
-        return stats;
-    }
-
-    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
-    {
-        const auto & dag = filter_step->getExpression();
-        const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
-        remapColumnStats(stats.column_stats, filter_step->getExpression());
-        return stats;
-    }
-
-    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
-        return aggregation_stats;
+        /// system.one always produces exactly one row - used to implement constant SELECTs like `SELECT 1`.
+        return RelationStats{.estimated_rows = 1, .table_name = "system.one", .rows_exact = true};
     }
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
+        /// Without the explicit opt-in, keep the previous behavior: a sub-join reports unknown statistics.
+        if (!options.propagate_join_estimates)
+            return RelationStats{};
+
         /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
         /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
-        return RelationStats{
+        auto stats = RelationStats{
             .estimated_rows = join_step->getResultRowsEstimation(),
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
             .imprecise_estimate = join_step->hasImpreciseEstimate()};
-    }
-
-    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        if (sorting_step->getLimit())
-        {
-            if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
-                stats.estimated_rows = sorting_step->getLimit();
-            clearColumnValueRanges(stats.column_stats);
-        }
+        addTransformation(stats.column_stats, Unsupported);
+        const auto strictness = join_step->getJoinOperator().strictness;
+        if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+            addTransformation(stats.column_stats, RowSubset);
         return stats;
     }
 
-    /// Estimates must see through exchanges: they do not change row counts, and an
-    /// already-distributed subtree would otherwise report unknown cardinality, degrading
-    /// broadcast-vs-shuffle and join order decisions.
-    if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter);
+    return std::nullopt;
+}
 
-    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
-        transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+}
 
-    return {};
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options)
+{
+    if (auto direct_stats = estimateDirectRelationStats(node, filter, options))
+        return std::move(*direct_stats);
+
+    if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
+        return estimateReadRowsCount(*reference->getSubplanReferenceRoot(), filter, options);
+
+    /// Unsupported steps must stop before their children are visited: the result is unknown anyway.
+    if (node.children.size() != 1 || classifyUnaryStepStats(*node.step) == UnaryStepStatsKind::Unsupported)
+        return {};
+
+    const ActionsDAG::Node * child_filter = filter;
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get()))
+    {
+        const auto & dag = filter_step->getExpression();
+        child_filter = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+    }
+
+    auto input_stats = estimateReadRowsCount(*node.children.front(), child_filter, options);
+    return estimateUnaryStepStats(*node.step, std::move(input_stats)).value_or(RelationStats{});
 }
 
 }
