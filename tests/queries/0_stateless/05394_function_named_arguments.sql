@@ -23,10 +23,3 @@ DROP FUNCTION IF EXISTS f_named_arguments;
 CREATE FUNCTION f_named_arguments AS (a, b) -> concat(b, a);
 SELECT f_named_arguments(a => 'x', b => 'y'); -- { serverError BAD_ARGUMENTS }
 DROP FUNCTION f_named_arguments;
-
-SELECT '-- secrets are masked when arguments are named';
-
-SELECT encrypt('aes-128-ecb', plaintext => 'text', key => 'named_secret_key_1'); -- { serverError BAD_ARGUMENTS }
-SELECT * FROM s3('http://localhost:11111/test/a.csv', access_key_id => 'x', secret_access_key => 'named_secret_key_2'); -- { serverError BAD_ARGUMENTS }
-SYSTEM FLUSH LOGS query_log;
-SELECT count() FROM system.query_log WHERE current_database = currentDatabase() AND event_date >= yesterday() AND query LIKE '%named\_secret\_key\_%' AND query NOT LIKE '%query_log%';

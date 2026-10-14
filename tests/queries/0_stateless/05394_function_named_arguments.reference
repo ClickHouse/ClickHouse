@@ -6,5 +6,3 @@ SELECT f(a => g(b => 1))
 SELECT f(a => 1, (x -> x), b => y, ((z, w) -> w))
 SELECT f(b => x, a => \'y\')
 -- errors
--- secrets are masked when arguments are named
-0

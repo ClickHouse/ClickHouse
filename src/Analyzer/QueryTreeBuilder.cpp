@@ -826,7 +826,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Named argument {} is allowed only as an argument of an ordinary function",
-            expression->formatForErrorMessage());
+            backQuoteIfNeed(expression->as<ASTNamedArgument &>().name));
     }
     else
     {
