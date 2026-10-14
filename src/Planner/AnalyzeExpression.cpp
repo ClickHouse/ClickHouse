@@ -508,9 +508,22 @@ static void applyASTNamingAndAppendSourceColumns(
     /// Rename outputs to match AST column names (overrides the above for
     /// top-level expressions where AST formatting may differ from the
     /// recursive function-name rebuild).
+    ///
+    /// An output can be an input node itself (e.g. a SQL UDF `x -> x` applied to a column) or
+    /// a node shared by several outputs. Renaming such a node in place would change the
+    /// required input name or the name of another output, so add an alias for it instead.
     for (size_t i = 0; i < outputs.size(); ++i)
     {
-        if (outputs[i]->result_name != ast_column_names[i])
+        if (outputs[i]->result_name == ast_column_names[i])
+            continue;
+
+        bool is_shared = outputs[i]->type == ActionsDAG::ActionType::INPUT;
+        for (size_t j = 0; j < outputs.size() && !is_shared; ++j)
+            is_shared = j != i && outputs[j] == outputs[i];
+
+        if (is_shared)
+            outputs[i] = &actions.addAlias(*outputs[i], ast_column_names[i]);
+        else
             const_cast<ActionsDAG::Node *>(outputs[i])->result_name = ast_column_names[i];
     }
 
