@@ -1,0 +1,9 @@
+wrapped bbox: 170.0 -170.0
+--- a polygon with a bounding box crossing the antimeridian
+1
+1
+--- NULL points read as (0, 0)
+(0,0)
+(0,0)
+--- pruning still works if the filter does not contain (0, 0)
+ParquetPrunedRowGroups: 1

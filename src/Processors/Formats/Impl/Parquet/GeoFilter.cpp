@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <unordered_set>
 
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
@@ -96,6 +97,19 @@ std::optional<SpatialFilter> tryExtractSpatialFilterFromNode(const ActionsDAG::N
     return filter;
 }
 
+/// Whether the column chunk contains only points and multipoints (also with Z and/or M coordinates).
+bool geospatialStatisticsHaveOnlyPoints(const parq::GeospatialStatistics & statistics)
+{
+    /// An empty list means that the types are unknown.
+    if (statistics.geospatial_types.empty())
+        return false;
+    return std::ranges::all_of(statistics.geospatial_types, [](Int32 geospatial_type)
+    {
+        Int32 base_type = geospatial_type % 1000;
+        return geospatial_type > 0 && (base_type == 1 || base_type == 4);
+    });
+}
+
 }
 
 std::vector<SpatialFilter> extractSpatialFilters(
@@ -158,14 +172,32 @@ bool rowGroupFailsSpatialFilters(
             continue;
         /// For X only, `xmin > xmax` is allowed by the spec: the bounding box crosses the
         /// antimeridian, and the X range is the union of [xmin, +inf) and (-inf, xmax].
-        bool x_disjoint = bbox.xmin <= bbox.xmax
-            ? (bbox.xmax < filter.query_xmin || bbox.xmin > filter.query_xmax)
-            : (filter.query_xmax < bbox.xmin && filter.query_xmin > bbox.xmax);
+        /// It bounds the vertices, but not the straight segments between them, which the
+        /// Cartesian predicates use: a segment from 170 to -170 crosses 0. So the wrapped X range
+        /// is used only if the column chunk is known to contain only points.
+        bool x_disjoint = false;
+        if (bbox.xmin <= bbox.xmax)
+            x_disjoint = bbox.xmax < filter.query_xmin || bbox.xmin > filter.query_xmax;
+        else if (geospatialStatisticsHaveOnlyPoints(col_meta.geospatial_statistics))
+            x_disjoint = filter.query_xmax < bbox.xmin && filter.query_xmin > bbox.xmax;
         bool disjoint = x_disjoint
                       || bbox.ymax < filter.query_ymin
                       || bbox.ymin > filter.query_ymax;
-        if (disjoint)
-            return true;
+        if (!disjoint)
+            continue;
+
+        /// The bounding box covers only non-NULL geometries. If the column is read as a
+        /// non-nullable type, NULLs become default values, e.g. the point (0, 0), which can match
+        /// the predicate.
+        bool may_have_nulls = !geo_col->output_nullable
+            && std::ranges::any_of(geo_col->levels, [](const auto & level) { return !level.is_array; })
+            && !(col_meta.__isset.statistics && col_meta.statistics.__isset.null_count && col_meta.statistics.null_count == 0);
+        bool origin_matches = filter.query_xmin <= 0 && filter.query_xmax >= 0
+                            && filter.query_ymin <= 0 && filter.query_ymax >= 0;
+        if (may_have_nulls && origin_matches)
+            continue;
+
+        return true;
     }
 
     return false;
