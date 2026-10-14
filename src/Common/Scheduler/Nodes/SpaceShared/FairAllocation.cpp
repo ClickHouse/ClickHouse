@@ -100,23 +100,26 @@ ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest & ki
 void FairAllocation::approveIncrease()
 {
     chassert(increase);
+    // Child approval can synchronously propagate a new selection back to this node.
+    auto & approved_child = *increase_child;
     SCHED_DBG("{} -- approveIncrease(child={}, id={}, size={})",
-        getPath(), increase_child->basename, increase->allocation.id, increase->size);
+        getPath(), approved_child.basename, increase->allocation.id, increase->size);
     apply(*increase);
     increase = nullptr;
-    increase_child->approveIncrease();
-    setIncrease(*increase_child, increase_child->increase, false);
+    approved_child.approveIncrease();
+    setIncrease(approved_child, approved_child.increase, false);
 }
 
 void FairAllocation::approveDecrease()
 {
     chassert(decrease);
+    auto & approved_child = *decrease_child;
     SCHED_DBG("{} -- approveDecrease(child={}, id={}, size={})",
-        getPath(), decrease_child->basename, decrease->allocation.id, decrease->size);
+        getPath(), approved_child.basename, decrease->allocation.id, decrease->size);
     apply(*decrease);
     decrease = nullptr;
-    decrease_child->approveDecrease();
-    setDecrease(*decrease_child, decrease_child->decrease, false);
+    approved_child.approveDecrease();
+    setDecrease(approved_child, approved_child.decrease, false);
 }
 
 void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)

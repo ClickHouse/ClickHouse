@@ -100,30 +100,33 @@ ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseReques
 void PrecedenceAllocation::approveIncrease()
 {
     chassert(increase);
+    // Child approval can synchronously propagate a new selection back to this node.
+    auto & approved_child = *increase_child;
     SCHED_DBG("{} -- approveIncrease(child={}, id={}, size={})",
-        getPath(), increase_child->basename, increase->allocation.id, increase->size);
+        getPath(), approved_child.basename, increase->allocation.id, increase->size);
     apply(*increase);
-    if (!increase_child->isRunning()) // We are adding the first allocation
-        running_children.insert(*increase_child);
+    if (!approved_child.isRunning()) // We are adding the first allocation
+        running_children.insert(approved_child);
     increase = nullptr;
-    increase_child->approveIncrease();
+    approved_child.approveIncrease();
 
-    setIncrease(*increase_child, increase_child->increase, false);
+    setIncrease(approved_child, approved_child.increase, false);
 }
 
 void PrecedenceAllocation::approveDecrease()
 {
     chassert(decrease);
+    auto & approved_child = *decrease_child;
     SCHED_DBG("{} -- approveDecrease(child={}, id={}, size={})",
-        getPath(), decrease_child->basename, decrease->allocation.id, decrease->size);
+        getPath(), approved_child.basename, decrease->allocation.id, decrease->size);
     apply(*decrease);
-    chassert(decrease_child->isRunning());
+    chassert(approved_child.isRunning());
     // Check if we are removing the last running allocation of the child
-    if (decrease->removing_allocation && decrease_child->allocations == 1)
-        running_children.erase(running_children.iterator_to(*decrease_child));
+    if (decrease->removing_allocation && approved_child.allocations == 1)
+        running_children.erase(running_children.iterator_to(approved_child));
     decrease = nullptr;
-    decrease_child->approveDecrease();
-    setDecrease(*decrease_child, decrease_child->decrease, false);
+    approved_child.approveDecrease();
+    setDecrease(approved_child, approved_child.decrease, false);
 }
 
 void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)

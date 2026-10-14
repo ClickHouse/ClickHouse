@@ -5,6 +5,7 @@
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/MemoryTracker.h>
 
@@ -1006,6 +1007,59 @@ TEST(SchedulerSpaceShared, SpillReordersGrowthAndEviction)
         queue->processActivation();
         expect_order(a, b);
     });
+}
+
+
+TEST(SchedulerSpaceShared, SpillReselectionDuringIncreaseApproval)
+{
+    for (bool use_precedence : {false, true})
+    {
+        SCOPED_TRACE(use_precedence);
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        if (use_precedence)
+            r.root_node = std::make_shared<PrecedenceAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+        else
+            r.root_node = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo{});
+        auto * policy = static_cast<ISpaceSharedNode *>(r.root_node.get());
+        auto * limit = r.addLimit("/limit", 900);
+        auto * queue = r.addQueueUnder("/limit/queue", limit);
+        r.registerResource();
+
+        SpillableAllocation a(queue, "a", 100);
+        SpillableAllocation b(queue, "b", 300);
+        SpillableAllocation c(queue, "c", 200);
+        r.setSoftLimit(limit, 600);
+
+        r.execute([&]
+        {
+            c.reportReclaimable(200);
+            queue->increaseAllocation(a, 100);
+            queue->increaseAllocation(b, 100);
+            queue->increaseAllocation(c, 250);
+            queue->processActivation();
+            ASSERT_NE(t.scheduler.increase, nullptr);
+            ASSERT_EQ(&t.scheduler.increase->allocation, &a);
+
+            // Approving `a` selects `b` next. Requesting a spill of 100 from `c` lowers its key
+            // from 450 to 350, ahead of `b`'s 400. Its increase exceeds the hard limit (700 + 250 > 900), so the
+            // policy's selected child becomes null before its approval returns.
+            t.scheduler.approveIncrease();
+            EXPECT_EQ(a.size(), 200);
+            EXPECT_EQ(b.size(), 300);
+            EXPECT_EQ(c.size(), 200);
+            EXPECT_EQ(c.takeSpillRequest(), 100);
+            ASSERT_NE(queue->increase, nullptr);
+            EXPECT_EQ(&queue->increase->allocation, &c);
+            for (auto * node : std::initializer_list<ISpaceSharedNode *>{limit, policy, &t.scheduler})
+            {
+                EXPECT_EQ(node->increase, nullptr);
+                EXPECT_EQ(node->allocated, 700);
+                EXPECT_EQ(node->reclaimable, 100);
+                EXPECT_EQ(node->reclaiming, 100);
+            }
+        });
+    }
 }
 
 
