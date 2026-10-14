@@ -66,7 +66,7 @@ namespace Setting
 namespace
 {
 
-/// Wrapper storages answer both predicates by walking what they wrap, so they are memoized per visitor.
+/// Wrapper storages answer these predicates by walking what they wrap, so they are memoized per visitor.
 struct SubcolumnSupportAnswers
 {
     bool all_transformers;
@@ -80,7 +80,7 @@ SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, S
 {
     auto it = cache.find(&storage);
     if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt, std::nullopt}).first;
     return it->second;
 }
 
