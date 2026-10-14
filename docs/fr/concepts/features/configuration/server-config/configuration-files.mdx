@@ -359,11 +359,9 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-<div id="example-1">
-  ## Exemples YAML
-</div>
+## Exemples YAML {#example-1}
 
-Vous trouverez ici la configuration par défaut écrite en YAML : [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
+Vous trouverez ici la configuration par défaut écrite en YAML : [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 
 Il existe quelques différences entre les formats YAML et XML pour les configurations ClickHouse.
 Des conseils pour écrire une configuration au format YAML sont présentés ci-dessous.
@@ -374,13 +372,13 @@ Une balise XML contenant une valeur textuelle est représentée par une paire cl
 key: value
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <key>value</key>
 ```
 
-Un nœud XML imbriqué est représenté par une structure de mappage YAML :
+Un nœud XML imbriqué est représenté par une structure de mappage YAML :
 
 ```yaml
 map_key:
@@ -389,7 +387,7 @@ map_key:
   key3: val3
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <map_key>
@@ -399,7 +397,7 @@ XML correspondant :
 </map_key>
 ```
 
-Pour créer plusieurs occurrences de la même balise XML, utilisez une séquence YAML :
+Pour créer plusieurs occurrences de la même balise XML, utilisez une séquence YAML :
 
 ```yaml
 seq_key:
@@ -411,7 +409,7 @@ seq_key:
       key3: val5
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <seq_key>val1</seq_key>
@@ -427,7 +425,7 @@ XML correspondant :
 </seq_key>
 ```
 
-Pour spécifier un attribut XML, vous pouvez utiliser une clé d’attribut avec le préfixe `@`. Notez que `@` est réservé par la norme YAML et doit donc être placé entre guillemets doubles :
+Pour spécifier un attribut XML, vous pouvez utiliser une clé d’attribut avec le préfixe `@`. Notez que `@` est réservé par la norme YAML et doit donc être placé entre guillemets doubles :
 
 ```yaml
 map:
@@ -436,7 +434,7 @@ map:
   key: 123
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <map attr1="value1" attr2="value2">
@@ -444,7 +442,7 @@ XML correspondant :
 </map>
 ```
 
-Il est également possible d’utiliser des attributs dans une séquence YAML :
+Il est également possible d’utiliser des attributs dans une séquence YAML :
 
 ```yaml
 seq:
@@ -454,7 +452,7 @@ seq:
   - abc
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <seq attr1="value1" attr2="value2">123</seq>
@@ -462,7 +460,7 @@ XML correspondant :
 ```
 
 La syntaxe mentionnée ci-dessus ne permet pas de représenter en YAML des nœuds de texte XML avec des attributs XML. Ce cas particulier peut être représenté à l’aide d’une
-clé d’attribut `#text` :
+clé d’attribut `#text` :
 
 ```yaml
 map_key:
@@ -470,7 +468,7 @@ map_key:
   "#text": value2
 ```
 
-XML correspondant :
+XML correspondant :
 
 ```xml
 <map_key attr1="value1">value2</map_key>

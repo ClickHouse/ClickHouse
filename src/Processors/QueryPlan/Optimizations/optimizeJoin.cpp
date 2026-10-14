@@ -202,8 +202,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     const auto & table_join = join->getTableJoin();
 
     /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
-    const auto * hash_join = typeid_cast<const HashJoin *>(join.get());
-    if (table_join.kind() != JoinKind::Inner && !hash_join)
+    bool allow_outer_join = typeid_cast<const HashJoin *>(join.get());
+    if (table_join.kind() != JoinKind::Inner && !allow_outer_join)
         return true;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
@@ -212,22 +212,20 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
         return true;
 
     bool need_swap = false;
-    std::optional<UInt64> lhs_estimation;
     if (!join_step->swap_join_tables.has_value())
     {
-        lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_estimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
+        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
-            lhs_estimation ? toString(lhs_estimation.value()) : "unknown",
-            rhs_estimation ? toString(rhs_estimation.value()) : "unknown");
+            lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
+            rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
 
-        if (lhs_estimation && rhs_estimation && lhs_estimation < rhs_estimation)
+        if (lhs_extimation && rhs_extimation && lhs_extimation < rhs_extimation)
             need_swap = true;
     }
     else if (join_step->swap_join_tables.value())
     {
         need_swap = true;
-        lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
     }
 
     if (!need_swap)
@@ -242,15 +240,7 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
-    /// After the swap the old left stream is the build side. Recompute the layout from that
-    /// estimate; `HashJoin::clone` would keep the pre-swap `use_parallel_layout`.
-    const bool use_parallel_layout
-        = preferParallelHashLayout(updated_table_join->kind(), lhs_estimation, updated_table_join->parallelHashJoinThreshold());
-    JoinPtr updated_join;
-    if (hash_join)
-        updated_join = hash_join->cloneWithParallelLayout(updated_table_join, left_stream_input_header, use_parallel_layout);
-    else
-        updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
+    auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
 
     /// After swapping, the join output may lose columns because TableJoin::swapSides
     /// swaps result_columns_from_left_table with columns_added_by_join, and the join
@@ -305,6 +295,12 @@ struct QueryGraphBuilder
     std::unordered_map<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
     /// ON-clause predicates of outer joins, see QueryGraph::outer_join_conditions
     std::unordered_map<JoinActionRef, size_t> outer_join_conditions;
+
+    /// Whether the disjunction push-down already ran on the joins this graph was built from. Reordering
+    /// rebuilds the join steps, and a fresh step would let the push-down run a second time and add the
+    /// same partial predicate again - a filter the read already applies through PREWHERE. Only a plan
+    /// that is optimized more than once reaches that state (the parallel-replicas plan-based path does).
+    bool disjunctions_optimization_applied = false;
 
     /// One record per binary join operator of the original tree, captured for the optional conflict
     /// detector (CD-A/CD-C). Relation ids are local to this (sub)graph and shifted in `uniteGraphs`.
@@ -390,6 +386,10 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
     for (const auto & [action, null_rel] : rhs_outer_conditions_raw)
         lhs.outer_join_conditions[JoinActionRef(action, lhs.expression_actions)] = null_rel + shift;
+
+    /// The mark belongs to the flattened graph as a whole: reordering rebuilds every join step from it,
+    /// so a mark carried by any join of the merged sub-graph has to survive the merge.
+    lhs.disjunctions_optimization_applied |= rhs.disjunctions_optimization_applied;
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
@@ -445,6 +445,9 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
     return false;
 }
 
+/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
+/// allows it and the expression cannot be applied twice by the name-based merge.
+///
 /// Merging puts the expression into the join graph, where reordering can leave it computed twice from the
 /// raw inputs - once for the join key that decides matching and once for the output column - and can also
 /// evaluate it on rows the original join order would have discarded. An expression whose result or whose
@@ -452,27 +455,7 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
 /// non-deterministic function draws independently in the two places, so the returned rows can violate the
 /// query's own `JOIN ON` condition, a stateful function (`aiEmbed`, `timeSeriesStoreTags`, ...) makes
 /// extra external calls or mutates per-query state, and a function with observable side effects (`sleep`)
-/// spends a different amount of time and accounts different profile events. A lambda without captures is
-/// constant-folded into a `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body
-/// from a plain scan over the function nodes, so the check descends into it with `allNodeFunctions`.
-static bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
-{
-    auto is_insensitive = [](const IFunctionBase & function)
-    {
-        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
-    };
-
-    for (const auto & node : dag.getNodes())
-    {
-        if (!allNodeFunctions(node, is_insensitive))
-            return true;
-    }
-
-    return false;
-}
-
-/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
-/// allows it and the expression cannot be applied twice by the name-based merge.
+/// spends a different amount of time and accounts different profile events.
 static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
 {
     if (!merge_expression_into_join)
@@ -598,11 +581,18 @@ static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
         /// comparisons (the atoms of equi/theta-join predicates)
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
-        "plus", "minus", "multiply", "divide", "modulo", "negate",
+        "plus", "minus", "multiply", "divide", "divideExact", "modulo", "negate",
         "CAST", "_CAST",
     };
     const auto & name = node.function_base->getName();
     if (!names.contains(name))
+        return false;
+    /// The operands of a join key comparison are brought to a common supertype only when the physical
+    /// join is built (`predicateOperandsToCommonType`), after reordering. With a `Variant`/`Dynamic`/
+    /// `JSON` operand that supertype is `Variant`/`Dynamic`, so a `Nullable` operand is cast to it and a
+    /// NULL key then matches a NULL key: the comparison does not reject a null-extended row.
+    if (std::ranges::any_of(node.children, [](const auto * child)
+            { return isVariant(child->result_type) || isDynamic(child->result_type) || isObject(child->result_type); }))
         return false;
     /// A cast to a non-`Nullable` type raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` rather than
     /// returning `NULL`; a cast to `Variant`/`Dynamic` returns `NULL` but a join on such a key
@@ -689,6 +679,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical expected");
+    query_graph.disjunctions_optimization_applied |= join_step->isDisjunctionsOptimizationApplied();
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
@@ -949,12 +940,19 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
 
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
+    const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
+
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
+    for (size_t i = 0; i < query_graph_builder.inputs.size(); ++i)
+    {
+        if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
+            query_graph.prepared_storage_relations.set(i);
+    }
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
@@ -1306,6 +1304,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 actions_after_join,
                 join_settings,
                 sorting_settings);
+
+            join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
 
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;

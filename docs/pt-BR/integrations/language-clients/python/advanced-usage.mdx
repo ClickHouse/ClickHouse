@@ -7,15 +7,11 @@ title: 'Uso avançado'
 doc_type: 'reference'
 ---
 
-<div id="raw-api">
-  ## API bruta
-</div>
+## API bruta {#raw-api}
 
 Para casos de uso que não exigem transformação entre dados do ClickHouse e tipos de dados e estruturas nativos ou de terceiros, o cliente ClickHouse Connect fornece métodos para usar diretamente a conexão com o ClickHouse.
 
-<div id="client-rawquery-method">
-  ### Método `raw_query` do cliente
-</div>
+### Método `raw_query` do cliente {#client-rawquery-method}
 
 O método `Client.raw_query` permite usar diretamente a interface HTTP de consulta do ClickHouse por meio da conexão do cliente. O valor retornado é um objeto `bytes` não processado. Ele oferece um wrapper conveniente com vinculação de parâmetros, tratamento de erros, novas tentativas e gerenciamento de configurações por meio de uma interface mínima:
 
@@ -31,15 +27,11 @@ O método `Client.raw_query` permite usar diretamente a interface HTTP de consul
 
 Cabe a quem faz a chamada lidar com o objeto `bytes` resultante. Observe que `Client.query_arrow` é apenas um wrapper leve em torno desse método, usando o formato de saída `Arrow` do ClickHouse.
 
-<div id="client-rawstream-method">
-  ### Método `raw_stream` do Client
-</div>
+### Método `raw_stream` do Client {#client-rawstream-method}
 
 O método síncrono `Client.raw_stream` tem a mesma API de `raw_query`, mas retorna um fluxo `io.IOBase` de fragmentos de bytes. Feche o fluxo quando o processamento for concluído. `AsyncClient.raw_stream` deve ser aguardado com `await` e retorna um `StreamContext` assíncrono para uso com `async with` e `async for`.
 
-<div id="client-rawinsert-method">
-  ### Método `raw_insert` do cliente
-</div>
+### Método `raw_insert` do cliente {#client-rawinsert-method}
 
 O método `Client.raw_insert` permite inserts diretos de objetos `bytes` ou geradores de objetos `bytes` usando a conexão do cliente. Como ele não faz nenhum processamento do payload de insert, oferece alto desempenho. O método fornece opções para especificar configurações e o formato de insert:
 
@@ -55,9 +47,7 @@ O método `Client.raw_insert` permite inserts diretos de objetos `bytes` ou gera
 
 É responsabilidade de quem chama garantir que o `insert_block` esteja no formato especificado e use o método de compressão especificado. O ClickHouse Connect usa esses inserts brutos para uploads de arquivos e tabelas PyArrow, delegando o parsing ao servidor ClickHouse.
 
-<div id="saving-query-results-as-files">
-  ## Salvando resultados de consultas em arquivos
-</div>
+## Salvando resultados de consultas em arquivos {#saving-query-results-as-files}
 
 Você pode transferir arquivos diretamente do ClickHouse para o sistema de arquivos local usando o método `raw_stream`. Por exemplo, se quiser salvar os resultados de uma consulta em um arquivo CSV, poderá usar o seguinte trecho de código:
 
@@ -93,9 +83,7 @@ O código acima gera um arquivo `output.csv` com o seguinte conteúdo:
 
 Da mesma forma, você pode salvar dados em [TabSeparated](/pt-BR/reference/formats/TabSeparated/TabSeparated) e em outros formatos. Consulte [Formatos para dados de entrada e saída](/pt-BR/reference/formats) para ter uma visão geral de todas as opções de formato disponíveis.
 
-<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
-  ## Casos de uso multithread, multiprocesso e assíncronos/orientados a eventos
-</div>
+## Casos de uso multithread, multiprocesso e assíncronos/orientados a eventos {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
 O ClickHouse Connect funciona bem em aplicações multithread, multiprocesso e orientadas a loop de eventos/assíncronas. Todo o processamento de consultas e inserts ocorre em uma única thread, portanto as operações em geral são thread-safe. (O processamento paralelo de algumas operações em baixo nível é uma possível melhoria futura para superar a perda de desempenho de uma única thread, mas, mesmo nesse caso, a segurança entre threads será mantida.)
 
@@ -103,9 +91,7 @@ Como cada consulta ou insert executado mantém estado em seu próprio objeto `Qu
 
 Além disso, em uma aplicação que tenha duas ou mais consultas e/ou inserts &quot;em andamento&quot; ao mesmo tempo, há mais dois pontos a considerar. O primeiro é a &quot;sessão&quot; do ClickHouse associada à consulta/insert, e o segundo é o pool de conexões HTTP usado pelas instâncias do cliente ClickHouse Connect.
 
-<div id="asyncclient">
-  ## AsyncClient
-</div>
+## AsyncClient {#asyncclient}
 
 O ClickHouse Connect fornece um cliente nativo, baseado em aiohttp, para aplicações com asyncio. Instale a dependência opcional antes de usá-lo:
 
@@ -134,6 +120,8 @@ asyncio.run(main())
 
 O cliente assíncrono segue o mesmo contrato de query, insert, raw, Arrow e streaming do cliente síncrono. Ele usa aiohttp para E/S de rede. A análise do formato Native com uso intensivo de CPU pode ser executada em um executor para não bloquear o loop de eventos.
 
+Um cliente assíncrono é dono de uma sessão aiohttp criada em um loop de eventos. Antes de mover o cliente para outro loop de eventos, feche-o no loop proprietário e, em seguida, chame `await client._initialize()` no novo loop antes de fazer requisições. Se o loop proprietário já tiver sido encerrado, chame `await client.close()` seguido de `await client._initialize()` no loop atual. O aiohttp ainda pode reportar um transporte não fechado quando a limpeza só começa depois que o loop proprietário já foi encerrado. Por isso, sempre que possível, feche o cliente antes de transferi-lo.
+
 Os métodos assíncronos de streaming são aguardados antes de entrar no contexto retornado:
 
 ```python
@@ -146,16 +134,14 @@ async with await client.query_rows_stream(
 
 Ao contrário da fábrica síncrona, `get_async_client` desativa, por padrão, a geração automática de IDs de sessão para que corrotinas concorrentes possam compartilhar um cliente. Passe um `session_id` explícito ou `autogenerate_session_id=True` somente quando precisar de estado de sessão e evitar consultas concorrentes nessa sessão.
 
-<div id="managing-clickhouse-session-ids">
-  ## Gerenciando IDs de sessão do ClickHouse
-</div>
+## Gerenciando IDs de sessão do ClickHouse {#managing-clickhouse-session-ids}
 
 Cada consulta do ClickHouse ocorre no contexto de uma &quot;sessão&quot; do ClickHouse. Atualmente, as sessões são usadas para duas finalidades:
 
 * Associar configurações específicas do ClickHouse a várias consultas (consulte [configurações do usuário](/pt-BR/reference/settings/session-settings)). O comando `SET` do ClickHouse é usado para alterar as configurações no escopo de uma sessão de usuário.
 * Acompanhar [tabelas temporárias.](/pt-BR/reference/statements/create/table#temporary-tables)
 
-Por padrão, um `Client` síncrono usa um ID de sessão gerado. Instruções `SET` e tabelas temporárias, portanto, são mantidas entre requisições desse cliente. A fábrica async não gera um ID de sessão por padrão. O ClickHouse não permite consultas simultâneas na mesma sessão, e o cliente gerará um `ProgrammingError` se isso for tentado, portanto use um dos seguintes padrões:
+Por padrão, um `Client` síncrono usa um ID de sessão gerado. Instruções `SET` e tabelas temporárias são mantidas entre requisições desse cliente somente quando essas requisições chegam ao mesmo processo do servidor ClickHouse. A fábrica async não gera um ID de sessão por padrão. O estado de sessões nomeadas e as verificações de sobreposição na mesma sessão são locais ao processo, e o cliente gera um `ProgrammingError` ao detectar uma sobreposição local antes de enviar a requisição. No ClickHouse Cloud ou em outras implantações com balanceamento de carga, não use um `session_id` fixo como estado distribuído nem como mutex distribuído. Se a sobreposição for relevante, serialize as requisições antes de enviá-las ao ClickHouse. Use um dos seguintes padrões:
 
 1. Crie uma instância `Client` separada para cada thread/processo/manipulador de eventos que precise de isolamento de sessão. Isso preserva o estado da sessão de cada cliente (tabelas temporárias e valores de `SET`).
 2. Use um `session_id` exclusivo para cada consulta por meio do argumento `settings` ao chamar `query`, `command` ou `insert`, se você não precisar de um estado de sessão compartilhado.
@@ -177,11 +163,11 @@ Como alternativa, passe `autogenerate_session_id=False` diretamente para `get_cl
 
 Nesse caso, o ClickHouse Connect não envia um `session_id`; o servidor não considera que requisições separadas pertençam à mesma sessão. Tabelas temporárias e configurações no nível da sessão não serão mantidas entre as requisições.
 
-<div id="customizing-the-http-connection-pool">
-  ## Personalizando o pool de conexões HTTP
-</div>
+## Personalizando o pool de conexões HTTP {#customizing-the-http-connection-pool}
 
-O ClickHouse Connect usa pools de conexões do `urllib3` para gerenciar a conexão HTTP subjacente com o servidor. Por padrão, todas as instâncias de cliente compartilham o mesmo pool de conexões, o que é suficiente para a maioria dos casos de uso. Esse pool padrão mantém até 8 conexões HTTP Keep Alive para cada servidor ClickHouse usado pela aplicação.
+O ClickHouse Connect usa pools de conexões do `urllib3` para gerenciar a conexão HTTP subjacente com o servidor. Por padrão, todas as instâncias de cliente síncronas em um processo compartilham o mesmo pool de conexões, o que é suficiente para a maioria dos casos de uso. Cada worker de multiprocessamento recebe seu próprio pool padrão, local ao processo, e o reutiliza entre os clientes criados nesse worker. Um cliente criado antes de um fork mantém o pool do processo pai e não deve ser usado no processo filho. O pool padrão mantém até 8 conexões HTTP Keep Alive para cada servidor ClickHouse usado pela aplicação.
+
+As opções de socket padrão habilitam o keepalive TCP e o `TCP_NODELAY`. O sistema operacional gerencia os tamanhos dos buffers de envio e recebimento do socket.
 
 Para aplicações grandes e multithread, pode ser mais adequado usar pools de conexões separados. Pools de conexões personalizados podem ser fornecidos como o argumento nomeado `pool_mgr` para a função principal `clickhouse_connect.get_client`:
 
@@ -197,4 +183,8 @@ client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 
 Os clientes podem compartilhar o mesmo gerenciador de pool, ou cada cliente pode usar um gerenciador separado. Para mais detalhes, consulte a [documentação do PoolManager do `urllib3`](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior).
 
-O cliente assíncrono tem um pool do aiohttp em vez de usar `urllib3`. Configure-o com `connector_limit`, `connector_limit_per_host` e `keepalive_timeout` em `get_async_client`. Chamar `await async_client.close_connections()` renova o pool sem interromper as solicitações em andamento.
+Para definir opções de socket, passe `socket_options` para `httputil.get_pool_manager` ou `httputil.get_pool_manager_options`. Isso substitui toda a lista padrão, incluindo as opções de keepalive e `TCP_NODELAY`. Passe `[]` ou `None` para não aplicar nenhuma opção de socket explícita.
+
+O cliente assíncrono tem um pool do aiohttp em vez de usar `urllib3`. Configure-o com `connector_limit`, `connector_limit_per_host` e `keepalive_timeout` em `get_async_client`. Chamar `await async_client.close_connections()` renova o pool sem interromper as requisições em andamento.
+
+Em consultas e inserts assíncronos, a espera por um slot livre no pool não tem tempo limite. Leia até o fim ou feche as respostas em streaming para liberar os slots que elas ocupam no pool. O `connect_timeout` começa a contar depois que um slot fica disponível e abrange a resolução de DNS, o estabelecimento das conexões TCP e TLS e a negociação com o proxy. O `send_receive_timeout` limita as leituras do socket. Para definir um prazo para a operação inteira, incluindo a espera pelo pool, use `asyncio.wait_for`, por exemplo, `await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`.

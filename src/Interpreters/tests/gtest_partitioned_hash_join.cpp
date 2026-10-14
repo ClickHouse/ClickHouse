@@ -320,7 +320,7 @@ std::vector<UInt64> keysOf(const std::vector<size_t> & key_indexes)
 
 bool addBuildBlock(IJoin & join, const Block & block, size_t worker_id = 0)
 {
-    return join.addBlockToJoin(block, block.rows(), worker_id, /*check_limits=*/true);
+    return join.addBlockToJoin(block, block.rows(), JoinBuildContext::forStream(worker_id, worker_id + 1));
 }
 
 void addBuildBlocks(IJoin & join, size_t distinct_keys, size_t duplicates, const BuildOptions & options)
@@ -1853,9 +1853,8 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
         /*any_take_last_row_=*/false,
         /*reserve_num_=*/0,
         /*instance_id_=*/"",
+        HashJoinBuildLayout::oneBucket(1),
         /*stats_collecting_params_=*/{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false,
         /*allow_set_maps_=*/false);
     std::vector<HashJoinClause::FillBlock> build_blocks;
     std::atomic<size_t> accumulated_bytes{0};

@@ -495,6 +495,18 @@ MemoryWorker::MemoryWorker(
 #endif
 }
 
+void MemoryWorker::setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache)
+{
+    std::lock_guard lock(releasable_cache_mutex);
+    releasable_cache = std::move(cache);
+}
+
+std::shared_ptr<IMemoryReleasableCache> MemoryWorker::getReleasableCache()
+{
+    std::lock_guard lock(releasable_cache_mutex);
+    return releasable_cache;
+}
+
 MemoryWorker::MemoryUsageSource MemoryWorker::getSource()
 {
     return source;
@@ -939,6 +951,9 @@ void MemoryWorker::updateResidentMemoryThread()
             if (page_cache)
                 page_cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
+            if (auto cache = getReleasableCache())
+                cache->autoResize(std::max(memory_usage.resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
+
 #if USE_JEMALLOC
             const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
             const auto purge_total_memory_threshold = static_cast<double>(memory_tracker_limit) * purge_total_memory_threshold_ratio;
@@ -1000,25 +1015,23 @@ void MemoryWorker::updateResidentMemoryThread()
                     }
                 }
             }
+#endif
 
-            /// update MemoryTracker with resident memory information (cgroup or jemalloc) when:
+            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise resident,
+            /// which may be much larger than what was actually allocated) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value
             ///  - `correct_tracker` is set to true
+            ///
+            /// When the tracker is not corrected on this tick, refresh `MemoryTrackingUncorrected`
+            /// anyway, so that the metric stays a snapshot of the plain counter that is at most
+            /// one tick old in both modes.
             if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/true);
             else if (correct_tracker)
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
-#else
-            /// we don't update in the first run if we don't have jemalloc
-            /// because without a sanitizer we can only use resident memory information
-            /// resident memory can be much larger than the actual allocated memory
-            /// so we rather ignore the potential difference caused by allocated memory
-            /// before MemoryTracker initialization
-            /// sanitizer builds provide allocated memory, but keep the same behavior
-            if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
-                MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
-#endif
+            else
+                MemoryTracker::updateUncorrected();
 
             /// Capture the settings generation before reading ratio/ceiling. We re-read
             /// it just before `setHardLimit` and skip the write if a reload happened

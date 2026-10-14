@@ -133,9 +133,8 @@ PartitionedHashJoin::PartitionedHashJoin(
               any_take_last_row,
               /*reserve_num_=*/0,
               /*instance_id_=*/"",
+              HashJoinBuildLayout::oneBucket(1),
               /*stats_collecting_params_=*/HashJoinStatsCollectingParams{},
-              /*max_threads_=*/1,
-              /*use_parallel_layout_=*/false,
               /*allow_set_maps_=*/false))
     , join_table_mode(join_table_mode_)
     , used_flags_per_row(hash_join->needUsedFlagsForPerRightTableRow(table_join))
@@ -306,7 +305,7 @@ void PartitionedHashJoin::shareJoinTable(const PartitionedHashJoin & source)
     /// The stored blocks are the storage's now, so the right-side flags of the statistics can be
     /// sized to them, as `HashJoin::reuseJoinedData` sizes its own.
     if (matched_rows_stats)
-        matched_rows_stats->prepareRightFlagsIfNeeded(hash_join->data->workers);
+        matched_rows_stats->prepareRightFlagsIfNeeded(storedBlocks());
 }
 
 DataTypePtr PartitionedHashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
@@ -378,7 +377,7 @@ PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane(size_t worker_i
     return *fresh;
 }
 
-bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, size_t worker_id, bool check_limits)
+bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, JoinBuildContext context)
 {
     /// `num_rows` only matters for the columnless CROSS blocks this algorithm never plans.
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
@@ -427,7 +426,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         if (!any_row_stored && !nullmap_saved)
             dropLastStoredBlock();
 
-        if (!check_limits)
+        if (!context.joinChecksLimits())
             return true;
         return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
@@ -458,7 +457,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         for (auto & clause : clauses)
             clause.insertSingleLaneBlock(fill);
 
-        if (!check_limits)
+        if (!context.joinChecksLimits())
             return true;
         return table_join->sizeLimits().check(
             accumulated_rows.load(std::memory_order_relaxed),
@@ -467,7 +466,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
             ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
 
-    FillLane & lane = getFillLane(worker_id);
+    FillLane & lane = getFillLane(context.getStream());
     if (max_bytes_before_external_join)
     {
         /// A sketch merge reads `hll` under this lock, so it never sees a half-written register.
@@ -491,7 +490,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     accumulated_bytes.fetch_add(fill.stored.allocatedBytes() + fill.routeBytes(), std::memory_order_relaxed);
     lane.blocks.push_back(std::move(fill));
 
-    if (!check_limits)
+    if (!context.joinChecksLimits())
         return true;
 
     /// The fill-phase analogue of `HashJoin`'s per-block limit check. Rows are the accumulated
@@ -862,7 +861,7 @@ void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
     /// Every stored block has its final number: the right-side flags of the statistics are sized
     /// per block, as `HashJoin::onBuildPhaseFinish` sizes its own.
     if (matched_rows_stats)
-        matched_rows_stats->prepareRightFlagsIfNeeded(hash_join->data->workers);
+        matched_rows_stats->prepareRightFlagsIfNeeded(storedBlocks());
     build_phase_finished = true;
 }
 
@@ -1233,9 +1232,7 @@ PartitionedHashJoin::cloneNoParallel(const std::shared_ptr<TableJoin> & table_jo
         any_take_last_row,
         /*reserve_num_=*/0,
         /*instance_id_=*/"",
-        HashJoinStatsCollectingParams{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false);
+        HashJoinBuildLayout::oneBucket(1));
 }
 
 void PartitionedHashJoin::setEnableLazyColumnsIndexing(bool value)
@@ -1336,6 +1333,38 @@ BlocksList PartitionedHashJoin::releaseJoinedBlocks(bool restructure)
     return blocks;
 }
 
+UInt64 PartitionedHashJoin::getJoinTableRowCount() const
+{
+    UInt64 rows = 0;
+    std::visit(
+        [&](const auto & shape)
+        {
+            auto count_rows = [&](const auto & table)
+            {
+                if constexpr (requires { table.begin()->getMapped().rows(); })
+                    for (auto it = table.begin(); it != table.end(); ++it)
+                        rows += it->getMapped().rows();
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The table of a Join table mode does not keep every row of a key");
+            };
+            switch (storedData().type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
+        if (shape.TYPE) \
+            count_rows(*shape.TYPE); \
+        break;
+                APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
+#undef M
+                default:
+                    throw Exception(
+                        ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", storedData().type);
+            }
+        },
+        clause.tableMaps().maps);
+    return rows;
+}
+
 const Block & PartitionedHashJoin::savedBlockSample() const
 {
     return hash_join->savedBlockSample();
@@ -1346,7 +1375,7 @@ size_t PartitionedHashJoin::getRightTableRowCount() const
     return accumulated_rows.load(std::memory_order_relaxed);
 }
 
-void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
+void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target, JoinBuildContext context)
 {
     chassert(stored_blocks_released);
 
@@ -1355,7 +1384,7 @@ void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
     if (workers <= 1)
     {
         for (Block block = releaseNextStoredBlock(); !block.empty(); block = releaseNextStoredBlock())
-            target.addBlockToJoin(block, block.rows(), /*worker_id=*/0, /*check_limits=*/false);
+            target.addBlockToJoin(block, block.rows(), context.callerChecksLimits());
         return;
     }
 
@@ -1364,6 +1393,7 @@ void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
     std::mutex pop_mutex;
     auto drain = [&](size_t worker_id)
     {
+        const auto worker_context = JoinBuildContext::forStream(worker_id, std::max(context.getNumStreams(), workers)).callerChecksLimits();
         while (true)
         {
             Block block;
@@ -1373,7 +1403,7 @@ void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
             }
             if (block.empty())
                 return;
-            target.addBlockToJoin(block, block.rows(), worker_id, /*check_limits=*/false);
+            target.addBlockToJoin(block, block.rows(), worker_context);
         }
     };
 

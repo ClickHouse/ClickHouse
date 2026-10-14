@@ -37,10 +37,14 @@ private:
     Chunk finish_chunk;
 };
 
-class SimpleSquashingChunksTransform final : public IInflatingTransform
+class SimpleSquashingChunksTransform : public IInflatingTransform
 {
 public:
-    explicit SimpleSquashingChunksTransform(SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
+    /// Non-zero max bounds stop merging before the merged chunks' total rows or bytes would exceed them; a single chunk is never split.
+    /// The byte bound is an estimate: it sums the input chunks, and concatenation can change a column's representation.
+    explicit SimpleSquashingChunksTransform(
+        SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes,
+        size_t max_block_size_rows_ = 0, size_t max_block_size_bytes_ = 0);
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
@@ -53,6 +57,13 @@ protected:
 private:
     Squashing squashing;
     Chunk squashed_chunk;
+
+    const size_t max_block_size_rows;
+    const size_t max_block_size_bytes;
+    /// `squashedBytes` of the chunks buffered in `squashing`; valid only while it is non-empty.
+    size_t buffered_bytes = 0;
+    /// Buffered data emitted ahead of a chunk that would overflow a max bound.
+    Chunk flushed_chunk;
 };
 
 /// Squashes the output of a join whose inputs were widened per slot (`IJoin::supportParallelJoin`). Such a
@@ -61,12 +72,16 @@ private:
 /// chunks pass through. The join answers on the first chunk (`IJoin::emitsSizedOutputBlocks`), because the
 /// spilling wrapper knows only after the build whether it kept the in-memory join or switched to grace.
 /// The transform keeps the name of the one it replaces, so pipeline dumps do not change.
-class JoinOutputSquashingTransform final : public IInflatingTransform
+class JoinOutputSquashingTransform final : public SimpleSquashingChunksTransform
 {
 public:
-    JoinOutputSquashingTransform(SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes, std::shared_ptr<IJoin> join_);
-
-    String getName() const override { return "SimpleSquashingTransform"; }
+    JoinOutputSquashingTransform(
+        SharedHeader header,
+        size_t min_block_size_rows,
+        size_t min_block_size_bytes,
+        size_t max_block_size_rows,
+        size_t max_block_size_bytes,
+        std::shared_ptr<IJoin> join_);
 
 protected:
     void consume(Chunk chunk) override;
@@ -78,8 +93,6 @@ private:
     std::shared_ptr<IJoin> join;
     /// Decided on the first chunk: the build is over by then, so the join's answer is final.
     std::optional<bool> pass_through;
-    Squashing squashing;
-    Chunk squashed_chunk;
     Chunk passed_chunk;
 };
 
