@@ -1,7 +1,7 @@
 -- one-sided conditions: one clause, two per-side filters, partitioned_hash serves the join
 Type: inner | Strictness: all | Algorithm: PartitionedHashJoin
-Filter column: b < 3
-Filter column: c > 2
+Prewhere filter column:  b < 3
+Prewhere filter column:  c > 2
 9	142032
 9	142032
 -- two-sided residual: folded into the join by the general planning, no post-join filter, same plan as hash

@@ -22,7 +22,7 @@ SELECT '-- one-sided conditions: one clause, two per-side filters, partitioned_h
 SELECT replaceRegexpAll(explain, '^[ │└─]+', '') FROM (
     EXPLAIN actions = 1 SELECT count() FROM t_phj_gjp_l AS l INNER JOIN t_phj_gjp_r AS r ON l.id = r.id AND l.b < 3 AND r.c > 2
     SETTINGS join_algorithm = 'partitioned_hash'
-) WHERE explain LIKE '%Algorithm%' OR explain LIKE '%Filter column%';
+) WHERE explain LIKE '%Algorithm%' OR explain LIKE '%ilter column%';
 SELECT count(), sum(l.id * 1000 + r.c) FROM t_phj_gjp_l AS l INNER JOIN t_phj_gjp_r AS r ON l.id = r.id AND l.b < 3 AND r.c > 2 SETTINGS join_algorithm = 'partitioned_hash';
 SELECT count(), sum(l.id * 1000 + r.c) FROM t_phj_gjp_l AS l INNER JOIN t_phj_gjp_r AS r ON l.id = r.id AND l.b < 3 AND r.c > 2 SETTINGS join_algorithm = 'hash';
 
