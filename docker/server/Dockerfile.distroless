@@ -102,10 +102,8 @@ RUN if [ -n "${single_binary_location_url}" ]; then \
     fi
 
 # Fall back to installation from the ClickHouse repository.
-# Probe with `--tmp` so a recent binary does not create its default data directory in the home inside the image;
-# an older binary has no such option (and uses a temporary directory anyway), so pass it only if it is supported.
-RUN LOCAL_TMP=$(clickhouse local --help 2>/dev/null | grep -q -e '--tmp' && echo --tmp); \
-    clickhouse local $LOCAL_TMP -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
+# `--tmp` keeps `clickhouse local` from creating its default data directory in the home inside the image.
+RUN clickhouse local --tmp -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
     ; apt-get update --error-on=any \
     && apt-get install --yes --no-install-recommends dirmngr gnupg2 \
     && mkdir -p /etc/apt/sources.list.d \
@@ -136,8 +134,7 @@ RUN LOCAL_TMP=$(clickhouse local --help 2>/dev/null | grep -q -e '--tmp' && echo
 #docker-official-library:on
 
 # Verify the installation.
-RUN LOCAL_TMP=$(clickhouse local --help 2>/dev/null | grep -q -e '--tmp' && echo --tmp); \
-    clickhouse-local $LOCAL_TMP -q 'SELECT * FROM system.build_options'
+RUN clickhouse-local --tmp -q 'SELECT * FROM system.build_options'
 
 # Assemble the output directory tree that will be COPYed into the distroless image.
 # Symlinks pointing to /usr/bin/clickhouse are preserved by Docker COPY.
