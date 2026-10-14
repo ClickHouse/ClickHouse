@@ -15,6 +15,7 @@
 
 #include "Test.h"
 
+#include <atomic>
 #include <cerrno>
 #include <cstdarg>
 #include <cstdio>
@@ -454,7 +455,7 @@ TEST(Profiling, Reset)
     log2_size = 0;
     CHECK_EQ(mallctlByName(thread_state, "prof.reset", nullptr, nullptr, &log2_size, sizeof(log2_size)), 0);
     CHECK_EQ(log2_profiling_sample, size_t(0));
-    CHECK(old_thread_data->expired);
+    CHECK(old_thread_data->isExpired());
 
     ProfilingThreadData * new_thread_data = profilingThreadDataGet(thread_state, true);
     CHECK(new_thread_data != old_thread_data);
@@ -488,6 +489,54 @@ TEST(Profiling, Reset)
     sampledFree(x);
     CHECK_EQ(profilingThreadDataCount(), all_thread_data_before);
     sampledFree(y);
+    CHECK_EQ(profilingBacktraceCount(), size_t(0));
+}
+
+namespace
+{
+
+std::atomic<bool> reset_done{false};
+
+void * allocateUntilResetDone(void *)
+{
+    while (!reset_done.load(std::memory_order_relaxed))
+    {
+        void * ptr = sampledMalloc(1 << 20);
+        sampledFree(ptr);
+    }
+    return nullptr;
+}
+
+}
+
+/// `prof.reset` expires the tdatas of other threads while they allocate: each thread notices the expiration of its own
+/// tdata on the allocation path without taking the tdata mutex (run under TSan, this checks that the accesses are
+/// atomic).
+TEST(Profiling, ResetConcurrentWithAllocations)
+{
+    init();
+    installBacktraceHook();
+    ThreadState & thread_state = ThreadState::fetch();
+    size_t all_thread_data_before = profilingThreadDataCount();
+    setBacktrace({0x5555});
+
+    constexpr size_t num_threads = 4;
+    pthread_t threads[num_threads];
+    reset_done.store(false, std::memory_order_relaxed);
+    for (auto & thread : threads)
+        REQUIRE(pthread_create(&thread, nullptr, allocateUntilResetDone, nullptr) == 0);
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        size_t log2_size = 0;
+        CHECK_EQ(mallctlByName(thread_state, "prof.reset", nullptr, nullptr, &log2_size, sizeof(log2_size)), 0);
+    }
+    reset_done.store(true, std::memory_order_relaxed);
+    for (auto & thread : threads)
+        pthread_join(thread, nullptr);
+
+    /// The main thread has not allocated since the reset: re-create its tdata.
+    CHECK(profilingThreadDataGet(thread_state, true) != nullptr);
+    CHECK_EQ(profilingThreadDataCount(), all_thread_data_before);
     CHECK_EQ(profilingBacktraceCount(), size_t(0));
 }
 

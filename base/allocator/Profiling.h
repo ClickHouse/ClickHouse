@@ -210,11 +210,17 @@ public:
     /// True if profiling is active for this tdata's thread (`thread.prof.active`).
     bool active;
     bool attached;
+    /// Written by `prof.reset` under `lock`, read without it by the owning thread on the allocation path: always
+    /// accessed through `isExpired` / `setExpired`.
     bool expired;
     /// Temporary storage for summation during dump.
     ProfilingCounters count_summed;
     /// Backtrace vector, used for calls to `profilingBacktrace`.
     void ** vector;
+
+    /// Relaxed: the owning thread notices the expiration eventually, as in jemalloc.
+    bool isExpired() const { return std::atomic_ref<bool>(const_cast<bool &>(expired)).load(std::memory_order_relaxed); }
+    void setExpired(bool value) { std::atomic_ref<bool>(expired).store(value, std::memory_order_relaxed); }
 };
 
 static_assert(sizeof(ProfilingThreadData) == 192, "Must have the size of prof_tdata_t");
@@ -329,7 +335,7 @@ ALLOCATOR_ALWAYS_INLINE ProfilingThreadData * profilingThreadDataGet(ThreadState
                 thread_state.profiling_thread_data = thread_data;
             }
         }
-        else if (ALLOCATOR_UNLIKELY(thread_data->expired))
+        else if (ALLOCATOR_UNLIKELY(thread_data->isExpired()))
         {
             thread_data = profilingThreadDataReinit(thread_state, thread_data);
             thread_state.profiling_thread_data = thread_data;

@@ -812,7 +812,7 @@ void profilingGlobalContextFinish(ThreadState & thread_state, ProfilingGlobalCon
 void profilingThreadDataMergeIterate(ThreadState * thread_state, ProfilingThreadData * thread_data, ProfilingCounters * count_all)
 {
     MutexLock lock(thread_state, *thread_data->lock);
-    if (!thread_data->expired)
+    if (!thread_data->isExpired())
     {
         thread_data->dumping = true;
         memset(&thread_data->count_summed, 0, sizeof(ProfilingCounters));
@@ -1136,7 +1136,7 @@ ProfilingThreadData * profilingThreadDataInitImpl(
     thread_data->thread_uid = thread_uid;
     thread_data->thread_discriminator = thread_discriminator;
     thread_data->attached = true;
-    thread_data->expired = false;
+    thread_data->setExpired(false);
     thread_data->thread_context_uid_next = 0;
     if (thread_name == nullptr)
         profilingThreadNameClear(thread_data);
@@ -1211,9 +1211,9 @@ bool profilingThreadDataExpire(ThreadState * thread_state, ProfilingThreadData *
     bool destroy_thread_data;
 
     MutexLock lock(thread_state, *thread_data->lock);
-    if (!thread_data->expired)
+    if (!thread_data->isExpired())
     {
-        thread_data->expired = true;
+        thread_data->setExpired(true);
         destroy_thread_data = profilingThreadDataShouldDestroy(thread_state, thread_data, false);
     }
     else

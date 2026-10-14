@@ -421,29 +421,30 @@ public:
     ALLOCATOR_ALWAYS_INLINE void setNumFreeBinShard(unsigned num_free, unsigned bin_shard)
     {
         ALLOCATOR_ASSERT(bin_shard < bin_infos[sizeClassIdx()].num_shards);
-        packed_bits = (packed_bits & (~extent_bits::num_free.mask() & ~extent_bits::bin_shard.mask()))
-            | (uint64_t(bin_shard) << extent_bits::bin_shard.shift) | (uint64_t(num_free) << extent_bits::num_free.shift);
+        storeBits(
+            (loadBits() & (~extent_bits::num_free.mask() & ~extent_bits::bin_shard.mask()))
+            | (uint64_t(bin_shard) << extent_bits::bin_shard.shift) | (uint64_t(num_free) << extent_bits::num_free.shift));
     }
 
     /// jemalloc: edata_nfree_inc
     ALLOCATOR_ALWAYS_INLINE void numFreeIncrement()
     {
         ALLOCATOR_ASSERT(slab());
-        packed_bits += uint64_t(1) << extent_bits::num_free.shift;
+        storeBits(loadBits() + (uint64_t(1) << extent_bits::num_free.shift));
     }
 
     /// jemalloc: edata_nfree_dec
     ALLOCATOR_ALWAYS_INLINE void numFreeDecrement()
     {
         ALLOCATOR_ASSERT(slab());
-        packed_bits -= uint64_t(1) << extent_bits::num_free.shift;
+        storeBits(loadBits() - (uint64_t(1) << extent_bits::num_free.shift));
     }
 
     /// jemalloc: edata_nfree_sub
     ALLOCATOR_ALWAYS_INLINE void numFreeSub(uint64_t n)
     {
         ALLOCATOR_ASSERT(slab());
-        packed_bits -= n << extent_bits::num_free.shift;
+        storeBits(loadBits() - (n << extent_bits::num_free.shift));
     }
 
     /// jemalloc: edata_sn_set
@@ -604,11 +605,21 @@ public:
     }
 
 private:
-    ALLOCATOR_ALWAYS_INLINE uint64_t getBits(ExtentBitField field) const { return (packed_bits & field.mask()) >> field.shift; }
+    /// The word is modified under the lock of the owner (e.g. `nfree` under the bin lock), while other fields of the
+    /// same word (e.g. the arena index) are read without it: relaxed atomic accesses, which compile to plain loads and
+    /// stores. A modification is a load followed by a store, not an atomic read-modify-write, as in jemalloc.
+    ALLOCATOR_ALWAYS_INLINE uint64_t loadBits() const
+    {
+        return std::atomic_ref<uint64_t>(const_cast<uint64_t &>(packed_bits)).load(std::memory_order_relaxed);
+    }
+
+    ALLOCATOR_ALWAYS_INLINE void storeBits(uint64_t value) { std::atomic_ref<uint64_t>(packed_bits).store(value, std::memory_order_relaxed); }
+
+    ALLOCATOR_ALWAYS_INLINE uint64_t getBits(ExtentBitField field) const { return (loadBits() & field.mask()) >> field.shift; }
 
     ALLOCATOR_ALWAYS_INLINE void setBits(ExtentBitField field, uint64_t value)
     {
-        packed_bits = (packed_bits & ~field.mask()) | (value << field.shift);
+        storeBits((loadBits() & ~field.mask()) | (value << field.shift));
     }
 };
 
