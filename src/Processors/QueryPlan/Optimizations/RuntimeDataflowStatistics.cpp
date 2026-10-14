@@ -39,7 +39,7 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
 }
 
-RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
+RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
     if (unsupported_case)
     {
@@ -71,16 +71,6 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
             res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
-    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
-    {
-        const auto & stats = duplicated_bytes_statistics[i];
-        if (stats.compressed_bytes)
-        {
-            log_stats(stats, fmt::format("Duplicated{}", toString(static_cast<InputStatisticsType>(i))));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
-            res.duplicated_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
-        }
-    }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
         const auto & stats = output_bytes_statistics[i];
@@ -94,9 +84,8 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, duplicated bytes={}, output bytes={}",
+        "Collected statistics: input bytes={}, output bytes={}",
         res.input_bytes,
-        res.duplicated_bytes,
         res.output_bytes);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
@@ -208,7 +197,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     cols.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
-    recordColumns(block->output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
+    recordColumns(output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
@@ -227,7 +216,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
     size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
 
-    auto & statistics = block->output_bytes_statistics[OutputStatisticsType::AggregationState];
+    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationState];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += res;
     statistics.sample_bytes += res;
@@ -243,39 +232,18 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     cols.reserve(keys_positions.size());
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(block->output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
-    const Chunk & chunk,
-    const ColumnNumbers & keys_positions,
-    const DataTypes & key_types,
-    size_t full_key_bytes,
-    const Columns & untruncated_sample_columns)
+    const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types, size_t full_key_bytes)
 {
+    const auto & columns = chunk.getColumns();
     ColumnsWithTypeAndName cols;
     cols.reserve(keys_positions.size());
-
-    size_t num_rows = chunk.getNumRows();
-    if (!untruncated_sample_columns.empty())
-    {
-        /// The byte count describes the untruncated keys, so the ratio it is divided by has to come from
-        /// them as well - the chunk holds the kept groups only, and their keys compress differently.
-        /// When every group was rejected the chunk holds nothing at all, and without a ratio the byte
-        /// count is dropped rather than estimated. The conversion kept a bounded sample for both cases.
-        chassert(untruncated_sample_columns.size() == keys_positions.size());
-        for (size_t i = 0; i < untruncated_sample_columns.size(); ++i)
-            cols.emplace_back(untruncated_sample_columns[i], key_types[i], "");
-        num_rows = untruncated_sample_columns.front()->size();
-    }
-    else
-    {
-        const auto & columns = chunk.getColumns();
-        for (size_t i = 0; i < keys_positions.size(); ++i)
-            cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    }
-
-    recordColumns(block->output_bytes_statistics[OutputStatisticsType::AggregationKeys], num_rows, cols, full_key_bytes);
+    for (size_t i = 0; i < keys_positions.size(); ++i)
+        cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols, full_key_bytes);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
@@ -296,7 +264,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
             continue;
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
     }
-    recordColumns(block->output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
@@ -320,7 +288,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    auto & statistics = duplicated ? block->duplicated_bytes_statistics[type] : block->input_bytes_statistics[type];
+    auto & statistics = input_bytes_statistics[type];
     if (read_bytes && !input_columns.empty())
     {
         if (!column_sizes.empty())

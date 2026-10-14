@@ -93,14 +93,9 @@ def test_crash_log_synchronous(started_node):
         wait_for_clickhouse_stop(started_node)
         started_node.restart_clickhouse()
         crashes_count += 1
-        # Report the rows that are there. Without them a lost row leaves only `'1' == '2'` behind,
-        # which says nothing about which of the two crashes failed to record itself.
         assert (
             started_node.query("SELECT COUNT(*) FROM system.crash_log")
             == f"{crashes_count}\n"
-        ), started_node.query(
-            "SELECT event_time, timestamp_ns, signal, signal_description, query "
-            "FROM system.crash_log ORDER BY timestamp_ns FORMAT Vertical"
         )
 
         # A frame in the main executable is stored as its file offset, which is what keeps the row
