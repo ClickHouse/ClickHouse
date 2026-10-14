@@ -14,7 +14,7 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## promql_database
+## promql_database {#promql_database}
 
 <PrivatePreviewBadge />
 
@@ -22,19 +22,19 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 &#39;promql&#39; ダイアレクトで使用するデータベース名を指定します。空文字列は現在のデータベースを表します。
 
-## promql_evaluation_time
+## promql_evaluation_time {#promql_evaluation_time}
 
 <PrivatePreviewBadge />
 
 **別名**: `evaluation_time`
 
-<SettingsInfoBlock type="FloatAuto" default_value="auto" />
+<SettingsInfoBlock type="DoubleAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "この設定はリネームされました。以前の名前は `evaluation_time` です。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "この設定はリネームされました。以前の名前は `evaluation_time` です。"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "auto"},{"label": "新しい実験的な設定。導入時の名前は `evaluation_time` で、現在はこの設定の別名となっています。"}]}]} />
 
-promql ダイアレクトで使用する評価時刻を設定します。`auto` は現在時刻を表します。
+promql ダイアレクトで使用する評価時刻を、秒単位の Unixタイムスタンプ(小数部は任意)で設定します。`auto` は現在時刻を表します。
 
-## promql_table
+## promql_table {#promql_table}
 
 <PrivatePreviewBadge />
 
