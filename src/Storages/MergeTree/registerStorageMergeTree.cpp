@@ -1128,9 +1128,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         ++arg_num;
 
+        const bool check_key_aliases = !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
+
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
+            if (check_key_aliases)
+                KeyDescription::checkNoAlias(engine_args[arg_num].get(), "SAMPLE BY");
             metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
             ++arg_num;
         }
@@ -1144,6 +1148,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_param_key_arg)
             additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
 
+        if (check_key_aliases)
+            KeyDescription::checkNoAlias(engine_args[arg_num].get(), "PRIMARY KEY");
         metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)

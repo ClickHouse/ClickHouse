@@ -27,6 +27,10 @@ CREATE TABLE t_key_alias (c0 UInt64) ENGINE = MergeTree ORDER BY c0 SAMPLE BY (c
 CREATE TABLE t_key_alias (c0 Int64, d Date TTL (d AS x) + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, CONSTRAINT c CHECK (c0 AS a) >= 0) ENGINE = MergeTree ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_key_alias (c0 Int64, CONSTRAINT c ASSUME (c0 >= 0 AS a)) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+SET allow_deprecated_syntax_for_merge_tree = 1;
+CREATE TABLE t_key_alias (d Date, c0 UInt64, c1 UInt64) ENGINE = MergeTree(d, (c0 AS x, x + c1), 8192); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_key_alias (d Date, c0 UInt64) ENGINE = MergeTree(d, intHash32(c0) AS s, (c0, intHash32(c0)), 8192); -- { serverError BAD_ARGUMENTS }
+SET allow_deprecated_syntax_for_merge_tree = 0;
 
 CREATE TABLE t_src (x Int64) ENGINE = MergeTree ORDER BY x;
 CREATE MATERIALIZED VIEW mv_key_alias ENGINE = MergeTree PRIMARY KEY (x AS a) AS SELECT x FROM t_src; -- { serverError BAD_ARGUMENTS }

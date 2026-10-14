@@ -6005,20 +6005,32 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 check(old_constraint, constraint, "CONSTRAINT");
             }
 
+            /// The column each column was renamed from; a column the ALTER adds has none.
+            std::unordered_map<String, std::optional<String>> old_names;
+            for (const auto & column : old_metadata.columns)
+                old_names.emplace(column.name, column.name);
+            for (const auto & command : commands)
+            {
+                if (command.ignore)
+                    continue;
+                if (command.type == AlterCommand::ADD_COLUMN)
+                    old_names.try_emplace(command.column_name, std::nullopt);
+                else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
+                    old_names.erase(command.column_name);
+                else if (command.type == AlterCommand::RENAME_COLUMN)
+                {
+                    if (auto node = old_names.extract(command.column_name))
+                    {
+                        node.key() = command.rename_to;
+                        old_names.insert(std::move(node));
+                    }
+                }
+            }
+
             for (const auto & column : new_metadata.columns)
             {
-                /// The column it was renamed from; a column the ALTER adds has none.
-                std::optional<String> old_name = column.name;
-                for (auto it = commands.rbegin(); it != commands.rend() && old_name; ++it)
-                {
-                    if (it->ignore)
-                        continue;
-                    if (it->type == AlterCommand::ADD_COLUMN && it->column_name == *old_name)
-                        old_name.reset();
-                    else if (it->type == AlterCommand::RENAME_COLUMN && it->rename_to == *old_name)
-                        old_name = it->column_name;
-                }
-                const auto * old_column = old_name ? old_metadata.columns.tryGet(*old_name) : nullptr;
+                auto it = old_names.find(column.name);
+                const auto * old_column = it != old_names.end() && it->second ? old_metadata.columns.tryGet(*it->second) : nullptr;
                 check(old_column ? old_column->ttl : nullptr, column.ttl, "TTL");
             }
         }
