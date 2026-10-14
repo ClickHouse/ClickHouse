@@ -148,7 +148,6 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
-    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace FailPoints
@@ -920,6 +919,17 @@ Exception DatabaseDataLake::cannotTellNewTableLocation(const String & name) cons
         backQuoteIfNeed(getDatabaseName()), name);
 }
 
+void DatabaseDataLake::checkStorageTypeMatchesEngine(
+    const String & name, DatabaseDataLakeStorageType engine_type, DatabaseDataLakeStorageType catalog_type) const
+{
+    if (catalog_type != engine_type)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog of database {} places table {} in {}, while its table engine writes to {}. "
+            "Use the table engine variant for {}",
+            backQuoteIfNeed(getDatabaseName()), name, catalog_type, engine_type, catalog_type);
+}
+
 static std::optional<String> chooseTableEngineName(DataLake::DataLakeTableFormat table_format, DatabaseDataLakeStorageType storage_type)
 {
     if (table_format == DataLake::DataLakeTableFormat::ICEBERG)
@@ -999,20 +1009,11 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
     const auto namespace_name = DataLake::parseTableName(name).first;
     const auto engine_type = toDataLakeStorageType(engine_storage_type);
 
-    auto storage_mismatch = [&](DatabaseDataLakeStorageType catalog_type)
-    {
-        return Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Catalog of database {} places table {} in {}, while its table engine writes to {}. "
-            "Use the table engine variant for {}",
-            backQuoteIfNeed(getDatabaseName()), name, catalog_type, engine_type, catalog_type);
-    };
-
     auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
     if (!table_metadata)
     {
-        if (const auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type && *catalog_storage_type != engine_type)
-            throw storage_mismatch(*catalog_storage_type);
+        if (const auto catalog_storage_type = catalog->getStorageType())
+            checkStorageTypeMatchesEngine(name, engine_type, *catalog_storage_type);
 
         if (!catalog->assignsLocationToNewNamespaces())
             throw cannotTellNewTableLocation(name);
@@ -1023,8 +1024,7 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
             throw cannotTellNewTableLocation(name);
     }
 
-    if (table_metadata->getStorageType() != engine_type)
-        throw storage_mismatch(table_metadata->getStorageType());
+    checkStorageTypeMatchesEngine(name, engine_type, table_metadata->getStorageType());
 
     auto engine_args = buildTableEngineArgs(settings, *catalog, *table_metadata, /* lightweight */false);
 
@@ -1093,18 +1093,23 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
             "Cannot create table {} in database {} without a column list: the table does not exist yet, so there is no data to infer the schema from",
             name, backQuoteIfNeed(getDatabaseName()));
 
+    /// The catalog schema keeps only names and types, so a special column would become an ordinary one.
+    if (!columns.hasOnlyOrdinary())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported when the catalog of database {} creates table {}",
+            backQuoteIfNeed(getDatabaseName()), name);
+
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
-    /// Verify the engine and catalog have the same storage type.
-    if (const auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type && *catalog_storage_type != *engine_storage_type)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Catalog of database {} places table {} in {}, while its table engine writes to {}. "
-            "Use the table engine variant for {}",
-            backQuoteIfNeed(getDatabaseName()), name, *catalog_storage_type, *engine_storage_type, *catalog_storage_type);
+    /// Verify the engine and catalog have the same storage type. Without a catalog-wide location, the namespace location tells it.
+    if (const auto catalog_storage_type = catalog->getStorageType())
+        checkStorageTypeMatchesEngine(name, *engine_storage_type, *catalog_storage_type);
+    else if (const auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name))
+        checkStorageTypeMatchesEngine(name, *engine_storage_type, table_metadata->getStorageType());
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
@@ -1142,19 +1147,8 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
     Iceberg::setMetadataCompressionCodecProperty(metadata_object, context_);
 
     catalog->createNamespaceIfNotExists(namespace_name);
-    try
-    {
-        catalog->createTableAtDefaultLocation(namespace_name, table_name, metadata_object);
-        LOG_DEBUG(log, "Created table {} in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
-    }
-    catch (const Exception & e)
-    {
-        /// The interpreter checked that the table does not exist, but a concurrent query can create it after that check.
-        if (e.code() == ErrorCodes::TABLE_ALREADY_EXISTS && create.if_not_exists)
-            LOG_DEBUG(log, "Table {} was created in the catalog of database {} by a concurrent query", name, backQuoteIfNeed(getDatabaseName()));
-        else
-            throw;
-    }
+    catalog->createTableAtDefaultLocation(namespace_name, table_name, metadata_object);
+    LOG_DEBUG(log, "Created table {} in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
 
     auto storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
     if (!storage)

@@ -2736,7 +2736,19 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         /// Some databases create the table in an external catalog. Otherwise the storage factory creates it.
         if (mode == LoadingStrictnessLevel::CREATE)
-            res = database->maybeCreateTableInExternalCatalog(getContext(), create, properties.columns);
+        {
+            try
+            {
+                res = database->maybeCreateTableInExternalCatalog(getContext(), create, properties.columns);
+            }
+            catch (const Exception & e)
+            {
+                /// A query on another server can create the table in the catalog after the existence check above.
+                if (e.code() == ErrorCodes::TABLE_ALREADY_EXISTS && create.if_not_exists)
+                    return false;
+                throw;
+            }
+        }
 
         if (!res)
         {

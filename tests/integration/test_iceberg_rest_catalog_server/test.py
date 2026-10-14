@@ -559,6 +559,13 @@ def test_clickhouse_client_creates_table(started_cluster):
         error = node.query_and_get_error(create_query("events"), settings=create_settings)
         assert "already exists" in error, error
 
+        # The catalog schema has no column kinds, so a special column cannot be sent.
+        error = node.query_and_get_error(
+            f"CREATE TABLE {db}.`{ns}.special` (id Int64, doubled Int64 MATERIALIZED id * 2) ENGINE = IcebergS3",
+            settings=create_settings,
+        )
+        assert "Special columns" in error, error
+
         # The server does not implement UpdateTable yet, so the table stays empty.
         assert node.query(f"SELECT count() FROM {db}.`{ns}.events`") == "0\n"
 
