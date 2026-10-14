@@ -940,7 +940,11 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     /// The numbering is derived from the key of the table: the next objects are `data.tsv` -> `data.1.tsv`, ...,
     /// and an insert that had to step aside from an existing object into a numbered key continues the numbering from there.
     const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
-    size_t sequence_number = 1;
+    /// Every key of the table after the first one is a numbered key, so an insert with `*_create_new_file_on_insert`
+    /// starts probing from the number of the keys the table knows, as it always did: every probe is a request to the
+    /// object storage, and starting from 1 would make the N-th insert probe all the keys of the previous inserts again.
+    /// A truncating insert overwrites the numbered keys from the beginning, see below.
+    size_t sequence_number = settings.create_new_file_on_insert && !settings.truncate_on_insert ? paths.size() : 1;
     /// Every key this insert writes - the one it starts with, and every generated one - is reserved until the
     /// insert is over, so that a concurrent insert into the same table picks a different one: a key is published
     /// for the readers only after its object has been committed, and until then the object storage does not have
