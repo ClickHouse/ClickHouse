@@ -1118,15 +1118,32 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
             }
 
             const size_t directories = snapshot.layout->size();
-            fs.applyLayout(std::move(*snapshot.layout), std::move(backups_of_targets));
-            applied_snapshot_etag = std::move(snapshot.etag);
-            applied_snapshot_had_pending_replaces = !targets_read_from_backups.empty();
-            superseded_snapshot_etag.clear();
-            /// The state came from the writer: the pending replacements seen by a previous listing are no longer relevant.
-            remote_directories_of_pending_replaces.clear();
-            previous_refresh.restart();
-            LOG_DEBUG(log, "Loaded metadata for {} directories from the snapshot file", directories);
-            return;
+            bool applied = false;
+            try
+            {
+                /// A file that was parsed can still be inconsistent (e.g. a file and a directory on the same path).
+                /// `applyLayout` builds the new tree before replacing the current one, so a failure leaves the state as it was.
+                fs.applyLayout(std::move(*snapshot.layout), std::move(backups_of_targets));
+                applied = true;
+            }
+            catch (...)
+            {
+                /// The same as for a file that cannot be read (see `tryReadSnapshotFile`).
+                tryLogCurrentException(log, "Cannot apply the snapshot file, the state will be loaded by listing the object storage");
+            }
+
+            if (applied)
+            {
+                applied_snapshot_etag = std::move(snapshot.etag);
+                applied_snapshot_had_pending_replaces = !targets_read_from_backups.empty();
+                state_loaded_from_snapshot = true;
+                superseded_snapshot_etag.clear();
+                /// The state came from the writer: the pending replacements seen by a previous listing are no longer relevant.
+                remote_directories_of_pending_replaces.clear();
+                previous_refresh.restart();
+                LOG_DEBUG(log, "Loaded metadata for {} directories from the snapshot file", directories);
+                return;
+            }
         }
 
         applied_snapshot_etag.clear();
@@ -1162,11 +1179,15 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
         }
     }
 
+    /// A state loaded from the snapshot file is not a base for an incremental listing: the listing reuses a directory when
+    /// its `prefix.path` did not change, but the files of a directory change without rewriting it, and the state may also
+    /// contain files read from the backups of pending replacements. So it is replaced by a full listing.
     std::optional<PlainRewritableRemoteLayout> base;
-    if (mode == LoadMode::Incremental)
+    if (mode == LoadMode::Incremental && !state_loaded_from_snapshot)
         base = getCurrentLayout();
 
     const bool empty = loadRemoteLayout(base ? &base.value() : nullptr, /*is_initial_load=*/ mode == LoadMode::Initial, log);
+    state_loaded_from_snapshot = false;
 
     if (isSnapshotReader())
         superseded_snapshot_etag = std::move(snapshot_etag_to_supersede);

@@ -235,6 +235,9 @@ private:
     /// Some files of the state loaded from the snapshot file are read from the backups of pending replacements.
     /// Protected by `load_mutex`.
     bool applied_snapshot_had_pending_replaces = false;
+    /// The current state was loaded from the snapshot file (even if its ETag is not usable and `applied_snapshot_etag` is
+    /// empty), so it cannot be a base of an incremental listing. Protected by `load_mutex`.
+    bool state_loaded_from_snapshot = false;
     /// The ETag of the snapshot file that existed when a reader loaded the state by listing the object storage instead
     /// (e.g. the file could not be read), empty if there is none. That state is at least as fresh as the file, so the file
     /// is not applied until it changes. Protected by `load_mutex`.
