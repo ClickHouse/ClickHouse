@@ -68,6 +68,7 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDictionary.h>
@@ -1194,11 +1195,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
     auto right_sample_block = joined_plan->getCurrentHeader();
-    /// The old analyzer has no join-order pass, so the right side is sized by walking
-    /// `joined_plan`. That plan is not optimized yet, so the index analysis must not be kept.
-    const std::optional<UInt64> rhs_size_estimation
-        = QueryPlanOptimizations::estimateReadRowsCount(*joined_plan->getRootNode(), /*filter=*/nullptr, /*keep_index_analysis=*/false)
-              .estimated_rows;
+    /// The old analyzer has no join-order pass, so the right side is sized by walking `joined_plan`.
+    const std::optional<UInt64> rhs_size_estimation = QueryPlanOptimizations::estimateReadRowsCount(*joined_plan->getRootNode()).estimated_rows;
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {

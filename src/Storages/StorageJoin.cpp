@@ -393,28 +393,11 @@ std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
 {
     const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
-    if (!readsAllRowsOfKey(join->getKind(), join->getStrictness()))
+    if (!readsAllRowsOfKey(kind, strictness))
         return join->getTotalRowCount();
 
     /// getTotalRowCount counts keys, so the rows of each key are summed here.
-    const auto data = join->getJoinedData();
-    const auto * maps = std::get_if<HashJoin::MapsAll>(&data->maps.front());
-    if (!maps)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin keeps every row of a key in a map that is not MapsAll");
-
-    UInt64 rows = 0;
-    switch (data->type)
-    {
-#define M(TYPE) \
-        case HashJoin::Type::TYPE: \
-            if (maps->TYPE) \
-                for (const auto & cell : *maps->TYPE) \
-                    rows += cell.getMapped().rows(); \
-            break;
-        APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
-    }
-    return rows;
+    return join->getJoinTableRowCount();
 }
 
 std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const

@@ -289,7 +289,7 @@ void PartitionedHashJoin::shareJoinTable(const PartitionedHashJoin & source)
     /// The stored blocks are the storage's now, so the right-side flags of the statistics can be
     /// sized to them, as `HashJoin::reuseJoinedData` sizes its own.
     if (matched_rows_stats)
-        matched_rows_stats->prepareRightFlagsIfNeeded(hash_join->data->workers);
+        matched_rows_stats->prepareRightFlagsIfNeeded(storedBlocks());
 }
 
 DataTypePtr PartitionedHashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
@@ -430,7 +430,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         if (!any_row_stored && !nullmap_saved)
             dropLastStoredBlock();
 
-        if (!check_limits)
+        if (!context.joinChecksLimits())
             return true;
         return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
@@ -766,7 +766,7 @@ void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
     /// Every stored block has its final number: the right-side flags of the statistics are sized
     /// per block, as `HashJoin::onBuildPhaseFinish` sizes its own.
     if (matched_rows_stats)
-        matched_rows_stats->prepareRightFlagsIfNeeded(hash_join->data->workers);
+        matched_rows_stats->prepareRightFlagsIfNeeded(storedBlocks());
     build_phase_finished = true;
 }
 
@@ -1188,6 +1188,31 @@ BlocksList PartitionedHashJoin::releaseJoinedBlocks(bool restructure)
         for (auto & block : blocks)
             block = HashJoin::restoreRightBlock(block, *right_sample_block);
     return blocks;
+}
+
+UInt64 PartitionedHashJoin::getJoinTableRowCount() const
+{
+    UInt64 rows = 0;
+    std::visit(
+        [&](const auto & shape)
+        {
+            switch (storedData().type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
+        if (shape.TYPE) \
+            for (auto it = shape.TYPE->begin(); it != shape.TYPE->end(); ++it) \
+                rows += it->getMapped().rows(); \
+        break;
+                APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
+#undef M
+                default:
+                    throw Exception(
+                        ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", storedData().type);
+            }
+        },
+        clause.tableMaps().maps);
+    return rows;
 }
 
 const Block & PartitionedHashJoin::savedBlockSample() const

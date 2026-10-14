@@ -282,6 +282,8 @@ public:
     const Block & savedBlockSample() const;
     /// Right rows stored so far. `getTotalRowCount` reports the distinct keys once the table is built.
     size_t getRightTableRowCount() const;
+    /// The rows of the one table of a Join table mode that keeps every row of a key. `getTotalRowCount` counts keys.
+    UInt64 getJoinTableRowCount() const;
 
 private:
     friend class NotJoinedPartitioned;

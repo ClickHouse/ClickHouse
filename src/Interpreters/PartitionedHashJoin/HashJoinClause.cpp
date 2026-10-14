@@ -1862,7 +1862,7 @@ bool HashJoinClause::insertJoinTableBlock(FillBlock & fill)
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using Table = typename decltype(shape_maps.TYPE)::element_type; \
-        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table, /*use_offset=*/false>::Type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table>::Type; \
         any_row_stored = insertJoinTableRows<KeyGetter, Table>( \
             *shape_maps.TYPE, fill.key_columns, key_sizes, fill.rows, fill.block_no, fill.skipData(), *join_table_arena, any_take_last_row); \
         break; \
