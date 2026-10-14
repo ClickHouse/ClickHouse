@@ -1580,10 +1580,11 @@ class JobConfigs:
         )
     )
 
-    # Pull requests run the LLVM coverage jobs only with the `ci-coverage` label. By default they
-    # run the same configurations on the `arm_binary` build instead, which is several times faster
-    # than the coverage build and randomizes settings and runs `long` tests, which the coverage runs
-    # do not. The plain coverage batches and `excluded_from_llvm` need no replacement: the full
+    # Pull requests run the LLVM coverage jobs only with the `ci-coverage` or `ci-llvm-coverage`
+    # label. By default they run the same configurations on the `arm_binary` build instead, which
+    # is several times faster than the coverage build and randomizes settings and runs `long`
+    # tests, which the coverage runs do not. The plain coverage batches and `excluded_from_llvm`
+    # need no replacement: the full
     # `arm_binary, parallel`/`sequential` stateless jobs already run the whole suite. The parallel
     # jobs use the same runner shape as the coverage jobs (16 vCPU, 64 GiB): with 32 vCPU and the
     # same memory, the stateful data load and the doubled test concurrency exceed the memory limits.
