@@ -344,9 +344,9 @@ FilterStep::FilterStep(
 }
 
 /// Stream headers must match, constness included, and a lambda type has no default value.
-static const ActionsDAG::Node & addNodeWithoutPredicate(ActionsDAG & dag, const ActionsDAG::Node & node, const ColumnPtr & stream_column)
+static const ActionsDAG::Node * addNodeWithoutPredicate(ActionsDAG & dag, const ActionsDAG::Node * node, const ColumnPtr & stream_column)
 {
-    const auto * source = &node;
+    const auto * source = node;
     while (source->type == ActionsDAG::ActionType::ALIAS)
         source = source->children.front();
 
@@ -354,18 +354,18 @@ static const ActionsDAG::Node & addNodeWithoutPredicate(ActionsDAG & dag, const 
         return node;
 
     if (const auto * stream_constant = stream_column ? typeid_cast<const ColumnConst *>(stream_column.get()) : nullptr)
-        return dag.addColumn(ColumnConst::create(stream_constant->getDataColumnPtr(), 0), node.result_type, node.result_name);
+        return &dag.addColumn(ColumnConst::create(stream_constant->getDataColumnPtr(), 0), node->result_type, node->result_name);
 
-    if (typeid_cast<const DataTypeFunction *>(node.result_type.get()))
+    if (typeid_cast<const DataTypeFunction *>(node->result_type.get()))
     {
         ActionsDAG::NodeRawConstPtrs children;
         for (const auto * child : source->children)
-            children.push_back(&addNodeWithoutPredicate(dag, *child, nullptr));
-        return dag.addFunction(source->function_base, std::move(children), node.result_name);
+            children.push_back(addNodeWithoutPredicate(dag, child, nullptr));
+        return &dag.addFunction(source->function_base, std::move(children), node->result_name);
     }
 
-    return dag.materializeNode(
-        dag.addColumn(node.result_type->createColumnConstWithDefaultValue(0), node.result_type, node.result_name));
+    return &dag.materializeNode(
+        dag.addColumn(node->result_type->createColumnConstWithDefaultValue(0), node->result_type, node->result_name));
 }
 
 /// `stream_header` is `dag.updateHeader` of the stream's header, so it starts with the outputs in their order.
@@ -376,7 +376,7 @@ static ExpressionActionsPtr makeActionsWithoutPredicate(
     auto result = dag.clone();
     auto & outputs = result.getOutputs();
     for (size_t i = 0; i < outputs.size(); ++i)
-        outputs[i] = &addNodeWithoutPredicate(result, *outputs[i], stream_header.getByPosition(i).column);
+        outputs[i] = addNodeWithoutPredicate(result, outputs[i], stream_header.getByPosition(i).column);
 
     if (remove_filter_column)
         outputs.erase(std::ranges::find(outputs, &result.findInOutputs(filter_column_name)));

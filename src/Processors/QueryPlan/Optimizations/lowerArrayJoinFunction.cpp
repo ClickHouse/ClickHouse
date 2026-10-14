@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -22,12 +23,13 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (!expression_step && !filter_step)
         return 0;
 
-    /// The extremes skip the predicate of such a filter, but not an `ArrayJoinStep` made from it.
-    if (filter_step && filter_step->skipsExtremes())
-        return 0;
-
     auto & dag = expression_step ? expression_step->getExpression() : filter_step->getExpression();
     if (!dag.hasArrayJoin())
+        return 0;
+
+    /// The extremes skip the predicate of such a filter, but not an `ArrayJoinStep` made from it. Unlowered, a
+    /// non-deterministic or stateful function is computed before the expansion, so such a filter is still lowered.
+    if (filter_step && filter_step->skipsExtremes() && !dag.hasStatefulFunctions() && !dagContainsNonDeterministicFunction(dag))
         return 0;
 
     /// a stateful function sees other blocks after the step
