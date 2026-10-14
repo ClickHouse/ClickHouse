@@ -16,10 +16,10 @@
 namespace DB::GPU
 {
 
-__host__ void checkCuda(cudaError_t status, const std::string & what)
+__host__ void checkCuda(cudaError_t status, const std::string & message)
 {
     if (status != cudaSuccess)
-        throwGPUError((what + ": " + cudaGetErrorString(status)).c_str());
+        throwGPUError((message + ": " + cudaGetErrorString(status)).c_str());
 }
 
 __host__ void setCudfMemoryPool(cudaMemPool_t pool)
@@ -58,10 +58,10 @@ namespace
 {
 
 /// `max_rows` is below the largest `cudf::size_type` for a column that also needs a count of offsets one larger.
-__host__ cudf::size_type rowsForCudf(size_t rows, size_t max_rows, const std::string & what)
+__host__ cudf::size_type rowsForCudf(size_t rows, size_t max_rows)
 {
     if (rows > max_rows)
-        throwGPUError((what + " of " + std::to_string(rows) + " rows is too large for cuDF").c_str());
+        throwGPUError(("a column of " + std::to_string(rows) + " rows is too large for cuDF").c_str());
     return static_cast<cudf::size_type>(rows);
 }
 
@@ -69,48 +69,48 @@ constexpr size_t max_cudf_rows = std::numeric_limits<cudf::size_type>::max();
 
 }
 
-__host__ cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type, const std::string & what)
+__host__ cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type)
 {
     if (column.null_mask)
-        throwGPUError((what + " arrived with a null mask, which is not taken yet").c_str());
+        throwGPUError("a column for cuDF arrived with a null mask, which is not taken yet");
 
     if (column.type() != expected_type)
         throwGPUError(
-            (what + " arrived as a column of element type " + std::to_string(static_cast<int>(column.type())) + ", expected "
+            ("a column for cuDF arrived of element type " + std::to_string(static_cast<int>(column.type())) + ", expected "
             + std::to_string(static_cast<int>(expected_type))).c_str());
 
     switch (column.kind)
     {
         case GPUColumnKind::Fixed:
-            return columnViewOf(column.fixed, expected_type, what);
+            return columnViewOf(column.fixed, expected_type);
         case GPUColumnKind::Variable:
-            return columnViewOf(column.variable, what);
+            return columnViewOf(column.variable);
     }
     throwGPUError(("unknown column kind " + std::to_string(static_cast<int>(column.kind))).c_str());
 }
 
-__host__ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType expected_type, const std::string & what)
+__host__ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType expected_type)
 {
     if (columnKindOf(column.element_type) != GPUColumnKind::Fixed)
-        throwGPUError((what + " arrived as fixed-width values of a type of varying width").c_str());
+        throwGPUError("a column for cuDF arrived as fixed-width values of a type of varying width");
 
     if (column.element_type != expected_type)
         throwGPUError(
-            (what + " arrived as element type " + std::to_string(static_cast<int>(column.element_type)) + ", expected "
+            ("a column for cuDF arrived of element type " + std::to_string(static_cast<int>(column.element_type)) + ", expected "
             + std::to_string(static_cast<int>(expected_type))).c_str());
 
     /// cuDF reads the values as of their type, which takes them aligned to their size.
     if (reinterpret_cast<uintptr_t>(column.data) % sizeOf(column.element_type) != 0)
         throwGPUError(
-            (what + " arrived at an address not aligned to its values of " + std::to_string(sizeOf(column.element_type)) + " bytes")
-                .c_str());
+            ("a column for cuDF arrived at an address not aligned to its values of " + std::to_string(sizeOf(column.element_type))
+            + " bytes").c_str());
 
-    return cudf::column_view(cudfTypeOf(column.element_type), rowsForCudf(column.rows, max_cudf_rows, what), column.data, nullptr, 0);
+    return cudf::column_view(cudfTypeOf(column.element_type), rowsForCudf(column.rows, max_cudf_rows), column.data, nullptr, 0);
 }
 
-__host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::string & what)
+__host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column)
 {
-    const cudf::size_type rows = rowsForCudf(column.rows, max_cudf_rows - 1, what);
+    const cudf::size_type rows = rowsForCudf(column.rows, max_cudf_rows - 1);
 
     /// An empty column may come without offsets, and cuDF's own empty strings column has no children either.
     if (rows == 0)
@@ -121,38 +121,40 @@ __host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column, con
     return cudf::column_view(cudf::data_type{cudf::type_id::STRING}, rows, column.chars, nullptr, 0, 0, {offsets});
 }
 
-__host__ void checkNoNulls(const cudf::column_view & column, const std::string & what)
+__host__ void checkNoNulls(const cudf::column_view & column)
 {
     if (column.null_count() != 0)
         throwGPUError(
-            ("the device returned " + std::to_string(column.null_count()) + " nulls in " + what
-            + ", where the input had no null mask at all").c_str());
+            ("cuDF returned a column with " + std::to_string(column.null_count())
+            + " nulls, where the input had no null mask at all").c_str());
 }
 
-__host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what)
+__host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type)
 {
-    checkNoNulls(column, what);
+    checkNoNulls(column);
 
     if (column.offset() != 0)
-        throwGPUError(("the device returned " + what + " as a slice at offset " + std::to_string(column.offset())).c_str());
+        throwGPUError(("cuDF returned a column as a slice at offset " + std::to_string(column.offset())).c_str());
 
     if (column.type() != cudfTypeOf(expected_type))
         throwGPUError(
-            ("the device returned " + what + " of cuDF type " + std::to_string(static_cast<int32_t>(column.type().id()))
+            ("cuDF returned a column of type " + std::to_string(static_cast<int32_t>(column.type().id()))
             + ", expected element type " + std::to_string(static_cast<int>(expected_type))).c_str());
 
     return {.element_type = expected_type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
 }
 
-__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, const std::string & what, rmm::cuda_stream_view stream)
+__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, rmm::cuda_stream_view stream)
 {
-    checkNoNulls(column, what);
+    checkNoNulls(column);
 
     if (column.type().id() != cudf::type_id::STRING)
-        throwGPUError(("the device returned " + what + " of cuDF type " + std::to_string(static_cast<int32_t>(column.type().id()))).c_str());
+        throwGPUError(
+            ("cuDF returned a column of type " + std::to_string(static_cast<int32_t>(column.type().id())) + ", expected strings")
+                .c_str());
 
     if (column.offset() != 0)
-        throwGPUError(("the device returned " + what + " as a slice at offset " + std::to_string(column.offset())).c_str());
+        throwGPUError(("cuDF returned a strings column as a slice at offset " + std::to_string(column.offset())).c_str());
 
     if (column.size() == 0)
         return {};
@@ -167,19 +169,22 @@ __host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view
             break;
         case cudf::type_id::INT32:
             widened_offsets = guarded(
-                "widening the offsets of " + what, [&] { return cudf::cast(offsets, cudf::data_type{cudf::type_id::INT64}, stream); });
+                "widening the offsets of a strings column",
+                [&] { return cudf::cast(offsets, cudf::data_type{cudf::type_id::INT64}, stream); });
             offsets = widened_offsets->view();
             /// cuDF returns once the cast is queued, and the offsets may be read on another stream or by the host.
-            checkCuda(cudaStreamSynchronize(stream.value()), "cannot wait for the offsets of " + what + " to be widened");
+            checkCuda(cudaStreamSynchronize(stream.value()), "cannot wait for the offsets of a strings column to be widened");
             break;
         default:
-            throwGPUError(("the offsets of " + what + " are of cuDF type " + std::to_string(static_cast<int32_t>(offsets.type().id()))).c_str());
+            throwGPUError(
+                ("cuDF returned a strings column with offsets of type " + std::to_string(static_cast<int32_t>(offsets.type().id())))
+                    .c_str());
     }
 
     if (offsets.size() != column.size() + 1)
         throwGPUError(
-            ("the device returned " + std::to_string(offsets.size()) + " offsets of " + what + " of " + std::to_string(column.size())
-            + " rows").c_str());
+            ("cuDF returned a strings column of " + std::to_string(column.size()) + " rows with " + std::to_string(offsets.size())
+            + " offsets").c_str());
 
     /// The same bytes as the signed offsets of cuDF, see `columnViewOf`.
     return {

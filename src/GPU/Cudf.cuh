@@ -34,19 +34,19 @@ __host__ auto guarded(const std::string & doing, Body && body)
     }
 }
 
-__host__ void checkCuda(cudaError_t status, const std::string & what);
+__host__ void checkCuda(cudaError_t status, const std::string & message);
 
 __host__ cudf::data_type cudfTypeOf(GPUElementType element_type);
 
-__host__ cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type, const std::string & what);
+__host__ cudf::column_view columnViewOf(const DeviceColumnView & column, GPUElementType expected_type);
 
-__host__ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType expected_type, const std::string & what);
+__host__ cudf::column_view columnViewOf(const DeviceFixedColumn & column, GPUElementType expected_type);
 
-__host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column, const std::string & what);
+__host__ cudf::column_view columnViewOf(const DeviceVariableColumn & column);
 
-__host__ void checkNoNulls(const cudf::column_view & column, const std::string & what);
+__host__ void checkNoNulls(const cudf::column_view & column);
 
-__host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what);
+__host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type);
 
 struct DeviceVariableColumnOfCudf
 {
@@ -54,6 +54,6 @@ struct DeviceVariableColumnOfCudf
     std::unique_ptr<cudf::column> widened_offsets;
 };
 
-__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, const std::string & what, rmm::cuda_stream_view stream);
+__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, rmm::cuda_stream_view stream);
 
 }
