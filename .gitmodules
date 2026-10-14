@@ -336,9 +336,6 @@
 [submodule "contrib/sz3"]
 	path = contrib/sz3
 	url = https://github.com/ClickHouse/SZ3.git
-[submodule "contrib/numactl"]
-	path = contrib/numactl
-	url = https://github.com/ClickHouse/numactl.git
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
@@ -384,6 +381,9 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/ipcrypt2"]
+	path = contrib/ipcrypt2
+	url = https://github.com/jedisct1/ipcrypt2.git
 [submodule "contrib/heks"]
 	path = contrib/heks
 	url = https://github.com/ClickHouse/heks.git
@@ -474,3 +474,6 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/parquet-testing"]
+	path = contrib/parquet-testing
+	url = https://github.com/apache/parquet-testing
