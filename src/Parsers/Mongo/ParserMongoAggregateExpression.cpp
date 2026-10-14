@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -27,6 +28,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
+extern const int TOO_BIG_AST;
 }
 
 namespace Mongo
@@ -48,6 +50,27 @@ ASTPtr makeLiteral(Field value)
 ASTPtr makeNull()
 {
     return makeLiteral(Field());
+}
+
+/** The largest translation of one aggregation expression. Several operators refer to an argument
+  * more than once - `$toDate` dispatches on its type, `$cmp` compares it twice - so nesting them
+  * multiplies the size of the translation with every level: fifteen nested `$toDate` would make
+  * millions of copies of the innermost field out of a short request, before the size of the query
+  * is checked anywhere else. Every operator is checked against this bound as it is translated, so
+  * the arguments it copies are bounded too, and so is the translation of the next level.
+  */
+constexpr size_t MAX_EXPRESSION_SIZE = 100000;
+
+ASTPtr checkExpressionSize(ASTPtr expression)
+{
+    /// `IAST::size` counts a subtree each time it is referenced, which is the size of the query text.
+    if (expression->size() > MAX_EXPRESSION_SIZE)
+        throw Exception(
+            ErrorCodes::TOO_BIG_AST,
+            "The translation of the aggregation expression is larger than {} elements: it nests operators that refer to their "
+            "arguments more than once too deeply",
+            MAX_EXPRESSION_SIZE);
+    return expression;
 }
 
 /** A piece of a translated Mongo format: either a ClickHouse format string, or Mongo's `%L` - the
@@ -131,11 +154,7 @@ ASTPtr makeFunction(const std::string & name, std::vector<ASTPtr> arguments)
 ASTPtr makeFormattedDate(const ASTPtr & date, const std::vector<DateFormatSegment> & segments, const ASTPtr & timezone)
 {
     auto formatted = [&](const std::string & format)
-    {
-        if (timezone)
-            return makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(format)), timezone->clone());
-        return makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(format)));
-    };
+    { return makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(format)), timezone->clone()); };
 
     std::vector<ASTPtr> parts;
     for (const auto & segment : segments)
@@ -182,7 +201,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$toLong", "toInt64"},
     {"$toInt", "toInt32"},
     {"$toDouble", "toFloat64"},
-    {"$toBool", "toBool"},
     {"$strLenBytes", "length"},
     {"$strLenCP", "lengthUTF8"},
     {"$toUpper", "upper"},
@@ -201,17 +219,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$setIntersection", "arrayIntersect"},
     {"$range", "range"},
     {"$not", "not"},
-    {"$year", "toYear"},
-    {"$month", "toMonth"},
-    {"$dayOfMonth", "toDayOfMonth"},
-    {"$dayOfYear", "toDayOfYear"},
-    {"$week", "toWeek"},
-    {"$isoWeek", "toISOWeek"},
-    {"$isoWeekYear", "toISOYear"},
-    {"$hour", "toHour"},
-    {"$minute", "toMinute"},
-    {"$second", "toSecond"},
-    {"$millisecond", "toMillisecond"},
     {"$concat", "concat"},
     {"$and", "and"},
     {"$or", "or"},
@@ -226,6 +233,26 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$mod", "modulo"},
     {"$pow", "pow"},
     {"$ifNull", "coalesce"},
+};
+
+/** The operators that take a part of a date, with the `mode` of the ClickHouse function where it
+  * has one: `$week` counts the weeks from Sunday, the first of them being week 0, and `$dayOfWeek`
+  * and `$isoDayOfWeek` number the days from Sunday and from Monday as 1.
+  */
+const std::unordered_map<std::string_view, std::pair<std::string, std::optional<UInt64>>> date_part_functions = {
+    {"$year", {"toYear", {}}},
+    {"$month", {"toMonth", {}}},
+    {"$dayOfMonth", {"toDayOfMonth", {}}},
+    {"$dayOfYear", {"toDayOfYear", {}}},
+    {"$dayOfWeek", {"toDayOfWeek", 3}},
+    {"$isoDayOfWeek", {"toDayOfWeek", 0}},
+    {"$week", {"toWeek", 0}},
+    {"$isoWeek", {"toISOWeek", {}}},
+    {"$isoWeekYear", {"toISOYear", {}}},
+    {"$hour", {"toHour", {}}},
+    {"$minute", {"toMinute", {}}},
+    {"$second", {"toSecond", {}}},
+    {"$millisecond", {"toMillisecond", {}}},
 };
 
 /// Operators that fold their arguments into a tree of binary applications.
@@ -288,9 +315,19 @@ ASTPtr makeLambda(const std::string & parameter, ASTPtr body)
     return makeASTFunction("lambda", std::move(parameters), std::move(body));
 }
 
+/** The lambda parameter a variable `$$<name>` is translated into. A field path `$<name>` reads the
+  * field of the document even inside the body of the operator that binds `<name>`, so the variable
+  * cannot be the identifier of the same name, which is the field: `$$x` and `$x` are different
+  * values in `{$add: ["$$x", "$x"]}`. A variable of an inner operator still shadows one of the same
+  * name of an outer one, because the inner lambda parameter shadows the outer one.
+  */
+std::string variableIdentifier(std::string_view name)
+{
+    return fmt::format("__mongo_variable_{}", name);
+}
+
 /// The name a `$map` or a `$filter` binds its element to. Mongo writes it as `$$<name>` and
-/// defaults it to `this`; the lambda parameter is given the same name, so that referring to the
-/// variable inside the body resolves to it and shadows a column of that name exactly as in Mongo.
+/// defaults it to `this`.
 std::string parseVariableName(const rapidjson::Value & argument, const char * default_name)
 {
     auto it = argument.FindMember("as");
@@ -351,13 +388,16 @@ std::string_view dateUnit(const rapidjson::Value & argument, std::string_view op
     return stringView(unit);
 }
 
-/// The `timezone` of a date operator, if it names one: the time zone its calendar arithmetic
-/// runs in, which decides where a day, a week or a month begins and how long a day is.
+/** The `timezone` of a date operator: the time zone its calendar arithmetic runs in, which decides
+  * where a day, a week or a month begins and how long a day is. Mongo runs it in UTC unless the
+  * operator names another one, whatever time zone the value was written with, so UTC is named
+  * explicitly: otherwise the ClickHouse functions would use the time zone of the type of the value.
+  */
 ASTPtr parseTimezoneMember(const rapidjson::Value & argument)
 {
     auto it = argument.FindMember("timezone");
     if (it == argument.MemberEnd())
-        return nullptr;
+        return makeLiteral(Field(String("UTC")));
     return parseMongoAggregateExpression(it->value);
 }
 
@@ -407,13 +447,10 @@ ASTPtr parseDateAddAmount(const rapidjson::Value & value, std::string_view opera
     return makeASTFunction("plus", makeASTFunction("toInt64", std::move(amount)), std::move(check));
 }
 
-/// `toStartOfWeek(date, mode[, timezone])`: the first day of the week a date falls in.
+/// `toStartOfWeek(date, mode, timezone)`: the first day of the week a date falls in.
 ASTPtr makeStartOfWeek(ASTPtr date, UInt64 mode, const ASTPtr & timezone)
 {
-    auto result = makeASTFunction("toStartOfWeek", std::move(date), makeLiteral(Field(mode)));
-    if (timezone)
-        result->arguments->children.push_back(timezone->clone());
-    return result;
+    return makeASTFunction("toStartOfWeek", std::move(date), makeLiteral(Field(mode)), timezone->clone());
 }
 
 /** The regular expression of `$regexFind` and `$regexMatch`: the `regex` field - a bare pattern
@@ -467,10 +504,17 @@ ASTPtr makeToDecimal(ASTPtr argument)
             case Field::Types::UInt64: scale = 0; break;
             case Field::Types::String: scale = decimalScaleOfNumberDecimal(literal->value.safeGet<String>()); break;
             case Field::Types::Float64:
+            {
                 /// The shortest decimal text that reads back as the same double, which is what
-                /// Mongo preserves when it converts a double to a decimal.
-                scale = decimalScaleOfNumberDecimal(applyVisitor(FieldVisitorToString(), literal->value));
+                /// Mongo preserves when it converts a double to a decimal. That text is what is
+                /// converted, rather than the double: `toDecimal128(1.15, 2)` multiplies the double
+                /// by a power of ten and truncates the product, which is `1.14`.
+                auto text = applyVisitor(FieldVisitorToString(), literal->value);
+                scale = decimalScaleOfNumberDecimal(text);
+                if (scale)
+                    argument = makeLiteral(Field(std::move(text)));
                 break;
+            }
             default: break;
         }
         if (!scale)
@@ -533,10 +577,92 @@ ASTPtr makeToDate(ASTPtr argument)
     return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
 }
 
+/** The lowering of `$toBool`, which converts by the type of the value rather than by its text: a
+  * number is `false` when it is zero, a boolean is itself, `null` stays `null`, and every other value
+  * - every string, `"false"` and `""` included, a date, an array - is `true`. `toBool` would parse a
+  * string instead. A literal carries its type here; any other value is dispatched on the type it
+  * holds in each row, which `dynamicType` names for a value of any type cast to `Dynamic` - including
+  * a path of a stored document, whose type is `Dynamic` as a whole. The text of a number is what is
+  * tested, because it can be computed for a value of any type without an error in the branches that
+  * are not taken.
+  */
+ASTPtr makeToBool(ASTPtr argument)
+{
+    if (const auto * literal = argument->as<ASTLiteral>())
+    {
+        switch (literal->value.getType())
+        {
+            case Field::Types::Null: return makeNull();
+            case Field::Types::Bool: return argument;
+            case Field::Types::Int64: return makeLiteral(Field(literal->value.safeGet<Int64>() != 0));
+            case Field::Types::UInt64: return makeLiteral(Field(literal->value.safeGet<UInt64>() != 0));
+            case Field::Types::Float64: return makeLiteral(Field(literal->value.safeGet<Float64>() != 0));
+            case Field::Types::String: return makeLiteral(Field(true));
+            default: break;
+        }
+    }
+
+    auto type = makeASTFunction("dynamicType", makeASTFunction("CAST", argument->clone(), makeLiteral(Field(String("Dynamic")))));
+    auto text = makeASTFunction("toString", argument->clone());
+    auto is_true_number = makeASTFunction(
+        "or",
+        makeASTFunction("equals", text, makeLiteral(Field(String("true")))),
+        makeASTFunction("notEquals", makeASTFunction("toFloat64OrZero", text->clone()), makeLiteral(Field(UInt64(0)))));
+    return makeASTFunction(
+        "toBool",
+        makeASTFunction(
+            "multiIf",
+            makeASTFunction("equals", type, makeLiteral(Field(String("None")))),
+            makeNull(),
+            makeASTFunction("match", type->clone(), makeLiteral(Field(String("^(U?Int|Float|Decimal|Bool)")))),
+            std::move(is_true_number),
+            makeLiteral(Field(UInt64(1)))));
+}
+
+/** An operator that takes a part of a date, in the time zone it names and in UTC when it names none,
+  * as in Mongo. The argument is the date itself, an array holding it, or the document of a `date` and
+  * a `timezone`.
+  */
+ASTPtr makeDatePart(std::string_view name, const rapidjson::Value & argument)
+{
+    const auto & [function, mode] = date_part_functions.at(name);
+
+    ASTPtr date;
+    ASTPtr timezone;
+    if (argument.IsObject() && argument.MemberCount() >= 1 && !stringView(argument.MemberBegin()->name).starts_with('$'))
+    {
+        static const std::unordered_set<std::string_view> supported_members{"date", "timezone"};
+        rejectUnknownMembers(argument, name, supported_members);
+        date = parseMongoAggregateExpression(requireMember(argument, "date", name));
+        timezone = parseTimezoneMember(argument);
+    }
+    else
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        date = std::move(arguments[0]);
+        timezone = makeLiteral(Field(String("UTC")));
+    }
+
+    if (mode)
+        return makeASTFunction(function, std::move(date), makeLiteral(Field(*mode)), std::move(timezone));
+    return makeASTFunction(function, std::move(date), std::move(timezone));
+}
+
 ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 {
     if (auto it = direct_functions.find(name); it != direct_functions.end())
         return makeFunction(it->second, parseArguments(argument));
+
+    if (date_part_functions.contains(name))
+        return makeDatePart(name, argument);
+
+    if (name == "$toBool")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeToBool(arguments[0]);
+    }
 
     if (auto it = folded_functions.find(name); it != folded_functions.end())
     {
@@ -597,11 +723,16 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         requireArgumentCount(name, arguments, 2);
         /// Mongo indexes an array from zero and ClickHouse from one; a negative index counts from
         /// the end in both, and there `-1` already means the same element.
-        const auto * index = arguments[1]->as<ASTLiteral>();
-        const bool counts_from_the_end = index && index->value.getType() == Field::Types::Int64 && index->value.safeGet<Int64>() < 0;
-        if (!counts_from_the_end)
-            arguments[1] = makeASTFunction("plus", arguments[1], makeLiteral(Field(UInt64(1))));
-        return makeASTFunction("arrayElement", arguments[0], arguments[1]);
+        if (const auto * index = arguments[1]->as<ASTLiteral>())
+        {
+            const bool counts_from_the_end = index->value.getType() == Field::Types::Int64 && index->value.safeGet<Int64>() < 0;
+            if (!counts_from_the_end)
+                arguments[1] = makeASTFunction("plus", arguments[1], makeLiteral(Field(UInt64(1))));
+            return makeASTFunction("arrayElement", arguments[0], arguments[1]);
+        }
+        /// An index computed per document is shifted by its value: by one when it is not negative.
+        auto shift = makeASTFunction("greaterOrEquals", arguments[1]->clone(), makeLiteral(Field(UInt64(0))));
+        return makeASTFunction("arrayElement", arguments[0], makeASTFunction("plus", arguments[1], std::move(shift)));
     }
 
     if (name == "$in")
@@ -677,10 +808,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         if (unit == "week")
             return makeStartOfWeek(std::move(date), startOfWeekMode(argument, name), timezone);
 
-        auto result = makeASTFunction("dateTrunc", makeLiteral(Field(String(unit))), std::move(date));
-        if (timezone)
-            result->arguments->children.push_back(std::move(timezone));
-        return result;
+        return makeASTFunction("dateTrunc", makeLiteral(Field(String(unit))), std::move(date), std::move(timezone));
     }
 
     if (name == "$regexMatch")
@@ -692,15 +820,6 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
     if (name == "$rand")
         return makeASTFunction("randCanonical");
-
-    if (name == "$dayOfWeek" || name == "$isoDayOfWeek")
-    {
-        auto arguments = parseArguments(argument);
-        requireArgumentCount(name, arguments, 1);
-        /// `$dayOfWeek` numbers the days from Sunday as 1, `$isoDayOfWeek` from Monday as 1; those
-        /// are the modes 3 and 0 of `toDayOfWeek`.
-        return makeASTFunction("toDayOfWeek", arguments[0], makeLiteral(Field(UInt64(name == "$dayOfWeek" ? 3 : 0))));
-    }
 
     if (name == "$log")
     {
@@ -813,7 +932,8 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             BoundVariableScope scope(variable);
             body = parseMongoAggregateExpression(requireMember(argument, name == "$map" ? "in" : "cond", name));
         }
-        auto mapped = makeASTFunction(name == "$map" ? "arrayMap" : "arrayFilter", makeLambda(variable, std::move(body)), std::move(input));
+        auto mapped = makeASTFunction(
+            name == "$map" ? "arrayMap" : "arrayFilter", makeLambda(variableIdentifier(variable), std::move(body)), std::move(input));
         if (auto limit_it = argument.FindMember("limit"); limit_it != argument.MemberEnd() && name == "$filter")
             return makeASTFunction(
                 "arraySlice", std::move(mapped), makeLiteral(Field(UInt64(1))), parseMongoAggregateExpression(limit_it->value));
@@ -829,10 +949,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         rejectUnknownMembers(argument, name, supported_members);
 
         auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
-        ASTPtr timezone;
+        /// Written in UTC unless the operator names a time zone, as in Mongo: not in the time zone of
+        /// the type of the value, which would be a local time marked as UTC.
+        auto timezone = parseTimezoneMember(argument);
         auto timezone_it = argument.FindMember("timezone");
-        if (timezone_it != argument.MemberEnd())
-            timezone = parseMongoAggregateExpression(timezone_it->value);
 
         if (auto format_it = argument.FindMember("format"); format_it != argument.MemberEnd())
             return makeFormattedDate(date, translateMongoDateFormat(format_it->value, name), timezone);
@@ -893,10 +1013,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         /// A day, a month or a year added in a time zone is as long as the calendar of that time
         /// zone makes it - 23 or 25 hours around a change of the daylight saving time - which the
         /// time zone argument of `addDays` and its kin decides.
-        auto result = makeASTFunction(function, std::move(start), std::move(amount));
-        if (auto timezone = parseTimezoneMember(argument))
-            result->arguments->children.push_back(std::move(timezone));
-        return result;
+        return makeASTFunction(function, std::move(start), std::move(amount), parseTimezoneMember(argument));
     }
 
     if (name == "$dateDiff")
@@ -922,10 +1039,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             return makeASTFunction("intDiv", std::move(days), makeLiteral(Field(UInt64(7))));
         }
 
-        auto result = makeASTFunction("dateDiff", makeLiteral(Field(String(unit))), std::move(start), std::move(end));
-        if (timezone)
-            result->arguments->children.push_back(std::move(timezone));
-        return result;
+        return makeASTFunction("dateDiff", makeLiteral(Field(String(unit))), std::move(start), std::move(end), std::move(timezone));
     }
 
     if (name == "$regexFind" || name == "$regexFindAll")
@@ -954,14 +1068,15 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
             /// A system variable stands for something the translation has no counterpart for - the
             /// document being processed, the pruning decision of `$redact`, the current cluster
             /// time. A user variable, which only `$map` and `$filter` can bind, names the lambda
-            /// parameter of the same name, and is an error anywhere it is not bound.
+            /// parameter it is bound to (see `variableIdentifier`), and is an error anywhere it is
+            /// not bound.
             static const std::unordered_set<std::string_view> system_variables
                 = {"ROOT", "CURRENT", "REMOVE", "DESCEND", "PRUNE", "KEEP", "CLUSTER_TIME", "SEARCH_META", "USER_ROLES"};
             if (variable.empty() || system_variables.contains(variable))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The aggregation system variable '{}' is not supported", text);
             if (std::find(bound_variables.begin(), bound_variables.end(), variable) == bound_variables.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Use of undefined variable: '{}'", variable);
-            return make_intrusive<ASTIdentifier>(String(variable));
+            return make_intrusive<ASTIdentifier>(variableIdentifier(variable));
         }
         if (text.starts_with("$"))
         {
@@ -1000,7 +1115,7 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
                 ErrorCodes::NOT_IMPLEMENTED,
                 "A document expression is only supported as the value of a '$project' or a '$set' field, where it becomes "
                 "one column per leaf");
-        return parseOperator(name, member.value);
+        return checkExpressionSize(parseOperator(name, member.value));
     }
 
     if (auto constant = tryParseMongoConstant(value))
@@ -1046,6 +1161,16 @@ std::pair<ASTPtr, int> makeGroupOrderKey(const MongoGroupOrder & order, std::str
     return {keys, direction};
 }
 
+/** The values of an array accumulator out of the one-element tuples it collected. The array
+  * aggregate functions skip a `NULL` value, while a `$push` of a document whose value is `null`
+  * pushes it; a tuple is never `NULL`, so the values are collected wrapped into one.
+  */
+ASTPtr makeNullPreservingArray(ASTPtr tuples)
+{
+    auto element = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("x"), makeLiteral(Field(UInt64(1))));
+    return makeASTFunction("arrayMap", makeLambda("x", std::move(element)), std::move(tuples));
+}
+
 /// The values of a group in the order of the stream: they are collected together with the sort key
 /// and sorted by it, because `groupArray` appends them in the order the query reads the rows in.
 ASTPtr makeOrderedGroupValues(ASTPtr value, const MongoGroupOrder & order, std::string_view accumulator)
@@ -1071,12 +1196,21 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         {"$avg", "avg"},
         {"$min", "min"},
         {"$max", "max"},
-        {"$first", "any"},
-        {"$last", "anyLast"},
-        {"$push", "groupArray"},
-        {"$addToSet", "groupUniqArray"},
         {"$stdDevPop", "stddevPop"},
         {"$stdDevSamp", "stddevSamp"},
+    };
+
+    /// The value of the first or the last document of the group, even when it is `null`: `any` and
+    /// `anyLast` would skip such a document.
+    static const std::unordered_map<std::string_view, std::string> null_respecting_accumulators = {
+        {"$first", "any_respect_nulls"},
+        {"$last", "anyLast_respect_nulls"},
+    };
+
+    /// The values of the group, `null` included (see `makeNullPreservingArray`).
+    static const std::unordered_map<std::string_view, std::string> array_accumulators = {
+        {"$push", "groupArray"},
+        {"$addToSet", "groupUniqArray"},
     };
 
     if (name == "$count")
@@ -1115,12 +1249,12 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
 
         /// `groupArray(N)(x)` keeps the first N values of the group and `groupArrayLast(N)(x)` the
         /// last ones; the count is a parameter of the aggregate function rather than an argument.
-        auto function = makeASTFunction(name == "$firstN" ? "groupArray" : "groupArrayLast", std::move(input));
+        auto function = makeASTFunction(name == "$firstN" ? "groupArray" : "groupArrayLast", makeASTFunction("tuple", std::move(input)));
         auto parameters = make_intrusive<ASTExpressionList>();
         parameters->children.push_back(std::move(count));
         function->parameters = parameters;
         function->children.push_back(std::move(parameters));
-        return function;
+        return makeNullPreservingArray(std::move(function));
     }
 
     if (name == "$sum")
@@ -1147,8 +1281,19 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
 
         auto [key, direction] = makeGroupOrderKey(order, name);
         const bool takes_the_smallest_key = (name == "$first") == (direction == 1);
-        return makeASTFunction(takes_the_smallest_key ? "argMin" : "argMax", std::move(input), std::move(key));
+        /// The value is wrapped into a tuple, which is never `NULL`: `argMin` and `argMax` skip a
+        /// `NULL` value, while the first document of the group is the first one even when its
+        /// value is `null`.
+        auto selected = makeASTFunction(
+            takes_the_smallest_key ? "argMin" : "argMax", makeASTFunction("tuple", std::move(input)), std::move(key));
+        return makeASTFunction("tupleElement", std::move(selected), makeLiteral(Field(UInt64(1))));
     }
+
+    if (auto it = null_respecting_accumulators.find(name); it != null_respecting_accumulators.end())
+        return makeASTFunction(it->second, parseMongoAggregateExpression(member.value));
+
+    if (auto it = array_accumulators.find(name); it != array_accumulators.end())
+        return makeNullPreservingArray(makeASTFunction(it->second, makeASTFunction("tuple", parseMongoAggregateExpression(member.value))));
 
     if (auto it = accumulators.find(name); it != accumulators.end())
         return makeASTFunction(it->second, parseMongoAggregateExpression(member.value));
@@ -1177,17 +1322,23 @@ void expandMongoProjectedField(const std::string & name, const rapidjson::Value 
             auto whole_match = makeASTFunction("regexpExtract", input, pattern, makeLiteral(Field(UInt64(0))));
 
             result.push_back({name + ".match", makeASTFunction("if", matched, whole_match, makeNull())});
-            result.push_back(
-                {name + ".idx",
-                 makeASTFunction(
-                     "if",
-                     matched->clone(),
-                     makeASTFunction(
-                         "minus", makeASTFunction("position", input->clone(), whole_match->clone()), makeLiteral(Field(UInt64(1)))),
-                     makeNull())});
-            result.push_back(
-                {name + ".captures",
-                 makeASTFunction("if", matched->clone(), makeASTFunction("extractGroups", input->clone(), pattern->clone()), makeNull())});
+            /** The index of the match is the number of code points before it. Searching for the text
+              * of the match would find an earlier occurrence of the same text, which the expression
+              * need not match there, and count bytes. So the text before the match is extracted:
+              * the shortest prefix after which the expression matches is the one before the leftmost
+              * match, which is the match `regexpExtract` returns. The expression is grouped, so that
+              * its alternatives and its inline flags stay its own.
+              */
+            auto prefix_pattern = makeLiteral(Field("^((?s:.*?))(?:" + pattern->as<ASTLiteral &>().value.safeGet<String>() + ")"));
+            auto prefix = makeASTFunction("regexpExtract", input->clone(), std::move(prefix_pattern), makeLiteral(Field(UInt64(1))));
+            result.push_back({name + ".idx", makeASTFunction("if", matched->clone(), makeASTFunction("lengthUTF8", std::move(prefix)), makeNull())});
+            /** `extractGroups` refuses an expression without groups, for which Mongo answers an empty
+              * array of captures. So an empty group is appended to the grouped expression - it
+              * matches the empty string and changes no match - and its capture is dropped.
+              */
+            auto captures_pattern = makeLiteral(Field("(?:" + pattern->as<ASTLiteral &>().value.safeGet<String>() + ")()"));
+            auto captures = makeASTFunction("arrayPopBack", makeASTFunction("extractGroups", input->clone(), std::move(captures_pattern)));
+            result.push_back({name + ".captures", makeASTFunction("if", matched->clone(), std::move(captures), makeNull())});
             return;
         }
 
