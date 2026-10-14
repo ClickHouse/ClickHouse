@@ -155,6 +155,7 @@ protected:
             context.reset();
             session.reset();
             params.reset();
+            request_span = nullptr;
         });
 
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
@@ -180,6 +181,7 @@ protected:
             trace_settings_context->getOpenTelemetrySpanLog());
         thread_trace_context.root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context.root_span.addAttribute("http.method", request.getMethod());
+        request_span = &thread_trace_context.root_span;
 
         try
         {
@@ -330,6 +332,8 @@ protected:
     std::unique_ptr<Session> session;
     std::unique_ptr<Credentials> request_credentials;
     ContextMutablePtr context;
+    /// The root span of the current request, for errors that are turned into a response.
+    OpenTelemetry::Span * request_span = nullptr;
 };
 
 
@@ -668,6 +672,9 @@ public:
             /// Drop any partial success body still sitting in the output buffer
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
+
+            if (request_span)
+                request_span->addAttribute(e);
 
             /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
             /// not with the query: report it as an internal error so that clients don't attribute it

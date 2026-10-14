@@ -247,6 +247,28 @@ def test_query_api_setup_failure_records_http_status_in_span_log(bad_param):
     )
 
 
+def test_query_api_bad_promql_records_exception_in_span_log():
+    """
+    A PromQL error is turned into a 400 response, and its exception should still be
+    recorded on the PrometheusRequestHandler span.
+    """
+    trace_id = str(uuid.uuid4())
+    traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
+    escaped_query = urllib.parse.quote_plus("sum(", safe="")
+    url = f"http://{node.ip_address}:9093/api/v1/query?query={escaped_query}"
+    response = get_response_to_http_api(url, headers={"traceparent": traceparent})
+    assert response.status_code == 400
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT attribute['clickhouse.http_status'], attribute['clickhouse.exception'] != '' "
+        f"FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        "400\t1\n",
+    )
+
+
 def test_remote_write_appears_in_query_log_with_written_rows():
     """
     A remote write to /write should produce one parent TimeSeries row in
