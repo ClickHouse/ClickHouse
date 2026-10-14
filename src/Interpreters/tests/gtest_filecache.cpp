@@ -4474,6 +4474,7 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
 
     const String data(1_KiB, 'x');
     FilesystemCacheSettings temporary_settings;
+    temporary_settings.read_if_exists_otherwise_bypass = true;
     temporary_settings.cache_temporarily = true;
     DiskCacheProvider temporary(cache, temporary_settings);
     DiskCacheProvider regular(cache, FilesystemCacheSettings{});

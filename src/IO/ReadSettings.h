@@ -115,8 +115,8 @@ struct PageCacheSettings
 struct FilesystemCacheSettings
 {
     bool read_if_exists_otherwise_bypass = false;
-    /// A miss is cached only while the `ReaderExecutor` needs it: a segment it filled is dropped once it passes
-    /// the segment, unless another reader used it. Other readers bypass the cache. The bypass above wins.
+    /// A variant of the bypass above, set together with it: the `ReaderExecutor` caches a miss and drops the segment
+    /// once it passes it, unless another reader used it. Readers without this mode see only the bypass.
     bool cache_temporarily = false;
     /// Cache-only mode for data with no backing storage (distributed-cache temporary data):
     /// a miss is an error, never a remote-FS bypass. Takes precedence over `read_if_exists_otherwise_bypass`.
