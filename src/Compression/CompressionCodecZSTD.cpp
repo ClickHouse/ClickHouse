@@ -3,11 +3,14 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <zstd.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ObjectPool.h>
 #include <Common/PerCPU.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/memory.h>
 #include <base/unit.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -53,24 +56,43 @@ SimpleObjectPool<ContextPtr> & contextPool()
     return pools[static_cast<size_t>(PerCPU::getCurrentCPU()) % num_pools];
 }
 
+/// Memory of a context as the memory tracker counts it: the holder, the context from `ZSTD_createCCtx` and the workspace
+/// that `ZSTD_compress2` allocates, each rounded up by the allocator.
+Int64 trackedSize([[maybe_unused]] ZSTD_CCtx * cctx)
+{
+#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_FREEBSD))
+    static const size_t context_size = ZSTD_sizeof_CCtx(ZstdCCtxPtr(ZSTD_createCCtx()).get());
+    static const Int64 fixed_size
+        = ::Memory::getActualAllocationSize(sizeof(ZstdCCtxPtr)) + ::Memory::getActualAllocationSize(context_size);
+    size_t workspace_size = ZSTD_sizeof_CCtx(cctx) - context_size;
+    return fixed_size + (workspace_size ? ::Memory::getActualAllocationSize(workspace_size) : 0);
+#else
+    /// Without the `malloc` interceptors, the allocations of `libzstd` are not tracked: only the holder from `new` is.
+    return sizeof(ZstdCCtxPtr);
+#endif
+}
+
 }
 
 UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     static std::atomic<size_t> num_contexts = 0;
-    /// Pooled contexts outlive queries, so they are accounted only in the global memory tracker.
-    MemoryTrackerBlockerInThread blocker;
     /// Returning a context to its pool happens in a destructor, which must not throw `MEMORY_LIMIT_EXCEEDED`.
     LockMemoryExceptionInThread lock(VariableContext::Global);
-    auto holder = contextPool<ZstdCCtxPtr>().get([]
+    bool created = false;
+    auto holder = contextPool<ZstdCCtxPtr>().get([&]
     {
         ZstdCCtxPtr ctx(ZSTD_createCCtx());
         if (!ctx)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: failed to create compression context");
         ++num_contexts;
+        created = true;
         return new ZstdCCtxPtr(std::move(ctx));
     });
     ZSTD_CCtx * cctx = holder->get();
+    /// A pooled context is charged to the query while it is used; a new one is charged by its own allocations.
+    const Int64 charged = created ? 0 : trackedSize(cctx);
+    std::ignore = CurrentMemoryTracker::allocNoThrow(charged);
     /// The previous user may have set other parameters or failed mid-frame.
     ZSTD_CCtx_reset(cctx, ZSTD_reset_session_and_parameters);
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
@@ -85,6 +107,15 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
     {
         delete holder.release();
         --num_contexts;
+    }
+    const Int64 pooled = holder ? trackedSize(cctx) : 0;
+    std::ignore = CurrentMemoryTracker::free(pooled);
+    /// The global tracker counts the pool all the time, so it takes back what it got from the charges above;
+    /// under a blocker it only corrects its amount.
+    if (pooled != charged)
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        total_memory_tracker.adjustWithUntrackedMemory(pooled - charged);
     }
 
     if (ZSTD_isError(compressed_size))
