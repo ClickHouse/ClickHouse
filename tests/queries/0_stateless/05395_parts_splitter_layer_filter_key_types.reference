@@ -1,0 +1,17 @@
+array	1	1	1	1	1
+bool	1	1	1	1	1
+date	1	1	1	1	1
+date32	1	1	1	1	1
+datetime	1	1	1	1	1
+datetime64	1	1	1	1	1
+decimal	1	1	1	1	1
+enum	1	1	1	1	1
+fixedstring	1	1	1	1	1
+int128	1	1	1	1	1
+interval	1	1	1	1	1
+ipv6	1	1	1	1	1
+lowcardinality	1	1	1	1	1
+string	1	1	1	1	1
+tuple	1	1	1	1	1
+uuid	1	1	1	1	1
+two_tables	1
