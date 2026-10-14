@@ -190,23 +190,51 @@ This table function is similar to the [s3Cluster function](/reference/functions/
 
 ## Syntax {#syntax}
 
+<Tabs>
+<Tab title="Connection string">
+
+Credentials are embedded in the connection string, so no separate `account_name`/`account_key` is needed:
+
 ```sql
-azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+azureBlobStorageCluster(cluster_name, connection_string, container_name, blobpath [, format, compression, structure])
 ```
+
+</Tab>
+<Tab title="Storage account URL">
+
+Requires `account_name` and `account_key` as separate arguments:
+
+```sql
+azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, structure])
+```
+
+</Tab>
+<Tab title="Workload identity">
+
+Uses Azure workload identity via `extra_credentials`; mutually exclusive with `account_name` / `account_key` and requires `storage_account_url` (not `connection_string`):
+
+```sql
+azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, structure])
+```
+
+</Tab>
+</Tabs>
 
 ## Arguments {#arguments}
 
 | Argument            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `cluster_name`      | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `connection_string` | storage_account_url` — connection_string includes account name & key ([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)) or you could also provide the storage account url here and account name & account key as separate parameters (see parameters account_name & account_key) | 
+| `connection_string` | A connection string that includes embedded credentials (account name + account key or SAS token). When using this form, `account_name` and `account_key` should **not** be passed separately, and `client_id` / `tenant_id` cannot be used. See [Configure a connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account). |
+| `storage_account_url` | The storage account endpoint URL, e.g. `https://myaccount.blob.core.windows.net/`. When using this form, pass either `account_name` and `account_key`, or `extra_credentials(client_id=, tenant_id=)` for workload identity. |
 | `container_name`    | Container name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 | `blobpath`          | file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                                                                                                                                                                                                                                                                                                                                                          |
-| `account_name`      | if storage_account_url is used, then account name can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `account_key`       | if storage_account_url is used, then account key can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `account_name`      | Storage account name. **Required** when using `storage_account_url` without SAS or workload identity; must **not** be passed with `connection_string` or `extra_credentials`. |
+| `account_key`       | Storage account key. **Required** when using `storage_account_url` without SAS or workload identity; must **not** be passed with `connection_string` or `extra_credentials`. |
 | `format`            | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `compression`       | Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                                                                                                                                                      |
 | `structure`         |  Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `extra_credentials` | Use `client_id` and `tenant_id` for Azure workload identity authentication. Mutually exclusive with `account_name` / `account_key`, and requires `storage_account_url` (not `connection_string`). Every node in the cluster must have `AZURE_FEDERATED_TOKEN_FILE` set. |
 
 ## Returned value {#returned-value}
 
