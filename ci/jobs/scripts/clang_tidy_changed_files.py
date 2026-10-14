@@ -895,7 +895,9 @@ def infrastructure_error(output, returncode):
     `error:` line without a source location is either a compile error clang
     could not place, which is a finding and is reported as one, or clang-tidy
     refusing to run at all - an unknown check, a translation unit missing from
-    the compilation database - which is this.
+    the compilation database - which is this. So is a nonzero return code that no
+    error diagnostic explains, such as `Error: no checks enabled.`: clang-tidy
+    exits nonzero only for errors, as warnings are not turned into errors here.
     """
     if returncode < 0:
         return f"clang-tidy was killed by signal {-returncode}"
@@ -906,6 +908,11 @@ def infrastructure_error(output, returncode):
         match = _BARE_ERROR_RE.match(line)
         if match and "clang-diagnostic" not in match.group("message"):
             return f"clang-tidy failed to run: {match.group('message')}"
+    if returncode != 0 and not any(
+        diagnostic["level"] in ("fatal error", "error")
+        for diagnostic in parse_diagnostics(output)
+    ):
+        return f"clang-tidy exited with code {returncode} without reporting an error"
     return ""
 
 
@@ -1295,6 +1302,22 @@ def self_test(repo_dir, build_dir, compile_commands):
     expect(
         infrastructure_error("", -9),
         "A killed clang-tidy is not an infrastructure error",
+    )
+    expect(
+        infrastructure_error("Error: no checks enabled.", 1),
+        "clang-tidy enabling no checks is not an infrastructure error",
+    )
+    expect(
+        infrastructure_error(
+            f"{changed_path}:1:1: warning: changed [bugprone-test]", 1
+        ),
+        "A nonzero exit explained by no error is not an infrastructure error",
+    )
+    expect(
+        not infrastructure_error(
+            f"{changed_path}:1:1: warning: changed [bugprone-test]", 0
+        ),
+        "A warning is taken for an infrastructure error",
     )
 
     return Result(

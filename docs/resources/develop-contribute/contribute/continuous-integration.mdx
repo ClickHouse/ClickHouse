@@ -240,10 +240,10 @@ A change to the check itself additionally runs a self-test of how it selects tra
 Both jobs can be run locally:
 
 ```bash
-python -m ci.praktika run "Clang-tidy (changed files)"
+python -m ci.praktika run "Clang-tidy (changed files)" --workflow MergeQueueCI --pr <PR number>
 ```
 
-The limited check derives what to analyze from the pull request, so run it from the branch of an open one.
+The limited check is registered only in the `MergeQueueCI` workflow, and it derives what to analyze from the files changed by the pull request given with `--pr`, so run it from the branch of that pull request.
 A single file can also be checked directly against a configured build directory:
 
 ```bash
