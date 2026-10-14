@@ -224,7 +224,7 @@ Poco::JSON::Object::Ptr BigQueryClient::requestJSON(
         if (!request_body.empty())
         {
             headers.emplace_back("Content-Type", "application/json");
-            out_stream_callback = [&request_body](std::ostream & os) { os << request_body; };
+            out_stream_callback = [&request_body](WriteBuffer & out) { writeString(request_body, out); };
         }
 
         /// Also covers tokens returned by the OAuth endpoint and tables attached without the CREATE check.
