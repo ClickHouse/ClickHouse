@@ -407,6 +407,70 @@ It is allowed to specify multiple volume mounts to the same `mountPath`.
 Operator will create projected volume with all specified mounts.
 </Note>
 
+### Health probes {#health-probes}
+
+The operator configures liveness and readiness probes on every ClickHouse and Keeper container.
+No startup probe is set by default.
+
+| Resource            | Probe     | Default check                                                                                   |
+|---------------------|-----------|-------------------------------------------------------------------------------------------------|
+| `ClickHouseCluster` | liveness  | HTTP `GET /ping` on the interserver port `9009`                                                 |
+| `ClickHouseCluster` | readiness | HTTP `GET /ping` on the management HTTP port `9002`                                             |
+| `KeeperCluster`     | liveness  | TCP connect to the client port `2181` (`2281` when both `settings.tls.enabled` and `settings.tls.required` are `true`) |
+| `KeeperCluster`     | readiness | HTTP `GET /ready` on the `http_control` port `9123`                                             |
+
+ClickHouse and Keeper use the same default timing settings:
+
+| Probe     | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+|-----------|-----------------------|-----------------|------------------|--------------------|--------------------|
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+ClickHouse opens the interserver listener before it loads tables and the client listeners after, so the liveness probe tolerates slow table loading, while a passing readiness probe means the replica serves queries.
+
+Override any probe through `spec.containerTemplate` on either resource. For example, customize the ClickHouse liveness probe:
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+A probe you set replaces the operator default entirely — it isn't merged field by field.
+Specify the handler (`httpGet`, `tcpSocket`, or `exec`) and every timing field you care about; omitted fields fall back to the Kubernetes defaults (for example `timeoutSeconds: 1`, `failureThreshold: 3`), not to the operator values above.
+</Warning>
+
+#### Startup probe {#startup-probe}
+
+Use `startupProbe` when a container needs more time to start than the liveness probe allows — with the defaults, about 60 seconds of initial delay plus 10 failed checks 5 seconds apart.
+Kubernetes holds back the liveness and readiness probes until the startup probe succeeds, so a slow start doesn't trigger a restart loop.
+For example, give a Keeper replica that replays a large snapshot up to 10 minutes to start accepting connections:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+After the startup probe succeeds, the regular liveness and readiness probes take over.
+
 ### See [API Reference](/products/kubernetes-operator/reference/api-reference#containertemplatespec) for all supported Container template options.
 
 ## TLS/SSL configuration {#tls-ssl-configuration}

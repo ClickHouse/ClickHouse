@@ -256,7 +256,7 @@ def _run_copilot_once(prompt, robot_name):
             # </dev/null: ensure stdin is definitively non-interactive
             command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                     f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-                    f"--add-dir . --model gpt-5.4 --effort xhigh < /dev/null",
+                    f"--add-dir . --model gpt-6.1-sol --effort xhigh < /dev/null",
             with_info=True,
         )
 
@@ -290,7 +290,7 @@ def _run_codex_once(prompt, _robot_name):
 
         return Result.from_commands_run(
             name="codex review",
-            # -m gpt-5.4: same model the Copilot CLI uses, so
+            # -m gpt-6.1-sol: same model the Copilot CLI uses, so
             #   review quality stays comparable across backends.
             # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
             #   read-only elsewhere; sufficient for the review output.
@@ -303,7 +303,7 @@ def _run_codex_once(prompt, _robot_name):
             # --color never: no ANSI codes in the job log.
             command=f"CODEX_HOME={shlex.quote(codex_home)} "
                     f"codex exec "
-                    f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
+                    f"-m gpt-6.1-sol -c 'model_reasoning_effort=xhigh' "
                     f"-s workspace-write "
                     f"-c sandbox_workspace_write.network_access=true "
                     f"-c approval_policy=never "

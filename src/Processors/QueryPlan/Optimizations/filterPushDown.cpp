@@ -30,7 +30,6 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -1113,6 +1112,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         Names right_stream_stable_columns_to_push_down = get_available_columns_for_filter(
             false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
 
+        /// An empty column set does not mean "nothing is pushable": a column-free conjunct such as a folded
+        /// `WHERE 0` still passes `tryToExtractPartialPredicate`, because it depends on no column at all.
+        /// A side whose push-down is disabled must not receive it either: for a prepared lookup on the
+        /// right (`JoinStepLogicalLookup`) the inserted `Filter` would hide the storage from the direct-join
+        /// detection, and a forced `join_algorithm = 'direct'` would fail with `NOT_IMPLEMENTED` instead
+        /// of returning an empty result. The estimator still sees the empty read from the other side.
+        if (left_stream_filter_push_down_input_columns_available)
         {
             auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down);
             if (left_partial_filter_dag.has_value())
@@ -1128,6 +1134,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             }
         }
 
+        if (right_stream_filter_push_down_input_columns_available)
         {
             auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down);
             if (right_partial_filter_dag.has_value())
@@ -1218,29 +1225,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return 0;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
-            return updated_steps;
-    }
-
-    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
-    {
-        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
-        /// window: it only removes whole partitions, and dropping a partition never changes
-        /// any window value on a surviving row (regardless of the window function or frame).
-        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
-        Names partition_keys;
-        for (const auto & sort_column : window->getWindowDescription().partition_by)
-            partition_keys.push_back(sort_column.column_name);
-
-        if (partition_keys.empty())
-            return 0;
-
-        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
-        /// A predicate must be deterministic in the partition key, not merely reference only it:
-        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
-        /// inside a surviving partition before the window runs, which can change which row
-        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
-        /// rows in the partition, so non-deterministic filters are not safe to move below it.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys, /*allow_index_hints=*/false))
             return updated_steps;
     }
 
