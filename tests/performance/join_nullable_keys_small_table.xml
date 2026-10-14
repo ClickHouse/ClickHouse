@@ -9,7 +9,7 @@
         SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
         LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='hash'
+        SETTINGS max_threads=8, join_algorithm='hash', parallel_hash_join_threshold=18446744073709551615
     </query>
 
     <query>
