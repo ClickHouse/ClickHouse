@@ -25,7 +25,6 @@ struct BlobStorageLogElement
         MultiPartUploadComplete = 5,
         MultiPartUploadAbort = 6,
         Read = 7,
-        Copy = 8,
     };
 
     EventType event_type{};
@@ -38,8 +37,6 @@ struct BlobStorageLogElement
     String bucket;
     String remote_path;
     String local_path;
-    String source_bucket;
-    String source_remote_path;
 
     size_t data_size{};
     size_t elapsed_microseconds{};
@@ -69,8 +66,6 @@ public:
         std::shared_lock lock{prepare_mutex};
         return !prefix_to_ignore.empty() && path.starts_with(prefix_to_ignore);
     }
-
-    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
 
 protected:
     void prepareTable() override;

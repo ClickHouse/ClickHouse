@@ -9,6 +9,7 @@ SET optimize_and_compare_chain = 1;
 SET optimize_extract_common_expressions = 0;
 SET optimize_rewrite_has_to_in = 0;
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 -- { echoOn }
 DROP TABLE IF EXISTS table_basic;
@@ -126,8 +127,6 @@ SET use_variant_as_common_type=1;
 
 DROP TABLE IF EXISTS table_json;
 
--- `json.b` is a `Dynamic` path, and `has` compares it per stored type: `has(['042'], json.b)` matches a stored `42`.
--- A transform of it renders each value from its own type instead, so the `json.b` part of the key is not used.
 CREATE TABLE table_json (id UInt64, json JSON(a UInt32)) ENGINE = MergeTree ORDER BY (json.a, json.b::String) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2, 'b', 'str_' || number % 3, 'c', range(number % 10))) FROM numbers(4);

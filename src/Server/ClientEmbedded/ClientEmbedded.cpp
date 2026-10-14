@@ -59,11 +59,12 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
 }
 
 
-void ClientEmbedded::processError(std::string_view query) const
+void ClientEmbedded::processError(std::string_view) const
 {
-    /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
-    /// the exception is reported here rather than rethrown - rethrowing it would end the run.
-    if (is_interactive || ignore_error)
+    if (ignore_error)
+        return;
+
+    if (is_interactive)
     {
         String message;
         if (server_exception)
@@ -75,10 +76,7 @@ void ClientEmbedded::processError(std::string_view query) const
             message = client_exception->message();
         }
 
-        if (is_interactive)
-            error_stream << fmt::format("Received exception\n{}\n\n", message);
-        else
-            error_stream << fmt::format("Received exception\n{}\n(query: {})\n", message, query);
+        error_stream << fmt::format("Received exception\n{}\n\n", message);
     }
     else
     {
@@ -181,13 +179,8 @@ try
     addOptionsToTheClientConfiguration(options);
 
     /// Apply settings specified as command line arguments (read environment variables).
-    /// Apply only the changed settings and check them against the constraints: replacing the whole
-    /// `Settings` would drop what the session context got from the user's profiles and roles
-    /// (e.g. `readonly`, resource limits, `additional_table_filters`).
     global_context = session->sessionContext();
-    SettingsChanges cmd_settings_changes = cmd_settings->changes();
-    global_context->checkSettingsConstraints(cmd_settings_changes, SettingSource::QUERY);
-    global_context->applySettingsChanges(cmd_settings_changes);
+    global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;
     /// If a query is passed via SSH - just append it to the list of queries to execute:
@@ -205,8 +198,8 @@ try
 
     load_suggestions = true;
     wait_for_suggestions_to_load = true;
-    server_display_name = global_context->getConfigRef().getString("display_name", getFQDNOrHostName());
-    prompt = "{display_name}";
+    server_display_name = getFQDNOrHostName();
+    prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
     enable_highlight = ConfigHelper::getBool(getClientConfiguration(), "highlight", true);

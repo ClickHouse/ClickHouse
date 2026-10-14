@@ -13,7 +13,7 @@
 #include <Interpreters/FileCache/FileCacheUtils.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Common/callOnce.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -456,17 +456,11 @@ const FileCache::OriginInfo & FileCache::getCommonOrigin()
 
 FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::path & filename) const
 {
-    return getCommonOriginWithSegmentKeyType(
-        system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data);
-}
-
-FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(FileSegmentKeyType segment_type) const
-{
     auto origin = FileCache::getCommonOrigin();
     if (!use_split_cache)
         return origin;
 
-    origin.segment_type = segment_type;
+    origin.segment_type = system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
     return origin;
 }
 
@@ -2207,16 +2201,8 @@ void FileCache::loadMetadataImpl()
                     return std::nullopt;
                 }
 
-                if (!user_it->is_directory())
-                {
-                    /// Only client directories are loaded from here. Ignore files: a server of
-                    /// another version may keep files of its own next to them, and opening one
-                    /// as a directory would fail the whole load.
-                    const auto entry = user_it->path().filename().string();
-                    if (entry != "status")
-                        LOG_WARNING(log, "Ignoring file {} in {}", entry, metadata.getBaseDirectory());
+                if (user_it->path().filename() == "status")
                     continue;
-                }
 
                 key_prefix_it = fs::directory_iterator{user_it->path()};
                 if (key_prefix_it == fs::directory_iterator())
@@ -2755,17 +2741,6 @@ std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const Key & key, c
 {
     std::vector<FileSegment::Info> file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL, OriginInfo(user_id));
-    for (const auto & [_, file_segment_metadata] : *locked_key)
-        file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment));
-    return file_segments;
-}
-
-std::vector<FileSegment::Info> FileCache::tryGetFileSegmentInfos(const Key & key, const UserID & user_id)
-{
-    std::vector<FileSegment::Info> file_segments;
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, OriginInfo(user_id));
-    if (!locked_key)
-        return file_segments;
     for (const auto & [_, file_segment_metadata] : *locked_key)
         file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment));
     return file_segments;
