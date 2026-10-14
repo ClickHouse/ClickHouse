@@ -3377,6 +3377,16 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 }
 
 
+void Aggregator::checkMergedGroupLimit(std::atomic<size_t> & merged_groups, size_t bucket_groups) const
+{
+    if (params.max_rows_to_group_by == 0 || params.group_by_overflow_mode != OverflowMode::THROW)
+        return;
+
+    bool no_more_keys = false;
+    checkLimits(merged_groups.fetch_add(bucket_groups) + bucket_groups, no_more_keys);
+}
+
+
 void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
 {
     if (!data || data->empty())

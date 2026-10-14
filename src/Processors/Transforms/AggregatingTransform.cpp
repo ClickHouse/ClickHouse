@@ -320,24 +320,6 @@ public:
 
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
-    /// A throw-mode group limit is enforced against the merged totals for every run: the
-    /// baseline producers' checks cannot see the merged cardinality (their tables are
-    /// checked one by one), and the adaptive producers' checks cannot see the staged keys
-    /// at all, so this is where the limit catches what they miss. The dropping modes keep
-    /// the merge untouched: their contract is decided at the producers, and stopping the
-    /// merge here would drop already-aggregated groups. `AdaptiveBucketMergingSource` checks
-    /// its buckets here too.
-    static void checkMergedGroupLimit(const AggregatingTransformParams & params, SharedData & shared_data, size_t full_group_count)
-    {
-        if (params.params.max_rows_to_group_by != 0 && params.params.group_by_overflow_mode == OverflowMode::THROW
-            && !shared_data.is_cancelled.load(std::memory_order_seq_cst))
-        {
-            bool no_more_keys = false;
-            const size_t total = shared_data.two_level_merged_groups.fetch_add(full_group_count) + full_group_count;
-            params.aggregator.checkLimits(total, no_more_keys);
-        }
-    }
-
     ConvertingAggregatedToChunksWithMergingSource(
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
@@ -384,7 +366,8 @@ protected:
             *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
 
-        checkMergedGroupLimit(*params, *shared_data, full_group_count);
+        if (!shared_data->is_cancelled.load(std::memory_order_seq_cst))
+            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, full_group_count);
         shared_data->is_bucket_processed[bucket_num] = true;
 
         return chunk;
@@ -454,7 +437,7 @@ protected:
             if (shared_data->is_cancelled.load(std::memory_order_seq_cst))
                 return {};
 
-            ConvertingAggregatedToChunksWithMergingSource::checkMergedGroupLimit(*params, *shared_data, full_group_count);
+            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, full_group_count);
             shared_data->is_bucket_processed[bucket_num] = true;
 
             for (auto & agg_chunk : agg_chunks)

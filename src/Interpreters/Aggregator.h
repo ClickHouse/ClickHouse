@@ -462,6 +462,16 @@ public:
     /// The header of the blocks of aggregate states that the external aggregation spills and merges.
     Block getSpilledStatesHeader() const;
 
+    /// Holds a throw-mode `max_rows_to_group_by` against the groups of the buckets merged so far: adds
+    /// `bucket_groups`, the groups of the bucket just merged, to `merged_groups`, the running total of the
+    /// threads that merge the buckets, and checks the total. The buckets partition the key space, so the
+    /// total never exceeds the final group count: once it crosses the limit, so does the final count. The
+    /// producers' checks miss what this catches: the baseline producers check their tables one by one, so
+    /// they cannot see the merged cardinality, and the adaptive producers cannot see the staged keys at all.
+    /// The dropping modes keep the merge untouched: their contract is decided at the producers, and stopping
+    /// the merge here would drop already-aggregated groups.
+    void checkMergedGroupLimit(std::atomic<size_t> & merged_groups, size_t bucket_groups) const;
+
     /** This array serves two purposes.
       *
       * Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
