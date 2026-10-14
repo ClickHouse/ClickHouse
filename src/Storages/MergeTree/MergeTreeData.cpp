@@ -6189,14 +6189,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         {
             if (command.type != AlterCommand::ADD_INDEX)
                 continue;
-            /// The index may be absent from the new metadata, e.g. `ADD INDEX i ..., DROP INDEX i` in one query.
-            if (!new_metadata.secondary_indices.has(command.index_name))
-                continue;
-            const auto & added = new_metadata.secondary_indices.getByName(command.index_name);
-            if (added.where_expression)
+            /// The declaration of the command itself: with `IF NOT EXISTS` the index of that name in the new
+            /// metadata can be an older one, and with `DROP INDEX` of the same name it can be absent.
+            const auto * declaration = command.index_decl ? command.index_decl->as<ASTIndexDeclaration>() : nullptr;
+            if (declaration && declaration->getWhere())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Skip index '{}' with WHERE is experimental. Enable the setting 'allow_experimental_partial_skip_indexes' to use it",
-                    added.name);
+                    declaration->name);
         }
     }
 

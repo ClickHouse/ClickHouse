@@ -94,7 +94,7 @@ public:
     MergeTreeIndexSubstreams getPotentialSubstreams() const override
     {
         if (index.where_expression)
-            return getSubstreams();
+            return withPartialIndexMarker(getSubstreams());
         return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
     }
     using IMergeTreeIndex::getPhysicalFormat;

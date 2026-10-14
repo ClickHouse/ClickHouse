@@ -255,6 +255,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         skip_index_accumulated_marks.push_back(0);
         partial_index_granule_open.push_back(false);
         partial_index_granule_has_rows.push_back(false);
+        partial_index_signatures.push_back(skip_index->index.where_expression ? skip_index->getPartialIndexSignature() : String());
     }
 }
 
@@ -562,6 +563,28 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         }
     }
 
+    /// The marker of a partial index is a small standalone file: its checksum is what readers compare.
+    for (size_t i = 0; i < skip_indices.size(); ++i)
+    {
+        const auto & skip_index = skip_indices[i];
+        if (!skip_index->index.where_expression)
+            continue;
+
+        const String marker_name = replaceFileNameToHashIfNeeded(skip_index->getFileName(), *storage_settings, data_part_storage.get())
+            + IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION;
+        const String & signature = partial_index_signatures[i];
+
+        auto marker_file = getDataPartStorage().writeFile(marker_name, signature.size(), settings.query_write_settings);
+        HashingWriteBuffer marker_hashing(*marker_file);
+        marker_hashing.write(signature.data(), signature.size());
+        marker_hashing.finalize();
+        marker_file->finalize();
+
+        auto & checksum = checksums.files[marker_name];
+        checksum.file_size = marker_hashing.count();
+        checksum.file_hash = marker_hashing.getHash();
+    }
+
     if (skip_indices_packed_writer && skip_indices_packed_writer->hasModifiedFiles())
     {
         const String packed_filename{SKIP_INDICES_PACKED_FILENAME};
@@ -694,6 +717,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     skip_index_accumulated_marks.clear();
     partial_index_granule_open.clear();
     partial_index_granule_has_rows.clear();
+    partial_index_signatures.clear();
     skip_indices_packed_file.reset();
     skip_indices_packed_writer.reset();
 }

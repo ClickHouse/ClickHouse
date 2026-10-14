@@ -60,6 +60,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool print_pretty_type_names;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool qbit_one_bit_symmetric_distance;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -119,6 +120,8 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// decide per alternative whether an incompatible type throws or evaluates to `NULL`. The result type is
     /// the same either way, so a lenient session must not prime a "no marks match" verdict for a strict one,
     /// which is supposed to see the exception.
+    /// The distance functions on `QBit` freeze this choice when they are built.
+    hash.update(settings[Setting::qbit_one_bit_symmetric_distance].value);
     hash.update(settings[Setting::variant_throw_on_type_mismatch].value);
     hash.update(settings[Setting::dynamic_throw_on_type_mismatch].value);
     /// The `JSON*` functions snapshot a whole `FormatSettings` in `JSONOverloadResolver`, and `JSON_VALUE` /

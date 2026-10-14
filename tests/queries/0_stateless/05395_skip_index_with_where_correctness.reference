@@ -16,6 +16,38 @@ partial index replaced by an ordinary one under the same name
 1
 1
 1
+condition evaluated under another session time zone when the part is written
+1
+1
+1
+0
+0
+0
+1
+1
+1
+1
+one partial condition replaced by another under the same name
+1
+1
+1
+1
+1
+set index that overflows in some granules
+8
+8
+8
+24
+24
+24
+MATERIALIZE INDEX rebuilds an index left stale by a rename of the condition column
+1
+1
+1
+1
 experimental gate
 i
 j
+t_clone	i
+t_copy	i
+t_src	i

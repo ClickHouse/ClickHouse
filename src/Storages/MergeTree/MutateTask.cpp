@@ -1807,7 +1807,7 @@ static NameToNameVector collectFilesForRenames(
     /// extension that substream declares: claiming a substream or extension the type does not write
     /// would protect, and so leak, a file of the index being dropped.
     static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
-    static const std::array<String, 3> owned_index_extensions = {".idxp", ".idx2", ".idx"};
+    static const std::array<String, 4> owned_index_extensions = {".idxp", ".idx2", ".idx", ".idxs"};
 
     NameSet surviving_index_owned_files;
     {
@@ -1832,6 +1832,9 @@ static NameToNameVector collectFilesForRenames(
                 };
 
                 protect(substream.extension);
+                /// The marker of a partial index goes wherever its granules go.
+                if (surviving_index->index.where_expression)
+                    protect(IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION);
                 /// minmax changed `.idx` (v1) -> `.idx2` (v2), so an upgraded part may still carry
                 /// the legacy file for a substream that now declares `.idx2`.
                 if (substream.extension == ".idx2")
@@ -4487,7 +4490,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
         /// two indices share a getIndexFileName prefix, e.g. `a` and `a.b` with `escape_index_filenames` = 0).
         static const std::array<String, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
-        static const std::array<String, 3> known_index_extensions = {".idxp", ".idx2", ".idx"};
+        static const std::array<String, 4> known_index_extensions = {".idxp", ".idx2", ".idx", ".idxs"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
         /// Exact in-archive filenames owned by the surviving indices, so a speculative suffix never

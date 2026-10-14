@@ -58,6 +58,9 @@ struct IndexDescription
     /// `queryConditionCacheSettingsSalt` of the settings the condition's functions were built with: they decide
     /// what the condition evaluated to when the index was written, and the name and types of a function do not.
     UInt64 where_settings_salt = 0;
+    /// Identity of the condition: its AST and the settings above. Parts of a partial index are written with a
+    /// marker that holds it, so granules built for another condition are never read as this one's.
+    UInt128 where_identity = 0;
 
     /// True if index is created implicitly using settings:
     /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns

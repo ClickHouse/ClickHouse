@@ -145,6 +145,9 @@ protected:
     /// Current granule of each partial index (with `WHERE`): whether it is open and whether it got any rows.
     std::vector<bool> partial_index_granule_open;
     std::vector<bool> partial_index_granule_has_rows;
+    /// The signature of each partial index (empty for the others), taken when the writer is created, in the thread
+    /// that evaluates the conditions: finalization can run elsewhere, with another session time zone.
+    std::vector<String> partial_index_signatures;
 
     /// Optional packed archive shared by all skip-index substreams that stayed under the
     /// per-substream size threshold. Substreams that exceeded it were spilled to standalone

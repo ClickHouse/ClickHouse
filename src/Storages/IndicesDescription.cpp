@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -70,6 +71,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , where_ast(other.where_ast ? other.where_ast->clone() : nullptr)
     , where_column_name(other.where_column_name)
     , where_settings_salt(other.where_settings_salt)
+    , where_identity(other.where_identity)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
 {
@@ -125,6 +127,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
 
     where_column_name = other.where_column_name;
     where_settings_salt = other.where_settings_salt;
+    where_identity = other.where_identity;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
     return *this;
@@ -209,7 +212,17 @@ IndexDescription IndexDescription::getIndexFromAST(
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
                 "WHERE condition of skip index '{}' must be of type UInt8 or Bool, got {}", result.name, where_column.type->getName());
         result.where_column_name = where_column.name;
-        result.where_settings_salt = queryConditionCacheSettingsSalt(context->getSettingsRef());
+        /// The condition is evaluated by INSERT, merge and mutation from an expression they analyse again from
+        /// the AST in the server (global) context, not in the session that defines the index, so the global
+        /// settings are the ones its functions capture.
+        result.where_settings_salt = queryConditionCacheSettingsSalt(context->getGlobalContext()->getSettingsRef());
+
+        SipHash identity;
+        const auto where_hash = result.where_ast->getTreeHash(/*ignore_aliases=*/ true);
+        identity.update(where_hash.low64);
+        identity.update(where_hash.high64);
+        identity.update(result.where_settings_salt);
+        result.where_identity = identity.get128();
     }
 
     if (index_type && index_type->arguments)

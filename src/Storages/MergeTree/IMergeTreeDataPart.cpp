@@ -3614,8 +3614,22 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
 
     /// The two layouts are not interchangeable: only the one the index is declared with counts.
     for (const auto & declared : metadata->getSecondaryIndices())
-        if (declared.name == index_name)
-            return declared.where_expression ? has_partial : has_ordinary;
+    {
+        if (declared.name != index_name)
+            continue;
+
+        if (!declared.where_expression)
+            return has_ordinary;
+
+        /// Granules of another condition (or built in another environment) do not count as the index being
+        /// there, so that rebuilding commands such as MATERIALIZE INDEX replace them.
+        const auto marker_name = getStreamNameOrHash(file_name, IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION, checksums);
+        if (!has_partial || !marker_name)
+            return false;
+        const auto it = checksums.files.find(*marker_name + IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION);
+        const auto expected = IMergeTreeIndex::getPartialIndexMarkerChecksum(IMergeTreeIndex::getPartialIndexSignature(declared));
+        return it != checksums.files.end() && it->second.file_size == expected.file_size && it->second.file_hash == expected.file_hash;
+    }
 
     return has_ordinary || has_partial;
 }

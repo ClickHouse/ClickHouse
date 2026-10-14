@@ -982,11 +982,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
 
-                if (index_desc.where_expression && !create.attach && !settings[Setting::allow_experimental_partial_skip_indexes])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Skip index '{}' with WHERE is experimental. Enable the setting 'allow_experimental_partial_skip_indexes' to use it",
-                        index_desc.name);
-
                 properties.indices.push_back(index_desc);
             }
         }
@@ -1242,6 +1237,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         properties.constraints.checkExpressionsPreserveRowCount();
         properties.constraints.checkNamesAreUnique();
+
+        /// Indices of every origin: an explicit list, and the copy made by `AS src` / `CLONE AS src`.
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_partial_skip_indexes])
+            for (const auto & index : properties.indices)
+                if (index.where_expression)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index '{}' with WHERE is experimental. Enable the setting 'allow_experimental_partial_skip_indexes' to use it",
+                        index.name);
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);

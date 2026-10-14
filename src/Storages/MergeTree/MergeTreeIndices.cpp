@@ -1,3 +1,6 @@
+#include <IO/NullWriteBuffer.h>
+#include <IO/HashingWriteBuffer.h>
+#include <Common/DateLUT.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -421,6 +424,21 @@ MergeTreeIndexFormat getDeserializedFormatImpl(
     if (!isPartTypeCompatibleImpl(skip_index, part))
         return {0 /*unknown*/, {}};
 
+    /// The granules of a partial index describe one particular condition evaluated in one particular
+    /// environment; the marker written with them must be the one the current definition expects.
+    if (skip_index.index.where_expression)
+    {
+        const auto marker_name = IMergeTreeDataPart::getStreamNameOrHash(
+            relative_path_prefix, IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION, getChecksums(part));
+        if (!marker_name)
+            return {0 /*unknown*/, {}};
+
+        const auto it = getChecksums(part).files.find(*marker_name + IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION);
+        const auto expected = IMergeTreeIndex::getPartialIndexMarkerChecksum(skip_index.getPartialIndexSignature());
+        if (it == getChecksums(part).files.end() || it->second.file_size != expected.file_size || it->second.file_hash != expected.file_hash)
+            return {0 /*unknown*/, {}};
+    }
+
     return format;
 }
 
@@ -445,6 +463,33 @@ MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
 MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
     return getDeserializedFormatImpl(*this, part, relative_path_prefix);
+}
+
+String IMergeTreeIndex::getPartialIndexSignature(const IndexDescription & index_description)
+{
+    SipHash hash;
+    hash.update(index_description.where_identity);
+    /// The condition is evaluated by whichever query or background job writes the part, and the session time
+    /// zone it runs with is not part of the metadata, so it must be recorded to be compared later.
+    hash.update(DateLUT::instance().getTimeZone());
+    const UInt128 value = hash.get128();
+    return String(reinterpret_cast<const char *>(&value), sizeof(value));
+}
+
+MergeTreeDataPartChecksum IMergeTreeIndex::getPartialIndexMarkerChecksum(const String & signature)
+{
+    NullWriteBuffer null;
+    HashingWriteBuffer hashing(null);
+    hashing.write(signature.data(), signature.size());
+    hashing.finalize();
+    return MergeTreeDataPartChecksum(hashing.count(), hashing.getHash());
+}
+
+MergeTreeIndexSubstreams IMergeTreeIndex::withPartialIndexMarker(MergeTreeIndexSubstreams substreams) const
+{
+    if (index.where_expression)
+        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", PARTIAL_INDEX_MARKER_EXTENSION});
+    return substreams;
 }
 
 MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(
