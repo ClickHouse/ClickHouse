@@ -32,16 +32,13 @@ broken_data_path=$(local_default --query "SELECT data_paths[1] FROM system.table
 broken_dir=$(find "$home_dir" -type d -path "*/${broken_data_path%/}")
 for f in "$broken_dir"/*.bin; do echo garbage > "$f"; done
 
-# A query that does not use the broken table works, and the load failure is reported once.
-stderr_file="${CLICKHOUSE_TMP}/stderr_${CLICKHOUSE_DATABASE}"
-local_default --query "SELECT * FROM good" 2> "$stderr_file"
-grep -c "^Warning: .*broken" "$stderr_file"
-wc -l < "$stderr_file"
+# A query that does not use the broken table works without errors: tables load lazily, as in the server.
+local_default --query "SELECT * FROM good"
 
 # A query that uses the broken table fails with its load error.
-local_default --query "SELECT * FROM broken" 2>&1 | grep -v '^Warning: ' | grep -o 'ASYNC_LOAD_WAIT_FAILED'
+local_default --query "SELECT * FROM broken" 2>&1 | grep -o -m1 'ASYNC_LOAD_WAIT_FAILED'
 
 # The other table is untouched by all of this.
-local_default --query "SELECT count() FROM good" 2> /dev/null
+local_default --query "SELECT count() FROM good"
 
-rm -rf "$home_dir" "$stderr_file"
+rm -rf "$home_dir"
