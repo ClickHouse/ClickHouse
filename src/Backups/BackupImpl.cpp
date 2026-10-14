@@ -429,6 +429,9 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
+        /// A backup being written only looks up the sizes and checksums of the files of its base, to skip the files the base
+        /// already has. For a base of millions of files, the rest of the information about its files takes gigabytes.
+        base_params.for_file_lookups_only = (open_mode == OpenMode::WRITE);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
@@ -920,7 +923,12 @@ void BackupImpl::readBackupMetadata()
         {
             file_names.emplace(info.file_name, size_and_checksum);
             if (info.size)
-                file_infos.try_emplace(size_and_checksum, std::move(info));
+            {
+                if (params.for_file_lookups_only)
+                    sizes_and_checksums.push_back(size_and_checksum);
+                else
+                    file_infos.try_emplace(size_and_checksum, std::move(info));
+            }
         }
     };
 
@@ -952,6 +960,10 @@ void BackupImpl::readBackupMetadata()
     /// unset - and must be rejected instead of being treated as an empty backup.
     if (!contents_seen)
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
+
+    std::ranges::sort(sizes_and_checksums);
+    sizes_and_checksums.erase(std::ranges::unique(sizes_and_checksums).begin(), sizes_and_checksums.end());
+    sizes_and_checksums.shrink_to_fit();
 
     uncompressed_size = size_of_entries + str.size();
 
@@ -1318,6 +1330,8 @@ bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     std::lock_guard lock{mutex};
+    if (params.for_file_lookups_only)
+        return std::ranges::binary_search(sizes_and_checksums, size_and_checksum);
     return file_infos.contains(size_and_checksum);
 }
 
@@ -1379,6 +1393,9 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
 
     // Zero-sized files are not inserted into `file_infos` during metadata load,
     // but they are present in `file_names`. Short-circuit them here and return
@@ -1556,6 +1573,9 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
 
     if (size_and_checksum.first == 0)
     {
