@@ -2419,13 +2419,14 @@ public:
     /// (`Decimal` overflow, `Date` and `Interval` arithmetic, negative shifts, `intDiv` of floats, etc.) may throw.
     std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
-        return canThrowImpl(arguments, /* divisor_is_known_non_zero */ false);
+        return canThrowImpl(arguments, /* divisor_is_known_safe */ false);
     }
 
 protected:
     /// `DataTypesWithConstInfo` does not carry the value of a constant divisor, so `intDiv` and `modulo` are
-    /// described as not throwing only if the caller knows that the constant divisor is not zero.
-    bool canThrowImpl(const DataTypesWithConstInfo & arguments, bool divisor_is_known_non_zero) const
+    /// described as not throwing only if the caller knows that the constant divisor is safe: it is not zero
+    /// and, for a signed dividend, it does not become negative after the cast to a signed type.
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments, bool divisor_is_known_safe) const
     {
         if (arguments.size() != 2 || isSuitableForShortCircuitArgumentsExecution(arguments))
             return true;
@@ -2444,9 +2445,9 @@ protected:
         /// The divisor is a constant here (see `isSuitableForShortCircuitArgumentsExecution`). Division by a zero
         /// constant throws on every row, but it must not be moved ahead of a condition that skips all the rows,
         /// so the divisor must be known to be non-zero. Division of the minimal signed number by minus one depends
-        /// on the rows, so the divisor must be unsigned.
+        /// on the rows, so the divisor must be unsigned, and must stay positive after the cast to a signed type.
         if constexpr (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo)
-            return !divisor_is_known_non_zero || !isNativeInteger(left) || !isNativeUInt(right);
+            return !divisor_is_known_safe || !isNativeInteger(left) || !isNativeUInt(right);
 
         return true;
     }
@@ -3889,13 +3890,27 @@ public:
 
     std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
-        bool divisor_is_known_non_zero = false;
-        if (right.column && isColumnConst(*right.column))
+        bool divisor_is_known_safe = false;
+        if (arguments.size() == 2 && right.column && isColumnConst(*right.column))
         {
             const Field divisor = (*right.column)[0];
-            divisor_is_known_non_zero = !divisor.isNull() && !accurateEquals(divisor, Field(0));
+            if (divisor.getType() == Field::Types::UInt64 && divisor.safeGet<UInt64>() != 0)
+            {
+                /// For a signed dividend, the unsigned divisor is cast to the signed type of the same size
+                /// (see `DivideIntegralImpl::apply`), so it must stay positive after this cast,
+                /// otherwise e.g. `intDiv(toInt8(-128), toUInt8(255))` divides by minus one.
+                const auto left_type = removeNullable(recursiveRemoveLowCardinality(arguments[0].type));
+                const auto right_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+                if (isNativeUInt(left_type))
+                    divisor_is_known_safe = true;
+                else if (isNativeUInt(right_type) && right_type->getSizeOfValueInMemory() <= sizeof(UInt64))
+                {
+                    const UInt64 max_signed = (UInt64(1) << (right_type->getSizeOfValueInMemory() * 8 - 1)) - 1;
+                    divisor_is_known_safe = divisor.safeGet<UInt64>() <= max_signed;
+                }
+            }
         }
-        return Base::canThrowImpl(arguments, divisor_is_known_non_zero);
+        return Base::canThrowImpl(arguments, divisor_is_known_safe);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
