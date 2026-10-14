@@ -3,6 +3,7 @@
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -211,7 +212,7 @@ Poco::JSON::Object::Ptr ElasticsearchClient::sendRequestToElastic(const String &
     if (!request_body.empty())
     {
         headers.emplace_back("Content-Type", "application/json");
-        out_stream_callback = [&request_body](std::ostream & os) { os << request_body; };
+        out_stream_callback = [&request_body](WriteBuffer & os) { writeString(request_body, os); };
     }
     auto buf = BuilderRWBufferFromHTTP(uri)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
