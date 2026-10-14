@@ -51,6 +51,10 @@ public:
         /// True only when the server replays a definition it stored itself, during startup metadata loading.
         /// `internal` does not imply it: wrappers such as `PARALLEL WITH` run user statements as internal ones.
         bool is_metadata_replay = false;
+
+        /// The server replays a definition it stored itself: startup metadata loading (`is_metadata_replay`,
+        /// which runs with mode `ATTACH`), `FORCE_ATTACH` or `FORCE_RESTORE`. Not a user `ATTACH DATABASE`.
+        bool isLoadingFromExistingMetadata() const;
     };
 
     struct EngineFeatures
