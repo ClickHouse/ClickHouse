@@ -13,11 +13,11 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 <IntroClickPipe />
 
 <div id="features">
-  ## Funcionalidades
+  ## Funcionalidades {#features}
 </div>
 
 <div id="initial-load">
-  ### Carga inicial
+  ### Carga inicial {#initial-load}
 </div>
 
 O ClickPipe do BigQuery carregará as tabelas selecionadas de um [conjunto de dados](https://docs.cloud.google.com/bigquery/docs/datasets-intro) do BigQuery nas tabelas de destino do ClickHouse em uma única operação em lote. Assim que a tarefa de ingestão for concluída, o ClickPipe será interrompido automaticamente. O processo de ingestão da carga inicial requer um bucket do Google Cloud Storage (GCS) fornecido pelo usuário para staging. No futuro, o bucket intermediário será fornecido e gerenciado pelo ClickPipes.
@@ -27,13 +27,13 @@ O ClickPipe do BigQuery carregará as tabelas selecionadas de um [conjunto de da
 </Note>
 
 <div id="cdc">
-  ### CDC (Captura de Dados de Alterações)
+  ### CDC (Captura de Dados de Alterações) {#cdc}
 </div>
 
 O CDC **ainda não tem suporte** na prévia privada, mas terá no futuro. Enquanto isso, recomendamos usar o [Google Cloud Storage ClickPipe](/pt-BR/integrations/clickpipes/object-storage/google-cloud-storage/overview) para sincronizar continuamente as exportações de dados do BigQuery com o ClickHouse Cloud depois que a carga inicial for concluída.
 
 <div id="data-type-mapping">
-  ## Mapeamento de tipos de dados
+  ## Mapeamento de tipos de dados {#data-type-mapping}
 </div>
 
 [Tipos de dados do BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
@@ -60,42 +60,42 @@ O CDC **ainda não tem suporte** na prévia privada, mas terá no futuro. Enquan
 | `STRUCT` (RECORD)        | `String`                   |                                                                              |
 
 <div id="access-control">
-  ## Controle de acesso
+  ## Controle de acesso {#access-control}
 </div>
 
 <div id="authentication">
-  ### Autenticação
+  ### Autenticação {#authentication}
 </div>
 
-<div id="service-account-credentials">
-  #### Credenciais da conta de serviço
-</div>
+#### Credenciais da conta de serviço {#service-account-credentials}
 
 O ClickPipes se autentica no seu projeto do Google Cloud usando uma [chave de conta de serviço](https://docs.cloud.google.com/iam/docs/keys-create-delete). Recomendamos criar uma conta de serviço dedicada com o conjunto mínimo de [permissões](#permissions) necessárias para permitir que o ClickPipes exporte dados do BigQuery, carregue-os no bucket de staging do GCS e os leia no ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Criando uma chave de conta de serviço com permissões do BigQuery e do Cloud Storage" size="lg" border />
 
+#### Workload Identity do GCP (prévia privada) {#gcp-workload-identity}
+
+Siga o [guia de Workload Identity do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity) para obter a service account gerenciada no contexto do serviço ClickPipes. Conceda a ela as [funções do BigQuery e do GCS](#permissions) listadas abaixo e crie o pipe com a autenticação `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Não forneça credenciais de service account ao usar este método de autenticação.
+
 <div id="permissions">
-  ### Permissões
+  ### Permissões {#permissions}
 </div>
 
-<div id="bigquery">
-  #### BigQuery
-</div>
+#### BigQuery {#bigquery}
 
-A conta de serviço deve ter os seguintes papéis do BigQuery:
+A service account usada pelo ClickPipes, seja fornecida por você ou gerenciada por meio de Workload Identity, precisa destas funções do BigQuery:
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
 
-Para restringir ainda mais o escopo de acesso, recomendamos usar [condições do IAM](https://docs.cloud.google.com/bigquery/docs/conditions) para limitar os recursos aos quais o papel tem acesso. Por exemplo, você pode restringir o papel `dataViewer` ao conjunto de dados específico que contém as tabelas que deseja sincronizar:
+Para restringir ainda mais o escopo de acesso, recomendamos usar [condições do IAM](https://docs.cloud.google.com/bigquery/docs/conditions) para limitar os recursos aos quais a função tem acesso. Por exemplo, você pode restringir a função `dataViewer` ao dataset específico que contém as tabelas que deseja sincronizar:
 
 ```bash
 resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage
+  #### Cloud Storage {#cloud-storage}
 </div>
 
 A conta de serviço deve ter os seguintes papéis do Cloud Storage:

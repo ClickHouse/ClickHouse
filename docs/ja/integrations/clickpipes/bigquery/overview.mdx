@@ -13,11 +13,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 <IntroClickPipe />
 
 <div id="features">
-  ## 機能
+  ## 機能 {#features}
 </div>
 
 <div id="initial-load">
-  ### 初期ロード
+  ### 初期ロード {#initial-load}
 </div>
 
 BigQuery ClickPipe は、BigQuery の [データセット](https://docs.cloud.google.com/bigquery/docs/datasets-intro) 内で選択したテーブルを、1 回のバッチ操作で ClickHouse の宛先テーブルにロードします。インジェストタスクが完了すると、ClickPipe は自動的に自動停止します。初期ロードのインジェストプロセスでは、ステージング用にユーザーが用意した Google Cloud Storage (GCS) バケットが必要です。今後は、この中間バケットは ClickPipes によって提供および管理される予定です。
@@ -27,13 +27,13 @@ BigQuery ClickPipe は、BigQuery の [データセット](https://docs.cloud.go
 </Note>
 
 <div id="cdc">
-  ### CDC (変更データキャプチャ)
+  ### CDC (変更データキャプチャ) {#cdc}
 </div>
 
 CDC はプライベートプレビューでは**サポートされていません**が、今後サポートされる予定です。それまでは、初期ロードの完了後に BigQuery のデータエクスポートを ClickHouse Cloud に継続的に同期する方法として、[Google Cloud Storage ClickPipe](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview) の使用を推奨します。
 
 <div id="data-type-mapping">
-  ## データ型マッピング
+  ## データ型マッピング {#data-type-mapping}
 </div>
 
 [BigQuery のデータ型](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types)。
@@ -60,30 +60,30 @@ CDC はプライベートプレビューでは**サポートされていませ�
 | `STRUCT` (RECORD) | `String`        |                                     |
 
 <div id="access-control">
-  ## アクセス制御
+  ## アクセス制御 {#access-control}
 </div>
 
 <div id="authentication">
-  ### 認証
+  ### 認証 {#authentication}
 </div>
 
-<div id="service-account-credentials">
-  #### サービスアカウントの認証情報
-</div>
+#### サービスアカウントの認証情報 {#service-account-credentials}
 
 ClickPipes は、[サービスアカウントキー](https://docs.cloud.google.com/iam/docs/keys-create-delete)を使用して Google Cloud プロジェクトに認証します。ClickPipes が BigQuery からデータをエクスポートし、ステージング用の GCS バケットにロードしてから ClickHouse に読み込めるように、必要最小限の[権限](#permissions)のみを持つ専用のサービスアカウントを作成することを推奨します。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="BigQuery と Cloud ストレージ の権限を持つサービスアカウントキーの作成" size="lg" border />
 
+#### GCP workload identity (プライベートプレビュー) {#gcp-workload-identity}
+
+[GCP workload identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)の手順に従って、ClickPipes サービスのコンテキストからマネージド service account を取得します。次に、その service account に以下の [BigQuery および GCS のロール](#permissions)を付与し、`SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 認証でパイプを作成します。この認証方式を使用する場合は、service account の認証情報を指定しないでください。
+
 <div id="permissions">
-  ### 権限
+  ### 権限 {#permissions}
 </div>
 
-<div id="bigquery">
-  #### BigQuery
-</div>
+#### BigQuery {#bigquery}
 
-サービス アカウントには、次の BigQuery ロールが必要です。
+ClickPipes が使用する service account (お客様が用意したものか、Workload Identity を通じて管理されるものかを問わず) には、次の BigQuery ロールが必要です。
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
@@ -95,7 +95,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud ストレージ
+  #### Cloud ストレージ {#cloud-storage}
 </div>
 
 サービス アカウントには、次の Cloud ストレージ ロールが必要です。

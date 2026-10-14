@@ -204,6 +204,14 @@
       ]
     },
     {
+      "group": "Безопасность и доступ",
+      "icon": "shield-check",
+      "pages": [
+        "ru/integrations/clickpipes/security/aws-iam-role",
+        "ru/integrations/clickpipes/security/gcp-workload-identity"
+      ]
+    },
+    {
       "group": "Сетевые подключения",
       "icon": "network-wired",
       "pages": [

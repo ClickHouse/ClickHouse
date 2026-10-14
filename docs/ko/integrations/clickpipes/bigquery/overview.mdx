@@ -13,11 +13,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 <IntroClickPipe />
 
 <div id="features">
-  ## 기능
+  ## 기능 {#features}
 </div>
 
 <div id="initial-load">
-  ### 초기 적재
+  ### 초기 적재 {#initial-load}
 </div>
 
 BigQuery ClickPipe는 BigQuery [데이터셋](https://docs.cloud.google.com/bigquery/docs/datasets-intro)에서 선택한 테이블을 한 번의 배치 작업으로 ClickHouse 대상 테이블에 적재합니다. 수집 작업이 완료되면 ClickPipe는 자동으로 중지됩니다. 초기 적재 과정에는 스테이징용으로 사용자 제공 Google Cloud Storage(GCS) 버킷이 필요합니다. 앞으로는 이 중간 버킷을 ClickPipes에서 제공하고 관리할 예정입니다.
@@ -27,13 +27,13 @@ BigQuery ClickPipe는 BigQuery [데이터셋](https://docs.cloud.google.com/bigq
 </Note>
 
 <div id="cdc">
-  ### CDC (변경 데이터 캡처)
+  ### CDC (변경 데이터 캡처) {#cdc}
 </div>
 
 현재 비공개 프리뷰에서는 CDC가 **지원되지 않지만**, 향후 지원될 예정입니다. 그전까지는 초기 적재가 완료된 후 [Google Cloud Storage ClickPipe](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview)를 사용해 BigQuery 데이터 내보내기를 ClickHouse Cloud에 지속적으로 동기화하는 것을 권장합니다.
 
 <div id="data-type-mapping">
-  ## 데이터 타입 매핑
+  ## 데이터 타입 매핑 {#data-type-mapping}
 </div>
 
 [BigQuery 데이터 타입](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
@@ -60,30 +60,30 @@ BigQuery ClickPipe는 BigQuery [데이터셋](https://docs.cloud.google.com/bigq
 | `STRUCT` (RECORD) | `String`          |                                                 |
 
 <div id="access-control">
-  ## 접근 제어
+  ## 접근 제어 {#access-control}
 </div>
 
 <div id="authentication">
-  ### 인증
+  ### 인증 {#authentication}
 </div>
 
-<div id="service-account-credentials">
-  #### 서비스 계정 자격 증명
-</div>
+#### 서비스 계정 자격 증명 {#service-account-credentials}
 
 ClickPipes는 [서비스 계정 키](https://docs.cloud.google.com/iam/docs/keys-create-delete)를 사용해 Google Cloud 프로젝트에 인증합니다. ClickPipes가 BigQuery에서 데이터를 내보내고, 이를 스테이징 GCS 버킷에 적재한 뒤 ClickHouse에서 읽을 수 있도록, 필요한 최소한의 [권한](#permissions)만 부여된 전용 서비스 계정을 생성하는 것을 권장합니다.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="BigQuery 및 Cloud Storage 권한이 있는 서비스 계정 키 생성" size="lg" border />
 
+#### GCP workload identity (비공개 프리뷰) {#gcp-workload-identity}
+
+[GCP workload identity 가이드](/ko/integrations/clickpipes/security/gcp-workload-identity)에 따라 ClickPipes 서비스 컨텍스트에서 관리형 서비스 계정을 확인하십시오. 이 계정에 아래의 [BigQuery 및 GCS 역할](#permissions)을 부여한 다음, `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 인증을 사용하여 파이프를 생성하십시오. 이 인증 메서드를 사용할 때는 서비스 계정 자격 증명을 제공하지 마십시오.
+
 <div id="permissions">
-  ### 권한
+  ### 권한 {#permissions}
 </div>
 
-<div id="bigquery">
-  #### BigQuery
-</div>
+#### BigQuery {#bigquery}
 
-서비스 계정에는 다음 BigQuery 역할이 있어야 합니다.
+ClickPipes에서 사용하는 서비스 계정에는 직접 제공한 계정이든 Workload Identity를 통해 관리되는 계정이든 관계없이 다음 BigQuery 역할이 필요합니다.
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
@@ -95,7 +95,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage
+  #### Cloud Storage {#cloud-storage}
 </div>
 
 서비스 계정에는 다음 Cloud Storage 역할이 있어야 합니다.

@@ -13,11 +13,11 @@ import { Image } from "/snippets/es/components/Image.jsx";
 <IntroClickPipe />
 
 <div id="features">
-  ## Funciones
+  ## Funciones {#features}
 </div>
 
 <div id="initial-load">
-  ### Carga inicial
+  ### Carga inicial {#initial-load}
 </div>
 
 El ClickPipe de BigQuery cargará las tablas seleccionadas de un [conjunto de datos](https://docs.cloud.google.com/bigquery/docs/datasets-intro) de BigQuery en las tablas de destino de ClickHouse en una sola operación por lotes. Una vez completada la tarea de ingestión, el ClickPipe se detiene automáticamente. El proceso de ingestión de la carga inicial requiere un bucket de Google Cloud Storage (GCS) proporcionado por el usuario para staging. En el futuro, el bucket intermedio será proporcionado y administrado por ClickPipes.
@@ -27,13 +27,13 @@ El ClickPipe de BigQuery cargará las tablas seleccionadas de un [conjunto de da
 </Note>
 
 <div id="cdc">
-  ### CDC (captura de cambios de datos)
+  ### CDC (captura de cambios de datos) {#cdc}
 </div>
 
 CDC **no está disponible** en la vista previa privada, pero será compatible en el futuro. Mientras tanto, recomendamos usar [Google Cloud Storage ClickPipe](/es/integrations/clickpipes/object-storage/google-cloud-storage/overview) para sincronizar continuamente las exportaciones de datos de BigQuery con ClickHouse Cloud una vez completada la carga inicial.
 
 <div id="data-type-mapping">
-  ## Correspondencia de tipos de datos
+  ## Correspondencia de tipos de datos {#data-type-mapping}
 </div>
 
 [Tipos de datos de BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
@@ -60,30 +60,30 @@ CDC **no está disponible** en la vista previa privada, pero será compatible en
 | `STRUCT` (RECORD)        | `String`                   |                                                                                    |
 
 <div id="access-control">
-  ## Control de acceso
+  ## Control de acceso {#access-control}
 </div>
 
 <div id="authentication">
-  ### Autenticación
+  ### Autenticación {#authentication}
 </div>
 
-<div id="service-account-credentials">
-  #### Credenciales de la cuenta de servicio
-</div>
+#### Credenciales de la cuenta de servicio {#service-account-credentials}
 
 ClickPipes se autentica en tu proyecto de Google Cloud mediante una [clave de cuenta de servicio](https://docs.cloud.google.com/iam/docs/keys-create-delete). Recomendamos crear una cuenta de servicio dedicada con el conjunto mínimo de [permisos](#permissions) necesarios para permitir que ClickPipes exporte datos desde BigQuery, los cargue en el bucket de GCS de staging y los lea en ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Creación de una clave de cuenta de servicio con permisos de BigQuery y Cloud Storage" size="lg" border />
 
+#### Workload Identity de GCP (vista previa privada) {#gcp-workload-identity}
+
+Siga la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity) para obtener la cuenta de servicio administrada a partir del contexto del servicio de ClickPipes. Asígnele los [roles de BigQuery y GCS](#permissions) que se indican a continuación y cree la canalización con la autenticación `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. No proporcione credenciales de cuenta de servicio con este método de autenticación.
+
 <div id="permissions">
-  ### Permisos
+  ### Permisos {#permissions}
 </div>
 
-<div id="bigquery">
-  #### BigQuery
-</div>
+#### BigQuery {#bigquery}
 
-La cuenta de servicio debe tener los siguientes roles de BigQuery:
+La cuenta de servicio que usa ClickPipes, ya sea proporcionada por usted o gestionada mediante workload identity, necesita estos roles de BigQuery:
 
 * [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
 * [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
@@ -95,7 +95,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage
+  #### Cloud Storage {#cloud-storage}
 </div>
 
 La cuenta de servicio debe tener los siguientes roles de Cloud Storage:
