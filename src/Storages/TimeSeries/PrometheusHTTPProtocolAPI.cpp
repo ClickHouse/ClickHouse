@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsUInt64 max_execution_speed;
     extern const SettingsUInt64 max_execution_speed_bytes;
     extern const SettingsSeconds max_execution_time;
+    extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_rows_in_join;
@@ -363,12 +364,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
             || settings[Setting::limit] != 0 || settings[Setting::offset] != 0
             || !settings[Setting::select].value.empty() || !settings[Setting::order].value.empty()
             || !settings[Setting::sort].value.empty() || !settings[Setting::filter].value.empty();
-        /// A GROUP BY, sorting or JOIN limit would see one chunk at a time, a read or speed limit would start again for each chunk,
+        /// A GROUP BY, sorting or JOIN limit would see one chunk at a time, a read, speed or leaf time limit would start again for each chunk,
         /// and a time limit with `timeout_overflow_mode = 'break'` would stop elsewhere, so they don't let the query be split either.
         const bool has_whole_query_limits = settings[Setting::max_rows_to_group_by] || settings[Setting::max_rows_to_sort]
             || settings[Setting::max_bytes_to_sort] || settings[Setting::max_rows_in_join] || settings[Setting::max_bytes_in_join]
             || settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read]
             || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf]
+            || settings[Setting::max_execution_time_leaf].totalMicroseconds() != 0
             || settings[Setting::min_execution_speed] || settings[Setting::min_execution_speed_bytes]
             || settings[Setting::max_execution_speed] || settings[Setting::max_execution_speed_bytes]
             || settings[Setting::max_estimated_execution_time].totalMicroseconds() != 0
