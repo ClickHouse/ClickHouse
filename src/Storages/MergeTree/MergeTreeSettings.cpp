@@ -768,11 +768,17 @@ When the fsync of an `INSERT` happens. Has no effect unless `fsync_after_insert`
   batch that the filesystem can coalesce) and cheaper in total: a part that a background merge
   has already merged away while the query was still running is not synced at all, only the
   wider part covering it is. A part committed by a still-running `INSERT` is then visible but
-  not yet durable - durability is guaranteed when the query completes.
+  not yet durable - durability is guaranteed when the query completes. The files are reopened
+  for this fsync after they were written and closed. Linux reports a background writeback error
+  to such a later `fsync` as long as the file stays in the kernel's inode cache, but loses it if
+  the inode is evicted in between (e.g. under memory pressure), so in that rare case a failed
+  write can go unnoticed.
 - `true` - for every part, as soon as it is written, which is significantly slower for an
   `INSERT` that produces many parts, and is not recommended with wide parts. Use it when every
   part has to be durable at the moment it becomes visible, rather than at the moment the
-  `INSERT` completes.
+  `INSERT` completes, or when a writeback error must be detected even if the inode of the
+  written file is evicted from the kernel's cache before the end of the query: here every file
+  is synced through the descriptor it was written with.
 
 The same applies to the patch parts written by lightweight `UPDATE` and `DELETE`. A streaming
 `INSERT` (with `input_format_max_block_wait_ms` other than 0), which can stay open indefinitely,

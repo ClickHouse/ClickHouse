@@ -622,7 +622,9 @@ void DiskLocal::syncFile(const String & path) const
     const String full_path = fs::path(disk_path) / path;
 
     /// O_RDONLY is enough to fsync on Linux, and it keeps this usable for files that are already
-    /// finalized and closed.
+    /// finalized and closed. Since Linux 4.16 a writeback error that nobody has seen yet is reported
+    /// to a descriptor opened after it happened, as long as the inode stays in the cache; if the inode
+    /// is evicted in between, the error is lost. This is documented in `fsync_after_insert_each_part`.
     int fd = ::open(full_path.c_str(), O_RDONLY | O_CLOEXEC);
     if (-1 == fd)
     {
