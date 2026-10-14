@@ -313,6 +313,16 @@ AIRequestPolicy FunctionBaseAI::makeRequestPolicy(const ContextPtr & context)
     policy.max_retries = settings[Setting::ai_function_max_retries].value;
     policy.retry_initial_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
     policy.throw_on_error = settings[Setting::ai_function_throw_on_error].value;
+
+    constexpr UInt64 max_retries_limit = 5;
+    constexpr UInt64 retry_initial_delay_ms_limit = 10'000;
+    if (policy.max_retries > max_retries_limit)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'ai_function_max_retries' is {}, the maximum is {}", policy.max_retries, max_retries_limit);
+    if (policy.retry_initial_delay_ms > retry_initial_delay_ms_limit)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'ai_function_retry_initial_delay_ms' is {}, the maximum is {}", policy.retry_initial_delay_ms, retry_initial_delay_ms_limit);
+
     return policy;
 }
 

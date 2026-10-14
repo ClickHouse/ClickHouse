@@ -13,7 +13,6 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <algorithm>
 #include <chrono>
 #include <thread>
 
@@ -38,18 +37,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Exponential backoff delay capped at one minute, so adversarial values of
-/// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour
-/// sleep or overflow `std::chrono::milliseconds`.
-UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt)
-{
-    constexpr UInt64 max_retry_delay_ms = 60'000;
-    UInt64 delay_ms = std::min(initial_delay_ms, max_retry_delay_ms);
-    for (UInt64 i = 0; i < attempt && delay_ms < max_retry_delay_ms; ++i)
-        delay_ms = std::min(delay_ms * 2, max_retry_delay_ms);
-    return delay_ms;
-}
 
 /// Whether a failed provider request should be retried: transient network failures and
 /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
@@ -174,7 +161,8 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
             if (attempt < policy.max_retries && isRetriableProviderError(std::current_exception()))
             {
                 ProfileEvents::increment(ProfileEvents::AIAPICallsRetried);
-                std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(policy.retry_initial_delay_ms, attempt)));
+                /// Exponential backoff. `makeRequestPolicy` bounds both settings, so the longest sleep is 160 seconds.
+                std::this_thread::sleep_for(std::chrono::milliseconds(policy.retry_initial_delay_ms << attempt));
                 continue;
             }
 
