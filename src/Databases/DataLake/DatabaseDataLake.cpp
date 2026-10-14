@@ -4,6 +4,8 @@
 #include <array>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Databases/DataLake/HiveCatalog.h>
@@ -1451,6 +1453,9 @@ void DatabaseDataLake::createTable(
             "CREATE TABLE without a table engine is not implemented for a {} DataLakeCatalog; "
             "give an explicit {}-family table engine with the table location",
             family_name, family_name);
+
+    /// The query was authorized for the default table engine, but the catalog table is opened as `family_name`.
+    context_->checkAccess(AccessType::TABLE_ENGINE, family_name);
 
     const auto & create = query->as<ASTCreateQuery &>();
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);

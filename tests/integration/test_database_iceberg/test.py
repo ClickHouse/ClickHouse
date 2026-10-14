@@ -1521,6 +1521,37 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+@pytest.mark.parametrize("engine_clause", [" ENGINE = Iceberg", ""])
+def test_create_requires_catalog_table_engine_grant(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_requires_catalog_table_engine_grant_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    user = f"user_{uuid.uuid4().hex}"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(f"CREATE USER {user}")
+    try:
+        node.query(f"GRANT CREATE TABLE ON {CATALOG_NAME}.* TO {user}")
+        node.query(f"GRANT TABLE ENGINE ON MergeTree TO {user}")
+
+        create_query = f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}"
+        settings = {"allow_experimental_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+        error = node.query_and_get_error(create_query, user=user, settings=settings)
+        assert "ACCESS_DENIED" in error, error
+        assert node.query(f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'") == ""
+
+        node.query(f"GRANT READ, WRITE ON S3 TO {user}")
+        node.query(create_query, user=user, settings=settings)
+        assert node.query(
+            f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
+        ) == f"{root_namespace}.{table_name}\n"
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+
+
 @pytest.mark.parametrize("namespace_exists", [False, True])
 def test_create_without_engine_arguments_storage_mismatch(started_cluster, namespace_exists):
     node = started_cluster.instances["node1"]

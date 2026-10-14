@@ -454,20 +454,10 @@ bool tryWriteVersionHintFile(
         }
         else
         {
+            /// The metadata file written with `If-None-Match: *` is the commit itself, and another writer
+            /// may already have advanced the hint past it, building on this version.
             if (old_version >= metadata_file_info.version)
-            {
-                /// Remove the metadata file this commit wrote, otherwise version-hint resolution could later
-                /// pick this uncommitted file as the latest version.
-                LOG_INFO(
-                    getLogger("IcebergMetadataFileWriter"),
-                    "Removing the uncommitted Iceberg metadata file {}: the version hint is already at version {}, "
-                    "at or past version {} this commit tried to write, so the write did not commit",
-                    storage_metadata_path,
-                    old_version,
-                    metadata_file_info.version);
-                object_storage->removeObjectIfExists(StoredObject(storage_metadata_path));
-                return false;
-            }
+                return true;
         }
 
         /// lastly, let's update it
