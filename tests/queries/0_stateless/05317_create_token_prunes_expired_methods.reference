@@ -1,9 +1,0 @@
--- A token that is already expired when it is created is kept by the statement that creates it
-[0,1]
--- The next CREATE TOKEN drops it, and keeps the password and the new token
-[0,0]
--- Rotating expired tokens never accumulates them
-[0,0,1]
--- The surviving token and the password still authenticate
-1
-2

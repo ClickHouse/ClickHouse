@@ -728,13 +728,11 @@ namespace
                 ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays", "transform");
 
         const ColumnPtr & from_column_uncast = array_from->getDataPtr();
-        const DataTypePtr & from_array_nested_type
-            = typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType();
 
         cache->from_column = castColumn(
             {
                 from_column_uncast,
-                from_array_nested_type,
+                typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType(),
                 arguments[1].name
             },
             from_type);
@@ -789,12 +787,6 @@ namespace
 
         WhichDataType which(from_type);
 
-        /// A `String`/`FixedString` entry that is not an `Enum` member is already rejected by the cast
-        /// above, and comparing it below would put the member's numeric value against its name.
-        /// A numeric entry is cast without a membership check, so it still needs the comparison.
-        const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
-            && isStringOrFixedString(removeNullable(from_array_nested_type));
-
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
         {
@@ -802,7 +794,8 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
+                    || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
@@ -825,7 +818,7 @@ namespace
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     std::string_view ref = cache->from_column->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
@@ -838,7 +831,7 @@ namespace
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     SipHash hash;
                     cache->from_column->updateHashWithValue(i, hash);
@@ -1001,53 +994,44 @@ Requirements:
     {
         "transform(T, Array(T), Array(U), U) -> U",
         R"(
-CREATE TABLE hits (SearchEngineID UInt8, Referer String) ENGINE = Memory;
-
-INSERT INTO hits VALUES
-    (2, 'http://yandex.ru/search'),
-    (2, 'http://yandex.ru/news'),
-    (2, 'http://mail.yandex.ru/'),
-    (3, 'http://google.ru/search'),
-    (4, 'http://duckduckgo.com/'),
-    (0, 'http://vkontakte.ru/feed'),
-    (0, '');
-
 SELECT
 transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
 count() AS c
-FROM hits
+FROM test.hits
 WHERE SearchEngineID != 0
 GROUP BY title
-ORDER BY c DESC, title
+ORDER BY c DESC
         )",
         R"(
-┌─title──┬─c─┐
-│ Yandex │ 3 │
-│ Google │ 1 │
-│ Other  │ 1 │
-└────────┴───┘
+┌─title─────┬──────c─┐
+│ Yandex    │ 498635 │
+│ Google    │ 229872 │
+│ Other     │ 104472 │
+└───────────┴────────┘
         )"
     },
     {
         "transform(T, Array(T), Array(T)) -> T",
         R"(
--- Without a default, a domain that is not listed is returned unchanged.
 SELECT
 transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s, count() AS c
-FROM hits
+FROM test.hits
 GROUP BY domain(Referer)
-ORDER BY count() DESC, s
+ORDER BY count() DESC
 LIMIT 10
         )",
         R"(
-┌─s──────────────┬─c─┐
-│ www.yandex     │ 2 │
-│                │ 1 │
-│ duckduckgo.com │ 1 │
-│ example.com    │ 1 │
-│ mail.yandex.ru │ 1 │
-│ vk.com         │ 1 │
-└────────────────┴───┘
+┌─s──────────────┬───────c─┐
+│                │ 2906259 │
+│ www.yandex     │  867767 │
+│ ███████.ru     │  313599 │
+│ mail.yandex.ru │  107147 │
+│ ██████.ru      │  100355 │
+│ █████████.ru   │   65040 │
+│ news.yandex.ru │   64515 │
+│ ██████.net     │   59141 │
+│ example.com    │   57316 │
+└────────────────┴─────────┘
         )"
     }
     };
