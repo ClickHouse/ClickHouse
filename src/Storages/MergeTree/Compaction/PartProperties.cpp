@@ -109,21 +109,32 @@ std::set<std::string> getProjectionsMissingColumns(const MergeTreeDataPartPtr & 
     return projection_names;
 }
 
-/// Mirrors how `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare` fills `expired_columns`, limited to the
-/// columns the projections require. It leans towards reporting a column as absent: a column whose values
-/// sit only in patch parts, or that is the target of a pending rename, is still reported.
-std::set<std::string> getAbsentProjectionSourceColumns(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot)
+std::map<std::string, PartProperties::ProjectionPartSize> getProjectionSizes(const MergeTreeDataPartPtr & part)
+{
+    std::map<std::string, PartProperties::ProjectionPartSize> projection_sizes;
+
+    for (auto && [name, projection_part] : part->getProjectionParts())
+        if (!projection_part->is_broken)
+            projection_sizes.emplace(name, PartProperties::ProjectionPartSize{
+                .rows = projection_part->rows_count,
+                .size_uncompressed = projection_part->getTotalColumnsSize().data_uncompressed,
+            });
+
+    return projection_sizes;
+}
+
+/// Mirrors how `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare` fills `expired_columns`. It leans towards
+/// reporting a column as absent: a column whose values sit only in patch parts, or that is the target of a
+/// pending rename, is still reported.
+std::set<std::string> getAbsentColumns(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot)
 {
     std::set<std::string> absent_columns;
 
     const auto & columns = metadata_snapshot->getColumns();
-    for (const auto & projection : metadata_snapshot->getProjections())
+    for (const auto & column : columns.getAllPhysical())
     {
-        for (const auto & column : projection.getRequiredColumns())
-        {
-            if (columns.hasPhysical(column) && !columns.getDefault(column) && !part->tryGetColumn(column))
-                absent_columns.insert(column);
-        }
+        if (!columns.getDefault(column.name) && !part->tryGetColumn(column.name))
+            absent_columns.insert(column.name);
     }
 
     return absent_columns;
@@ -142,7 +153,8 @@ PartProperties buildPartProperties(
         .info = part->info,
         .projection_names = getCalculatedProjectionNames(part),
         .projections_missing_columns = getProjectionsMissingColumns(part, metadata_snapshot),
-        .absent_projection_source_columns = getAbsentProjectionSourceColumns(part, metadata_snapshot),
+        .projection_sizes = getProjectionSizes(part),
+        .absent_columns = getAbsentColumns(part, metadata_snapshot),
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
         .is_in_volume_where_merges_avoid = !part->shallParticipateInMerges(storage_policy),
         .size = part->getExistingBytesOnDisk(),

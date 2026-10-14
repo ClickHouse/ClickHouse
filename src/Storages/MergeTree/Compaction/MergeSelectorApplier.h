@@ -33,13 +33,18 @@ public:
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
     const StorageID storage_id;
+    /// The requested merge runs through `MergeAlgorithm::Horizontal` whatever the range (`OPTIMIZE ... DEDUPLICATE`
+    /// or `OPTIMIZE ... FINAL CLEANUP`, see `MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm`), so
+    /// the memory-derived cap does not let a range merge wider on the grounds that it would merge vertically.
+    const bool merge_forced_horizontal = false;
 
     MergeSelectorApplier(
         std::vector<MergeConstraint> && merge_constraints_,
         bool merge_with_ttl_allowed_,
         bool aggressive_,
         IMergeSelector::RangeFilter range_filter_,
-        StorageID storage_id_);
+        StorageID storage_id_,
+        bool merge_forced_horizontal_ = false);
 
     MergeSelectorChoices chooseMergesFrom(
         const PartsRanges & ranges,

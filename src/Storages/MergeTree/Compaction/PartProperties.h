@@ -6,6 +6,7 @@
 
 #include <Core/UUID.h>
 
+#include <map>
 #include <optional>
 #include <set>
 #include <span>
@@ -32,11 +33,22 @@ struct PartProperties
     /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
     const std::set<std::string> projections_missing_columns = {};
 
-    /// The parent columns required by some projection that the part does not have and that have no default
-    /// expression. A column absent from every source part of a merge is expired by the merge, and a merge that
-    /// expires a column of a projection rebuilds the projection from the parent part, see
-    /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
-    const std::set<std::string> absent_projection_source_columns = {};
+    /// The size of every projection part among `projection_names`. A merge that keeps a projection every source
+    /// part has merges the projection parts in a child merge of its own, which runs after the parent merge and
+    /// chooses its algorithm by these sizes, see `MergeTask::MergeProjectionsStage::prepareProjections`.
+    struct ProjectionPartSize
+    {
+        const size_t rows = 0;
+        const size_t size_uncompressed = 0;
+    };
+    const std::map<std::string, ProjectionPartSize> projection_sizes = {};
+
+    /// The physical columns of the table that the part does not have and that have no default expression. A
+    /// column absent from every source part of a merge is expired by the merge: it is not gathered, which
+    /// may turn a vertical merge into a horizontal one, and a merge that expires a column of a projection
+    /// rebuilds the projection from the parent part, see `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare`
+    /// and `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
+    const std::set<std::string> absent_columns = {};
 
     const bool all_ttl_calculated_if_any = false;
     const bool is_in_volume_where_merges_avoid = false;

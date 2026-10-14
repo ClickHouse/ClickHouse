@@ -797,7 +797,9 @@ A merge that runs through the vertical algorithm (see `enable_vertical_merge_alg
 key columns of every source part at once and gathers the other columns one at a time, so it is priced by
 its key columns alone and keeps its full width on a small server. Whether a merge will be vertical is
 predicted from the table definition and the rows and bytes of the candidate parts the same way the merge
-decides it; where the prediction is unsure it prices the merge as a horizontal one.
+decides it; where the prediction is unsure it prices the merge as a horizontal one. `OPTIMIZE ... DEDUPLICATE`
+always merges horizontally and is priced as such. The projection parts that a merge keeps are merged by
+child merges after it, and the merge is narrowed to fit each of them as well.
 
 Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alone.
 )", 0, \
