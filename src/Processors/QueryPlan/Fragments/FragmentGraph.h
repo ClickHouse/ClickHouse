@@ -15,26 +15,6 @@ namespace DB
 /// A model of the stages ("query fragments") of a distributed query plan and of the exchanges between them,
 /// built from the output of `makeDistributedPlan`. It is used to explain the shape of a distributed query.
 
-/// An edge from a producer fragment to the fragment that consumes its output.
-struct FragmentDependency
-{
-    enum class Type : uint8_t
-    {
-        /// The consumer processes the rows of the producer as they arrive.
-        Streaming,
-        /// The consumer cannot produce output until the producer has finished.
-        Blocking,
-    };
-
-    /// Fragment id of the producer.
-    UInt32 producer = 0;
-    /// Id of the exchange the data flows through.
-    UInt32 exchange = 0;
-    Type type = Type::Streaming;
-    /// Why the dependency is blocking, e.g. "build side of JoinLogical"; empty for a streaming dependency.
-    String reason;
-};
-
 /// One stage of a distributed query plan.
 struct QueryFragment
 {
@@ -62,23 +42,26 @@ struct QueryFragment
     ExecutionLocation location = ExecutionLocation::Distributed;
     /// `SingleNode` only: why the plan was not cut.
     std::optional<String> fallback_reason;
-    /// The set this fragment fills, e.g. "k IN (SELECT k FROM small)".
-    std::optional<String> set;
-    /// Worker stages of a distributed set source: the id of the fragment that fills the set.
-    std::optional<UInt32> set_fragment;
+    /// What the fragment computes when its stage name does not tell, e.g. the set it fills: "k IN (SELECT k FROM small)".
+    std::optional<String> description;
     /// The number of tasks of the stage.
     size_t tasks = 0;
-    /// 0 for leaves (fragments without dependencies), the maximum for the root.
-    UInt32 level = 0;
-    /// Sorted by producer id.
-    std::vector<FragmentDependency> depends_on;
+    /// Ids of the exchanges this fragment reads, ascending.
+    std::vector<UInt32> children;
     /// The plan of the stage (not owned); nullptr in hand-built graphs of tests.
     const QueryPlan * plan = nullptr;
     /// Step names of the fragment in root-to-leaf order, excluding `Expression`, `Filter` and the send and receive steps.
     std::vector<String> summary;
 };
 
-/// The data transfer between two fragments.
+struct ExchangeStatistics
+{
+    /// The estimated number of rows the producer sends, when the planner has an estimate.
+    std::optional<UInt64> estimated_rows;
+};
+
+/// The edge from a producer fragment to the fragment that consumes its output. Every dependency between two
+/// fragments goes through exactly one exchange; the send and receive steps stay in the plans of the fragments.
 struct FragmentExchange
 {
     enum class Kind : uint8_t
@@ -103,6 +86,14 @@ struct FragmentExchange
         Materialised,
     };
 
+    enum class Type : uint8_t
+    {
+        /// The consumer processes the rows of the producer as they arrive.
+        Streaming,
+        /// The consumer cannot produce output until the producer has finished.
+        Blocking,
+    };
+
     /// The exchange id assigned by the cutter, N for `exchange_N`.
     UInt32 id = 0;
     /// The executor's exchange name, e.g. `exchange_1`, for log and trace joins.
@@ -119,8 +110,10 @@ struct FragmentExchange
     Mode mode = Mode::Pipelined;
     size_t source_buckets = 0;
     size_t destination_buckets = 0;
-    /// The estimated number of rows the producer sends, when the planner has an estimate.
-    std::optional<UInt64> estimated_rows;
+    Type type = Type::Streaming;
+    /// Why the exchange is blocking, e.g. "build side of JoinLogical"; empty for a streaming exchange.
+    String reason;
+    ExchangeStatistics statistics;
 };
 
 struct FragmentGraph
@@ -129,8 +122,6 @@ struct FragmentGraph
     std::vector<QueryFragment> fragments;
     /// Sorted by id.
     std::vector<FragmentExchange> exchanges;
-    /// Fragment ids by level, ascending within a level; `levels[0]` are the leaves.
-    std::vector<std::vector<UInt32>> levels;
 
     /// Throws `LOGICAL_ERROR` when absent.
     const QueryFragment & getFragment(UInt32 id) const;
@@ -146,13 +137,18 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan);
 /// The fragment is an initiator with the `SingleNode` location and carries `fallback_reason`.
 FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<String> fallback_reason);
 
-/// Fills `level` of every fragment and `levels`; `fragments` and their `depends_on` must be set.
-/// The graph must be acyclic and have exactly one root (a fragment no other fragment depends on),
-/// which must have the `Initiator` role. Exposed for tests.
-void computeLevels(FragmentGraph & graph);
+/// Throws `LOGICAL_ERROR` unless every child of a fragment is an exchange into it from a known fragment, every
+/// exchange is the child of one fragment, the graph is acyclic, and it has exactly one root (a fragment whose
+/// output no exchange reads), which has the `Initiator` role.
+void validateFragmentGraph(const FragmentGraph & graph);
 
-/// The step of the consumer fragment which reads the output of a receive step,
-/// ignoring the `Expression` and `Filter` steps in between.
+/// Fragment ids by topological level, ascending within a level: the first level are the leaves, the last the root.
+/// A fragment is one level above its deepest producer. Computed on demand for the renderers; validates the graph.
+std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph);
+
+/// The step of the consumer fragment which decides whether a dependency is blocking: the first step on the
+/// way from a receive step to the output of the fragment which needs all of its input on that way before it
+/// produces output. `Other` when there is no such step, so the rows of the receive step stream through.
 struct ConsumerStepInfo
 {
     enum class Kind : uint8_t
@@ -161,24 +157,28 @@ struct ConsumerStepInfo
         Join,
         MergingAggregated,
         Sorting,
+        Aggregating,
     };
 
     Kind kind = Kind::Other;
     /// E.g. "JoinLogical", used in the reason text.
     String step_name;
-    /// `Join` only: the receive step feeds the build side of the join.
+    /// `Join` only: the way from the receive step enters the build side of the join.
     bool receive_feeds_build_side = false;
     /// `Sorting` only.
     SortingStep::Type sorting_type = SortingStep::Type::Full;
     /// `MergingAggregated` only: the step merges bucket by bucket (memory-efficient or memory-bound merging)
     /// and emits a bucket once every input has sent it, instead of merging all the input into one table first.
     bool merges_bucket_by_bucket = false;
+    /// `Aggregating` only: the aggregation runs in the order of the keys and emits a key once it is complete,
+    /// instead of emitting the hash table after all the input.
+    bool aggregation_in_order = false;
 };
 
-/// Pure classification of one dependency; `reason` is set for a blocking dependency and cleared otherwise.
+/// Pure classification of one exchange; `reason` is set for a blocking exchange and cleared otherwise.
 /// A `SetValues` exchange is always blocking (the set must be complete), then a `Materialised` exchange,
 /// otherwise the consumer step decides. Exposed for tests.
-FragmentDependency::Type classifyDependency(
+FragmentExchange::Type classifyDependency(
     const ConsumerStepInfo & consumer, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason);
 
 /// Multi-line debug text of the model (for `LOG_TEST` and tests).

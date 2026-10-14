@@ -1740,6 +1740,10 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 }
             }
 
+            /// The rebuilt node has no estimate, so carry over the one of the original node. For an exchange the
+            /// root is the receive step: it outputs the rows of the exchange.
+            current_plan->getRootNode()->cost_estimation = frame.node->cost_estimation;
+
             current_stage_depends_on = std::move(frame.depends_on_stages);
             current_list_of_shards = std::move(frame.list_of_shards);
             current_shards_are_copies = frame.shards_are_copies;
