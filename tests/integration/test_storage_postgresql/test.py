@@ -1987,9 +1987,10 @@ def test_postgres_pushdown_injection_via_in_list(started_cluster):
     started_cluster.postgres_conn.commit()
 
     # The quote inside the payload must be doubled, which is what a PostgreSQL string literal
-    # understands, and must never be written as the ClickHouse `\'`.
-    assert "''" in pushed_down, pushed_down
-    assert "\\'" not in pushed_down, pushed_down
+    # understands, and must never be written as the ClickHouse `\'`. Asserting the exact expected
+    # literal rather than the absence of `\'` anywhere keeps this from failing on an unrelated
+    # backslash that some later change puts elsewhere in the generated text.
+    assert "'" + payload.replace("'", "''") + "'" in pushed_down, pushed_down
 
     node1.query("DROP TABLE pg_pushdown_injection_in_list")
     cursor.execute(f"DROP TABLE {table_name}")
@@ -2037,10 +2038,27 @@ def test_postgres_pushdown_injection_via_scalar_literal(started_cluster):
     db_cursor.execute(f"CREATE TABLE {table_name} (name text)")
     db_cursor.execute(f"CREATE TABLE {marker_table} (payload text)")
     db_cursor.execute(f"INSERT INTO {table_name} VALUES ('x'), ('y')")
+    # Read back the setting over the connection ClickHouse itself uses, not just over a fresh psycopg
+    # one. `PoolWithFailover` caches connections per connection string, so a connection opened before
+    # the `ALTER DATABASE` would still see `on` and the injection below could not fire -- which would
+    # make this test pass while the defect is present. Asserting it here turns that silent false
+    # negative into a visible failure.
+    db_cursor.execute(
+        "CREATE VIEW conforming_strings AS "
+        "SELECT current_setting('standard_conforming_strings') AS value"
+    )
 
     # Only one `)` is needed here: the comparison adds no parenthesis of its own, so it closes the
     # subquery of the `COPY` wrapper.
     payload = f"a\\') TO STDOUT; COMMIT; INSERT INTO {marker_table} VALUES ($$scalar_pwn$$); --"
+
+    assert (
+        node1.query(
+            f"SELECT value FROM postgresql('{host}', '{db_name}', 'conforming_strings', "
+            f"'postgres', '{pg_pass}')"
+        ).strip()
+        == "off"
+    ), "ClickHouse reached PostgreSQL over a connection that still has standard_conforming_strings on"
 
     node1.query("DROP TABLE IF EXISTS pg_pushdown_injection_scalar")
     node1.query(
