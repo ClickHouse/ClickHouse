@@ -803,7 +803,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         StoragePtr analyzer_storage
             = createProjectionQuerySource(ColumnsDescription(columns.getAll()), MergeTreeData::createVirtuals(partition_key));
 
-        auto query_tree = buildProjectionQueryTree(result.query_ast, analyzer_storage, mut_context);
+        ProjectionUnresolvedNodeNames unresolved_node_names;
+        auto query_tree = buildProjectionQueryTree(
+            result.query_ast, analyzer_storage, mut_context, declared_columns ? &unresolved_node_names : nullptr);
         auto & query_node = query_tree->as<QueryNode &>();
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
@@ -821,7 +823,23 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             for (size_t i = 0; i < visible_count; ++i)
             {
                 visible_output_names.push_back(resolved_outputs[i].name);
+
+                /// The old interpreter builds the stored column names from the original SELECT
+                /// expressions. Resolution can fold constants or rename aggregate functions, so
+                /// the resolved node's default AST may name a different column.
+                const QueryTreeNodePtr * unresolved_node = &projection_nodes[i];
+                if (const auto * constant_node = (*unresolved_node)->as<ConstantNode>();
+                    constant_node && constant_node->hasSourceExpression())
+                    unresolved_node = &constant_node->getSourceExpression();
+                if (auto it = unresolved_node_names.find(*unresolved_node); it != unresolved_node_names.end())
+                {
+                    physical_output_names.push_back(it->second);
+                    continue;
+                }
+
                 ConvertToASTOptions ast_options;
+                ast_options.use_source_expression_for_constants = true;
+                ast_options.add_cast_for_constants = false;
                 ast_options.fully_qualified_identifiers = false;
                 auto physical_expression = projection_nodes[i]->toAST(ast_options);
                 physical_expression->setAlias({});
