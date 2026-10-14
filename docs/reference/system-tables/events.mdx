@@ -4236,6 +4236,10 @@ The total number of pages pruned from parquet data via column index
 
 The total number of row groups pruned from parquet data
 
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)
+
 ### ParquetReadPages {#parquetreadpages}
 
 The total number of Parquet data pages read
@@ -6475,6 +6479,10 @@ Number of exceptions while writing to S3.
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+Number of lookup requests to YTsaurus that were throttled
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 
