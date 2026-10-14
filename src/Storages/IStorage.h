@@ -133,10 +133,10 @@ public:
     /// each row, which is not necessarily the name of this storage.
     virtual bool readsFromOtherTables() const { return false; }
 
-    /// Returns true if reading this storage may read the table `view_source_id` through a nested query analyzed
-    /// in the reader's context (e.g. `Merge`, `loop`, `executable`). Under a materialized view over that table,
-    /// such a read returns the block pushed to the view.
-    virtual bool mayReadViewSource(const StorageID & /*view_source_id*/) const { return false; }
+    /// Returns true if reading this storage in `query_context` may read the table `view_source_id` through a nested query
+    /// analyzed in the reader's context (e.g. `Merge`, `loop`, `executable`), or through a filter such a nested read
+    /// gets at planning time. Under a materialized view over that table, such a read returns the block pushed to the view.
+    virtual bool mayReadViewSource(const StorageID & /*view_source_id*/, const ContextPtr & /*query_context*/) const { return false; }
 
     /// Storages whose rows this storage returns as its own on read, e.g. the target of `Alias`.
     /// Their row policies apply to reads from this storage as well, so only a wrapper that exposes

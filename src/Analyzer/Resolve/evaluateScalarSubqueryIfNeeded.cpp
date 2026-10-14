@@ -107,7 +107,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !only_analyze_subquery && !subtreeMayReadViewSource(node_without_alias.get(), context->getViewSource());
+    bool can_use_global_scalars = !only_analyze_subquery && !subtreeMayReadViewSource(node_without_alias.get(), context);
 
     auto & scalars_cache = early_short_circuit_type_inference_in_process
         ? scalar_subquery_to_scalar_value_type_only

@@ -11,13 +11,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Every row is pushed to the views as its own block, so a scalar subquery result reused across blocks shows.
 BLOCK_PER_ROW="max_block_size = 1, max_insert_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
     min_insert_block_size_rows_for_materialized_views = 0, min_insert_block_size_bytes_for_materialized_views = 0"
+UDF="udf_05388_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS mv_merge;
 DROP TABLE IF EXISTS mv_loop;
 DROP TABLE IF EXISTS mv_row_policy;
-DROP ROW POLICY IF EXISTS policy_05388 ON policy_child;
-DROP TABLE IF EXISTS policy_child;
+DROP TABLE IF EXISTS mv_policy_in, mv_policy_udf, mv_merge_policy, mv_loop_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf;
+DROP ROW POLICY IF EXISTS policy_05388 ON policy_child, pin, pudf, pmerge, ploop, pn1, pn2;
+DROP TABLE IF EXISTS policy_child, pin, pudf, pmerge, ploop, pn1, pn2, pns, patf, src_atf, pmatf;
+DROP FUNCTION IF EXISTS ${UDF};
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS dist;
 DROP TABLE IF EXISTS dist_target;
@@ -51,15 +54,69 @@ CREATE MATERIALIZED VIEW mv_row_policy TO dst AS
     SELECT 'row policy' AS name, count() AS block_rows, any(c.value) AS value
     FROM src CROSS JOIN (SELECT count() AS value FROM merge(${CLICKHOUSE_DATABASE}, '^policy_child\$')) AS c;
 
+-- A row policy or 'additional_table_filters' of a table read by a scalar subquery is analyzed in the same context.
+CREATE TABLE pin ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE TABLE pudf ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE TABLE pmerge ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE TABLE ploop ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE TABLE pn1 ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE TABLE pn2 ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE TABLE pns ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE FUNCTION ${UDF} AS (v) -> v IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src);
+CREATE ROW POLICY policy_05388 ON pin, pmerge, ploop, pn2 USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src) TO ALL;
+CREATE ROW POLICY policy_05388 ON pudf USING ${UDF}(x) TO ALL;
+CREATE ROW POLICY policy_05388 ON pn1 USING x <= (SELECT max(x) FROM ${CLICKHOUSE_DATABASE}.pn2) TO ALL;
+
+CREATE MATERIALIZED VIEW mv_policy_in TO dst AS
+    SELECT 'policy in' AS name, count() AS block_rows, (SELECT max(x) FROM pin) AS value FROM src;
+CREATE MATERIALIZED VIEW mv_policy_udf TO dst AS
+    SELECT 'policy udf' AS name, count() AS block_rows, (SELECT max(x) FROM pudf) AS value FROM src;
+CREATE MATERIALIZED VIEW mv_merge_policy TO dst AS
+    SELECT 'merge policy' AS name, count() AS block_rows,
+        (SELECT max(x) FROM merge(${CLICKHOUSE_DATABASE}, '^pmerge\$')) AS value
+    FROM src;
+CREATE MATERIALIZED VIEW mv_loop_policy TO dst AS
+    SELECT 'loop policy' AS name, count() AS block_rows,
+        (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, ploop) LIMIT 3)) AS value
+    FROM src;
+-- The row policy of the 'Merge' child 'pn1' is analyzed as a standalone expression.
+CREATE MATERIALIZED VIEW mv_nested_policy TO dst AS
+    SELECT 'nested policy' AS name, count() AS block_rows,
+        (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^pn1\$')) AS value
+    FROM src;
+-- The filter is in the settings of a query nested in the scalar subquery.
+CREATE MATERIALIZED VIEW mv_nested_settings TO dst AS
+    SELECT 'nested settings' AS name, count() AS block_rows,
+        (SELECT max(x) FROM (SELECT x FROM pns
+            SETTINGS additional_table_filters = {'${CLICKHOUSE_DATABASE}.pns': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src)'})) AS value
+    FROM src;
+
+CREATE TABLE src_atf (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE patf ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE TABLE pmatf ENGINE = MergeTree ORDER BY x AS SELECT number + 1 AS x FROM numbers(3);
+CREATE MATERIALIZED VIEW mv_atf TO dst AS
+    SELECT 'additional filters' AS name, count() AS block_rows, (SELECT max(x) FROM patf) AS value FROM src_atf;
+-- 'dist' makes the 'Merge' read 'pmatf' through a nested interpreter, which applies its filter.
+CREATE MATERIALIZED VIEW mv_merge_atf TO dst AS
+    SELECT 'merge filters' AS name, count() AS block_rows,
+        (SELECT max(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(pmatf|dist)\$')) AS value
+    FROM src_atf;
+
 INSERT INTO src SELECT number + 1 FROM numbers(3) SETTINGS ${BLOCK_PER_ROW};
+INSERT INTO src_atf SELECT number + 1 FROM numbers(3)
+    SETTINGS ${BLOCK_PER_ROW},
+        additional_table_filters = {'${CLICKHOUSE_DATABASE}.patf': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src_atf)',
+            '${CLICKHOUSE_DATABASE}.pmatf': 'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src_atf)'};
 
 SELECT * FROM dst ORDER BY name, value;
 
 DROP TABLE mv_merge;
 DROP TABLE mv_loop;
 DROP TABLE mv_row_policy;
-DROP ROW POLICY policy_05388 ON policy_child;
-DROP TABLE policy_child;
+DROP TABLE mv_policy_in, mv_policy_udf, mv_merge_policy, mv_loop_policy, mv_nested_policy, mv_atf, mv_nested_settings, mv_merge_atf;
+DROP ROW POLICY policy_05388 ON policy_child, pin, pudf, pmerge, ploop, pn1, pn2;
+DROP TABLE policy_child, pin, pudf, pmerge, ploop, pn1, pn2, pns, patf, src_atf, pmatf;
+DROP FUNCTION ${UDF};
 DROP TABLE dst;
 DROP TABLE dist;
 DROP TABLE dist_target;

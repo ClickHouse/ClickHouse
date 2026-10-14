@@ -154,7 +154,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
 
 static bool subqueryUsesViewSource(const InterpreterSelectQueryAnalyzer & interpreter, const ContextPtr & context)
 {
-    return subtreeMayReadViewSource(interpreter.getQueryTree().get(), context->getViewSource());
+    return subtreeMayReadViewSource(interpreter.getQueryTree().get(), context);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)

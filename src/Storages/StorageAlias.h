@@ -37,10 +37,10 @@ public:
         return {};
     }
 
-    bool mayReadViewSource(const StorageID & view_source_id) const override
+    bool mayReadViewSource(const StorageID & view_source_id, const ContextPtr & query_context) const override
     {
         auto target = tryGetTargetTable();
-        return target && target->mayReadViewSource(view_source_id);
+        return target && target->mayReadViewSource(view_source_id, query_context);
     }
 
     /// An `Alias` has no data of its own, so a bulk `TRUNCATE ALL TABLES` must skip it.

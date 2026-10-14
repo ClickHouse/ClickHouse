@@ -90,10 +90,10 @@ public:
     bool isRemote() const override;
     bool readRequiresAnalyzedQuery() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
-    bool mayReadViewSource(const StorageID & view_source_id) const override
+    bool mayReadViewSource(const StorageID & view_source_id, const ContextPtr & query_context) const override
     {
         auto destination = getDestinationTable();
-        return destination && destination->mayReadViewSource(view_source_id);
+        return destination && destination->mayReadViewSource(view_source_id, query_context);
     }
     StoragePtr getDestinationTable() const;
 

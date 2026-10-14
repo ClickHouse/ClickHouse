@@ -34,8 +34,10 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 /// Returns true if storage is used in tree, false otherwise
 bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root);
 
-/// Returns true if the tree reads `view_source` or a storage that may read it (`IStorage::mayReadViewSource`).
-bool subtreeMayReadViewSource(const IQueryTreeNode * node, const StoragePtr & view_source);
+/// Returns true if the tree reads the view source of `context`, a storage that may read it (`IStorage::mayReadViewSource`),
+/// or a table whose row policy or `additional_table_filters` may read a table. Each query or union in the tree is
+/// checked in its own context.
+bool subtreeMayReadViewSource(const IQueryTreeNode * node, const ContextPtr & context);
 
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);

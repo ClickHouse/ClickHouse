@@ -66,6 +66,8 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <Planner/Utils.h>
+
 #include <Poco/String.h>
 
 #include <ranges>
@@ -110,29 +112,55 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
     return false;
 }
 
-bool subtreeMayReadViewSource(const IQueryTreeNode * node, const StoragePtr & view_source)
+namespace
 {
-    if (!node || !view_source)
+
+bool subtreeMayReadViewSourceImpl(const IQueryTreeNode * node, const StorageID & view_source_id, ContextPtr current_context)
+{
+    if (!node)
         return false;
 
+    if (const auto * query_node = node->as<QueryNode>(); query_node && query_node->getContext())
+        current_context = query_node->getContext();
+    else if (const auto * union_node = node->as<UnionNode>(); union_node && union_node->getContext())
+        current_context = union_node->getContext();
+
+    StoragePtr storage;
     if (const auto * table_node = node->as<TableNode>())
     {
-        const auto view_source_id = view_source->getStorageID();
-        if (table_node->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted()
-            || (table_node->getStorage() && table_node->getStorage()->mayReadViewSource(view_source_id)))
+        if (table_node->getStorageID().getFullNameNotQuoted() == view_source_id.getFullNameNotQuoted())
             return true;
+        storage = table_node->getStorage();
     }
     else if (const auto * table_function_node = node->as<TableFunctionNode>())
     {
-        if (table_function_node->getStorage() && table_function_node->getStorage()->mayReadViewSource(view_source->getStorageID()))
-            return true;
+        storage = table_function_node->getStorage();
     }
 
+    if (storage
+        && (storage->mayReadViewSource(view_source_id, current_context)
+            || hiddenFilterMayReadTable(*storage, node->getOriginalAlias(), current_context)))
+        return true;
+
     for (const auto & child : node->getChildren())
-        if (subtreeMayReadViewSource(child.get(), view_source))
+        if (subtreeMayReadViewSourceImpl(child.get(), view_source_id, current_context))
             return true;
 
     return false;
+}
+
+}
+
+bool subtreeMayReadViewSource(const IQueryTreeNode * node, const ContextPtr & context)
+{
+    if (!node || !context)
+        return false;
+
+    auto view_source = context->getViewSource();
+    if (!view_source)
+        return false;
+
+    return subtreeMayReadViewSourceImpl(node, view_source->getStorageID(), context);
 }
 
 bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root)
