@@ -15,10 +15,10 @@ struct FragmentGraph;
 /// plan of the fragment, followed by an empty line and `Not distributed: <reason>` when the fragment has a
 /// `fallback_reason`.
 ///
-/// Otherwise every fragment is printed as a header line `Fragment <id> (<stage name>, <role>, tasks=<N>)`,
+/// Otherwise every fragment is printed as a header line `Query fragment <id> (<stage name>) · <role> · tasks=<N>`,
 /// the `QueryPlan::explainPlan` output of its plan and an empty line; the initiator comes first and the other
 /// fragments follow by descending id, so that data flows upward as in a plan tree. The `Exchanges`,
-/// `Dependencies` and `Levels` sections follow the fragments.
+/// `Dependencies` and `Levels` sections follow the fragments; they refer to query fragment <id> as `F<id>`.
 void explainFragmentGraph(
     const FragmentGraph & graph,
     WriteBuffer & buf,

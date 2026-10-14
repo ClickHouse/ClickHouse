@@ -116,7 +116,7 @@ void explainFragmentGraph(
 
     for (const auto * fragment : print_order)
     {
-        buf << fmt::format("Fragment {} ({}, {}, tasks={})\n", fragment->id, fragment->stage_name, formatRole(fragment->role), fragment->tasks);
+        buf << fmt::format("Query fragment {} ({}) · {} · tasks={}\n", fragment->id, fragment->stage_name, formatRole(fragment->role), fragment->tasks);
         getPlan(*fragment).explainPlan(buf, options, 0, max_step_description_length);
         buf << '\n';
     }
@@ -126,7 +126,7 @@ void explainFragmentGraph(
         buf << "Exchanges:\n";
         for (const auto & exchange : graph.exchanges)
         {
-            buf << fmt::format("  {}: {}, {}, Fragment {} -> Fragment {}",
+            buf << fmt::format("  {}: {}, {}, F{} -> F{}",
                 exchange.name, formatKind(exchange), formatMode(exchange.mode), exchange.from, exchange.to);
             if (exchange.source_buckets || exchange.destination_buckets)
                 buf << fmt::format(", buckets {} -> {}", exchange.source_buckets, exchange.destination_buckets);
@@ -142,7 +142,7 @@ void explainFragmentGraph(
             for (UInt32 child : fragment->children)
             {
                 const auto & exchange = graph.getExchange(child);
-                buf << fmt::format("  Fragment {} <- Fragment {} ({}, ", fragment->id, exchange.from, exchange.name);
+                buf << fmt::format("  F{} <- F{} ({}, ", fragment->id, exchange.from, exchange.name);
                 switch (exchange.type)
                 {
                     case FragmentExchange::Type::Streaming:
@@ -163,7 +163,11 @@ void explainFragmentGraph(
     {
         if (i != 0)
             buf << " -> ";
-        buf << fmt::format("[{}]", fmt::join(levels[i], ", "));
+        std::vector<String> names;
+        names.reserve(levels[i].size());
+        for (UInt32 id : levels[i])
+            names.push_back(fmt::format("F{}", id));
+        buf << fmt::format("[{}]", fmt::join(names, ", "));
     }
     buf << '\n';
 }

@@ -852,9 +852,9 @@ Join (JOIN FillRightFirst)
 
 #### Query fragments {#explain-plan-fragments}
 
-With `fragments` = 1, a query that is executed by stateless workers (`make_distributed_plan = 1`) is shown as it is cut for execution: one plan per query fragment. A query fragment is a part of the plan that is executed as one or more parallel tasks; the fragment run by the initiator is printed first, and the other fragments follow in the reverse order of their ids, so that data flows upward as in a plan tree. Every fragment starts with a header that shows its id, its stage name, its role (`initiator` or `worker`) and its number of tasks. The send and receive steps show the name of the exchange they write to or read from.
+With `fragments` = 1, a query that is executed by stateless workers (`make_distributed_plan = 1`) is shown as it is cut for execution: one plan per query fragment. A query fragment is a part of the plan that is executed as one or more parallel tasks; the fragment run by the initiator is printed first, and the other fragments follow in the reverse order of their ids, so that data flows upward as in a plan tree. Every fragment starts with a header `Query fragment <id> (<stage name>) · <role> · tasks=<N>` that shows its id, its stage name, its role (`initiator` or `worker`) and its number of tasks. The send and receive steps show the name of the exchange they write to or read from.
 
-The fragments are followed by three sections:
+The fragments are followed by three sections, which refer to query fragment `<id>` as `F<id>`:
 
 - `Exchanges` — how the data is transferred between two fragments: by the hash of the keys (`hash(...)`), to every task of the consumer (`broadcast`), into one task (`gather`, with `sorted by` when the sort order is kept) or without regard to the values (`any`); whether it is sent over the network while it is produced (`pipelined`) or written to temporary files first (`materialised`); and the number of source and destination buckets.
 - `Dependencies` — for every fragment, the fragments it reads from. A `streaming` dependency is processed as the rows arrive; a `blocking` dependency must be finished before the consumer produces output, because a step on the way from the exchange to the output of the fragment needs all of its input first: the build side of a join, a hash aggregation, a merge of aggregation states that does not merge bucket by bucket, or a full sort. A materialised exchange is always blocking. The reason is printed next to it.
@@ -873,13 +873,13 @@ SETTINGS make_distributed_plan = 1, explain_query_plan_default = 'legacy';
 ```
 
 ```text
-Fragment 3 (main, initiator, tasks=1)
+Query fragment 3 (main) · initiator · tasks=1
 GatherSend (final_result)
   Expression ((Project names + Projection))
     MergingAggregated (merge)
       GatherReceive (exchange_2)
 
-Fragment 2 (stage_2, worker, tasks=3)
+Query fragment 2 (stage_2) · worker · tasks=3
 GatherSend (exchange_2)
   Aggregating (partial)
     Expression (Before GROUP BY)
@@ -887,25 +887,25 @@ GatherSend (exchange_2)
         ShuffleReceive (exchange_0)
         BroadcastReceive (exchange_1)
 
-Fragment 1 (stage_1, worker, tasks=1)
+Query fragment 1 (stage_1) · worker · tasks=1
 BroadcastSend (exchange_1)
   Expression (Change column names to column identifiers)
     ReadFromMergeTree (default.small)
 
-Fragment 0 (stage_0, worker, tasks=1)
+Query fragment 0 (stage_0) · worker · tasks=1
 ShuffleSend (exchange_0)
   Expression (Change column names to column identifiers)
     ReadFromMergeTree (default.big)
 
 Exchanges:
-  exchange_0: any, pipelined, Fragment 0 -> Fragment 2, buckets 1 -> 3
-  exchange_1: broadcast, pipelined, Fragment 1 -> Fragment 2, buckets 1 -> 3
-  exchange_2: gather, pipelined, Fragment 2 -> Fragment 3, buckets 3 -> 1
+  exchange_0: any, pipelined, F0 -> F2, buckets 1 -> 3
+  exchange_1: broadcast, pipelined, F1 -> F2, buckets 1 -> 3
+  exchange_2: gather, pipelined, F2 -> F3, buckets 3 -> 1
 Dependencies:
-  Fragment 3 <- Fragment 2 (exchange_2, streaming)
-  Fragment 2 <- Fragment 0 (exchange_0, blocking: hash aggregation)
-  Fragment 2 <- Fragment 1 (exchange_1, blocking: build side of JoinLogical)
-Levels: [0, 1] -> [2] -> [3]
+  F3 <- F2 (exchange_2, streaming)
+  F2 <- F0 (exchange_0, blocking: hash aggregation)
+  F2 <- F1 (exchange_1, blocking: build side of JoinLogical)
+Levels: [F0, F1] -> [F2] -> [F3]
 ```
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
