@@ -2743,3 +2743,61 @@ def test_api_call_quota_is_shared_by_ai_calls_in_one_query(started_cluster):
         query_id=qid,
     )
     assert int(get_profile_events(qid)["api_calls"]) == 50
+
+
+def test_kill_query_stops_issuing_requests(started_cluster):
+    """`KILL QUERY` stops an AI function mid-block: no new request is sent after the kill. The 400 rows
+    form one block, which at 0.5s per request would otherwise take 200s and send all 400 requests."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_kill")
+    request = instance.get_query_request(
+        f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
+        settings={"ai_function_max_concurrent_requests_per_thread": 1},
+        query_id=qid,
+    )
+
+    wait_condition(
+        _concurrency_stats, lambda stats: stats["requests"] >= 2, max_attempts=100, delay=0.1
+    )
+    instance.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+    assert "Query was cancelled" in request.get_error()
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the killed query kept sending requests: {requests} of 400 were sent"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    exception_code = instance.query(
+        f"SELECT exception_code FROM system.query_log "
+        f"WHERE query_id = '{qid}' AND type = 'ExceptionWhileProcessing'"
+    ).strip()
+    assert exception_code == "394"
+    assert int(get_profile_events(qid, "ExceptionWhileProcessing")["api_calls"]) == requests
+
+
+def test_max_execution_time_stops_issuing_requests(started_cluster):
+    """`max_execution_time` stops an AI function mid-block like `KILL QUERY`: the 400 rows form one block
+    that would take 200s at 0.5s per request, and the query fails after 2s having sent a fraction of them."""
+    _reset_concurrency()
+    error = instance.query_and_get_error(
+        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
+        settings={"max_execution_time": 2, "ai_function_max_concurrent_requests_per_thread": 1},
+    )
+    assert "TIMEOUT_EXCEEDED" in error
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the timed-out query kept sending requests: {requests} of 400 were sent"
+
+
+def test_max_execution_time_break_stops_issuing_requests(started_cluster):
+    """With `timeout_overflow_mode = 'break'` the query returns without an error once the time limit is
+    reached, and no further requests are sent."""
+    _reset_concurrency()
+    instance.query(
+        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
+        settings={
+            "max_execution_time": 2,
+            "timeout_overflow_mode": "break",
+            "ai_function_max_concurrent_requests_per_thread": 1,
+        },
+    )
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the query kept sending requests past the time limit: {requests} of 400 were sent"
