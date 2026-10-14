@@ -95,6 +95,13 @@ ResourceAllocation * AllocationRateLimit::selectAllocationToKill(IncreaseRequest
     return child->selectAllocationToKill(killer, limit, details);
 }
 
+ResourceAllocation * AllocationRateLimit::selectAllocationToSpill(ResourceCost at_least, String & details)
+{
+    if (!child)
+        return nullptr;
+    return child->selectAllocationToSpill(at_least, details);
+}
+
 void AllocationRateLimit::approveIncrease()
 {
     chassert(increase);

@@ -42,6 +42,7 @@ private:
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;
     void killAllocation(const std::exception_ptr & reason) override;
+    void spillAllocation(ResourceCost additional_bytes) override;
 
     /// Releases the slot (or cancels the pending allocation) and waits until the scheduler is done with it.
     void detachFromQueue();

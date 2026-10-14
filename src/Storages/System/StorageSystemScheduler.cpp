@@ -116,6 +116,14 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"allocated", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
             "For space-shared nodes only. The currently allocated amount of resource under this node."
         },
+        {"reclaimable", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
+            "For space-shared nodes only. Memory available for new spill requests under this node. "
+            "For each allocation, outstanding requests are subtracted from its reported reclaimable memory and the result is clamped at zero before summing."
+        },
+        {"reclaiming", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
+            "For space-shared nodes only. Memory requested for spilling but not yet settled under this node, including requests that have not started executing. "
+            "Settlement retires the requested amount independently of the amount actually freed."
+        },
         {"allocations", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For space-shared nodes only. The current number of running resource allocations under this node."
         },
@@ -139,6 +147,14 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         },
         {"victims", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For space-shared nodes only. The total number of allocations that were evicted from this node."
+        },
+        {"spills", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The total number of spill requests issued by this node due to its soft memory limit being exceeded."
+        },
+        // AllocationLimit
+        {"soft_limit", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
+            "For `allocation_limit` nodes only. The effective soft memory limit above which reclaimable allocations are asked to spill "
+            "(the smaller of `max_memory_before_spill` and `max_memory_to_spill_ratio * max_memory`). Values not below the hard limit mean spilling is disabled."
         },
         // AllocationQueue
         {"rejects", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
@@ -188,6 +204,8 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field throttling_us;
         Field tokens;
         Field allocated;
+        Field reclaimable;
+        Field reclaiming;
         Field allocations;
         Field updates;
         Field increases;
@@ -196,6 +214,8 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field removes;
         Field killers;
         Field victims;
+        Field spills;
+        Field soft_limit;
         Field rejects;
         Field pending;
 
@@ -246,11 +266,11 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             throttling_us = ptr->getThrottlingDuration().count() / 1000;
             tokens = ptr->getTokens();
         }
-        if (auto * ptr = dynamic_cast<AllocationLimit *>(node))
-            max_cost = ptr->getLimit();
         if (auto * ptr = dynamic_cast<ISpaceSharedNode *>(node))
         {
             allocated = ptr->allocated;
+            reclaimable = ptr->reclaimable;
+            reclaiming = ptr->reclaiming;
             allocations = ptr->allocations;
             updates = ptr->updates;
             increases = ptr->increases;
@@ -259,6 +279,12 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             removes = ptr->removes;
             killers = ptr->killers;
             victims = ptr->victims;
+            spills = ptr->spills;
+        }
+        if (auto * ptr = dynamic_cast<AllocationLimit *>(node))
+        {
+            max_cost = ptr->getLimit();
+            soft_limit = ptr->getSoftLimit();
         }
         if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
         {
@@ -291,6 +317,8 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(throttling_us);
         res_columns[i++]->insert(tokens);
         res_columns[i++]->insert(allocated);
+        res_columns[i++]->insert(reclaimable);
+        res_columns[i++]->insert(reclaiming);
         res_columns[i++]->insert(allocations);
         res_columns[i++]->insert(updates);
         res_columns[i++]->insert(increases);
@@ -299,6 +327,8 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(removes);
         res_columns[i++]->insert(killers);
         res_columns[i++]->insert(victims);
+        res_columns[i++]->insert(spills);
+        res_columns[i++]->insert(soft_limit);
         res_columns[i++]->insert(rejects);
         res_columns[i++]->insert(pending);
     });

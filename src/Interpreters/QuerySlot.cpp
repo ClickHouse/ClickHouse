@@ -119,6 +119,12 @@ void QuerySlot::allocationFailed(const std::exception_ptr & reason)
     cv.notify_all();
 }
 
+void QuerySlot::spillAllocation(ResourceCost)
+{
+    // Query slots never report reclaimable size, so the scheduler never asks them to spill.
+    chassert(false);
+}
+
 void QuerySlot::killAllocation(const std::exception_ptr &)
 {
     // Query slots are never evicted: the `QUERY` resource limits are built without eviction.

@@ -36,6 +36,7 @@ public:
 
     // ISpaceSharedNode
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override;
+    ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) override;
     void approveIncrease() override;
     void approveDecrease() override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
