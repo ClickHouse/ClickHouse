@@ -115,12 +115,12 @@ def _expected_summary(partition):
     ]
 
 
-def _declared_partition_types(table_path):
+def _declared_partition_types(table_path, manifest_list=None):
     """The Avro type each manifest declares for its partition fields, read from the id-carrying
     `avro.schema` header the writer stores. A bound is only decodable by a reader if it is the width
     of the type declared here, so the two are asserted together."""
     declared = []
-    for entry in _read_avro(_manifest_list_of_last_snapshot(table_path)):
+    for entry in _read_avro(manifest_list or _manifest_list_of_last_snapshot(table_path)):
         manifest = os.path.join(
             table_path, "metadata", os.path.basename(unescape_path(entry["manifest_path"]))
         )
@@ -338,8 +338,7 @@ def test_writes_manifest_list_partition_summary_bucket_transform(
         assert summary is not None
         assert _summary_tuples(summary) == _expected_summary(partition)
 
-    # Pin: the manifest declares that field as Avro `"int"` both before and after this fix, so the
-    # bound's width and the declared type agree.
+    # The manifest declares that field as Avro `"int"`, the type the four-byte bounds above encode.
     assert _declared_partition_types(table_path) == [[("s", "int")], [("s", "int")]]
 
     # These bounds are also what ClickHouse's own manifest-list pruner reads. Without a bound it
@@ -400,6 +399,8 @@ def test_writes_manifest_list_partition_summary_after_compaction(
     assert os.path.basename(after_list) != os.path.basename(before_list)
     entries = _entries_of_last_snapshot(table_path, after_list)
     assert len(entries) == 2
+    # The manifests compaction writes declare the Iceberg `int` of a `bucket[N]` field.
+    assert _declared_partition_types(table_path, after_list) == [[("s", "int")], [("s", "int")]]
 
     # Compaction rewrites the manifest list through its own `generateManifestList` call, so a
     # rewritten entry carries the same four-byte bucket bound the insert path writes.
@@ -504,7 +505,7 @@ def test_writes_manifest_list_partition_summary_nullable_bucket(
     ]
     assert _summary_tuples(summaries["null"]) == [(True, None, None, None)]
 
-    # The nullable source keeps the Avro `["null", "int"]` union of the partition field.
+    # A nullable source declares the partition field as the Avro `["null", "int"]` union.
     assert _declared_partition_types(table_path) == [
         [("s", ("null", "int"))],
         [("s", ("null", "int"))],

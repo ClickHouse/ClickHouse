@@ -705,6 +705,12 @@ def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_s
     assert len(spark_rows) == 80
     assert sorted(row["id"] for row in spark_rows) == list(range(0, 80))
 
+    # A filter on the bucketed column makes Spark evaluate the partition values and bounds compaction rewrote.
+    filtered = spark.read.format("iceberg").load(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    ).where("id = 5").collect()
+    assert [row["id"] for row in filtered] == [5]
+
 
 def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg_with_spark):
     """
