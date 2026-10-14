@@ -260,4 +260,4 @@ ORDER BY number FORMAT TSV"
 $CLICKHOUSE_LOCAL -q "
 SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP, 'no_such_column UInt64')" 2>&1 | grep -o -m1 'THERE_IS_NO_COLUMN'
 $CLICKHOUSE_LOCAL -q "
-SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP, 'src_addr UInt8')" 2>&1 | grep -o -m1 'CANNOT_CONVERT_TYPE\|TYPE_MISMATCH\|CANNOT_PARSE[A-Z_]*' | head -n1
+SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP, 'src_addr UInt8')" 2>&1 | grep -o -m1 'while converting column .src_addr. from type Nullable(IPv6) to type UInt8'

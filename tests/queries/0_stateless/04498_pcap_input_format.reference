@@ -117,6 +117,7 @@ null.pcap	0	0	0
 sll.pcap	0	0	0
 sll2.pcap	0	0	0
 dot3.pcap	0	0	0
+options.pcap	0	0	0
 --- padded short frame: payload excludes the Ethernet padding ---
 60	4	ping	0	42
 --- tunnels: IP columns describe the outer header ---
@@ -166,3 +167,23 @@ sll.pcap	1	SLL	['SLL','IP','UDP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68
 1	IEEE802_3	['IEEE802_3','SNAP','IP','UDP']	00:11:22:33:44:aa	01:80:c2:00:00:00	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
 2	IEEE802_3	['IEEE802_3','LLC','STP']	00:11:22:33:44:aa	01:80:c2:00:00:00	LLC	\N	\N	\N		\N	\N
 3	ETHERNET_II	['ETHERNET_II','IP','UDP']	66:77:88:99:aa:bb	00:11:22:33:44:55	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
+--- end-of-options padding: the headers are dissected, the payload starts after the padding ---
+1	['ETHERNET_II','IP','UDP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
+2	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	4	ping
+3	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	4	ping
+--- non-first IPv6 fragment: the extension-header chain stops at the Fragment header ---
+4	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	IPv6-Opts	\N	\N	0
+--- explicit structure: the columns are converted to the requested types ---
+1	UInt32	80	Nullable(String)
+2	UInt32	67	Nullable(String)
+3	UInt32	\N	Nullable(String)
+4	UInt32	80	Nullable(String)
+5	UInt32	\N	Nullable(String)
+6	UInt32	80	Nullable(String)
+7	UInt32	67	Nullable(String)
+8	UInt32	80	Nullable(String)
+9	UInt32	\N	Nullable(String)
+10	UInt32	80	Nullable(String)
+11	UInt32	67	Nullable(String)
+THERE_IS_NO_COLUMN
+while converting column `src_addr` from type Nullable(IPv6) to type UInt8
