@@ -246,12 +246,11 @@ ProcessList::EntryPtr ProcessList::insert(
         /// limit was unlimited are already counted, so once the limit becomes finite the next arrivals
         /// observe the real running count instead of `0` and queue as expected, rather than slipping
         /// past the limit on the fast path. The FIFO *wait* only happens for a finite limit
-        /// (`needs_admission`, i.e. `max_size > 0`); when unlimited, a slot is always taken immediately.
+        /// (`max_size > 0`); when unlimited, a slot is always taken immediately.
         ///
         /// `isAdmissionExemptQuery` (currently `SYSTEM RELOAD CONFIG`) is never tracked: it must stay
         /// available to raise `max_concurrent_queries` while the limit is saturated.
         const bool admission_tracked = !is_unlimited_query && admission_queue_enabled && !isAdmissionExemptQuery(ast);
-        const bool needs_admission = admission_tracked && max_size;
 
         /// Connection liveness callback and its polling interval, shared by the `replace_running_query` wait,
         /// the FIFO admission wait and the post-handoff secondary-limit waits below. All of them can park a
@@ -345,6 +344,12 @@ ProcessList::EntryPtr ProcessList::insert(
         /// budget already spent and be rejected with `TOO_MANY_SIMULTANEOUS_QUERIES` without ever having
         /// queued for that long.
         const auto admission_deadline = std::chrono::steady_clock::now() + effective_wait;
+
+        /// Read `max_size` only now, after the `replace_running_query` wait above, which releases `mutex`:
+        /// `max_concurrent_queries` may have been reloaded meanwhile. A stale finite limit would park this
+        /// query in a queue that `setMaxSize` has already drained for the switch to unlimited, where no
+        /// release would ever grant it a slot; a stale `0` would let it bypass a newly finite limit.
+        const bool needs_admission = admission_tracked && max_size;
 
         if (needs_admission && admission_running >= max_size)
         {
@@ -562,8 +567,13 @@ ProcessList::EntryPtr ProcessList::insert(
             /// limit is genuinely full.
             if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert)
             {
-                auto under_limit = [&] { return getQueryKindAmount(query_kind) < max_insert_queries_amount; };
-                auto drain_can_clear = [&] { return getQueryKindAmount(query_kind) < max_insert_queries_amount + query_kind_pending_teardowns_count(query_kind); };
+                /// `max_insert_queries_amount` may be reloaded while `passes_secondary_limit` waits; `0` means unlimited.
+                auto under_limit = [&] { return !max_insert_queries_amount || getQueryKindAmount(query_kind) < max_insert_queries_amount; };
+                auto drain_can_clear = [&]
+                {
+                    return !max_insert_queries_amount
+                        || getQueryKindAmount(query_kind) < max_insert_queries_amount + query_kind_pending_teardowns_count(query_kind);
+                };
                 if (!passes_secondary_limit(under_limit, drain_can_clear))
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous insert queries. Maximum: {}, current: {}",
@@ -571,8 +581,13 @@ ProcessList::EntryPtr ProcessList::insert(
             }
             if (max_select_queries_amount && query_kind == IAST::QueryKind::Select)
             {
-                auto under_limit = [&] { return getQueryKindAmount(query_kind) < max_select_queries_amount; };
-                auto drain_can_clear = [&] { return getQueryKindAmount(query_kind) < max_select_queries_amount + query_kind_pending_teardowns_count(query_kind); };
+                /// `max_select_queries_amount` may be reloaded while `passes_secondary_limit` waits; `0` means unlimited.
+                auto under_limit = [&] { return !max_select_queries_amount || getQueryKindAmount(query_kind) < max_select_queries_amount; };
+                auto drain_can_clear = [&]
+                {
+                    return !max_select_queries_amount
+                        || getQueryKindAmount(query_kind) < max_select_queries_amount + query_kind_pending_teardowns_count(query_kind);
+                };
                 if (!passes_secondary_limit(under_limit, drain_can_clear))
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous select queries. Maximum: {}, current: {}",
