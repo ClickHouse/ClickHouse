@@ -253,15 +253,21 @@ void BaseDaemon::initialize(Application & self)
         /// `logger.log` and `logger.errorlog` have their own options; `logger.stderr` and `logger.stdout` have
         /// no option of their own and arrive through `argsToConfig` as `-- --logger.stderr=...`, but they are
         /// read further down in this function just the same, after the `chdir`, so they need resolving too.
+        ///
+        /// An empty value is not a path: for the `logger.*` keys it disables the corresponding channel,
+        /// so it is left alone. The start directory is only prepended, never normalized lexically, because
+        /// collapsing `..` changes which file a path names as soon as a component is a symlink: started from
+        /// `/srv/launch`, with `conf` pointing to `/srv/releases/r1/conf`, `conf/../config.xml` is
+        /// `/srv/releases/r1/config.xml` and not `/srv/launch/config.xml`.
         Poco::AutoPtr<Poco::Util::MapConfiguration> absolute_paths = new Poco::Util::MapConfiguration;
         for (const auto * key : {"config-file", "pid", "logger.log", "logger.errorlog", "logger.stderr", "logger.stdout"})
         {
             if (config().has(key))
             {
                 std::string value = config().getString(key);
-                if (!fs::path(value).is_absolute())
+                if (!value.empty() && !fs::path(value).is_absolute())
                 {
-                    absolute_paths->setString(key, (fs::path(original_working_directory) / value).lexically_normal().string());
+                    absolute_paths->setString(key, (fs::path(original_working_directory) / value).string());
                 }
             }
         }
