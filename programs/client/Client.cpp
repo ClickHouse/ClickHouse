@@ -1253,6 +1253,8 @@ void Client::connect()
 
 #if USE_JWT_CPP && USE_SSL
             connection_parameters.jwt_provider = jwt_provider;
+            /// The login token in the config can be expired by now, for example after `Ctrl+B`.
+            connection_parameters.refreshJWT();
 #endif
 
             /// Candidate endpoints for the connection, in the order of preference. Normally there is a

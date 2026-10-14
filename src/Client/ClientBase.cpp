@@ -1922,7 +1922,8 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             if (!out_file_if_truncated.empty())
             {
-                if (have_error)
+                /// A killed background job stops without finishing its output, so keep the old file.
+                if (have_error || (cancelled && isQueryCancellationRequested()))
                     cleanupTempFile(parsed_query, out_file);
                 else
                     performAtomicRename(parsed_query, out_file_if_truncated);

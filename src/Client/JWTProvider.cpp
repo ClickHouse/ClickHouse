@@ -534,7 +534,7 @@ void JWTProvider::tryPrintQRCode(const std::string & url, std::ostream & out)
     out << "\nQR code for the shortcut URL (scan with another device):\n";
     char buffer[4096];
     ssize_t n = 0;
-    while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0)
+    while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0) /// NOLINT(clang-analyzer-unix.BlockInCriticalSection)
         out.write(buffer, static_cast<std::streamsize>(n));
     closeFD(pipefd[0]);
 
