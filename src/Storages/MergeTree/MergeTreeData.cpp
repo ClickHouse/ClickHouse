@@ -175,7 +175,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
@@ -297,7 +297,6 @@ namespace Setting
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
-    extern const SettingsBool use_skip_indexes;
 }
 
 namespace MergeTreeSetting
@@ -799,6 +798,18 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
             auto & result_command = result_commands.emplace_back(command);
             result_command.mutation_version = mutation_version;
         }
+    }
+}
+
+void MergeTreeData::MutationsSnapshotBase::addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const
+{
+    for (const auto & command : commands)
+    {
+        bool is_applied = (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
+            || (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type));
+
+        if (is_applied)
+            AlterConversions::addUpdatedColumns(command, result);
     }
 }
 
@@ -1696,17 +1707,27 @@ namespace
 {
 
 ExpressionActionsPtr getCombinedIndicesExpression(
-    const KeyDescription & key,
+    const KeyDescription * key,
     const MergeTreeIndices & indices,
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
-    ContextPtr context)
+    ContextPtr context,
+    const std::function<bool(const String &)> & use_index_expression = {})
 {
-    ASTPtr combined_expr_list = key.expression_list_ast->clone();
+    ASTPtr combined_expr_list = key ? key->expression_list_ast->clone() : make_intrusive<ASTExpressionList>();
 
     for (const auto & index : indices)
-        for (const auto & index_expr : index->index.expression_list_ast->children)
-            combined_expr_list->children.push_back(index_expr->clone());
+    {
+        /// `column_names` are the analyzed result names, one per expression.
+        const auto & index_exprs = index->index.expression_list_ast->children;
+        chassert(index_exprs.size() == index->index.column_names.size());
+        for (size_t i = 0; i < index_exprs.size(); ++i)
+            if (!use_index_expression || use_index_expression(index->index.column_names[i]))
+                combined_expr_list->children.push_back(index_exprs[i]->clone());
+    }
+
+    if (!key && combined_expr_list->children.empty())
+        return nullptr;
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
@@ -1755,13 +1776,26 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 ExpressionActionsPtr
 MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+    return getCombinedIndicesExpression(&metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
 ExpressionActionsPtr
-MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
+MergeTreeData::getSortingKeyAndSkipIndicesExpression(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeIndices & indices,
+    const std::function<bool(const String &)> & use_index_expression) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+    return getCombinedIndicesExpression(
+        &metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext(), use_index_expression);
+}
+
+ExpressionActionsPtr MergeTreeData::getSkipIndicesExpression(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeIndices & indices,
+    const std::function<bool(const String &)> & use_index_expression) const
+{
+    return getCombinedIndicesExpression(
+        nullptr, indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext(), use_index_expression);
 }
 
 void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
@@ -3495,9 +3529,13 @@ void MergeTreeData::startStatisticsCache()
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
     std::lock_guard lock(refresh_stats_task_mutex);
     if (refresh_stats_task)
+    {
+        refresh_stats_cancelled = true;
         refresh_stats_task->deactivate();
+    }
     if (refresh_statistics_seconds && !refresh_stats_stopped)
     {
+        refresh_stats_cancelled = false;
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool()->createTask(
             getStorageID(), "MergeTreeData::refreshStatistics",
@@ -3512,6 +3550,7 @@ void MergeTreeData::stopStatisticsCache()
     /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
     std::lock_guard lock(refresh_stats_task_mutex);
     refresh_stats_stopped = true;
+    refresh_stats_cancelled = true;
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
 }
@@ -3681,6 +3720,10 @@ try
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
     DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
+
+    /// Queries do not read patch parts, otherwise the cache would never match.
+    std::erase_if(data_parts, [](const auto & part) { return part->info.isPatch(); });
+
     if (cached_estimator)
     {
         if (!cached_estimator->isStale(data_parts))
@@ -3695,6 +3738,8 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
+        if (refresh_stats_cancelled)
+            return;
         ProfileEvents::increment(ProfileEvents::LoadedStatistics);
         auto stats = data_part->loadStatistics();
         estimator_builder.markDataPart(data_part);
@@ -11694,9 +11739,11 @@ void MergeTreeData::optimizeDryRun(
         }
     }
 
-    auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
-    if (!future_part)
-        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Failed to construct future part for OPTIMIZE DRY RUN. Some of the source parts don't exist in the table");
+    auto constructed_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
+    if (!constructed_part)
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Failed to construct future part for OPTIMIZE DRY RUN. Some of the source parts don't exist in the table: {}", constructed_part.error().text);
+
+    auto future_part = std::move(*constructed_part);
 
     UInt64 disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts);
     ReservationSharedPtr reservation = getStoragePolicy()->reserveAndCheck(disk_space);
@@ -12676,7 +12723,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                     wrapped, query_context, minmax_columns.getNames(),
                     MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context)),
                     /*single_point=*/false,
-                    /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes]};
+                    /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning]};
             };
             auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
             minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(inverted_dag, std::move(key_condition_factory), metadata_snapshot, query_context, /*skip_folding_=*/!query_context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis]);
@@ -14135,23 +14182,8 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
 
     /// Apply masking policies to the part
 #if CLICKHOUSE_CLOUD
-    if (enabled_masking_policies)
-    {
-        auto alter_commands = enabled_masking_policies->getAlterCommands(
-            part->storage.getStorageID().database_name,
-            part->storage.getStorageID().table_name);
-
-        /// Convert each ALTER command to a MutationCommand
-        for (const auto & alter_command_ast : alter_commands)
-        {
-            if (auto mutation_command_opt = MutationCommand::parse(*alter_command_ast))
-            {
-                commands.push_back(*mutation_command_opt);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse MutationCommand produced by masking policy rule");
-        }
-    }
+    auto masking_commands = getMaskingPolicyCommands(part->storage.getStorageID(), enabled_masking_policies);
+    commands.insert(commands.end(), masking_commands.begin(), masking_commands.end());
 #endif
 
     for (auto & patch : patches)
@@ -14174,6 +14206,28 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
 
     return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context);
 }
+
+#if CLICKHOUSE_CLOUD
+MutationCommands MergeTreeData::getMaskingPolicyCommands(const StorageID & storage_id, const EnabledMaskingPoliciesPtr & enabled_masking_policies)
+{
+    MutationCommands commands;
+    if (!enabled_masking_policies)
+        return commands;
+
+    auto alter_commands = enabled_masking_policies->getAlterCommands(storage_id.database_name, storage_id.table_name);
+
+    /// Convert each ALTER command to a MutationCommand
+    for (const auto & alter_command_ast : alter_commands)
+    {
+        if (auto mutation_command_opt = MutationCommand::parse(*alter_command_ast))
+            commands.push_back(*mutation_command_opt);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse MutationCommand produced by masking policy rule");
+    }
+
+    return commands;
+}
+#endif
 
 PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
 {
@@ -14273,7 +14327,7 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
     if (it != commands.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected command with type {} in lightweight update", it->type);
 
-    LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.toString(false));
+    LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.ast(false)->formatForLogging());
 
     NamesAndTypesList system_columns;
     MutationCommands commands_to_run;
@@ -15039,7 +15093,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},
         /*written_offset_substreams=*/nullptr,
-        /*try_adaptive_codec=*/ false); /// Empty 0-row part (also reached by mutations): no data is written, so the flag has no effect.
+        /*try_adaptive_codec=*/ false, /// Empty 0-row part (also reached by mutations): no data is written, so the flag has no effect.
+        /// Zero rows, so no marks to share; checking here would also block DROP PARTITION and TRUNCATE on a colliding table.
+        /*stream_base_manifest=*/ nullptr);
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 

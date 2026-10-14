@@ -9,15 +9,11 @@ doc_type: 'guide'
 
 تمنحك هذه الصفحة نظرة عامة على نطاق التكامل لتتمكن من تحديد نطاق أعمال الإدخال والاستهلاك. للتحقق والنشر، تابع إلى [اختبار التكامل الخاص بك](/ar/resources/develop-contribute/integrations/testing-your-integration) و[توثيق التكامل الخاص بك](/ar/resources/develop-contribute/integrations/documenting-your-integration).
 
-<div id="ingestion">
-  ## إدخال البيانات
-</div>
+## إدخال البيانات {#ingestion}
 
 هناك مساران لإدخال البيانات إلى ClickHouse. اختر بينهما بحسب ما إذا كان ينبغي لمنتجك أن يتولى منظومة الإدخال أو أن يفوضها.
 
-<div id="path-a-clickpipes">
-  ### المسار A: ClickPipes (مُدارة، ClickHouse Cloud فقط)
-</div>
+### المسار A: ClickPipes (مُدارة، ClickHouse Cloud فقط) {#path-a-clickpipes}
 
 إذا كنت تفضّل عدم إنشاء وتشغيل البنية التحتية للإدخال، فإن [ClickPipes](/ar/integrations/clickpipes/home) هي الخدمة المُدارة التي تسحب البيانات من مصادر عميلك إلى خدمة ClickHouse Cloud الخاصة به. ويتولى ClickPipes التحجيم، والمعالجة المتوازية، وإعادات المحاولة، والإبلاغ عن التأخر.
 
@@ -27,9 +23,7 @@ doc_type: 'guide'
 * **تخزين الكائنات:** Amazon S3 (والمخازن المتوافقة مع S3)، Google Cloud Storage، Azure Blob Storage
 * **CDC:** PostgreSQL، MySQL، MongoDB، BigQuery
 
-<div id="path-b-language-client">
-  ### المسار B: الإدخال ذاتي الإدارة عبر مكتبة عملاء رسمية للغات البرمجة
-</div>
+### المسار B: الإدخال ذاتي الإدارة عبر مكتبة عملاء رسمية للغات البرمجة {#path-b-language-client}
 
 إذا كنت تدير مسار المعالجة بنفسك، فاستخدم إحدى [مكتبات العملاء الرسمية للغات البرمجة](/ar/integrations/language-clients/index). فهي تتولى التسلسل، والتجميع على دفعات، وTLS، والضغط، وإدارة مجمع الاتصالات. أنت تمرّر قيمًا بدائية في وقت التشغيل؛ وتتولى مكتبة العميل تنسيق البيانات على مستوى النقل.
 
@@ -41,9 +35,7 @@ doc_type: 'guide'
 
 راجع أيضًا: [عمليات الإدراج المجمّعة](/ar/concepts/features/operations/insert/bulkinserts).
 
-<div id="consumption">
-  ## الاستهلاك
-</div>
+## الاستهلاك {#consumption}
 
 ينقل كلٌّ من HTTP وnative TCP الاستعلامات. أما native TCP فهو ثنائي ويضيف عبئًا أقل. ويعمل HTTP عبر موازنات التحميل والوكلاء. كلاهما مدعوم بالكامل؛ فاختر بناءً على البنية التحتية، لا على فجوات الميزات.
 
@@ -51,23 +43,17 @@ doc_type: 'guide'
 * **أدوات BI وSQL:** يوفّر ClickHouse رسميًا [برنامج تشغيل JDBC v2](/ar/integrations/language-clients/java/index) (Java) و[برنامج تشغيل ODBC](/ar/concepts/features/interfaces/odbc). ويتكامل Tableau وLooker وPower BI وMetabase وApache Superset وGrafana عبر برامج التشغيل هذه أو عبر موصلات مخصصة تديرها ClickHouse وشركاؤها
 * **تنسيق النتائج:** تتولى البرامج العميلة عادةً عملية التسلسل. ويمكنك طلب Arrow أو Parquet أو تنسيقات عمودية أخرى على الشبكة إذا كان منتجك يحتاج إليها
 
-<div id="result-set-sizing">
-  ### تحديد حجم مجموعة النتائج
-</div>
+### تحديد حجم مجموعة النتائج {#result-set-sizing}
 
 تعيد معظم الاستعلامات التحليلية مجموعات نتائج صغيرة (التجميعات والملخصات وTop-N)، ونادرًا ما يكون النقل عبر الشبكة هو عنق الزجاجة. يمكن أن تحتوي جداول ClickHouse على مليارات الصفوف، وقد ينقل `SELECT *` غير المقيّد على جدول وقائع كبير تيرابايتات من البيانات. **صِغ الطلب في تطبيقك بعناية:** استخدم `LIMIT`، وترقيم الصفحات، والقراءات المتدفقة، وقوائم أعمدة صريحة. إذا كنت تبني تحليلات موجّهة للمستخدمين، فاعتبر مجموعات النتائج غير المقيّدة مشكلة في تجربة الاستخدام، لا مشكلة في النقل.
 
 يتميّز ClickHouse بنظام أنواع غني: Array وTuple وMap وJSON وNested وLowCardinality وغيرها. وتربط مكتبات العميل الرسمية هذه الأنواع بأنواع لغوية مناسبة لكل لغة. إذا كان منتجك يعرض بيانات ClickHouse للمستخدمين النهائيين، فضع استراتيجية لربط الأنواع في وقت مبكر.
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+## الخطوات التالية {#next-steps}
 
-اختر مسارًا وأنشئ نموذجًا أوليًا بالاعتماد على [نسخة تجريبية من ClickHouse Cloud](https://clickhouse.com/cloud)، ثم سجّل تكاملك في [بوابة الشركاء](https://clickhouse.com/partners).
+اختر مسارًا وأنشئ نموذجًا أوليًا بالاعتماد على [نسخة تجريبية من ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-building-integrations)، ثم سجّل تكاملك في [بوابة الشركاء](https://clickhouse.com/partners).
 
-<div id="user-agent-string-convention">
-  ## الصيغة المتعارف عليها لسلسلة User-Agent
-</div>
+## الصيغة المتعارف عليها لسلسلة User-Agent {#user-agent-string-convention}
 
 يجب على عملاء HTTP تعيين سلسلة `User-Agent` تُعرّف تكاملك. ويحلّل ClickHouse هذه السلسلة على جانب الخادم لتتبّع مستوى الاعتماد، وعرض بيانات القياس عن بُعد الخاصة بالاستخدام، والاستناد إليها في خارطة الطريق.
 
@@ -91,8 +77,6 @@ doc_type: 'guide'
 
 إذا كنت تستخدم JDBC، فراجع [تحديد هوية العميل](/ar/integrations/language-clients/java/jdbc#client-identification) لمعرفة كيفية تعيين برنامج التشغيل لقيمة `User-Agent` والحقول ذات الصلة.
 
-<div id="sandbox-and-trial-access">
-  ## الوصول إلى البيئة المعزولة والفترة التجريبية
-</div>
+## الوصول إلى البيئة المعزولة والفترة التجريبية {#sandbox-and-trial-access}
 
-توفّر [ClickHouse Cloud](https://clickhouse.com/cloud) فترة تجريبية مجانية لأغراض التطوير والتحقق من التكامل. إذا كنت شريكًا في House Mate، يمكنك طلب أرصدة تطوير إضافية عبر [بوابة الشركاء](https://clickhouse.com/partners).
+توفّر [ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-building-integrations) فترة تجريبية مجانية لأغراض التطوير والتحقق من التكامل. إذا كنت شريكًا في House Mate، يمكنك طلب أرصدة تطوير إضافية عبر [بوابة الشركاء](https://clickhouse.com/partners).

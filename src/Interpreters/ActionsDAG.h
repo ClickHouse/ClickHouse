@@ -521,6 +521,14 @@ public:
         bool allow_non_deterministic_functions,
         bool allow_index_hints = true);
 
+    /// The same, for conjuncts the caller has chosen rather than those computable from some inputs. Each of
+    /// `conjunctions_to_push` is one of the atoms `extractConjunctionAtoms` finds in the filter column.
+    std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
+        const std::string & filter_name,
+        bool removes_filter,
+        const NodeRawConstPtrs & conjunctions_to_push,
+        const ColumnsWithTypeAndName & all_inputs);
+
     struct ActionsForJOINFilterPushDown;
 
     /** Split actions for JOIN filter push down.
@@ -609,6 +617,14 @@ public:
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
+
+    /// See `restrictFilterDAGToInputs`; `walk_or` also weakens an `AND` under an `OR`, and `substitutes` receives
+    /// the constants that replace a conjunct.
+    ActionsDAG restrictFilterDAGToInputsImpl(
+        const Node * filter_node,
+        const NameSet & available_inputs,
+        bool walk_or,
+        std::unordered_set<const Node *> * substitutes = nullptr) const;
 
     Node & addNode(Node node);
 
