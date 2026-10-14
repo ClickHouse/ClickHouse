@@ -180,6 +180,14 @@ size_t AggregatedDataVariants::allocatedBytes() const
     return res;
 }
 
+size_t AggregatedDataVariants::usedArenaBytes() const
+{
+    size_t res = 0;
+    for (const auto & pool : aggregates_pools)
+        res += pool->usedBytes();
+    return res;
+}
+
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
 {
     switch (type)

@@ -497,6 +497,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
+    /// Bytes that the keys and states took in the arenas. Unlike the arenas' allocated bytes,
+    /// which grow by whole chunks of doubling size, they follow every allocation.
+    size_t usedArenaBytes() const;
 
     /// The adaptive bucket-parallel merge's arena slots, one per bucket, populated on the merge
     /// destination (see `Aggregator::createAdaptiveMergeDestination`). A slot holds the arena of
