@@ -160,10 +160,10 @@ SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '150' SETTING
 SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '';
 SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
-SELECT '-- 32c. a bare MATERIALIZE TTL does not rebuild a sibling index through a MATERIALIZED column';
--- Case 31 with idx_old reading a MATERIALIZED column instead of the TTL target itself.
--- `MutationsInterpreter::prepare` recomputes MATERIALIZED columns only from the columns the commands
--- name, and a bare MATERIALIZE TTL names none, so idx_old is carried over here rather than rebuilt.
+SELECT '-- 32c. a bare MATERIALIZE TTL rebuilds a sibling index through a MATERIALIZED column of a TTL target';
+-- Case 31 with idx_old reading a MATERIALIZED column instead of the TTL target itself. MATERIALIZE TTL
+-- recomputes m because g has a column TTL, so idx_old is rebuilt from current data, c is recorded at
+-- its new type, and both indices prune.
 DROP TABLE IF EXISTS t_sibling_materialized_ttl_only;
 CREATE TABLE t_sibling_materialized_ttl_only (
     k UInt64,
@@ -187,15 +187,15 @@ SYSTEM START MERGES t_sibling_materialized_ttl_only;
 ALTER TABLE t_sibling_materialized_ttl_only MATERIALIZE TTL, MATERIALIZE INDEX idx_new
     SETTINGS mutations_sync = 2, alter_sync = 2;
 SYSTEM STOP MERGES t_sibling_materialized_ttl_only;
--- Recording c at Nullable(UInt64) would let idx_old read granules built from its String values.
-SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase()
     AND table = 't_sibling_materialized_ttl_only' AND active AND column = 'c';
 SELECT count() = 64 FROM t_sibling_materialized_ttl_only WHERE g != '';
 SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase()
     AND table = 't_sibling_materialized_ttl_only';
--- No granule is dropped anywhere in the plan: idx_old refuses instead of pruning stale granules.
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialized_ttl_only WHERE c = 150
-    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialized_ttl_only WHERE c = 150
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialized_ttl_only WHERE c = 150
+    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
 SELECT count() FROM t_sibling_materialized_ttl_only WHERE c = 150;
 SELECT count() FROM t_sibling_materialized_ttl_only WHERE c = 150 SETTINGS use_skip_indexes = 0;
 

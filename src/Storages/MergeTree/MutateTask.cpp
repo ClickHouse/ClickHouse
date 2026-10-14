@@ -627,9 +627,9 @@ static NameSet collectIndicesRebuiltByMutation(
     /// Exactly the set `MutationsInterpreter` derives from the same commands. A wider one here would
     /// claim a rebuild it does not perform.
     NameSet updated_columns;
-    /// `MutationsInterpreter::prepare` recomputes MATERIALIZED columns only from the columns its
-    /// commands name and from the columns it clears, never from a column TTL target, so that subset
-    /// seeds the closure below (`need_materialized_analysis` in `MutationsInterpreter.cpp`).
+    /// `MutationsInterpreter::prepare` recomputes MATERIALIZED columns from the columns its commands
+    /// name, from the columns it clears and, for `MATERIALIZE TTL`, from the column TTL targets, so
+    /// that subset seeds the closure below. The inputs of a TTL expression are read, not updated.
     NameSet command_updated_columns;
     for (const auto & command : commands)
     {
@@ -681,7 +681,10 @@ static NameSet collectIndicesRebuiltByMutation(
         /// `MutationsInterpreter` marks each column that has a column TTL as a `TTL_TARGET`.
         /// Its dependency calculation subsequently rebuilds skip indices that depend on them.
         for (const auto & [column_name, _] : metadata_snapshot->getColumns().getColumnTTLs())
+        {
             updated_columns.insert(column_name);
+            command_updated_columns.insert(column_name);
+        }
     }
 
     StorageInMemoryMetadata::HasDependencyCallback has_dependency =
