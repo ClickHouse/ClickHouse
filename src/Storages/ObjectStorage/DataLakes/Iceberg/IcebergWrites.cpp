@@ -1137,8 +1137,14 @@ void generateManifestList(
         /// Only data files get row ids, so a delete manifest leaves the field null.
         if (version > 2 && entry_content == Iceberg::FileContentType::DATA)
         {
-            setVersionedField(entry, next_first_row_id, Iceberg::f_manifest_first_row_id);
-            next_first_row_id += added_rows_count;
+            const Int64 manifest_first_row_id = next_first_row_id;
+            if (common::addOverflow(manifest_first_row_id, added_rows_count, next_first_row_id))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Cannot assign row ids to {} rows starting at row id {}: the row id overflows",
+                    added_rows_count,
+                    manifest_first_row_id);
+            setVersionedField(entry, manifest_first_row_id, Iceberg::f_manifest_first_row_id);
         }
 
         write_partition_summary(entry, entry_idx);

@@ -13,12 +13,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TABLE_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_v3_upgrade_row_ids"
 rm -rf "${TABLE_PATH}"
 
-# Two data manifests and one position-delete manifest, all without `first_row_id`.
+# A manifest of EXISTING entries (two inserts merged), a plain insert manifest and a position-delete manifest, all without `first_row_id`.
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_insert_into_iceberg = 1;
     CREATE TABLE t_v3_upgrade (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}');
     INSERT INTO t_v3_upgrade SELECT number FROM numbers(3);
     INSERT INTO t_v3_upgrade SELECT number + 10 FROM numbers(2);
+    SET allow_experimental_iceberg_compaction = 1;
+    OPTIMIZE TABLE t_v3_upgrade MANIFEST SETTINGS iceberg_manifest_min_count_to_compact = 1;
+    INSERT INTO t_v3_upgrade SELECT number + 40 FROM numbers(2);
     ALTER TABLE t_v3_upgrade DELETE WHERE x = 0;
 "
 
