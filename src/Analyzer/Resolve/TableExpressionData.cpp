@@ -47,8 +47,10 @@ ColumnNodePtr AnalysisTableExpressionData::tryGetColumnNode(std::string_view col
         /// Erase before resolving: resolution of the ALIAS expression can look up this column again
         /// (it is an error of cyclic aliases), and the lookup has to get the column without recursion.
         unresolved_alias_columns.erase(unresolved_it);
+        /// A copy of this data shares the nodes of the map, and could have resolved this column already.
         /// `node_map` is not changed by the resolution (only the nodes in it), so `it` remains valid.
-        resolve_alias_column(it->second);
+        if (!it->second->hasExpression())
+            resolve_alias_column(it->second);
     }
 
     return it->second;
