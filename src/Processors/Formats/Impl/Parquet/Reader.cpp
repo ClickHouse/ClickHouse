@@ -2021,8 +2021,23 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     /// non-matching entries then materialize empty strings without copying the data.
     /// Once the shared filter has disabled itself (it turned out to be non-selective), the mask
     /// would never be consulted, so do not pay for the dictionary scan and the mask allocation.
+    /// The mask is used only for the non-null rows, so nulls must not be credited with skipped bytes.
+    /// If the column is read for a later `PREWHERE` step, the earlier steps may have already filtered out
+    /// most rows, and the mask is consulted only for the rows that passed them. Their number is not known
+    /// when the dictionary is decoded (it is shared by all row subgroups), so do not credit the mask with
+    /// the rows of the column chunk at all, only with one row per entry.
     if (column_info.string_value_filter && column_info.string_value_filter->isEnabled())
-        column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter);
+    {
+        Int64 non_null_values = 0;
+        if (column_info.first_step_to_calculate == 1)
+        {
+            const auto & meta_data = column.meta->meta_data;
+            non_null_values = std::max<Int64>(0, meta_data.num_values);
+            if (meta_data.statistics.__isset.null_count)
+                non_null_values -= std::clamp<Int64>(meta_data.statistics.null_count, 0, non_null_values);
+        }
+        column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter, size_t(non_null_values));
+    }
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
