@@ -32,7 +32,7 @@ struct ArraySortImpl
     static void checkArguments(
         const String & name,
         const ColumnWithTypeAndName * fixed_arguments)
-        requires num_fixed_params
+        requires(num_fixed_params)
     {
         if (!fixed_arguments)
             throw Exception(
@@ -73,9 +73,7 @@ struct NameArrayPartialReverseSort
 
 using FunctionArraySort = FunctionArrayMapped<ArraySortImpl<true, false>, NameArraySort>;
 using FunctionArrayReverseSort = FunctionArrayMapped<ArraySortImpl<false, false>, NameArrayReverseSort>;
-/// Partial sort is non-deterministic: the order of elements beyond position k is unspecified
-/// (uses nth_element internally), so the same input can produce different outputs.
-using FunctionArrayPartialSort = FunctionArrayMapped<ArraySortImpl<true, true>, NameArrayPartialSort, /*IsDeterministic=*/ false>;
-using FunctionArrayPartialReverseSort = FunctionArrayMapped<ArraySortImpl<false, true>, NameArrayPartialReverseSort, /*IsDeterministic=*/ false>;
+using FunctionArrayPartialSort = FunctionArrayMapped<ArraySortImpl<true, true>, NameArrayPartialSort>;
+using FunctionArrayPartialReverseSort = FunctionArrayMapped<ArraySortImpl<false, true>, NameArrayPartialReverseSort>;
 
 }

@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
     /// JSONArrayLength(json)
-    class FunctionJSONArrayLength final : public IFunction
+    class FunctionJSONArrayLength : public IFunction
     {
     public:
         static constexpr auto name = "JSONArrayLength";

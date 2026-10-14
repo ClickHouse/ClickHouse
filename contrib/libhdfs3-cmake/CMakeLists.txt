@@ -158,10 +158,8 @@ set_source_files_properties("${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp" PROPERTIES C
 add_library(_hdfs3 ${SRCS})
 
 add_dependencies(_hdfs3 protoc)
-# `SHELL:` keeps the two `-include` options apart, otherwise CMake de-duplicates the repeated flag.
 target_compile_options(_hdfs3 PRIVATE
-    "SHELL:-include ${ClickHouse_SOURCE_DIR}/contrib/libhdfs3-cmake/absl_log_undef.h"
-    "SHELL:-include ${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
+    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
 )
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
@@ -197,6 +195,6 @@ endif()
 add_library(ch_contrib::hdfs ALIAS _hdfs3)
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
-    add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp)
+     add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp)
      target_link_libraries(perf_checksum PRIVATE ch_contrib::hdfs)
 endif ()
