@@ -236,6 +236,10 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
+    for (const auto & step : prewhere_actions.steps)
+        if (step->actions)
+            set_spillables.add(step->actions->getActionsDAG());
+
     /// Determine the condition under which PREWHERE-filtered granules can be recorded in the query
     /// condition cache. A deterministic PREWHERE condition is cached under its own hash. A condition
     /// that is non-deterministic only because of folded current-time constants (e.g.
