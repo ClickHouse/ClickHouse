@@ -388,10 +388,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN_UBSAN,
-            provides=[
-                ArtifactNames.CH_AMD_ASAN_UBSAN,
-                ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
-            ],
+            provides=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -422,7 +419,10 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
-            provides=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            provides=[
+                ArtifactNames.CH_ARM_ASAN_UBSAN,
+                ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -849,9 +849,9 @@ class JobConfigs:
     )
     stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
-            parameter="amd_asan_ubsan, flaky check",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            parameter="arm_asan_ubsan, flaky check",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan, flaky check",
@@ -1214,16 +1214,10 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_SMALL_MEM,
         ),
     )
-    # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
-    # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
-    # require the PR's UNITTEST_AMD_ASAN_UBSAN artifact: the "touched tests pass on the
-    # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
-    # module docstring), so this job is not gated behind `build_amd_asan_ubsan` and
-    # builds the "before" binary in parallel with the build matrix — matching the early
-    # start of the functional/integration bugfix validators.
+    # Builds the "before" `unit_tests_dbms` in-job, in parallel with the build matrix; the PR side is `Unit tests (asan_ubsan)`.
     bugfix_validation_ut_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_UT,
-        runs_on=RunnerLabels.AMD_LARGE,
+        runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
         # The job both builds and RUNS the before-binary in this container. Running
         # `unit_tests_dbms` needs `io_uring` (the `silk` fiber runtime calls
@@ -1264,8 +1258,8 @@ class JobConfigs:
     unittest_jobs = common_unit_test_job_config.parametrize(
         Job.ParamSet(
             parameter="asan_ubsan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="tsan",
@@ -1279,8 +1273,8 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="asan_ubsan, function_prop_fuzzer",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(
