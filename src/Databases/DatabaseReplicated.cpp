@@ -1249,9 +1249,6 @@ void DatabaseReplicated::dumpTableRawMetadataDiffForOneTable(
     bool is_digest_carrier,
     const std::map<String, String> * table_name_to_metadata_in_zk) const
 {
-    /// A null map means the coordinator snapshot could not be fetched. The on-disk half of the
-    /// report needs no Keeper, so it is still produced, and the coordinator side is reported as
-    /// unknown rather than as missing.
     const String * zk_metadata = nullptr;
     if (table_name_to_metadata_in_zk)
     {
@@ -1263,9 +1260,8 @@ void DatabaseReplicated::dumpTableRawMetadataDiffForOneTable(
             zk_metadata = &zk_metadata_it->second;
     }
 
-    /// The digest hashes the raw metadata bytes, so compare those: two spellings of one AST have
-    /// equal formatted forms and different hashes. Report sizes and hashes, not the raw content,
-    /// which is unmasked and may hold secrets.
+    /// The digest hashes raw metadata bytes, so compare bytes, not ASTs. Log sizes and hashes only:
+    /// the raw content is unmasked.
     try
     {
         String on_disk_metadata = readMetadataFile(table_name);
@@ -1313,8 +1309,7 @@ void DatabaseReplicated::dumpTableAstDiffForOneTable(
     auto zk_metadata_it = table_name_to_metadata_in_zk.find(table_name);
     const bool exists_in_zk = zk_metadata_it != table_name_to_metadata_in_zk.end();
 
-    /// Supplementary rendering, so one table's failure must not hide the others: parse without the
-    /// aborting form check, and guard the formatting too, since `IAST::format` runs `checkStackSize`.
+    /// The formatting is guarded too: `IAST::format` runs `checkStackSize`.
     try
     {
         ASTPtr local_ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
@@ -1372,23 +1367,19 @@ void DatabaseReplicated::dumpTableAstDiffForOneTable(
 
 void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
 {
-    /// Runs immediately before aborting on a digest mismatch, so an escaping exception would
-    /// replace `LOGICAL_ERROR: Digest does not match` and hide the family. Best effort: every
-    /// catchable failure is contained. A LOGICAL_ERROR still aborts in these builds by design.
+    /// Runs right before the digest-mismatch abort, so an escaping exception would replace that error:
+    /// every catchable failure is contained.
     try
     {
         auto table_names_local = getAllTableNames(local_context);
 
-        /// The digest sums over the in-memory `tables` map, while `getAllTableNames` also lists
-        /// not-yet-loaded ones, and `mutex` is already released: `true` means the table contributes
-        /// a digest term, `false` does not exonerate it. Sampled once, so the passes cannot disagree.
+        /// The digest sums over the in-memory `tables` only, while `getAllTableNames` also lists unloaded
+        /// ones. Sampled without `mutex`: `false` does not exonerate a table.
         std::map<String, bool> is_digest_carrier;
         for (const auto & table_name : table_names_local)
             is_digest_carrier.emplace(table_name, isTableExist(table_name, local_context));
 
-        /// The coordinator snapshot is fetched in its own guarded region: the on-disk half of the
-        /// report needs no Keeper, and the field-observed failure is the local recompute disagreeing
-        /// with the in-memory counter, which reaches here without Keeper being consulted at all.
+        /// Guarded separately: the on-disk half of the report needs no Keeper.
         std::optional<std::map<String, String>> table_name_to_metadata_in_zk;
         try
         {
@@ -1407,8 +1398,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
                 table_name_to_metadata_in_zk->size(), table_names_local.size());
         }
 
-        /// Two passes, so that a table whose AST rendering fails does not cost the raw-byte report
-        /// of the tables after it: the raw-byte report is what names the diverging table.
+        /// All raw-byte reports first: they name the diverging table, the AST rendering may fail.
         for (const auto & table_name : table_names_local)
         {
             dumpTableRawMetadataDiffForOneTable(
@@ -1416,8 +1406,6 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
                 table_name_to_metadata_in_zk ? &*table_name_to_metadata_in_zk : nullptr);
         }
 
-        /// Both remaining passes compare against the coordinator, so without a snapshot they have
-        /// nothing to say.
         if (!table_name_to_metadata_in_zk)
             return;
 
@@ -1429,9 +1417,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
             if (is_digest_carrier.contains(table_name))
                 continue;
 
-            /// This term is exactly the amount by which the coordinator digest exceeds the local
-            /// recompute, so report it before the rendering, which may fail. No local fields and no
-            /// carrier flag: the table does not exist locally, so those would have to be invented.
+            /// This term is what the coordinator digest has over the local one; log it before the rendering.
             LOG_ERROR(log, "Table {} exists in ZK, but missing locally: coordinator digest term {}, {} bytes in coordinator",
                 table_name, DB::getMetadataHash(table_name, table_metadata), table_metadata.size());
 
@@ -1450,7 +1436,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
                 if (zk_ast_ptr)
                     LOG_ERROR(log, "Table {} coordinator metadata: {}", table_name, zk_ast_ptr->formatForLogging());
             }
-            catch (...) /// Ok: saved into failure_reason and logged below, so the loop reaches the later tables.
+            catch (...) /// Ok: logged below.
             {
                 failure_reason = describeCurrentExceptionForDumpOnly();
                 zk_ast_ptr = nullptr;
@@ -1462,8 +1448,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
     }
     catch (...)
     {
-        /// Not tryLogCurrentException: it formats the message, which aborts on a caught
-        /// std::logic_error in these builds and would replace the mismatch being reported.
+        /// Not `tryLogCurrentException`: formatting a caught `std::logic_error` aborts in these builds.
         LOG_ERROR(log, "Failed to dump the local and coordinator metadata diff: {}", describeCurrentExceptionForDumpOnly());
     }
 }
@@ -2537,14 +2522,9 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         context_->getSettingsRef()[Setting::max_parser_depth],
         context_->getSettingsRef()[Setting::max_parser_backtracks]);
 
-    /// `as` returns nullptr rather than throwing, so a non-CREATE query is folded into the same
-    /// unexpected-form branch instead of reaching the reference cast below.
     auto * create = ast->as<ASTCreateQuery>();
     if (!create || create->uuid == UUIDHelpers::Nil || create->getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create->database)
     {
-        /// Only the metadata dump passes @unexpected_form_is_not_an_error: it runs in builds where a
-        /// LOGICAL_ERROR aborts at construction, so it could not contain one, and reports the form
-        /// itself. Every other caller is on a real execution path, where this is a real assertion.
         if (unexpected_form_is_not_an_error)
             return nullptr;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", table_name, query);

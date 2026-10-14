@@ -159,9 +159,8 @@ public:
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
-    /// With @unexpected_form_is_not_an_error, metadata that parses but is not in the form this
-    /// database writes yields nullptr instead of throwing LOGICAL_ERROR. Only the metadata dump
-    /// passes true: a LOGICAL_ERROR aborts at construction in the builds it runs in.
+    /// With @unexpected_form_is_not_an_error, metadata not in the form this database writes yields nullptr
+    /// instead of LOGICAL_ERROR. Only the metadata dump passes true: a LOGICAL_ERROR aborts in its builds.
     static ASTPtr parseQueryFromMetadataInZooKeeper(
         ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query,
         bool unexpected_form_is_not_an_error = false);
@@ -258,15 +257,13 @@ private:
 
     /// For debug purposes only, don't use in production code
     void tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const;
-    /// Reports one table's digest term and its local-vs-coordinator metadata bytes; a null map
-    /// means no coordinator snapshot, so only the local side is reported. Best effort: catches every
-    /// catchable failure. A LOGICAL_ERROR still aborts in these builds by design.
+    /// One table's digest term and local-vs-coordinator metadata bytes; a null map reports the local side
+    /// only. Best effort: catches every catchable failure.
     void dumpTableRawMetadataDiffForOneTable(
         const String & table_name,
         bool is_digest_carrier,
         const std::map<String, String> * table_name_to_metadata_in_zk) const;
-    /// Supplementary AST rendering for one table, run only after every byte report.
-    /// Best effort in the same sense as above.
+    /// Supplementary AST rendering for one table. Best effort in the same sense as above.
     void dumpTableAstDiffForOneTable(
         const String & table_name,
         bool is_digest_carrier,
