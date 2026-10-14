@@ -7,12 +7,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1433,6 +1435,9 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    /// Read all consumers in parallel, as Kafka does: with `parallel_view_processing = 0` the pipeline has one thread, and
+    /// sources that share the flush deadline would run one after another, the later ones finding it already spent.
+    block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), num_created_consumers));
 
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
@@ -1608,6 +1613,12 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     factory.registerStorage(
         "RabbitMQ",
         creator_fn,
+        SecretArgumentsSpec{
+            /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
+            .secret_settings = RabbitMQ::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+            .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
