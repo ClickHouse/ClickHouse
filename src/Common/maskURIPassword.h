@@ -13,25 +13,19 @@
 namespace DB
 {
 
-/** Hides the value of every `AccountKey` and `SharedAccessSignature` (any case) and every value with '?' or '@' in an Azure
-  * connection string. A '?', '#' or '@' still shown after that is the query, fragment or userinfo of a url, so the whole
-  * string is hidden. Returns whether anything was hidden.
+/** Hides the secrets of an Azure connection string as the Azure SDK reads it (`Azure::Storage::_internal::ParseConnectionString`,
+  * `contrib/azure/sdk/storage/azure-storage-common/src/storage_credential.cpp`): a key runs to '=' and its value to ';', keys
+  * match exactly, and the last copy of a repeated key wins. Splitting at every ';' first can only hide more than the SDK reads.
+  *   - secret keys:   `AccountName=a;AccountKey=K;SharedAccessSignature=S` -> `AccountName=a;AccountKey=[HIDDEN];SharedAccessSignature=[HIDDEN]`
+  *   - repeated keys: `AccountKey=K1;AccountKey=K2` -> `AccountKey=[HIDDEN];AccountKey=[HIDDEN]`
+  *   - an endpoint is a url, so a query in it is a SAS: `BlobEndpoint=https://h/?sig=S` or `BlobEndpoint=https://u@h/` -> `BlobEndpoint=[HIDDEN]`
+  *   - a '?', '#' or '@' still shown belongs to a url that is not a pair value: `https://h/?sig=S` -> `[HIDDEN]`
+  * Returns whether anything was hidden.
   */
 inline bool maskAzureConnectionStringSecrets(std::string & str)
 {
-    auto is_secret_key = [](std::string_view key)
-    {
-        auto is_space = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r'; };
-        while (!key.empty() && is_space(key.front()))
-            key.remove_prefix(1);
-        while (!key.empty() && is_space(key.back()))
-            key.remove_suffix(1);
-        return std::ranges::any_of(std::array<std::string_view, 2>{"accountkey", "sharedaccesssignature"}, [&](std::string_view expected)
-        {
-            return std::equal(key.begin(), key.end(), expected.begin(), expected.end(),
-                [](char c, char lowercase) { return (('A' <= c && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c) == lowercase; });
-        });
-    };
+    static constexpr std::array<std::string_view, 2> secret_keys = {"AccountKey", "SharedAccessSignature"};
+    auto is_secret_key = [](std::string_view key) { return std::ranges::find(secret_keys, key) != secret_keys.end(); };
 
     std::string result;
     size_t copied = 0;

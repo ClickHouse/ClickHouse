@@ -220,7 +220,11 @@ String ConnectionParams::getConnectionURL() const
         try
         {
             auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
-            return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+            /// The query is the SAS that `ParseConnectionString` appends: this url is an endpoint, never a credential.
+            auto url = parsed_connection_string.BlobServiceUrl;
+            for (const auto & [key, value] : parsed_connection_string.BlobServiceUrl.GetQueryParameters())
+                url.RemoveQueryParameter(key);
+            return url.GetAbsoluteUrl();
         }
         catch (const std::logic_error & e)
         {
