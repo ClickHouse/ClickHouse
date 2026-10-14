@@ -391,9 +391,8 @@ void DatabaseOnDisk::checkRowsLimit(UInt64 attaching_rows, const String & table_
     if (attaching_rows > limit || current_rows > limit - attaching_rows)
         throw Exception(
             ErrorCodes::TOO_MANY_ROWS,
-            "Adding table {}.{} would exceed the row limit (database setting `max_rows`) of {}: "
-            "current {} + adding {} rows",
-            backQuote(getDatabaseName()), backQuote(table_name), limit, current_rows, attaching_rows);
+            "Adding table {}.{} with {} rows would exceed the row limit (database setting `max_rows`) of {}",
+            backQuote(getDatabaseName()), backQuote(table_name), attaching_rows, limit);
 }
 
 /// If the table was detached permanently we will have a flag file with

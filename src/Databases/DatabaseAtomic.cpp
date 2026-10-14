@@ -355,9 +355,8 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (incoming_rows > limit || remaining_rows > limit - incoming_rows)
             throw Exception(
                 ErrorCodes::TOO_MANY_ROWS,
-                "Moving table {}.{} would exceed the row limit (database setting `max_rows`) of {}: "
-                "current {} - removing {} + adding {} rows",
-                backQuote(moved_into_db.database_name), backQuote(moved_table_name), limit, current_rows, outgoing_rows, incoming_rows);
+                "Moving table {}.{} with {} rows would exceed the row limit (database setting `max_rows`) of {}",
+                backQuote(moved_into_db.database_name), backQuote(moved_table_name), incoming_rows, limit);
     };
 
     String table_data_path;

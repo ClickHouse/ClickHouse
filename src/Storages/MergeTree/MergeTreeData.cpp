@@ -8895,8 +8895,8 @@ std::exception_ptr MergeTreeData::getDatabaseRowsLimitReachedException() const
 
     return std::make_exception_ptr(Exception(
         ErrorCodes::TOO_MANY_ROWS,
-        "Too many rows in database {}. The limit (database setting `max_rows`) is set to {}, the current number of rows is {}",
-        backQuote(database_name), limit, current_rows));
+        "Too many rows in database {}. The limit (database setting `max_rows`) is set to {}",
+        backQuote(database_name), limit));
 }
 
 bool MergeTreeData::hasDatabaseRowsLimit() const
@@ -8930,8 +8930,8 @@ std::exception_ptr MergeTreeData::getDatabaseRowsLimitException(UInt64 incoming_
     if (incoming_rows > limit || remaining_rows > limit - incoming_rows)
         return std::make_exception_ptr(Exception(
             ErrorCodes::TOO_MANY_ROWS,
-            "Adding {} rows to table {} would exceed the row limit (database setting `max_rows`) of {}: current {} - removing {} + adding {} rows",
-            incoming_rows, getStorageID().getNameForLogs(), limit, current_rows, outgoing_rows, incoming_rows));
+            "Adding {} rows to table {} would exceed the row limit (database setting `max_rows`) of {}",
+            incoming_rows, getStorageID().getNameForLogs(), limit));
 
     return nullptr;
 }
