@@ -30,13 +30,15 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ttl"
 # A table with an Outdated part that no Active part covers is skipped: the `DETACH`/`ATTACH` cycle
 # reloads the parts from disk and would resurrect that part as Active. `ALTER TABLE ... DETACH PART`
 # leaves such a part behind — the empty covering part it creates is immediately dropped from the
-# working set but stays on disk until the asynchronous cleanup.
+# working set but stays on disk until the asynchronous cleanup. The two parts are in different
+# partitions, so that a background merge cannot consume the named part first (stopping merges is not an
+# option: the hook skips a table with an action lock, which would defeat the positive control).
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_uncovered"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_uncovered (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_uncovered (a UInt64) ENGINE = MergeTree PARTITION BY a ORDER BY a"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_uncovered VALUES (1)"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_uncovered VALUES (2)"
 check_if_detached "SELECT * FROM t_reattach_uncovered FORMAT Null" "t_reattach_uncovered"
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_reattach_uncovered DETACH PART 'all_1_1_0'"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_reattach_uncovered DETACH PART '1_1_1_0'"
 check_if_not_detached "SELECT * FROM t_reattach_uncovered FORMAT Null" "t_reattach_uncovered"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_uncovered"
 
