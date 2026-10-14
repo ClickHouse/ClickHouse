@@ -234,9 +234,10 @@ TEST(LazyFrontier, KeepsEverythingEagerWithoutALazySource)
         EXPECT_EQ(frontier.at(output).above, Placement::Above::Crossing);
 }
 
-/// A value nothing below the LIMIT used is computed above it for the first time, so even a
-/// non-deterministic one needs no column of its own.
-TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueLate)
+/// A non-deterministic value is computed where the plan computes it and crosses the LIMIT as a column, even where
+/// nothing below the LIMIT uses it: computed above it, it would be drawn for other rows than the plan drew it for - once
+/// per row a join repeats instead of once per row of its side.
+TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueWhereThePlanDoes)
 {
     tryRegisterFunctions();
     const Block header{column("a"), column("b"), column("heavy")};
@@ -258,8 +259,8 @@ TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueLate)
 
     const auto * random_in_merged = findNodeContaining(merged, "rand64");
     ASSERT_TRUE(random_in_merged != nullptr);
-    EXPECT_EQ(frontier.at(random_in_merged).above, Placement::Above::Recomputed);
-    EXPECT_FALSE(frontier.at(random_in_merged).computed_below);
+    EXPECT_EQ(frontier.at(random_in_merged).above, Placement::Above::Crossing);
+    EXPECT_TRUE(frontier.at(random_in_merged).computed_below);
 }
 
 /// Values a join can stuff: `a + b` and `intDiv(heavy, b)` are computed from one side of an outer join,
