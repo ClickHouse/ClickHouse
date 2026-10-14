@@ -23,6 +23,12 @@ namespace DB
 /// holds, while a block is one allocation for many chunks. Consecutive partitions share blocks in groups of
 /// `partitions_per_group`, chosen by the caller to match the consumption order. A block is freed once all its
 /// chunks are released, allowing consumers to reclaim memory without waiting for unrelated groups.
+///
+/// A group's blocks grow too. Its first block takes the first chunks of its partitions, so those stay the
+/// minimum allocation, and each later block is as large as the group's earlier blocks together, up to a cap.
+/// The group's total doubles up to the cap and then grows by the cap, so for the same records a group takes
+/// no more than blocks of the cap would. `clear` starts every group over from its first block, so a buffer
+/// emptied and refilled in rounds holds no more than each round's records need.
 class PartitionedRecordBuffer
 {
 public:
@@ -82,7 +88,7 @@ public:
 
 private:
     static constexpr size_t max_chunk_bytes = 32 << 10;
-    static constexpr size_t block_bytes = 256 << 10;
+    static constexpr size_t max_block_bytes = 256 << 10;
 
     struct Block;
     struct ChunkHeader;
@@ -104,18 +110,26 @@ private:
         UInt64 closed_chunk_records = 0;
     };
 
-    /// The position and remaining capacity in one allocation group's current block.
+    /// The position and remaining capacity in one allocation group's current block, and the total size of
+    /// the group's blocks since construction or `clear`.
     struct Carver
     {
         char * pos = nullptr;
         size_t remaining = 0;
         Block * block = nullptr;
+        size_t allocated_block_bytes = 0;
     };
 
     /// The cold path of `append`: closes the partition's current chunk and starts one that holds `bytes`.
     NO_INLINE void startChunk(size_t partition, size_t bytes);
 
+    /// Ends the claims on the blocks being carved, so each block is freed with its last chunk. The groups
+    /// keep their totals: appends resumed after `finishAppending` continue the growth of their blocks.
     void releaseCurrentBlocks();
+
+    /// The size of the group's next block: the first takes the first chunks of the group's partitions, and
+    /// each later one is as large as the group's blocks together, up to the cap.
+    size_t nextBlockBytes(size_t group) const;
 
     const size_t num_partitions;
     const size_t partitions_per_group;
