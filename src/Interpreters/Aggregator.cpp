@@ -2520,7 +2520,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// external-aggregation threshold when its states grow, and its producer learns again.
         if (adaptive->isFrozen() && params.max_bytes_before_external_group_by
             && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-            && adaptiveFrozenTableWorthSpilling(*adaptive))
+            && adaptiveFrozenTableWorthSpilling(result, *adaptive))
             spillFrozenAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
         return true;
     }

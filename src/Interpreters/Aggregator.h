@@ -876,8 +876,10 @@ private:
     bool adaptiveStagingWorthSpilling(const AdaptiveAggregationProducer & adaptive) const;
 
     /// Whether writing a frozen table to disk over the external-aggregation threshold frees enough memory: its states
-    /// keep growing after the freeze, and it absorbed `adaptive_frozen_spill_min_hits` rows since it froze.
-    bool adaptiveFrozenTableWorthSpilling(const AdaptiveAggregationProducer & adaptive) const;
+    /// grew past the floor of `adaptive_spill_min_bytes` in its arenas since the freeze, or they own heap memory and
+    /// the table absorbed `adaptive_frozen_spill_min_hits` rows since then.
+    bool adaptiveFrozenTableWorthSpilling(
+        const AggregatedDataVariants & result, const AdaptiveAggregationProducer & adaptive) const;
 
     /// The freeze transition: creates the producer's partitions and count bins at its first freeze, flips its phase,
     /// and records the event. Owned here so the mid-block crossing and the between-blocks check perform the identical

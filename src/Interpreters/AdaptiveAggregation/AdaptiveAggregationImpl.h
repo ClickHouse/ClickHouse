@@ -50,9 +50,11 @@ constexpr size_t adaptive_drain_range_prefetch_bytes = 4096;
 /// A merge unit's table is prefetched into only when it is larger than this: below it the table stays in the
 /// cache through the drain, and a prefetch of a cache-resident slot is pure overhead.
 constexpr size_t adaptive_drain_prefetch_min_table_bytes = 512 << 10;
-/// A producer over the external-aggregation threshold spills its staged records only once it holds this much of
-/// them, or a share of the threshold where that is less: a spill writes one block per partition and takes a lock per
-/// partition, so a producer that just spilled must not spill its few new records on every block that follows.
+/// A producer over the external-aggregation threshold writes its staged records to disk only once they take this much
+/// memory, and its frozen table only once the table's states grew by this much in its arenas since its freeze. A
+/// smaller threshold lowers the floor to half of the threshold split among the threads. A write of staged records
+/// takes a block and a lock per partition, and a written table learns its keys again and freezes anew, so a producer
+/// that just wrote must not write a trickle of new bytes on every block that follows.
 constexpr size_t adaptive_spill_min_bytes = 16 << 20;
 /// The spill streams of a session, one per partition, are open together, and each holds about three buffers of the
 /// streams' buffer size: the compression input, the compressed block and the file's write buffer. Their buffer size
@@ -69,10 +71,11 @@ constexpr size_t adaptive_merge_unit_records = 16'384;
 /// Between the bounds, the threshold follows the estimated work per worker for this query.
 constexpr size_t adaptive_parallel_merge_min_work = 16'384;
 constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
-/// A frozen table whose aggregate states own heap memory is written to disk over the external-aggregation threshold
-/// only once it has absorbed this many rows since it froze (see `Aggregator::adaptiveFrozenTableWorthSpilling`): the
-/// write empties the table, which then learns its keys anew, so a table that was just written must not be written
-/// again on every block while the query stays over the threshold.
+/// The growth of aggregate states that own heap memory does not show in a frozen table's arenas, so a frozen table
+/// with such states is also written to disk over the external-aggregation threshold once it has absorbed this many
+/// rows since it froze (see `Aggregator::adaptiveFrozenTableWorthSpilling`): the write empties the table, which then
+/// learns its keys anew, so a table that was just written must not be written again on every block while the query
+/// stays over the threshold.
 constexpr size_t adaptive_frozen_spill_min_hits = 65'536;
 
 /// The thaw guard: the table filled and froze, but the stream behind it keeps repeating the same missing
@@ -349,11 +352,16 @@ struct AdaptiveAggregationProducer
     /// (see `adaptive_frozen_spill_min_hits`).
     struct FrozenState
     {
-        explicit FrozenState(size_t estimated_table_bytes_per_key_)
-            : estimated_table_bytes_per_key(estimated_table_bytes_per_key_)
+        FrozenState(size_t used_arena_bytes_at_freeze_, size_t estimated_table_bytes_per_key_)
+            : used_arena_bytes_at_freeze(used_arena_bytes_at_freeze_)
+            , estimated_table_bytes_per_key(estimated_table_bytes_per_key_)
         {
         }
 
+        /// Bytes that the table's keys and states took in its arenas at the freeze (see
+        /// `AggregatedDataVariants::usedArenaBytes`). The frozen-table spill guard measures the growth of the states
+        /// against it.
+        size_t used_arena_bytes_at_freeze;
         /// Estimated hash-table buffer and arena bytes per key. A populated table supplies its measured
         /// allocations, including capacity and allocation overhead. An empty table uses the aggregate state
         /// size as a lower bound. This excludes staged records, other workers' memory and allocations owned
@@ -428,9 +436,9 @@ struct AdaptiveAggregationProducer
     bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
     bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
-    void freeze(size_t estimated_table_bytes_per_key)
+    void freeze(size_t used_arena_bytes_at_freeze, size_t estimated_table_bytes_per_key)
     {
-        phase.emplace<FrozenState>(estimated_table_bytes_per_key);
+        phase.emplace<FrozenState>(used_arena_bytes_at_freeze, estimated_table_bytes_per_key);
     }
     void learnAgain() { phase = LearningState{}; }
     void standDown() { phase = BaselineState{}; }
