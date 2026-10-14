@@ -914,7 +914,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     template <typename LocalMethod, typename SharedMethod>
     requires MapAggregationMethod<LocalMethod>
@@ -928,7 +929,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     /// The set counterpart: with no aggregate functions there are no places to record and no states to
     /// advance, so a hit is just the probe and a miss stages the key alone.
@@ -944,7 +946,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     /// Groups the current block's staged misses by bucket (counting sort) into one staged chunk
     /// and hands it to `stageChunk`. Key bytes are copied exactly once, straight from

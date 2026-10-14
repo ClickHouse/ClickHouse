@@ -2453,7 +2453,8 @@ bool Aggregator::executeOnBlock(Columns columns,
         std::optional<MemoryTrackerSwitcher> scope;
         session_scope(scope);
         executeFrozen(
-            columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const);
+            columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const,
+            own_tracker ? result.memory_tracker.get() : nullptr);
     }
     else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
              && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold)
@@ -2500,7 +2501,8 @@ bool Aggregator::executeOnBlock(Columns columns,
                     key_columns,
                     aggregate_functions_instructions.data(),
                     *adaptive,
-                    /*all_keys_are_const=*/false);
+                    /*all_keys_are_const=*/false,
+                    own_tracker ? result.memory_tracker.get() : nullptr);
             }
         }
     }
