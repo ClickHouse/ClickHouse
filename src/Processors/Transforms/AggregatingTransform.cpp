@@ -165,6 +165,11 @@ namespace
     /// arena slot of a bucket belong to the source of the bucket. The records of a unit are freed once it is
     /// converted, and the states of a chunk once the external merge has merged it.
     ///
+    /// The sources hold a throw-mode group limit against the staged groups of the buckets they merge, which
+    /// they count together in `merged_groups`. The groups that only the parts of the producers' tables hold
+    /// are not counted: the external merge of the parts checks no limit, as in the ordinary external
+    /// aggregation.
+    ///
     /// The external merge takes a bucket once every input has passed it (see `GroupingAggregatedTransform`), which it
     /// learns from the input's first chunk of a later bucket, and pulls nothing more from an input until it reaches
     /// that bucket. So a source merges its next bucket right after it hands out the first chunk of a bucket, while
@@ -178,12 +183,14 @@ namespace
             AggregatingTransformParamsPtr params_,
             AdaptiveAggregationSessionPtr session_,
             ManyAggregatedDataVariantsPtr destination_,
+            std::shared_ptr<std::atomic<size_t>> merged_groups_,
             size_t first_bucket,
             size_t step_)
             : ISource(std::move(header))
             , params(std::move(params_))
             , session(std::move(session_))
             , destination(std::move(destination_))
+            , merged_groups(std::move(merged_groups_))
             , next_bucket(first_bucket)
             , step(step_)
         {
@@ -203,6 +210,7 @@ namespace
                     const auto bucket = static_cast<Int32>(next_bucket);
                     next_bucket += step;
 
+                    size_t full_group_count = 0;
                     auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
                         *destination,
                         *session,
@@ -211,9 +219,10 @@ namespace
                         bucket,
                         is_cancelled,
                         /*updater=*/nullptr,
-                        /*full_group_count=*/nullptr);
+                        &full_group_count);
                     if (is_cancelled.load(std::memory_order_seq_cst))
                         return {};
+                    params->aggregator.checkMergedGroupLimit(*merged_groups, full_group_count);
 
                     chunks.splice(chunks.end(), agg_chunks);
                 }
@@ -233,6 +242,7 @@ namespace
         AggregatingTransformParamsPtr params;
         AdaptiveAggregationSessionPtr session;
         ManyAggregatedDataVariantsPtr destination;
+        std::shared_ptr<std::atomic<size_t>> merged_groups;
         AdaptiveMergeTask task;
         Aggregator::AggregatedChunks chunks;
         size_t next_bucket;
@@ -306,9 +316,10 @@ public:
         /// Groups the two-level bucket merge has converted so far; a throw-mode group limit is
         /// checked against this running total, taken from the bucket tables rather than from
         /// the converted chunks, which the bucket-local Top-K conversion truncates. For the
-        /// adaptive aggregator this is the only enforcement the staged keys ever get: the
-        /// frozen tables are bounded and the staged cardinality is unknown until the merge.
-        /// The buckets partition the key space, so the sum counts every group exactly once.
+        /// adaptive aggregator this is the only enforcement the staged keys get unless the merge
+        /// goes external (see `AdaptiveStagedRecordsSource`): the frozen tables are bounded and
+        /// the staged cardinality is unknown until the merge. The buckets partition the key
+        /// space, so the sum counts every group exactly once.
         std::atomic<size_t> two_level_merged_groups = 0;
 
         SharedData()
@@ -1859,10 +1870,11 @@ void AggregatingTransform::initGenerate()
             const auto destination
                 = std::make_shared<ManyAggregatedDataVariants>(1, params->aggregator.createAdaptiveMergeDestination());
             const auto header = std::make_shared<const Block>(params->aggregator.getSpilledStatesHeader());
+            const auto merged_groups = std::make_shared<std::atomic<size_t>>(0);
             const size_t num_sources = std::min(temporary_data_merge_threads, ADAPTIVE_AGGREGATION_NUM_BUCKETS);
             for (size_t first_bucket = 0; first_bucket < num_sources; ++first_bucket)
                 pipes.emplace_back(Pipe(std::make_unique<AdaptiveStagedRecordsSource>(
-                    header, params, adaptive_context->session, destination, first_bucket, num_sources)));
+                    header, params, adaptive_context->session, destination, merged_groups, first_bucket, num_sources)));
         }
 
         LOG_DEBUG(

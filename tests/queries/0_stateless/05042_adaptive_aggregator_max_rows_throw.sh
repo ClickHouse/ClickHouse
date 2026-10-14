@@ -10,10 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # too many groups exist. The producers cannot see the staged keys' cardinality (their frozen
 # tables are bounded by the freeze threshold), so the limit is enforced where the groups first
 # materialize: as the bucket-parallel merge converts buckets. The dropping modes (break, any)
-# stay rejected. Both external thresholds are pinned off because the ratio threshold defaults
-# to a half of the memory limit: a pressured runner could spill, and a spilled run merges
-# externally, where the limit is checked as the spill drains build their tables (its own cell
-# below).
+# stay rejected. Both external thresholds are pinned off, so that each cell runs the path it
+# names: the ratio threshold defaults to a half of the memory limit, and a pressured runner could
+# spill. A run that spills only its staged records keeps the bucket-parallel merge, which reads
+# them back (its own cell below). A run whose frozen tables spill merges externally, which
+# `05386_adaptive_aggregator_max_rows_throw_external_merge` covers.
 # The two-level thresholds are pinned high so the baseline spill branch stays out of the way.
 # The test runs in one `clickhouse-local` process per cell, so the `system.events` counters
 # belong to that cell alone.
