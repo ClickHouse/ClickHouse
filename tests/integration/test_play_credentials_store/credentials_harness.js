@@ -79,12 +79,22 @@ function makeStorage() {
     };
 }
 
+/// A connection field: `classList` for the credential indication of `checkCredentials`, and `matches`
+/// for the autofill detection (`isAutofilled`), which reports the field as autofilled while
+/// `autofilled` is set.
+function makeField() {
+    const field = { value: '', autofilled: false, classList: { add() {}, remove() {} } };
+    field.matches = selector => selector === ':autofill' && field.autofilled;
+    return field;
+}
+
 function makeContext(storage) {
     const ctx = {
         localStorage: storage,
-        url_elem: { value: '' },
-        user_elem: { value: '' },
-        password_elem: { value: '' },
+        window: { localStorage: storage },
+        url_elem: makeField(),
+        user_elem: makeField(),
+        password_elem: makeField(),
         location: { href: 'http://localhost:8123/play', origin: 'http://localhost:8123' },
         stored: [],
         fetched: [],
@@ -100,7 +110,17 @@ function makeContext(storage) {
         Object,
         /// What the page computes without `CSS.supports`: no field is ever reported as autofilled, so
         /// `dropAutofilledStalePassword` (called by `storeCredentials`) keeps every password here.
+        /// A scenario enables the detection by setting it to `:autofill` (see `makeField`).
         AUTOFILL_SELECTOR: null,
+        PASSWORDLESS_LOGINS_KEY: 'passwordless_logins',
+        MAX_PASSWORDLESS_LOGINS: 100,
+        /// The page state `checkCredentials` reads and writes besides the connection fields.
+        check_credentials_request_num: 0,
+        checked_connection: null,
+        document: { getElementById: () => ({ innerText: '' }) },
+        formatUptime: () => '',
+        updateServerInfoVisibility() {},
+        openConnectionDropdown() {},
         /// The page state `restampPendingImplicitUser` writes again once this visit learns the
         /// implicit name: the current history entry, the tabs, and recorders for the two writers.
         history: { state: null },
@@ -140,7 +160,8 @@ const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUser
     'resolvedImplicitUser', 'durableImplicitUserStamp', 'durableResultSnapshot', 'runEntryUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
     'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser', 'restampPendingImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
-    'isAutofilled', 'dropAutofilledStalePassword'];
+    'isAutofilled', 'dropAutofilledStalePassword', 'passwordlessLoginKey', 'loadPasswordlessLogins',
+    'rememberLoginPassword', 'connectionTuple', 'checkCredentials'];
 
 function boot(js, { withPasswordCredential = true, storage = makeStorage() } = {}) {
     const ctx = makeContext(storage);
@@ -463,6 +484,87 @@ scenario('persisted-result-stamp-is-durable', async js => {
     reloaded.entry = { server: snapshot.url, user: '', implicitUser: snapshot.implicitUser };
     assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', reloaded), 'alice',
         'a download of the persisted snapshot names the producing account');
+});
+
+/// The probe is an ordinary query of the same user, so it must not compete with the query of the Run
+/// for the user's query slots (`max_concurrent_queries_for_user = 1` rejects whichever arrives second
+/// with `TOO_MANY_SIMULTANEOUS_QUERIES`): it is sent only once the Run has settled, failed or not, and
+/// with the connection taken at launch.
+scenario('probe-after-run-completes', async js => {
+    for (const outcome of ['resolve', 'reject']) {
+        const ctx = boot(js);
+        ctx.implicit_user = 'alice';
+        ctx.url_elem.value = 'http://host:8123/';
+        ctx.user_elem.value = '';
+        ctx.password_elem.value = 'secret';
+        let finish;
+        ctx.run = new Promise((resolve, reject) => { finish = outcome === 'resolve' ? resolve : reject; });
+        const stored = vm.runInContext('storeCredentials(run)', ctx);
+        ctx.url_elem.value = 'http://other:8123/';
+        ctx.password_elem.value = 'other';
+        for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve));
+        assertEqual(ctx.fetched.length, 0, `no probe while the Run is in flight (${outcome})`);
+        assertEqual(ctx.stored.length, 0, `nothing stored while the Run is in flight (${outcome})`);
+        finish(new Error('the Run failed'));
+        await stored;
+        assertEqual(ctx.fetched.length, 1, `one probe once the Run has settled (${outcome})`);
+        if (!ctx.fetched[0].url.startsWith('http://host:8123/?') || !ctx.fetched[0].url.includes('&password=secret'))
+            throw new Error(`the probe does not use the connection taken at launch: ${ctx.fetched[0].url}`);
+        assertEqual(ctx.stored.length, 1, `stored once the Run has settled (${outcome})`);
+        assertEqual(ctx.stored[0].id, 'alice', `remembered under the implicit user (${outcome})`);
+        assertEqual(ctx.stored[0].name, 'http://host:8123/', `remembered for the server taken at launch (${outcome})`);
+    }
+});
+
+/// The login of an empty field is saved under the name of the account (`storeCredentials`), so the
+/// next visit refills that name. A later passwordless authentication of the empty field must be
+/// recorded for that name as well, or the stale autofilled password of the refilled login is kept,
+/// sent, and offered to the browser again. A password login of the empty field forgets it under both
+/// spellings, and another user is not affected.
+scenario('refill-after-passwordless-login', async js => {
+    const settle = async () => { for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve)); };
+    const visit = (storage, user, password) => {
+        const ctx = boot(js, { storage });
+        ctx.AUTOFILL_SELECTOR = ':autofill';
+        ctx.implicit_user = 'alice';
+        ctx.url_elem.value = 'http://host:8123/';
+        ctx.user_elem.value = user;
+        ctx.password_elem.value = password;
+        return ctx;
+    };
+    const storage = makeStorage();
+    const first = visit(storage, '', 'secret');
+    await store(first);
+    assertEqual(first.stored[0].id, 'alice', 'the empty-field login is saved under the implicit user');
+
+    /// The account's password was removed: the empty field authenticates with an empty password.
+    const second = visit(storage, '', '');
+    vm.runInContext('checkCredentials()', second);
+    await settle();
+
+    /// The password manager refills the saved login.
+    const third = visit(storage, 'alice', 'secret');
+    third.password_elem.autofilled = true;
+    await store(third);
+    assertEqual(third.password_elem.value, '', 'the stale autofilled password of the refilled login is dropped');
+    assertEqual(third.stored.length, 0, 'and not offered to the browser again');
+
+    /// Another user is not affected by the passwordless login of alice.
+    const other = visit(storage, 'bob', 'secret');
+    other.password_elem.autofilled = true;
+    await store(other);
+    assertEqual(other.password_elem.value, 'secret', 'the autofilled password of another user is kept');
+
+    /// The account got a password back: a password login of the empty field forgets the entry for the
+    /// refilled name too.
+    const fourth = visit(storage, '', 'new');
+    vm.runInContext('checkCredentials()', fourth);
+    await settle();
+    const fifth = visit(storage, 'alice', 'new');
+    fifth.password_elem.autofilled = true;
+    await store(fifth);
+    assertEqual(fifth.password_elem.value, 'new', 'the autofilled password is kept after a password login');
+    assertEqual(fifth.stored[0].id, 'alice', 'and offered to the browser');
 });
 
 scenario('implicit-default-round-trip-with-query-string', async js => {

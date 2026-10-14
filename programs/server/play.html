@@ -10382,21 +10382,36 @@ function loadPasswordlessLogins() {
 /// Record a successful authentication as `server_address`/`user` with `password`: an empty password
 /// remembers the login as passwordless, a non-empty one forgets it.
 ///
+/// An empty `user` field authenticates as the server's `default_session_user`, and the login is saved
+/// to the password manager under that name (`storeCredentials`), so the next visit refills it as an
+/// explicit name. Such a login is therefore recorded under both spellings: the empty one and the name
+/// of the account, `implicit_user` as reported by the server for this very request when the caller
+/// knows it, otherwise the name this visit has learned (`learnedImplicitUser`). An explicit user is
+/// recorded only under its own name, so different users are never conflated.
+///
 /// Best-effort: it runs on the success path of an authentication check and of a query, and a storage
 /// failure (`QuotaExceededError`, a storage policy exception) must not turn that success into a
 /// client-side error or lose the green indication. Without the entry the page merely does not drop a
 /// stale autofilled password next time, which is the pre-existing behaviour.
-function rememberLoginPassword(server_address, user, password) {
-    const key = passwordlessLoginKey(server_address, user);
-    const logins = loadPasswordlessLogins();
-    if (password) {
-        if (!logins.delete(key)) return;
-    } else {
-        if (logins.has(key)) return;
-        logins.add(key);
-        /// A `Set` iterates in insertion order, so the oldest entries go first.
-        while (logins.size > MAX_PASSWORDLESS_LOGINS) logins.delete(logins.values().next().value);
+function rememberLoginPassword(server_address, user, password, implicit_user = '') {
+    const keys = [passwordlessLoginKey(server_address, user)];
+    if (!effectiveConnectionUser(server_address, user)) {
+        const account = implicit_user || learnedImplicitUser(server_address);
+        if (account) keys.push(passwordlessLoginKey(server_address, account));
     }
+    const logins = loadPasswordlessLogins();
+    let changed = false;
+    for (const key of keys) {
+        if (password) {
+            if (logins.delete(key)) changed = true;
+        } else if (!logins.has(key)) {
+            logins.add(key);
+            changed = true;
+        }
+    }
+    if (!changed) return;
+    /// A `Set` iterates in insertion order, so the oldest entries go first.
+    while (logins.size > MAX_PASSWORDLESS_LOGINS) logins.delete(logins.values().next().value);
     try { window.localStorage.setItem(PASSWORDLESS_LOGINS_KEY, JSON.stringify([...logins])); } catch (e) { /* best-effort, see above */ }
 }
 
@@ -10487,7 +10502,7 @@ function checkCredentials() {
             if (json) {
                 /// These credentials were accepted: recorded from the values the request was sent with,
                 /// not the live fields (an autofill raising no `input` could have changed them since).
-                rememberLoginPassword(server_address, user, password);
+                rememberLoginPassword(server_address, user, password, user ? '' : (json.u || ''));
                 [user_elem, password_elem].forEach(e => { e.classList.remove('fail'); e.classList.add('ok'); });
                 document.getElementById('server_info').innerText = `v${json.v}, uptime ${formatUptime(json.t)} `;
                 updateServerInfoVisibility();
@@ -18078,12 +18093,20 @@ function serverAddressWithoutSession(server_address) {
 /// the server authenticate the request as its `default_session_user`, which is server configuration
 /// (not necessarily `default`), so the real name is asked from the server (`currentUser` in
 /// `getServerStatus`, sent without a `user` parameter) and the login is saved under it: the refilled
-/// name then selects the same account explicitly. The probe runs while the query of this Run may be in
-/// flight, so it is sent outside of the connection's HTTP session (`serverAddressWithoutSession`).
+/// name then selects the same account explicitly. The probe is sent outside of the connection's HTTP
+/// session (`serverAddressWithoutSession`): a query of another tab may be in flight in it, and the
+/// server rejects a concurrent request in one session with `SESSION_IS_LOCKED`.
 /// Nothing is saved if the server cannot tell, which includes a server URL with a userinfo
 /// (`http://alice@host:8123/`): `fetch` refuses URLs with credentials, so such a connection does not
-/// work from this page at all. Returns a promise for tests.
-function storeCredentials() {
+/// work from this page at all.
+///
+/// The probe is an ordinary query of the same user, so while the query of this Run is in flight it
+/// would compete with it for the user's query slots: with `max_concurrent_queries_for_user = 1` the
+/// server rejects whichever of the two arrives second with `TOO_MANY_SIMULTANEOUS_QUERIES`, and the
+/// probe can win the race, since the Run first awaits its lexer preflight. So the probe is sent only
+/// after `run` (the promise of the launched Run) has settled; the connection is still the one taken
+/// here, at launch. Returns a promise for tests.
+function storeCredentials(run) {
     /// A stale autofilled password must not be re-offered to the browser's store either.
     dropAutofilledStalePassword();
     const server_address = url_elem.value;
@@ -18094,7 +18117,7 @@ function storeCredentials() {
     if (user) return store(user);
     const probe_address = serverAddressWithoutSession(server_address);
     if (!probe_address) return Promise.resolve();
-    return getServerStatus(probe_address, '', password).then(json => {
+    return Promise.allSettled([run]).then(() => getServerStatus(probe_address, '', password)).then(json => {
         if (!json || !json.u) return;
         rememberImplicitUser(server_address, json.u);
         return store(json.u);
@@ -18109,8 +18132,7 @@ document.getElementById('controls').addEventListener('submit', e =>
     if (activeInFlight()) {
         cancel();
     } else {
-        postOne();
-        storeCredentials();
+        storeCredentials(postOne());
     }
 });
 
@@ -18120,8 +18142,7 @@ document.getElementById('run-all').addEventListener('click', e =>
     e.preventDefault();
     markBootstrapDirty(e);
     if (!activeInFlight()) {
-        postAll();
-        storeCredentials();
+        storeCredentials(postAll());
     }
 });
 
@@ -18139,11 +18160,9 @@ document.addEventListener('keydown', event => {
             cancel();
         } else if (event.shiftKey && isMultiQuery) {
             /// Ctrl/Cmd+Shift+Enter runs all queries in multi-query mode.
-            postAll();
-            storeCredentials();
+            storeCredentials(postAll());
         } else {
-            postOne();
-            storeCredentials();
+            storeCredentials(postOne());
         }
         event.preventDefault();
     }
