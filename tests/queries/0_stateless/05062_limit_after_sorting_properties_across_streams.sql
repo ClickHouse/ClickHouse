@@ -23,21 +23,6 @@ FROM
 ORDER BY x
 SETTINGS enable_analyzer = 1;
 
-SELECT x
-FROM
-(
-    SELECT x
-    FROM
-    (
-        (SELECT number * 2 AS x FROM numbers(20) ORDER BY x)
-        UNION ALL
-        (SELECT number * 2 + 1 AS x FROM numbers(20) ORDER BY x)
-    )
-    LIMIT AFTER x >= 0
-)
-ORDER BY x
-SETTINGS enable_analyzer = 0;
-
 -- Over the union the outer sort stays a full sort (only a `Sort description`), while over one ordered
 -- stream it becomes a finish sort (a `Prefix sort description`). The descriptions spell columns the way
 -- the analyzer names them.

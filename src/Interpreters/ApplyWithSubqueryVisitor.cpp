@@ -1,5 +1,6 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/misc.h>
@@ -23,6 +24,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_scopes_for_with_statement;
+    extern const SettingsUInt64 max_expanded_ast_elements;
 }
 
 namespace
@@ -47,6 +50,43 @@ ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & 
 
 }
 
+void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, size_t max_expanded_ast_elements)
+{
+    ExpandedASTBudget budget(max_expanded_ast_elements, *ast);
+    Data data;
+    data.budget = &budget;
+    visit(ast, data);
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, ContextPtr context, ExpandedASTBudget & budget)
+{
+    Data data;
+    data.context = std::move(context);
+    data.budget = &budget;
+    visit(ast, data);
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & select, size_t max_expanded_ast_elements)
+{
+    ExpandedASTBudget budget(max_expanded_ast_elements, select);
+    Data data;
+    data.budget = &budget;
+    visit(select, data);
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & select, size_t max_expanded_ast_elements)
+{
+    ExpandedASTBudget budget(max_expanded_ast_elements, select);
+    visit(select, budget);
+}
+
+void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & select, ExpandedASTBudget & budget)
+{
+    Data data;
+    data.budget = &budget;
+    visit(select, data);
+}
+
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
     checkStackSize();
@@ -66,15 +106,27 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
-    /// The CTEs this select declares itself are registered below either way: only the inherited
+    /// The elements this select declares itself are registered below either way: only the inherited
     /// ones are out of scope here.
     std::optional<Data> scope_data;
     if (data.context)
     {
         scope_data = data;
         scope_data->context = getSubqueryContext(ast, data.context);
-        if (!scope_data->context->getSettingsRef()[Setting::enable_global_with_statement])
+        const auto & scope_settings = scope_data->context->getSettingsRef();
+        /// A common table expression is reached by looking into an enclosing scope, so a select that does
+        /// not look there cannot name one. An expression alias declared with scopes disabled is instead
+        /// copied down, and a select reads that copy when it disables them too.
+        if (!scope_settings[Setting::enable_global_with_statement])
+        {
             scope_data->subqueries.clear();
+            scope_data->literals.clear();
+        }
+        if (!scope_settings[Setting::enable_scopes_for_with_statement])
+        {
+            for (const auto & [name, node] : scope_data->exported_literals)
+                scope_data->literals[name] = node;
+        }
     }
     const Data & scope = scope_data ? *scope_data : data;
 
@@ -93,7 +145,11 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 if (ast_with_elem)
                     new_data->subqueries[ast_with_elem->name] = {ast_with_elem->subquery, ast.recursive_with};
                 else
+                {
                     new_data->literals[child_alias] = child;
+                    if (new_data->context && !new_data->context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
+                        new_data->exported_literals[child_alias] = child;
+                }
             }
         }
     }
@@ -122,9 +178,12 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
             if (subquery_it != data.subqueries.end())
             {
                 auto old_alias = table.database_and_table_name->tryGetAlias();
+                /// The table name is still part of the query here, as `replace` expects: it may count the query
+                /// for the first time and then refund the table name, which must not be refunded if it was never counted.
+                auto new_subquery = data.budget->replace(table.database_and_table_name, subquery_it->second.ast);
                 table.children.clear();
                 table.database_and_table_name.reset();
-                table.subquery = subquery_it->second.ast->clone();
+                table.subquery = new_subquery;
                 auto & subquery = table.subquery->as<ASTSubquery &>();
                 subquery.cte_name = table_id.table_name;
                 subquery.recursive_with = subquery_it->second.recursive_with;
@@ -153,7 +212,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 if (subquery_it != data.subqueries.end())
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
-                    func.arguments->children[1] = subquery_it->second.ast->clone();
+                    func.arguments->children[1] = data.budget->replace(func.arguments->children[1], subquery_it->second.ast);
                     auto & subquery = func.arguments->children[1]->as<ASTSubquery &>();
                     subquery.cte_name = name;
                     subquery.recursive_with = subquery_it->second.recursive_with;
@@ -166,7 +225,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                     if (literal_it != data.literals.end())
                     {
                         auto old_alias = func.arguments->children[1]->tryGetAlias();
-                        func.arguments->children[1] = literal_it->second->clone();
+                        func.arguments->children[1] = data.budget->replace(func.arguments->children[1], literal_it->second);
                         if (!old_alias.empty())
                             func.arguments->children[1]->setAlias(old_alias);
                     }
@@ -186,7 +245,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
             if (literal_it != data.literals.end())
             {
                 auto old_alias = dict_name_arg->tryGetAlias();
-                dict_name_arg = literal_it->second->clone();
+                dict_name_arg = data.budget->replace(dict_name_arg, literal_it->second);
                 /// Always reset the alias name, otherwise the aliases will not match after AddDefaultDatabaseVisitor
                 dict_name_arg->setAlias(old_alias);
             }

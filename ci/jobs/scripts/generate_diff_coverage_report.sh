@@ -11,6 +11,11 @@ for var in PREV_30_COMMITS PREV_COVERAGE_URLS CURRENT_COMMIT BASE_COMMIT BRANCH 
   fi
 done
 
+# Resolved before the `cd ci/tmp` below, while the invocation path is still valid.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./coverage_ignore_paths.sh
+source "$SCRIPT_DIR/coverage_ignore_paths.sh"
+
 cd ci/tmp
 
 # Every exit-0 path names its outcome here, so an absent marker means the script
@@ -99,15 +104,18 @@ fi
 patterns=()
 while IFS= read -r f; do
   # Only include C/C++ source files that can appear in lcov coverage data.
-  # Skip contrib/ files — coverage is disabled for third-party code, so they
-  # produce no records in the tracefile and cause lcov to fail with "(empty)".
-  if [[ "$f" =~ \.(cpp|cc|cxx|c|h|hpp|hxx|hh)$ ]] && [[ ! "$f" =~ ^contrib/ ]]; then
+  # A file the export step ignores (third-party code, the unit tests, generated
+  # sources, the tools no CI job runs) produces no records in the tracefile, so
+  # extracting it would leave lcov with "(empty)" and turn a tests-only PR into
+  # the no_coverage_data outcome instead of no_cpp_changes. The same regex the
+  # export uses decides that, so the two cannot drift apart.
+  if [[ "$f" =~ \.(cpp|cc|cxx|c|h|hpp|hxx|hh)$ ]] && [[ ! "$f" =~ $COVERAGE_IGNORE_FILENAME_REGEX ]]; then
     patterns+=("*$f")
   fi
 done < <(echo "$changed_files")
 
 if [ ${#patterns[@]} -eq 0 ]; then
-  echo "No coverable C/C++ source files changed (contrib/ is excluded from coverage), skipping differential coverage report"
+  echo "No coverable C/C++ source files changed (contrib/, unit tests and the tools no CI job runs are excluded from coverage), skipping differential coverage report"
   # In this outcome llvm_coverage_job.py runs the global newly-covered-lines
   # analysis instead (see newly_covered_lines.py). Download up to
   # EXTRA_BASELINES_MAX older master baselines so that analysis can require

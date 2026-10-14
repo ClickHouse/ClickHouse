@@ -22,7 +22,118 @@ across test runs.
 
 ---
 
-## Solution: PGID tracking via per-worker group pid files
+## Invariant: a per-test wrapper must not hold the runner's stdout or stderr
+
+Because a surviving test process cannot be reaped in every case, it must at
+least be **harmless**.  It is not harmless if it holds a descriptor belonging to
+the runner's own stdout or stderr.  Only those two are redirected; fd 0 stays
+inherited by design and cannot wedge anything, because holding a pipe's *read*
+end does not prevent a downstream reader from seeing EOF, and a `.sh` test may
+legitimately read the inherited stdin:
+
+`ci/jobs/functional_tests.py` runs the runner as the head of a shell pipeline
+
+```
+set -o pipefail; clickhouse-test ... | ts '%Y-%m-%d %H:%M:%S' | tee -a "<file>"
+```
+
+so an orphan that inherited the runner's stdout keeps the write end of that pipe
+open.  `ts` never sees EOF, `tee` never sees EOF, and **the pipeline never
+finishes** even though the runner is long gone.  The job then runs to praktika's
+wall-clock ceiling, and praktika then tears the job down: it signals the process
+group it started (`TeePopen.send_signal` -> `os.killpg`) and runs `docker rm -f` on
+the job's container.  Functional-test jobs run in a container
+(`ci/defs/job_configs.py`), so that host process group holds the `docker run`
+client, which forwards the signal into the container; either way
+`ci/jobs/functional_tests.py` is killed while still blocked in `Shell.run`, before
+it ever reaches `FTResultsProcessor.run(runner_exit_code=...)`, so the per-test
+results are never processed at all: praktika finds an incomplete result, marks it
+`ERROR` and fills `info` from its own rolling log buffer, and the run reports **no
+per-test results at all**.  Note that the exit status itself is not the problem —
+the signal-derived `-15` is already a member of `ABORTED_RUN_EXIT_CODES` in
+`ci/jobs/scripts/functional_tests_results.py`; the processor simply never runs.
+
+Therefore `run_single_test` gives the wrapper its own sink instead of letting it
+inherit ours:
+
+```python
+open(self.stdout_file, "wb").close()          # see the fatal preexec_fn path below
+open(self.stderr_file, "wb").close()          # start empty
+with open(self.stderr_file, "ab") as wrapper_stderr:   # then append
+    proc = Popen(command, shell=True, ..., start_new_session=True,
+                 stdout=subprocess.DEVNULL, stderr=wrapper_stderr)
+```
+
+Nothing is lost: the test's own output is redirected by `command` itself
+(`{test} > {stdout} 2> {stderr}`) and read back from those files by
+`process_result_impl`.
+
+Two producers can reach these streams:
+
+* **The wrapper shell's own diagnostics** — the job-control messages bash emits *after*
+  the redirect is installed, such as
+  `line 1: 1234 Segmentation fault  <test> > ... 2> ...` when the wrapper's own child (the
+  test command) dies from a signal, plus anything it writes when the redirect itself fails
+  and so never truncates the file.  The exact shape of the job-control message depends on
+  the signal: `SIGTERM` prints a bare `Terminated`, with no `line N:` prefix and no command
+  echo.  When a background job the *test script* started is signalled instead, the message
+  goes to the test's own stderr file as it always did, so this adds no new writer there and
+  cannot turn `process_result_impl`'s "non-empty stderr" check into new failures.  These
+  now land in the stderr file the harness already collects and reports, instead of the job
+  log.
+* **`preexec_fn`** (`setup_cgroup_with_memory_limit_cb`, used under `--memory-limit`),
+  which runs in the child *after* `Popen` has installed these streams.  Its fatal
+  `Failed to configure cgroup {name}: {e}` report reaches the stderr file rather
+  than the job log, and it is written on the one path where bash never execs
+  (the branch ends in `os._exit(1)`), so the command's own `2> {stderr}` never
+  truncates it.  Because that same path also means `> {stdout}` never created the
+  stdout file, `run_single_test` creates it before spawning — otherwise the
+  post-run normalization, which opens that file unconditionally after `proc.wait`,
+  would raise `FileNotFoundError` and the diagnostic would be reported as an
+  unrelated internal error instead of as this test's failure.
+  A write from a branch that *does* go on to exec would be truncated by the
+  redirect, which is why the benign "cgroups are not available" notice is emitted
+  from the parent instead: `report_cgroups_unavailable` is `functools.cache`d,
+  so it reports once per test-executing process rather than once per spawn - up to
+  `--jobs + 1` times, because the cache lives in the decorated function itself (so
+  it is per process) and `run_single_test` is reached both from the forked parallel
+  workers and directly from the parent for a suite's sequential tests.
+
+Both halves of the `open` pair above are load-bearing, and for opposite reasons:
+
+* **Truncate first**, because on the fatal `preexec_fn` path the redirect that
+  would normally have emptied the file never runs, and `"Permission denied"` is
+  one of `MESSAGES_TO_RETRY`, so without it each retried attempt would report
+  every earlier attempt's diagnostics, and could carry a stale ` <Fatal> ` line,
+  which `process_result_impl` promotes to `SERVER_DIED`.
+* **Then append**, because the test command's own `2> {stderr}` opens the same
+  path through an independent descriptor with its own offset.  A non-append
+  descriptor here starts at 0, so the wrapper's job-control diagnostic would
+  overwrite whatever the test already wrote to its stderr, including a
+  ` <Fatal> ` line, silently disarming that same `SERVER_DIED` promotion.
+  `O_APPEND` sends every write to the current end of the file, so the wrapper's
+  diagnostics land after the test's own output.
+
+**Scope.** This covers per-test wrappers and, transitively, their descendants
+(they inherit from the wrapper).  It deliberately does **not** apply to the
+parallel workers, which are forked `multiprocessing.Process` objects that inherit
+the runner's stdout **by design**, because `run_tests_array` reports every
+assembled result via `sys.stdout.write`.  The two `multiprocessing.Manager`
+processes (one hosting the shared test queue, one the restarted-tests list) also
+inherit it, but they are outside this invariant simply because they are not
+per-test wrappers: they run no tests and print no results.
+Consequently the invariant does not hold if the *top-level runner* is SIGKILL'd
+(the surviving workers would then hold the pipe themselves); that is a separate
+concern about worker lifetime.
+
+**Regression coverage.**
+`tests/queries/0_stateless/05218_clickhouse_test_wrapper_stdio_contract.sh` loads
+`clickhouse-test` as a module and drives `run_single_test` with the `Popen` seam replaced, so it
+checks all three properties above without needing a server and without timing dependence.
+
+---
+
+## Solution: PGID tracking via per-group pid files
 
 The kernel stores the PGID directly in the process descriptor.  It is **never
 reset** when a process is re-parented.  Therefore `kill_process_group(pgid)`
@@ -33,39 +144,56 @@ reaches an orphan as long as we know its PGID — no parent-chain walk needed.
 ```
 _GROUP_PID_PATH = {repo}/ci/tmp/
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
+_RUN_TOKEN      = "<parent_pid>-<random hex>"   # seeded through the environment
+                                               # (`_CLICKHOUSE_TEST_RUN_TOKEN`), so
+                                               # `fork` and `spawn` workers alike share
+                                               # the invocation's token
 ```
 
-Each worker process (`os.getpid()`) writes its own file:
+A worker process (`os.getpid()`) writes one file per group it launches:
 
 ```
-{repo}/ci/tmp/clickhouse_test_group_pid.<worker_pid>
+{repo}/ci/tmp/clickhouse_test_group_pid.<run_token>.<worker_pid>.<pgid>
 ```
 
-One PGID per file.  Because every worker owns a separate file no cross-process
-locking is needed.  Files are written atomically via `write_text_atomic`
-(write to a `.tmp` sibling, then `rename`), so `--cleanup` never sees a
-partial write.
+One PGID per file, and no two files ever share a name, so no cross-process
+locking is needed and a record that is kept because its group may still be live
+is not overwritten by that worker's next test.  The run token is what scopes a
+reap to this invocation's own records (see `worker_pids` below), and it is passed
+to workers through the environment because a `spawn` worker re-executes the
+runner and would otherwise mint its own; a worker pid alone cannot scope a reap,
+being recyclable into a concurrent invocation's worker.  Files are
+written atomically via `write_text_atomic` (write to a `.tmp` sibling, then
+`rename`), so `--cleanup` never sees a partial write.
 
 ### Per-test bookkeeping
 
 ```python
-proc = Popen(command, shell=True, start_new_session=True, preexec_fn=cgroup_fn)
+open(self.stdout_file, "wb").close()  # see the fatal preexec_fn path above
+open(self.stderr_file, "wb").close()
+with open(self.stderr_file, "ab") as wrapper_stderr:  # see the invariant above
+    proc = Popen(command, shell=True, start_new_session=True, preexec_fn=cgroup_fn,
+                 stdout=subprocess.DEVNULL, stderr=wrapper_stderr)
 # proc.pid == PGID after start_new_session=True
-_gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
-write_text_atomic(_gpid_file, f"{proc.pid}\n")
+write_text_atomic(test_process_group_record(proc.pid), f"{proc.pid}\n")
 
 try:
     proc.wait(args.timeout)
 finally:
     if cgroup_name:
         cleanup_cgroup(cgroup_name)
-    _gpid_file.unlink(missing_ok=True)
 ```
 
-On a clean run every started test deletes its file in the `finally` block, so
-no files remain when `clickhouse-test` exits.  If `clickhouse-test` is
-SIGKILL'd, the file for the currently-running test is left behind with its
-PGID.
+The record is written at launch and kept for as long as the group may still be
+live, since it is the only thing that can lead a reaper to that group.
+`process_result_impl` deals with the group once the test finishes and then calls
+`forget_test_process_group`, but only if `test_process_group_is_gone` confirms
+the group is gone, because neither `proc.returncode` nor a returning
+`kill_process_group` rules out a backgrounded member that outlived the leader.
+Anything still recorded is consumed by the parent's abort-path reap
+(`reap_recorded_test_groups`) or by a later `--cleanup`.  So on a clean run no
+files remain when `clickhouse-test` exits, and if a worker is SIGKILL'd its
+record survives for those reapers.
 
 ### `--cleanup` mode
 
@@ -75,7 +203,9 @@ clickhouse-test --cleanup
 
 Calls `cleanup_test_groups()`, which globs `{_GROUP_PID_PATH}/{_GROUP_PID_NAME}.*`
 (skipping `.tmp` files), reads each file, calls `kill_process_group(pgid, None)`
-on the recorded PGID, and removes the file.
+on the recorded PGID, and removes the file.  It passes no `worker_pids`, so it
+matches every record regardless of name shape: it is an orphan sweep run when
+nothing else is live, and the orphan it exists for may predate a name change.
 
 ### `clickhouse-test` startup
 
@@ -115,10 +245,16 @@ The hook contains no kill logic of its own — it just calls
 
 | Layer | Trigger | Mechanism |
 |---|---|---|
-| `cleanup_child_processes` | SIGTERM/SIGINT/SIGHUP to `clickhouse-test` | `killpg` on each direct child's PGID |
-| test `finally` block | Any exit of the per-test code path (incl. SIGKILL to the worker) | `_gpid_file.unlink` — removes the per-worker file |
-| `run_test()` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
+| `cleanup_child_processes` | SIGTERM/SIGINT/SIGHUP to `clickhouse-test` | `killpg` on each direct child's PGID (so it cannot reach a group whose leader already exited) |
+| `process_result_impl` | The test finished | `kill_process_group`, then `forget_test_process_group` if the group is gone |
+| `reap_recorded_test_groups` | Any exit of the parallel or sequential runner: an abort (hung check, server death, time limit, `--max-failures`), a signal to the parent, or a normal finish | `kill_process_group` per record written by this run's own workers |
+| `run_test` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
 | Post-hook | Any exit of `fast_test.py` (incl. SIGKILL) | same — `clickhouse-test --cleanup` |
+
+The abort-path reap is pinned by `tests/integration/test_clickhouse_test_abort_reap`:
+token and worker scoping, `spawn` propagation of the token, the signal masking of
+`reap_recorded_test_groups` and `quiesce_workers_and_reap`, and stopping the workers
+before the single walk over the records.
 
 ### Remaining limitation
 
@@ -133,36 +269,22 @@ clears all processes.  For Linux production CI the Docker boundary already cover
 ### Process group not killed on normal test exit
 
 When the bash script exits normally (exit code is set), `kill_process_group` is
-**not** called.  The code path is:
+**not** called:
 
 ```python
-# run_single_test_command (line ~3136)
-proc = Popen(command, shell=True, start_new_session=True, ...)
-_gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
-write_text_atomic(_gpid_file, f"{proc.pid}\n")
-try:
-    proc.wait(args.timeout)
-except subprocess.TimeoutExpired:
-    pass
-finally:
-    _gpid_file.unlink(missing_ok=True)   # file removed here on every exit
-return proc, total_time
-
-# process_result_impl (line ~2712)
-if proc.returncode is None:              # only true on TimeoutExpired
-    kill_process_group(os.getpgid(proc.pid), ...)
+# process_result_impl
+timed_out = proc.returncode is None      # only true on TimeoutExpired
+if timed_out:
+    kill_process_group(proc.pid, ...)
+elif test_process_group_is_gone(proc.pid):
+    forget_test_process_group(proc.pid)
 ```
 
-Consequence: any processes that are still in the process group after bash exits
-(e.g. background jobs the test script started without `wait`) are **not killed**
-and the PGID file is already gone, so `--cleanup` cannot reach them either.
+So background jobs the test script started without `wait` are still not killed
+here, to avoid the overhead on every normally passing test.  They are no longer
+unreachable, though: the group is only forgotten once it is actually gone, so a
+surviving member keeps its record and stays reapable by the abort-path reap and
+by `--cleanup`.
 
-In practice, most shell tests call `wait` at the end, so all background jobs
-finish before bash exits and the group is empty.  A test that does not call
-`wait` (or that spawns detached sub-subprocesses inside the group) leaks those
-processes silently.
-
-The fix would be to call `kill_process_group` on the PGID before deleting the
-file, unconditionally (or at least when `pgrep(pgid=proc.pid)` still shows
-living members).  This is not done today to avoid the overhead on every normally
-passing test.
+In practice most shell tests call `wait` at the end, so the group is empty by
+the time bash exits and the record is dropped immediately.

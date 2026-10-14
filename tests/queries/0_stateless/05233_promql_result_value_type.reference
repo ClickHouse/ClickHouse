@@ -1,0 +1,30 @@
+-- Scalar and string results
+timestamp	DateTime64(3, \'UTC\')					
+value	Float64					
+timestamp	DateTime64(3, \'UTC\')					
+value	String					
+-- Float32 values are widened to Float64 exactly
+tags	Array(Tuple(String, String))					
+timestamp	DateTime64(3, \'UTC\')					
+value	Float64					
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('job','j')]	1970-01-01 00:17:10.000	0.09000000715255752
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('job','j')]	1970-01-01 00:17:10.000	0.6000000163912773
+tags	Array(Tuple(String, String))					
+samples	Array(Tuple(DateTime64(3, \'UTC\'), Float64))					
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',0.10000000149011612),('1970-01-01 00:16:55.000',0.20000000298023224),('1970-01-01 00:17:10.000',0.30000001192092896)]
+-- Functions of the evaluation time
+timestamp	value
+DateTime64(3, \'UTC\')	Float64
+1970-01-01 00:17:10.250	1030.25
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[]	1970-01-01 00:17:10.250	17
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[]	[('1970-01-01 00:16:40.000',16),('1970-01-01 00:16:55.000',16),('1970-01-01 00:17:10.000',17)]

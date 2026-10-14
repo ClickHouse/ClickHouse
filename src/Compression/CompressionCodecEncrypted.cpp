@@ -477,7 +477,7 @@ CompressionCodecEncrypted::CompressionCodecEncrypted(EncryptionMethod Method): e
 {
 }
 
-ASTPtr CompressionCodecEncrypted::getCodecDesc() const
+ASTPtr CompressionCodecEncrypted::getCodecDescription() const
 {
     return makeCodecDescription(getMethodName(encryption_method));
 }
@@ -489,7 +489,7 @@ uint8_t CompressionCodecEncrypted::getMethodByte() const
 
 void CompressionCodecEncrypted::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_size) const

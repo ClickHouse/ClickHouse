@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnNumbers.h>
+#include <Common/SipHash.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
@@ -54,9 +55,17 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    /// True when a NULL argument makes `result_type` NULL. The default implementation for Nulls
+    /// guarantees this only when `result_type` can hold a NULL. Functions that handle NULLs
+    /// themselves but still propagate them (`CAST`, `toNullable`, ...) override this.
+    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
+
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
+
+    /// Returns indexes of arguments that must be `ColumnConst`.
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
 protected:
     friend struct ::FunctionsStressTestThread;
@@ -111,28 +120,36 @@ protected:
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
-    /** Some arguments could remain constant during this implementation.
-      */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
-
     /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
       *
       * Useful when executing on LowCardinality dictionary, which contains default value even if
       * none of the rows use it.
       *
-      * *Not* useful when executing on Nullable columns. The value behind a NULL is
-      * not necessarily default. E.g.:
+      * Also used when executing on Nullable columns: `createBlockWithNestedColumns` leaves the rows
+      * behind a NULL untouched, so a function that declines this contract is not executed on them
+      * either - they are filtered out first, and their result is masked out as NULL anyway. This
+      * means the nested value under a NULL is not observable for such a function, e.g.:
       *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
       *   ┌──x─┐
       *   │ 42 │
       *   └────┘
+      * still holds for `plus` (which accepts the contract), while a declining function such as
+      * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /** True if function might throw an exception during execution.
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
+
+    /** The default implementations above may execute the function over a representation that stores
+      * equal rows once (replicated nested rows, sparse values, a LowCardinality dictionary) and map the
+      * result back onto the logical rows, which is sound only if the result is determined by the
+      * argument values. A function answering `false` is executed over materialized rows instead.
+      * See `IFunction::isDeterministicInScopeOfQuery` for the property itself.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
 private:
 
@@ -147,6 +164,9 @@ private:
 
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+    /// The function and every lambda passed to it are deterministic in the scope of the query.
+    bool isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const;
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -177,6 +197,19 @@ public:
 
     /// Get the main function name.
     virtual String getName() const = 0;
+
+    /** Contributes whatever decides the values this function produces beyond its name, its
+      * parameters and the types it was resolved for: a conversion, for instance, captures the
+      * settings that tell it how to parse. Anything that keys an expression by a hash - the query
+      * condition cache, the reuse of collected statistics - relies on this, so a function that
+      * captures a setting must override this and hash it, as the conversions, the comparisons,
+      * the `JSON*` functions, `JSONAllPaths*`, `JSONAllValues`, `has` / `indexOf` / `countEqual` and
+      * `empty` / `notEmpty` on `JSON`, `countMatches`, `formatQuery`, `toJSONString` and `visibleWidth` do. A
+      * function that does not is keyed by its name and types alone, and two sessions that differ in
+      * the setting it captured share one key (the query condition cache still tells them apart by
+      * `queryConditionCacheSettingsSalt`, the statistics cache does not).
+      */
+    virtual void updateHash(SipHash &) const {}
 
     const Array & getParameters() const final;
 
@@ -367,11 +400,12 @@ public:
         bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
-        /// Is true if the function is monotonic over the whole subset of the input range on which its
-        /// evaluation succeeds, but the evaluation may throw an exception for the rest of the range
-        /// (so it is weaker than is_always_monotonic, which requires the whole range to be mapped).
-        /// It is enough to push a comparison constant through a sorting key expression: stored key
-        /// values always belong to the subset on which the evaluation succeeds.
+        /// Is true if the function is monotonic over the whole subset of the input range on which it
+        /// is defined, while the rest of the range either throws an exception or wraps around (so it
+        /// is weaker than is_always_monotonic, which requires the whole range to be mapped).
+        /// It is enough to push a comparison constant through a sorting or partition key expression:
+        /// a constant outside of that subset is rejected by the guards in `applyFunctionChainToColumn`.
+        /// It is not enough to map a key range through the function, which needs `is_monotonic`.
         bool is_always_monotonic_where_defined = false;
     };
 
@@ -424,6 +458,7 @@ public:
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
+
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
@@ -573,6 +608,10 @@ public:
 
     virtual String getName() const = 0;
 
+    /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this interface
+    /// into one forwards to this.
+    virtual void updateHash(SipHash &) const {}
+
     /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
     ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting
     ///  getReturnTypeImpl sometimes; I didn't understand it. This only applies to conversion functions,
@@ -594,6 +633,11 @@ public:
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
+
+    /** True when a NULL argument makes `result_type` NULL. See `IExecutableFunction::isNullPropagating`:
+      * override this when the function handles NULLs itself but still propagates them.
+      */
+    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing

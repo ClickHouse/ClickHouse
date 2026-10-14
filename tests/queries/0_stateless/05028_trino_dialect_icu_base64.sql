@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest: the `normalize`, base64, and `word_stem` functions need the ICU, simdutf, and libstemmer libraries
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 SELECT '-- base64';

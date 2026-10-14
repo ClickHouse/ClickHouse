@@ -49,7 +49,7 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <base/defines.h>
 
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -615,7 +615,7 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
 
     size_t total_rows = 0;
     {
-        QueryPipeline pipeline(Pipe(exchange_lookup->createSource(header, stream_id)));
+        QueryPipeline pipeline(Pipe(exchange_lookup->createSource(header, stream_id, /*output_is_serialized=*/ false)));
         PullingPipelineExecutor executor(pipeline);
         Chunk chunk;
         while (executor.pull(chunk))
