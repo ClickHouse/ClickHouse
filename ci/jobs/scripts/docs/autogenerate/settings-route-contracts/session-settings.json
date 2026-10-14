@@ -76,6 +76,7 @@
     {"prefix":"restore_replace","mode":"token","target":"/reference/settings/session-settings/restore-replace"},
     {"prefix":"temporary_files","mode":"token","target":"/reference/settings/session-settings/temporary-files"},
     {"prefix":"webassembly_udf","mode":"token","target":"/reference/settings/session-settings/webassembly-udf"},
+    {"prefix":"weight_lowering","mode":"token","target":"/reference/settings/session-settings/weight-lowering"},
     {"prefix":"backup_restore","mode":"token","target":"/reference/settings/session-settings/backup-restore"},
     {"prefix":"count_distinct","mode":"token","target":"/reference/settings/session-settings/count-distinct"},
     {"prefix":"external_table","mode":"token","target":"/reference/settings/session-settings/external-table"},
