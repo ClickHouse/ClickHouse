@@ -4,7 +4,6 @@
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
-#include <Common/HashTable/HashTable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -15,6 +14,8 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
@@ -166,7 +167,11 @@ bool StorageJoin::optimize(
 void StorageJoin::optimizeUnlocked()
 {
     size_t current_bytes = join->getTotalByteCount();
-    join->shrinkStoredBlocksToFit();
+    {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join->shrinkStoredBlocksToFit();
+    }
 
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
@@ -187,7 +192,10 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = makeStorageJoinTable(table_join, getRightSampleBlock(), overwrite);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = makeStorageJoinTable(table_join, getRightSampleBlock(), overwrite);
+    }
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -224,7 +232,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addBlockToJoin(block, block.rows(), /* worker_id = */ 0, true);
+            new_data->addBlockToJoin(block, block.rows(), JoinBuildContext::serial());
             if (persistent)
                 backup_stream.write(block);
         }
@@ -233,7 +241,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    join = std::move(new_data);
+    {
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        join = std::move(new_data);
+    }
+    setCurrentQueryMemoryDriftExpected();
     increment = 1;
 
     if (persistent)
@@ -357,7 +369,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addBlockToJoin(block_to_insert, block_to_insert.rows(), /* worker_id = */ 0, true);
+    join->addBlockToJoin(block_to_insert, block_to_insert.rows(), JoinBuildContext::serial());
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -366,11 +378,26 @@ size_t StorageJoin::getSize(ContextPtr context) const
     return join->getTotalRowCount();
 }
 
+namespace
+{
+
+/// Whether a read of the table returns every stored row of a key rather than one row per key.
+constexpr bool readsAllRowsOfKey(JoinKind kind, JoinStrictness strictness)
+{
+    return strictness == JoinStrictness::All || (kind == JoinKind::Right && strictness != JoinStrictness::RightAny);
+}
+
+}
+
 std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
 {
     const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
-    return join->getTotalRowCount();
+    if (!readsAllRowsOfKey(kind, strictness))
+        return join->getTotalRowCount();
+
+    /// getTotalRowCount counts keys, so the rows of each key are summed here.
+    return join->getJoinTableRowCount();
 }
 
 std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const
@@ -556,6 +583,7 @@ void registerStorageJoin(StorageFactory & factory)
     factory.registerStorage(
         "Join",
         creator_fn,
+        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = has_builtin_fn,
@@ -656,6 +684,8 @@ Possible values:
 Default value: `1`.
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
+
+A [row policy](/reference/statements/create/row-policy) on a `Join`-engine table filters a plain `SELECT` from it, but a `JOIN` or `joinGet` reads the prepared hash table as is and cannot filter its rows, so while a policy applies to the table such queries fail with `ACCESS_DENIED`.
 
 The `Join`-engine allows to specify [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/reference/statements/select/index) query should have the same `join_use_nulls` value.
 
@@ -889,7 +919,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (!join->storedData().hasStoredColumns())
+        if (join->storedData().columns.empty())
             return {};
 
         /// The inner join's own maps stay empty; their variant only names the shape the table mirrors.
@@ -1001,37 +1031,12 @@ private:
 
         for (; it != end; ++it)
         {
-            if constexpr (STRICTNESS == JoinStrictness::RightAny)
-            {
-                fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::All)
-            {
-                fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Any)
-            {
-                if constexpr (KIND == JoinKind::Left || KIND == JoinKind::Inner)
-                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Semi)
-            {
-                if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Anti)
-            {
-                if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else
+            if constexpr (STRICTNESS == JoinStrictness::Asof)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
+            else if constexpr (readsAllRowsOfKey(KIND, STRICTNESS))
+                fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+            else
+                fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
 
             if (rows_added >= max_block_size)
             {
@@ -1056,7 +1061,7 @@ private:
 
         /// Note key32 and keys32 (likewise key64/keys64) share one map type, so the variant has to come
         /// from the enum: only the keysN ones pack several key columns into the map key.
-        using KeyGetter = typename KeyGetterForType<TYPE, std::remove_cvref_t<Map>, /*use_offset=*/false>::Type;
+        using KeyGetter = typename KeyGetterForType<TYPE, std::remove_cvref_t<Map>>::Type;
         if constexpr (PacksKeysIntoBlob<KeyGetter>)
         {
             Sizes clause_sizes;
@@ -1100,21 +1105,11 @@ private:
     template <typename Map>
     static void insertKey(MutableColumns & columns, const KeyLayout & layout, typename Map::const_iterator & it)
     {
-        /// A `FixedHashMapCell` has no key of its own: the key is the cell index, exposed as hash.
-        const auto key = [&]
-        {
-            using CellKey = std::remove_cvref_t<decltype(it->getKey())>;
-            if constexpr (std::is_same_v<CellKey, VoidKey>)
-                return static_cast<typename Map::key_type>(it.getHash());
-            else
-                return it->getKey();
-        }();
-
         if (layout.whole_key_pos)
-            columns[*layout.whole_key_pos]->insertData(rawData(key), rawSize(key));
+            columns[*layout.whole_key_pos]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
         else
             for (const auto & slot : layout.packed)
-                columns[slot.output_pos]->insertData(rawData(key) + slot.offset, slot.width);
+                columns[slot.output_pos]->insertData(rawData(it->getKey()) + slot.offset, slot.width);
     }
 
     template <typename Map>

@@ -1,10 +1,8 @@
 #include <Interpreters/SpillingHashJoin.h>
-#include <algorithm>
-
-#include <utility>
 
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -52,7 +50,7 @@ SpillingHashJoin::SpillingHashJoin(
 
 SpillingHashJoin::~SpillingHashJoin() = default;
 
-void SpillingHashJoin::tryConvertFillLanes(size_t worker_id)
+void SpillingHashJoin::tryConvertFillLanes(JoinBuildContext context)
 {
     chassert(grace_join);
 
@@ -74,14 +72,16 @@ void SpillingHashJoin::tryConvertFillLanes(size_t worker_id)
             Block block = partitioned_join->releaseNextFillLaneBlock(lane);
             if (block.empty())
                 break;
-            grace_join->addBlockToJoin(block, block.rows(), worker_id, /*check_limits=*/false);
+            grace_join->addBlockToJoin(block, block.rows(), context.callerChecksLimits());
         }
     }
 }
 
 std::string SpillingHashJoin::getName() const
 {
-    return fmt::format("SpillingHashJoin({})", partitioned_join->getName());
+    static constexpr auto name_format = "SpillingHashJoin({})";
+
+    return fmt::format(name_format, partitioned_join->getName());
 }
 
 bool SpillingHashJoin::supportParallelJoin() const
@@ -96,33 +96,48 @@ bool SpillingHashJoin::emitsSizedOutputBlocks() const
     return state.load(std::memory_order_acquire) == State::IN_MEMORY_JOIN && chosen_join && chosen_join->emitsSizedOutputBlocks();
 }
 
-bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits)
+size_t SpillingHashJoin::getMaxBuildThreads() const
+{
+    return max_threads;
+}
+
+std::string SpillingHashJoin::getAlgorithm() const
+{
+    if (state.load(std::memory_order_acquire) == State::GRACE_HASH_JOIN)
+        return toString(JoinAlgorithm::GRACE_HASH);
+
+    return toString(JoinAlgorithm::HASH);
+}
+
+bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context)
 {
     /// Fast path: already switched to GraceHashJoin (no lock needed).
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
-        /// Lend a hand with the conversion instead of waiting for it.
-        tryConvertFillLanes(worker_id);
-        return chosen_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
+        tryConvertFillLanes(context);
+        return chosen_join->addBlockToJoin(block, num_rows, context);
     }
 
     /// Checked BEFORE the inner `addBlockToJoin` runs. `predictedResidentBytes` already counts the
     /// table the barrier is going to build, so the switch fires while the resident data plus the
     /// conversion peak still fit under the configured cap.
     if (partitioned_join->predictedResidentBytes() >= max_bytes_before_external_join)
-        switchToGraceHashJoin(worker_id);
+        switchToGraceHashJoin(context);
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
-        return chosen_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
+    {
+        tryConvertFillLanes(context);
+        return chosen_join->addBlockToJoin(block, num_rows, context);
+    }
 
     /// Shared so build threads do not serialize, but still excludes them while it is drained.
     std::shared_lock lock(switch_mutex);
 
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
-        return chosen_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
+        return chosen_join->addBlockToJoin(block, num_rows, context);
 
-    return partitioned_join->addBlockToJoin(block, num_rows, worker_id, check_limits);
+    return partitioned_join->addBlockToJoin(block, num_rows, context);
 }
 
 void SpillingHashJoin::createGraceJoin(size_t initial_buckets_hint)
@@ -139,10 +154,9 @@ void SpillingHashJoin::createGraceJoin(size_t initial_buckets_hint)
         max_threads);
 
     grace_join->initialize(*left_sample_block);
-    chosen_join = grace_join;
 }
 
-void SpillingHashJoin::switchToGraceHashJoin(size_t worker_id, bool spill_immediately)
+void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately)
 {
     {
         std::unique_lock lock(switch_mutex);
@@ -161,12 +175,15 @@ void SpillingHashJoin::switchToGraceHashJoin(size_t worker_id, bool spill_immedi
 
         createGraceJoin();
         if (spill_immediately)
-            grace_join->requestSpill();
+            grace_join->requestSpill(context);
+        chosen_join = grace_join;
 
         state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
+        QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
 
-        /// Under the lock: a build thread that got in before the state flipped is still inside
-        /// the in-memory join. Freeing here also drops the transients before the conversion peak.
+        /// A build thread that got in before the state flipped is still inside the in-memory join,
+        /// which is why this runs under the lock. Freeing here also drops the table scratch before
+        /// the conversion peak.
         partitioned_join->dropFillAuxiliary();
 
         /// A single fill thread has no lanes: its rows sit in the stored blocks. This thread is the
@@ -175,43 +192,11 @@ void SpillingHashJoin::switchToGraceHashJoin(size_t worker_id, bool spill_immedi
         {
             partitioned_join->beginStoredBlockDrain();
             if (partitioned_join->getTotalRowCount() > 0)
-                partitioned_join->drainStoredBlocksInto(*grace_join);
+                partitioned_join->drainStoredBlocksInto(*grace_join, context);
         }
     }
 
-    tryConvertFillLanes(worker_id);
-}
-
-size_t SpillingHashJoin::getSpillableBytes() const
-{
-    switch (state.load(std::memory_order_acquire))
-    {
-        case State::COLLECTING:
-            /// Switching to GraceHashJoin puts what was collected on disk, except the one bucket it keeps
-            /// in memory. An upper bound is fine here, the scheduler only ranks candidates by it.
-            return partitioned_join->getTotalByteCount();
-        case State::GRACE_HASH_JOIN:
-            return chosen_join->getSpillableBytes();
-        case State::IN_MEMORY_JOIN:
-            /// Build phase finished in memory, nothing left to spill.
-            return 0;
-    }
-}
-
-void SpillingHashJoin::requestSpill()
-{
-    switch (state.load(std::memory_order_acquire))
-    {
-        case State::COLLECTING:
-            /// `switchToGraceHashJoin` re-checks the state, so a concurrent switch is harmless.
-            switchToGraceHashJoin(/*worker_id=*/0, /*spill_immediately=*/true);
-            return;
-        case State::GRACE_HASH_JOIN:
-            chosen_join->requestSpill();
-            return;
-        case State::IN_MEMORY_JOIN:
-            return;
-    }
+    tryConvertFillLanes(context);
 }
 
 void SpillingHashJoin::onBuildPhaseFinish()
@@ -224,7 +209,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
         if (partitioned_join->predictedResidentBytes(/*at_barrier=*/true) >= max_bytes_before_external_join)
         {
-            switchToGraceHashJoin(/* worker_id = */ 0);
+            switchToGraceHashJoin(JoinBuildContext::serial());
         }
         else
         {
@@ -253,6 +238,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
                     buckets_hint);
 
                 createGraceJoin(buckets_hint);
+                chosen_join = grace_join;
 
                 /// The barrier already consumed every fill lane, so a late helper finds nothing to
                 /// convert. It must still find a `grace_join` to convert into.
@@ -260,8 +246,9 @@ void SpillingHashJoin::onBuildPhaseFinish()
 
                 partitioned_join->dropFillAuxiliary();
                 partitioned_join->beginStoredBlockDrain();
-                partitioned_join->drainStoredBlocksInto(*chosen_join);
+                partitioned_join->drainStoredBlocksInto(*chosen_join, JoinBuildContext::serial());
                 state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
+                QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
             }
             else
             {
@@ -282,6 +269,38 @@ void SpillingHashJoin::onBuildPhaseFinish()
         return;
 
     chosen_join->onBuildPhaseFinish();
+}
+
+size_t SpillingHashJoin::getSpillableBytes() const
+{
+    switch (state.load(std::memory_order_acquire))
+    {
+        case State::COLLECTING:
+            /// Switching to GraceHashJoin puts what was collected on disk, except the one bucket it keeps
+            /// in memory. An upper bound is fine here, the scheduler only ranks candidates by it.
+            return partitioned_join->getTotalByteCount();
+        case State::GRACE_HASH_JOIN:
+            return chosen_join->getSpillableBytes();
+        case State::IN_MEMORY_JOIN:
+            /// Build phase finished in memory, nothing left to spill.
+            return 0;
+    }
+}
+
+void SpillingHashJoin::requestSpill(JoinBuildContext context)
+{
+    switch (state.load(std::memory_order_acquire))
+    {
+        case State::COLLECTING:
+            /// `switchToGraceHashJoin` re-checks the state, so a concurrent switch is harmless.
+            switchToGraceHashJoin(context, /*spill_immediately=*/true);
+            return;
+        case State::GRACE_HASH_JOIN:
+            chosen_join->requestSpill(context);
+            return;
+        case State::IN_MEMORY_JOIN:
+            return;
+    }
 }
 
 void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)
@@ -321,7 +340,7 @@ void SpillingHashJoin::initialize(const Block & sample_block)
 JoinResultPtr SpillingHashJoin::joinBlock(Block block)
 {
     /// During header computation (transformHeader), `joinBlock` is called with an empty block
-    /// before any data is added. Delegate to the in-memory join in COLLECTING state.
+    /// before any data is added. Delegate to the appropriate join in COLLECTING state.
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
         return partitioned_join->joinBlock(std::move(block));
 

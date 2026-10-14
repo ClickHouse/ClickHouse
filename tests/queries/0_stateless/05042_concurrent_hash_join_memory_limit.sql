@@ -8,6 +8,7 @@
 -- `parallel_hash` are one algorithm and behave alike.
 
 SET max_threads = 8;
+SET join_algorithm = 'hash';
 
 -- Above `parallel_hash_join_threshold` a hot run's row estimate keeps the parallel build; the limit is
 -- about the plan-time cost of that build, whatever the estimate says.

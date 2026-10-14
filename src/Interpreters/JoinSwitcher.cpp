@@ -1,51 +1,13 @@
-#include <algorithm>
-#include <memory>
-#include <mutex>
-#include <shared_mutex>
-
+#include <Common/typeid_cast.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
-#include <Common/Exception.h>
-#include <Common/FailPoint.h>
+#include <Interpreters/JoinUtils.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-extern const char join_switcher_throw_after_hash_release[];
-}
-
-namespace
-{
-
-/// `MergeJoin::joinBlock` is not concurrent. `supportParallelJoin` is decided at plan time.
-/// After a drain the pipeline may still probe from several `JoiningTransform`s.
-class ExclusiveJoinResult : public IJoinResult
-{
-public:
-    ExclusiveJoinResult(std::unique_lock<SharedMutex> lock_, JoinResultPtr inner_)
-        : lock(std::move(lock_))
-        , inner(std::move(inner_))
-    {
-    }
-
-    JoinResultBlock next() override { return inner->next(); }
-
-private:
-    std::unique_lock<SharedMutex> lock;
-    JoinResultPtr inner;
-};
-
-}
 
 JoinSwitcher::JoinSwitcher(
     std::shared_ptr<TableJoin> table_join_,
@@ -55,79 +17,50 @@ JoinSwitcher::JoinSwitcher(
     size_t max_threads_,
     std::optional<size_t> build_rows_hint_)
     : limits(table_join_->sizeLimits())
+    , switched(false)
     , table_join(table_join_)
     , right_sample_block(right_sample_block_->cloneEmpty())
-    , max_threads(std::max<size_t>(1, max_threads_))
 {
     /// No memory budget: the limits of `table_join` decide the switch, and there is no join to spill into.
     join = std::make_shared<PartitionedHashJoin>(
         table_join,
         right_sample_block_,
-        max_threads,
+        std::max<size_t>(1, max_threads_),
         any_take_last_row_,
         stats_collecting_params_,
         /*max_bytes_before_external_join_=*/0,
         build_rows_hint_);
-    supports_parallel_join = join->supportParallelJoin();
-    supports_parallel_non_joined_blocks_processing = join->supportParallelNonJoinedBlocksProcessing();
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();
 }
 
-bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool)
+bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context)
 {
-    if (switched.load(std::memory_order_acquire))
-    {
-        std::unique_lock lock(switch_mutex);
-        return join->addBlockToJoin(block, num_rows, worker_id, true);
-    }
+    std::lock_guard lock(switch_mutex);
 
-    bool over_limit = false;
-    {
-        std::shared_lock lock(switch_mutex);
+    /// `MergeJoin` checks no limits of its own, so it does not matter whether `context` asks for them.
+    if (switched)
+        return join->addBlockToJoin(block, num_rows, context);
 
-        if (switched.load(std::memory_order_relaxed))
-        {
-            lock.unlock();
-            std::unique_lock exclusive(switch_mutex);
-            return join->addBlockToJoin(block, num_rows, worker_id, true);
-        }
+    /// The in-memory join, with the limits checked here instead
 
-        join->addBlockToJoin(block, num_rows, worker_id, false);
-        const size_t rows = assert_cast<const PartitionedHashJoin &>(*join).rowCountForLimit(limits.max_rows);
-        over_limit = !limits.softCheck(rows, join->getTotalByteCount());
-    }
+    join->addBlockToJoin(block, num_rows, context.callerChecksLimits());
+    size_t rows = assert_cast<const PartitionedHashJoin &>(*join).rowCountForLimit(limits.max_rows);
+    size_t bytes = join->getTotalByteCount();
 
-    if (!over_limit)
-        return true;
+    if (!limits.softCheck(rows, bytes))
+        return switchJoin(context);
 
-    std::unique_lock lock(switch_mutex);
-    if (switched.load(std::memory_order_relaxed))
-        return true;
-    return switchJoin();
-}
-
-JoinResultPtr JoinSwitcher::joinBlock(Block block)
-{
-    if (!switched.load(std::memory_order_acquire))
-    {
-        std::shared_lock lock(switch_mutex);
-        if (!switched.load(std::memory_order_relaxed))
-            return join->joinBlock(std::move(block));
-    }
-
-    std::unique_lock lock(switch_mutex);
-    return std::make_unique<ExclusiveJoinResult>(std::move(lock), join->joinBlock(std::move(block)));
+    return true;
 }
 
 void JoinSwitcher::onBuildPhaseFinish()
 {
-    std::shared_lock lock(switch_mutex);
     join->onBuildPhaseFinish();
 }
 
-bool JoinSwitcher::switchJoin()
+bool JoinSwitcher::switchJoin(JoinBuildContext context)
 {
     LOG_DEBUG(
         getLogger("JoinSwitcher"),
@@ -136,24 +69,18 @@ bool JoinSwitcher::switchJoin()
         join->getTotalByteCount(),
         join->getTotalRowCount());
 
-    /// Construct first so a throw here leaves `join` as the live in-memory join with `switched == false`.
-    auto merge_join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
+    BlocksList right_blocks = assert_cast<PartitionedHashJoin *>(join.get())->releaseJoinedBlocks(true);
 
-    /// Keep the old table alive for the drain. Publish `MergeJoin` before releasing so a throw
-    /// cannot send waiters back onto a drained HashJoin.
-    auto old_join = std::move(join);
-    switched.store(true, std::memory_order_release);
-    join = merge_join;
-
-    BlocksList right_blocks = assert_cast<PartitionedHashJoin *>(old_join.get())->releaseJoinedBlocks(/*restructure=*/true);
-
-    fiu_do_on(FailPoints::join_switcher_throw_after_hash_release, {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the in-memory join's data was released");
-    });
+    /// Destroy old join & create new one.
+    join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
 
     bool success = true;
     for (const Block & saved_block : right_blocks)
-        success = success && merge_join->addBlockToJoin(saved_block, saved_block.rows(), /* worker_id = */ 0, true);
+        success = success && join->addBlockToJoin(saved_block, saved_block.rows(), context);
+
+    switched = true;
+
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::PARTIAL_MERGE);
 
     return success;
 }

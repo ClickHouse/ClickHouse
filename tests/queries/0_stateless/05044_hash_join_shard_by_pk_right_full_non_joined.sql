@@ -13,7 +13,7 @@ SET optimize_read_in_order = 1;
 SET join_algorithm = 'hash';
 SET query_plan_join_shard_by_pk_ranges = 1;
 SET parallel_non_joined_rows_processing = 1;
--- Force the parallel layout on the original join so the missing override would drop unmatched rows.
+-- Without sharding, threshold 0 gives the join the parallel layout.
 SET parallel_hash_join_threshold = 0;
 SET max_threads = 4;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;

@@ -1,7 +1,7 @@
 -- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas
 -- no sanitizers -- their allocator overhead is not what a memory limit this small should measure
 
-SET max_threads = 256, join_algorithm = 'parallel_hash';
+SET max_threads = 256, join_algorithm = 'hash';
 
 -- Above `parallel_hash_join_threshold` a hot run's row estimate keeps the parallel build; the limit is
 -- about the plan-time cost of that build, whatever the estimate says.

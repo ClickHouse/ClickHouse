@@ -6,27 +6,15 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'ログ', 'インテグレーション', 'アプリケーション監視']
 ---
 
-このガイドで対応している項目:
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✖️ ログ</td>
-      <td className="pe-2">✖️ ️️メトリクス</td>
-      <td className="pe-2">✅ トレース</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['traces']} />
 
 *ログを ClickStack に送信するには、[OpenTelemetry collector](/ja/clickstack/ingesting-data/collector) 経由で送信してください。*
 
-<div id="getting-started">
-  ## はじめに
-</div>
+## はじめに {#getting-started}
 
-<div id="install-otel-packages">
-  ### OpenTelemetry パッケージをインストールする
-</div>
+### OpenTelemetry パッケージをインストールする {#install-otel-packages}
 
 次のコマンドで OpenTelemetry パッケージをインストールします。
 
@@ -34,9 +22,7 @@ keywords: ['clickstack', 'sdk', 'ログ', 'インテグレーション', 'アプ
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-<div id="configure-otel-logger-formatter">
-  ### OpenTelemetry + ログ用フォーマッタを設定する
-</div>
+### OpenTelemetry + ログ用フォーマッタを設定する {#configure-otel-logger-formatter}
 
 次に、OpenTelemetry のトレーシング用インストルメンテーションを初期化し、
 Rails ロガーのログメッセージ用フォーマッタを設定して、ログが自動的に
@@ -77,26 +63,24 @@ Rails.application.configure do
 end
 ```
 
-<div id="configure-environment-variables">
-  ### 環境変数を設定する
-</div>
+### 環境変数を設定する {#configure-environment-variables}
 
 続いて、OpenTelemetry Collector 経由で ClickStack にテレメトリーを送信するため、シェルで以下の環境変数を設定する必要があります。
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>

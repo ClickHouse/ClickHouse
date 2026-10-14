@@ -30,113 +30,108 @@ INSERT INTO t_asof_right
            concat('ar', toString(number)) AS tag
     FROM numbers(20);
 
+SET join_algorithm = 'hash';
 SET max_threads = 4;
-SET parallel_hash_join_threshold = 1;
 SET query_plan_join_swap_table = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
+SET query_plan_optimize_join_order_limit = 10;
 
 SELECT '--- INNER nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
+    SETTINGS parallel_hash_join_threshold=1000000000
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+    SETTINGS parallel_hash_join_threshold=0
+) SETTINGS log_comment = '04107_inner';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
+    SETTINGS parallel_hash_join_threshold=0
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+    SETTINGS parallel_hash_join_threshold=1000000000
+) SETTINGS log_comment = '04107_inner_reverse';
 
 SELECT '--- LEFT nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
+    SETTINGS parallel_hash_join_threshold=1000000000
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+    SETTINGS parallel_hash_join_threshold=0
+) SETTINGS log_comment = '04107_left';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
+    SETTINGS parallel_hash_join_threshold=0
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l LEFT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+    SETTINGS parallel_hash_join_threshold=1000000000
+) SETTINGS log_comment = '04107_left_reverse';
 
 SELECT '--- RIGHT nullable right (exercises NotJoinedHash partition iteration) ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
+    SETTINGS parallel_hash_join_threshold=1000000000
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+    SETTINGS parallel_hash_join_threshold=0
+) SETTINGS log_comment = '04107_right';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
+    SETTINGS parallel_hash_join_threshold=0
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+    SETTINGS parallel_hash_join_threshold=1000000000
+) SETTINGS log_comment = '04107_right_reverse';
 
 SELECT '--- FULL nullable right ---';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
+    SETTINGS parallel_hash_join_threshold=1000000000
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+    SETTINGS parallel_hash_join_threshold=0
+) SETTINGS log_comment = '04107_full';
 SELECT count() FROM (
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
+    SETTINGS parallel_hash_join_threshold=0
     EXCEPT
     SELECT l.k, l.v, r.k, r.v FROM t_left l FULL JOIN t_right_nullable r ON l.k = r.k
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+    SETTINGS parallel_hash_join_threshold=1000000000
+) SETTINGS log_comment = '04107_full_reverse';
 
 SELECT '--- ASOF LEFT nullable timestamp ---';
-SELECT count() FROM (
-    SELECT l.k, l.ts, l.v, r.ts, r.tag
-    FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-    EXCEPT
-    SELECT l.k, l.ts, l.v, r.ts, r.tag
-    FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
-SELECT count() FROM (
-    SELECT l.k, l.ts, l.v, r.ts, r.tag
-    FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
-    SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-    EXCEPT
-    SELECT l.k, l.ts, l.v, r.ts, r.tag
-    FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
-    SETTINGS join_algorithm='hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0
-);
+CREATE TABLE asof_serial ENGINE = Memory AS
+SELECT l.k AS k, l.ts AS ts, l.v AS v, r.ts AS r_ts, r.tag AS tag
+FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
+SETTINGS max_threads=1, log_comment='04107_asof_left_serial';
+CREATE TABLE asof_parallel ENGINE = Memory AS
+SELECT l.k AS k, l.ts AS ts, l.v AS v, r.ts AS r_ts, r.tag AS tag
+FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
+SETTINGS parallel_hash_join_threshold=0, log_comment='04107_asof_left_parallel';
+SELECT count() FROM (SELECT * FROM asof_serial EXCEPT SELECT * FROM asof_parallel);
+SELECT count() FROM (SELECT * FROM asof_parallel EXCEPT SELECT * FROM asof_serial);
 
-SELECT '--- exact rows: INNER ---';
+SELECT '--- parallel_hash exact rows: INNER ---';
 SELECT l.k, l.v, r.k, r.v
 FROM t_left l INNER JOIN t_right_nullable r ON l.k = r.k
 ORDER BY l.k, r.v
-SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0;
+SETTINGS parallel_hash_join_threshold=0;
 
-SELECT '--- exact rows: RIGHT (right-only rows have NULL/empty left) ---';
+SELECT '--- parallel_hash exact rows: RIGHT (right-only rows have NULL/empty left) ---';
 SELECT l.k, l.v, r.k, r.v
 FROM t_left l RIGHT JOIN t_right_nullable r ON l.k = r.k
 ORDER BY r.k NULLS LAST, r.v
-SETTINGS join_algorithm='parallel_hash', join_use_nulls=1, parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0;
+SETTINGS join_use_nulls=1, parallel_hash_join_threshold=0;
 
-SELECT '--- exact rows: ASOF (rows where r.ts was NULL must NOT appear) ---';
+SELECT '--- parallel_hash exact rows: ASOF (rows where r.ts was NULL must NOT appear) ---';
 SELECT l.k, l.ts, r.ts, r.tag
 FROM t_asof_left l ASOF LEFT JOIN t_asof_right r ON l.k = r.k AND l.ts >= r.ts
 ORDER BY l.k, l.ts
-SETTINGS join_algorithm='parallel_hash', parallel_hash_join_threshold=1, max_threads=4, query_plan_join_swap_table=0, query_plan_convert_outer_join_to_inner_join=0;
+SETTINGS parallel_hash_join_threshold=0;
 
+DROP TABLE asof_serial;
+DROP TABLE asof_parallel;
 DROP TABLE t_left;
 DROP TABLE t_right_nullable;
 DROP TABLE t_asof_left;

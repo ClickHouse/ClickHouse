@@ -10,7 +10,7 @@ insert into spill_scheduler_04695_3 select cast(rand() as String) as k, cast(ran
 
 set max_threads=1;
 set join_algorithm='hash';
-set max_memory_usage=314572800;
+set max_memory_usage=178257920;
 set enable_parallel_replicas=0; -- parallel replicas distribute data across nodes, reducing per-node memory and preventing the expected OOM
 set grace_hash_join_initial_buckets=1; -- more initial buckets split the right side, reducing per-bucket memory and preventing the expected OOM
 set collect_hash_table_stats_during_joins=0;

@@ -16,7 +16,7 @@
 #include <Core/Block_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -168,6 +168,8 @@ public:
 
     std::string getName() const override { return "HashJoin"; }
 
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::HASH); }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     /// The left side is streamed through once, each row emitted in input order.
@@ -177,7 +179,7 @@ public:
       * Returns false, if some limit was exceeded and you should not insert more data.
       * The build runs on one thread, so `worker_id` is not read.
       */
-    bool addBlockToJoin(const Block & source_block_, size_t num_rows, size_t worker_id, bool check_limits) override;
+    bool addBlockToJoin(const Block & source_block_, size_t num_rows, JoinBuildContext context) override;
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -529,7 +531,7 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks(bool restructure);
+    BlocksList releaseJoinedBlocks(bool restructure = false);
     /// One saved right block back in the structure of the right input, for an algorithm that takes
     /// the blocks over: the columns of `right_sample_block` by name, their nullability restored.
     static Block restoreRightBlock(const Block & saved_block, const Block & right_sample_block);
@@ -697,7 +699,6 @@ private:
 
     void reinitUsedFlags();
 
-    bool hasNonJoinedRows() const;
     bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;
