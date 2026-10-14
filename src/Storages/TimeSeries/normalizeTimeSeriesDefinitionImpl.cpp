@@ -140,52 +140,34 @@ namespace
             ? TimeSeriesColumnNames::MetricFamilyName : TimeSeriesColumnNames::MetricFamily;
     }
 
-    /// Materializes the `uuid_type_version` setting into the declared inner-column types: a bare `UUID` becomes
-    /// `UUID2` when the setting is 2 (mirroring how the outer columns are materialized in
-    /// InterpreterCreateQuery). Rewriting the AST here - before the types are resolved and before the inner
-    /// tables are created - keeps the samples and tags inner tables consistent about the `id` type and makes
-    /// any later normalization pass read the already-materialized types.
-    void materializeUUIDTypeVersionInInnerColumns(ASTCreateQuery & create_query, ViewTarget::Kind kind, UInt64 uuid_type_version)
+    /// Materializes the `uuid_type_version` setting into the declared inner columns and inner engine: a bare `UUID`
+    /// becomes `UUID2` when the setting is 2 (mirroring how the outer columns are materialized in
+    /// InterpreterCreateQuery), both in the declared types and in the persisted expressions (defaults, codecs,
+    /// indices, engine keys) that name a type. Rewriting the AST here - before the types are resolved, before the
+    /// `AS <other_table>` clause is applied, and before the inner tables are created - keeps the samples and tags inner
+    /// tables consistent about the `id` type and makes any later normalization pass read the already-materialized types.
+    void materializeUUIDTypeVersionInInnerTarget(ASTCreateQuery & create_query, ViewTarget::Kind kind, UInt64 uuid_type_version)
     {
-        auto * inner_columns = create_query.getTargetInnerColumns(kind);
-        if (!inner_columns || !inner_columns->columns)
-            return;
-        for (auto & column : inner_columns->columns->children)
-        {
-            if (auto * decl = column->as<ASTColumnDeclaration>())
-            {
-                if (auto type = decl->getType())
-                    decl->setType(applyUUIDTypeVersion(type, uuid_type_version));
-            }
-        }
+        if (auto * inner_columns = create_query.getTargetInnerColumns(kind); inner_columns && inner_columns->columns)
+            applyUUIDTypeVersionInPlace(*inner_columns, uuid_type_version);
+        if (auto * inner_engine = create_query.getTargetInnerEngine(kind))
+            applyUUIDTypeVersionInPlace(*inner_engine, uuid_type_version);
     }
 
-    /// Rewrites a bare `UUID` type name in an AST subtree to its explicit historical alias `UUID1`.
+    /// Rewrites a bare `UUID` type name in an AST subtree to its explicit historical alias `UUID1`, including the type
+    /// names in string literals of persisted expressions (such as `CAST(x, 'UUID')` in a default).
     /// Called only under `uuid_type_version = 2`, after the setting has been materialized into the
-    /// declared inner columns and after the missing ones have been generated from the resolved types: every
+    /// declared inner columns and engines and after the missing ones have been generated from the resolved types: every
     /// bare `UUID` remaining at that point denotes a type that must stay historical (an explicitly declared
-    /// `UUID1`, a column generated from such an id, or a type copied from the table of the `AS <other_table>` clause).
-    /// Spelling it explicitly makes the normalized query stable under a second materialization pass -
-    /// `normalizeTimeSeriesDefinition` runs again over the already-normalized query (see `StorageTimeSeries`) and
-    /// `InterpreterCreateQuery` materializes the setting over the whole `CREATE` AST afterwards - which would
-    /// otherwise turn a generated `UUID` into `UUID2` and make the samples and tags inner tables disagree about the `id` type.
+    /// `UUID1`, a column generated from such an id, or a type or an expression copied from the table of the
+    /// `AS <other_table>` clause). Spelling it explicitly makes the normalized query stable under a second
+    /// materialization pass - `normalizeTimeSeriesDefinition` runs again over the already-normalized query (see
+    /// `StorageTimeSeries`) and `InterpreterCreateQuery` materializes the setting over the whole `CREATE` AST
+    /// afterwards - which would otherwise turn a generated `UUID` into `UUID2`, make the samples and tags inner tables
+    /// disagree about the `id` type, and change the semantics of the expressions copied from the old table.
     bool pinHistoricalUUIDTypeName(IAST & ast)
     {
-        bool pinned = false;
-
-        if (auto * data_type = ast.as<ASTDataType>(); data_type && equalsCaseInsensitive(data_type->name, "UUID"))
-        {
-            data_type->name = "UUID1";
-            pinned = true;
-        }
-
-        for (const auto & child : ast.children)
-        {
-            if (child)
-                pinned |= pinHistoricalUUIDTypeName(*child);
-        }
-
-        return pinned;
+        return pinHistoricalUUIDTypeNamesInPlace(ast);
     }
 
     /// Applies `rewrite` to the type named by the `id_type` setting of the SETTINGS clause, which is stored as a string.
@@ -2198,7 +2180,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     if (materialize_uuid2)
     {
         for (auto kind : getTargetKinds())
-            materializeUUIDTypeVersionInInnerColumns(create_query, kind, params.uuid_type_version);
+            materializeUUIDTypeVersionInInnerTarget(create_query, kind, params.uuid_type_version);
         rewriteIdTypeSetting(create_query, [&](IAST & type_ast) { return applyUUIDTypeVersionInPlace(type_ast, params.uuid_type_version); });
         if (create_query.storage && create_query.storage->settings)
             materializeUUIDTypeVersionInIdGeneratorSetting(create_query.storage->settings->changes, params.uuid_type_version);
@@ -2311,6 +2293,13 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 if (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_TAGS_TEXT_INDEX
                     && normalizeInnerIndices(*inner_columns, *inner_engine, kind))
                     create_query.setTargetInnerColumns(kind, inner_columns);
+
+                /// The same for the inner engine: its keys and settings can be copied from the old table.
+                if (materialize_uuid2)
+                {
+                    if (auto * stored_inner_engine = create_query.getTargetInnerEngine(kind))
+                        pinHistoricalUUIDTypeName(*stored_inner_engine);
+                }
             }
         }
 

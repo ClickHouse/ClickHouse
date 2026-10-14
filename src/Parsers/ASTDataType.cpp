@@ -57,7 +57,7 @@ bool isBareUUIDTypeName(const String & name)
     return equalsCaseInsensitiveString(name, "uuid");
 }
 
-bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position);
+bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std::string_view replacement);
 bool foldConstantStringExpression(ASTPtr & argument);
 
 /// Position of the type name argument of a function, or `last_type_name_argument` when the type name is
@@ -99,7 +99,7 @@ constexpr TypeNameArgument type_name_arguments[]
     {"JSONExtractKeysAndValuesCaseInsensitive", last_type_name_argument},
 };
 
-bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)
+bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function, std::string_view replacement)
 {
     if (!function.arguments)
         return false;
@@ -150,7 +150,7 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)
     if (!ParserDataType{}.parse(pos, type_ast, expected) || !type_ast || pos->type != TokenType::EndOfStream)
         return false;
 
-    if (!substituteBareUUIDInPlace(*type_ast, false))
+    if (!substituteBareUUIDInPlace(*type_ast, false, replacement))
         return false;
 
     type_literal->value = type_ast->formatWithSecretsOneLine();
@@ -165,7 +165,7 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)
   * `parseColumnsListFromString`. Materializing the setting into the literal freezes the persisted schema, the
   * same way it is frozen for a regular column declaration list.
   */
-bool substituteBareUUIDInColumnsListLiteral(ASTLiteral & literal)
+bool substituteBareUUIDInColumnsListLiteral(ASTLiteral & literal, std::string_view replacement)
 {
     if (literal.value.getType() != Field::Types::String)
         return false;
@@ -185,7 +185,7 @@ bool substituteBareUUIDInColumnsListLiteral(ASTLiteral & literal)
         || pos->type != TokenType::EndOfStream)
         return false;
 
-    if (!substituteBareUUIDInPlace(*columns_list, false))
+    if (!substituteBareUUIDInPlace(*columns_list, false, replacement))
         return false;
 
     literal.value = columns_list->formatWithSecretsOneLine();
@@ -427,18 +427,18 @@ bool foldConstantStringExpression(ASTPtr & argument)
 
 /** Rewrite the schema string of a table function in a persisted definition.
   */
-bool substituteBareUUIDInTableFunction(ASTFunction & table_function)
+bool substituteBareUUIDInTableFunction(ASTFunction & table_function, std::string_view replacement)
 {
     bool substituted = false;
     for (auto * structure_argument : getTableFunctionStructureArguments(table_function))
     {
         if (structure_argument && foldConstantStringExpression(*structure_argument))
-            substituted |= substituteBareUUIDInColumnsListLiteral(*(*structure_argument)->as<ASTLiteral>());
+            substituted |= substituteBareUUIDInColumnsListLiteral(*(*structure_argument)->as<ASTLiteral>(), replacement);
     }
     return substituted;
 }
 
-bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function)
+bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function, std::string_view replacement)
 {
     if (!function.arguments)
         return false;
@@ -452,7 +452,7 @@ bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function)
             return false;
         if (!foldConstantStringExpression(arguments[candidate.argument_index]))
             return false;
-        return substituteBareUUIDInColumnsListLiteral(*arguments[candidate.argument_index]->as<ASTLiteral>());
+        return substituteBareUUIDInColumnsListLiteral(*arguments[candidate.argument_index]->as<ASTLiteral>(), replacement);
     }
 
     return false;
@@ -495,24 +495,27 @@ const ASTPtr * getNamedTableFunctionArgument(const ASTPtr & argument)
   * scalar function, most notably `format`, which is both `format(format_name, structure, data)` and the string
   * formatting function `format(pattern, ...)`. Rewriting by name alone would corrupt the data argument of a
   * persisted `SELECT format('{} {}', 'id UUID', 'x')`.
+  *
+  * `replacement` is the explicit type name a bare `UUID` is rewritten to: `UUID2` to materialize
+  * `uuid_type_version = 2`, or `UUID1` to pin the historical type.
   */
-bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position)
+bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std::string_view replacement)
 {
     bool substituted = false;
 
     if (auto * data_type = ast.as<ASTDataType>(); data_type && isBareUUIDTypeName(data_type->name))
     {
-        data_type->name = "UUID2";
+        data_type->name = String(replacement);
         substituted = true;
     }
 
     auto * function = ast.as<ASTFunction>();
     if (function)
     {
-        substituted |= substituteBareUUIDInTypeNameLiteral(*function);
-        substituted |= substituteBareUUIDInColumnsListLiteralArgument(*function);
+        substituted |= substituteBareUUIDInTypeNameLiteral(*function, replacement);
+        substituted |= substituteBareUUIDInColumnsListLiteralArgument(*function, replacement);
         if (in_table_function_position)
-            substituted |= substituteBareUUIDInTableFunction(*function);
+            substituted |= substituteBareUUIDInTableFunction(*function, replacement);
     }
 
     /// A table function is recognized by its position rather than by its name, so that the schema string of any
@@ -545,7 +548,7 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position)
 
         if (!table_function_argument_index || child != function->arguments)
         {
-            substituted |= substituteBareUUIDInPlace(*child, child.get() == table_function_child);
+            substituted |= substituteBareUUIDInPlace(*child, child.get() == table_function_child, replacement);
             continue;
         }
 
@@ -558,12 +561,12 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position)
             if (const auto * value = getNamedTableFunctionArgument(arguments[i]))
             {
                 const auto & equals_arguments = arguments[i]->as<ASTFunction &>().arguments->children;
-                substituted |= substituteBareUUIDInPlace(*equals_arguments[0], false);
-                substituted |= substituteBareUUIDInPlace(**value, true);
+                substituted |= substituteBareUUIDInPlace(*equals_arguments[0], false, replacement);
+                substituted |= substituteBareUUIDInPlace(**value, true, replacement);
             }
             else
             {
-                substituted |= substituteBareUUIDInPlace(*arguments[i], i == *table_function_argument_index);
+                substituted |= substituteBareUUIDInPlace(*arguments[i], i == *table_function_argument_index, replacement);
             }
         }
     }
@@ -579,7 +582,7 @@ ASTPtr applyUUIDTypeVersion(const ASTPtr & type_ast, UInt64 uuid_type_version)
         return type_ast;
 
     auto cloned = type_ast->clone();
-    if (substituteBareUUIDInPlace(*cloned, false))
+    if (substituteBareUUIDInPlace(*cloned, false, "UUID2"))
         return cloned;
     return type_ast;
 }
@@ -589,7 +592,12 @@ bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version)
     if (uuid_type_version != 2)
         return false;
 
-    return substituteBareUUIDInPlace(ast, false);
+    return substituteBareUUIDInPlace(ast, false, "UUID2");
+}
+
+bool pinHistoricalUUIDTypeNamesInPlace(IAST & ast)
+{
+    return substituteBareUUIDInPlace(ast, false, "UUID1");
 }
 
 String ASTDataType::getID(char delim) const

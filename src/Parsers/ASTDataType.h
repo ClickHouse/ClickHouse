@@ -51,6 +51,15 @@ ASTPtr applyUUIDTypeVersion(const ASTPtr & type_ast, UInt64 uuid_type_version);
   */
 bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version);
 
+/** Rewrites every bare `UUID` type name in an AST subtree to its explicit historical alias `UUID1`, in the same
+  * places `applyUUIDTypeVersionInPlace` rewrites it to `UUID2` (data types and type names in string literals).
+  *
+  * Used for a part of a definition that must keep the historical type (e.g. one copied from an existing table)
+  * when the rest of the query is materialized with `uuid_type_version = 2`: a pinned name is not affected by it.
+  * Returns true if anything was substituted.
+  */
+bool pinHistoricalUUIDTypeNamesInPlace(IAST & ast);
+
 template <typename... Args>
 boost::intrusive_ptr<ASTDataType> makeASTDataType(const String & name, Args &&... args)
 {
