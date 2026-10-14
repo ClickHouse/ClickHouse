@@ -168,7 +168,11 @@ public:
                             accessor(places[i])->convertToTwoLevel();
                     }
                 };
-                for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
+                const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num);
+                /// With the capacity reserved, `enqueueAndKeepTrack` can throw only before the pool
+                /// accepts a task, so the runner waits for every accepted task before this frame unwinds.
+                runner.reserve(max_threads_to_enqueue);
+                for (size_t i = 0; i < max_threads_to_enqueue; ++i)
                     runner.enqueueAndKeepTrack(thread_func, Priority{});
             }
             catch (...)
@@ -251,6 +255,9 @@ public:
             };
 
             const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
+            /// With the capacity reserved, `enqueueAndKeepTrack` can throw only before the pool accepts
+            /// a task, so the runner waits for every accepted task before this frame unwinds.
+            runner.reserve(max_threads_to_enqueue);
             for (size_t i = 0; i < max_threads_to_enqueue
                  && next_bucket_to_merge->load(std::memory_order_relaxed) < NUM_BUCKETS; ++i)
                 runner.enqueueAndKeepTrack(thread_func, Priority{});
@@ -319,6 +326,9 @@ public:
                     };
 
                     const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                    /// With the capacity reserved, `enqueueAndKeepTrack` can throw only before the pool
+                    /// accepts a task, so the runner waits for every accepted task before this frame unwinds.
+                    runner.reserve(max_threads_to_enqueue);
                     for (size_t i = 0; i < max_threads_to_enqueue
                          && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
                         runner.enqueueAndKeepTrack(thread_func, Priority{});
