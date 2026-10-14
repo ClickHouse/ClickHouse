@@ -205,7 +205,7 @@ detail::RuntimeFilterIndexAnalysis::RuntimeFilterIndexAnalysis(const DataTypePtr
 
 void detail::RuntimeFilterIndexAnalysis::setRange(const Range & range)
 {
-    if (!enabled || !range_supported || !positive_filter)
+    if (!range_supported || !positive_filter)
         return;
 
     range_min = range.left;
@@ -616,6 +616,7 @@ AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     , max_ratio_of_set_bits_in_bloom_filter(geometry_.max_ratio_of_set_bits_in_bloom_filter)
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
+    , key_range(filter_column_target_type_, /*positive_filter_=*/true)
     , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, geometry_.exact_bytes_limit, geometry_.exact_values_limit)
 {
 }
@@ -625,6 +626,7 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
     if (state_serialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after its state was serialized");
 
+    key_range.insert(*values);
     insert(std::move(values), filter);
 }
 
@@ -704,6 +706,12 @@ void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source
     if (state_serialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after its state was serialized");
 
+    /// Without a range from the source, the merged range would miss its keys.
+    if (source.key_range.isEnabled())
+        key_range.mergeFrom(source.key_range);
+    else
+        key_range.disable();
+
     std::visit(
         Overloaded{
             [&](const ExactFilter & source_exact_filter) { insert(source_exact_filter.getValuesColumn(), filter); },
@@ -782,6 +790,15 @@ void AdaptiveSetRuntimeFilter::serialize(WriteBuffer & out)
 
     writeVarUInt(RUNTIME_FILTER_STATE_VERSION, out);
 
+    /// 0: the range is not tracked, 1: tracked, but no keys yet, 2: tracked, followed by min and max.
+    const auto range = key_range.getRange();
+    writeBinary(UInt8(!key_range.isEnabled() ? 0 : (range ? 2 : 1)), out);
+    if (range)
+    {
+        writeFieldBinary(range->left, out);
+        writeFieldBinary(range->right, out);
+    }
+
     if (const auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter))
     {
         writeBinary(UInt8(1), out);
@@ -815,6 +832,20 @@ AdaptiveSetRuntimeFilter AdaptiveSetRuntimeFilter::deserialize(
     if (version != RUNTIME_FILTER_STATE_VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown runtime filter state version {}", version);
 
+    UInt8 key_range_state{};
+    readBinary(key_range_state, in);
+    if (key_range_state > 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed runtime filter key range");
+    std::optional<Range> range;
+    if (key_range_state == 2)
+    {
+        Field range_min = readFieldBinary(in);
+        Field range_max = readFieldBinary(in);
+        if (range_min.isNull() || range_max.isNull() || range_min.getType() != range_max.getType() || accurateLess(range_max, range_min))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed runtime filter key range");
+        range = Range(std::move(range_min), true, std::move(range_max), true);
+    }
+
     UInt8 has_bloom_filter{};
     readBinary(has_bloom_filter, in);
     if (has_bloom_filter > 1)
@@ -825,6 +856,10 @@ AdaptiveSetRuntimeFilter AdaptiveSetRuntimeFilter::deserialize(
         geometry_,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    if (key_range_state != 0)
+        filter.key_range.enable();
+    if (range)
+        filter.key_range.setRange(*range);
 
     if (has_bloom_filter)
     {

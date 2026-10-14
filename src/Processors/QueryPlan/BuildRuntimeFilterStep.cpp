@@ -115,6 +115,9 @@ public:
         if (!filter_column_target_type->equals(*filter_column_original_type))
             cast_to_target_type = createInternalCast(
                 header->getByPosition(filter_column_position), filter_column_target_type, CastType::nonAccurate, {}, nullptr);
+        /// Index analysis needs the key range, which a bloom filter cannot give back.
+        if (query_context && query_context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])
+            partial->enableKeyRangeTracking();
     }
 
     String getName() const override { return "BuildRuntimeFilterPartialTransform"; }

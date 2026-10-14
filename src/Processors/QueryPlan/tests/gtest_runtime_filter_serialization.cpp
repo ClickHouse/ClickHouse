@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
@@ -119,9 +120,22 @@ std::vector<bool> probe(const AdaptiveSetRuntimeFilter & filter, UInt64 from, UI
 }
 
 /// The second byte of the state is the phase tag: 0 = exact values, 1 = bloom filter.
+/// Reads the phase byte, which follows the version and the key range.
 bool isBloomState(const String & state)
 {
-    return state.size() > 1 && state[1] == 1;
+    ReadBufferFromString in(state);
+    UInt64 version = 0;
+    readVarUInt(version, in);
+    UInt8 key_range_state = 0;
+    readBinary(key_range_state, in);
+    if (key_range_state == 2)
+    {
+        readFieldBinary(in);
+        readFieldBinary(in);
+    }
+    UInt8 phase = 0;
+    readBinary(phase, in);
+    return phase == 1;
 }
 
 }
@@ -134,8 +148,26 @@ TEST(RuntimeFilterSerialization, GarbageFailsLoudly)
 
     WriteBufferFromOwnString bad_phase;
     writeVarUInt(1, bad_phase);
+    writeBinary(UInt8(0), bad_phase); /// no key range
     writeBinary(UInt8(7), bad_phase);
     EXPECT_THROW(deserializeFromString(bad_phase.str()), Exception);
+
+    /// A valid tracked state, then the same state with its minimum and maximum swapped.
+    auto tracked = makeFilter();
+    tracked->enableKeyRangeTracking();
+    tracked->insert(makeColumn(5, 11));
+    const String tracked_state = serializeToString(*tracked);
+    EXPECT_NO_THROW(deserializeFromString(tracked_state));
+    WriteBufferFromOwnString range_prefix;
+    writeVarUInt(1, range_prefix);
+    writeBinary(UInt8(2), range_prefix);
+    WriteBufferFromOwnString swapped_range;
+    writeFieldBinary(Field(UInt64(10)), swapped_range);
+    writeFieldBinary(Field(UInt64(5)), swapped_range);
+    ASSERT_TRUE(tracked_state.starts_with(range_prefix.str()));
+    const String bad_range = range_prefix.str() + swapped_range.str()
+        + tracked_state.substr(range_prefix.str().size() + swapped_range.str().size());
+    EXPECT_THROW(deserializeFromString(bad_range), Exception);
 
     auto bloom = makeFilter();
     bloom->insert(makeColumn(0, 1000));
@@ -156,6 +188,7 @@ TEST(RuntimeFilterSerialization, GarbageFailsLoudly)
     /// A row count above the exact-values limit is rejected before any column is allocated.
     WriteBufferFromOwnString oversized;
     writeVarUInt(1, oversized);
+    writeBinary(UInt8(0), oversized); /// no key range
     writeBinary(UInt8(0), oversized);
     writeVarUInt(1000 * 1000 * 1000, oversized);
     EXPECT_THROW(deserializeFromString(oversized.str()), Exception);

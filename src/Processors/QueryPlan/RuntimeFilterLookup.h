@@ -81,6 +81,8 @@ public:
     RuntimeFilterIndexAnalysis(const DataTypePtr & data_type, bool positive_filter_);
 
     void enable() { enabled = true; }
+    void disable() { enabled = false; }
+    bool isEnabled() const { return enabled; }
     bool canUseExactValues() const { return enabled && positive_filter; }
     void insert(const IColumn & values);
     void mergeFrom(const RuntimeFilterIndexAnalysis & source);
@@ -247,8 +249,16 @@ public:
     ColumnPtr getRecordedKeyValues() const;
     DataTypePtr getTargetType() const { return filter_column_target_type; }
 
-    /// Writes the raw filter state (exact values or bloom filter bits) so that a partial filter can be
-    /// sent to another server and merged there. Captures the state: further inserts and merges throw.
+    /// Records the range of the inserted keys, so that it is serialized and merged with the state. A
+    /// transported partial needs it: no `RuntimeFilter` is around it to record the range for index
+    /// analysis, and a bloom filter cannot give the range back.
+    void enableKeyRangeTracking() { key_range.enable(); }
+    /// Empty if tracking is off or the range is not known.
+    std::optional<Range> getKeyRange() const { return key_range.getRange(); }
+
+    /// Writes the raw filter state (exact values or bloom filter bits, and the key range) so that a
+    /// partial filter can be sent to another server and merged there. Captures the state: further
+    /// inserts and merges throw.
     void serialize(WriteBuffer & out);
 
     /// Reads the state written by `serialize`. Throws if the bloom parameters in the data differ from
@@ -282,6 +292,7 @@ private:
     /// Whether the hint counts distinct values of this complete filter key, rather than only providing an upper bound.
     const bool distinct_keys_hint_matches_filter_key;
 
+    detail::RuntimeFilterIndexAnalysis key_range;
     Filter filter;
     /// Guards against inserts after `serialize` already captured the state: they would be silently
     /// missing from the transported partial.
@@ -345,6 +356,9 @@ private:
     {
         using FilterType = std::decay_t<FilterImpl>;
         auto target_type = filter.getTargetType();
+        std::optional<Range> initial_range;
+        if constexpr (std::is_same_v<FilterType, Adaptive>)
+            initial_range = filter.getKeyRange();
         Data result{
             detail::RuntimeFilterBuildState(FilterType::is_prebuilt ? 0 : filters_to_merge, FilterType::is_prebuilt),
             Filter(std::forward<FilterImpl>(filter)),
@@ -352,9 +366,11 @@ private:
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
             result.index_analysis.enable();
-            if (const auto & range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange())
-                result.index_analysis.setRange(*range);
+            initial_range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange();
         }
+        /// Kept even before `enableIndexAnalysis`: it is used only after that call.
+        if (initial_range)
+            result.index_analysis.setRange(*initial_range);
         return result;
     }
 

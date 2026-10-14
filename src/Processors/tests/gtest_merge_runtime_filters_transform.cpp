@@ -45,16 +45,25 @@ RuntimeFilterGeometry testGeometry()
     };
 }
 
-String makePartialBlob(UInt64 from, UInt64 to, const RuntimeFilterGeometry & geometry = testGeometry())
+AdaptiveSetRuntimeFilter
+makePartial(UInt64 from, UInt64 to, bool track_key_range = false, const RuntimeFilterGeometry & geometry = testGeometry())
 {
     AdaptiveSetRuntimeFilter filter(
         std::make_shared<DataTypeUInt64>(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    if (track_key_range)
+        filter.enableKeyRangeTracking();
     auto column = ColumnUInt64::create();
     for (UInt64 i = from; i < to; ++i)
         column->insertValue(i);
     filter.insert(std::move(column));
+    return filter;
+}
+
+String makePartialBlob(UInt64 from, UInt64 to, bool track_key_range = false, const RuntimeFilterGeometry & geometry = testGeometry())
+{
+    auto filter = makePartial(from, to, track_key_range, geometry);
 
     WriteBufferFromOwnString out;
     filter.serialize(out);
@@ -156,9 +165,22 @@ void finishInsert(AdaptiveSetRuntimeFilter & filter)
     filter.finishInsert(evaluation_state);
 }
 
-ProcessorPtr partialSource(UInt64 from, UInt64 to)
+ProcessorPtr partialSource(UInt64 from, UInt64 to, bool track_key_range = false)
 {
-    return std::make_shared<SourceFromSingleChunk>(runtimeFilterPartialsHeader(), makePartialsChunk({makePartialBlob(from, to)}));
+    return std::make_shared<SourceFromSingleChunk>(
+        runtimeFilterPartialsHeader(), makePartialsChunk({makePartialBlob(from, to, track_key_range)}));
+}
+
+ProcessorPtr blobSource(const String & blob)
+{
+    return std::make_shared<SourceFromSingleChunk>(runtimeFilterPartialsHeader(), makePartialsChunk({blob}));
+}
+
+void expectRange(const std::optional<Range> & range, UInt64 min, UInt64 max)
+{
+    ASSERT_TRUE(range.has_value());
+    EXPECT_EQ(range->left, Field(min));
+    EXPECT_EQ(range->right, Field(max));
 }
 
 }
@@ -311,6 +333,47 @@ TEST(MergeRuntimeFiltersTransform, ForwardModeEmitsUnion)
     EXPECT_EQ(probe(merged, 30, 40), std::vector<bool>(10, false));
 }
 
+/// More than `EXACT_VALUES_LIMIT` keys turn a partial into a bloom filter, which cannot give back its
+/// keys, so index analysis has only the key range that travels with the state.
+TEST(MergeRuntimeFiltersTransform, KeyRangeSurvivesTheBloomState)
+{
+    /// A merge task forwards the union; an empty partial must not stop the range tracking.
+    auto blobs = runForward({partialSource(100, 300, true), partialSource(5, 5, true), partialSource(1000, 1100, true)});
+    ASSERT_EQ(blobs.size(), 1u);
+    expectRange(deserializeBlob(blobs.front()).getKeyRange(), 100, 1099);
+
+    TestPipeline pipeline;
+    pipeline.enable_index_analysis = true;
+    pipeline.build({blobSource(blobs.front()), partialSource(50, 60, true)});
+    pipeline.execute();
+
+    auto filter = pipeline.lookup->find("test_key");
+    ASSERT_NE(filter, nullptr);
+    EXPECT_EQ(filter->getRecordedKeyValues(), nullptr);
+    expectRange(filter->getRecordedKeyRanges(), 50, 1099);
+}
+
+TEST(MergeRuntimeFiltersTransform, KeyRangeIsDroppedWhenAPartialHasNone)
+{
+    /// The partial without tracking has keys outside the range of the others.
+    auto blobs = runForward({partialSource(100, 300, true), partialSource(0, 10)});
+    ASSERT_EQ(blobs.size(), 1u);
+    EXPECT_FALSE(deserializeBlob(blobs.front()).getKeyRange().has_value());
+}
+
+TEST(MergeRuntimeFiltersTransform, SameTaskPublicationKeepsTheKeyRange)
+{
+    /// A build task registers its own merged partial for the apply sites of its stage.
+    auto lookup = createRuntimeFilterLookup();
+    registerCompleteRuntimeFilter(
+        *lookup, "test_key", "test_filter", testGeometry(), makePartial(200, 400, true), /*enable_index_analysis=*/true);
+
+    auto filter = lookup->find("test_key");
+    ASSERT_NE(filter, nullptr);
+    EXPECT_EQ(filter->getRecordedKeyValues(), nullptr);
+    expectRange(filter->getRecordedKeyRanges(), 200, 399);
+}
+
 TEST(MergeRuntimeFiltersTransform, ForwardModeOversizedMergedOutputEmitsNothing)
 {
     /// Each input is a small exact state, but their union crosses the exact limits and degrades
@@ -369,7 +432,7 @@ TEST(MergeRuntimeFiltersTransform, PayloadRetentionIndependentOfInputCount)
                 std::make_shared<SourceFromSingleChunk>(
                     runtimeFilterPartialsHeader(),
                     /// More rows than `exact_values_limit`, so the state is a bloom of `payload` bytes.
-                    makePartialsChunk({makePartialBlob(input * 1000, input * 1000 + 100, geometry)})));
+                    makePartialsChunk({makePartialBlob(input * 1000, input * 1000 + 100, /*track_key_range=*/false, geometry)})));
         pipeline.build(std::move(sources));
 
         auto & thread_tracker = CurrentThread::get().memory_tracker;
