@@ -151,6 +151,13 @@ TEST(FieldAccurateComparisonTest, DecimalSameTypeScales)
     EXPECT_FALSE(accurateLess(big, max30));
     EXPECT_TRUE(accurateLess(max30, big));
     EXPECT_FALSE(accurateEquals(big, max30));
+
+    /// The same for Int64: 922337204 (scale 0) is above every value of scale 10.
+    Field big64 = DecimalField<Decimal64>(Decimal64(922337204), 0);
+    Field max10 = DecimalField<Decimal64>(Decimal64(std::numeric_limits<Int64>::max()), 10);
+    EXPECT_FALSE(accurateLess(big64, max10));
+    EXPECT_TRUE(accurateLess(max10, big64));
+    EXPECT_FALSE(accurateEquals(big64, max10));
 }
 
 /// Pin the actual target carrier of the optimization: a `Field` built from

@@ -4,6 +4,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/DecimalScaleBounds.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -163,11 +164,20 @@ ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, U
     MaxNativeType converted_value;
     if (scale_to > scale_from)
     {
-        converted_value = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
-        if (common::mulOverflow(static_cast<MaxNativeType>(value.value), converted_value, converted_value))
+        const MaxNativeType multiplier = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
+        bool overflow = false;
+        if constexpr (is_big_int_v<MaxNativeType>)
+        {
+            overflow = !DecimalScaleBounds<MaxNativeType>(multiplier).fits(value.value);
+            converted_value = common::mulIgnoreOverflow(static_cast<MaxNativeType>(value.value), multiplier);
+        }
+        else
+            overflow = common::mulOverflow(static_cast<MaxNativeType>(value.value), multiplier, converted_value);
+
+        if (overflow)
         {
             if constexpr (throw_exception)
-                throwDecimalScaleOverflow(ToDataType::family_name, value.value, converted_value);
+                throwDecimalScaleOverflow(ToDataType::family_name, value.value, multiplier);
             else
                 return ReturnType(false);
         }
@@ -224,10 +234,18 @@ NO_SANITIZE_UNDEFINED void convertDecimalsBatch(
     if (scale_to > scale_from)
     {
         const MaxNativeType multiplier = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
+        const DecimalScaleBounds<MaxNativeType> bounds(multiplier);
         for (size_t i = 0; i < size; ++i)
         {
             MaxNativeType converted_value;
-            bool mul_overflow = common::mulOverflow(static_cast<MaxNativeType>(from[i].value), multiplier, converted_value);
+            bool mul_overflow = false;
+            if constexpr (is_big_int_v<MaxNativeType>)
+            {
+                mul_overflow = !bounds.fits(from[i].value);
+                converted_value = common::mulIgnoreOverflow(static_cast<MaxNativeType>(from[i].value), multiplier);
+            }
+            else
+                mul_overflow = common::mulOverflow(static_cast<MaxNativeType>(from[i].value), multiplier, converted_value);
 
             bool range_overflow = false;
             if constexpr (check_overflow)
@@ -791,14 +809,14 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-Overflow checks happen not only on arithmetic operations but also on value comparison:
+With `decimal_check_overflow` enabled (the default), a comparison of values with different scales is exact, even when a value does not fit into the type at the common scale:
 
 ```sql
 SELECT toDecimal32(1, 8) < 100
 ```
 
 ```text
-DB::Exception: Can't compare.
+1
 ```
 
 **See also**
