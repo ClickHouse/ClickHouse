@@ -75,6 +75,10 @@ struct WriteOptions
     /// Annotate the WKB-encoded geo columns (only written if `write_geometadata`) with the
     /// `GEOMETRY` logical type and write `GeospatialStatistics` instead of min/max statistics.
     bool write_geometry_logical_type = false;
+
+    /// Write a named `Tuple` whose element names are fields of the `FILE` logical type as a
+    /// `FILE`-annotated group. See getFileLogicalTypeElementTypes.
+    bool write_file_logical_type = false;
 };
 
 /// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
@@ -90,6 +94,7 @@ struct IcebergOptionality
     bool owned_by_enclosing_nullable = false;
 
     bool isOptional(const String & path) const;
+    bool isLocalTimestamp(const String & path) const;
 };
 
 /// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched

@@ -519,6 +519,15 @@ struct PlainStringDecoder : public PageDecoder
                             ++values_replaced;
                             bytes_skipped += size_t(x);
                         }
+                        if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                        {
+                            active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                            values_checked = 0;
+                            values_replaced = 0;
+                            bytes_skipped = 0;
+                            if (!active_value_filter->isEnabled())
+                                active_value_filter = nullptr;
+                        }
                     }
                     else
                     {
@@ -916,6 +925,15 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
                             ++values_replaced;
                             bytes_skipped += len;
                         }
+                        if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                        {
+                            active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                            values_checked = 0;
+                            values_replaced = 0;
+                            bytes_skipped = 0;
+                            if (!active_value_filter->isEnabled())
+                                active_value_filter = nullptr;
+                        }
                     }
                     else
                     {
@@ -1155,6 +1173,15 @@ struct DeltaByteArrayDecoder : public PageDecoder
                         out_str->insertDefault();
                         ++values_replaced;
                         bytes_skipped += current_value.size();
+                    }
+                    if (values_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES)
+                    {
+                        active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
+                        values_checked = 0;
+                        values_replaced = 0;
+                        bytes_skipped = 0;
+                        if (!active_value_filter->isEnabled())
+                            active_value_filter = nullptr;
                     }
                 }
                 else
@@ -1534,20 +1561,47 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect dictionary page size: {} != {} * {}", data.size(), count, value_size);
 }
 
-void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter)
+void Dictionary::buildStringValueFilterMask(const StringValueFilter & filter, size_t num_rows)
 {
     /// Other modes are not used together with the filter: it is attached only when
     /// the string converter is trivial, see Reader::preparePrewhere.
-    if (mode != Mode::StringPlain)
+    if (mode != Mode::StringPlain || count == 0)
         return;
+
+    /// Every entry is expected to be referenced by this many rows, and the mask skips the data of
+    /// a non-matching entry in all of them.
+    const double rows_per_entry = std::max(1.0, double(num_rows) / double(count));
 
     string_value_filter = &filter;
     string_value_filter_mask.resize(count);
+    size_t entries_checked = 0;
+    size_t bytes_skipped = 0;
     for (size_t i = 0; i < count; ++i)
     {
         size_t start = offsets[ssize_t(i) - 1] + 4; // offsets[-1] is ok because of padding
         size_t len = offsets[i] - start;
-        string_value_filter_mask[i] = len != 0 && filter.match(data.data() + start, len);
+        bool matches = len != 0 && filter.match(data.data() + start, len);
+        string_value_filter_mask[i] = matches;
+
+        ++entries_checked;
+        if (!matches)
+            bytes_skipped += len;
+
+        if (entries_checked == StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES || i + 1 == count)
+        {
+            filter.updateStatsOfDictionaryEntries(entries_checked, size_t(double(bytes_skipped) * rows_per_entry));
+            entries_checked = 0;
+            bytes_skipped = 0;
+
+            /// The mask would never be consulted, do not check the rest of the entries.
+            if (!filter.isEnabled())
+            {
+                string_value_filter_mask.clear();
+                string_value_filter_mask.shrink_to_fit();
+                string_value_filter = nullptr;
+                return;
+            }
+        }
     }
 }
 
@@ -1715,7 +1769,7 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 }
                 /// Report the observed selectivity to the shared filter, so that a non-selective
                 /// filter disables itself for all readers, same as in the non-dictionary paths.
-                string_value_filter->updateStats(n, values_replaced, bytes_skipped);
+                string_value_filter->updateStatsWithoutPerValueChecks(n, values_replaced, bytes_skipped);
                 break;
             }
             for (size_t i = 0; i < n; ++i)
@@ -1779,10 +1833,10 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
                 if (!string_value_filter_mask[idx])
                 {
                     c.insertManyDefaults(n);
-                    string_value_filter->updateStats(n, n, len * n);
+                    string_value_filter->updateStatsWithoutPerValueChecks(n, n, len * n);
                     break;
                 }
-                string_value_filter->updateStats(n, 0, 0);
+                string_value_filter->updateStatsWithoutPerValueChecks(n, 0, 0);
             }
             c.reserve(c.size() + n);
             for (size_t i = 0; i < n; ++i)

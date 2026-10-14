@@ -443,6 +443,7 @@ struct FormatSettings
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         bool write_geometry_logical_type = false;
+        bool write_file_logical_type = false;
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
 
