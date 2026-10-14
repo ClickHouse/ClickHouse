@@ -50,6 +50,17 @@ void S3Capabilities::setIsBatchDeleteSupported(bool support_batch_delete_)
     support_batch_delete = support_batch_delete_;
 }
 
+bool S3Capabilities::setBatchDeleteUnsupportedIfUndecided()
+{
+    std::lock_guard lock{mutex};
+
+    if (support_batch_delete.has_value())
+        return false;
+
+    support_batch_delete = false;
+    return true;
+}
+
 S3Capabilities getCapabilitiesFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     std::optional<bool> support_batch_delete;
