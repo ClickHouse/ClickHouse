@@ -3669,6 +3669,11 @@ private:
         auto settings = ctx->source_part->storage.getSettings();
         NameSet hardlinked_files;
 
+        /// `DataPartStorageOnDiskFull::copyFileFrom` uses an independent disk transaction,
+        /// so its destination directory must exist before copying unchanged files.
+        if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
+            ctx->new_data_part->getDataPartStorage().checkpointTransaction();
+
         /// NOTE: Renames must be done in order
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
@@ -3724,6 +3729,10 @@ private:
             {
                 // it's a projection part directory
                 ctx->new_data_part->getDataPartStorage().createProjection(destination);
+
+                /// Commit the directory before obtaining projection storage with a shared transaction.
+                if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
+                    ctx->new_data_part->getDataPartStorage().checkpointTransaction();
 
                 auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(destination);
                 auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(destination);
