@@ -385,7 +385,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         }
     }
 
-    rx.install_window_change_handler();
+    /// The handler of `SIGWINCH` is process-wide. In the embedded mode the process is the server,
+    /// and the pseudoterminal is not its controlling terminal, so the signal is never delivered.
+    if (!options.embedded_mode)
+        rx.install_window_change_handler();
 
     auto callback = [this] (const String & context, size_t context_size)
     {
@@ -540,7 +543,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
-    if (options.ignore_shell_suspend)
+    /// In the embedded mode, it would stop the whole server process with `SIGSTOP`.
+    if (options.ignore_shell_suspend || options.embedded_mode)
         rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
