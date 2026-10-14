@@ -169,122 +169,74 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
 namespace
 {
 
-/// The storages that keep the data of `storage`, each with the kind of the inner table it is, if it is one. Every inner
-/// table of a view or a `TimeSeries` table counts, whatever its engine: e.g. `TAGS INNER ENGINE = Memory` keeps data that
-/// no storage policy provides, so it makes the table mixed and refused, instead of its data being left out. A standalone
-/// table counts only if it is a `MergeTreeData`: `Alias`, `Distributed` and `StorageProxy` report a storage policy but
-/// keep no data of their own.
-std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStorages(const StoragePtr & storage, const ContextPtr & context)
+/// Looks through the `StorageTableProxy` of a lazily loaded table, which reports no storage policy. Only a `MergeTreeData`
+/// keeps its data on a storage policy: `Alias`, `Distributed` and `StorageProxy` report one but keep no data of their own.
+bool isMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
 {
-    std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> data_storages;
-
-    /// Looks through the `StorageTableProxy` of a lazily loaded table, which reports no storage policy.
-    auto add_inner_table = [&](ViewTarget::Kind target_kind, const StoragePtr & target)
-    {
-        if (auto merge_tree = castStorage<MergeTreeData>(target, DeferredTable::Load))
-            data_storages.emplace_back(target_kind, std::move(merge_tree));
-        else
-            data_storages.emplace_back(target_kind, target);
-    };
-
-    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
-    {
-        if (materialized_view->hasInnerTable())
-        {
-            if (auto target = materialized_view->tryGetTargetTable())
-                add_inner_table(ViewTarget::To, target);
-        }
-    }
-    else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
-    {
-        for (auto target_kind : StorageTimeSeries::getTargetKinds())
-        {
-            if (time_series->isInnerTable(target_kind))
-            {
-                if (auto target = time_series->tryGetTargetTable(target_kind, context))
-                    add_inner_table(target_kind, target);
-            }
-        }
-    }
-    else if (auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load))
-    {
-        data_storages.emplace_back(std::nullopt, std::move(merge_tree));
-    }
-    return data_storages;
+    auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
+    if (!merge_tree)
+        return false;
+    auto policy = merge_tree->getStoragePolicy();
+    return policy && policy->isBackupMetadataOnly();
 }
 
 }
 
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context)
 {
-    auto data_storages = getDataStorages(storage, context);
-
-    size_t num_on_backup_metadata_only_policy = 0;
-    for (const auto & [_, data_storage] : data_storages)
+    StoragePtr inner_table_on_policy;
+    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
     {
-        auto policy = data_storage->getStoragePolicy();
-        if (policy && policy->isBackupMetadataOnly())
-            ++num_on_backup_metadata_only_policy;
+        if (materialized_view->hasInnerTable())
+        {
+            if (auto target = materialized_view->tryGetTargetTable(); target && isMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
+                inner_table_on_policy = target;
+        }
+    }
+    else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
+    {
+        for (auto target_kind : StorageTimeSeries::getTargetKinds())
+        {
+            if (!time_series->isInnerTable(target_kind))
+                continue;
+            if (auto target = time_series->tryGetTargetTable(target_kind, context); target && isMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
+                inner_table_on_policy = target;
+        }
+    }
+    else
+    {
+        return isMergeTreeOnBackupMetadataOnlyStoragePolicy(storage);
     }
 
-    if (num_on_backup_metadata_only_policy && num_on_backup_metadata_only_policy != data_storages.size())
+    if (inner_table_on_policy)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Some inner tables of {} are on a storage policy marked backup_metadata_only and some are not, "
-            "BACKUP and RESTORE of such a table are not supported",
-            storage->getStorageID().getNameForLogs());
-
-    return num_on_backup_metadata_only_policy != 0;
-}
-
-std::vector<std::pair<UUID, UUID>> getUUIDsOfDataStorages(
-    const StoragePtr & storage, const ASTCreateQuery & create_query_from_backup, const ContextPtr & context)
-{
-    std::vector<std::pair<UUID, UUID>> res;
-    for (const auto & [target_kind, data_storage] : getDataStorages(storage, context))
-    {
-        UUID uuid_in_backup = UUIDHelpers::Nil;
-        if (!target_kind)
-            uuid_in_backup = create_query_from_backup.uuid;
-        else if (create_query_from_backup.targets)
-            uuid_in_backup = create_query_from_backup.targets->getInnerUUID(*target_kind);
-        res.emplace_back(data_storage->getStorageID().uuid, uuid_in_backup);
-    }
-    return res;
-}
-
-bool isAnyCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
-{
-    auto is_on_backup_metadata_only_policy = [&](const ASTStorage * storage)
-    {
-        if (!storage || !storage->engine || !storage->settings)
-            return false;
-
-        /// Only an explicit `storage_policy` matters: a read-only policy can't be the default one.
-        const auto * policy_name = storage->settings->changes.tryGet("storage_policy");
-        if (!policy_name)
-            return false;
-
-        /// Only the engines with the setting keep their data on a storage policy. An unknown engine is reported by `CREATE`.
-        const auto & storages = StorageFactory::instance().getAllStorages();
-        auto it = storages.find(storage->engine->name);
-        if (it == storages.end() || !it->second.features.has_builtin_setting_fn || !it->second.features.has_builtin_setting_fn("storage_policy"))
-            return false;
-
-        return context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly();
-    };
-
-    if (is_on_backup_metadata_only_policy(create_query.storage))
-        return true;
-
-    if (create_query.targets)
-    {
-        for (const auto * inner_engine : create_query.targets->getInnerEngines())
-            if (is_on_backup_metadata_only_policy(inner_engine))
-                return true;
-    }
+            "{} has the inner table {} on a storage policy marked backup_metadata_only. BACKUP and RESTORE support such policies "
+            "only for tables that keep their data themselves, not for the inner tables of materialized views and TimeSeries tables",
+            storage->getStorageID().getNameForLogs(),
+            inner_table_on_policy->getStorageID().getNameForLogs());
 
     return false;
+}
+
+bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
+{
+    const auto * storage = create_query.storage;
+    if (!storage || !storage->engine || !storage->settings)
+        return false;
+
+    /// Only an explicit `storage_policy` matters: a read-only policy can't be the default one.
+    const auto * policy_name = storage->settings->changes.tryGet("storage_policy");
+    if (!policy_name)
+        return false;
+
+    /// Only the engines with the setting keep their data on a storage policy. An unknown engine is reported by `CREATE`.
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    auto it = storages.find(storage->engine->name);
+    if (it == storages.end() || !it->second.features.has_builtin_setting_fn || !it->second.features.has_builtin_setting_fn("storage_policy"))
+        return false;
+
+    return context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly();
 }
 
 }

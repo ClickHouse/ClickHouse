@@ -666,7 +666,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
         const auto * create_table_query = res_table_info.create_table_query ? res_table_info.create_table_query->as<ASTCreateQuery>() : nullptr;
         if (partitions_named
             && (res_table_info.storage ? BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(res_table_info.storage, context)
-                                       : create_table_query && BackupUtils::isAnyCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context)))
+                                       : create_table_query && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context)))
         {
             throw Exception(
                 ErrorCodes::CANNOT_BACKUP_TABLE,

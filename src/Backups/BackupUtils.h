@@ -35,18 +35,12 @@ bool isInnerTable(const String & database_name, const String & table_name);
 /// read-only dataset: `BACKUP` stores only the definition of the table, and `RESTORE` recreates the table with its UUID
 /// from the backup, because the data is on the storage under a path derived from the UUID, and doesn't restore data.
 
-/// Whether the data of `storage` is on storage policies marked `backup_metadata_only`. The data of a materialized view
-/// or a `TimeSeries` table is in its inner tables. Throws if only a part of the data is on such policies.
+/// Whether `storage` keeps its data on a storage policy marked `backup_metadata_only`. Throws for a materialized view or a
+/// `TimeSeries` table with an inner table on such a policy, which is not supported.
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context);
 
-/// The UUID of each table that keeps the data of `storage`, paired with its UUID in `create_query_from_backup`. The data on
-/// the storage is the data of the backup only if they are equal.
-std::vector<std::pair<UUID, UUID>> getUUIDsOfDataStorages(
-    const StoragePtr & storage, const ASTCreateQuery & create_query_from_backup, const ContextPtr & context);
-
-/// Whether a table created by `create_query`, or one of the inner tables of the view it creates, is on a storage policy
-/// marked `backup_metadata_only`.
-bool isAnyCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context);
+/// Whether a table created by `create_query` is on a storage policy marked `backup_metadata_only`.
+bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context);
 
 }
 
