@@ -1,3 +1,6 @@
+-- Tags: memory-engine
+-- `memory-engine`: the stress runner would rewrite the `Memory` left side to `MergeTree`, which is shippable.
+
 -- The plan-based counterpart of `04724_parallel_replicas_right_join_ineligible_right_side`. That test
 -- asserts the shipped SQL query - one `EXPLAIN` line carrying both `ReadFromRemoteParallelReplicas`
 -- and `RIGHT JOIN` - which only the query-based implementation produces, so it is pinned to it. What
@@ -8,7 +11,7 @@
 DROP TABLE IF EXISTS t_inel_left SYNC;
 DROP TABLE IF EXISTS t_inel_mid SYNC;
 DROP TABLE IF EXISTS t_inel_right SYNC;
-DROP TABLE IF EXISTS t_inel_merge;
+DROP TABLE IF EXISTS t_inel_mem;
 
 CREATE TABLE t_inel_left (key UInt64) ENGINE = MergeTree ORDER BY key;
 INSERT INTO t_inel_left SELECT number FROM numbers(10);
@@ -19,10 +22,8 @@ INSERT INTO t_inel_mid SELECT number FROM numbers(10);
 CREATE TABLE t_inel_right (key UInt64) ENGINE = MergeTree ORDER BY key;
 INSERT INTO t_inel_right SELECT number FROM numbers(10);
 
--- `Merge` rather than `Memory`: the stress runner rewrites `Log` and `Memory` tables to `MergeTree`
--- (`--replace-log-memory-with-mergetree`), which would make the left side shippable and move the
--- counts below.
-CREATE TABLE t_inel_merge (key UInt64) ENGINE = Merge(currentDatabase(), '^t_inel_mid$');
+CREATE TABLE t_inel_mem (key UInt64) ENGINE = Memory;
+INSERT INTO t_inel_mem SELECT number FROM numbers(10);
 
 SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
@@ -66,25 +67,26 @@ ORDER BY r.key;
 -- is printed in logical form while a join the initiator kept is already a physical `Join` step.
 -- A shippable left side moves these to 1, which is what the last arm shows.
 --
--- The unshippable left side here is a `Merge` table, not `numbers(...)` or `system.one`: those two
+-- The unshippable left side here is a `Memory` table, not `numbers(...)` or `system.one`: those two
 -- become serializable in https://github.com/ClickHouse/ClickHouse/pull/119862, which would move these
--- counts. The shapes that read them are still covered below, by their answers.
+-- counts, while a `Memory` read is unshippable in either implementation and stays so. The shapes that
+-- read them are still covered below, by their answers.
 
-SELECT '-- left is a Merge table: only the right side is distributed';
+SELECT '-- left is a Memory table: only the right side is distributed';
 SELECT countIf(explain ILIKE '%JoinLogical%'), countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT * FROM (SELECT key FROM t_inel_merge) AS l
+    EXPLAIN SELECT * FROM (SELECT key FROM t_inel_mem) AS l
     RIGHT JOIN (SELECT key FROM t_inel_right) AS r ON l.key = r.key);
 
 SELECT '-- the same with a local join';
 SELECT countIf(explain ILIKE '%JoinLogical%'), countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT * FROM (SELECT key FROM t_inel_merge) AS l
+    EXPLAIN SELECT * FROM (SELECT key FROM t_inel_mem) AS l
     RIGHT JOIN (SELECT key FROM t_inel_right) AS r ON l.key = r.key
     SETTINGS parallel_replicas_prefer_local_join = 1);
 
-SELECT '-- left joins a Merge table to a table';
+SELECT '-- left joins a Memory table to a table';
 SELECT countIf(explain ILIKE '%JoinLogical%'), countIf(explain ILIKE '%ParallelReplicas%') FROM (
     EXPLAIN SELECT * FROM (
-        SELECT b.key AS key FROM t_inel_merge AS a LEFT JOIN t_inel_mid AS b ON a.key = b.key
+        SELECT b.key AS key FROM t_inel_mem AS a LEFT JOIN t_inel_mid AS b ON a.key = b.key
     ) AS l
     RIGHT JOIN (SELECT key FROM t_inel_right) AS r ON l.key = r.key);
 
@@ -124,7 +126,7 @@ SELECT r.key FROM (SELECT key FROM t_inel_left WHERE key < 5) AS l
 RIGHT JOIN (SELECT key FROM t_inel_right) AS r ON l.key = r.key
 ORDER BY r.key;
 
-DROP TABLE t_inel_merge;
+DROP TABLE t_inel_mem;
 DROP TABLE t_inel_right SYNC;
 DROP TABLE t_inel_mid SYNC;
 DROP TABLE t_inel_left SYNC;
