@@ -2,14 +2,21 @@
 
 #include <algorithm>
 #include <atomic>
+#include <limits>
 #include <new>
 
 #include <Common/Allocator.h>
 #include <Common/CacheLine.h>
+#include <Common/Exception.h>
 #include <Common/memory.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_STRING_SIZE;
+}
 
 struct alignas(CH_CACHE_LINE_SIZE) PartitionedRecordBuffer::Block
 {
@@ -61,6 +68,10 @@ void PartitionedRecordBuffer::releaseCurrentBlocks()
 
 void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
 {
+    /// The chunk metadata is 32-bit, so a record that does not fit is rejected before anything is allocated.
+    if (bytes > std::numeric_limits<UInt32>::max() - sizeof(ChunkHeader) - tail_padding_bytes - alignof(ChunkHeader))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "A staged record of {} bytes is too large for the partitioned record buffer", bytes);
+
     Cursor & cursor = cursors[partition];
     Chain & chain = chains[partition];
     if (chain.last)
