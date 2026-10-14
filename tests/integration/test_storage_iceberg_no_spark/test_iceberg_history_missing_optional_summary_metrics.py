@@ -87,9 +87,9 @@ def test_iceberg_history_missing_optional_summary_metrics(
     # already-read version is not re-read and this test would pass without the fix.
     _write_next_metadata(instance, table_name, meta, prev)
 
-    # This is the statement from the bug report. The open-source build refuses data
-    # compaction before reading any summary. Where compaction runs, `getHistory` reads
-    # every summary first and only the compaction that follows it is v2-only. On the cloud
+    # This is the statement from the bug report. `IcebergMetadata::optimize` calls
+    # `getHistory` before `compactIcebergTable`, so the summary is read here for both
+    # format versions and only the compaction that follows it is v2-only. On the cloud
     # build `OPTIMIZE` is gated by a member flag rather than this setting and that path
     # never calls `getHistory` at all.
     is_cloud = instance.query(
@@ -105,15 +105,11 @@ def test_iceberg_history_missing_optional_summary_metrics(
         assert (
             "Can not convert empty value" not in message
         ), f"OPTIMIZE hit the missing-optional-summary-metric conversion: {message}"
-        # Anything else must be one of the known rejections, otherwise an unrelated
-        # failure would pass this check silently.
-        tolerated = (
-            is_cloud == "1"
-            or "not yet supported for Iceberg data compaction" in message
-            or (
-                format_version == 1
-                and "Compaction is supported only for format_version 2" in message
-            )
+        # Anything else must be one of the two known post-`getHistory` rejections,
+        # otherwise an unrelated failure would pass this check silently.
+        tolerated = is_cloud == "1" or (
+            format_version == 1
+            and "Compaction is supported only for format_version 2" in message
         )
         assert tolerated, f"OPTIMIZE failed unexpectedly: {message}"
 
