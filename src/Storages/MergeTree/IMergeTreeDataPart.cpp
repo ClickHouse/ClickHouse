@@ -1,5 +1,6 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -959,12 +960,27 @@ std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & c
     return getColumnsDescription().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
-std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const
+std::optional<NameAndTypePair> tryGetColumnOfPartForTable(
+    const ColumnsDescription & part_columns, const String & column_name, const ColumnsDescription & table_columns)
 {
     if (table_columns.hasPhysical(column_name))
-        return getColumnsDescription().tryGetPhysical(column_name);
+        return part_columns.tryGetPhysical(column_name);
 
-    return tryGetColumn(column_name);
+    auto column_in_table = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    if (column_in_table && column_in_table->isSubcolumn())
+    {
+        auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        if (column_in_part && column_in_part->getNameInStorage() == column_in_table->getNameInStorage())
+            return column_in_part;
+        return {};
+    }
+
+    return part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+}
+
+std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const
+{
+    return tryGetColumnOfPartForTable(getColumnsDescription(), column_name, table_columns);
 }
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const

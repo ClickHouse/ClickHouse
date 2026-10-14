@@ -86,9 +86,23 @@ extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
 
 bool ProjectionDescription::providesColumn(const String & column_name, const ColumnsDescription & table_columns) const
 {
-    const bool stored = table_columns.hasPhysical(column_name)
-        ? sample_block.findByName(column_name) != nullptr
-        : sample_block.findColumnOrSubcolumnByName(column_name).has_value();
+    bool stored = false;
+    if (table_columns.hasPhysical(column_name))
+    {
+        stored = sample_block.findByName(column_name) != nullptr;
+    }
+    else if (auto column_in_table = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+             column_in_table && column_in_table->isSubcolumn())
+    {
+        /// A subcolumn of a table column is provided only by the same column of the projection, which stores
+        /// the column itself in place of its subcolumns (see `fillProjectionDescriptionByQuery`).
+        const auto * column_in_projection = sample_block.findByName(column_in_table->getNameInStorage());
+        stored = column_in_projection && column_in_projection->type->tryGetSubcolumnType(column_in_table->getSubcolumnName());
+    }
+    else
+    {
+        stored = sample_block.findColumnOrSubcolumnByName(column_name).has_value();
+    }
     return stored || metadata->virtuals.has(column_name);
 }
 

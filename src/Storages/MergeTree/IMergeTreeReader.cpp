@@ -550,6 +550,14 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String
     if (subcolumn_name.empty() && !data_part_info_for_read->getColumnsDescription().hasPhysical(name_in_part))
         return {};
 
+    /// For the same reason a subcolumn is read only from the column that holds it in the current metadata. A part
+    /// written before `ALTER TABLE ... ADD COLUMN` added a column `a.x` next to a `JSON` column `a` does not hold `a.x`,
+    /// and its subcolumn `a.x.y` is extracted from the default of `a.x`, not read from the path `x.y` of `a`. For a wide
+    /// part a `Nested` column is found here as the column collected from its flattened columns.
+    if (!subcolumn_name.empty() && !part_columns.hasPhysical(name_in_storage)
+        && !data_part_info_for_read->getColumnsDescription().hasPhysical(name_in_part))
+        return {};
+
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns();
     if (auto column_in_part = part_columns.tryGetColumn(options, name_in_part))
         return column_in_part;
