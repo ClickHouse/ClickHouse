@@ -610,8 +610,12 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
 struct ManualAllocation : public ResourceAllocation
 {
-    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
-        : ResourceAllocation(*queue_, name_)
+    ManualAllocation(
+        AllocationQueue * queue_,
+        const String & name_,
+        ResourceCost initial_size,
+        MemoryPressurePolicy memory_pressure_policy = {})
+        : ResourceAllocation(*queue_, name_, memory_pressure_policy)
     {
         if (initial_size > 0)
             increase_enqueued = true;
@@ -670,6 +674,12 @@ struct ManualAllocation : public ResourceAllocation
     {
         std::unique_lock lock(mutex);
         return kills;
+    }
+
+    bool waitKillsFor(size_t count, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [&] { return kills >= count; });
     }
 
     ResourceCost size()
@@ -762,4 +772,94 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
     ASSERT_EQ(b.killCount(), 0u);
     EXPECT_EQ(a.size(), 9000);
     EXPECT_EQ(b.size(), 0);
+}
+
+
+static ResourceAllocation::MemoryPressurePolicy recoveryPolicy(bool protect, UInt64 reserved_bytes)
+{
+    ResourceAllocation::MemoryPressurePolicy policy;
+    policy.protect_from_eviction = protect;
+    policy.recovery_reserved_bytes = reserved_bytes;
+    return policy;
+}
+
+
+TEST(SchedulerSpaceShared, ProtectedGrowthUsesReservedCapacity)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation requester(queue, "requester", 1000, recoveryPolicy(true, 2000));
+    ManualAllocation ordinary(queue, "ordinary", 7000, recoveryPolicy(false, 2000));
+
+    requester.increaseAsync(2000);
+    requester.waitSynced();
+
+    EXPECT_EQ(requester.size(), 3000);
+    EXPECT_EQ(requester.killCount(), 0u);
+    EXPECT_EQ(ordinary.killCount(), 0u);
+}
+
+
+TEST(SchedulerSpaceShared, ReservedRecoveryFallsBackToExistingEvictionAtFullLimit)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation requester(queue, "requester", 8000, recoveryPolicy(true, 2000));
+    requester.increaseAsync(3000);
+
+    ASSERT_TRUE(requester.waitKillsFor(1, std::chrono::seconds(5)))
+        << "A protected request above the full resource limit did not enter the existing eviction path";
+}
+
+
+TEST(SchedulerSpaceShared, ReservedRecoveryRunsOneCandidateAtATime)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation first(queue, "first", 3000, recoveryPolicy(true, 2000));
+    ManualAllocation second(queue, "second", 3000, recoveryPolicy(true, 2000));
+    ManualAllocation ordinary(queue, "ordinary", 2000, recoveryPolicy(false, 2000));
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    first.increaseAsync(2000);
+    second.increaseAsync(2000);
+    release.set_value();
+
+    first.waitSynced();
+    EXPECT_EQ(first.size(), 5000);
+
+    std::promise<void> scheduler_barrier;
+    auto scheduler_barrier_future = scheduler_barrier.get_future();
+    t.scheduler.event_queue.enqueue([&] { scheduler_barrier.set_value(); });
+    scheduler_barrier_future.get();
+
+    EXPECT_EQ(second.size(), 3000)
+        << "A second protected request consumed the reserve before the first owner returned it";
+    EXPECT_EQ(second.killCount(), 0u);
+
+    first.decreaseAsync(2000);
+    first.waitSynced();
+    second.waitSynced();
+
+    EXPECT_EQ(first.size(), 3000);
+    EXPECT_EQ(second.size(), 5000);
+    EXPECT_EQ(first.killCount(), 0u);
+    EXPECT_EQ(second.killCount(), 0u);
+    EXPECT_EQ(ordinary.killCount(), 0u);
 }
