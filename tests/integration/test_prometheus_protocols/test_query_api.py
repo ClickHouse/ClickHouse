@@ -482,6 +482,17 @@ def test_nocache_bypasses_query_cache():
     )
     assert json.loads(extract_data_from_http_api_response(response))["result"][0]["value"][1] == "3"
 
+    # `nocache=1` wins over `use_query_cache=1` in the same request.
+    def get_default_user_value(extra_params):
+        params = [("query", "nocache_metric"), ("time", "1010"), ("use_query_cache", "1"), ("query_cache_nondeterministic_function_handling", "save")]
+        response = requests.get(f"http://{node.ip_address}:9093/api/v1/query", params=params + extra_params)
+        return json.loads(extract_data_from_http_api_response(response))["result"][0]["value"][1]
+
+    assert get_default_user_value([]) == "3"
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1009.0: 4.0})])
+    assert get_default_user_value([]) == "3"
+    assert get_default_user_value([("nocache", "1")]) == "4"
+
 
 # `partial_response=false` makes an unreachable shard an error even for a user with `skip_unavailable_shards = 1`.
 def test_partial_response_false_requires_all_shards():
@@ -494,6 +505,14 @@ def test_partial_response_false_requires_all_shards():
 
     path = "/dynamic_table/api/v1/query"
     params = {"table": "prometheus_dist", "user": "skip_shards_user"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
+    # `partial_response=false` wins over `skip_unavailable_shards=1` in the same request.
+    params = {"table": "prometheus_dist", "skip_unavailable_shards": "1"}
     data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
     assert json.loads(data)["result"][0]["value"][1] == "7"
     params["partial_response"] = "false"

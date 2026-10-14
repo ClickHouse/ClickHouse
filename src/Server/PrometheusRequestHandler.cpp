@@ -485,10 +485,16 @@ public:
 
     void addSettingsFromParams(SettingsChanges & settings_changes) const override
     {
+        /// Drop the request's own value first: the constraint check removes a change equal to the current value.
+        auto force_off = [&](const String & setting_name)
+        {
+            std::erase_if(settings_changes, [&](const SettingChange & change) { return change.name == setting_name; });
+            settings_changes.push_back({setting_name, false});
+        };
         if (hasParamValue("nocache", true))
-            settings_changes.push_back({"use_query_cache", false});
+            force_off("use_query_cache");
         if (hasParamValue("partial_response", false))
-            settings_changes.push_back({"skip_unavailable_shards", false});
+            force_off("skip_unavailable_shards");
     }
 
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
