@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "ja": {
-          "updatedAt": "2026-10-14T22:42:39.207Z",
+          "updatedAt": "2026-10-14T23:37:01.004Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-14T22:42:39.687Z",
+          "updatedAt": "2026-10-14T23:37:01.383Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ar": {
-          "updatedAt": "2026-10-14T22:42:40.402Z",
+          "updatedAt": "2026-10-14T23:37:01.953Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ko": {
-          "updatedAt": "2026-10-14T22:42:39.450Z",
+          "updatedAt": "2026-10-14T23:37:01.189Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ru": {
-          "updatedAt": "2026-10-14T22:42:39.931Z",
+          "updatedAt": "2026-10-14T23:37:01.576Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "es": {
-          "updatedAt": "2026-10-14T22:42:38.954Z",
+          "updatedAt": "2026-10-14T23:37:00.812Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "zh": {
-          "updatedAt": "2026-10-14T22:42:40.167Z",
+          "updatedAt": "2026-10-14T23:37:01.761Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "fr": {
-          "updatedAt": "2026-10-14T22:42:40.654Z",
+          "updatedAt": "2026-10-14T23:37:02.143Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         }
@@ -60344,47 +60344,47 @@
     },
     {
       "fileId": "363a3ec4f65cdf5ff0f6a6977c4158920b4f881b374169396fa5fc1078ac50ed",
-      "versionId": "c2ebff9ae6b0bad7fd2be11c114c327839ef14756c1a015abd94b902b2e2ddf0",
+      "versionId": "3dc9fa3238478abbb8060ade90dff0eca8704255f44e0805ab56f738d31511e2",
       "translations": {
+        "zh": {
+          "updatedAt": "2026-10-14T23:37:05.700Z",
+          "fileName": "zh/reference/functions/regular-functions/ai-functions.mdx",
+          "postProcessHash": "cca60d190deab606a77965e6bd0f938269ccf24d137b2083eb69371d89934ce6"
+        },
         "es": {
-          "updatedAt": "2026-09-24T10:24:05.562Z",
+          "updatedAt": "2026-10-14T23:37:05.700Z",
           "fileName": "es/reference/functions/regular-functions/ai-functions.mdx",
-          "postProcessHash": "8decc2f300d8e717a8949c60b90b4c787d8e69a13a740e32fefe65f1c0d3bc6d"
+          "postProcessHash": "3437e9216d3d98f674a4c2b8cf9c662e203f4c7f772f75f1f004679150fc00a0"
         },
         "ja": {
-          "updatedAt": "2026-09-24T10:24:05.563Z",
+          "updatedAt": "2026-10-14T23:37:05.701Z",
           "fileName": "ja/reference/functions/regular-functions/ai-functions.mdx",
-          "postProcessHash": "ad05e3e3b0de874bfb9884a3cec9144eaa4f4dbb92be2d925da88e217f6628d9"
+          "postProcessHash": "6f1db6aa37310944d31da026f91d3145aa7c9bce584deffdd05475312acae168"
         },
         "ko": {
-          "updatedAt": "2026-09-24T10:24:05.564Z",
+          "updatedAt": "2026-10-14T23:37:05.701Z",
           "fileName": "ko/reference/functions/regular-functions/ai-functions.mdx",
-          "postProcessHash": "2c645660ca3401fe548544f71e1b6ebf05fd1cb4543a4e2076c1f4fdb459cc0b"
+          "postProcessHash": "45c72c4b575d5b742c9bc3c316df85ccbac18c6b95580939add79c4380a67d29"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:05.565Z",
+          "updatedAt": "2026-10-14T23:37:05.702Z",
           "fileName": "pt-BR/reference/functions/regular-functions/ai-functions.mdx",
-          "postProcessHash": "4a4bfe47484024ad03bb30f899124dacd92c6bde514f7cd9b547f102c0e3b3d9"
+          "postProcessHash": "d396ff44ebeb68c6c62c975065fdfc14965ca5ba9d200baad4cd45c8fcd70563"
         },
         "ru": {
-          "updatedAt": "2026-09-24T10:24:05.565Z",
+          "updatedAt": "2026-10-14T23:37:05.703Z",
           "fileName": "ru/reference/functions/regular-functions/ai-functions.mdx",
-          "postProcessHash": "42fbd6e211d7f0f1f8f5500eb1dd8c83316c1c8fffa0795bcb8deaa6f5d41ee7"
-        },
-        "zh": {
-          "updatedAt": "2026-09-24T10:24:05.566Z",
-          "fileName": "zh/reference/functions/regular-functions/ai-functions.mdx",
-          "postProcessHash": "d2fc6b85323ac8cfe10e256ea7ee8259d5437cf0a0439340eb30e8accd80f99d"
-        },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:05.566Z",
-          "fileName": "ar/reference/functions/regular-functions/ai-functions.mdx",
-          "postProcessHash": "63a545f840e1813c0974460e42ab2f5dc8867ebce30b26c16dd21c7d8ba70041"
+          "postProcessHash": "479c0c39cf5b199d64fb4322e22d911f691d3931cec05b88108f876770f538f4"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:05.567Z",
+          "updatedAt": "2026-10-14T23:37:05.703Z",
           "fileName": "fr/reference/functions/regular-functions/ai-functions.mdx",
-          "postProcessHash": "987902f0e7b7f9bd83385ebcf69100f7dadbe66c66bead04ebcc9fc936dd3727"
+          "postProcessHash": "5569dc4ed3497c0a96d1764d923467b0240c8b6ae9b3b7e7fe45f6f4a4ec7187"
+        },
+        "ar": {
+          "updatedAt": "2026-10-14T23:37:05.703Z",
+          "fileName": "ar/reference/functions/regular-functions/ai-functions.mdx",
+          "postProcessHash": "da58292d9e9d69e3759ee4e9cc3823984565e0999870ef34e07b9b191ecbb3a7"
         }
       },
       "fileName": "reference/functions/regular-functions/ai-functions.mdx"
