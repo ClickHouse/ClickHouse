@@ -200,7 +200,7 @@ DirectoryWatchReactor::~DirectoryWatchReactor()
 
 void DirectoryWatchReactor::runLoop()
 {
-    std::array<epoll_event, max_events_per_wait> events;
+    std::array<epoll_event, max_events_per_wait> events{};
 
     while (true)
     {
@@ -371,7 +371,7 @@ size_t DirectoryWatchReactor::waitForEvents(std::array<struct kevent, max_events
 
 void DirectoryWatchReactor::drainReadyEvents()
 {
-    std::array<struct kevent, max_events_per_wait> events;
+    std::array<struct kevent, max_events_per_wait> events{};
     while (true)
     {
         const size_t ready = waitForEvents(events, 0, commands_pending);
@@ -384,7 +384,7 @@ void DirectoryWatchReactor::drainReadyEvents()
 
 void DirectoryWatchReactor::runLoop()
 {
-    std::array<struct kevent, max_events_per_wait> events;
+    std::array<struct kevent, max_events_per_wait> events{};
 
     while (true)
     {
