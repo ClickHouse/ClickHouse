@@ -151,7 +151,8 @@ std::chrono::seconds RequestTimeout(Options const& options) {
 
 // Identifies the current contents of the trust store an SSL context loads: the
 // explicit CA bundle (file or directory) when one is configured, otherwise the
-// OpenSSL default locations (honouring `SSL_CERT_FILE` / `SSL_CERT_DIR`). Each
+// OpenSSL default locations (honouring `SSL_CERT_FILE` / `SSL_CERT_DIR`, where
+// the latter may be a `:`-separated list of directories). Each
 // path contributes its device, inode, size and modification time, so replacing a
 // bundle in place, or atomically through a rename, yields a different value. For
 // a directory only entries being added, removed or renamed change its mtime, which
@@ -164,8 +165,18 @@ std::string TrustStoreFingerprint(std::string const& ca_location) {
   } else {
     char const* file = std::getenv(X509_get_default_cert_file_env());
     paths.emplace_back(file != nullptr ? file : X509_get_default_cert_file());
+    // `SSL_CERT_DIR` may name several directories separated by `:`, and the
+    // context loads each of them on its own, so each one is fingerprinted.
     char const* dir = std::getenv(X509_get_default_cert_dir_env());
-    paths.emplace_back(dir != nullptr ? dir : X509_get_default_cert_dir());
+    std::string const dirs = dir != nullptr ? dir : X509_get_default_cert_dir();
+    std::string::size_type begin = 0;
+    while (true) {
+      auto const end = dirs.find(':', begin);
+      paths.push_back(dirs.substr(
+          begin, end == std::string::npos ? std::string::npos : end - begin));
+      if (end == std::string::npos) break;
+      begin = end + 1;
+    }
   }
   std::string result;
   for (auto const& path : paths) {
