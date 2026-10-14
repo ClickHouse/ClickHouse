@@ -190,6 +190,8 @@ public:
 private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
+    /// Columns whose parts carry statistics for different data types. They get no statistics, see `addStatistics`.
+    NameSet columns_with_mixed_types;
 };
 
 }
