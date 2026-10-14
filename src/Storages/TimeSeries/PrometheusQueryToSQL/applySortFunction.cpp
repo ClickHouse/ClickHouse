@@ -40,6 +40,29 @@ namespace
             makeTagsExpression());
     }
 
+    /// Key for Prometheus's natural order of a label value: digit runs compare by number, other runs as strings.
+    /// A run's class orders a digit run against other runs the way a string compare of their first chars would.
+    ASTPtr makeNaturalSortKey(ASTPtr label_value)
+    {
+        auto run = [] { return make_intrusive<ASTIdentifier>("c"); };
+        auto is_digits = [&] { return makeASTFunction("match", run(), make_intrusive<ASTLiteral>(String{"^[0-9]"})); };
+        auto without_leading_zeros = [&]
+        {
+            return makeASTFunction("replaceRegexpOne", run(), make_intrusive<ASTLiteral>(String{"^0+"}), make_intrusive<ASTLiteral>(String{}));
+        };
+
+        auto run_class = makeASTFunction("multiIf",
+            is_digits(), make_intrusive<ASTLiteral>(1u),
+            makeASTFunction("less", run(), make_intrusive<ASTLiteral>(String{"0"})), make_intrusive<ASTLiteral>(0u),
+            make_intrusive<ASTLiteral>(2u));
+        auto number_length = makeASTFunction("if", is_digits(), makeASTFunction("length", without_leading_zeros()), make_intrusive<ASTLiteral>(0u));
+
+        /// arrayMap(c -> (<run_class>, <number_length>, replaceRegexpOne(c, '^0+', '')), extractAll(<value>, '[0-9]+|[^0-9]+'))
+        return makeASTFunction("arrayMap",
+            makeASTLambda({"c"}, makeASTFunction("tuple", std::move(run_class), std::move(number_length), without_leading_zeros())),
+            makeASTFunction("extractAll", std::move(label_value), make_intrusive<ASTLiteral>(String{"[0-9]+|[^0-9]+"})));
+    }
+
     /// Builds the per-series sort key for sort_by_label() / sort_by_label_desc(): the natural sort keys
     /// of the given label values (a missing label is an empty string), with the full label set as a tiebreaker.
     ASTPtr makeSortByLabelKey(const std::vector<String> & labels)
@@ -47,7 +70,7 @@ namespace
         auto key = makeASTFunction("tuple");
         for (const auto & label : labels)
         {
-            /// naturalSortKey(tupleElement(arrayFirst(t -> t.1 = '<label>', timeSeriesGroupToTags(group)), 2))
+            /// tupleElement(arrayFirst(t -> t.1 = '<label>', timeSeriesGroupToTags(group)), 2)
             auto label_value = makeASTFunction("tupleElement",
                 makeASTFunction("arrayFirst",
                     makeASTLambda({"t"},
@@ -56,7 +79,7 @@ namespace
                             make_intrusive<ASTLiteral>(label))),
                     makeTagsExpression()),
                 make_intrusive<ASTLiteral>(2u));
-            key->arguments->children.push_back(makeASTFunction("naturalSortKey", std::move(label_value)));
+            key->arguments->children.push_back(makeNaturalSortKey(std::move(label_value)));
         }
         key->arguments->children.push_back(makeTagsExpression());
         return key;

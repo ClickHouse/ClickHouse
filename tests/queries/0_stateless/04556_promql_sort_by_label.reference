@@ -18,6 +18,20 @@
 [('__name__','mem'),('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
 [('__name__','mem'),('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
 [('__name__','mem'),('host','only')]	2023-11-14 22:13:20.000	14
+-- sort_by_label(net, 'instance'): Prometheus order (host2, host10, host-1, host.1, hostA, host_1)
+[('__name__','net'),('instance','host2')]	2023-11-14 22:13:20.000	21
+[('__name__','net'),('instance','host10')]	2023-11-14 22:13:20.000	23
+[('__name__','net'),('instance','host-1')]	2023-11-14 22:13:20.000	22
+[('__name__','net'),('instance','host.1')]	2023-11-14 22:13:20.000	24
+[('__name__','net'),('instance','hostA')]	2023-11-14 22:13:20.000	25
+[('__name__','net'),('instance','host_1')]	2023-11-14 22:13:20.000	26
+-- sort_by_label_desc(net, 'instance'): reverse of the above
+[('__name__','net'),('instance','host_1')]	2023-11-14 22:13:20.000	26
+[('__name__','net'),('instance','hostA')]	2023-11-14 22:13:20.000	25
+[('__name__','net'),('instance','host.1')]	2023-11-14 22:13:20.000	24
+[('__name__','net'),('instance','host-1')]	2023-11-14 22:13:20.000	22
+[('__name__','net'),('instance','host10')]	2023-11-14 22:13:20.000	23
+[('__name__','net'),('instance','host2')]	2023-11-14 22:13:20.000	21
 -- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()
 [('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
 [('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11

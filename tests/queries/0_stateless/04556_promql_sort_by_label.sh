@@ -35,6 +35,15 @@ INSERT INTO ts_tags VALUES
     ('00000000-0000-0000-0000-000000000013', 'mem', {'dc':'eu','host':'z'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
     ('00000000-0000-0000-0000-000000000014', 'mem', {'host':'only'},        toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
 
+-- 'net' has label values where a digit run meets punctuation; Prometheus compares the non-digit runs first.
+INSERT INTO ts_tags VALUES
+    ('00000000-0000-0000-0000-000000000021', 'net', {'instance':'host2'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
+    ('00000000-0000-0000-0000-000000000022', 'net', {'instance':'host-1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
+    ('00000000-0000-0000-0000-000000000023', 'net', {'instance':'host10'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
+    ('00000000-0000-0000-0000-000000000024', 'net', {'instance':'host.1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
+    ('00000000-0000-0000-0000-000000000025', 'net', {'instance':'hostA'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
+    ('00000000-0000-0000-0000-000000000026', 'net', {'instance':'host_1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
+
 INSERT INTO ts_data VALUES
     ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1),
     ('00000000-0000-0000-0000-000000000002', toDateTime64(1700000000, 3, 'UTC'), 2),
@@ -43,7 +52,13 @@ INSERT INTO ts_data VALUES
     ('00000000-0000-0000-0000-000000000011', toDateTime64(1700000000, 3, 'UTC'), 11),
     ('00000000-0000-0000-0000-000000000012', toDateTime64(1700000000, 3, 'UTC'), 12),
     ('00000000-0000-0000-0000-000000000013', toDateTime64(1700000000, 3, 'UTC'), 13),
-    ('00000000-0000-0000-0000-000000000014', toDateTime64(1700000000, 3, 'UTC'), 14);
+    ('00000000-0000-0000-0000-000000000014', toDateTime64(1700000000, 3, 'UTC'), 14),
+    ('00000000-0000-0000-0000-000000000021', toDateTime64(1700000000, 3, 'UTC'), 21),
+    ('00000000-0000-0000-0000-000000000022', toDateTime64(1700000000, 3, 'UTC'), 22),
+    ('00000000-0000-0000-0000-000000000023', toDateTime64(1700000000, 3, 'UTC'), 23),
+    ('00000000-0000-0000-0000-000000000024', toDateTime64(1700000000, 3, 'UTC'), 24),
+    ('00000000-0000-0000-0000-000000000025', toDateTime64(1700000000, 3, 'UTC'), 25),
+    ('00000000-0000-0000-0000-000000000026', toDateTime64(1700000000, 3, 'UTC'), 26);
 "
 
 promql_client()
@@ -62,6 +77,12 @@ promql_client -q "sort_by_label(mem, 'dc', 'host')"
 
 echo "-- sort_by_label_desc(mem, 'dc', 'host'): reverse of the above"
 promql_client -q "sort_by_label_desc(mem, 'dc', 'host')"
+
+echo "-- sort_by_label(net, 'instance'): Prometheus order (host2, host10, host-1, host.1, hostA, host_1)"
+promql_client -q "sort_by_label(net, 'instance')"
+
+echo "-- sort_by_label_desc(net, 'instance'): reverse of the above"
+promql_client -q "sort_by_label_desc(net, 'instance')"
 
 echo "-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()"
 promql_client -q "abs(sort_by_label(mem, 'host'))"
