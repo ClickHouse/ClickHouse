@@ -139,7 +139,7 @@ Red and green. A timeout is `TIMEOUT_EXCEEDED` (for a shell query, its time limi
 A censored row records the time of the completed statements plus the budget. With `--long`, regressions and `partial` queries are visible but do not turn the job red, and:
 
 * A settings or setup failure on the reference side (a feature the older binary lacks) runs the test on the tested side only, reported as `partial`, without `do_not_check_in_pr`. A setup failure on the tested side is red.
-* Every test runs under `timeout -k 60` with a 3-hour budget. A non-zero exit always leaves an error record (`124`: budget expired, `137`: killed), so the job is red. A failed upload of the required results (raw runs, query metrics, test times) is red too.
+* Every test runs under `timeout -k 60` with a 4-hour budget. A non-zero exit always leaves an error record (`124`: budget expired, `137`: killed), so the job is red. A failed upload of the required results (raw runs, query metrics, test times) is red too.
 * Teardown: on exit, including `SIGTERM`, `perf.py` runs the drop queries on every server that ran setup and prints `teardown-complete` only if all of them succeeded (a missing table is accepted on a reference whose setup failed). Without that line the harness records `teardown incomplete, stopping the batch` and runs no further tests on that host; what was measured is still reported.
 * Changes reported by the nightly are unconfirmed: `confirm_changes` is skipped, and the repetition from night to night is the confirmation.
 

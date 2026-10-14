@@ -21,15 +21,25 @@ A test whose teardown did not complete stops the batch. Changes do not gate and 
 Rerun: `gh workflow run NightlyExtendedPerformance` (`--ref <branch>` runs are excluded from the nightly history).
 
 Results: `query_metrics_v2`, `query_metric_runs_v1`, `perf_test_times_v1`, `perf_metric_changes_v1` with
-`workflow_name = 'NightlyExtendedPerformance'`; the PR-check thresholds read `MasterCI` rows only. Query text:
+`workflow_name = 'NightlyExtendedPerformance'`, readable on `play.clickhouse.com` as user `play`; the PR-check
+thresholds read `MasterCI` rows only. Query text:
 `perf.py --print-queries tests/performance/<test>.xml --queries-to-run <query_index>`. Most regressed last night:
 
     SELECT test, query_index, query_display_name, old_value, new_value, diff, stat_threshold, new_sha, report_url,
            concat('tests/performance/', test, '.xml') AS test_file
     FROM query_metrics_v2
     WHERE event_date >= today() - 1 AND workflow_name = 'NightlyExtendedPerformance'
-      AND metric = 'client_time' AND diff > stat_threshold
+      AND report_url LIKE '%?REF=master&%' AND metric = 'client_time' AND diff > stat_threshold
     ORDER BY diff DESC LIMIT 50
+
+Slowest last night:
+
+    SELECT test, query_index, query_display_name, new_value, new_sha, report_url,
+           concat('tests/performance/', test, '.xml') AS test_file
+    FROM query_metrics_v2
+    WHERE event_date >= today() - 1 AND workflow_name = 'NightlyExtendedPerformance'
+      AND report_url LIKE '%?REF=master&%' AND metric = 'client_time'
+    ORDER BY new_value DESC LIMIT 50
 
 Open: a nightly view on the performance dashboard (it shows `MasterCI` runs only); the size of the runner pool.
 """
