@@ -164,7 +164,7 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 
 Times are summed across executions and threads, so they can exceed query wall-clock time.
 Divide `AIRequestMicroseconds` by `AIAPICalls` to get mean request latency, including failed attempts.
-These counters do not provide per-request latency percentiles.
+These counters are per-query, they do not provide per-request latency information.
 
 `AIInputRows` counts function inputs, rather than HTTP requests or final query rows.
 For example, `aiEmbed` can send several rows in one request, and `aiSimilarity` embeds two operands per row.
