@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="number_of_free_entries_in_pool_to_execute_mutation">
-  ## number_of_free_entries_in_pool_to_execute_mutation
-</div>
+## number_of_free_entries_in_pool_to_execute_mutation {#number_of_free_entries_in_pool_to_execute_mutation}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -34,9 +32,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 [`background_merges_mutations_concurrency_ratio`](/ko/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio)의 곱을 초과해서는 안 됩니다.
 그렇지 않으면 ClickHouse가 예외를 발생시킵니다.
 
-<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
-  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
-</div>
+## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
@@ -51,15 +47,11 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 양의 정수.
 
 `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-설정 값은 다음 값보다 작아야 합니다.
-[background&#95;pool&#95;size](/ko/reference/settings/server-settings/settings/background#background_pool_size)
+설정 값은 [`background_pool_size`](/ko/reference/settings/server-settings/settings/background#background_pool_size)와
+[`background_merges_mutations_concurrency_ratio`](/ko/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio)의 곱을 초과해서는 안 됩니다.
+그렇지 않으면 ClickHouse에서 예외가 발생합니다.
 
-* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/ko/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
-  그렇지 않으면 ClickHouse에서 예외가 발생합니다.
-
-<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
-  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
-</div>
+## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number_of_free_entries_in_pool_to_lower_max_size_of_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -72,9 +64,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 * 임의의 양의 정수.
 
-<div id="number_of_mutations_to_delay">
-  ## number_of_mutations_to_delay
-</div>
+## number_of_mutations_to_delay {#number_of_mutations_to_delay}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -82,18 +72,14 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 해당 개수 이상 있으면 테이블의 뮤테이션 속도를 인위적으로 늦춥니다.
 0으로 설정하면 비활성화됩니다.
 
-<div id="number_of_mutations_to_throw">
-  ## number_of_mutations_to_throw
-</div>
+## number_of_mutations_to_throw {#number_of_mutations_to_throw}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 테이블에 완료되지 않은 뮤테이션이 이 수 이상 있으면 &#39;Too many mutations&#39; 예외를 발생시킵니다.
 0으로 설정하면 비활성화됩니다
 
-<div id="number_of_partitions_to_consider_for_merge">
-  ## number_of_partitions_to_consider_for_merge
-</div>
+## number_of_partitions_to_consider_for_merge {#number_of_partitions_to_consider_for_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
