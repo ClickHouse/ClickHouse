@@ -74,8 +74,12 @@ public:
 
         /// Ignore if returned type changed.
         /// Example : SELECT now64(if(Null, NULL, if(Null, nan, toFloat64(number))), Null) FROM numbers(2)
-        if (!multi_if_function->getResultType()->equals(*function_node->getResultType()))
+        if (!multi_if_function->getResultType()->equals(*function_node->getFunctionOrThrow()->getResultType()))
             return;
+
+        /// A `group_by_use_nulls` copy of a GROUP BY key is the key made Nullable: rewrite it like the key and keep it Nullable.
+        if (!multi_if_function->getResultType()->equals(*function_node->getResultType()))
+            multi_if_function->convertToNullable();
 
         node = std::move(multi_if_function);
     }
