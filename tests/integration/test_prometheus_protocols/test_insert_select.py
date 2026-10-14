@@ -81,12 +81,12 @@ def test_insert_with_metrics_metadata():
 
 def test_promql_at_timestamp_with_supported_timestamp_types():
     timestamp_types = [
-        ("u32", "UInt32", "4294967196", "0", "0"),
-        ("datetime", "DateTime", "toDateTime(4294967196)", "toDateTime(0)", "0"),
-        ("datetime64", "DateTime64(3)", "toDateTime64(-100, 3)", "toDateTime64(0, 3)", "1"),
+        ("u32", "UInt32", "4294967196", "0", ["0", "[]"]),
+        ("datetime", "DateTime", "toDateTime(4294967196)", "toDateTime(0)", ["0", "[]"]),
+        ("datetime64", "DateTime64(3)", "toDateTime64(-100, 3)", "toDateTime64(0, 3)", ["1", "[1]"]),
     ]
 
-    for suffix, timestamp_type, wrapped_timestamp, epoch_timestamp, expected_negative_count in timestamp_types:
+    for suffix, timestamp_type, wrapped_timestamp, epoch_timestamp, expected_negative in timestamp_types:
         table_name = f"prometheus_{suffix}"
         try:
             node.query(
@@ -97,14 +97,15 @@ def test_promql_at_timestamp_with_supported_timestamp_types():
                 f" ('metric', {{'job': 'test'}}, [({wrapped_timestamp}, 1), ({epoch_timestamp}, 2)])"
             )
 
+            # A negative selector must not read a wrapped positive timestamp.
             assert node.query(
-                f"SELECT count() FROM prometheusQuery({table_name}, 'metric @ -100', 0)"
-            ) == TSV([[expected_negative_count]])
+                f"SELECT count(), groupArray(value) FROM prometheusQuery({table_name}, 'metric @ -100', 0)"
+            ) == TSV([expected_negative])
 
-            # The default five-minute lookback crosses the Unix epoch at @ 100.
+            # The default five-minute lookback crosses the Unix epoch at @ +100.
             assert node.query(
-                f"SELECT count() FROM prometheusQuery({table_name}, 'metric @ 100', 0)"
-            ) == TSV([["1"]])
+                f"SELECT count(), groupArray(value) FROM prometheusQuery({table_name}, 'metric @ +100', 0)"
+            ) == TSV([["1", "[2]"]])
         finally:
             node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
