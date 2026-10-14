@@ -166,7 +166,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
     const auto & join_algorithms = join->getJoinSettings().join_algorithms;
-    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
+    if (!TableJoin::isHashFamilyEnabled(join_algorithms))
         return 0;
 
     const auto & join_operator = join->getJoinOperator();
