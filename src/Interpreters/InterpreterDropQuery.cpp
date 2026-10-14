@@ -294,6 +294,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
                 check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(table_id, context_, is_drop_or_detach_database);
             }
 
             table->flushAndShutdown();
@@ -366,6 +367,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(table_id, context_, is_drop_or_detach_database);
 
             table->flushAndShutdown(true);
 

@@ -1,5 +1,5 @@
 -- Tags: atomic-database
--- The source of an incremental refreshable materialized view cannot be renamed or exchanged:
+-- The source of an incremental refreshable materialized view cannot be dropped, renamed or exchanged:
 -- the view's cursor would be applied to a different table and silently skip its rows.
 
 DROP TABLE IF EXISTS src_rename_mv;
@@ -33,6 +33,8 @@ RENAME TABLE src_rename_src TO src_rename_moved; -- { serverError HAVE_DEPENDENT
 EXCHANGE TABLES src_rename_src AND src_rename_staged; -- { serverError HAVE_DEPENDENT_OBJECTS }
 EXCHANGE TABLES src_rename_staged AND src_rename_src; -- { serverError HAVE_DEPENDENT_OBJECTS }
 CREATE OR REPLACE TABLE src_rename_src (k UInt64) ENGINE = MergeTree ORDER BY k; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP TABLE src_rename_src; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DETACH TABLE src_rename_src PERMANENTLY; -- { serverError HAVE_DEPENDENT_OBJECTS }
 
 -- The source is intact and the view keeps reading it.
 INSERT INTO src_rename_src VALUES (2);

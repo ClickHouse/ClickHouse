@@ -115,9 +115,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
 
-        StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(StorageID(elem.from_database_name, elem.from_table_name), getContext());
+        StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(StorageID(elem.from_database_name, elem.from_table_name), getContext(), /*is_drop_database*/ false);
         if (exchange_tables)
-            StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(StorageID(elem.to_database_name, elem.to_table_name), getContext());
+            StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(StorageID(elem.to_database_name, elem.to_table_name), getContext(), /*is_drop_database*/ false);
 
         /// Run the caller's pre-swap check while still holding `ddl_guards`. If it
         /// throws, the guards release via RAII, no rename happens, and the caller's

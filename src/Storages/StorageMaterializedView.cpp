@@ -1225,11 +1225,14 @@ void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_t
         refresher->start();
 }
 
-void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & local_context)
+void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & local_context, bool is_drop_database)
 {
     auto & catalog = DatabaseCatalog::instance();
     for (const auto & dependent_id : catalog.getReferentialDependents(table_id))
     {
+        /// `DROP DATABASE` drops dependents before their dependencies.
+        if (is_drop_database && dependent_id.database_name == table_id.database_name)
+            continue;
         auto view = std::dynamic_pointer_cast<StorageMaterializedView>(catalog.tryGetTable(dependent_id, local_context));
         if (!view)
             continue;
@@ -1251,7 +1254,7 @@ void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const Stor
         /// The cursor is in the source's block-number space, so another table under the same name would be read from a stale cursor.
         if (source_id.database_name == table_id.database_name && source_id.table_name == table_id.table_name)
             throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS,
-                "Cannot rename or exchange table {}, because it is the source of incremental refreshable materialized view {}. "
+                "Cannot drop, rename or exchange table {}, because it is the source of incremental refreshable materialized view {}. "
                 "Drop the view first",
                 table_id.getNameForLogs(), view->getStorageID().getNameForLogs());
     }
