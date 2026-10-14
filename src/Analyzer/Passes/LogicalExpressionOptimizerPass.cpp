@@ -911,6 +911,17 @@ static AddComparisonFilterResult addComparisonFilter(
         return AddComparisonFilterResult::ADDED;
     }
 
+    /// Composite carriers of floats (`Array(Float64)`, `Tuple(Float64, ...)`, `Map`, `Variant`) are
+    /// compared here as `Field` containers, which order a nested NaN after all values and treat it as
+    /// equivalent to anything in the `notEquals` map, while query execution compares the elements with
+    /// the nested function: `[1.0] < [nan]` is false. Only a top-level NaN is detected below, so keep
+    /// such filters out of the analysis (`arr = [1.0] AND arr < [nan]` must not become `arr = [1.0]`).
+    if (!isFloat(removeNullable(expr_type)) && containsFloat(expr_type))
+    {
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     auto is_nan_field = [](const Field & f)
     { return f.getType() == Field::Types::Float64 && isNaN(f.safeGet<Float64>()); };
 
