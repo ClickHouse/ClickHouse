@@ -19,6 +19,8 @@
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ReadHelpers.h>
+#include <IO/copyData.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
@@ -31,7 +33,6 @@
 #include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
 #include <aws/core/utils/ratelimiter/RateLimiterInterface.h>
-#include <Poco/StreamCopier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/JSON/JSON.h>
@@ -626,12 +627,15 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             Stopwatch watch;
 
-            auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
+            auto request_body = sendHTTPRequest(*session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
             observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
             observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
+
+            /// Set when the server has already answered while the request body was being sent.
+            std::unique_ptr<HTTPResponseReadBuffer> response_body;
 
             if (request.GetContentBody())
             {
@@ -647,8 +651,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
                 try
                 {
-                    auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
-                    request_body_stream.flush();
+                    auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
+                    request_body->finalize();
                     if (enable_s3_requests_logging)
                         LOG_TEST(log, "Written {} bytes to request body", size);
                 }
@@ -658,7 +662,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     /// TLS allows no I/O after a failed write.
                     if (session->secure()
                         || DB::getSocketState(session->socket()) != DB::SocketState::DataPending
-                        || !session->receiveEarlyResponse(poco_response)
+                        || !(response_body = receiveEarlyHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE))
                         || poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
                         throw;
                     LOG_DEBUG(log, "Failed to send the request body to {}, using the response the server has already sent: {}",
@@ -666,11 +670,16 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 }
             }
 
-            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+            if (!response_body)
+            {
+                request_body->finalize();
 
-            if (enable_s3_requests_logging)
-                LOG_TEST(log, "Receiving response...");
-            auto & response_body_stream = session->receiveResponse(poco_response);
+                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Receiving response...");
+                response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
+            }
 
             watch.stop();
             addMetric(request, S3MetricType::Microseconds, watch.elapsedMicroseconds());
@@ -747,8 +756,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
             if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {
                 /// reading the full response
-                std::string response_string((std::istreambuf_iterator<char>(response_body_stream)),
-                               std::istreambuf_iterator<char>());
+                std::string response_string;
+                readStringUntilEOF(response_string, *response_body);
 
                 /// Just trim string so it will not be so long
                 LOG_TRACE(log, "Got dangerous response with successful code {}, checking its body: '{}'", status_code, response_string.substr(0, 300));
@@ -780,8 +789,12 @@ void PocoHTTPClient::makeRequestInternalImpl(
                         error_report(proxy_configuration);
                 }
 
-                /// expose stream, after that client reads data from that stream without built-in retries
-                response->SetResponseBody(response_body_stream, session);
+                /// expose the body, after that client reads data from it without built-in retries
+                const auto content_length = poco_response.getContentLength();
+                response->SetResponseBody(
+                    std::move(response_body),
+                    content_length == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH ? std::numeric_limits<size_t>::max()
+                                                                                    : static_cast<size_t>(content_length));
             }
 
             return;
@@ -931,16 +944,16 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto session = makeHTTPSession(group, url, getCredentialAcquisitionTimeouts(timeouts));
-    session->sendRequest(request);
+    sendHTTPRequest(*session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    auto & in = session->receiveResponse(response);
+    auto in = receiveHTTPResponse(*session, response);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Failed to request bearer token: {}", response.getReason());
 
     String token_json_raw;
-    Poco::StreamCopier::copyToString(in, token_json_raw);
+    readStringUntilEOF(token_json_raw, *in);
 
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Received token in response: {}", token_json_raw);
