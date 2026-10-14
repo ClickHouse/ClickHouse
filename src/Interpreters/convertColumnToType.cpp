@@ -200,26 +200,36 @@ bool isVariantOrDynamic(const IDataType & type)
     return typeid_cast<const DataTypeVariant *>(&type) || isDynamic(type);
 }
 
-bool containsVariantOrDynamic(const DataTypePtr & type)
+/// A `JSON` value materialized as a `Field` loses the types of its paths in the same way: the dynamic
+/// paths are `Dynamic` columns, and an `Object` field keeps only the nested values.
+bool hasAlternatives(const IDataType & type)
 {
-    if (isVariantOrDynamic(*type))
+    return isVariantOrDynamic(type) || isObject(type);
+}
+
+bool containsAlternatives(const DataTypePtr & type)
+{
+    if (hasAlternatives(*type))
         return true;
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-        return containsVariantOrDynamic(nullable_type->getNestedType());
+        return containsAlternatives(nullable_type->getNestedType());
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-        return containsVariantOrDynamic(array_type->getNestedType());
+        return containsAlternatives(array_type->getNestedType());
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-        return std::ranges::any_of(tuple_type->getElements(), [](const DataTypePtr & element) { return containsVariantOrDynamic(element); });
+        return std::ranges::any_of(tuple_type->getElements(), [](const DataTypePtr & element) { return containsAlternatives(element); });
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
-        return containsVariantOrDynamic(map_type->getKeyType()) || containsVariantOrDynamic(map_type->getValueType());
+        return containsAlternatives(map_type->getKeyType()) || containsAlternatives(map_type->getValueType());
     return false;
 }
 
-/// A composite holding a `Variant`/`Dynamic` converted to a `String` as a whole is rendered from its column:
-/// its `Field` keeps none of the members' alternatives, so it cannot be rendered as `CAST` renders it.
-bool isCompositeWithAlternativesToString(const DataTypePtr & from, const DataTypePtr & unwrapped_to)
+/// A `JSON` value, or a composite holding a `Variant`/`Dynamic`/`JSON`, converted to a `String` as a whole
+/// is rendered from its column: its `Field` keeps none of the members' alternatives, so it cannot be
+/// rendered as `CAST` renders it.
+bool isRenderedFromColumnToString(const DataTypePtr & from, const DataTypePtr & unwrapped_to)
 {
-    return (isArray(from) || isTuple(from) || isMap(from)) && isStringOrFixedString(unwrapped_to) && containsVariantOrDynamic(from);
+    if (!isStringOrFixedString(unwrapped_to))
+        return false;
+    return isObject(from) || ((isArray(from) || isTuple(from) || isMap(from)) && containsAlternatives(from));
 }
 
 /// `resolveActiveAlternative` recovers the alternative of a top-level `Variant`/`Dynamic` only. Inside a
@@ -229,8 +239,9 @@ bool isCompositeWithAlternativesToString(const DataTypePtr & from, const DataTyp
 /// member here, with its own alternative as the source type, straight to the matching member of `to`.
 /// `rewriteNestedAlternativesType` gives the source type of the result: those members already have the
 /// type of `to`, and `convertFieldToType` leaves a value whose source type equals the target as it is. A
-/// composite that holds such members and is converted to a `String` as a whole is rendered here as well.
-/// `from` is never a `Variant`/`Dynamic` itself at the top level: the callers resolve that alternative first.
+/// `JSON` value, and a composite that holds such members, converted to a `String` as a whole is rendered
+/// here as well. `from` is never a `Variant`/`Dynamic` itself at the top level: the callers resolve that
+/// alternative first.
 DataTypePtr rewriteNestedAlternativesType(const DataTypePtr & from, const DataTypePtr & to)
 {
     if (isVariantOrDynamic(*from))
@@ -244,7 +255,7 @@ DataTypePtr rewriteNestedAlternativesType(const DataTypePtr & from, const DataTy
 
     const DataTypePtr unwrapped_to = removeLowCardinalityAndNullable(to);
 
-    if (isCompositeWithAlternativesToString(from, unwrapped_to))
+    if (isRenderedFromColumnToString(from, unwrapped_to))
         return std::make_shared<DataTypeString>();
 
     if (const auto * array_from = typeid_cast<const DataTypeArray *>(from.get()))
@@ -359,7 +370,7 @@ bool rewriteNestedAlternatives(
 
     const DataTypePtr unwrapped_to = removeLowCardinalityAndNullable(to);
 
-    if (isCompositeWithAlternativesToString(from, unwrapped_to))
+    if (isRenderedFromColumnToString(from, unwrapped_to))
     {
         WriteBufferFromOwnString out;
         from->getDefaultSerialization()->serializeText(column, row, out, format_settings);
