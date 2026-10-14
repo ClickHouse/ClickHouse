@@ -31,7 +31,8 @@ namespace
 
 /// A value that does not answer the same twice cannot be recomputed above the `LIMIT`: the filter below
 /// already used one answer, and the result has to agree with it. Same for a function whose answer depends
-/// on the rows around it, which above the `LIMIT` are no longer the same rows.
+/// on the rows around it, which above the `LIMIT` are no longer the same rows, and for one with observable side
+/// effects, such as `sleepEachRow`, which has to run for the rows the plan runs it for.
 ///
 /// A higher-order function answers as its lambdas do, so it is recomputed only with them. A lambda is as deterministic as
 /// its body, which its capture function says, or, for a lambda that captures nothing, the function of its constant.
@@ -54,13 +55,14 @@ bool canBeRecomputed(const ActionsDAG::Node * node)
             return true;
 
         const auto & function = column_function->getFunction();
-        return function->isDeterministicInScopeOfQuery() && !function->isStateful();
+        return function->isDeterministicInScopeOfQuery() && !function->isStateful() && !function->hasObservableSideEffects();
     }
 
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return true;
 
-    if (!node->function_base->isDeterministicInScopeOfQuery() || node->function_base->isStateful())
+    if (!node->function_base->isDeterministicInScopeOfQuery() || node->function_base->isStateful()
+        || node->function_base->hasObservableSideEffects())
         return false;
 
     for (const auto * child : node->children)
@@ -206,6 +208,12 @@ private:
         if (WhichDataType(node->result_type).isFunction())
             return Decision::Recompute;
 
+        /// A short-circuit function evaluates its branches for some rows only, which a function in them that crossed on
+        /// its own would lose: computed for every row as a column of its own, it could throw at a row its branch skips.
+        /// Such a function crosses as a whole instead, computed where the plan computes it, with its branches.
+        if (hasBranchThatWouldCross(node))
+            return Decision::Cross;
+
         /// How to have it above, once the rest of this settles whether to: a source column is read a
         /// second time, anything else is computed a second time.
         const auto have_it_above = source ? Decision::LazyRead : Decision::Recompute;
@@ -238,6 +246,49 @@ private:
             return Decision::Cross;
 
         return preferRecomputing(node) ? have_it_above : Decision::Cross;
+    }
+
+    /// Whether a function would cross on its own for a reason of its own rather than of how the rest is placed: it
+    /// cannot be recomputed, or a join can stuff it and it cannot be recomputed under a mask.
+    bool wouldCross(const ActionsDAG::Node * node) const
+    {
+        if (!canBeRecomputed(node))
+            return true;
+
+        if (const auto * stuffing = merged.getNearestStuffing(node))
+            return !masked_stuffings.contains(stuffing) || !canEvaluateOnStuffedRows(node);
+
+        return false;
+    }
+
+    /// Whether `node` is a short-circuit function, and a function in its arguments would cross on its own.
+    bool hasBranchThatWouldCross(const ActionsDAG::Node * node) const
+    {
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            return false;
+
+        IFunctionBase::ShortCircuitSettings settings;
+        if (!node->function_base->isShortCircuit(settings, node->children.size()))
+            return false;
+
+        std::vector<const ActionsDAG::Node *> stack(node->children.begin(), node->children.end());
+        NodeSet visited;
+        while (!stack.empty())
+        {
+            const auto * argument = stack.back();
+            stack.pop_back();
+            if (!visited.insert(argument).second)
+                continue;
+
+            /// A lambda answers for its body through its capture function; a constant or a column computes nothing.
+            if (argument->type == ActionsDAG::ActionType::FUNCTION && !WhichDataType(argument->result_type).isFunction()
+                && wouldCross(argument))
+                return true;
+
+            stack.insert(stack.end(), argument->children.begin(), argument->children.end());
+        }
+
+        return false;
     }
 
     /// Whether to compute a value the main branch already computes a second time above the `LIMIT`,
