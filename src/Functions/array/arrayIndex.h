@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -748,6 +749,33 @@ private:
                 : inner_type_decayed;
             arguments[1].column = castColumn(arguments[1], target_type);
             arguments[1].type = std::move(target_type);
+            return;
+        }
+
+        /// The same mix can be nested in composite elements (e.g. `Tuple(UUID2)` searched for `Tuple(UUID)`).
+        /// The constant path compares such `Field` values without a cast, so bring both sides to their common
+        /// type, as the generic path does.
+        const auto is_uuid = [](const IDataType & t) { return isUUID(t); };
+        const auto is_uuid2 = [](const IDataType & t) { return isUUID2(t); };
+        if (!(anyInTypeTree(*inner_type_decayed, is_uuid) && anyInTypeTree(*arg_decayed, is_uuid2))
+            && !(anyInTypeTree(*inner_type_decayed, is_uuid2) && anyInTypeTree(*arg_decayed, is_uuid)))
+            return;
+
+        const auto common_type = getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
+        const auto & inner_type = array_type->getNestedType();
+        const DataTypePtr inner_target_type = inner_type->isNullable() ? makeNullable(common_type) : common_type;
+        const DataTypePtr arg_target_type = arguments[1].type->isNullable() ? makeNullable(common_type) : common_type;
+
+        if (!inner_target_type->equals(*inner_type))
+        {
+            DataTypePtr array_target_type = std::make_shared<DataTypeArray>(inner_target_type);
+            arguments[0].column = castColumn(arguments[0], array_target_type);
+            arguments[0].type = std::move(array_target_type);
+        }
+        if (!arg_target_type->equals(*arguments[1].type))
+        {
+            arguments[1].column = castColumn(arguments[1], arg_target_type);
+            arguments[1].type = arg_target_type;
         }
     }
 
