@@ -254,8 +254,10 @@ void BaseDaemon::initialize(Application & self)
         /// no option of their own and arrive through `argsToConfig` as `-- --logger.stderr=...`, but they are
         /// read further down in this function just the same, after the `chdir`, so they need resolving too.
         ///
-        /// An empty value is not a path: for the `logger.*` keys it disables the corresponding channel,
-        /// so it is left alone. The start directory is only prepended, never normalized lexically, because
+        /// An empty value is not a path: for `logger.log` and `logger.errorlog` it disables the
+        /// corresponding file channel, and for the other keys it is rejected where the file is opened.
+        /// Either way, prepending the start directory would turn it into the directory itself, so it is
+        /// left alone. The start directory is only prepended, never normalized lexically, because
         /// collapsing `..` changes which file a path names as soon as a component is a symlink: started from
         /// `/srv/launch`, with `conf` pointing to `/srv/releases/r1/conf`, `conf/../config.xml` is
         /// `/srv/releases/r1/config.xml` and not `/srv/launch/config.xml`.

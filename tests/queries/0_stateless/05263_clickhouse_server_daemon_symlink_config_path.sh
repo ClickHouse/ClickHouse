@@ -40,10 +40,14 @@ write_config "$work/releases/r1/config.xml" "$work/release_data"
 write_config "$work/run/config.xml" "$work/decoy_data"
 ln -s "$work/releases/r1/conf" "$work/run/conf"
 
-server_pid=""
+# The pid file is read here rather than from a variable: the daemon writes it early in
+# `BaseDaemon::initialize`, so it can already exist when the test gives up before the server is ready.
+# `StatusFile` unlinks it on a clean shutdown, so this is also correct after the server has stopped.
 cleanup()
 {
-    [ -n "$server_pid" ] && kill -9 "$server_pid" 2>/dev/null
+    local pid
+    pid=$(cat "$work/run/server.pid" 2>/dev/null)
+    [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -70,6 +74,11 @@ fi
 [ -d "$work/decoy_data" ] && echo "the configuration at the collapsed path was loaded"
 
 server_pid=$(cat server.pid 2>/dev/null)
+if [ -z "$server_pid" ]; then
+    echo "pid file does not point to the running server"
+    exit 1
+fi
+
 kill -TERM "$server_pid"
 for _ in {1..600}; do
     kill -0 "$server_pid" 2>/dev/null || break
@@ -79,6 +88,5 @@ done
 if kill -0 "$server_pid" 2>/dev/null; then
     echo "server did not stop"
 else
-    server_pid=""
     echo "server stopped"
 fi

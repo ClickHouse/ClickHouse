@@ -16,10 +16,14 @@ work="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_05262"
 rm -rf "$work"
 mkdir -p "$work/run" "$work/data"
 
-server_pid=""
+# The pid file is read here rather than from a variable: the daemon writes it early in
+# `BaseDaemon::initialize`, so it can already exist when the test gives up before the server is ready.
+# `StatusFile` unlinks it on a clean shutdown, so this is also correct after the server has stopped.
 cleanup()
 {
-    [ -n "$server_pid" ] && kill -9 "$server_pid" 2>/dev/null
+    local pid
+    pid=$(cat "$work/run/server.pid" 2>/dev/null)
+    [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -45,7 +49,7 @@ cd "$work/run" || exit 1
 $CLICKHOUSE_BINARY server --daemon \
     -C config.xml \
     -P server.pid \
-    -- --logger.log= --logger.errorlog= --logger.stderr=console.log \
+    -- --logger.log= --logger.errorlog= --logger.stderr="$work/run/console.log" \
     >/dev/null 2>&1
 
 for _ in {1..600}; do
@@ -58,8 +62,9 @@ if ! grep -q 'Ready for connections' console.log 2>/dev/null; then
     exit 1
 fi
 
-# The start directory itself must not have been used as a log file name.
-[ -d "$work/run" ] && echo "start directory is still a directory"
+# `Loggers::buildLoggers` prints `Logging <level> to <path>` for every file channel it opens. Neither
+# channel may appear: that line would mean an empty value had been turned into a path again.
+grep -q '^Logging ' console.log || echo "no file log channel was configured"
 
 server_pid=$(cat server.pid 2>/dev/null)
 if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
@@ -78,6 +83,5 @@ done
 if kill -0 "$server_pid" 2>/dev/null; then
     echo "server did not stop"
 else
-    server_pid=""
     echo "server stopped"
 fi
