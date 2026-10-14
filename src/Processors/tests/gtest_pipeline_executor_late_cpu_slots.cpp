@@ -20,8 +20,8 @@ namespace
 {
 
 constexpr size_t num_streams = 4;
+constexpr auto timeout = std::chrono::seconds(60);
 
-/// Shared by the sources of a pipeline: counts the steps and the distinct threads that ran them.
 struct LateSlotsState
 {
     std::mutex mutex;
@@ -30,15 +30,15 @@ struct LateSlotsState
     bool first_step_started = false;
     bool slots_released = false;
 
-    /// Counted from the moment the CPU slots were released.
-    size_t steps_after_release = 0;
-    std::set<std::thread::id> threads_after_release;
+    /// Threads that ran a step after the release.
+    std::set<std::thread::id> threads;
     bool done = false;
+    bool timed_out = false;
 };
 
-/// Each step sleeps a bit, so that threads overlap. The first step of the pipeline waits until the test releases
-/// the CPU slots held by another allocation. The sources stop when all `num_streams` threads ran a step after
-/// the release, or after too many steps.
+/// The first step of the pipeline waits until the test releases the CPU slots held by another allocation.
+/// Every later step waits until `num_streams` threads are in it. A thread is started for a granted slot only
+/// at a task boundary of a running thread, so without one the only running thread waits here for the timeout.
 class LateSlotsSource : public ISource
 {
 public:
@@ -53,34 +53,32 @@ public:
 protected:
     Chunk generate() override
     {
+        std::unique_lock lock(state.mutex);
+        if (!state.first_step_started)
         {
-            std::unique_lock lock(state.mutex);
-            if (!state.first_step_started)
-            {
-                state.first_step_started = true;
-                state.cv.notify_all();
-                state.cv.wait_for(lock, std::chrono::seconds(60), [&] { return state.slots_released; });
-            }
-            else
-            {
-                ++state.steps_after_release;
-                state.threads_after_release.insert(std::this_thread::get_id());
-                if (state.threads_after_release.size() >= num_streams || state.steps_after_release >= 10000)
-                    state.done = true;
-            }
-            if (state.done)
-                return {};
+            state.first_step_started = true;
+            state.cv.notify_all();
+            state.cv.wait_for(lock, timeout, [&] { return state.slots_released; });
+            return Chunk(Columns{ColumnUInt8::create(1, static_cast<UInt8>(1))}, 1);
         }
 
-        std::this_thread::sleep_for(std::chrono::microseconds(500));
-        return Chunk(Columns{ColumnUInt8::create(1, static_cast<UInt8>(1))}, 1);
+        if (!state.done)
+        {
+            state.threads.insert(std::this_thread::get_id());
+            if (state.threads.size() >= num_streams)
+                state.done = true;
+            else if (!state.cv.wait_for(lock, timeout, [&] { return state.done; }))
+                state.done = state.timed_out = true;
+            state.cv.notify_all();
+        }
+        return {};
     }
 
 private:
     LateSlotsState & state;
 };
 
-size_t stepsUntilAllThreadsRun(bool lazy_allocation)
+void checkThreadsForLateSlots(bool lazy_allocation)
 {
     auto & concurrency_control = ConcurrencyControl::instance();
     const String prev_scheduler = concurrency_control.getScheduler();
@@ -115,8 +113,7 @@ size_t stepsUntilAllThreadsRun(bool lazy_allocation)
 
     {
         std::unique_lock lock(state.mutex);
-        EXPECT_TRUE(state.cv.wait_for(lock, std::chrono::seconds(60), [&] { return state.first_step_started; }))
-            << "The pipeline did not start";
+        EXPECT_TRUE(state.cv.wait_for(lock, timeout, [&] { return state.first_step_started; })) << "The pipeline did not start";
     }
 
     /// The other query finishes: its slots are granted to the pipeline, which is in the middle of execution.
@@ -130,8 +127,8 @@ size_t stepsUntilAllThreadsRun(bool lazy_allocation)
     query.join();
 
     std::lock_guard lock(state.mutex);
-    EXPECT_EQ(state.threads_after_release.size(), num_streams);
-    return state.steps_after_release;
+    EXPECT_FALSE(state.timed_out);
+    EXPECT_EQ(state.threads.size(), num_streams);
 }
 
 }
@@ -141,10 +138,10 @@ size_t stepsUntilAllThreadsRun(bool lazy_allocation)
 /// `max_scheduled_local_tasks` local tasks in a row).
 TEST(PipelineExecutor, ThreadsForSlotsGrantedAfterStart)
 {
-    EXPECT_LT(stepsUntilAllThreadsRun(/* lazy_allocation */ true), 32);
+    checkThreadsForLateSlots(/* lazy_allocation */ true);
 }
 
 TEST(PipelineExecutor, ThreadsForSlotsGrantedAfterStartEagerAllocation)
 {
-    EXPECT_LT(stepsUntilAllThreadsRun(/* lazy_allocation */ false), 32);
+    checkThreadsForLateSlots(/* lazy_allocation */ false);
 }
