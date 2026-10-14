@@ -50,5 +50,6 @@ open(path, 'wb').write(bytes(data))
 EOF
 
 echo "--- delta dictionary that repeats a base value is read ---"
-${CLICKHOUSE_LOCAL} --query "SELECT d, toTypeName(d) FROM file('${DATA_FILE}', 'ArrowStream')"
+# The rows of the two record batches are compared in the file order, so read them in a single stream.
+${CLICKHOUSE_LOCAL} --max_threads 1 --query "SELECT d, toTypeName(d) FROM file('${DATA_FILE}', 'ArrowStream')"
 ${CLICKHOUSE_LOCAL} --query "SELECT d, count() FROM file('${DATA_FILE}', 'ArrowStream') GROUP BY d ORDER BY d"
