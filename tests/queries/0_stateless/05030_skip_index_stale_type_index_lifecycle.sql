@@ -95,6 +95,76 @@ SELECT count() FROM t_sibling_cleared WHERE c = '150' SETTINGS use_skip_indexes 
 SELECT count() FROM t_sibling_cleared WHERE c = '';
 SELECT count() FROM t_sibling_cleared WHERE c = '' SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 34c. CLEAR COLUMN of an expired column named like a stored subcolumn rebuilds no sibling index';
+-- `a.size0` is a column of its own, named like the size subcolumn of the stored `a`. Once its TTL has
+-- expired the part does not hold it, so `CLEAR COLUMN` never reaches `MutationsInterpreter` and
+-- `idx_old` carries over granules built before `c` got its new default: `c` must stay absent.
+DROP TABLE IF EXISTS t_sibling_cleared_shadowed;
+CREATE TABLE t_sibling_cleared_shadowed (k UInt64, d DateTime, a Array(UInt64),
+    `a.size0` UInt64 TTL d + INTERVAL 1 SECOND, c String TTL d + INTERVAL 1 SECOND,
+    INDEX idx_old (c, `a.size0`) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_sibling_cleared_shadowed SELECT number, '2000-01-01 00:00:00', [number, number], number + 1, toString(number * 3) FROM numbers(64);
+ALTER TABLE t_sibling_cleared_shadowed MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_cleared_shadowed' AND active AND column IN ('c', 'a.size0');
+ALTER TABLE t_sibling_cleared_shadowed MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_cleared_shadowed MODIFY COLUMN `a.size0` REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_cleared_shadowed MODIFY COLUMN c String DEFAULT 'new' SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_cleared_shadowed ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_cleared_shadowed;
+ALTER TABLE t_sibling_cleared_shadowed CLEAR COLUMN `a.size0` SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_sibling_cleared_shadowed MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT count() = 2 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_cleared_shadowed' AND NOT is_done;
+SYSTEM START MERGES t_sibling_cleared_shadowed;
+ALTER TABLE t_sibling_cleared_shadowed UPDATE d = d WHERE 0 SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_cleared_shadowed;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_cleared_shadowed' AND active AND column = 'c';
+-- Both indices hold files, so `idx_new` was materialized and `idx_old` kept its granules.
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase()
+    AND table = 't_sibling_cleared_shadowed';
+SELECT count() FROM t_sibling_cleared_shadowed WHERE c = 'new' SETTINGS ignore_data_skipping_indices = 'idx_new';
+SELECT count() FROM t_sibling_cleared_shadowed WHERE c = 'new';
+SELECT count() FROM t_sibling_cleared_shadowed WHERE c = 'new' SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 34d. MODIFY COLUMN of an expired column named like a stored subcolumn rebuilds no sibling index';
+-- Case 34c with a type change in place of the clear, which does not reach `MutationsInterpreter`
+-- either. Changing the type back makes `idx_old` usable again over its carried-over granules.
+DROP TABLE IF EXISTS t_sibling_modified_shadowed;
+CREATE TABLE t_sibling_modified_shadowed (k UInt64, d DateTime, a Array(UInt64),
+    `a.size0` UInt64 TTL d + INTERVAL 1 SECOND, c String TTL d + INTERVAL 1 SECOND,
+    INDEX idx_old (c, `a.size0`) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_sibling_modified_shadowed SELECT number, '2000-01-01 00:00:00', [number, number], number + 1, toString(number * 3) FROM numbers(64);
+ALTER TABLE t_sibling_modified_shadowed MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_modified_shadowed' AND active AND column IN ('c', 'a.size0');
+ALTER TABLE t_sibling_modified_shadowed MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_modified_shadowed MODIFY COLUMN `a.size0` REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_modified_shadowed MODIFY COLUMN c String DEFAULT 'new' SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_modified_shadowed ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_modified_shadowed;
+ALTER TABLE t_sibling_modified_shadowed MODIFY COLUMN `a.size0` UInt32 SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_sibling_modified_shadowed MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT count() = 2 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_modified_shadowed' AND NOT is_done;
+SYSTEM START MERGES t_sibling_modified_shadowed;
+ALTER TABLE t_sibling_modified_shadowed UPDATE d = d WHERE 0 SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_sibling_modified_shadowed MODIFY COLUMN `a.size0` UInt64 SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_modified_shadowed;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_modified_shadowed' AND active AND column = 'c';
+-- Both indices hold files, so `idx_new` was materialized and `idx_old` kept its granules.
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase()
+    AND table = 't_sibling_modified_shadowed';
+SELECT count() FROM t_sibling_modified_shadowed WHERE c = 'new' SETTINGS ignore_data_skipping_indices = 'idx_new';
+SELECT count() FROM t_sibling_modified_shadowed WHERE c = 'new';
+SELECT count() FROM t_sibling_modified_shadowed WHERE c = 'new' SETTINGS use_skip_indexes = 0;
+
 SELECT '-- 35. materialize_ttl_recalculate_only is ignored next to an UPDATE, and so is it here';
 -- `MutationsInterpreter::prepare` forces `materialize_ttl_recalculate_only` off as soon as the same
 -- command set updates rows, so `MATERIALIZE TTL` rewrites `g` and rebuilds `idx_old` over it. Reading
@@ -130,4 +200,6 @@ SELECT count() FROM t_sibling_ttl_recalculate_only WHERE c = '' SETTINGS use_ski
 
 DROP TABLE t_sibling_modify_rebuilt;
 DROP TABLE t_sibling_cleared;
+DROP TABLE t_sibling_cleared_shadowed;
+DROP TABLE t_sibling_modified_shadowed;
 DROP TABLE t_sibling_ttl_recalculate_only;

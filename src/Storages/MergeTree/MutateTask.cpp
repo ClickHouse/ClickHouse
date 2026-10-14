@@ -581,9 +581,9 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
 }
 
 /// Which indices this mutation rebuilds the granules of, among those the part already holds. It
-/// answers from `commands` alone, because `MutationsInterpreter` is built downstream of this
-/// function; an index it cannot decide counts as carried over, which costs pruning but never records
-/// a column at a type a carried-over granule was not built from.
+/// answers from `commands`, the ones split off for `MutationsInterpreter`, because the interpreter is
+/// built downstream of this function; an index it cannot decide counts as carried over, which costs
+/// pruning but never records a column at a type a carried-over granule was not built from.
 static NameSet collectIndicesRebuiltByMutation(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
@@ -597,9 +597,8 @@ static NameSet collectIndicesRebuiltByMutation(
 
     /// A column the part does not store may still be described by a missing-column marker in its
     /// serialization infos, which records the type it was inserted with. `MutationsInterpreter::prepare`
-    /// reads the old type from that marker when the column files are absent, and treats a marker-only
-    /// `CLEAR COLUMN` like one over stored data; both lookups go by the name the part knows the column
-    /// under, so a rename this mutation applies on top is translated back first.
+    /// reads the old type from that marker when the column files are absent, by the name the part knows
+    /// the column under, so a rename this mutation applies on top is translated back first.
     const auto & serialization_infos = part->getSerializationInfos();
     auto markerName = [&](String name)
     {
@@ -661,8 +660,7 @@ static NameSet collectIndicesRebuiltByMutation(
                 type_changed_columns.insert(command.column_name);
         }
 
-        if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear
-            && (part->tryGetColumn(command.column_name) || serialization_infos.isMissingColumn(markerName(command.column_name))))
+        if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
             cleared_columns.insert(command.column_name);
 
         if (command.type != MutationCommand::Type::MATERIALIZE_TTL
@@ -1312,7 +1310,7 @@ static void splitAndModifyMutationCommands(
                 part,
                 metadata_snapshot,
                 alter_conversions,
-                commands,
+                for_interpreter,
                 suitable_for_ttl_optimization,
                 (*part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only],
                 context);
