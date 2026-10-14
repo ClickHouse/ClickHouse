@@ -41,7 +41,7 @@ private:
     bool tryConsumeInKeeper(const String & user_name, UInt64 time_step_start);
 
     const zkutil::GetZooKeeper get_zookeeper;
-    const String keeper_path;
+    String keeper_path;
     const LoggerPtr log;
 
     std::mutex mutex;

@@ -3,6 +3,7 @@
 #include <ctime>
 #include <Access/AuthenticationData.h>
 #include <Access/Common/OneTimePassword.h>
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -14,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 OneTimePasswordUsageTracker::OneTimePasswordUsageTracker()
     : log(getLogger("OneTimePasswordUsageTracker"))
 {
@@ -24,6 +30,10 @@ OneTimePasswordUsageTracker::OneTimePasswordUsageTracker(zkutil::GetZooKeeper ge
     , keeper_path(std::move(keeper_path_))
     , log(getLogger("OneTimePasswordUsageTracker"))
 {
+    if (keeper_path.empty() || keeper_path.front() != '/')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `totp_strict_mode_keeper_path` must be an absolute path, got '{}'", keeper_path);
+    if (keeper_path.back() == '/')
+        keeper_path.pop_back();
 }
 
 bool OneTimePasswordUsageTracker::tryConsume(const String & user_name, std::string_view code, const OneTimePasswordSecret & secret)

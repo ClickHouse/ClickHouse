@@ -45,6 +45,7 @@ namespace DB
 namespace ServerSetting
 {
     extern const ServerSettingsBool totp_strict_mode;
+    extern const ServerSettingsString totp_strict_mode_keeper_path;
 }
 
 namespace ErrorCodes
@@ -386,7 +387,8 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     {
         if (!zkutil::hasZooKeeperConfig(config_))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `totp_strict_mode` requires ZooKeeper or ClickHouse Keeper to be configured");
-        one_time_password_usage_tracker = std::make_unique<OneTimePasswordUsageTracker>(get_zookeeper_function_, "/clickhouse/access/one_time_passwords");
+        one_time_password_usage_tracker = std::make_unique<OneTimePasswordUsageTracker>(
+            get_zookeeper_function_, server_settings[ServerSetting::totp_strict_mode_keeper_path]);
     }
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);

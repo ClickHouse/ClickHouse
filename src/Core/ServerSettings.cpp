@@ -139,12 +139,21 @@ namespace
     DECLARE(Bool, totp_strict_mode, false, R"(
 Enforces single use of time-based one-time password (TOTP) codes across all servers that share the same ZooKeeper or ClickHouse Keeper, instead of per server.
 
-The accepted codes are recorded in Keeper under `/clickhouse/access/one_time_passwords`, one node per user named by the SHA-256 hash of the user name: a code accepted by one server is rejected by all the others, and the record survives server restarts. Keeper must be configured when this setting is enabled; while Keeper is unavailable, authentication with a one-time password fails.
+The accepted codes are recorded in Keeper under the path set by `totp_strict_mode_keeper_path`, one node per user named by the SHA-256 hash of the user name: a code accepted by one server is rejected by all the others, and the record survives server restarts. Keeper must be configured when this setting is enabled; while Keeper is unavailable, authentication with a one-time password fails.
 
 **Example**
 
 ```xml
 <totp_strict_mode>1</totp_strict_mode>
+```
+)", 0) \
+    DECLARE(String, totp_strict_mode_keeper_path, "/clickhouse/access/one_time_passwords", R"(
+The path in Keeper under which the accepted time-based one-time password codes are recorded when `totp_strict_mode` is enabled. Clusters that share one Keeper without a chroot must use different paths, otherwise users with the same name on different clusters would share their records.
+
+**Example**
+
+```xml
+<totp_strict_mode_keeper_path>/clickhouse/access/one_time_passwords</totp_strict_mode_keeper_path>
 ```
 )", 0) \
     DECLARE(UInt64, shutdown_wait_unfinished, 120, R"(Delay in seconds to wait for unfinished queries on shutdown. Also bounds the wait for running backups and restores when `shutdown_wait_backups_and_restores` is disabled.)", 0) \

@@ -23,8 +23,9 @@ INTERACTIVE_USERS = [f"totuser_interactive_{i}" for i in range(3)]
 NO_PASSWORD_USERS = [f"totuser_no_password_{i}" for i in range(2)]
 EMPTY_PASSWORD_USERS = [f"totuser_empty_password_{i}" for i in range(2)]
 
-# In strict mode the accepted codes are shared through Keeper under this path.
-STRICT_MODE_KEEPER_PATH = "/clickhouse/access/one_time_passwords"
+# In strict mode the accepted codes are shared through Keeper under this path
+# (`totp_strict_mode_keeper_path` in config/totp_strict_mode.xml, set there with a trailing slash).
+STRICT_MODE_KEEPER_PATH = "/clickhouse/test_totp_auth/one_time_passwords"
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
