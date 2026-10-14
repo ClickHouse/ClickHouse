@@ -5,6 +5,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Compression/ICompressionCodec.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -44,6 +46,10 @@ NameSet getColumnDataStreamFileNames(
 /// with streams that another writer of the same mutation (the column output stream of an updated
 /// sibling) will produce, so that recompression leaves those shared streams to that writer.
 ///
+/// When `need_sync` is set, the written `.bin` and marks files are synced after being finalized, as
+/// the part-fsync policy requires. `check_cancelled` is invoked between streams and between the
+/// compressed blocks of a stream; it is expected to throw if the mutation was cancelled.
+///
 /// Only wide parts with full (local) storage are supported; the caller must guarantee that.
 void recompressColumnStreams(
     const IMergeTreeDataPart & source_part,
@@ -54,6 +60,8 @@ void recompressColumnStreams(
     const MergeTreeSettings & storage_settings,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
+    bool need_sync,
+    const std::function<void()> & check_cancelled,
     NameSet & recompressed_streams,
     MergeTreeDataPartChecksums & checksums);
 

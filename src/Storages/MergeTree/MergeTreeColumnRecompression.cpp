@@ -112,7 +112,7 @@ void writeCompressedBlock(WriteBuffer & out, const ICompressionCodec & codec, co
 /// `new_codec` and writes it to `bin_name` in `new_storage`. Blocks are re-emitted one-to-one, so
 /// the decompressed content and block boundaries are preserved. Fills `offset_map` with the
 /// source-offset -> new-offset mapping of every block start (plus the end-of-file offset) and
-/// returns the checksum of the written file.
+/// returns the checksum of the written file. `check_cancelled` is invoked before every block.
 MergeTreeDataPartChecksum recompressBinFile(
     const IDataPartStorage & source_storage,
     IDataPartStorage & new_storage,
@@ -121,6 +121,8 @@ MergeTreeDataPartChecksum recompressBinFile(
     const MergeTreeDataPartChecksum & source_checksum,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
+    bool need_sync,
+    const std::function<void()> & check_cancelled,
     OffsetMap & offset_map)
 {
     RawCompressedBlockReader reader(source_storage.readFile(bin_name, read_settings, std::nullopt));
@@ -133,6 +135,8 @@ MergeTreeDataPartChecksum recompressBinFile(
 
     while (true)
     {
+        check_cancelled();
+
         size_t consumed = reader.readBlock(decompressed);
         if (consumed == 0)
             break;
@@ -147,6 +151,8 @@ MergeTreeDataPartChecksum recompressBinFile(
     /// A mark of the last granule may point at the end of the file.
     offset_map[source_offset] = bin_hashing.count();
     out->finalize();
+    if (need_sync)
+        out->sync();
 
     MergeTreeDataPartChecksum checksum;
     checksum.is_compressed = true;
@@ -172,7 +178,8 @@ MergeTreeDataPartChecksum rewriteMarksFile(
     size_t marks_compress_block_size,
     const OffsetMap & offset_map,
     const ReadSettings & read_settings,
-    const WriteSettings & write_settings)
+    const WriteSettings & write_settings,
+    bool need_sync)
 {
     /// Read the (decompressed) marks.
     String old_marks;
@@ -245,6 +252,8 @@ MergeTreeDataPartChecksum rewriteMarksFile(
         file_hashing.finalize();
     }
     out->finalize();
+    if (need_sync)
+        out->sync();
 
     checksum.file_size = file_hashing.count();
     checksum.file_hash = file_hashing.getHash();
@@ -316,6 +325,8 @@ void recompressColumnStreams(
     const MergeTreeSettings & storage_settings,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
+    bool need_sync,
+    const std::function<void()> & check_cancelled,
     NameSet & recompressed_streams,
     MergeTreeDataPartChecksums & checksums)
 {
@@ -359,6 +370,8 @@ void recompressColumnStreams(
         if (!recompressed_streams.insert(stream_name).second)
             return;
 
+        check_cancelled();
+
         const String bin_name = stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION;
 
         const auto & subtype = substream_path.back().data.type;
@@ -372,12 +385,14 @@ void recompressColumnStreams(
 
         OffsetMap offset_map;
         checksums.files[bin_name] = recompressBinFile(
-            source_storage, new_storage, bin_name, *new_codec, source_bin_checksum, read_settings, write_settings, offset_map);
+            source_storage, new_storage, bin_name, *new_codec, source_bin_checksum, read_settings, write_settings,
+            need_sync, check_cancelled, offset_map);
 
         const String mrk_name = stream_name + marks_extension;
+        check_cancelled();
         checksums.files[mrk_name] = rewriteMarksFile(
             source_storage, new_storage, mrk_name, mark_size, compressed_marks, marks_codec, marks_compress_block_size,
-            offset_map, read_settings, write_settings);
+            offset_map, read_settings, write_settings, need_sync);
     });
 }
 

@@ -3947,6 +3947,8 @@ private:
                 *ctx->data->getSettings(),
                 ctx->context->getReadSettings(),
                 ctx->context->getWriteSettings(),
+                ctx->need_sync,
+                [&my_ctx = *ctx]() { my_ctx.checkOperationIsNotCanceled(); },
                 recompressed_streams,
                 ctx->new_data_part->checksums);
         }
