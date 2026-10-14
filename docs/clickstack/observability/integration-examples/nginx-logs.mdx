@@ -9,11 +9,11 @@ doc_type: 'guide'
 import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-Collect JSON access logs from Nginx with an OpenTelemetry collector and send them to ClickHouse Observability or a self-configured deployment. Use the [demo dataset](#demo-dataset) to try the integration without an existing Nginx installation.
+Collect JSON access logs from Nginx with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without an existing Nginx installation.
 
 ## Prerequisites {#prerequisites}
 
-- A ClickHouse Observability service, or a self-configured deployment
+- A ClickHouse Observability service
 - Docker to run the collector commands below, or an existing OpenTelemetry Collector Contrib deployment
 - For your own logs, an existing Nginx installation, permission to edit its configuration, and access to its log files from the collector
 
@@ -162,7 +162,7 @@ The following example shows the same view using the demo dataset, with `ServiceN
 
 ## Demo dataset {#demo-dataset}
 
-The sample dataset contains 14,743 JSON access-log entries with successful requests, errors, and upstream response timings. You need Docker and a ClickHouse Observability service or self-configured deployment. Set the [connection environment variables](#demo-connection-details) before starting, and keep the downloaded file and configuration in the same directory.
+The sample dataset contains 14,743 JSON access-log entries with successful requests, errors, and upstream response timings. You need Docker and a ClickHouse Observability service. Set the [connection environment variables](#demo-connection-details) before starting, and keep the downloaded file and configuration in the same directory.
 
 <Steps>
 <Step title="Download the sample dataset" id="download-sample">

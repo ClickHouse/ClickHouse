@@ -10,11 +10,11 @@ keywords: ['ClickHouse Observability', 'Nginx', 'traces', 'otel']
 import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-Capture distributed traces from Nginx with the OpenTelemetry Nginx module and send them to ClickHouse Observability or a self-configured deployment. Use the [demo dataset](#demo-dataset) to try the integration without installing Nginx.
+Capture distributed traces from Nginx with the OpenTelemetry Nginx module and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without installing Nginx.
 
 ## Prerequisites {#prerequisites}
 
-- A ClickHouse Observability service or self-configured deployment with a reachable OTLP endpoint
+- A ClickHouse Observability service
 - For your own traces, an Nginx installation with the OpenTelemetry module and permission to update its configuration; the Docker example below uses `nginx:1.27-otel`
 - For the demo dataset, `curl` and Docker
 
