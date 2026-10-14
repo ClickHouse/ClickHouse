@@ -50,8 +50,8 @@ public:
     template <typename Function>
     void registerFunction(FunctionDocumentation documentation, Case case_sensitiveness, FunctionNamedArguments named_arguments_)
     {
+        registerNamedArguments(Function::name, std::move(named_arguments_), documentation.arguments);
         registerFunction<Function>(Function::name, std::move(documentation), case_sensitiveness);
-        registerNamedArguments(Function::name, std::move(named_arguments_));
     }
 
     /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
@@ -98,7 +98,9 @@ private:
     std::unordered_map<std::string, SecretArgumentsSpec> secret_arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     std::unordered_map<std::string, FunctionNamedArguments> named_arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    void registerNamedArguments(const std::string & name, FunctionNamedArguments named_arguments_);
+    /// Also checks that the names are the documented argument names.
+    void registerNamedArguments(
+        const std::string & name, FunctionNamedArguments named_arguments_, const FunctionDocumentation::Arguments & documented_arguments);
 
     const Functions & getMap() const override { return functions; }
 
