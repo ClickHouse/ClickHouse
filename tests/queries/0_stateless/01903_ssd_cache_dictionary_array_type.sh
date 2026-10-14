@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +23,7 @@ $CLICKHOUSE_CLIENT --query="
     PRIMARY KEY id
     SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'dictionary_array_source_table'))
     LIFETIME(MIN 1 MAX 1000)
-    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$USER_FILES_PATH/0d'));
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 8192 PATH '$CLICKHOUSE_USER_FILES_UNIQUE/0d'));
 
     SELECT 'SSDCache dictionary';
     SELECT dictGet('ssd_cache_dictionary', 'array_value', toUInt64(0));

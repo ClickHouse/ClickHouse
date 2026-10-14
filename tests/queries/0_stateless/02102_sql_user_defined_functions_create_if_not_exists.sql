@@ -1,5 +1,5 @@
 -- Tags: no-parallel
-
+-- Tag no-parallel: fixed global SQL UDF name, concurrent flaky-check reruns of this file race on CREATE/DROP FUNCTION
 CREATE FUNCTION IF NOT EXISTS 02102_test_function AS x -> x + 1;
 SELECT 02102_test_function(1);
 

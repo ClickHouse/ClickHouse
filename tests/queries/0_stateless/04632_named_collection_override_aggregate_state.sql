@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-parallel, no-replicated-database
 -- no-fasttest: the s3 table function is not available in the fasttest build.
--- no-parallel: CREATE/DROP NAMED COLLECTION mutate global server state shared by concurrent
--- tests (see 02918_fuzzjson_table_function.sql for the same requirement).
+-- Tag no-parallel: CREATE/DROP NAMED COLLECTION mutate global server state shared by
+--   concurrent tests (see 02918_fuzzjson_table_function.sql for the same requirement).
 -- no-replicated-database: CREATE NAMED COLLECTION is not replicated.
 
 -- A named collection key override is materialized as text with fieldToString(), which has no

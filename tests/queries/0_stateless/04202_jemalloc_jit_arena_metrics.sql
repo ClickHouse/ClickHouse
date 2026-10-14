@@ -1,3 +1,5 @@
+-- Tags: no-parallel:misc-caches
+-- Tag no-parallel: serializes tests that mutate or assert the shared `misc-caches` resource
 -- Verify that the dedicated JIT jemalloc arena and the compiled-expression cache configuration
 -- limits are exposed in `system.asynchronous_metrics`. Both sets of metrics are gated on build
 -- options, so the test compares "metric is exposed" against the build options it depends on.

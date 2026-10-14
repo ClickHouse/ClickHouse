@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-azure-blob-storage
+# Tags: zookeeper, no-azure-blob-storage
 # no-azure-blob-storage: this test runs parallel `INSERT` threads against
 #   `ReplicatedMergeTree` and exceeds the test framework timeout under slow Azure blob
 #   storage. CIDB shows 14 failures / 4491 OKs (0.31%) on
@@ -14,7 +14,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 NUM_REPLICAS=2
-DATA_SIZE=200
+# Every row is a separate part with its own Keeper commit and fetch on the other replica; 40 rows per replica
+# keep both replicas inserting concurrently while staying fast when other tests run on the server.
+DATA_SIZE=40
 
 SEQ=$(seq 0 $(($NUM_REPLICAS - 1)))
 

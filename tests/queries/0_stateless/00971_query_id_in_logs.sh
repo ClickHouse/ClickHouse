@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
+# Tag no-parallel: asserts that every server log line sent to the client carries its query id; lines from concurrent queries leak into it
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=trace
 

@@ -1,10 +1,9 @@
 -- Tags: no-fasttest, no-parallel, no-replicated-database
--- Tag justification:
---   no-fasttest: the NATS engine is not available in a build without libraries.
---   no-parallel: creates and drops global named collections; the flaky check runs the same test
+-- Tag no-fasttest: the NATS engine is not available in a build without libraries.
+-- Tag no-parallel: creates and drops global named collections; the flaky check runs the same test
 --                concurrently, and parallel repetitions collide on them (the first finishing run
 --                drops the collection while others still use it).
---   no-replicated-database: named collections are server-global, not database-scoped.
+-- Tag no-replicated-database: named collections are server-global, not database-scoped.
 
 -- The server opens the TLS paths itself, so like `nats_credential_file` they are accepted only from
 -- a named collection defined in the server configuration file, whose destination SQL cannot override.

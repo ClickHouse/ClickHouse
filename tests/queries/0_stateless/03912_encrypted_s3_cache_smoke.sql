@@ -1,4 +1,5 @@
 -- Tags: no-fasttest, no-parallel
+-- Tag no-parallel: drops the shared server-wide `s3_cache` filesystem cache, evicting the entries of concurrent tests
 
 -- Smoke test for encrypted disk over cached S3 storage.
 -- Verifies the `s3_cache_encrypted` disk and storage policy are configured and functional.

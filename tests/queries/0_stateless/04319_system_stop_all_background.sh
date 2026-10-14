@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine
+# Tags: atomic-database, memory-engine, no-parallel
+# Tag no-parallel: `SYSTEM ... ALL BACKGROUND` affects every refreshable view on the server.
+
+# Uses `SYSTEM ... ALL BACKGROUND` commands, which affect all refreshable views
+# on the server, so it cannot run concurrently with other tests that create RMV
+# https://github.com/ClickHouse/ClickHouse/issues/102707
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

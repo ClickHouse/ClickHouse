@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- ^ creates a function
 SET enable_analyzer = 1;
 DROP FUNCTION IF EXISTS f0;

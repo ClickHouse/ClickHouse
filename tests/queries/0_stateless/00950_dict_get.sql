@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel:xml-entities
+-- Tag no-parallel: serializes tests that mutate or assert the shared `xml-entities` resource
 
 -- Must use `default` database and these tables - they're configured in tests/*_dictionary.xml
 use default;

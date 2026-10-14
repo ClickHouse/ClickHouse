@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# Reason: modifies quotas and creates users
+# Tag no-parallel: modifies quotas and creates users; quota consumption counters are server-global
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

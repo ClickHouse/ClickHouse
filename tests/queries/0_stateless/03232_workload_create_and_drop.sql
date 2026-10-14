@@ -1,5 +1,6 @@
 -- Tags: no-parallel
--- Do not run this test in parallel because `all` workload might affect other queries execution process
+-- Tag no-parallel: creates, replaces, and drops the process-global root `WORKLOAD all`, which
+-- would disrupt query scheduling for any concurrently running test
 CREATE OR REPLACE WORKLOAD all;
 SELECT name, parent, create_query FROM system.workloads ORDER BY name;
 CREATE WORKLOAD IF NOT EXISTS production IN all;

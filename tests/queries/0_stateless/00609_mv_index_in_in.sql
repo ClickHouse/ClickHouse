@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-parallel
+-- Tags: no-ordinary-database
 
 DROP TABLE IF EXISTS test_00609;
 DROP TABLE IF EXISTS test_mv_00609;

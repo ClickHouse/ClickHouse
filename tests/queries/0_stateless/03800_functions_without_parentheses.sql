@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: creates the fixed server-global named collection `test_niladic_coll`, which collides between concurrent copies of this file in the flaky check
 
 -- Test SQL standard niladic functions without parentheses
 SET enable_analyzer = 1;

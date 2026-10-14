@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: deadlock, no-debug, no-parallel
+# Tags: deadlock, no-debug
 
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 

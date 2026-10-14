@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: uses fixed server-global access entity names that collide between concurrent copies of this file in the flaky check
 
 DROP SETTINGS PROFILE IF EXISTS s1_01294, s2_01294, s3_01294, s4_01294, s5_01294, s6_01294, s7_01294, s8_01294, s9_01294, s10_01294;
 DROP SETTINGS PROFILE IF EXISTS s2_01294_renamed;

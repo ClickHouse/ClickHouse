@@ -46,10 +46,13 @@ function alter_thread()
 
 alter_thread &
 
+# Under `async_insert` each `INSERT` waits for its flush. The adaptive busy timeout is tracked per queue shard,
+# which is shared by all tables, so concurrent async inserts of other tests can hold it at
+# `async_insert_busy_timeout_max_ms` (5 s in the test config) and 100 sequential inserts then take minutes.
 for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.
     while true; do
-        $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
+        $CLICKHOUSE_CLIENT --async_insert_use_adaptive_busy_timeout 0 --async_insert_busy_timeout_max_ms 100 -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
     done
 done
 

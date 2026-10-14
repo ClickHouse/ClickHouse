@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: long, no-random-settings, no-tsan, no-asan, no-ubsan, no-msan, no-parallel, no-debug, no-coverage
+# Tag no-parallel: deliberately drives 16 concurrent `clickhouse-benchmark` connections
+# (`-c 16 -i 1000`) against a memory-constrained `uniqExact` query to reproduce a parallel-
+# merging race; CPU/memory contention from concurrently-running tests would perturb the race.
 
 # shellcheck disable=SC2154
 

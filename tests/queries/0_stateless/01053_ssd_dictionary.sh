@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-fasttest
 # Tag no-fasttest: this test mistakenly requires access to /var/lib/clickhouse -- can't run this locally, disabled
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -41,7 +41,7 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query="
   PRIMARY KEY id
   SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB '${CLICKHOUSE_DATABASE_1}'))
   LIFETIME(MIN 1000 MAX 2000)
-  LAYOUT(SSD_CACHE(FILE_SIZE 8192 PATH '$USER_FILES_PATH/0d'));
+  LAYOUT(SSD_CACHE(FILE_SIZE 8192 PATH '$CLICKHOUSE_USER_FILES_UNIQUE/0d'));
 
   SELECT 'TEST_SMALL';
   SELECT dictGetInt32('${CLICKHOUSE_DATABASE_1}.ssd_dict', 'b', toUInt64(1));
@@ -82,7 +82,7 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query="
   PRIMARY KEY id
   SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB '${CLICKHOUSE_DATABASE_1}'))
   LIFETIME(MIN 1000 MAX 2000)
-  LAYOUT(SSD_CACHE(FILE_SIZE 8192 PATH '$USER_FILES_PATH/1d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 4096));
+  LAYOUT(SSD_CACHE(FILE_SIZE 8192 PATH '$CLICKHOUSE_USER_FILES_UNIQUE/1d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 4096));
 
   SELECT 'UPDATE DICTIONARY';
   SELECT sum(dictGetUInt64('${CLICKHOUSE_DATABASE_1}.ssd_dict', 'a', toUInt64(id))) FROM ${CLICKHOUSE_DATABASE_1}.keys_table;
@@ -140,7 +140,7 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query="
   PRIMARY KEY id
   SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB '${CLICKHOUSE_DATABASE_1}'))
   LIFETIME(MIN 1000 MAX 2000)
-  LAYOUT(SSD_CACHE(FILE_SIZE 8192 PATH '$USER_FILES_PATH/2d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 1024));
+  LAYOUT(SSD_CACHE(FILE_SIZE 8192 PATH '$CLICKHOUSE_USER_FILES_UNIQUE/2d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 1024));
 
   SELECT 'UPDATE DICTIONARY (MT)';
   SELECT sum(dictGetUInt64('${CLICKHOUSE_DATABASE_1}.ssd_dict', 'a', toUInt64(id))) FROM ${CLICKHOUSE_DATABASE_1}.keys_table;

@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: compares the process-wide system.errors counter
 
 CREATE TABLE counters (value UInt64) ENGINE = MergeTree() ORDER BY value;
 

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
 
 -- { echo }

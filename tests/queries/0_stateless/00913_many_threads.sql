@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-fasttest, long
+-- Tag no-parallel: SET max_threads = 1500 deliberately saturates the server's global thread pool near capacity to exercise ThreadPool shrink-after-idle behavior
 
 -- This test creates many threads to test a case when ThreadPool will remove some threads from pool after job is done.
 SET max_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;

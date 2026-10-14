@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-parallel, no-fasttest
+# Tag no-parallel: uses a process-global failpoint
 # - no-parallel - due to usage of fail points
 
 # FIXME: convert to .sql

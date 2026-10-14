@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, long, no-distributed-cache, no-parallel, no-random-settings
+# Tag no-parallel: rewrites server configuration and executes `SYSTEM RELOAD CONFIG` to resize the shared `s3_cache`
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

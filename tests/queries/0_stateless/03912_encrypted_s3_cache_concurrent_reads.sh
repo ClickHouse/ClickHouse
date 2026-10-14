@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
+# Tag no-parallel: drops the shared server-wide `s3_cache` filesystem cache, evicting the entries of concurrent tests
 
 # Test for race conditions in ReadBufferFromEncryptedFile when multiple
 # concurrent readers access the same encrypted data through the filesystem cache.

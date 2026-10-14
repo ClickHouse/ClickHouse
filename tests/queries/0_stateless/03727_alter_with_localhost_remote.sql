@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel
+-- Tags: no-replicated-database
 
 DROP USER IF EXISTS test_03727;
 CREATE USER test_03727;

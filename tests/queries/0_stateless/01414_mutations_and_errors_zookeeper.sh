@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree
+# Tags: zookeeper, no-fasttest, no-shared-merge-tree
 # no-fasttest: Waiting for failed mutations is slow: https://github.com/ClickHouse/ClickHouse/issues/67936
 # no-shared-merge-tree: kill mutation looks different, implemented another test
 

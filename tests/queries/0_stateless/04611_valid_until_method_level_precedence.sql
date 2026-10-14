@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: Creates and drops fixed server-wide user names, which conflict with concurrent repetitions.
 -- ^ creates globally-named users; the flaky check runs the same test concurrently, so a fixed user
 --   name would collide (ACCESS_ENTITY_ALREADY_EXISTS) between parallel repetitions.
 

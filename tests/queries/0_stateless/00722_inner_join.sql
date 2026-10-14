@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 SET enable_analyzer = 1;
 
@@ -80,18 +79,19 @@ SELECT t.database, t.name
     WHERE t.database = db.base
     FORMAT PrettyCompactNoEscapes;
 
+-- Count only `system.one` and the table of this test: concurrent tests may have their own table `one`.
 SELECT count(t.database)
-    FROM (SELECT * FROM system.tables WHERE name = 'one') AS t
+    FROM (SELECT * FROM system.tables WHERE name = 'one' AND database IN ('system', currentDatabase())) AS t
     JOIN system.databases AS db ON t.database = db.name;
 
 SELECT count(db.name)
     FROM system.tables AS t
     JOIN system.databases AS db ON t.database = db.name
-    WHERE t.name = 'one';
+    WHERE t.name = 'one' AND t.database IN ('system', currentDatabase());
 
 SELECT count()
     FROM system.tables AS t
     JOIN system.databases AS db ON db.name = t.database
-    WHERE t.name = 'one';
+    WHERE t.name = 'one' AND t.database IN ('system', currentDatabase());
 
 DROP TABLE one;

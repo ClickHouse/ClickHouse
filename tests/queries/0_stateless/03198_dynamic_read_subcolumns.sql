@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-object-storage, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-parallel: Running `DROP MARK CACHE` can have a big impact on other concurrent tests
 -- Tag no-object-storage: this test relies on the number of opened files in MergeTree that can differ in object storages
 

@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: uses fixed server-global access entity names that collide between concurrent copies of this file in the flaky check
 
 DROP USER IF EXISTS test_user_01074;
 CREATE USER test_user_01074;

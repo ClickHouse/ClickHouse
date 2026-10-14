@@ -8,4 +8,7 @@
          "having stderror". Raise the limit so that warnings only fire if
          the connection count is genuinely abnormal. -->
     <storage_connections_warn_limit>100000</storage_connections_warn_limit>
+    <!-- The same applies to the connections of the `azure` disk: their group `Disk` has a default
+         `disk_connections_warn_limit` of 8000, which concurrent tests on the disk exceed. -->
+    <disk_connections_warn_limit>100000</disk_connections_warn_limit>
 </clickhouse>

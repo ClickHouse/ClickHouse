@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-random-merge-tree-settings
+# Tags: no-random-settings, no-random-merge-tree-settings, no-parallel:mark-cache
+# Tag no-parallel: compares file-open counts across global `SYSTEM CLEAR MARK CACHE` calls.
 
 # Metadata streams of `JSON` and `Dynamic` columns (`object_structure`, `dynamic_structure`) are read only while
 # deserializing the prefix, which always reads from the beginning of the file, and are released right after that.

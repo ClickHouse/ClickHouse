@@ -4,6 +4,9 @@
 # and expects exact cache hit/miss sequences. Repeated runs start while background merges of `test.hits_s3`
 # are still writing through `s3_cache` with `cache_on_write_operations`, which fills the whole cache with
 # non-releasable segments, so reads bypass the cache or re-download.
+# Tag no-parallel: issues an unscoped `SYSTEM CLEAR FILESYSTEM CACHE` and asserts entries in the
+# process-wide `system.filesystem_cache_log` table; a concurrent test's cache activity pollutes
+# both, so the `filesystem-cache` group is not enough - it must run fully sequentially.
 
 # set -x
 

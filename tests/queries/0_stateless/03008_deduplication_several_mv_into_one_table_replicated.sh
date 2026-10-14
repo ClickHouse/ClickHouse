@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest, no-parallel, no-object-storage, no-flaky-check, no-msan
+# Tag no-parallel: Isolate the 64 replicated materialized-view cases from concurrent test load.
 # Tag no-flaky-check -- not compatible with ThreadFuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

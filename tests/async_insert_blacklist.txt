@@ -24,25 +24,17 @@
 01133_begin_commit_race
 02345_implicit_transaction
 01169_old_alter_partition_isolation_stress
-01170_alter_partition_isolation
 01171_mv_select_insert_isolation_long
 01172_transaction_counters
 01173_transaction_control_queries
 01174_select_insert_isolation
-02421_truncate_isolation_no_merges
-02421_truncate_isolation_with_mutations
 03167_transactions_are_really_disabled
-01167_isolation_hermitage
 04057_transaction_version_metadata_lifecycle
 04060_transaction_snapshot_visibility
 
     Async inserts with 'implicit_transaction' are not supported. (NOT_IMPLEMENTED)
-01168_mutations_isolation
-01168_mutations_isolation_2
-01168_mutations_isolation_3
 03752_attach_as_replicated_transaction_metadata
     Cannot execute query because current transaction failed. Expecting ROLLBACK statement. (INVALID_TRANSACTION
-01169_alter_partition_isolation_stress
 
     Processing async inserts with both inlined and external data (from stdin or infile) is not supported. (NOT_IMPLEMENTED)
 02270_stdin_with_query_or_infile_data

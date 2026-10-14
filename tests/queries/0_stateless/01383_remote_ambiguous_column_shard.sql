@@ -1,4 +1,4 @@
--- Tags: shard, no-parallel
+-- Tags: shard
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

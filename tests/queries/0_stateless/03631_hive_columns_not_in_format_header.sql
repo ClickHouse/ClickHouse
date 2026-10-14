@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-random-settings
+-- Tags: no-fasttest, no-random-settings
 
 INSERT INTO FUNCTION s3(
     s3_conn,

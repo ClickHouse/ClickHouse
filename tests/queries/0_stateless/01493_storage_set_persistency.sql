@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 DROP TABLE IF EXISTS set;
 DROP TABLE IF EXISTS number;

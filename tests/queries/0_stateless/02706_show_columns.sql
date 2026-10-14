@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-flaky-check
--- no-parallel: creates a custom database schema and expects to use it exclusively
+-- Tag no-parallel: creates a custom database schema and expects to use it exclusively
 
 -- Create a test table and verify that the output of SHOW COLUMNS is sane.
 -- The matching of actual/expected results relies on the fact that the output of SHOW COLUMNS is sorted.

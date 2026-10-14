@@ -1,4 +1,4 @@
--- Tags: long, no-parallel
+-- Tags: long
 
 -- originally intended to check found rate, as it is not deterministic, so check query_count instead
 

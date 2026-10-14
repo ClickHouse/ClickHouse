@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
+# Tag no-parallel: the repro relies on a warmed entry in the server-global Iceberg metadata files
+# cache surviving between the warm-up SELECT and the INSERT; non-group Iceberg reads or LRU
+# eviction under parallel pressure drop it, so the `metadata-caches` group is not enough - it must
+# run fully sequentially.
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option).
 # - no-parallel: `SYSTEM DROP ICEBERG METADATA CACHE` is used.
 

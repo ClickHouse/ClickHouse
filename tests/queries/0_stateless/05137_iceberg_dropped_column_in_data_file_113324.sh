@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # - no-fasttest: requires IcebergLocal (USE_AVRO build option) and pyarrow.
+# - no-replicated-database: every `ALTER` of an `IcebergLocal` table in a `Replicated` database stalls for tens of
+#   seconds, so the test takes ~320 s there, past the per-test timeout.
 #
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/113324
 #

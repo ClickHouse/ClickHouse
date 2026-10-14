@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ubsan, no-fasttest, no-parallel, no-asan, no-msan, no-tsan
+# Tags: long, no-ubsan, no-fasttest, no-asan, no-msan, no-tsan
 # This test requires around 10 GB of memory and it is just too much.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

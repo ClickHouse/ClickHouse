@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-flaky-check, no-replicated-database
+# Tag no-parallel: the test creates the fixed global databases `db_01939` and
+# `NONE` and the fixed global user `u_01939`, and it drops the `NONE` database
+# at the end, so a concurrent copy of the test would race on those names.
 
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

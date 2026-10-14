@@ -1,5 +1,7 @@
--- Tags: no-parallel, no-replicated-database
--- Tag no-parallel: due to attaching to system.query_log
+-- Tags: no-replicated-database, no-parallel
+-- Tag no-parallel: attaches a materialized view directly on the server-wide `system.query_log`
+--  table, so every concurrent test's query gets pushed through this test's (possibly failing)
+--  `push_to_logs_proxy_mv_02572` while it exists.
 -- Tag no-replicated-database: Replicated database will has extra queries
 
 -- Attach MV to system.query_log and check that writing query_log will not fail

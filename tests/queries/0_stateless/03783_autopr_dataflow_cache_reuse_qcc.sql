@@ -1,7 +1,7 @@
--- Tags: no-sanitizers, long, no-parallel, no-distributed-cache
+-- Tags: no-sanitizers, long, no-distributed-cache, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-sanitizers: too slow
 -- long: for flaky check
--- no-parallel: Depends on the query condition cache content (queries executed in parallel may overflow the cache size or straight away call "clear cache")
 
 DROP TABLE IF EXISTS t;
 
@@ -62,4 +62,3 @@ FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE '03783_autopr_dataflow_cache_reuse_query_%') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
-

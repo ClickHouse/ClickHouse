@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-flaky-check, no-distributed-cache
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-flaky-check, no-distributed-cache, no-parallel
 # no-flaky-check: the test is long and timeouts because of thread-fuzzer
+# Tag no-parallel: the test builds its file-segment view from
+# `system.remote_data_paths`, which walks the metadata of every disk of the
+# server and does not push the `disk_name` predicate down, so the scan grows with
+# whatever other tests keep on object storage and the test times out.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,7 +30,7 @@ QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
 SET read_through_distributed_cache=0;
-SYSTEM CLEAR FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE '$CLICKHOUSE_TEST_UNIQUE_NAME';
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
 SYSTEM FLUSH LOGS filesystem_cache_log;
 "

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-msan
+# Tag no-parallel: creates and deletes the global `text_split_abi` module and `wasm_csv_batch_rows` function with fixed names
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-parallel, no-fasttest
-# no-parallel: enables a server-global failpoint
+# Tag no-parallel: enables a server-global failpoint
 # no-fasttest: needs ZooKeeper for a Replicated database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
