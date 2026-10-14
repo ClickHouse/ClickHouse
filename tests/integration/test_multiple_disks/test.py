@@ -9,6 +9,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -631,10 +632,14 @@ def test_max_data_part_size(start_cluster, name, engine):
 )
 def test_jbod_overflow(start_cluster, name, engine):
     try:
+        # Pin the codec to LZ4: this test relies on the on-disk part size to overflow the small jbod
+        # disk. `get_random_string` returns random printable ASCII, which ZSTD (the default codec)
+        # entropy-codes noticeably better than LZ4, shrinking the parts enough that they no longer
+        # overflow. Pinning LZ4 keeps the on-disk size independent of the server's default codec.
         node1.query_with_retry(
             """
             CREATE TABLE IF NOT EXISTS {name} (
-                s1 String
+                s1 String CODEC(LZ4)
             ) ENGINE = {engine}
             ORDER BY tuple()
             SETTINGS storage_policy='small_jbod_with_external'
@@ -1765,7 +1770,16 @@ def test_move_while_merge(start_cluster):
         optimize = threading.Thread(target=optimize)
         optimize.start()
 
-        time.sleep(0.5)
+        # The MOVE below fails only once the merge holds the part or has replaced it;
+        # a MOVE that arrives before the merge is selected succeeds.
+        assert_eq_with_retry(
+            node1,
+            f"SELECT (SELECT count() FROM system.merges WHERE table = '{name}') > 0"
+            f" OR (SELECT count() FROM system.parts WHERE table = '{name}' AND name = '{parts[0]}' AND active) = 0",
+            "1",
+            retry_count=100,
+            sleep_time=0.1,
+        )
 
         with pytest.raises(QueryRuntimeException):
             node1.query(

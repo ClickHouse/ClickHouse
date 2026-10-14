@@ -27,7 +27,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
-#include <Storages/StorageMerge.h>
+#include <Storages/IStorage.h>
 #include <Planner/Utils.h>
 #include <Core/Settings.h>
 
@@ -202,11 +202,18 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
 
+    if (select_query_info.table_expression_modifiers)
+        snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
+
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+    /// The `SelectQueryInfo` built above has no query: the step carries only a table name and the
+    /// table expression modifiers. Reads that need one get a `SELECT` over that table synthesized
+    /// and re-analyzed below; the rest read the storage directly.
+    const bool read_via_interpreter = storage->readRequiresAnalyzedQuery();
+
     ASTPtr query;
-    bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
-    if (storage->isRemote() || is_storage_merge)
+    if (read_via_interpreter)
     {
         auto table_expression = make_intrusive<ASTTableExpression>();
         if (table_function_ast)
@@ -248,7 +255,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     QueryPlan reading_plan;
-    if (storage->isRemote() || is_storage_merge)
+    if (read_via_interpreter)
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
@@ -285,6 +292,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         /// Preserve the mutable_context for the lifetime of query execution
         /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
         reading_plan.addInterpreterContext(mutable_context);
+        /// The reading step keeps this copy and consults `make_distributed_plan` in it when it builds its
+        /// IN sets, so a fallback of the plan has to be able to turn the setting off here as well.
+        reading_plan.addDistributedPlanDecisionContext(mutable_context);
     }
 
     if (!reading_plan.isInitialized())
@@ -327,7 +337,13 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
         if (const auto * delayed_creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
         {
             for (const auto & set : delayed_creating_sets->getSets())
-                set->getQueryPlan()->resolveStorages(context);
+            {
+                auto * set_plan = set->getQueryPlan();
+                set_plan->resolveStorages(context);
+                /// The set-source plan is kept aside, so the contexts its resolved reads captured must be handed to
+                /// this plan for a fallback to reach them, as the planner does for the set sources it builds.
+                takeContextsFrom(*set_plan);
+            }
         }
 
         for (auto * child : node->children)

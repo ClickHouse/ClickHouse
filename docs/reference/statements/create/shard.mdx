@@ -12,7 +12,7 @@ import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/
 
 Creates a SQL cluster catalog shard: an ordered list of endpoints (replicas) with optional weight and internal replication settings.
 
-Requires [`cluster_metadata`](/operations/sql-clusters#configuration) in the server configuration and the `CREATE SHARD` privilege. Each replica name must already exist as an endpoint (`CREATE ENDPOINT`).
+Requires [`cluster_metadata`](/guides/oss/deployment-and-scaling/sql-clusters#configuration) in the server configuration and the `CREATE SHARD` privilege. Each replica name must already exist as an endpoint (`CREATE ENDPOINT`).
 
 ## Syntax {#syntax}
 
@@ -48,10 +48,10 @@ CREATE SHARD shard_01 (replica_01, replica_02);
 
 ## Related {#related}
 
-- [SQL clusters guide](/operations/sql-clusters)
-- [`CREATE ENDPOINT`](/sql-reference/statements/create/endpoint)
-- [`CREATE CLUSTER`](/sql-reference/statements/create/cluster)
-- [`ALTER SHARD`](/sql-reference/statements/alter/shard)
-- [`DROP SHARD`](/sql-reference/statements/drop#drop-shard)
-- [`SHOW CREATE SHARD`](/sql-reference/statements/show#show-create-shard--cluster)
-- [`system.shards`](/operations/system-tables/shards)
+- [SQL clusters guide](/guides/oss/deployment-and-scaling/sql-clusters)
+- [`CREATE ENDPOINT`](/reference/statements/create/endpoint)
+- [`CREATE CLUSTER`](/reference/statements/create/cluster)
+- [`ALTER SHARD`](/reference/statements/alter/shard)
+- [`DROP SHARD`](/reference/statements/drop#drop-shard)
+- [`SHOW CREATE SHARD`](/reference/statements/show#show-create-shard--cluster)
+- [`system.shards`](/reference/system-tables/shards)

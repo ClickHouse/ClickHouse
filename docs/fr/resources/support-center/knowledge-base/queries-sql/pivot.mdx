@@ -1,8 +1,8 @@
 ---
-title: Peut-on utiliser PIVOT dans ClickHouse ?
-description: "ClickHouse ne dispose pas de clause PIVOT, mais on peut s’en approcher à l’aide de combinateurs de fonctions d’agrégation. Voyons comment procéder avec le jeu de données des prix de l’immobilier au Royaume-Uni."
+title: Peut-on faire un PIVOT dans ClickHouse ?
+description: "ClickHouse n’a pas de clause PIVOT, mais nous pouvons nous en approcher en utilisant des combinateurs de fonctions d’agrégation. Voyons comment procéder avec le jeu de données des prix de l’immobilier au Royaume-Uni."
 date: 2024-12-11
-tags: ['Modélisation des données', 'Concepts clés des données']
+tags: ['Modélisation des données', 'Concepts fondamentaux des données']
 keywords: ['PIVOT', 'Combinateurs de fonctions d’agrégation']
 ---
 
@@ -10,10 +10,10 @@ keywords: ['PIVOT', 'Combinateurs de fonctions d’agrégation']
   ## Introduction
 </div>
 
-ClickHouse ne dispose pas d’opérateur pivot, mais il est possible d’obtenir un comportement similaire à l’aide des [combinateurs de fonctions d’agrégation](/fr/reference/functions/aggregate-functions/combinators), en particulier ceux dotés du [suffixe `-Map`](/fr/reference/functions/aggregate-functions/combinators#-map).
+ClickHouse n&#39;a pas d&#39;opérateur pivot, mais nous pouvons obtenir un comportement similaire à l&#39;aide des [combinateurs de fonctions d&#39;agrégation](/fr/reference/functions/aggregate-functions/combinators) et, en particulier, de ceux dotés du [suffixe `-Map`](/fr/reference/functions/aggregate-functions/combinators#-map).
 
 Dans cet article, nous allons voir comment faire.
-Une vidéo couvrant le même sujet est également disponible ci-dessous :
+Une vidéo couvrant le même sujet est également disponible, que vous pouvez regarder ci-dessous :
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/nlRMOmwYtF4?si=0TZSNg-uo7zjiO52" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
@@ -23,13 +23,13 @@ Une vidéo couvrant le même sujet est également disponible ci-dessous :
   ## Comprendre les combinateurs de fonctions d’agrégation
 </div>
 
-Commençons par un exemple simple. Nous allons utiliser [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local), que vous pouvez lancer avec la commande suivante :
+Commençons par un exemple simple. Nous allons utiliser [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local), que vous pouvez démarrer en exécutant la commande suivante :
 
 ```bash
 clickhouse -m --output_format_pretty_row_numbers=0
 ```
 
-La requête suivante appelle la fonction `sumMap`, qui prend une map en entrée et additionne les valeurs de chaque clé :
+La requête suivante appelle la fonction `sumMap`, qui prend en entrée une map et additionne les valeurs de chaque clé :
 
 ```sql
 SELECT sumMap(map('ClickHouse', 1, 'ClickBench', 2));
@@ -41,8 +41,8 @@ SELECT sumMap(map('ClickHouse', 1, 'ClickBench', 2));
 └───────────────────────────────────────────────┘
 ```
 
-Ce n&#39;est pas un exemple particulièrement intéressant, car il renvoie la même map que celle passée en argument.
-Appelons maintenant `sumMap` sur plusieurs lignes de maps ;
+Ce n&#39;est pas un exemple particulièrement intéressant, puisqu&#39;il renvoie la même Map que celle passée en entrée.
+Appelons maintenant `sumMap` sur plusieurs lignes de Maps ;
 
 ```sql
 WITH values AS (
@@ -60,9 +60,9 @@ FROM values;
 └─────────────────────────────────┘
 ```
 
-La clé `ClickHouse` apparaît dans les deux lignes et ses valeurs sont additionnées. La clé `ClickBench` n’apparaît que sur une seule ligne ; elle ne totalise donc qu’une seule valeur, et renvoie cette valeur !
+La clé `ClickHouse` apparaissait sur les deux lignes et ses valeurs ont été additionnées. La clé `ClickBench` n’était présente que sur une seule ligne ; une seule valeur est donc additionnée, ce qui renvoie cette valeur !
 
-Nous pouvons également utiliser `maxMap` pour trouver les valeurs maximales par clé :
+Nous pouvons également utiliser `maxMap` pour trouver les valeurs maximales pour chaque clé :
 
 ```sql
 WITH values AS (
@@ -80,7 +80,7 @@ FROM values;
 └─────────────────────────────────┘
 ```
 
-Ou bien, nous pouvons utiliser `avgMap` pour trouver la valeur moyenne pour chaque clé :
+Ou nous pouvons également utiliser `avgMap` pour trouver la valeur moyenne pour chaque clé :
 
 ```sql
 WITH values AS (
@@ -101,12 +101,12 @@ FROM values;
 Nous espérons que cela vous a permis de mieux comprendre le fonctionnement de ces combinateurs de fonctions.
 
 <div id="real-world-application-uk-housing-prices-dataset">
-  ## Application réelle : jeu de données sur les prix de l’immobilier au Royaume-Uni
+  ## Application concrète : jeu de données sur les prix de l’immobilier au Royaume-Uni
 </div>
 
-Nous allons maintenant les utiliser sur un jeu de données plus vaste dans le [ClickHouse SQL playground](https://clickhouse.com/blog/announcing-the-new-sql-playground).
+Nous allons maintenant les utiliser sur un jeu de données plus volumineux dans le [ClickHouse SQL playground](https://clickhouse.com/blog/announcing-the-new-sql-playground).
 
-Nous pouvons nous connecter au playground à l’aide de clickhouse-client :
+Nous pouvons nous connecter au playground à l’aide de clickhouse-client :
 
 ```bash
 clickhouse client -m \
@@ -115,7 +115,7 @@ clickhouse client -m \
   --secure
 ```
 
-Nous allons interroger la table `uk_price_paid`, commençons donc par explorer les données qu’elle contient :
+Nous allons interroger la table `uk_price_paid` ; examinons donc les données qu’elle contient :
 
 ```sql
 SELECT * FROM uk.uk_price_paid LIMIT 1 FORMAT Vertical;
@@ -141,13 +141,13 @@ county:    NORTH YORKSHIRE
 category:  0
 ```
 
-On voit ci-dessus que la table contient différents champs liés aux ventes immobilières au Royaume-Uni.
+Comme on peut le voir ci-dessus, la table contient différents champs liés aux ventes immobilières au Royaume-Uni.
 
 <div id="grouping-and-aggregating-by-decade">
   ### Regroupement et agrégation par décennie
 </div>
 
-Calculons les prix médians par comté pour chaque décennie du jeu de données :
+Calculons, pour chaque décennie du jeu de données, les prix médians par comté :
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
@@ -176,7 +176,7 @@ LIMIT 10;
 ```
 
 <div id="filtering-results">
-  ### Filtrage des résultats
+  ### Filtrer les résultats
 </div>
 
 Nous pouvons filtrer les résultats pour n’inclure que les données à partir de 2010 :
@@ -212,7 +212,7 @@ LIMIT 10;
   ## Combiner plusieurs agrégations
 </div>
 
-Et si nous voulons trouver le prix le plus élevé par décennie, nous pouvons le faire à l’aide de la fonction `maxMap` que nous avons vue plus haut :
+Si nous voulons trouver le prix maximal par décennie, nous pouvons le faire à l’aide de la fonction `maxMap` que nous avons vue plus haut :
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
@@ -243,11 +243,11 @@ LIMIT 10;
 ```
 
 <div id="applying-functions-to-map-values">
-  ## Application de fonctions aux valeurs d&#39;une map
+  ## Appliquer des fonctions aux valeurs d&#39;une map
 </div>
 
 Nous pouvons également calculer le prix moyen à l&#39;aide de `avgMap`.
-Ces valeurs comportent beaucoup de décimales, que nous pouvons supprimer en utilisant la fonction [`mapApply`](/fr/reference/functions/regular-functions/tuple-map-functions#mapApply) pour appeler la fonction [`floor`](/fr/reference/functions/regular-functions/rounding-functions#floor) sur chaque valeur de la map :
+Ces valeurs comportent beaucoup de décimales, que nous pouvons simplifier en utilisant la fonction [`mapApply`](/fr/reference/functions/regular-functions/tuple-map-functions#mapApply) pour appeler la fonction [`floor`](/fr/reference/functions/regular-functions/rounding-functions#floor) sur chaque valeur de la map :
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year

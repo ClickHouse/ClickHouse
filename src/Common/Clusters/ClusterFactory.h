@@ -68,6 +68,9 @@ public:
     /// remote_servers config changes (used by e.g. `ConnectionPoolWithFailover` rebuild paths).
     size_t getClustersVersion() const;
 
+    /// Last-applied `<remote_servers>` config snapshot, `nullptr` until `applyClustersConfig` has been called.
+    ConfigurationPtr getClustersConfig() const;
+
     /// Returns whether `cluster_name` is currently resolved from `<remote_servers>` config only (SQL catalog / discovery
     /// entries with the same name would return false).
     bool isClusterDefinedOnlyInRemoteServers(const String & cluster_name) const;

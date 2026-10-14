@@ -112,6 +112,24 @@ Possible values:
 
 - Any positive integer.
 
+## merge_tree_min_bytes_per_read_stream {#merge_tree_min_bytes_per_read_stream}
+
+<SettingsInfoBlock type="UInt64" default_value="65536" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "65536"},{"label": "New setting to cap the number of streams for ordinary local unordered `MergeTree` narrow-column scans using a sqrt cost model, reducing per-stream overhead on high-core-count machines. previous_value=0 (disabled) so `compatibility` with versions before 26.8 restores the pre-existing stream count."}]}]}/>
+
+Per-stream overhead cost expressed as byte-equivalent. Controls the maximum number of read streams created for ordinary local unordered `MergeTree` scans. Ordered, `FINAL`, layered, and parallel-replica reads are not changed. The volume-based cap is `ceil(sqrt(estimated_read_bytes / this_setting))`. ClickHouse also preserves at least 16 streams and at least one quarter of the streams requested before this cap, so the effective stream count is `min(requested_streams, max(volume_based_cap, 16, floor(requested_streams / 4)))`. These lower bounds preserve downstream parallelism for CPU-heavy expressions and aggregations, whose cost is not represented by `estimated_read_bytes`.
+
+`estimated_read_bytes` is the uncompressed size of the columns being read over the mark ranges left after index and partition pruning. Uncompressed size is used because per-stream overhead is traded against the work done per stream, which scales with the number of values processed rather than with how well they compress.
+
+The cap is not applied when the read volume cannot be estimated conservatively, for example when an old part needs other physical columns to evaluate a newly added `DEFAULT` column, or when a selected range reads only part of a variable-width column.
+
+The default of 64 KB is derived from the cost model `T(N) = W/N + F + V·N`, where `W` is useful work, `F` is fixed pipeline overhead, and `V` is per-stream variable cost. The optimal stream count is `sqrt(W/V)`. Expressing `W` in bytes via throughput gives `C = throughput · V ≈ 400 MB/s · 0.17 ms ≈ 64 KB`. Increasing this value reduces the number of streams (more conservative); decreasing it allows more streams. Set to 0 to disable this optimization.
+
+Possible values:
+
+- Non-negative integer.
+
 ## merge_tree_min_bytes_per_task_for_remote_reading {#merge_tree_min_bytes_per_task_for_remote_reading}
 
 **Aliases**: `filesystem_prefetch_min_bytes_for_single_read_task`
@@ -161,6 +179,14 @@ If the distance between two data blocks to be read in one file is less than `mer
 Possible values:
 
 - Any positive integer.
+
+## merge_tree_prefetch_json_shared_data_substreams {#merge_tree_prefetch_json_shared_data_substreams}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."}]}]}/>
+
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
 
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 

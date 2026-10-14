@@ -29,11 +29,11 @@ integration:
 </Accordion>
 
 <Accordion title="使用 ClickPipes for Kafka 需要满足哪些条件？">
-  要使用 ClickPipes for Kafka，您需要一个正在运行的 Kafka broker，以及一个已启用 ClickPipes 的 ClickHouse Cloud 服务。您还需要确保 ClickHouse Cloud 能够访问您的 Kafka broker。这可以通过在 Kafka 端允许远程连接，并在 Kafka 配置中将 [ClickHouse Cloud 出站 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api) 加入白名单来实现。或者，您也可以使用 [AWS PrivateLink](/zh/integrations/clickpipes/aws-privatelink) 将 ClickPipes for Kafka 连接到您的 Kafka brokers。
+  要使用 ClickPipes for Kafka，您需要一个正在运行的 Kafka broker，以及一个已启用 ClickPipes 的 ClickHouse Cloud 服务。您还需要确保 ClickHouse Cloud 能够访问您的 Kafka broker。这可以通过在 Kafka 端允许远程连接，并在 Kafka 配置中将 [ClickHouse Cloud 出站 IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api) 加入白名单来实现。或者，您也可以使用 [AWS PrivateLink](/zh/integrations/clickpipes/networking/aws-privatelink) 将 ClickPipes for Kafka 连接到您的 Kafka brokers。
 </Accordion>
 
 <Accordion title="ClickPipes for Kafka 支持 AWS PrivateLink 吗？">
-  支持 AWS PrivateLink。有关设置方法的更多信息，请参阅[相关文档](/zh/integrations/clickpipes/aws-privatelink)。
+  支持 AWS PrivateLink。有关设置方法的更多信息，请参阅[相关文档](/zh/integrations/clickpipes/networking/aws-privatelink)。
 </Accordion>
 
 <Accordion title="我可以使用 ClickPipes for Kafka 将数据写入 Kafka topic 吗？">
@@ -63,7 +63,7 @@ integration:
 </Accordion>
 
 <Accordion title="Azure Schema Registry 可与 ClickPipes 配合使用吗？">
-  不能。ClickPipes 仅支持与 Confluent Schema Registry API 兼容的 Schema Registry，而 Azure Schema Registry 并不属于此类。如果你需要支持此 Schema Registry，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)。
+  不能。ClickPipes 支持与 Confluent 兼容的 registry 和 AWS Glue Schema Registry，但不支持 Azure Schema Registry。请参阅 [Kafka ClickPipe 的 Schema Registry](/zh/integrations/clickpipes/kafka/schema-registries) 了解当前的支持矩阵。如果你需要 Azure Schema Registry 支持，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)。
 </Accordion>
 
 <Accordion title="我的策略需要哪些权限才能从 Azure Event Hubs 消费数据？">
@@ -79,7 +79,7 @@ integration:
 </Accordion>
 
 <Accordion title="对于 Azure Event Hubs，ClickPipes IP 仍然相关吗？">
-  是的。要限制发往你的 Event Hubs 实例的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips) 添加到。
+  是的。要限制发往你的 Event Hubs 实例的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/networking/static-ips) 添加到 Event Hubs 命名空间的 IP 防火墙规则中。
 </Accordion>
 
 <Accordion title="连接字符串是用于 Event Hub，还是用于 Event Hub 命名空间？">

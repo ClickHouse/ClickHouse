@@ -16,4 +16,28 @@ K7 anti	0
 K9 any inner	1
 K10 all inner	6
 K11 right equi	6
+K12 derived	6
+K12 equals nodes on	3
+K12 equals nodes off	2
+K13 right-only key	6
+K13 right-only key miss	0
+K17 lc key	6
+K17 lc key miss	0
+K14 join	1	20
+K14 join	2	20
+K14 join	3	20
+K14 oracle	1	20
+K14 oracle	2	20
+K14 oracle	3	20
+K15 post-join	1
+K15 control	0
+K16 flag	1	20
+K16 flag	2	20
+K16 flag	3	20
+K16 not flag	1	10
+K16 not flag	2	10
+K16 not flag	3	10
+K16 nullable flag	1	20
+K16 nullable flag	2	20
+K16 nullable flag	3	20
 --- other rejections keep their own error, the guard did not widen ---

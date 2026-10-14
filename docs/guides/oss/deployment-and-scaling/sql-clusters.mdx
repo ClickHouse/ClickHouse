@@ -12,7 +12,7 @@ import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/
 
 ## Overview {#overview}
 
-SQL clusters let you define the same topology that traditionally lives under [`remote_servers`](/operations/server-configuration-parameters/settings#remote_servers) using DDL statements. Definitions are stored in ClickHouse Keeper (or ZooKeeper), replicated across nodes that share a replica group, and materialized into the server cluster map used by `Distributed` tables, the `cluster` table function, and `ON CLUSTER` DDL.
+SQL clusters let you define the same topology that traditionally lives under [`remote_servers`](/reference/settings/server-settings/settings/remote#remote_servers) using DDL statements. Definitions are stored in ClickHouse Keeper (or ZooKeeper), replicated across nodes that share a replica group, and materialized into the server cluster map used by `Distributed` tables, the `cluster` table function, and `ON CLUSTER` DDL.
 
 A SQL cluster is built from three catalog objects:
 
@@ -24,7 +24,7 @@ A SQL cluster is built from three catalog objects:
 
 Create objects bottom-up (`ENDPOINT` → `SHARD` → `CLUSTER`) and drop them top-down (`CLUSTER` → `SHARD` → `ENDPOINT`).
 
-SQL catalog clusters coexist with clusters from `remote_servers`, [cluster discovery](/operations/cluster-discovery), and `Replicated` databases. After materialization they appear in [`system.clusters`](/operations/system-tables/clusters) like any other cluster.
+SQL catalog clusters coexist with clusters from `remote_servers`, [cluster discovery](/guides/oss/deployment-and-scaling/cluster-discovery), and `Replicated` databases. After materialization they appear in [`system.clusters`](/reference/system-tables/clusters) like any other cluster.
 
 ## Configuration {#configuration}
 
@@ -388,26 +388,26 @@ Most catalog statements accept an optional trailing `SYNC`:
 
 | Table | Contents |
 | --- | --- |
-| [`system.endpoints`](/operations/system-tables/endpoints) | SQL endpoints (`CREATE ENDPOINT`) |
-| [`system.shards`](/operations/system-tables/shards) | SQL shards (`CREATE SHARD`), including referenced clusters |
-| [`system.clusters`](/operations/system-tables/clusters) | All clusters available to the server, including materialized SQL clusters |
+| [`system.endpoints`](/reference/system-tables/endpoints) | SQL endpoints (`CREATE ENDPOINT`) |
+| [`system.shards`](/reference/system-tables/shards) | SQL shards (`CREATE SHARD`), including referenced clusters |
+| [`system.clusters`](/reference/system-tables/clusters) | All clusters available to the server, including materialized SQL clusters |
 
 Passwords in `system.endpoints` are masked unless secret display settings and privileges allow showing them (same rules as other `SHOW CREATE` secret handling).
 
 ## Related statements {#related-statements}
 
-- [`CREATE ENDPOINT`](/sql-reference/statements/create/endpoint)
-- [`CREATE SHARD`](/sql-reference/statements/create/shard)
-- [`CREATE CLUSTER`](/sql-reference/statements/create/cluster)
-- [`ALTER ENDPOINT`](/sql-reference/statements/alter/endpoint)
-- [`ALTER SHARD`](/sql-reference/statements/alter/shard)
-- [`ALTER CLUSTER`](/sql-reference/statements/alter/cluster)
-- [`DROP`](/sql-reference/statements/drop)
-- [`SHOW`](/sql-reference/statements/show)
+- [`CREATE ENDPOINT`](/reference/statements/create/endpoint)
+- [`CREATE SHARD`](/reference/statements/create/shard)
+- [`CREATE CLUSTER`](/reference/statements/create/cluster)
+- [`ALTER ENDPOINT`](/reference/statements/alter/endpoint)
+- [`ALTER SHARD`](/reference/statements/alter/shard)
+- [`ALTER CLUSTER`](/reference/statements/alter/cluster)
+- [`DROP`](/reference/statements/drop)
+- [`SHOW`](/reference/statements/show)
 
 ## See also {#see-also}
 
-- [`remote_servers`](/operations/server-configuration-parameters/settings#remote_servers)
-- [Cluster discovery](/operations/cluster-discovery)
-- [Distributed table engine](/engines/table-engines/special/distributed)
-- [Distributed DDL](/sql-reference/distributed-ddl)
+- [`remote_servers`](/reference/settings/server-settings/settings/remote#remote_servers)
+- [Cluster discovery](/guides/oss/deployment-and-scaling/cluster-discovery)
+- [Distributed table engine](/reference/engines/table-engines/special/distributed)
+- [Distributed DDL](/reference/statements/distributed-ddl)

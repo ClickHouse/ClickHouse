@@ -35,6 +35,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -106,11 +110,11 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
     FunctionDocumentation::Examples examples = {
         {
             "Get exact edge length in radians",
-            "SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads",
+            "SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads",
             R"(
-┌──exactEdgeLengthRads─┐
-│ 0.030677980118976447 │
-└──────────────────────┘
+┌─exactEdgeLengthRads─┐
+│      0.030677980119 │
+└─────────────────────┘
             )"
         }
     };

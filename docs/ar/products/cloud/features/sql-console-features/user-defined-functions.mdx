@@ -2,19 +2,21 @@
 sidebarTitle: 'الدوال المعرّفة من قبل المستخدم'
 slug: /cloud/features/user-defined-functions
 title: 'الدوال المعرّفة من قبل المستخدم في Cloud'
-description: 'أضف دوال بايثون التنفيذية الخاصة بك إلى Cloud'
+description: 'أضف دوال بايثون القابلة للتنفيذ الخاصة بك إلى Cloud'
 doc_type: 'guide'
 keywords: ['دالة معرّفة من قبل المستخدم', 'UDF']
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
-تتيح الدوال المعرّفة من قبل المستخدم (UDF) للمستخدمين توسيع إمكانات ClickHouse بما يتجاوز ما توفره أكثر من ألف [دالة](/ar/reference/functions/regular-functions/regular-functions-index) جاهزة.
+تتيح الدوال المعرّفة من قبل المستخدم (UDF) للمستخدمين توسيع إمكانات ClickHouse بما يتجاوز ما توفره أكثر من ألف [دالة](/ar/reference/functions/regular-functions/overview) جاهزة.
 
-في ClickHouse Cloud، توجد طريقتان لإنشاء الدوال المعرّفة من قبل المستخدم:
+في ClickHouse Cloud، توجد عدة طرق لإنشاء الدوال المعرّفة من قبل المستخدم وإدارتها:
 
 1. باستخدام SQL
 2. باستخدام UI والتعليمات البرمجية الخاصة بك (الإصدار التجريبي العام)
+3. باستخدام [Cloud واجهة برمجة تطبيقات](#manage-udfs-with-the-cloud-api) (تجريبي)
+4. باستخدام [Terraform](#manage-udfs-with-terraform) (تجريبي)
 
 <div id="sql-udfs">
   ## الدوال المعرّفة من قبل المستخدم في SQL
@@ -186,3 +188,82 @@ DROP FUNCTION isBusinessHours
     لقد أضفت بنجاح أول دالة معرّفة من قبل المستخدم عبر UI، وتحققت من أنها تعمل، ورأيت كيفية إنشاء إصدار جديد لها عند الحاجة.
   </Step>
 </Steps>
+
+<div id="manage-udfs-with-the-cloud-api">
+  ## إدارة UDFs باستخدام Cloud واجهة برمجة تطبيقات
+</div>
+
+<BetaBadge />
+
+يتوفر كل ما هو متاح في واجهة المستخدم برمجيًا أيضًا عبر [ClickHouse Cloud واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/api-overview).
+تتيح لك نقاط نهاية UDF إعداد برنامج نصي لإدارة دورة الحياة الكاملة لـ UDF، بما في ذلك تحميل أرشيفات المصدر وإنشاء الدالات والإصدارات وإرفاقها بالخدمات وحذفها.
+
+<Note>
+  نقاط النهاية هذه في مرحلة Beta، وقد يتغير عقد واجهة برمجة تطبيقات.
+</Note>
+
+سير العمل المعتاد لإنشاء UDF ونشرها عبر واجهة برمجة تطبيقات هو:
+
+1. [أنشئ URL للتحميل](/ar/products/cloud/api-reference/udf/udf-upload-session-create) للحصول على URL تحميل `application/zip` موقّع مسبقًا، ثم حمّل أرشيف ZIP إليه. لا يمكن استخدام كل معرّف تحميل إلا لمحاولة إنشاء واحدة، سواء لـ UDF أو لإصدار؛ اطلب URL تحميل جديدًا عند إعادة المحاولة.
+2. [أنشئ UDF](/ar/products/cloud/api-reference/udf/udf-create) من الأرشيف المُحمَّل، مع تحديد اسم الدالة وبيئة التشغيل والوسيطات ونوع الإرجاع.
+3. [أرفق UDF بخدمة](/ar/products/cloud/api-reference/udf/udf-attach). إذا لم يُحدَّد الإصدار، يُرفق أحدث إصدار جاهز. يجب أن تكون الخدمة قيد التشغيل؛ ويمكن إيقاظ الخدمات الخاملة أولًا.
+
+المجموعة الكاملة من نقاط النهاية:
+
+| نقطة النهاية                                                                        | الوصف                                                                |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [إنشاء URL لتحميل UDF](/ar/products/cloud/api-reference/udf/udf-upload-session-create) | ينشئ URL تحميل `application/zip` موقّعًا مسبقًا على مستوى المؤسسة    |
+| [إنشاء UDF](/ar/products/cloud/api-reference/udf/udf-create)                           | ينشئ UDF جديدة من أرشيف مُحمَّل                                      |
+| [إدراج UDFs](/ar/products/cloud/api-reference/udf/udf-list)                            | يعيد أحدث إصدار من كل UDF في المؤسسة                                 |
+| [الحصول على UDF](/ar/products/cloud/api-reference/udf/udf-get)                         | يعيد أحدث إصدار من UDF                                               |
+| [حذف UDF](/ar/products/cloud/api-reference/udf/udf-delete)                             | يحذف جميع إصدارات UDF ويفصلها عن كل الخدمات                          |
+| [إنشاء إصدار UDF](/ar/products/cloud/api-reference/udf/udf-version-create)             | يستخدم أرشيف مصدر، ويعيّن إصدارًا، ويبدأ بناء UDF                    |
+| [إدراج إصدارات UDF](/ar/products/cloud/api-reference/udf/udf-version-list)             | يعيد جميع إصدارات UDF                                                |
+| [حذف إصدار UDF](/ar/products/cloud/api-reference/udf/udf-version-delete)               | يحذف إصدار UDF غير المرفق بأي خدمة                                   |
+| [إرفاق UDF بخدمة](/ar/products/cloud/api-reference/udf/udf-attach)                     | يرفق إصدارًا واحدًا من UDF بخدمة، ويستبدل الإصدار الحالي عند الضرورة |
+| [إدراج إرفاقات UDF](/ar/products/cloud/api-reference/udf/udf-attachment-list)          | يعيد إرفاقات الخدمة الحالية لـ UDF                                   |
+| [الحصول على إرفاق UDF](/ar/products/cloud/api-reference/udf/udf-attachment-get)        | يعيد الإرفاق الحالي لـ UDF بخدمة واحدة                               |
+| [فصل UDF عن خدمة](/ar/products/cloud/api-reference/udf/udf-detach)                     | يفصل UDF عن خدمة                                                     |
+
+راجع [مرجع UDF واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/udf/udf-create) للاطلاع على مخططات الطلبات والاستجابات.
+
+<div id="manage-udfs-with-terraform">
+  ## إدارة UDFs باستخدام Terraform
+</div>
+
+<BetaBadge />
+
+يتضمن [موفّر Terraform الرسمي لـ ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) موردين لإدارة UDFs كبنية تحتية معرّفة بالشيفرة:
+
+* يدير [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) الدالة نفسها. ويأخذ أرشيف ZIP يتضمن شيفرة مصدر الدالة وينشر إصدارًا جديدًا كلما تغيّر hash الأرشيف، مع انتظار اكتمال عملية البناء.
+* يرفق [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) إصدار UDF بخدمة. لا يمكن أن تحتوي الخدمة إلا على إصدار واحد من الدالة في الوقت نفسه. يمكنك تثبيت رقم إصدار محدد، أو الإشارة إلى `clickhouse_udf.<name>.version` لترقية الخدمات تلقائيًا إلى أحدث إصدار.
+
+<Note>
+  تتوفر هذه الموارد في إصدار الموفّر 3.24.0 والإصدارات الأحدث. وهي في حالة beta، وقد يتغير سلوكها في إصدارات الموفّر المستقبلية.
+</Note>
+
+على سبيل المثال، لنشر UDF‏ `isBusinessHours` من المثال السابق باستخدام Terraform:
+
+```terraform
+resource "clickhouse_udf" "is_business_hours" {
+  function_name = "isBusinessHours"
+  runtime       = "python3.11"
+  type          = "executable_pool"
+  return_type   = "Bool"
+
+  arguments = [
+    { name = "timestamp", type = "DateTime" },
+  ]
+
+  source_archive_path = "${path.module}/is_business_hours.zip"
+  source_archive_hash = filebase64sha256("${path.module}/is_business_hours.zip")
+}
+
+resource "clickhouse_udf_attachment" "production" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+```
+
+لا تنجح عملية الإرفاق إلا للإصدارات الجاهزة، وقد تستغرق عدة دقائق؛ وتُفعَّل الخدمات الخاملة تلقائيًا. يؤدي حذف مورد `clickhouse_udf` إلى إزالة جميع إصدارات الدالة وفصلها عن جميع الخدمات.

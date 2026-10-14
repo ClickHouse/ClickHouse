@@ -25,7 +25,10 @@ DistributedAsyncInsertHeader::DistributedAsyncInsertHeader()
 {
 }
 
-DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
+namespace
+{
+
+DistributedAsyncInsertHeader readHeader(ReadBufferFromFile & in, LoggerPtr log)
 {
     DistributedAsyncInsertHeader distributed_header;
 
@@ -100,6 +103,14 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
         if (header_buf.hasPendingData())
             readBinary(distributed_header.client_info.is_internal, header_buf);
 
+        /// Trailing fields: the SQL-defined HTTP handler name and the request URL of the initiating query
+        /// (kept out of the embedded `ClientInfo` above for layout compatibility, like `client_agent`).
+        if (header_buf.hasPendingData())
+            readStringBinary(distributed_header.client_info.http_handler_name, header_buf);
+
+        if (header_buf.hasPendingData())
+            readStringBinary(distributed_header.client_info.http_request_url, header_buf);
+
         /// Add handling new data here, for example:
         ///
         /// if (header_buf.hasPendingData())
@@ -119,6 +130,26 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
 
     distributed_header.insert_query.resize(query_size);
     in.readStrict(distributed_header.insert_query.data(), query_size);
+
+    return distributed_header;
+}
+
+}
+
+DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
+{
+    DistributedAsyncInsertHeader distributed_header = readHeader(in, log);
+
+    /// A batch file written by an older server from a server-initiated query context (a `Buffer` flush, a
+    /// streaming consumer, an asynchronous insert flush) carries a zero client version, because such
+    /// contexts used to inherit the empty client info of the global context. The two legacy header layouts
+    /// handled above carry no client info at all, so they leave it default-constructed, which is a zero
+    /// version as well. In both cases `RemoteInserter` replays the batch with exactly this client info, and
+    /// this server is the one that re-initiates the insert.
+    ///
+    /// Normalizing rather than throwing: a stale batch file on disk is not a programming error, and
+    /// rejecting it would wedge the queue permanently.
+    distributed_header.client_info.setInitiatorVersionIfUnset();
 
     return distributed_header;
 }

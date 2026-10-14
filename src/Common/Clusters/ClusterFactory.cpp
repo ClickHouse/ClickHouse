@@ -216,6 +216,12 @@ size_t ClusterFactory::getClustersVersion() const
     return snap ? snap->clusters_version : 0;
 }
 
+ConfigurationPtr ClusterFactory::getClustersConfig() const
+{
+    auto snap = clusters_state.get();
+    return snap ? snap->clusters_config : ConfigurationPtr{};
+}
+
 bool ClusterFactory::isClusterDefinedOnlyInRemoteServers(const String & cluster_name) const
 {
     auto snap = clusters_state.get();

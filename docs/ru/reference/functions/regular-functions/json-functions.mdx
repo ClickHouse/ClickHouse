@@ -46,11 +46,64 @@ doc_type: 'reference'
   Эти функции могут работать медленнее, чем их регистрозависимые аналоги, поэтому по возможности используйте обычные функции JSONExtract.
 </Note>
 
+<div id="jsonpath-syntax">
+  ## Синтаксис JSONPath
+</div>
+
+Функции `JSON_EXISTS`, `JSON_VALUE` и `JSON_QUERY` принимают выражение JSONPath
+в качестве второго аргумента. ClickHouse реализует небольшое подмножество
+JSONPath, в общих чертах основанное на стандарте SQL/JSON (ISO/IEC TR 19075-6)
+и намеренно более ограниченное, чем [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
+и другие популярные реализации. Поддерживаемые операторы перечислены ниже.
+
+Эталонная реализация находится в
+[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers).
+
+<div id="supported-operators">
+  ### Поддерживаемые операторы
+</div>
+
+| Синтаксис     | Описание                                                                                                                                                           | Пример                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| `$`           | Корневой элемент. Каждый путь должен начинаться с него.                                                                                                            | `$`                               |
+| `.key`        | Доступ к элементу через точечную нотацию без кавычек. Ключ может начинаться с цифры или состоять только из цифр.                                                   | `$.store.book`, `$.1key`, `$.123` |
+| `."key"`      | Доступ к элементу через точечную нотацию в кавычках. Используйте для ключей, содержащих пробелы или специальные символы. Допускаются двойные или обратные кавычки. | `$."foo bar"`                     |
+| `[key]`       | Доступ к элементу через скобочную нотацию без кавычек.                                                                                                             | `$[hello]`                        |
+| `['key']`     | Доступ к элементу через скобочную нотацию в кавычках. Допускаются одинарные, двойные или обратные кавычки.                                                         | `$['foo bar']`                    |
+| `[n]`         | Доступ к элементу массива по индексу (отсчёт с 0).                                                                                                                 | `$.items[0]`                      |
+| `[n, m, ...]` | Доступ к нескольким элементам массива.                                                                                                                             | `$.items[0, 2, 4]`                |
+| `[n to m]`    | Диапазон элементов массива. Конечный индекс `m` не включается.                                                                                                     | `$.items[0 to 3]`                 |
+| `[*]`         | Подстановочный знак, соответствующий всем элементам массива.                                                                                                       | `$.items[*]`                      |
+
+Примечания:
+
+* Индексы и диапазоны можно комбинировать в одной паре скобок (например, `[0 to 2, 4]`).
+* Диапазоны индексов и подстановочный знак нельзя комбинировать в одной паре скобок (например, `[* , 0]` недопустимо).
+* В диапазоне `[n to m]` начальный индекс `n` должен быть строго меньше конечного индекса `m`, иначе возникает исключение.
+* Одиночный индекс `[n]` эквивалентен диапазону `[n to n+1]`.
+
+<div id="unsupported-operators">
+  ### Неподдерживаемые операторы
+</div>
+
+Следующие операторы JSONPath, доступные в RFC 9535 или других
+реализациях, **не** поддерживаются ClickHouse:
+
+| Синтаксис               | Описание                                                                    |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `..`                    | Рекурсивный спуск.                                                          |
+| `?(@.expr)`             | Выражения фильтрации.                                                       |
+| `[start:end:step]`      | Нотация среза. Вместо неё используйте `[n to m]`.                           |
+| `@`                     | Ссылка на текущий узел.                                                     |
+| `[-n]`                  | Отрицательные индексы массива (с конца).                                    |
+| Скриптовые выражения    | Арифметические выражения или вызовы функций внутри пути.                    |
+| `ON ERROR` / `ON EMPTY` | Стандартные секции SQL/JSON для управления ошибками и пустыми результатами. |
+
 {/* 
-  Во время сборки документационного фреймворка внутреннее содержимое тегов ниже заменяется на 
-  документацию, сгенерированную из system.functions. Пожалуйста, не изменяйте и не удаляйте эти теги.
-  См.: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
-  */}
+    Во время сборки документационного фреймворка внутреннее содержимое тегов ниже заменяется на 
+    документацию, сгенерированную из system.functions. Пожалуйста, не изменяйте и не удаляйте эти теги.
+    См.: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+    */}
 
 {/*AUTOGENERATED_START*/}
 
@@ -82,16 +135,16 @@ JSONAllPaths(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONAllPaths(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONAllPaths(json)─┐
-│ {"a":"42"}                           │ ['a']              │
-│ {"b":"Hello"}                        │ ['b']              │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a','c']          │
-└──────────────────────────────────────┴────────────────────┘
+┌─json───────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a":42}                       │ ['a']              │
+│ {"b":"Hello"}                  │ ['b']              │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['a','c']          │
+└────────────────────────────────┴────────────────────┘
 ```
 
 <div id="JSONAllPathsWithTypes">
@@ -122,16 +175,16 @@ JSONAllPathsWithTypes(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONAllPathsWithTypes(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
-│ {"a":"42"}                           │ {'a':'Int64'}                             │
-│ {"b":"Hello"}                        │ {'b':'String'}                            │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
-└──────────────────────────────────────┴───────────────────────────────────────────┘
+┌─json───────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
+│ {"a":42}                       │ {'a':'Int64'}                             │
+│ {"b":"Hello"}                  │ {'b':'String'}                            │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
+└────────────────────────────────┴───────────────────────────────────────────┘
 ```
 
 <div id="JSONAllValues">
@@ -163,16 +216,16 @@ JSONAllValues(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}};
 SELECT json, JSONAllValues(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONAllValues(json)──────┐
-│ {"a":42}                             │ ['42']                   │
-│ {"b":"Hello"}                        │ ['Hello']                │
-│ {"a":[1,2,3],"c":"2020-01-01"}       │ ['[1,2,3]','2020-01-01'] │
-└──────────────────────────────────────┴──────────────────────────┘
+┌─json───────────────────────────┬─JSONAllValues(json)──────┐
+│ {"a":42}                       │ ['42']                   │
+│ {"b":"Hello"}                  │ ['Hello']                │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['[1,2,3]','2020-01-01'] │
+└────────────────────────────────┴──────────────────────────┘
 ```
 
 <div id="JSONArrayLength">
@@ -244,16 +297,16 @@ JSONDynamicPaths(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONDynamicPaths(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONDynamicPaths(json)─┐
-│ {"a":"42"}                           │ ['a']                  │
-│ {"b":"Hello"}                        │ []                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a']                  │
-└──────────────────────────────────────┴────────────────────────┘
+┌─json───────────────────────────┬─JSONDynamicPaths(json)─┐
+│ {"a":42}                       │ ['a']                  │
+│ {"b":"Hello"}                  │ []                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['a']                  │
+└────────────────────────────────┴────────────────────────┘
 ```
 
 <div id="JSONDynamicPathsWithTypes">
@@ -276,7 +329,7 @@ JSONDynamicPathsWithTypes(json)
 
 **Возвращаемое значение**
 
-Возвращает Map динамических путей и их типов данных в JSON-столбце. [`Map(String, String)`](/ru/reference/data-types/map)
+Возвращает карту динамических путей и их типов данных в JSON-столбце. [`Map(String, String)`](/ru/reference/data-types/map)
 
 **Примеры**
 
@@ -284,16 +337,16 @@ JSONDynamicPathsWithTypes(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {'a':'Int64'}                   │
-│ {"b":"Hello"}                        │ {}                              │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
-└──────────────────────────────────────┴─────────────────────────────────┘
+┌─json───────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
+│ {"a":42}                       │ {'a':'Int64'}                   │
+│ {"b":"Hello"}                  │ {}                              │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
+└────────────────────────────────┴─────────────────────────────────┘
 ```
 
 <div id="JSONExtract">
@@ -329,9 +382,9 @@ SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Arr
 ```
 
 ```response title=Response
-┌─res──────────────────────────────┐
-│ ('hello',[-100,200,300])         │
-└──────────────────────────────────┘
+┌─res──────────────────────┐
+│ ('hello',[-100,200,300]) │
+└──────────────────────────┘
 ```
 
 <div id="JSONExtractArrayRaw">
@@ -366,9 +419,9 @@ SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') A
 ```
 
 ```response title=Response
-┌─res──────────────────────────┐
-│ ['-100','200.0','"hello"']   │
-└──────────────────────────────┘
+┌─res──────────────────────┐
+│ ['-100','200','"hello"'] │
+└──────────────────────────┘
 ```
 
 <div id="JSONExtractArrayRawCaseInsensitive">
@@ -710,9 +763,9 @@ SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
 ```
 
 ```response title=Response
-┌─res─────────┐
-│ ['a','b']   │
-└─────────────┘
+┌─res───────┐
+│ ['a','b'] │
+└───────────┘
 ```
 
 <div id="JSONExtractKeysAndValues">
@@ -938,9 +991,9 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') AS res;
 ```
 
 ```response title=Response
-┌─res──────────────┐
-│ [-100,200.0,300] │
-└──────────────────┘
+┌─res────────────┐
+│ [-100,200,300] │
+└────────────────┘
 ```
 
 <div id="JSONExtractRawCaseInsensitive">
@@ -1166,7 +1219,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
 
 ```response title=Response
 1
-0
+1
 ```
 
 <div id="JSONKey">
@@ -1308,16 +1361,16 @@ JSONSharedDataPaths(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONSharedDataPaths(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONSharedDataPaths(json)─┐
-│ {"a":"42"}                           │ []                        │
-│ {"b":"Hello"}                        │ ['b']                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['c']                     │
-└──────────────────────────────────────┴───────────────────────────┘
+┌─json───────────────────────────┬─JSONSharedDataPaths(json)─┐
+│ {"a":42}                       │ []                        │
+│ {"b":"Hello"}                  │ ['b']                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ ['c']                     │
+└────────────────────────────────┴───────────────────────────┘
 ```
 
 <div id="JSONSharedDataPathsWithTypes">
@@ -1348,16 +1401,16 @@ JSONSharedDataPathsWithTypes(json)
 
 ```sql title=Query
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}};
 SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 ```
 
 ```response title=Response
-┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                 │
-│ {"b":"Hello"}                        │ {'b':'String'}                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
-└──────────────────────────────────────┴────────────────────────────────────┘
+┌─json───────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
+│ {"a":42}                       │ {}                                 │
+│ {"b":"Hello"}                  │ {'b':'String'}                     │
+│ {"a":[1,2,3],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└────────────────────────────────┴────────────────────────────────────┘
 ```
 
 <div id="JSONType">
@@ -1435,18 +1488,18 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
 ```response title=Response
-┌─JSON_EXISTS(⋯ '$.hello')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯llo.world')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯.hello[*]')─┐
-│                        1 │
-└──────────────────────────┘
-┌─JSON_EXISTS(⋯.hello[0]')─┐
-│                        1 │
-└──────────────────────────┘
+┌─JSON_EXISTS('{"hello":1}', '$.hello')─┐
+│                                     1 │
+└───────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":{"world":1}}', '$.hello.world')─┐
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":["world"]}', '$.hello[*]')─┐
+│                                                1 │
+└──────────────────────────────────────────────────┘
+┌─JSON_EXISTS('{"hello":["world"]}', '$.hello[0]')─┐
+│                                                1 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="JSON_QUERY">
@@ -1534,7 +1587,7 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_retur
 world
 0
 2
-ᴺᵁᴸᴸ
+\N
 ```
 
 <div id="dynamicElement">
@@ -1666,7 +1719,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
 ┌─d─────────────┬─isDynamicElementInSharedData(d)─┐
 │ ᴺᵁᴸᴸ          │ false                           │
 │ 42            │ false                           │
-│ Hello, World! │ true                            │
+│ Hello, World! │ false                           │
 │ [1,2,3]       │ true                            │
 └───────────────┴─────────────────────────────────┘
 ```
@@ -1704,7 +1757,7 @@ SELECT isValidJSON('not JSON') = 0;
 
 ```response title=Response
 1
-0
+1
 ```
 
 **Доступ к JSON-массивам и объектам JSON с помощью целых чисел**
@@ -1720,7 +1773,6 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
 
 ```response title=Response
 0
-1
 1
 1
 1
@@ -1760,10 +1812,7 @@ SELECT prettyPrintJSON('{"a":1,"b":"hello"}');
 ```
 
 ```response title=Response
-{
-    "a": 1,
-    "b": "hello"
-}
+{\n    "a": 1,\n    "b": "hello"\n}
 ```
 
 **Настраиваемый отступ**
@@ -1773,9 +1822,7 @@ SELECT prettyPrintJSON('{"a":1}', 8);
 ```
 
 ```response title=Response
-{
-        "a": 1
-}
+{\n        "a": 1\n}
 ```
 
 <div id="simpleJSONExtractBool">
@@ -2165,14 +2212,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 Добавленный в: v21.7.0
 
 Сериализует значение в JSON-представление. Поддерживаются различные типы данных и вложенные структуры.
-64-битные [целые числа](/ru/reference/data-types/int-uint) и более крупные (например, `UInt64` или `Int128`) по умолчанию заключаются в кавычки. Это поведение контролируется параметром [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats#output_format_json_quote_64bit_integers).
-Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats#output_format_json_quote_denormals).
+64-битные [целые числа](/ru/reference/data-types/int-uint) и более крупные (например, `UInt64` или `Int128`) по умолчанию заключаются в кавычки. Это поведение контролируется параметром [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers).
+Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats/output-format#output_format_json_quote_denormals).
 При сериализации значения [Enum](/ru/reference/data-types/enum) функция выводит его имя.
 
 См. также:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **Синтаксис**
 
@@ -2209,9 +2256,9 @@ SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_form
 ```
 
 ```response title=Response
-┌─toJSONString(tuple(1.25, NULL, NaN, plus(inf), minus(inf), []))─┐
-│ [1.25,null,"nan","inf","-inf",[]]                               │
-└─────────────────────────────────────────────────────────────────┘
+┌─toJSONString((1.25, NULL, nan, inf, -inf, []))─┐
+│ [1.25,null,"nan","inf","-inf",[]]              │
+└────────────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

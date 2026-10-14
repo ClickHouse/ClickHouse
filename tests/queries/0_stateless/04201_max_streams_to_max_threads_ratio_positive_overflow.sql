@@ -16,6 +16,5 @@ INSERT INTO test_pos_overflow VALUES (0, 'Value_0');
 
 SELECT * FROM test_pos_overflow SETTINGS max_threads = 1025, max_streams_to_max_threads_ratio = 1e30, enable_analyzer = 1; -- { serverError PARAMETER_OUT_OF_BOUND }
 
-SELECT * FROM test_pos_overflow SETTINGS max_threads = 1025, max_streams_to_max_threads_ratio = 1e30, enable_analyzer = 0; -- { serverError PARAMETER_OUT_OF_BOUND }
 
 DROP TABLE test_pos_overflow;

@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 MySQL ClickPipe를 통해 데이터를 복제할 수 있도록 RDS MariaDB 인스턴스를 구성하는 방법을 단계별로 안내합니다.
 
@@ -111,6 +112,16 @@ RDS Console에서 MariaDB 인스턴스를 클릭한 다음 `Configurations` 탭�
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### IAM authentication 사용하기(선택 사항)
+</div>
+
+<Note>
+  AWS는 [버전 10.6.5에서 MariaDB용 RDS에 IAM 데이터베이스 인증을 도입했습니다](https://aws.amazon.com/blogs/database/iam-authentication-with-amazon-rds-for-mariadb/). 지원 여부는 사용하는 엔진 버전과 AWS Region에 따라 달라집니다. 이 옵션을 사용하기 전에 [AWS의 현재 지원되는 Region 및 엔진 버전](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html)을 확인하십시오.
+</Note>
+
+<IAMAuthentication engine="mysql" service="rds" />
+
 <div id="configure-network-access">
   ## 네트워크 액세스 구성
 </div>
@@ -119,7 +130,7 @@ RDS Console에서 MariaDB 인스턴스를 클릭한 다음 `Configurations` 탭�
   ### IP 기반 액세스 제어
 </div>
 
-RDS 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
+RDS 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS에서 보안 그룹을 찾는 위치" size="lg" border />
 

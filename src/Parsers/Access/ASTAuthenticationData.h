@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/AuthenticationType.h>
 #include <optional>
 
@@ -17,17 +18,22 @@ namespace DB
   *  the default password type that will be later inferred from the server parameters.
   */
 
+/// Formats the `VALID UNTIL <datetime>` / `VALID FOR <interval>` clause, leading space included.
+/// Shared by the authentication data of `CREATE USER` and by `CREATE TOKEN`.
+void formatAuthenticationValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings);
+
+/// Formats the `GRANTS (privilege ON object [,...])` clause, leading space included. The caller
+/// decides whether the clause is present at all (an `AccessRightsElements` which is not
+/// `structurallyEmpty()` but grants nothing is formatted as the canonical `GRANTS (USAGE ON *.*)`).
+void formatAuthenticationGrants(const AccessRightsElements & grants, WriteBuffer & ostr);
+
+
 class ASTAuthenticationData : public IAST
 {
 public:
     String getID(char) const override { return "AuthenticationData"; }
 
-    ASTPtr clone() const override
-    {
-        auto clone = make_intrusive<ASTAuthenticationData>(*this);
-        clone->cloneChildren();
-        return clone;
-    }
+    ASTPtr clone() const override;
 
     bool hasSecretParts() const override;
 
@@ -42,10 +48,29 @@ public:
     bool contains_password = false;
     bool contains_hash = false;
     bool jwt_use_authenticator = false;
+    /// The method-level deadline from `VALID UNTIL <datetime>` or `VALID FOR <interval>`.
+    /// It is registered in `children` (always after the payload children), so that the generic
+    /// AST machinery - depth/size limits, clone-based visitors - sees the subtree; assign it
+    /// only through `setValidUntil` to keep the two in sync.
     ASTPtr valid_until;
+    /// If true, `valid_until` holds an interval expression coming from `VALID FOR <interval>`
+    /// (the deadline is `now` plus the interval); otherwise it holds a `VALID UNTIL` value.
+    bool valid_until_is_interval = false;
+
+    void setValidUntil(ASTPtr ast);
+
+    /// The number of children that carry the authentication payload (password, salt, parameters,
+    /// SSH keys, HTTP scheme). They always precede `valid_until`, which, when present, is also
+    /// stored in `children` and must be excluded from positional payload access.
+    size_t numPayloadChildren() const { return children.size() - (valid_until ? 1 : 0); }
+
+    /// If not empty, the access rights of a user authenticated with this method
+    /// are limited to the intersection with these elements (the GRANTS clause).
+    AccessRightsElements grants;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }

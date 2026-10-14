@@ -59,7 +59,7 @@ Lorsque l’ingestion continue est activée, ClickPipes ingère en continu les d
 
 Par défaut, le S3 ClickPipe suppose que les fichiers sont ajoutés à un bucket dans l’ordre lexicographique et s’appuie sur cet ordre implicite pour ingérer les fichiers séquentiellement. Cela signifie que tout nouveau fichier **doit** être lexicographiquement supérieur au dernier fichier ingéré. Par exemple, des fichiers nommés `file1`, `file2` et `file3` seront ingérés séquentiellement, mais si un nouveau `file 0` est ajouté au bucket, il sera **ignoré** car son nom n’est pas lexicographiquement supérieur à celui du dernier fichier ingéré.
 
-Dans ce mode, le S3 ClickPipe effectue un chargement initial de **tous les fichiers** dans le chemin spécifié, puis recherche de nouveaux fichiers à un intervalle configurable (par défaut, 30 secondes). Il n’est **pas possible** de démarrer l’ingestion à partir d’un fichier spécifique ou d’un point dans le temps — ClickPipes chargera toujours tous les fichiers dans le chemin spécifié.
+Dans ce mode, le S3 ClickPipe effectue un chargement initial de **tous les fichiers** dans le chemin spécifié, puis recherche de nouveaux fichiers à un intervalle configurable (par défaut, 30 secondes). Pour démarrer l’ingestion continue après un fichier spécifique, configurez **Démarrer après**. ClickPipes ignorera les fichiers lexicographiquement inférieurs ou égaux à la valeur configurée et continuera à ingérer les fichiers plus récents à partir de ce point.
 
 <div id="continuous-ingestion-any-order">
   #### N’importe quel ordre
@@ -75,13 +75,13 @@ Il est possible de configurer un S3 ClickPipe pour ingérer des fichiers qui n�
   Le mode non ordonné est **uniquement** pris en charge avec Amazon S3 et n’est **pas** pris en charge pour les buckets publics ni pour les services compatibles S3. Il nécessite la configuration d’une file d’attente [Amazon SQS](https://aws.amazon.com/sqs/) connectée au bucket, avec éventuellement [Amazon EventBridge](https://aws.amazon.com/eventbridge/) comme routeur d’événements.
 </Note>
 
-Dans ce mode, le S3 ClickPipe effectue un chargement initial de **tous les fichiers** dans le chemin sélectionné, puis écoute dans la file d’attente les événements `ObjectCreated:*` correspondant au chemin spécifié. Tout message concernant un fichier déjà vu, un fichier ne correspondant pas au chemin ou un événement d’un autre type sera **ignoré**.
+Dans ce mode, le S3 ClickPipe effectue un chargement initial de **tous les fichiers** dans le chemin sélectionné, puis écoute dans la file d’attente les événements `ObjectCreated:*` correspondant au chemin spécifié. Tout message concernant un fichier déjà vu, un fichier ne correspondant pas au chemin ou un événement d’un autre type sera **ignoré**. Pour ingérer uniquement les fichiers transmis via la file d’attente, activez **Ignorer le chargement initial**. Lorsqu’il est activé, ClickPipes ignore le parcours initial des fichiers existants dans le chemin sélectionné et traite uniquement les fichiers transmis via la file d’attente SQS.
 
 <Note>
   La définition d’un préfixe/suffixe pour les événements est facultative. Si vous le faites, assurez-vous qu’il correspond au chemin défini pour le ClickPipe. S3 n’autorise pas plusieurs règles de notification qui se chevauchent pour les mêmes types d’événements.
 </Note>
 
-Les fichiers sont ingérés une fois le seuil configuré dans `max insert bytes` ou `max file count` atteint, ou après un intervalle configurable (30 secondes par défaut). Il est **impossible** de démarrer l’ingestion à partir d’un fichier spécifique ou d’un instant précis — ClickPipes chargera toujours tous les fichiers du chemin sélectionné. Si une DLQ est configurée, les messages en échec seront remis dans la file d’attente et retraités jusqu’au nombre de tentatives défini dans le paramètre `maxReceiveCount` de la DLQ.
+Les fichiers sont ingérés une fois le seuil configuré dans `max insert bytes` ou `max file count` atteint, ou après un intervalle configurable (30 secondes par défaut). Si une DLQ est configurée, les messages en échec seront remis dans la file d’attente et retraités jusqu’au nombre de tentatives défini dans le paramètre `maxReceiveCount` de la DLQ.
 
 <Tip>
   Nous recommandons vivement de configurer une **Dead-Letter-Queue (DLQ)** pour la file d’attente SQS, afin de faciliter le débogage et la relance des messages en échec.
@@ -207,7 +207,7 @@ Suivez [ce guide](/fr/products/cloud/guides/data-sources/accessing-s3-data-secur
 
 Les S3 ClickPipes utilisent deux chemins réseau distincts, respectivement pour la découverte des métadonnées et pour l&#39;ingestion des données : le service ClickPipes et le service ClickHouse Cloud. Si vous souhaitez ajouter un niveau supplémentaire de sécurité réseau (par exemple, pour des raisons de conformité), l&#39;accès réseau **doit être configuré pour ces deux chemins**.
 
-* Pour le **contrôle d&#39;accès basé sur les IP**, la stratégie du bucket S3 doit autoriser les IP statiques de la région du service ClickPipes indiquées [ici](/fr/integrations/clickpipes/home#list-of-static-ips), ainsi que les [IP statiques](/fr/products/cloud/guides/data-sources/cloud-endpoints-api) du service ClickHouse Cloud. Pour obtenir les IP statiques de votre région ClickHouse Cloud, ouvrez un terminal et exécutez :
+* Pour le **contrôle d&#39;accès basé sur les IP**, la politique du bucket S3 doit autoriser les IP statiques de la région du service ClickPipes indiquées [ici](/fr/integrations/clickpipes/networking/static-ips), ainsi que les [IP statiques](/fr/products/cloud/guides/data-sources/cloud-endpoints-api) du service ClickHouse Cloud. Pour obtenir les IP statiques de votre région ClickHouse Cloud, ouvrez un terminal et exécutez :
 
   ```bash
   # Remplacez <your-region> par votre région ClickHouse Cloud
@@ -227,18 +227,20 @@ Les S3 ClickPipes utilisent deux chemins réseau distincts, respectivement pour 
 
 ClickPipes fournit des valeurs par défaut adaptées à la plupart des cas d’usage. Si votre cas d’usage nécessite un réglage plus fin, vous pouvez ajuster les paramètres suivants :
 
-| Paramètre                            | Valeur par défaut | Description                                                                                                                                                                   |
-| ------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB              | Nombre d’octets à traiter dans un seul lot d’insertion.                                                                                                                       |
-| `Max file count`                     | 100               | Nombre maximal de fichiers à traiter dans un seul lot d’insertion.                                                                                                            |
-| `Max threads`                        | auto(3)           | [Nombre maximal de threads concurrents](/fr/reference/settings/session-settings#max_threads) pour le traitement des fichiers.                                                 |
-| `Max insert threads`                 | 1                 | [Nombre maximal de threads d’insertion concurrents](/fr/reference/settings/session-settings#max_insert_threads) pour le traitement des fichiers.                              |
-| `Min insert block size bytes`        | 1GB               | [Taille minimale en octets du bloc](/fr/reference/settings/session-settings#min_insert_block_size_bytes) pouvant être inséré dans une table.                                  |
-| `Max download threads`               | 4                 | [Nombre maximal de threads de téléchargement concurrents](/fr/reference/settings/session-settings#max_download_threads).                                                      |
-| `Object storage polling interval`    | 30s               | Configure la période d’attente maximale avant d’insérer les données dans le cluster ClickHouse.                                                                               |
-| `Parallel distributed insert select` | 2                 | [Paramètre parallel distributed insert select](/fr/reference/settings/session-settings#parallel_distributed_insert_select).                                                   |
-| `Parallel view processing`           | false             | Indique s’il faut activer l’envoi vers les vues attachées [de manière concurrente plutôt que séquentielle](/fr/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true              | Indique s’il faut traiter les fichiers en parallèle sur plusieurs nœuds.                                                                                                      |
+| Paramètre                            | Valeur par défaut | Description                                                                                                                                                                            |
+| ------------------------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB              | Nombre d’octets à traiter dans un seul lot d’insertion.                                                                                                                                |
+| `Max file count`                     | 100               | Nombre maximal de fichiers à traiter dans un seul lot d’insertion.                                                                                                                     |
+| `Max threads`                        | auto(3)           | [Nombre maximal de threads concurrents](/fr/reference/settings/session-settings/max-threads#max_threads) pour le traitement des fichiers.                                              |
+| `Max insert threads`                 | 1                 | [Nombre maximal de threads d’insertion concurrents](/fr/reference/settings/session-settings/max-insert#max_insert_threads) pour le traitement des fichiers.                            |
+| `Min insert block size bytes`        | 1GB               | [Taille minimale en octets du bloc](/fr/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) pouvant être inséré dans une table.                                |
+| `Max download threads`               | 4                 | [Nombre maximal de threads de téléchargement concurrents](/fr/reference/settings/session-settings/max-download#max_download_threads).                                                  |
+| `Object storage polling interval`    | 30s               | Configure la période d’attente maximale avant d’insérer les données dans le cluster ClickHouse.                                                                                        |
+| `Start after`                        | None              | Pour l’ingestion continue ordonnée, ignore les fichiers dont le nom ou le chemin est lexicographiquement inférieur ou égal à celui configuré.                                          |
+| `Skip initial load`                  | false             | Pour l’ingestion continue non ordonnée, ignore le parcours initial des fichiers existants et traite uniquement les notifications d’objets de la file d’attente SQS configurée.         |
+| `Parallel distributed insert select` | 2                 | [Paramètre parallel distributed insert select](/fr/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                                                   |
+| `Parallel view processing`           | false             | Indique s’il faut activer l’envoi vers les vues attachées [de manière concurrente plutôt que séquentielle](/fr/reference/settings/session-settings/parallel#parallel_view_processing). |
+| `Use cluster function`               | true              | Indique s’il faut traiter les fichiers en parallèle sur plusieurs nœuds.                                                                                                               |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Paramètres avancés de ClickPipes" size="lg" border />
 

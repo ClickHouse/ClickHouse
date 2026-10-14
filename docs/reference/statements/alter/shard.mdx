@@ -12,7 +12,7 @@ import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/
 
 Modifies an existing SQL cluster catalog shard: shard-level properties and the list of replica endpoints.
 
-Requires [`cluster_metadata`](/operations/sql-clusters#configuration) and the `CREATE SHARD` privilege.
+Requires [`cluster_metadata`](/guides/oss/deployment-and-scaling/sql-clusters#configuration) and the `CREATE SHARD` privilege.
 
 ## Syntax {#syntax}
 
@@ -50,7 +50,7 @@ ALTER SHARD shard_01 REPLACE replica_01 TO replica_03
 
 ## Related {#related}
 
-- [SQL clusters guide](/operations/sql-clusters)
-- [`CREATE SHARD`](/sql-reference/statements/create/shard)
-- [`DROP SHARD`](/sql-reference/statements/drop#drop-shard)
-- [`CREATE ENDPOINT`](/sql-reference/statements/create/endpoint)
+- [SQL clusters guide](/guides/oss/deployment-and-scaling/sql-clusters)
+- [`CREATE SHARD`](/reference/statements/create/shard)
+- [`DROP SHARD`](/reference/statements/drop#drop-shard)
+- [`CREATE ENDPOINT`](/reference/statements/create/endpoint)

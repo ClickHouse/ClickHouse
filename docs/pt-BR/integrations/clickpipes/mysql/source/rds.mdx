@@ -11,8 +11,9 @@ integration:
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/pt-BR/clickpipes/_iam_authentication.mdx";
 
-Este guia passo a passo mostra como configurar o Amazon RDS MySQL para replicar dados para o ClickHouse Cloud usando o [ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index). Para perguntas frequentes sobre CDC do MySQL, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).
+Este guia passo a passo mostra como configurar o Amazon RDS MySQL para replicar dados para o ClickHouse Cloud usando o [ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index). Para perguntas frequentes sobre MySQL CDC, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).
 
 <div id="enable-binlog-retention-rds">
   ## Habilitar a retenção do log binário
@@ -140,13 +141,7 @@ Conecte-se à sua instância do RDS MySQL como um usuário administrador e execu
   ### Usando autenticação IAM (opcional)
 </div>
 
-Em vez de uma senha, você pode autenticar o usuário do ClickPipes usando acesso baseado em funções do AWS IAM. Crie o usuário da seguinte forma e, em seguida, conceda a ele os mesmos privilégios de schema e de replicação mostrados acima:
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-Consulte [AWS IAM DB authentication (RDS/Aurora)](/pt-BR/integrations/clickpipes/postgres/auth) para obter as etapas completas para configurar a IAM role e a policy necessárias para que o ClickPipes possa se autenticar dessa forma.
+<IAMAuthentication engine="mysql" service="rds" />
 
 <div id="configure-network-access">
   ## Configure o acesso à rede
@@ -156,7 +151,7 @@ Consulte [AWS IAM DB authentication (RDS/Aurora)](/pt-BR/integrations/clickpipes
   ### Controle de acesso por IP
 </div>
 
-Para restringir o tráfego até sua instância do Aurora MySQL, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/home#list-of-static-ips) às **regras de entrada** do seu Security Group do RDS.
+Para restringir o tráfego até sua instância do Aurora MySQL, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às **regras de entrada** do seu Security Group do RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Onde encontrar o Security Group no RDS MySQL?" size="lg" border />
 

@@ -1,0 +1,8 @@
+plan lc string	1
+plan lc int	1
+plan lc nullable	1
+lc string	1	49300
+lc int	1	41126
+lc nullable	1	22343
+lc both conditions	1	42139
+lc nullable left	1	22581
