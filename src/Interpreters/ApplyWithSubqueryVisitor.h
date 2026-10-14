@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 
 #include <base/types.h>
@@ -41,12 +42,17 @@ public:
     static void visit(ASTSelectWithUnionQuery & select, size_t max_expanded_ast_elements);
     static void visit(ASTSelectWithUnionQuery & select, ExpandedASTBudget & budget);
 
+    /// Calls `callback` for each alias `expression` declares in the scope it belongs to, the way the analyzer collects
+    /// them: at any depth, but not inside a lambda or a subquery. The expression's own alias is last.
+    static void forEachExpressionAlias(const ASTPtr & expression, const std::function<void(const String &, const ASTPtr &)> & callback);
+
 private:
     static void visit(ASTPtr & ast, const Data & data);
     static void visit(ASTSelectQuery & ast, const Data & data);
     static void visit(ASTSelectWithUnionQuery & ast, const Data & data);
     static void visit(ASTTableExpression & table, const Data & data);
     static void visit(ASTFunction & func, const Data & data);
+    static void visitWithExpression(ASTPtr & ast, Data & data, bool export_aliases);
 };
 
 }
