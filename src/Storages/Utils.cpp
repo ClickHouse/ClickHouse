@@ -13,6 +13,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageSnapshot.h>
 
 
 namespace CurrentMetrics
@@ -52,14 +53,30 @@ namespace ErrorCodes
 namespace
 {
 
-std::optional<NameAndTypePair> findOrderBreakingConversion(const ColumnsDescription & source, const ColumnsDescription & declared)
+struct OrderBreakingConversion
 {
-    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
-    for (const auto & source_column : source.get(order_relevant_columns))
+    String name;
+    DataTypePtr source_type;
+    DataTypePtr declared_type;
+};
+
+std::optional<OrderBreakingConversion> findOrderBreakingConversion(const StorageSnapshot & source, const StorageSnapshot & declared)
+{
+    /// `getColumns` does not enumerate dynamic subcolumns, so each side is also resolved from the other.
+    const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases)
+                             .withSubcolumns()
+                             .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+    for (const auto & source_column : source.getColumns(options))
     {
-        auto declared_column = declared.tryGetColumn(order_relevant_columns, source_column.name);
+        auto declared_column = declared.tryGetColumn(options, source_column.name);
         if (declared_column && !conversionPreservesOrder(*source_column.type, *declared_column->type))
-            return source_column;
+            return OrderBreakingConversion{source_column.name, source_column.type, declared_column->type};
+    }
+    for (const auto & declared_column : declared.getColumns(options))
+    {
+        auto source_column = source.tryGetColumn(options, declared_column.name);
+        if (source_column && !conversionPreservesOrder(*source_column->type, *declared_column.type))
+            return OrderBreakingConversion{declared_column.name, source_column->type, declared_column.type};
     }
     return {};
 }
@@ -92,11 +109,11 @@ bool readLandsOnMerge(StoragePtr storage)
 QueryProcessingStage::Enum getStageForConvertingRead(
     QueryProcessingStage::Enum source_stage,
     const StoragePtr & source,
-    const ColumnsDescription & source_columns,
-    const ColumnsDescription & declared_columns)
+    const StorageSnapshotPtr & source_snapshot,
+    const StorageSnapshotPtr & declared_snapshot)
 {
     if (source_stage > QueryProcessingStage::FetchColumns && readLandsOnMerge(source)
-        && findOrderBreakingConversion(source_columns, declared_columns))
+        && findOrderBreakingConversion(*source_snapshot, *declared_snapshot))
         return QueryProcessingStage::FetchColumns;
     return source_stage;
 }
@@ -104,21 +121,21 @@ QueryProcessingStage::Enum getStageForConvertingRead(
 void checkStageForConvertingRead(
     QueryProcessingStage::Enum stage,
     const StoragePtr & source,
-    const ColumnsDescription & source_columns,
-    const ColumnsDescription & declared_columns,
+    const StorageSnapshotPtr & source_snapshot,
+    const StorageSnapshotPtr & declared_snapshot,
     const StorageID & reader)
 {
     if (stage <= QueryProcessingStage::FetchColumns || !readLandsOnMerge(source))
         return;
 
-    if (auto column = findOrderBreakingConversion(source_columns, declared_columns))
+    if (auto conversion = findOrderBreakingConversion(*source_snapshot, *declared_snapshot))
         throw Exception(
             ErrorCodes::INCOMPATIBLE_COLUMNS,
             "Column {} of table {} has type {}, which does not preserve the order when converted to the type {} "
             "declared by {}. The query processing stage was chosen before this type was visible, most likely "
             "because the table was altered while the query was being planned. Retry the query",
-            backQuoteIfNeed(column->name), source->getStorageID().getNameForLogs(), column->type->getName(),
-            declared_columns.get(column->name).type->getName(), reader.getNameForLogs());
+            backQuoteIfNeed(conversion->name), source->getStorageID().getNameForLogs(), conversion->source_type->getName(),
+            conversion->declared_type->getName(), reader.getNameForLogs());
 }
 
 }
