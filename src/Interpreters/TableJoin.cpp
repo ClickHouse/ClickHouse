@@ -73,7 +73,6 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
-    extern const SettingsBool joined_block_split_single_row;
     extern const SettingsBool parallel_non_joined_rows_processing;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
@@ -211,17 +210,15 @@ std::string TableJoin::formatClausesPretty(const TableJoin::Clauses & clauses, c
     return fmt::format("{}", fmt::join(res, " OR "));
 }
 
-TableJoin::TableJoin(const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
-    : size_limits(
-          SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
+TableJoin::TableJoin(
+    const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
+    : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
     , join_use_nulls(settings[Setting::join_use_nulls])
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
     , max_joined_block_bytes(settings[Setting::max_joined_block_size_bytes])
-    , joined_block_split_single_row(settings[Setting::joined_block_split_single_row])
-    , parallel_non_joined_rows_processing(settings[Setting::parallel_non_joined_rows_processing])
     , join_algorithms(settings[Setting::join_algorithm])
     , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
@@ -1311,19 +1308,8 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .current_metric = CurrentMetrics::TemporaryFilesForJoin,
         .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
-        .num_files = ProfileEvents::ExternalJoinWritePart}, temporary_files_buffer_size, temporary_files_codec);
-}
-
-namespace
-{
-
-/// The kinds whose non-joined-rows handling can cope with keys spread over several buckets.
-/// Strictness is not a separate gate: SEMI / ANTI / ASOF use the same kind (LEFT / INNER / RIGHT / FULL).
-bool parallelLayoutKindSupported(JoinKind kind)
-{
-    return kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full;
-}
-
+        .num_files = ProfileEvents::ExternalJoinWritePart,
+        .spilled_to_disk_operator = "join"}, temporary_files_buffer_size, temporary_files_codec);
 }
 
 bool allowHashJoinCacheKeys(
@@ -1332,19 +1318,19 @@ bool allowHashJoinCacheKeys(
     bool is_special_storage,
     bool one_disjunct)
 {
-    if (!TableJoin::isHashFamilyEnabled(join_algorithms))
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
         return false;
-    if (!parallelLayoutKindSupported(kind))
+    if (kind != JoinKind::Left && kind != JoinKind::Inner
+        && kind != JoinKind::Right && kind != JoinKind::Full)
         return false;
     if (is_special_storage || !one_disjunct)
         return false;
     return true;
 }
 
-bool preferParallelHashLayout(JoinKind kind, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold)
+bool TableJoin::preferParallelHashLayout(std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const
 {
-    /// No estimate means the right side cannot be ruled small, so prefer the parallel layout.
-    return parallelLayoutKindSupported(kind)
+    return (isInnerOrLeft(kind()) || isRightOrFull(kind())) && !isSpecialStorage()
         && (!rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold);
 }
 }

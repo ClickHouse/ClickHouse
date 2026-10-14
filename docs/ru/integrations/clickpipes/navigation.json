@@ -4,7 +4,7 @@
   "pages": [
     "ru/integrations/clickpipes/home",
     {
-      "group": "ClickPipes for Streaming",
+      "group": "ClickPipes для потоковых данных",
       "pages": [
         {
           "group": "Kafka",
@@ -37,7 +37,7 @@
       ]
     },
     {
-      "group": "ClickPipes for Object Storage",
+      "group": "ClickPipes для объектного хранилища",
       "pages": [
         {
           "group": "Amazon S3",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "group": "ClickPipes for CDC",
+      "group": "ClickPipes для CDC",
       "pages": [
         {
           "group": "Postgres",
@@ -87,7 +87,7 @@
             "ru/integrations/clickpipes/postgres/lifecycle",
             "ru/integrations/clickpipes/postgres/auth",
             {
-              "group": "Operations",
+              "group": "Операции",
               "pages": [
                 "ru/integrations/clickpipes/postgres/add-table",
                 "ru/integrations/clickpipes/postgres/pause-and-resume",
@@ -99,8 +99,9 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Источник",
               "pages": [
+                "ru/integrations/clickpipes/postgres/source/managed-postgres",
                 "ru/integrations/clickpipes/postgres/source/alloydb",
                 "ru/integrations/clickpipes/postgres/source/rds",
                 "ru/integrations/clickpipes/postgres/source/aurora",
@@ -127,7 +128,7 @@
             "ru/integrations/clickpipes/mysql/schema-changes",
             "ru/integrations/clickpipes/mysql/lifecycle",
             {
-              "group": "Operations",
+              "group": "Операции",
               "pages": [
                 "ru/integrations/clickpipes/mysql/add-table",
                 "ru/integrations/clickpipes/mysql/pause-and-resume",
@@ -139,7 +140,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Источник",
               "pages": [
                 "ru/integrations/clickpipes/mysql/source/rds",
                 "ru/integrations/clickpipes/mysql/source/aurora",
@@ -162,7 +163,7 @@
             "ru/integrations/clickpipes/mongodb/lifecycle",
             "ru/integrations/clickpipes/mongodb/faq",
             {
-              "group": "Operations",
+              "group": "Операции",
               "pages": [
                 "ru/integrations/clickpipes/mongodb/add-table",
                 "ru/integrations/clickpipes/mongodb/remove-table",
@@ -174,7 +175,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "Источник",
               "pages": [
                 "ru/integrations/clickpipes/mongodb/source/atlas",
                 "ru/integrations/clickpipes/mongodb/source/generic",
@@ -194,7 +195,7 @@
       ]
     },
     {
-      "group": "Programmatic access",
+      "group": "Программный доступ",
       "icon": "code",
       "pages": [
         "ru/integrations/clickpipes/programmatic-access/openapi",
@@ -202,7 +203,7 @@
       ]
     },
     {
-      "group": "Networking",
+      "group": "Сетевые подключения",
       "icon": "network-wired",
       "pages": [
         "ru/integrations/clickpipes/networking/index",

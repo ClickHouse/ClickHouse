@@ -313,31 +313,6 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
     return available_space;
 }
 
-namespace
-{
-
-/// A path built from an unhashed skip-index file name (see replace_long_file_name_to_hash) can
-/// exceed the filesystem's NAME_MAX when probed directly for existence -- e.g. checking for a
-/// legacy extension on a part that only has the packed/hashed form. That's a normal "not found
-/// under this name" outcome for an existence probe, so treat it as "doesn't exist" rather than
-/// letting it escape as an exception. Any other stat() failure (EACCES, EIO, ESTALE, ...) is a
-/// genuine problem and must keep throwing -- callers rely on that to distinguish "missing" from
-/// "broken" (e.g. MergeTreeData::loadFormatVersion, IMergeTreeDataPart::loadColumns).
-template <typename Func>
-bool existsOrFileNameTooLong(Func && func)
-try
-{
-    return func();
-}
-catch (const fs::filesystem_error & e)
-{
-    if (e.code() == std::errc::filename_too_long)
-        return false;
-    throw;
-}
-
-}
-
 bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
     return existsOrFileNameTooLong([&] { return fs::exists(fs::path(disk_path) / path); });
@@ -816,7 +791,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
             if (path == disk_ptr->getPath())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
         disk->startup(skip_access_check);

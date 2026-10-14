@@ -8,7 +8,7 @@
 -- new null mask, so the Arrow writer stores an out-of-range day number under a null slot.
 
 SET engine_file_truncate_on_insert = 1;
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_04512_plain.arrow', 'Arrow')
 SELECT nullIf(x, x) AS d FROM (SELECT toDate32('9999-12-31') + 100 AS x);
