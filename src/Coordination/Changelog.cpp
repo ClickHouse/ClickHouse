@@ -611,12 +611,16 @@ private:
                 };
 
                 /// Skip the segments that are never merged, so they do not hold back the ones after them.
+                /// Also skip the sources of an interrupted merge that are listed after the merged object (see below):
+                /// they are covered by a segment the cursor has already passed.
                 auto it = existing_changelogs.upper_bound(last_merged_index);
-                while (it != existing_changelogs.end() && !is_open_for_write(it->second) && !can_be_merged(it->second))
+                while (it != existing_changelogs.end() && !is_open_for_write(it->second)
+                    && (!can_be_merged(it->second) || it->second->to_log_index <= last_merged_index))
                 {
                     /// The name of a broken segment overlaps the segments after it, so advance only past its start:
                     /// advancing to its `to_log_index` would skip the following segments forever.
-                    last_merged_index = it->second->broken_at_end ? it->second->from_log_index : it->second->to_log_index;
+                    const auto passed_index = it->second->broken_at_end ? it->second->from_log_index : it->second->to_log_index;
+                    last_merged_index = std::max(last_merged_index, passed_index);
                     ++it;
                 }
 
@@ -637,7 +641,22 @@ private:
                 {
                     auto next_changelog = it->second;
 
-                    if (next_changelog->from_log_index != current_to_index + 1 || is_open_for_write(next_changelog))
+                    if (is_open_for_write(next_changelog))
+                        break;
+
+                    /// A crash after a merge was published but before its sources were removed leaves the sources
+                    /// listed after the merged object: startup removes only the one with the same start index. Their
+                    /// entries are already in the range being merged, so step over them instead of stopping here,
+                    /// otherwise the planner would pick the same range on every wake-up. They are not merged and stay
+                    /// listed, so the locations read from them on startup remain valid until retention removes them.
+                    if (next_changelog->from_log_index > current_from_index && next_changelog->to_log_index <= current_to_index
+                        && !is_never_merged(next_changelog))
+                    {
+                        ++it;
+                        continue;
+                    }
+
+                    if (next_changelog->from_log_index != current_to_index + 1)
                         break;
 
                     /// `rotate_interval` caps the number of entries in a merged object, so check the candidate
@@ -701,11 +720,38 @@ private:
                 auto relink = std::make_shared<LogEntryStorage::ChangelogRelink>();
                 relink->merged = merged_changelog;
                 relink->on_applied = [requests = s3_compaction_requests] { requestRelinkedSourcesCleanup(*requests); };
+                bool source_removed = false;
                 for (const auto & changelog : to_merge)
                 {
                     relink->sources.emplace_back(changelog, new_file->count());
-                    auto reader = changelog->disk->readFile(changelog->path, getReadSettings());
-                    copyData(*reader, *new_file);
+
+                    /// `writer_mutex` is released here, so the source's `disk` and `path` may be changed by a rewrite
+                    /// and the object may be removed meanwhile. The shared lock keeps them stable for the whole copy,
+                    /// the same way `executeReadPlan` reads a changelog, and `removed_from_disk` is published under the
+                    /// exclusive lock before an object is removed.
+                    changelog->withReadLock(
+                        [&]
+                        {
+                            if (changelog->removed_from_disk)
+                            {
+                                source_removed = true;
+                                return;
+                            }
+
+                            auto reader = changelog->disk->readFile(changelog->path, getReadSettings());
+                            copyData(*reader, *new_file);
+                        });
+
+                    if (source_removed)
+                        break;
+                }
+
+                if (source_removed)
+                {
+                    LOG_INFO(log, "A planned S3 changelog source was removed during merge, discarding merged file {}", merged_in_progress_path);
+                    new_file->cancel();
+                    removeInProgressObject(merged_in_progress_path);
+                    continue;
                 }
 
                 new_file->sync();

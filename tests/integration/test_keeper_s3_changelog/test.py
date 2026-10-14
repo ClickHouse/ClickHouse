@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import io
 import os
+import time
 
 import pytest
 from minio.deleteobjects import DeleteObject
@@ -216,3 +218,120 @@ def test_restart_reads_changelog_from_s3(started_cluster):
             assert node_zk.get(f"/test_restart/{child}")[0] == b"somedata"
     finally:
         stop_zk(node_zk)
+
+
+def get_s3_changelog_ranges(cluster):
+    ranges = []
+    for name in list_s3_objects(cluster, "snaplogs/"):
+        if not name.startswith("changelog_"):
+            continue
+        from_index, to_index = name[len("changelog_") : -len(".bin")].split("_")
+        ranges.append((int(from_index), int(to_index)))
+    return sorted(ranges)
+
+
+def split_changelog_records(data):
+    # A record is `checksum` (8 bytes), `version` (1), `index` (8), `term` (8),
+    # `value_type` (4) and `blob_size` (8), followed by the blob.
+    records = []
+    position = 0
+    while position < len(data):
+        index = int.from_bytes(data[position + 9 : position + 17], "little")
+        blob_size = int.from_bytes(data[position + 29 : position + 37], "little")
+        end = position + 37 + blob_size
+        records.append((index, data[position:end]))
+        position = end
+    return records
+
+
+def test_compaction_after_interrupted_merge(started_cluster):
+    # Merges must not be capped by `rotate_log_storage_interval`, and no snapshot
+    # may remove the merged object through retention.
+    stop_clickhouse(started_cluster, node_logs, cleanup_disks=True)
+    node_logs.copy_file_to_container(
+        os.path.join(CURRENT_TEST_DIR, "configs/enable_keeper.xml"),
+        "/etc/clickhouse-server/config.d/enable_keeper.xml",
+    )
+    for setting, value in [
+        ("snapshot_distance", "10"),
+        ("stale_log_gap", "10"),
+        ("rotate_log_storage_interval", "3"),
+    ]:
+        node_logs.replace_in_config(
+            "/etc/clickhouse-server/config.d/enable_keeper.xml",
+            f"<{setting}>{value}<",
+            f"<{setting}>100000<",
+        )
+    node_logs.replace_in_config(
+        "/etc/clickhouse-server/config.d/enable_keeper.xml",
+        "<!-- DISK DEFINITION PLACEHOLDER -->",
+        "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
+    )
+    node_logs.start_clickhouse()
+    keeper_utils.wait_until_connected(
+        started_cluster, node_logs, wait_complete_readiness=False
+    )
+
+    def wait_for_merge_past(index):
+        for _ in range(300):
+            ranges = get_s3_changelog_ranges(started_cluster)
+            if any(
+                from_index == 1 and to_index > index for from_index, to_index in ranges
+            ):
+                return ranges
+            time.sleep(0.1)
+        assert False, f"no merged S3 changelog past index {index}: {ranges}"
+
+    def create_nodes(count):
+        node_zk = get_fake_zk("node_logs")
+        try:
+            node_zk.ensure_path("/test_interrupted_merge")
+            # Sequential creates, so that every entry is flushed as a separate object.
+            for _ in range(count):
+                node_zk.create(
+                    "/test_interrupted_merge/node", b"somedata", sequence=True
+                )
+            return len(node_zk.get_children("/test_interrupted_merge"))
+        finally:
+            stop_zk(node_zk)
+
+    assert create_nodes(40) == 40
+    wait_for_merge_past(1)
+    node_logs.stop_clickhouse()
+
+    # Recreate the state after a crash between publishing a merge and removing its
+    # sources: startup removes the source with the same start index as the merged
+    # object, but keeps the following ones.
+    merged_to = max(
+        to_index
+        for from_index, to_index in get_s3_changelog_ranges(started_cluster)
+        if from_index == 1
+    )
+    minio = started_cluster.minio_client
+    merged_name = f"snaplogs/changelog_1_{merged_to}.bin"
+    response = minio.get_object(started_cluster.minio_bucket, merged_name)
+    try:
+        merged_data = response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+    records = split_changelog_records(merged_data)
+    assert [index for index, _ in records] == list(range(1, merged_to + 1))
+    for index, record in records[1:]:
+        minio.put_object(
+            started_cluster.minio_bucket,
+            f"snaplogs/changelog_{index}_{index}.bin",
+            io.BytesIO(record),
+            len(record),
+        )
+
+    node_logs.start_clickhouse()
+    keeper_utils.wait_until_connected(
+        started_cluster, node_logs, wait_complete_readiness=False
+    )
+
+    # The objects published after the restart must still be merged with the
+    # recovered one instead of stalling the compaction on the leftover sources.
+    assert create_nodes(40) == 80
+    wait_for_merge_past(merged_to)
