@@ -1,4 +1,8 @@
-AggregatingMergeTree	tuple(metric_name DESC, id DESC)	2
-MergeTree	tuple(id DESC, timestamp DESC)	2
-MergeTree	tuple(id DESC, timestamp DESC) TTL toDateTime(timestamp) + toIntervalSecond(345600)	2
-ReplacingMergeTree	metric_family DESC	2
+AggregatingMergeTree	(metric_name, id)	1
+AggregatingMergeTree	tuple(metric_name DESC, id DESC)	1
+MergeTree	(id, timestamp)	1
+MergeTree	(id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600)	1
+MergeTree	tuple(id DESC, timestamp DESC)	1
+MergeTree	tuple(id DESC, timestamp DESC) TTL toDateTime(timestamp) + toIntervalSecond(345600)	1
+ReplacingMergeTree	metric_family	1
+ReplacingMergeTree	metric_family DESC	1

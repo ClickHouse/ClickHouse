@@ -7185,8 +7185,11 @@ Tables created with the deprecated `MergeTree` syntax, where the sorting key is 
 With `distributed_ddl_entry_format_version` below 3, `CREATE TABLE ... ON CLUSTER` queries that do not specify
 the engine explicitly (`AS` another table, or relying on the default table engine) are not affected either,
 because the engine is resolved only on the hosts executing the query, which do not apply the rewrite.
-For the same reason, the inner tables of `TimeSeries` tables (including the ones behind a materialized view with
-`ENGINE = TimeSeries`) created by such queries keep the original key when their engines are not specified explicitly.
+For the same reason, the inner tables of `TimeSeries` tables created by such queries keep the original key when
+their engines are not specified explicitly.
+The inner tables of the hidden `TimeSeries` table behind a materialized view with `ENGINE = TimeSeries` always keep
+the original key, because their definitions are not persisted in the definition of the view and are regenerated
+on restore from a backup.
 )", 0, \
         {"26.10", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"}) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(

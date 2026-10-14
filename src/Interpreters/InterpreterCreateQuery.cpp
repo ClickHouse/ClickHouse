@@ -1339,11 +1339,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// in the original order. Flipping the stored `ORDER BY` to `DESC` for them would make the metadata
     /// disagree with the data on disk, so the rewrite is skipped for these.
     /// Internal queries are skipped too, because they create hidden inner tables from definitions which
-    /// the outer query has already rewritten. The exception is an internal `TimeSeries` table, e.g. the one
+    /// the outer query has already rewritten. This includes an internal `TimeSeries` table, e.g. the one
     /// behind `CREATE MATERIALIZED VIEW ... ENGINE = TimeSeries`: the default engines of its own inner tables
-    /// are added only above by `normalizeTimeSeriesDefinition`, so the outer query could not rewrite them.
-    /// `StorageMaterializedView` disables the setting for that internal query when restoring from a backup.
-    if ((!internal || create.is_time_series_table) && !create.is_clone_as && !is_restore_from_backup
+    /// are added only above by `normalizeTimeSeriesDefinition` and are not persisted in the definition of the
+    /// view, so a restore from a backup would regenerate them with the original keys and attach parts sorted
+    /// by the reversed keys. Such inner tables keep the original keys.
+    if (!internal && !create.is_clone_as && !is_restore_from_backup
         && mode <= LoadingStrictnessLevel::CREATE
         && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
     {
