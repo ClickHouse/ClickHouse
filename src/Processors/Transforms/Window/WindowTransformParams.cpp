@@ -106,15 +106,10 @@ int compareCalendarRangeOffset(
     const T rhs_value = assert_cast<const ColumnVector<T> &>(*rhs_column).getData()[rhs_row];
     const Int64 delta = static_cast<Int64>(offset.safeGet<UInt64>()) * (offset_is_preceding ? -1 : 1);
 
-    /// Int64, because a shifted Date may leave the range of the key type.
-    Int64 shifted_rhs = 0;
-    if constexpr (std::is_same_v<T, UInt16>)
-        shifted_rhs = time_zone->addMonths(DayNum(rhs_value), delta);
-    else
-    {
-        static_assert(std::is_same_v<T, Int32>);
-        shifted_rhs = time_zone->addMonths(ExtendedDayNum(rhs_value), delta);
-    }
+    /// A shifted key may leave the range of the key type, so a Date key is shifted as an ExtendedDayNum too:
+    /// the DayNum overload of addMonths saturates below 1970-01-01 and wraps above 2149-06-06.
+    static_assert(std::is_same_v<T, UInt16> || std::is_same_v<T, Int32>);
+    const Int64 shifted_rhs = time_zone->addMonths(ExtendedDayNum(rhs_value), delta);
 
     const Int64 lhs = lhs_value;
     if (lhs < shifted_rhs)

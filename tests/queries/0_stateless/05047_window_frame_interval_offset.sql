@@ -67,6 +67,23 @@ SELECT 'Nullable Date key, INTERVAL MONTH, NULLS FIRST';
 SELECT dt, val, sum(val) OVER (ORDER BY dt NULLS FIRST RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS rolling
 FROM (SELECT if(val = 4, NULL, dt) AS dt, val FROM test_window_interval_offset);
 
+-- A month bound may fall outside the range of a Date key, [1970-01-01, 2149-06-06]: it must not be clamped or wrap.
+SELECT 'Date key, INTERVAL MONTH bounds below 1970-01-01';
+SELECT dt,
+    count() OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS month_preceding,
+    count() OVER (ORDER BY dt RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 MONTH PRECEDING) AS before_month_preceding,
+    count() OVER (ORDER BY dt DESC RANGE BETWEEN INTERVAL 1 MONTH FOLLOWING AND UNBOUNDED FOLLOWING) AS desc_after_month_following
+FROM (SELECT arrayJoin([toDate('1970-01-01'), toDate('1970-01-20'), toDate('1970-02-15')]) AS dt)
+ORDER BY dt;
+
+SELECT 'Date key, INTERVAL MONTH bounds above 2149-06-06';
+SELECT dt,
+    count() OVER (ORDER BY dt RANGE BETWEEN CURRENT ROW AND INTERVAL 1 MONTH FOLLOWING) AS month_following,
+    count() OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH FOLLOWING AND UNBOUNDED FOLLOWING) AS after_month_following,
+    count() OVER (ORDER BY dt DESC RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS desc_month_preceding
+FROM (SELECT arrayJoin([toDate('2149-05-01'), toDate('2149-05-20'), toDate('2149-06-01')]) AS dt)
+ORDER BY dt;
+
 SELECT 'Windows differing only by unit are not merged';
 SELECT dt, val,
     sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS by_day,
