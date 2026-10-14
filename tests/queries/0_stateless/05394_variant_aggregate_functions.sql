@@ -19,6 +19,25 @@ SELECT count(v), groupArray(v), toTypeName(any(v)) FROM t_variant_agg;
 -- Window functions.
 SELECT DISTINCT k, sum(v) OVER (PARTITION BY k) FROM t_variant_agg ORDER BY k;
 
+-- Ordered windows add rows incrementally, the rows of the frame are converted on every step.
+SELECT k, n, sum(v) OVER (PARTITION BY k ORDER BY n ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), max(v) OVER (PARTITION BY k ORDER BY n ROWS UNBOUNDED PRECEDING)
+FROM (SELECT number % 2 AS k, number AS n, if(number % 3 = 0, NULL, number::Variant(UInt64)) AS v FROM numbers(8))
+ORDER BY k, n;
+SELECT sum(s) FROM (SELECT sum(v) OVER (ORDER BY number ROWS UNBOUNDED PRECEDING) AS s FROM (SELECT number, number::Variant(UInt64) AS v FROM numbers(20000)))
+SETTINGS max_block_size = 20000, max_threads = 1;
+
+-- Explicitly declared state of a function with a Variant argument.
+DROP TABLE IF EXISTS t_variant_agg_state;
+CREATE TABLE t_variant_agg_state (s AggregateFunction(sum, Variant(UInt64))) ENGINE = Memory;
+INSERT INTO t_variant_agg_state SELECT sumState(number::Variant(UInt64)) FROM numbers(3);
+INSERT INTO t_variant_agg_state SELECT sumState(number::Variant(UInt64)) FROM numbers(5);
+SELECT finalizeAggregation(s) FROM t_variant_agg_state ORDER BY 1;
+SELECT sumMerge(s), finalizeAggregation(sumMergeState(s)), toTypeName(sumMergeState(s)) FROM t_variant_agg_state;
+DROP TABLE t_variant_agg_state;
+
+-- Combinators that expose the Variant only to the nested function.
+SELECT sumArray([1::Variant(UInt64), NULL, 2::Variant(UInt64)]), maxForEach([number::Variant(UInt64), NULL]) FROM numbers(3);
+
 SELECT max(number::Variant(UInt64)), min(number::Variant(UInt64)) FROM numbers(10);
 SELECT argMax(number, number::Variant(UInt64)), argMin(number, number::Variant(UInt64)) FROM numbers(10);
 SELECT anyArgMax(number, number::Variant(UInt64)), anyArgMin(number, number::Variant(UInt64)) FROM numbers(10);

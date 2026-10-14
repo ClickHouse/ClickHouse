@@ -111,6 +111,17 @@ private:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant) const;
 
+    /// Creates the nested function of a combinator, applying `AggregateFunctionVariantAdapter` to it
+    /// only if it cannot be applied around the combinator, because its own arguments have no `Variant`.
+    AggregateFunctionPtr getNested(
+        const String & nested_name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const DataTypes & nested_argument_types,
+        const Array & nested_parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant) const;
+
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,

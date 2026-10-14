@@ -134,6 +134,25 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     }
 }
 
+AggregateFunctionPtr AggregateFunctionFactory::getNested(
+    const String & nested_name,
+    NullsAction action,
+    const DataTypes & argument_types,
+    const DataTypes & nested_argument_types,
+    const Array & nested_parameters,
+    AggregateFunctionProperties & out_properties,
+    AggregateFunctionStateVariant state_variant) const
+{
+    /// `AggregateFunctionVariantAdapter` is applied at the outermost level where a `Variant` argument appears.
+    /// If the arguments of the combinator have `Variant`, the adapter is applied around the combinator by `get`.
+    /// Otherwise the combinator exposes the `Variant` only to the nested function (e.g. `-Merge` of
+    /// `AggregateFunction(sum, Variant(...))` or `-Array` of `Array(Variant(...))`), and the adapter is applied to it.
+    auto nested_types_without_low_cardinality = convertLowCardinalityTypesToNested(nested_argument_types);
+    if (std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); }))
+        return getWithoutVariantAdapter(nested_name, action, nested_types_without_low_cardinality, nested_parameters, out_properties, state_variant);
+    return get(nested_name, action, nested_types_without_low_cardinality, nested_parameters, out_properties, state_variant);
+}
+
 AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
     const String & name,
     NullsAction action,
@@ -387,8 +406,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
             nested_functions.reserve(nested_arguments_list.size());
             for (const auto & nested_arguments : nested_arguments_list)
-                nested_functions.push_back(getWithoutVariantAdapter(
-                    nested_name, action, convertLowCardinalityTypesToNested(nested_arguments), nested_parameters, out_properties, state_variant));
+                nested_functions.push_back(getNested(
+                    nested_name, action, argument_types, nested_arguments, nested_parameters, out_properties, state_variant));
 
             /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
             /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
@@ -401,9 +420,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         {
             DataTypes nested_types = combinator->transformArguments(argument_types);
 
-            /// `AggregateFunctionVariantAdapter` is applied only as the outermost wrapper, around the combinators.
-            AggregateFunctionPtr nested_function = getWithoutVariantAdapter(
-                nested_name, action, convertLowCardinalityTypesToNested(nested_types), nested_parameters, out_properties, state_variant);
+            AggregateFunctionPtr nested_function = getNested(
+                nested_name, action, argument_types, nested_types, nested_parameters, out_properties, state_variant);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }
 
