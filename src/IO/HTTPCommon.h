@@ -14,6 +14,7 @@
 #include <Core/Types.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/HTTP/HTTPClientIO.h>
 
 
 namespace DB
@@ -60,8 +61,6 @@ private:
     const char * className() const noexcept override { return "DB::HTTPException"; }
 };
 
-using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
-
 void setResponseDefaultHeaders(HTTPServerResponse & response);
 
 /// Create session object to perform requests and set required parameters.
@@ -83,9 +82,9 @@ bool isRetriableHTTPError(Poco::Net::HTTPResponse::HTTPStatus http_status) noexc
 /** Used to receive response (response headers and possibly body)
   *  after sending data (request headers and possibly body).
   * Throws exception in case of non HTTP_OK (200) response code.
-  * Returned istream lives in 'session' object.
+  * The returned buffer reads the body from 'session', which has to outlive it.
   */
-std::istream * receiveResponse(
+std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
 /// Returns the Bearer token carried by a request's `Authorization` header, so a caller can scrub it
@@ -96,7 +95,7 @@ Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request);
 /// `body_secrets` are credential strings to scrub from the reflected response body (see
 /// `requestCredentialSecrets`): a remote error body can echo the request's own credentials.
 void assertResponseIsOk(
-    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false,
+    const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, bool allow_redirects = false,
     const Strings & body_secrets = {});
 
 }
