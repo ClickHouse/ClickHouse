@@ -170,11 +170,13 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
 namespace
 {
 
-/// Looks through the `StorageTableProxy` of a lazily loaded table, which reports no storage policy. Only a `MergeTreeData`
-/// keeps its data on a storage policy: `Alias`, `Distributed` and `StorageProxy` report one but keep no data of their own.
+/// Only a `MergeTreeData` keeps its data on a storage policy: `Alias`, `Distributed` and `StorageProxy` report one but keep no
+/// data of their own. Loads a lazily loaded table, whose `StorageTableProxy` reports no storage policy, but never runs the
+/// table function behind a `StorageTableFunctionProxy`, which is checked for every table backed up or restored.
 bool isMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
 {
-    auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
+    const auto resolved = resolveStorageProxyLoading(storage);
+    auto merge_tree = castStorage<MergeTreeData>(resolved, DeferredTable::Skip);
     if (!merge_tree)
         return false;
     auto policy = merge_tree->getStoragePolicy();
@@ -182,7 +184,7 @@ bool isMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
         return false;
 
     /// `RESTORE` creates a `ReplicatedMergeTree` table in a mode that refuses the existing parts it finds on the storage.
-    if (castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
+    if (castStorage<StorageReplicatedMergeTree>(resolved, DeferredTable::Skip))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "{} is a ReplicatedMergeTree table on a storage policy marked backup_metadata_only, BACKUP and RESTORE support such "
