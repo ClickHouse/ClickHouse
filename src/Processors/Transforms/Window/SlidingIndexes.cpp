@@ -118,6 +118,16 @@ std::vector<int64_t> assignPeerGroupIndexes(
     return peer_group_indexes;
 }
 
+/// The first row of the block is compared with the last row of the previous block.
+std::vector<bool> markGroupStarts(const std::vector<int64_t> & group_indexes, const std::vector<bool> & partition_starts, int64_t last_group_index)
+{
+    std::vector<bool> starts = partition_starts;
+    for (size_t row = 0; row < starts.size(); ++row)
+        starts[row] = starts[row] || group_indexes[row] != (row == 0 ? last_group_index : group_indexes[row - 1]);
+
+    return starts;
+}
+
 Columns cutLastKey(const Columns & columns, size_t rows_count, const std::vector<size_t> & key_indices)
 {
     Columns last_row(columns.size());
@@ -145,11 +155,12 @@ SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int
         materialized_columns, rows_count, params, every_row_is_a_group, /*compare_with_collation=*/false, partition_starts, last_order_key, last_peer_group_index);
     last_peer_group_index = peer_group_indexes.back();
 
-    std::vector<int64_t> order_by_peer_group_indexes;
+    std::vector<bool> order_by_peer_group_starts;
     if (params.separate_order_by_peer_groups)
     {
-        order_by_peer_group_indexes = assignPeerGroupIndexes(
+        const auto order_by_peer_group_indexes = assignPeerGroupIndexes(
             materialized_columns, rows_count, params, /*every_row_is_a_group=*/false, has_order_by_collation, partition_starts, last_order_key, last_order_by_peer_group_index);
+        order_by_peer_group_starts = markGroupStarts(order_by_peer_group_indexes, partition_starts, last_order_by_peer_group_index);
         last_order_by_peer_group_index = order_by_peer_group_indexes.back();
     }
     last_order_key = cutLastKey(materialized_columns, rows_count, params.order_by_indices);
@@ -157,7 +168,7 @@ SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int
     return SlidingIndex{
         .partition_starts = std::move(partition_starts),
         .peer_group_indexes = std::move(peer_group_indexes),
-        .order_by_peer_group_indexes = std::move(order_by_peer_group_indexes),
+        .order_by_peer_group_starts = std::move(order_by_peer_group_starts),
     };
 }
 

@@ -333,17 +333,14 @@ void WindowTransform::computeReadyRows()
                 peer_group_start = current;
             checkInvariants();
 
-            if (params.separate_order_by_peer_groups)
+            if (params.separate_order_by_peer_groups && order_by_peer_group_start.location != current.location
+                && blocks.blockAt(current.location.block).index.order_by_peer_group_starts[current.location.row])
             {
-                const int64_t order_by_peer_group_index = blocks.blockAt(current.location.block).index.order_by_peer_group_indexes[current.location.row];
-                if (order_by_peer_group_index != order_by_peer_group_start.peer_group_index_in_partition)
-                {
-                    order_by_peer_group_start = RowPoint{
-                        .location = current.location,
-                        .row_index_in_partition = current.row_index_in_partition,
-                        .peer_group_index_in_partition = order_by_peer_group_index,
-                    };
-                }
+                order_by_peer_group_start = RowPoint{
+                    .location = current.location,
+                    .row_index_in_partition = current.row_index_in_partition,
+                    .peer_group_index_in_partition = order_by_peer_group_start.peer_group_index_in_partition + 1,
+                };
             }
 
             frame.advance(blocks, current, partition);

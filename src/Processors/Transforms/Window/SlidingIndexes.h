@@ -14,9 +14,9 @@ struct SlidingIndex
 {
     std::vector<bool> partition_starts;
     std::vector<int64_t> peer_group_indexes;
-    /// Peer group indexes by the ORDER BY values whatever the frame type, filled only if
+    /// Peer group starts by the ORDER BY values whatever the frame type, filled only if
     /// WindowTransformParams::separate_order_by_peer_groups is set.
-    std::vector<int64_t> order_by_peer_group_indexes;
+    std::vector<bool> order_by_peer_group_starts;
 };
 
 class SlidingIndexes
