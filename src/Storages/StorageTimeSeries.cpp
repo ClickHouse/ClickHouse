@@ -341,17 +341,10 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
     chassert(target.table_id.empty());
 
     /// For inner targets in non-Atomic databases, `target.table_id` is empty and we look up the inner table by its constructed name.
-    StorageID time_series_table_id = getStorageID();
-    StorageID inner_table_id{time_series_table_id.getDatabaseName(), getTimeSeriesInnerTableName(target_kind, time_series_table_id, getVersion())};
-
-    if (auto res = lookup(inner_table_id))
-        return res;
-
-    /// Fallback for legacy tables created before the samples inner table was renamed
-    /// from `.inner.data.*` to `.inner.samples.*`
-    if (target_kind == ViewTarget::Samples)
+    StorageID inner_table_id = StorageID::createEmpty();
+    for (const auto & name : getInnerTableNames(target_kind))
     {
-        inner_table_id.table_name = getTimeSeriesInnerTableName("data", time_series_table_id);
+        inner_table_id = StorageID{getStorageID().getDatabaseName(), name};
         if (auto res = lookup(inner_table_id))
             return res;
     }
@@ -363,6 +356,20 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
     }
 
     return nullptr;
+}
+
+
+Strings StorageTimeSeries::getInnerTableNames(ViewTarget::Kind target_kind) const
+{
+    auto table_id = getStorageID();
+    Strings names{getTimeSeriesInnerTableName(target_kind, table_id, getVersion())};
+
+    /// Fallback for legacy tables created before the samples inner table was renamed
+    /// from `.inner.data.*` to `.inner.samples.*`
+    if (target_kind == ViewTarget::Samples)
+        names.push_back(getTimeSeriesInnerTableName("data", table_id));
+
+    return names;
 }
 
 
@@ -499,11 +506,19 @@ void StorageTimeSeries::dropInnerTables(bool sync, ContextPtr local_context, boo
     {
         if (isInnerTable(target_kind))
         {
-            auto inner_table_id = tryGetTargetTableID(target_kind, local_context);
-            /// A table that is not attached, e.g. during `SYSTEM RESTART REPLICA`, is guarded by its name from the definition.
-            if (!inner_table_id && need_ddl_guard)
-                inner_table_id = StorageID(table_id.database_name, getTimeSeriesInnerTableName(target_kind, table_id, getVersion()));
-            if (inner_table_id)
+            std::vector<StorageID> inner_table_ids;
+            if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
+            {
+                inner_table_ids.push_back(std::move(inner_table_id));
+            }
+            /// A table that is not attached, e.g. during `SYSTEM RESTART REPLICA`, is guarded by every name it may have.
+            else if (need_ddl_guard)
+            {
+                for (const auto & name : getInnerTableNames(target_kind))
+                    inner_table_ids.emplace_back(table_id.database_name, name);
+            }
+
+            for (const auto & inner_table_id : inner_table_ids)
                 InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
                                                        sync, /* ignore_sync_setting= */ true, need_ddl_guard);
         }
