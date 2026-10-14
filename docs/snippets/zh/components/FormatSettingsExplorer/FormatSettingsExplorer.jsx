@@ -296,17 +296,14 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 110,
+      count: 107,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
         { name: "output_format_arrow_date_as_uint16", path: "/output-format#output_format_arrow_date_as_uint16", default: "0" },
         { name: "output_format_arrow_fixed_string_as_fixed_byte_array", path: "/output-format#output_format_arrow_fixed_string_as_fixed_byte_array", default: "1" },
         { name: "output_format_arrow_low_cardinality_as_dictionary", path: "/output-format#output_format_arrow_low_cardinality_as_dictionary", default: "0" },
-        { name: "output_format_arrow_record_batch_size", path: "/output-format#output_format_arrow_record_batch_size", default: "0" },
-        { name: "output_format_arrow_record_batch_size_bytes", path: "/output-format#output_format_arrow_record_batch_size_bytes", default: "0" },
         { name: "output_format_arrow_string_as_string", path: "/output-format#output_format_arrow_string_as_string", default: "1" },
-        { name: "output_format_arrow_unsupported_types", path: "/output-format#output_format_arrow_unsupported_types", default: "binary" },
         { name: "output_format_arrow_unsupported_types_as_binary", path: "/output-format#output_format_arrow_unsupported_types_as_binary", default: "1" },
         { name: "output_format_arrow_use_64_bit_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_64_bit_indexes_for_dictionary", default: "0" },
         { name: "output_format_arrow_use_signed_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_signed_indexes_for_dictionary", default: "1" },
@@ -433,12 +430,11 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "type_json_*",
-      count: 5,
+      count: 4,
       settings: [
         { name: "type_json_allow_duplicated_key_with_literal_and_nested_object", path: "/type-json#type_json_allow_duplicated_key_with_literal_and_nested_object", default: "1" },
         { name: "type_json_skip_duplicated_paths", path: "/type-json#type_json_skip_duplicated_paths", default: "0" },
         { name: "type_json_skip_invalid_typed_paths", path: "/type-json#type_json_skip_invalid_typed_paths", default: "0" },
-        { name: "type_json_skip_null_typed_paths", path: "/type-json#type_json_skip_null_typed_paths", default: "0" },
         { name: "type_json_use_partial_match_to_skip_paths_by_regexp", path: "/type-json#type_json_use_partial_match_to_skip_paths_by_regexp", default: "1" }
       ],
       children: []
@@ -643,13 +639,13 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            匹配到 {matchingCount} {matchingCount === 1 ? "项设置" : "项设置"}
+            {matchingCount} 项 {matchingCount === 1 ? "设置" : "设置"}
           </span>
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/format-settings</div>
+          <div className="min-w-max font-semibold">/format-设置</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "全部折叠" : "全部展开"}

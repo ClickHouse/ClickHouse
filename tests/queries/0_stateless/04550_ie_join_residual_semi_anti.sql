@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- SEMI/ANTI IEJoin with a residual ON condition: the first candidate PASSING the residual
 -- decides each driving-side row. High-fanout rows (thousands of candidates per row, with the
 -- residual passing for one late candidate, for none, or yielding NULL for all) exercise the

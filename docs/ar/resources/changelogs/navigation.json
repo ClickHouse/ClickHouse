@@ -17,13 +17,12 @@
         },
         "ar/resources/changelogs/cloud/release-status",
         {
-          "group": "سجل التغييرات لإصدارات قاعدة بيانات Cloud",
+          "group": "سجل تغييرات إصدارات قاعدة بيانات Cloud",
           "pages": [
             "ar/resources/changelogs/cloud/release-notes-index",
             {
               "group": "2026",
               "pages": [
-                "ar/resources/changelogs/cloud/release-notes/26_6",
                 "ar/resources/changelogs/cloud/release-notes/26_4",
                 "ar/resources/changelogs/cloud/release-notes/26_02"
               ]
