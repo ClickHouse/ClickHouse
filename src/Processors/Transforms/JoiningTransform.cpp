@@ -1,9 +1,13 @@
 #include <optional>
+#include <utility>
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
+#include <Processors/ISpillable.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
@@ -58,6 +62,9 @@ JoiningTransform::JoiningTransform(
     , max_block_size(max_block_size_)
     , match_counter(std::move(match_counter_))
 {
+    if (const auto & actions = join->getTableJoin().getMixedJoinExpression())
+        set_spillables.add(actions->getActionsDAG());
+
     if (!join->isFilled())
         inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
 }
@@ -280,10 +287,13 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     return std::move(data.block);
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
-    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(
+    SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, JoinBuildContext build_context_)
+    : IProcessor({input_header}, {Block()})
+    , join(std::move(join_))
+    , finish_counter(std::move(finish_counter_))
+    , build_context(build_context_)
 {
-    spillable = join->canSpillToDisk();
 }
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
@@ -429,33 +439,10 @@ void FillingRightJoinSideTransform::work()
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
-        stop_reading = !join->addBlockToJoin(block, num_rows, true);
+        stop_reading = !join->addBlockToJoin(block, num_rows, build_context);
     }
 
     set_totals = for_totals;
-}
-
-ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
-{
-    if (!spillable)
-        return {};
-
-    ProcessorMemoryStats res;
-    res.spillable_memory_bytes = static_cast<Int64>(join->getSpillableBytes());
-    // in case the hash table will resize which requires more than 2x additional memory.
-    // we must reserve enough memory.
-    res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
-    return res;
-}
-
-bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
-{
-    if (spillable && join->getSpillableBytes() >= bytes)
-    {
-        join->requestSpill();
-        return true;
-    }
-    return false;
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
@@ -593,6 +580,8 @@ DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, J
     : IProcessor(InputPorts{}, OutputPorts(num_streams, Block()))
     , join(std::move(join_))
 {
+    if (const auto & actions = join->getTableJoin().getMixedJoinExpression())
+        set_spillables.add(actions->getActionsDAG());
 }
 
 void DelayedJoinedBlocksTransform::work()

@@ -307,6 +307,7 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
@@ -317,6 +318,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
     extern const SettingsBoolAuto force_read_through_distributed_cache;
@@ -756,6 +758,12 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
     mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
+
+    /// The remote throttler passed as the parent of the distributed cache throttler above.
+    /// Recorded because a Throttler exposes no way to read its parent back, and `setParent` is not
+    /// thread safe, so a published throttler concurrent queries may be using cannot be re-parented.
+    mutable ThrottlerPtr distributed_cache_read_throttler_parent;
+    mutable ThrottlerPtr distributed_cache_write_throttler_parent;
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
@@ -1414,7 +1422,11 @@ struct ContextSharedPart : boost::noncopyable
             remote_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
-            local_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+        {
+            auto throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+            throttler->setLimitsBlockDeviceBandwidth();
+            local_read_throttler = std::move(throttler);
+        }
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
             local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
@@ -1431,12 +1443,18 @@ struct ContextSharedPart : boost::noncopyable
         // Distributed cache client throttling.
         // Note that distributed cache throttlers are inherited from remote throttlers because they are socket-level throttlers and use server bandwidth
         if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_read_bandwidth_for_server])
+        {
             distributed_cache_read_throttler = std::make_shared<Throttler>(bandwidth, remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+            distributed_cache_read_throttler_parent = remote_read_throttler;
+        }
         else
             distributed_cache_read_throttler = remote_read_throttler;
 
         if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_write_bandwidth_for_server])
+        {
             distributed_cache_write_throttler = std::make_shared<Throttler>(bandwidth, remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+            distributed_cache_write_throttler_parent = remote_write_throttler;
+        }
         else
             distributed_cache_write_throttler = remote_write_throttler;
     }
@@ -1519,6 +1537,7 @@ ContextData::ContextData(const ContextData &o) :
     background_context(o.background_context),
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
+    parse_server_owned_query_without_limits(o.parse_server_owned_query_without_limits),
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
@@ -2298,21 +2317,35 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     /// an existing context (`EXECUTE AS`, a view's definer), whose own settings say nothing about the target.
     if (!isUserDefinedInConfig(user_id_))
     {
-        auto global_context = getGlobalContext();
-        const auto & new_session_settings = global_context->getSettingsRef();
-        auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
-        new_session_constraints->constraints.check(
-            new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true);
-        new_session_constraints->constraints.check(
-            new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
-            /* skip_config_defined_profiles= */ true);
+        try
+        {
+            auto global_context = getGlobalContext();
+            const auto & new_session_settings = global_context->getSettingsRef();
+            auto new_session_constraints = global_context->getSettingsConstraintsAndCurrentProfiles();
+            const auto * resolved_constraints = &enabled_profiles->constraints;
+            new_session_constraints->constraints.check(
+                new_session_settings, user->settings, SettingSource::USER, /* skip_config_defined_profiles= */ true,
+                /* actor_is_config_defined= */ false, resolved_constraints);
+            new_session_constraints->constraints.check(
+                new_session_settings, enabled_roles->settings_from_enabled_roles, SettingSource::ROLE,
+                /* skip_config_defined_profiles= */ true, /* actor_is_config_defined= */ false, resolved_constraints);
 
-        /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
-        SettingsProfileElements applied_profiles;
-        for (const auto & profile_id : enabled_profiles->profiles)
-            applied_profiles.emplace_back().parent_profile = profile_id;
-        new_session_constraints->constraints.check(
-            new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true);
+            /// A profile also reaches the user through its own `TO` clause, which neither list above holds.
+            SettingsProfileElements applied_profiles;
+            for (const auto & profile_id : enabled_profiles->profiles)
+                applied_profiles.emplace_back().parent_profile = profile_id;
+            new_session_constraints->constraints.check(
+                new_session_settings, applied_profiles, SettingSource::PROFILE, /* skip_config_defined_profiles= */ true,
+                /* actor_is_config_defined= */ false, resolved_constraints);
+        }
+        catch (Exception & e)
+        {
+            /// A new session starts with the constraints of the system profile.
+            e.addMessage(
+                "while checking the settings of user {} against the constraints of the system profile {}",
+                backQuote(user->getName()), backQuote(getSystemProfileName()));
+            throw;
+        }
     }
 
     /// Apply user's profiles, constraints, settings, roles.
@@ -6218,13 +6251,33 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
+ThrottlerPtr Context::getServerWideRemoteReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->remote_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideRemoteWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->remote_write_throttler;
+}
+
+ThrottlerPtr Context::getServerWideLocalReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->local_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideLocalWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->local_write_throttler;
+}
+
 ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_read_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideRemoteReadThrottler();
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
     if (auto process_list_element = getProcessListElementSafe())
@@ -6249,11 +6302,7 @@ ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) co
 
 ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_write_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideRemoteWriteThrottler();
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
     if (auto process_list_element = getProcessListElementSafe())
@@ -6278,11 +6327,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) c
 
 ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_read_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideLocalReadThrottler();
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
     if (!bandwidth)
@@ -6295,7 +6340,11 @@ ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) con
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+        {
+            auto query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            query_throttler->setLimitsBlockDeviceBandwidth();
+            local_read_query_throttler = std::move(query_throttler);
+        }
         throttler = local_read_query_throttler;
     }
     return throttler;
@@ -6303,11 +6352,7 @@ ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) con
 
 ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_write_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideLocalWriteThrottler();
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
     if (!bandwidth)
@@ -6347,6 +6392,18 @@ ThrottlerPtr Context::getMutationsThrottler() const
 ThrottlerPtr Context::getMergesThrottler() const
 {
     return shared->merges_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_write_throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
@@ -6403,7 +6460,11 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->local_read_throttler)
-            shared->local_read_throttler = std::make_shared<Throttler>(read_bandwidth);
+        {
+            auto throttler = std::make_shared<Throttler>(read_bandwidth);
+            throttler->setLimitsBlockDeviceBandwidth();
+            shared->local_read_throttler = std::move(throttler);
+        }
     }
 
     if (shared->local_read_throttler)
@@ -6428,8 +6489,16 @@ void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_
     /// (see configureServerWideThrottling), so a non-null pointer does not mean it is ours to mutate.
     if (read_bandwidth)
     {
-        if (!shared->distributed_cache_read_throttler || shared->distributed_cache_read_throttler == shared->remote_read_throttler) // Create throttler
+        /// A Throttler captures its parent at construction, so a child built over a different (or absent)
+        /// remote throttler must be rebuilt rather than updated in place, or the server-wide remote limit
+        /// silently stops applying to distributed cache traffic.
+        if (!shared->distributed_cache_read_throttler
+            || shared->distributed_cache_read_throttler == shared->remote_read_throttler
+            || shared->distributed_cache_read_throttler_parent != shared->remote_read_throttler) // Create throttler
+        {
             shared->distributed_cache_read_throttler = std::make_shared<Throttler>(read_bandwidth, shared->remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+            shared->distributed_cache_read_throttler_parent = shared->remote_read_throttler;
+        }
         else // Update throttler
             std::static_pointer_cast<Throttler>(shared->distributed_cache_read_throttler)->setMaxSpeed(read_bandwidth);
     }
@@ -6438,8 +6507,13 @@ void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_
 
     if (write_bandwidth)
     {
-        if (!shared->distributed_cache_write_throttler || shared->distributed_cache_write_throttler == shared->remote_write_throttler) // Create throttler
+        if (!shared->distributed_cache_write_throttler
+            || shared->distributed_cache_write_throttler == shared->remote_write_throttler
+            || shared->distributed_cache_write_throttler_parent != shared->remote_write_throttler) // Create throttler
+        {
             shared->distributed_cache_write_throttler = std::make_shared<Throttler>(write_bandwidth, shared->remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+            shared->distributed_cache_write_throttler_parent = shared->remote_write_throttler;
+        }
         else // Update throttler
             std::static_pointer_cast<Throttler>(shared->distributed_cache_write_throttler)->setMaxSpeed(write_bandwidth);
     }
@@ -9471,7 +9545,22 @@ QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
     return query_execution_counters;
 }
 
-bool Context::canUseTaskBasedParallelReplicas() const
+UInt64 Context::getAutomaticParallelReplicasMode(const Settings & settings_ref)
+{
+    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+        return 0;
+    return settings_ref[Setting::automatic_parallel_replicas_mode];
+}
+
+bool Context::isParallelReplicasEnabled() const
+{
+    const auto & settings_ref = getSettingsRef();
+    return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && !(settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+             && getAutomaticParallelReplicasMode(settings_ref) != 0);
+}
+
+bool Context::canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const
 {
     const auto & settings_ref = getSettingsRef();
 
@@ -9479,7 +9568,25 @@ bool Context::canUseTaskBasedParallelReplicas() const
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
             || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
-        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
+        && (ignore_automatic_parallel_replicas || getAutomaticParallelReplicasMode(settings_ref) == 0);
+}
+
+bool Context::canUseTaskBasedParallelReplicas() const
+{
+    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/false);
+}
+
+bool Context::canReplaceClusterEngineWithClusterVariant() const
+{
+    const auto & settings_ref = getSettingsRef();
+    /// A replica matches `additional_table_filters` by the table name or alias in the query it receives, and the shipped
+    /// query renames the table expression (`__table1`), so the replica would silently read unfiltered data.
+    /// `serialize_query_plan` does not help here: cluster engines ship the query text, not the plan.
+    return !settings_ref[Setting::cluster_for_parallel_replicas].value.empty()
+        && settings_ref[Setting::parallel_replicas_for_cluster_engines]
+        && canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/true)
+        && settings_ref[Setting::additional_table_filters].value.empty()
+        && !isDistributed();
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const

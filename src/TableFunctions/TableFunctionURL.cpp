@@ -35,7 +35,6 @@ namespace Setting
 {
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString url_base;
@@ -381,10 +380,7 @@ StoragePtr TableFunctionURL::getStorage(
         && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
         && urlPathHasListableGlobs(source);
 
-    const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && settings[Setting::parallel_replicas_for_cluster_engines]
-        && context->canUseTaskBasedParallelReplicas()
-        && !context->isDistributed()
+    const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && !is_secondary_query
         && !is_insert_query
         && !use_web_wildcard;
@@ -719,6 +715,6 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ## Related {#related}
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, urlSecretArguments(0));
 }
 }
