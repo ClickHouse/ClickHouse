@@ -14844,33 +14844,22 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
 
 StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
-    auto base = [&]() -> StorageMetadataHandle
-    {
-        if (bypass_metadata_cache)
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    if (bypass_metadata_cache)
+        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-        if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
+        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-        if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-        auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
-        auto it = cache->find(this);
-        if (it != cache->end())
-            return it->second;
+    auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
+    auto it = cache->find(this);
+    if (it != cache->end())
+        return it->second;
 
-        const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-        return cache->emplace(this, metadata).first->second;
-    }();
-
-    /// Let's return copy of storage metadata to catch lifetime bugs where reference to underlying metadata field was stored without pointer to metadata.
-    /// The column ASTs are shared, the metadata and column descriptions are still distinct objects.
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    return std::make_shared<StorageInMemoryMetadata>(base->copySharingColumnASTs());
-#else
-    return base;
-#endif
+    const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    return cache->emplace(this, metadata).first->second;
 }
 
 StorageSnapshotPtr

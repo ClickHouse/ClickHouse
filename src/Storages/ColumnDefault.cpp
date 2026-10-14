@@ -66,25 +66,16 @@ bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
     return lhs == rhs || columnIsPhysical(lhs) == columnIsPhysical(rhs);
 }
 
-void ColumnDefault::assign(const ColumnDefault & other, bool clone_expression)
-{
-    kind = other.kind;
-    expression = clone_expression && other.expression ? other.expression->clone() : other.expression;
-    ephemeral_default = other.ephemeral_default;
-}
-
 ColumnDefault & ColumnDefault::operator=(const ColumnDefault & other)
 {
-    if (this != &other)
-        assign(other, /*clone_expression=*/ true);
-    return *this;
-}
+    if (this == &other)
+        return *this;
 
-ColumnDefault ColumnDefault::copySharingExpression(const ColumnDefault & other)
-{
-    ColumnDefault copy;
-    copy.assign(other, /*clone_expression=*/ false);
-    return copy;
+    kind = other.kind;
+    expression = other.expression ? other.expression->clone() : nullptr;
+    ephemeral_default = other.ephemeral_default;
+
+    return *this;
 }
 
 ColumnDefault & ColumnDefault::operator=(ColumnDefault && other) noexcept

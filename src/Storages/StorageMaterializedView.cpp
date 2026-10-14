@@ -489,9 +489,7 @@ StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr
         virtuals_desc.add(std::move(desc));
     }
 
-    auto metadata = std::make_shared<StorageInMemoryMetadata>(base_metadata->copySharingColumnASTs());
-    metadata->setVirtuals(std::move(virtuals_desc));
-    return metadata;
+    return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals_desc)));
 }
 
 void StorageMaterializedView::readImpl(

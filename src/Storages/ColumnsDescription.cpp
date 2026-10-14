@@ -97,27 +97,20 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr cod
 {
 }
 
-void ColumnDescription::assign(const ColumnDescription & other, bool clone_asts)
+ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other)
 {
-    auto copy_ast = [clone_asts](const ASTPtr & ast) { return clone_asts && ast ? ast->clone() : ast; };
+    if (this == &other)
+        return *this;
 
     name = other.name;
     type = other.type;
-    if (clone_asts)
-        default_desc = other.default_desc;
-    else
-        default_desc = ColumnDefault::copySharingExpression(other.default_desc);
+    default_desc = other.default_desc;
     comment = other.comment;
-    codec = copy_ast(other.codec);
+    codec = other.codec ? other.codec->clone() : nullptr;
     settings = other.settings;
-    ttl = copy_ast(other.ttl);
+    ttl = other.ttl ? other.ttl->clone() : nullptr;
     statistics = other.statistics;
-}
 
-ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other)
-{
-    if (this != &other)
-        assign(other, /*clone_asts=*/ true);
     return *this;
 }
 
@@ -296,15 +289,6 @@ ColumnsDescription & ColumnsDescription::operator=(ColumnsDescription && other) 
         get_cache = std::move(other.get_cache);
     }
     return *this;
-}
-
-ColumnsDescription ColumnsDescription::copySharingASTs() const
-{
-    ColumnsDescription res;
-    for (const auto & column : columns)
-        res.columns.get<0>().emplace_back(column, ColumnDescription::ShareASTsTag{});
-    res.subcolumns = subcolumns;
-    return res;
 }
 
 ColumnsDescription::GetCacheKey ColumnsDescription::makeGetCacheKey(const GetColumnsOptions & options)

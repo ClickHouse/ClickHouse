@@ -66,8 +66,7 @@ public:
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
         auto nested_metadata = getNested()->getInMemoryMetadataPtr(query_context, false);
-        auto new_metadata = std::make_shared<StorageInMemoryMetadata>(base_metadata->copySharingColumnASTs());
-        new_metadata->setVirtuals(nested_metadata->virtuals);
+        auto new_metadata = std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(nested_metadata->virtuals));
         return std::make_shared<StorageSnapshot>(*this, std::move(new_metadata));
     }
 

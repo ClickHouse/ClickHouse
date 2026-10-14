@@ -594,7 +594,7 @@ StorageDistributed::StorageDistributed(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
-    setInMemoryMetadata(std::move(storage_metadata));
+    setInMemoryMetadata(storage_metadata);
 
     if (sharding_key_)
     {
@@ -621,8 +621,8 @@ StorageDistributed::StorageDistributed(
                 "Sharding expression cannot contain arrayJoin, because it changes the number of rows");
 
         /// Check that sharding_key exists in the table and has numeric type.
-        checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), columns_.getAllPhysical());
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), columns_.getAllPhysical(), false);
+        checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_has_unbuilt_set = expressionActionsContainSet(
             sharding_key_expr, [](const FutureSet & future_set) { return typeid_cast<const FutureSetFromSubquery *>(&future_set) != nullptr; });
         if (is_fresh_definition)

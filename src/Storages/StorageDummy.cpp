@@ -24,7 +24,7 @@ StorageDummy::StorageDummy(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setVirtuals(createVirtuals(original_storage_snapshot_));
-    setInMemoryMetadata(std::move(storage_metadata));
+    setInMemoryMetadata(storage_metadata);
 }
 
 QueryProcessingStage::Enum StorageDummy::getQueryProcessingStage(

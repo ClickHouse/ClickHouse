@@ -282,11 +282,6 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    void setInMemoryMetadata(StorageInMemoryMetadata && metadata_)
-    {
-        metadata.set(std::make_unique<StorageInMemoryMetadata>(std::move(metadata_)));
-    }
-
     void setInMemoryMetadataComment(const String & comment)
     {
         auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());

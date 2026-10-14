@@ -1,5 +1,4 @@
 #include <Storages/ColumnsDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Common/StringUtils.h>
 #include <Common/tests/gtest_global_register.h>
 
@@ -83,54 +82,4 @@ columns format version: 1
             /* No-op */
         });
     }
-}
-
-TEST_F(ColumnsDescriptionTest, CopySharingASTs)
-{
-    constexpr auto columns_text = "columns format version: 1\n"
-                                  "4 columns:\n"
-                                  "`a` UInt32\n"
-                                  "`b` UInt64\tDEFAULT\ta + 1\n"
-                                  "`c` UInt64\tALIAS\ta * 2\n"
-                                  "`d` Date\tCODEC(ZSTD(1))\tTTL d + toIntervalDay(1)\n";
-
-    tryRegisterFunctions();
-
-    const auto columns = ColumnsDescription::parse(columns_text);
-    const auto shared = columns.copySharingASTs();
-    const ColumnsDescription cloned(columns); /// NOLINT(performance-unnecessary-copy-initialization)
-
-    ASSERT_EQ(shared, columns);
-    ASSERT_EQ(cloned, columns);
-
-    for (const auto * name : {"b", "c"})
-    {
-        const auto * expression = columns.get(name).default_desc.expression.get();
-        ASSERT_NE(expression, nullptr);
-        ASSERT_EQ(shared.get(name).default_desc.expression.get(), expression);
-        ASSERT_NE(cloned.get(name).default_desc.expression.get(), expression);
-    }
-
-    const auto * codec = columns.get("d").codec.get();
-    const auto * ttl = columns.get("d").ttl.get();
-    ASSERT_NE(codec, nullptr);
-    ASSERT_NE(ttl, nullptr);
-    ASSERT_EQ(shared.get("d").codec.get(), codec);
-    ASSERT_EQ(shared.get("d").ttl.get(), ttl);
-    ASSERT_NE(cloned.get("d").codec.get(), codec);
-    ASSERT_NE(cloned.get("d").ttl.get(), ttl);
-
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(columns);
-    const auto shared_metadata = metadata.copySharingColumnASTs();
-    const StorageInMemoryMetadata cloned_metadata(metadata); /// NOLINT(performance-unnecessary-copy-initialization)
-
-    const auto * alias = metadata.getColumns().get("c").default_desc.expression.get();
-    const auto * metadata_codec = metadata.getColumns().get("d").codec.get();
-    ASSERT_NE(alias, nullptr);
-    ASSERT_NE(metadata_codec, nullptr);
-    ASSERT_EQ(shared_metadata.getColumns().get("c").default_desc.expression.get(), alias);
-    ASSERT_EQ(shared_metadata.getColumns().get("d").codec.get(), metadata_codec);
-    ASSERT_NE(cloned_metadata.getColumns().get("c").default_desc.expression.get(), alias);
-    ASSERT_NE(cloned_metadata.getColumns().get("d").codec.get(), metadata_codec);
 }

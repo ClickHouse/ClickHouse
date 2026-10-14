@@ -245,7 +245,7 @@ StorageMerge::StorageMerge(
         : columns_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
-    setInMemoryMetadata(std::move(storage_metadata));
+    setInMemoryMetadata(storage_metadata);
 }
 
 StorageMerge::StorageMerge(
@@ -270,7 +270,7 @@ StorageMerge::StorageMerge(
         : columns_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
-    setInMemoryMetadata(std::move(storage_metadata));
+    setInMemoryMetadata(storage_metadata);
 }
 
 StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr context_) const
@@ -700,9 +700,7 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
             throw;
     }
 
-    auto metadata = std::make_shared<StorageInMemoryMetadata>(base_metadata->copySharingColumnASTs());
-    metadata->setVirtuals(std::move(virtuals));
-    return metadata;
+    return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals)));
 }
 
 void StorageMerge::read(
