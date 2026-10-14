@@ -373,9 +373,8 @@ void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 
     auto & set = getExactValues();
     set.insertFromColumns({values});
-    /// Bound the key bytes, not the hash table buffer: after a resize the buffer is mostly empty and
-    /// would trip the bound long before the row limit. The receiver checks the same bound.
-    is_full = set.getTotalRowCount() > exact_values_limit || set.getSetElementsBytes() > bytes_limit;
+    const size_t set_bytes = bound_key_bytes ? set.getSetElementsBytes() : set.getTotalByteCount();
+    is_full = set.getTotalRowCount() > exact_values_limit || set_bytes > bytes_limit;
 }
 
 template <bool negate>
@@ -621,6 +620,12 @@ AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
 {
 }
 
+void AdaptiveSetRuntimeFilter::boundExactSetByKeyBytes()
+{
+    if (auto * exact_filter = std::get_if<ExactFilter>(&filter))
+        exact_filter->boundKeyBytes();
+}
+
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 {
     if (state_serialized)
@@ -856,6 +861,7 @@ AdaptiveSetRuntimeFilter AdaptiveSetRuntimeFilter::deserialize(
         geometry_,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    filter.boundExactSetByKeyBytes();
     if (key_range_state != 0)
         filter.key_range.enable();
     if (range)

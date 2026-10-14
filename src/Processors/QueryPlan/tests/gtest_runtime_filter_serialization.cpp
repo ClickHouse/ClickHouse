@@ -65,13 +65,16 @@ RuntimeFilterConfig makeConfig(const RuntimeFilterGeometry & geometry)
     return RuntimeFilterConfig{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling};
 }
 
+/// A partial as a build task makes it for the transport.
 std::unique_ptr<AdaptiveSetRuntimeFilter> makeFilter()
 {
-    return std::make_unique<AdaptiveSetRuntimeFilter>(
+    auto filter = std::make_unique<AdaptiveSetRuntimeFilter>(
         std::make_shared<DataTypeUInt64>(),
         makeGeometry(),
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    filter->boundExactSetByKeyBytes();
+    return filter;
 }
 
 /// A partial in flight is not wrapped in a `RuntimeFilter`, so it has no evaluation state of its
@@ -306,6 +309,7 @@ TEST(RuntimeFilterSerialization, LongTypeNameFitsTheExactStateBound)
         enum_type, makeGeometry(bytes_limit),
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    filter.boundExactSetByKeyBytes();
     auto column = enum_type->createColumn();
     for (Int16 i = 0; i < 10; ++i)
         column->insert(i);
@@ -356,6 +360,28 @@ TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
     }
 }
 
+TEST(RuntimeFilterSerialization, OnlyATransportedPartialBoundsTheKeyBytes)
+{
+    /// 2000 `UInt64` keys are 16000 bytes, but their hash table buffer is larger than 20000 bytes.
+    auto geometry = makeGeometry();
+    geometry.exact_bytes_limit = 20000;
+    geometry.exact_values_limit = 100000;
+    const auto make = [&](bool transported)
+    {
+        AdaptiveSetRuntimeFilter filter(
+            std::make_shared<DataTypeUInt64>(), geometry,
+            /*distinct_keys_hint_=*/std::nullopt,
+            /*distinct_keys_hint_matches_filter_key_=*/false);
+        if (transported)
+            filter.boundExactSetByKeyBytes();
+        filter.insert(makeColumn(0, 2000));
+        return serializeToString(filter);
+    };
+    /// A local filter keeps the buffer bound, so it changes to a bloom filter.
+    EXPECT_TRUE(isBloomState(make(/*transported=*/false)));
+    EXPECT_FALSE(isBloomState(make(/*transported=*/true)));
+}
+
 TEST(RuntimeFilterSerialization, ShortStringKeysStayExactUpToTheRaisedRowBound)
 {
     /// 20000 distinct short `String` keys, row bound raised to the estimate, byte budget at the
@@ -375,11 +401,13 @@ TEST(RuntimeFilterSerialization, ShortStringKeysStayExactUpToTheRaisedRowBound)
         stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    part1.boundExactSetByKeyBytes();
     part1.insert(makeShortStringColumn(0, 10000));
     AdaptiveSetRuntimeFilter part2(
         stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    part2.boundExactSetByKeyBytes();
     part2.insert(makeShortStringColumn(10000, 20000));
 
     const String state1 = serializeToString(part1);
@@ -412,6 +440,7 @@ TEST(RuntimeFilterSerialization, LongStringKeysStillDegradeAtTheByteCap)
         stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    filter.boundExactSetByKeyBytes();
     filter.insert(makeStringColumn(20000, 200));
 
     const String state = serializeToString(filter);
@@ -435,6 +464,7 @@ TEST(RuntimeFilterSerialization, DegradedBloomIsSizedByGeometryNotTheExactByteBo
         type, geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    filter.boundExactSetByKeyBytes();
     /// Overflows the row bound while the raised byte budget is nowhere near exhausted.
     filter.insert(makeColumn(0, 100));
 

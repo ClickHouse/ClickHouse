@@ -150,6 +150,9 @@ public:
 
     bool isFull() const noexcept { return is_full; }
 
+    /// Bound the bytes of the stored keys instead of the hash table buffer. Call before inserts.
+    void boundKeyBytes() { bound_key_bytes = true; }
+
     void insert(ColumnPtr values);
     void finishInsert();
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
@@ -190,6 +193,7 @@ private:
 
     LookupState lookup_state;
 
+    bool bound_key_bytes = false;
     bool is_full = false;
     bool is_finished = false;
 };
@@ -253,6 +257,11 @@ public:
     /// transported partial needs it: no `RuntimeFilter` is around it to record the range for index
     /// analysis, and a bloom filter cannot give the range back.
     void enableKeyRangeTracking() { key_range.enable(); }
+
+    /// Makes a transported partial bound its exact set by the bytes of the stored keys. Transport raises
+    /// `exact_bytes_limit` to the estimated keys times the key width, and the hash table buffer would
+    /// reach that bound long before the keys do. A local filter keeps the buffer bound. Call before inserts.
+    void boundExactSetByKeyBytes();
     /// Empty if tracking is off or the range is not known.
     std::optional<Range> getKeyRange() const { return key_range.getRange(); }
 

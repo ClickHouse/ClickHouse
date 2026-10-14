@@ -52,6 +52,7 @@ makePartial(UInt64 from, UInt64 to, bool track_key_range = false, const RuntimeF
         std::make_shared<DataTypeUInt64>(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+    filter.boundExactSetByKeyBytes();
     if (track_key_range)
         filter.enableKeyRangeTracking();
     auto column = ColumnUInt64::create();

@@ -1010,6 +1010,7 @@ Chunk makePartialChunk(size_t keys)
         partialGeometry(),
         /*distinct_keys_hint_=*/ std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/ false);
+    filter.boundExactSetByKeyBytes();
     filter.insert(makeChunk(0, keys).getColumns().front());
     WriteBufferFromOwnString out;
     filter.serialize(out);
