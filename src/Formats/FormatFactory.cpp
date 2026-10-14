@@ -1381,6 +1381,11 @@ bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, cons
     return true;
 }
 
+bool FormatFactory::checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const
+{
+    return checkParallelizeOutputAfterReading("Parquet", context) && checkParallelizeOutputAfterReading("Vortex", context);
+}
+
 void FormatFactory::checkFormatName(const String & name) const
 {
     auto it = dict.find(boost::to_lower_copy(name));

@@ -199,9 +199,13 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
     /// `max_num_streams` is a read-parallelism request, not a thread budget.
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
-    if (parallelize_output
-        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
-        && output_ports > 0 && output_ports < resize_to)
+    /// The format of a data lake configuration is only the format new files are written in, while
+    /// the files of the snapshot that is read can have any format, and resizing after a reader
+    /// that keeps the file order would scramble it again.
+    const bool format_allows_parallelize = configuration->isDataLakeConfiguration()
+        ? FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context)
+        : FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
+    if (parallelize_output && format_allows_parallelize && output_ports > 0 && output_ports < resize_to)
         pipe.resize(resize_to);
 
     for (const auto & processor : pipe.getProcessors())
