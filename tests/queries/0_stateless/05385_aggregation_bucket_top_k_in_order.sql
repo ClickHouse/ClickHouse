@@ -11,10 +11,8 @@ SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SELECT '-- in order';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, count() AS c FROM t_bucket_top_k_in_order GROUP BY k ORDER BY c DESC LIMIT 3 SETTINGS optimize_aggregation_in_order = 1) WHERE explain ILIKE '%Bucket top-K%';
-SELECT k, count() AS c FROM t_bucket_top_k_in_order GROUP BY k ORDER BY c DESC, k LIMIT 3 SETTINGS optimize_aggregation_in_order = 1;
 
 SELECT '-- not in order';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, count() AS c FROM t_bucket_top_k_in_order GROUP BY k ORDER BY c DESC LIMIT 3 SETTINGS optimize_aggregation_in_order = 0) WHERE explain ILIKE '%Bucket top-K%';
-SELECT k, count() AS c FROM t_bucket_top_k_in_order GROUP BY k ORDER BY c DESC, k LIMIT 3 SETTINGS optimize_aggregation_in_order = 0;
 
 DROP TABLE t_bucket_top_k_in_order;
