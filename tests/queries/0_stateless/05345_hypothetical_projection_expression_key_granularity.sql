@@ -103,6 +103,30 @@ SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain)
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM w_real WHERE b < 100 SETTINGS force_optimize_projection = 1)
 WHERE match(trim(explain), '^Granules:');
 
+-- a key that computes a LowCardinality column from a stored one can take the dictionary of the source
+-- the part does not record the size of that dictionary
+CREATE TABLE k_src (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 8192, use_const_adaptive_granularity = 0;
+INSERT INTO k_src SELECT number, number % 100, repeat(if(number < 600, toString(number % 2), toString(number)), 3000) FROM numbers(630)
+    SETTINGS max_block_size = 10000, max_threads = 1;
+CREATE TABLE k_est AS k_src;
+CREATE TABLE k_real AS k_src;
+ALTER TABLE k_real ADD PROJECTION p_k (SELECT a, b, c ORDER BY (b, toLowCardinality(c)));
+INSERT INTO k_est SELECT * FROM k_src WHERE c IN (repeat('0', 3000), repeat('1', 3000))
+    SETTINGS max_threads = 1, min_insert_block_size_rows = 100000, max_insert_block_size = 100000;
+INSERT INTO k_real SELECT * FROM k_src WHERE c IN (repeat('0', 3000), repeat('1', 3000))
+    SETTINGS max_threads = 1, min_insert_block_size_rows = 100000, max_insert_block_size = 100000;
+CREATE HYPOTHETICAL PROJECTION p_k ON k_est (SELECT a, b, c ORDER BY (b, toLowCardinality(c)));
+SELECT '-- a key that computes LowCardinality from a stored LowCardinality column';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line FROM (EXPLAIN WHATIF SELECT a, b, c FROM k_est WHERE b < 70)
+WHERE match(line, '^(Baseline|With |marks:|verdict:)');
+SELECT if(explain LIKE '%ReadFromMergeTree (p_k)%', 'real: from the projection', 'real: from the base table')
+FROM (EXPLAIN SELECT a, b, c FROM k_real WHERE b < 70) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM k_real WHERE b < 70 SETTINGS force_optimize_projection = 1)
+WHERE match(trim(explain), '^Granules:');
+
 -- with many distinct values the dictionary is a large part of the block, and the index needs two bytes
 CREATE TABLE t_est_many AS t_est;
 CREATE TABLE t_real_many AS t_est;
@@ -202,6 +226,9 @@ DROP TABLE sa_real;
 DROP TABLE w_src;
 DROP TABLE w_est;
 DROP TABLE w_real;
+DROP TABLE k_src;
+DROP TABLE k_est;
+DROP TABLE k_real;
 DROP TABLE t_est_many;
 DROP TABLE t_real_many;
 DROP TABLE m_est;

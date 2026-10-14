@@ -47,6 +47,14 @@ marks_span: 100 to 143
 verdict: too close to call
 real: from the base table
 real with force_optimize_projection: Granules: 106/106
+-- a key that computes LowCardinality from a stored LowCardinality column
+Baseline (after PK + partition + existing indexes):
+marks: 10
+With p_k (normal projection, hypothetical):
+marks: 16
+verdict: too close to call
+real: from the projection
+real with force_optimize_projection: Granules: 7/10
 -- a key with many distinct values
 Baseline (after PK + partition + existing indexes):
 marks: 72

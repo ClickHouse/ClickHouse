@@ -96,9 +96,30 @@ struct ProjectionPartData
 };
 
 /// a dictionary column has no size for each row, its size depends on the rows of the block
-bool hasDictionary(const ColumnWithTypeAndName & column)
+bool hasDictionary(const DataTypePtr & type)
 {
-    return !recursiveRemoveLowCardinality(column.type)->equals(*column.type);
+    return !recursiveRemoveLowCardinality(type)->equals(*type);
+}
+
+/// the key expression computes a dictionary column from a dictionary column
+/// the source that gave the writer that column can give the result a dictionary of any size, and the part does not record it
+bool keyFromDictionary(const ActionsDAG & dag)
+{
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output->type == ActionsDAG::ActionType::INPUT || !hasDictionary(output->result_type))
+            continue;
+        std::vector<const ActionsDAG::Node *> nodes{output};
+        while (!nodes.empty())
+        {
+            const auto * node = nodes.back();
+            nodes.pop_back();
+            if (node->type == ActionsDAG::ActionType::INPUT && hasDictionary(node->result_type))
+                return true;
+            nodes.insert(nodes.end(), node->children.begin(), node->children.end());
+        }
+    }
+    return false;
 }
 
 /// how a writer block holds the stored dictionary columns
@@ -157,7 +178,7 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
         if (!elem.column)
             continue;
         /// a sample does not show the dictionary of the rows it does not read, as with values of different sizes
-        if (hasDictionary(elem))
+        if (hasDictionary(elem.type))
         {
             variable_width = true;
             continue;
@@ -305,7 +326,7 @@ bool buildProjectionPart(
         /// the writer chooses the part format before the key expression and sizes the granules after it
         out.format_bytes += block.bytes();
         for (const auto & elem : block)
-            if (hasDictionary(elem))
+            if (hasDictionary(elem.type))
                 out.stored_dictionaries.insert(elem.name);
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
@@ -318,7 +339,7 @@ bool buildProjectionPart(
             appendRowSizes(out.row_bytes, out.variable_width, block);
             for (const auto & elem : block)
             {
-                if (!hasDictionary(elem))
+                if (!hasDictionary(elem.type))
                     continue;
                 auto & [type, whole] = dictionary_columns[elem.name];
                 if (!whole)
@@ -722,6 +743,7 @@ bool buildScenarios(
 
     for (auto & scenario : out.scenarios)
         scenario = std::make_shared<HypotheticalProjection>(projection.clone());
+    const bool key_from_dictionary = keyFromDictionary(projection.metadata->getSortingKey().expression->getActionsDAG());
 
     for (size_t part_idx = 0; part_idx < baseline_parts.size(); ++part_idx)
     {
@@ -760,7 +782,7 @@ bool buildScenarios(
             const auto [narrowest, widest] = std::minmax_element(part_data.row_bytes.begin(), part_data.row_bytes.end());
             uneven_rows = *narrowest != *widest;
         }
-        if (uneven_rows)
+        if (uneven_rows || (adaptive && key_from_dictionary))
             ++out.uneven_width_parts;
         /// no key rows from a non-empty part: the key needs a column we don't read, e.g. `_part_offset`
         if (part_data.rows == 0 && part->rows_count > 0)
