@@ -1,0 +1,353 @@
+UInt32	0	10	>=	C
+UInt32	0	20	>=	C
+UInt32	0	30	>=	Z
+UInt32	250	10	>=	C
+UInt32	250	20	>=	C
+UInt32	250	30	>=	Z
+UInt32	257	10	>=	C
+UInt32	257	20	>=	C
+UInt32	257	30	>=	Z
+UInt32	1000	10	>=	C
+UInt32	1000	20	>=	C
+UInt32	1000	30	>=	Z
+UInt32	9999	20	>=	single
+UInt32	0	20	>	C
+UInt32	0	30	>	C
+UInt32	250	10	>	filler
+UInt32	250	20	>	C
+UInt32	250	30	>	C
+UInt32	257	10	>	filler
+UInt32	257	20	>	C
+UInt32	257	30	>	C
+UInt32	1000	10	>	filler
+UInt32	1000	20	>	C
+UInt32	1000	30	>	C
+UInt32	9999	20	>	single
+UInt32	0	10	<=	A
+UInt32	0	20	<=	X
+UInt32	0	30	<=	X
+UInt32	250	10	<=	A
+UInt32	250	20	<=	X
+UInt32	250	30	<=	X
+UInt32	257	10	<=	A
+UInt32	257	20	<=	X
+UInt32	257	30	<=	X
+UInt32	1000	10	<=	A
+UInt32	1000	20	<=	X
+UInt32	1000	30	<=	X
+UInt32	0	10	<	X
+UInt32	0	20	<	X
+UInt32	250	10	<	X
+UInt32	250	20	<	X
+UInt32	257	10	<	X
+UInt32	257	20	<	X
+UInt32	1000	10	<	X
+UInt32	1000	20	<	X
+UInt32	0	20	>= reversed	A
+UInt32	250	20	>= reversed	A
+UInt32	257	20	>= reversed	A
+UInt32	1000	20	>= reversed	A
+UInt32	0	20	<= reversed	Z
+UInt32	250	20	<= reversed	Z
+UInt32	257	20	<= reversed	Z
+UInt32	1000	20	<= reversed	Z
+UInt32	0	20	>= unsorted	C
+UInt32	250	20	>= unsorted	C
+UInt32	257	20	>= unsorted	C
+UInt32	1000	20	>= unsorted	C
+UInt32	0	20	>= unsorted reversed	A
+UInt32	250	20	>= unsorted reversed	A
+UInt32	257	20	>= unsorted reversed	A
+UInt32	1000	20	>= unsorted reversed	A
+UInt32	0	20	<= unsorted	X
+UInt32	250	20	<= unsorted	X
+UInt32	257	20	<= unsorted	X
+UInt32	1000	20	<= unsorted	X
+UInt32	0	20	<= unsorted reversed	Z
+UInt32	250	20	<= unsorted reversed	Z
+UInt32	257	20	<= unsorted reversed	Z
+UInt32	1000	20	<= unsorted reversed	Z
+Int128	0	10	>=	C
+Int128	0	20	>=	C
+Int128	0	30	>=	Z
+Int128	250	10	>=	C
+Int128	250	20	>=	C
+Int128	250	30	>=	Z
+Int128	257	10	>=	C
+Int128	257	20	>=	C
+Int128	257	30	>=	Z
+Int128	1000	10	>=	C
+Int128	1000	20	>=	C
+Int128	1000	30	>=	Z
+Int128	9999	20	>=	single
+Int128	0	20	>	C
+Int128	0	30	>	C
+Int128	250	10	>	filler
+Int128	250	20	>	C
+Int128	250	30	>	C
+Int128	257	10	>	filler
+Int128	257	20	>	C
+Int128	257	30	>	C
+Int128	1000	10	>	filler
+Int128	1000	20	>	C
+Int128	1000	30	>	C
+Int128	9999	20	>	single
+Int128	0	10	<=	A
+Int128	0	20	<=	X
+Int128	0	30	<=	X
+Int128	250	10	<=	A
+Int128	250	20	<=	X
+Int128	250	30	<=	X
+Int128	257	10	<=	A
+Int128	257	20	<=	X
+Int128	257	30	<=	X
+Int128	1000	10	<=	A
+Int128	1000	20	<=	X
+Int128	1000	30	<=	X
+Int128	0	10	<	X
+Int128	0	20	<	X
+Int128	250	10	<	X
+Int128	250	20	<	X
+Int128	257	10	<	X
+Int128	257	20	<	X
+Int128	1000	10	<	X
+Int128	1000	20	<	X
+Int128	0	20	>= reversed	A
+Int128	250	20	>= reversed	A
+Int128	257	20	>= reversed	A
+Int128	1000	20	>= reversed	A
+Int128	0	20	<= reversed	Z
+Int128	250	20	<= reversed	Z
+Int128	257	20	<= reversed	Z
+Int128	1000	20	<= reversed	Z
+Int128	0	20	>= unsorted	C
+Int128	250	20	>= unsorted	C
+Int128	257	20	>= unsorted	C
+Int128	1000	20	>= unsorted	C
+Int128	0	20	>= unsorted reversed	A
+Int128	250	20	>= unsorted reversed	A
+Int128	257	20	>= unsorted reversed	A
+Int128	1000	20	>= unsorted reversed	A
+Int128	0	20	<= unsorted	X
+Int128	250	20	<= unsorted	X
+Int128	257	20	<= unsorted	X
+Int128	1000	20	<= unsorted	X
+Int128	0	20	<= unsorted reversed	Z
+Int128	250	20	<= unsorted reversed	Z
+Int128	257	20	<= unsorted reversed	Z
+Int128	1000	20	<= unsorted reversed	Z
+Float64	0	10	>=	C
+Float64	0	20	>=	C
+Float64	0	30	>=	Z
+Float64	250	10	>=	C
+Float64	250	20	>=	C
+Float64	250	30	>=	Z
+Float64	257	10	>=	C
+Float64	257	20	>=	C
+Float64	257	30	>=	Z
+Float64	1000	10	>=	C
+Float64	1000	20	>=	C
+Float64	1000	30	>=	Z
+Float64	9999	20	>=	single
+Float64	0	20	>	C
+Float64	0	30	>	C
+Float64	250	10	>	filler
+Float64	250	20	>	C
+Float64	250	30	>	C
+Float64	257	10	>	filler
+Float64	257	20	>	C
+Float64	257	30	>	C
+Float64	1000	10	>	filler
+Float64	1000	20	>	C
+Float64	1000	30	>	C
+Float64	9999	20	>	single
+Float64	0	10	<=	A
+Float64	0	20	<=	X
+Float64	0	30	<=	X
+Float64	250	10	<=	A
+Float64	250	20	<=	X
+Float64	250	30	<=	X
+Float64	257	10	<=	A
+Float64	257	20	<=	X
+Float64	257	30	<=	X
+Float64	1000	10	<=	A
+Float64	1000	20	<=	X
+Float64	1000	30	<=	X
+Float64	0	10	<	X
+Float64	0	20	<	X
+Float64	250	10	<	X
+Float64	250	20	<	X
+Float64	257	10	<	X
+Float64	257	20	<	X
+Float64	1000	10	<	X
+Float64	1000	20	<	X
+Float64	0	20	>= reversed	A
+Float64	250	20	>= reversed	A
+Float64	257	20	>= reversed	A
+Float64	1000	20	>= reversed	A
+Float64	0	20	<= reversed	Z
+Float64	250	20	<= reversed	Z
+Float64	257	20	<= reversed	Z
+Float64	1000	20	<= reversed	Z
+Float64	0	20	>= unsorted	C
+Float64	250	20	>= unsorted	C
+Float64	257	20	>= unsorted	C
+Float64	1000	20	>= unsorted	C
+Float64	0	20	>= unsorted reversed	A
+Float64	250	20	>= unsorted reversed	A
+Float64	257	20	>= unsorted reversed	A
+Float64	1000	20	>= unsorted reversed	A
+Float64	0	20	<= unsorted	X
+Float64	250	20	<= unsorted	X
+Float64	257	20	<= unsorted	X
+Float64	1000	20	<= unsorted	X
+Float64	0	20	<= unsorted reversed	Z
+Float64	250	20	<= unsorted reversed	Z
+Float64	257	20	<= unsorted reversed	Z
+Float64	1000	20	<= unsorted reversed	Z
+Decimal64	0	10	>=	C
+Decimal64	0	20	>=	C
+Decimal64	0	30	>=	Z
+Decimal64	250	10	>=	C
+Decimal64	250	20	>=	C
+Decimal64	250	30	>=	Z
+Decimal64	257	10	>=	C
+Decimal64	257	20	>=	C
+Decimal64	257	30	>=	Z
+Decimal64	1000	10	>=	C
+Decimal64	1000	20	>=	C
+Decimal64	1000	30	>=	Z
+Decimal64	9999	20	>=	single
+Decimal64	0	20	>	C
+Decimal64	0	30	>	C
+Decimal64	250	10	>	filler
+Decimal64	250	20	>	C
+Decimal64	250	30	>	C
+Decimal64	257	10	>	filler
+Decimal64	257	20	>	C
+Decimal64	257	30	>	C
+Decimal64	1000	10	>	filler
+Decimal64	1000	20	>	C
+Decimal64	1000	30	>	C
+Decimal64	9999	20	>	single
+Decimal64	0	10	<=	A
+Decimal64	0	20	<=	X
+Decimal64	0	30	<=	X
+Decimal64	250	10	<=	A
+Decimal64	250	20	<=	X
+Decimal64	250	30	<=	X
+Decimal64	257	10	<=	A
+Decimal64	257	20	<=	X
+Decimal64	257	30	<=	X
+Decimal64	1000	10	<=	A
+Decimal64	1000	20	<=	X
+Decimal64	1000	30	<=	X
+Decimal64	0	10	<	X
+Decimal64	0	20	<	X
+Decimal64	250	10	<	X
+Decimal64	250	20	<	X
+Decimal64	257	10	<	X
+Decimal64	257	20	<	X
+Decimal64	1000	10	<	X
+Decimal64	1000	20	<	X
+Decimal64	0	20	>= reversed	A
+Decimal64	250	20	>= reversed	A
+Decimal64	257	20	>= reversed	A
+Decimal64	1000	20	>= reversed	A
+Decimal64	0	20	<= reversed	Z
+Decimal64	250	20	<= reversed	Z
+Decimal64	257	20	<= reversed	Z
+Decimal64	1000	20	<= reversed	Z
+Decimal64	0	20	>= unsorted	C
+Decimal64	250	20	>= unsorted	C
+Decimal64	257	20	>= unsorted	C
+Decimal64	1000	20	>= unsorted	C
+Decimal64	0	20	>= unsorted reversed	A
+Decimal64	250	20	>= unsorted reversed	A
+Decimal64	257	20	>= unsorted reversed	A
+Decimal64	1000	20	>= unsorted reversed	A
+Decimal64	0	20	<= unsorted	X
+Decimal64	250	20	<= unsorted	X
+Decimal64	257	20	<= unsorted	X
+Decimal64	1000	20	<= unsorted	X
+Decimal64	0	20	<= unsorted reversed	Z
+Decimal64	250	20	<= unsorted reversed	Z
+Decimal64	257	20	<= unsorted reversed	Z
+Decimal64	1000	20	<= unsorted reversed	Z
+DateTime64	0	10	>=	C
+DateTime64	0	20	>=	C
+DateTime64	0	30	>=	Z
+DateTime64	250	10	>=	C
+DateTime64	250	20	>=	C
+DateTime64	250	30	>=	Z
+DateTime64	257	10	>=	C
+DateTime64	257	20	>=	C
+DateTime64	257	30	>=	Z
+DateTime64	1000	10	>=	C
+DateTime64	1000	20	>=	C
+DateTime64	1000	30	>=	Z
+DateTime64	9999	20	>=	single
+DateTime64	0	20	>	C
+DateTime64	0	30	>	C
+DateTime64	250	10	>	filler
+DateTime64	250	20	>	C
+DateTime64	250	30	>	C
+DateTime64	257	10	>	filler
+DateTime64	257	20	>	C
+DateTime64	257	30	>	C
+DateTime64	1000	10	>	filler
+DateTime64	1000	20	>	C
+DateTime64	1000	30	>	C
+DateTime64	9999	20	>	single
+DateTime64	0	10	<=	A
+DateTime64	0	20	<=	X
+DateTime64	0	30	<=	X
+DateTime64	250	10	<=	A
+DateTime64	250	20	<=	X
+DateTime64	250	30	<=	X
+DateTime64	257	10	<=	A
+DateTime64	257	20	<=	X
+DateTime64	257	30	<=	X
+DateTime64	1000	10	<=	A
+DateTime64	1000	20	<=	X
+DateTime64	1000	30	<=	X
+DateTime64	0	10	<	X
+DateTime64	0	20	<	X
+DateTime64	250	10	<	X
+DateTime64	250	20	<	X
+DateTime64	257	10	<	X
+DateTime64	257	20	<	X
+DateTime64	1000	10	<	X
+DateTime64	1000	20	<	X
+DateTime64	0	20	>= reversed	A
+DateTime64	250	20	>= reversed	A
+DateTime64	257	20	>= reversed	A
+DateTime64	1000	20	>= reversed	A
+DateTime64	0	20	<= reversed	Z
+DateTime64	250	20	<= reversed	Z
+DateTime64	257	20	<= reversed	Z
+DateTime64	1000	20	<= reversed	Z
+DateTime64	0	20	>= unsorted	C
+DateTime64	250	20	>= unsorted	C
+DateTime64	257	20	>= unsorted	C
+DateTime64	1000	20	>= unsorted	C
+DateTime64	0	20	>= unsorted reversed	A
+DateTime64	250	20	>= unsorted reversed	A
+DateTime64	257	20	>= unsorted reversed	A
+DateTime64	1000	20	>= unsorted reversed	A
+DateTime64	0	20	<= unsorted	X
+DateTime64	250	20	<= unsorted	X
+DateTime64	257	20	<= unsorted	X
+DateTime64	1000	20	<= unsorted	X
+DateTime64	0	20	<= unsorted reversed	Z
+DateTime64	250	20	<= unsorted reversed	Z
+DateTime64	257	20	<= unsorted reversed	Z
+DateTime64	1000	20	<= unsorted reversed	Z
+no duplicates	>=	1000	4393525079332276956
+no duplicates	>	1000	6157143776026723316
+no duplicates	<=	998	2836259448850470650
+no duplicates	<	998	3523288927659380161
+no duplicates	>=	1000	4393525079332276956
+no duplicates	>	1000	6157143776026723316
+no duplicates	<=	998	2836259448850470650
+no duplicates	<	998	3523288927659380161
