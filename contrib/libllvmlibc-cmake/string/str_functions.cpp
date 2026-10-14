@@ -98,43 +98,50 @@ extern "C" void *memchr(const void *s, int c, size_t n) noexcept {
   if (n == 0)
     return nullptr;
   const char *p = static_cast<const char *>(s);
-  const char *end = p + n;
   const vec_t needle = splat(static_cast<unsigned char>(c));
 
-  // First block: drop the bytes before `p`.
+  // The buffer is tracked as the remaining byte count, never as an end
+  // pointer: callers pass limits such as SIZE_MAX (musl's strnlen forwards the
+  // caller's limit), for which `p + n` would wrap around.
+
+  // First block: drop the bytes before `p`, and the bytes past the buffer if
+  // it ends within this block.
   const char *a = align_down(p);
-  uint64_t m = eq_mask(a, needle) >> (p - a);
-  // Bytes at or past `end` are not part of the buffer. `end - p` can only be
-  // < VEC here if the whole buffer fits into this first block.
-  if (static_cast<size_t>(end - p) < VEC)
-    m &= (uint64_t{1} << (end - p)) - 1;
+  const size_t skipped = static_cast<size_t>(p - a);
+  const size_t in_first = VEC - skipped;
+  uint64_t m = eq_mask(a, needle) >> skipped;
+  if (n < in_first)
+    m &= (uint64_t{1} << n) - 1;
   if (m)
     return const_cast<char *>(p + __builtin_ctzll(m));
+  if (n <= in_first)
+    return nullptr;
+  size_t remaining = n - in_first;
 
   a += VEC;
   // Callers may pass an `n` that overstates the buffer and rely on the search
   // stopping at the first match (musl's strnlen passes the caller's limit,
-  // realpath's is PATH_MAX past a shorter string), so `end` does not bound the
-  // readable memory. Re-align to the 4 * VEC stride before the unrolled loop:
-  // a 4 * VEC-aligned group never crosses a page, so it is only ever read
-  // beyond the match within the page that holds the match.
-  for (; a + VEC <= end && (reinterpret_cast<uintptr_t>(a) & (4 * VEC - 1));
-       a += VEC) {
+  // realpath's is PATH_MAX past a shorter string), so `remaining` does not
+  // bound the readable memory. Re-align to the 4 * VEC stride before the
+  // unrolled loop: a 4 * VEC-aligned group never crosses a page, so it is only
+  // ever read beyond the match within the page that holds the match.
+  for (; remaining >= VEC && (reinterpret_cast<uintptr_t>(a) & (4 * VEC - 1));
+       a += VEC, remaining -= VEC) {
     m = eq_mask(a, needle);
     if (m)
       return const_cast<char *>(a + __builtin_ctzll(m));
   }
-  for (; a + 4 * VEC <= end; a += 4 * VEC)
+  for (; remaining >= 4 * VEC; a += 4 * VEC, remaining -= 4 * VEC)
     if (const char *r = scan4(a, needle))
       return const_cast<char *>(r);
-  for (; a + VEC <= end; a += VEC) {
+  for (; remaining >= VEC; a += VEC, remaining -= VEC) {
     m = eq_mask(a, needle);
     if (m)
       return const_cast<char *>(a + __builtin_ctzll(m));
   }
 
-  if (a < end) {
-    m = eq_mask(a, needle) & ((uint64_t{1} << (end - a)) - 1);
+  if (remaining) {
+    m = eq_mask(a, needle) & ((uint64_t{1} << remaining) - 1);
     if (m)
       return const_cast<char *>(a + __builtin_ctzll(m));
   }
