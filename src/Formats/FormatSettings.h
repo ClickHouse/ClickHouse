@@ -442,6 +442,7 @@ struct FormatSettings
         bool detect_variant_by_structure = true;
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
+        bool write_file_logical_type = false;
         size_t max_dictionary_size = 1024 * 1024;
         /// Explicit per-column Parquet `field_id` overrides (column name -> field_id), as the raw
         /// entries of the `Map(String, Int32)` setting: `FormatSettings` are built for every input
