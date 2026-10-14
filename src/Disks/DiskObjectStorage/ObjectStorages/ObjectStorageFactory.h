@@ -5,6 +5,17 @@
 namespace DB
 {
 
+/// How the endpoint of an object storage is checked against remote_url_allow_hosts.
+enum class RemoteHostFilterCheck : uint8_t
+{
+    /// Endpoint from the server config: not checked.
+    None,
+    /// Custom disk loaded from existing metadata (server start, UNDROP): a rejection is reported, the load continues.
+    Warn,
+    /// Custom disk defined by a query: a rejection throws.
+    Enforce,
+};
+
 class ObjectStorageFactory final : private boost::noncopyable
 {
 public:
@@ -14,7 +25,7 @@ public:
         const std::string & config_prefix,
         const ContextPtr & context,
         bool skip_access_check,
-        bool run_remote_host_filter_check)>;
+        RemoteHostFilterCheck remote_host_filter_check)>;
 
     static ObjectStorageFactory & instance();
 
@@ -26,7 +37,7 @@ public:
         const std::string & config_prefix,
         const ContextPtr & context,
         bool skip_access_check,
-        bool run_remote_host_filter_check) const;
+        RemoteHostFilterCheck remote_host_filter_check) const;
 
     void clearRegistry();
 
