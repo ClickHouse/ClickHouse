@@ -6,3 +6,19 @@ marks: 10
 verdict: chosen
 real: ReadFromMergeTree (p_k)
 real: Granules: 10/94
+-- a key that returns LowCardinality
+Baseline (after PK + partition + existing indexes):
+marks: 72
+With p_lc (normal projection, hypothetical):
+marks: 37
+verdict: chosen
+real: ReadFromMergeTree (p_lc)
+real: Granules: 37/74
+-- a stored LowCardinality(String) column
+Baseline (after PK + partition + existing indexes):
+marks: 50
+With p_b (normal projection, hypothetical):
+marks: 25
+verdict: chosen
+real: ReadFromMergeTree (p_b)
+real: Granules: 25/50

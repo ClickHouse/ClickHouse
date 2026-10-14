@@ -2,12 +2,14 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -101,7 +103,10 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
     {
         if (!elem.column)
             continue;
-        if (elem.column->valuesHaveFixedSize())
+        /// a row of a `LowCardinality` column stores only its index, the column stores one dictionary
+        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(elem.column.get()))
+            fixed += static_cast<UInt32>(low_cardinality->getSizeOfIndexType());
+        else if (elem.column->valuesHaveFixedSize())
             fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
         else
         {
