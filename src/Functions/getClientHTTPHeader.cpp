@@ -44,6 +44,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
@@ -91,10 +94,10 @@ Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authorization`, `Authentication` and `X-ClickHouse-*`) are restricted.
 
-:::note Setting `allow_get_client_http_header` is required
+<Note title="Setting `allow_get_client_http_header` is required">
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
-:::
+</Note>
 
 HTTP headers are case-insensitive per RFC 9110.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.

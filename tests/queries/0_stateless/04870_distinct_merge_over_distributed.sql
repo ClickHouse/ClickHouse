@@ -28,9 +28,6 @@ CREATE TABLE merge_distinct AS t_distinct ENGINE = Merge(currentDatabase(), '^di
 SELECT count() FROM (SELECT DISTINCT s FROM merge_distinct ORDER BY s LIMIT 100)
     SETTINGS max_threads = 1, distributed_aggregation_memory_efficient = 0,
         optimize_distinct_in_order = 1;
-SELECT count() FROM (SELECT DISTINCT s FROM merge_distinct ORDER BY s LIMIT 100)
-    SETTINGS max_threads = 1, distributed_aggregation_memory_efficient = 0,
-        optimize_distinct_in_order = 1, enable_analyzer = 0;
 
 -- `DISTINCT ON (s)` parses into `LIMIT 1 BY s`, so this arm covers
 -- `LimitBySortedStreamTransform`, which also assumes equal keys are adjacent. It is selected on
@@ -49,8 +46,6 @@ SELECT count() FROM (SELECT DISTINCT s FROM dist_distinct ORDER BY s LIMIT 100)
 -- are what distinguishes the two behaviours. Expected: 9 9 8.
 SELECT s FROM merge_distinct GROUP BY s ORDER BY s DESC LIMIT 3
     SETTINGS max_threads = 1, distributed_group_by_no_merge = 2;
-SELECT s FROM merge_distinct GROUP BY s ORDER BY s DESC LIMIT 3
-    SETTINGS max_threads = 1, distributed_group_by_no_merge = 2, enable_analyzer = 0;
 
 -- `distributed_push_down_limit` defaults to 1, which sends the `LIMIT` to the shards as well.
 -- Turning it off keeps the `LIMIT` on the initiator, so the merge-only sort is reached without

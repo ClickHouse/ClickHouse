@@ -1,0 +1,8 @@
+SKIP	JSON(a UInt32, SKIP b)
+1	{"a":1,"c":"y"}	\N
+SKIP REGEXP	JSON(a UInt32, SKIP b, SKIP REGEXP \'^c\')
+1	{"a":1}	\N
+max_dynamic_paths	JSON(max_dynamic_paths=8, a UInt32, SKIP b, SKIP REGEXP \'^c\')
+max_dynamic_types	JSON(max_dynamic_types=4, max_dynamic_paths=8, a UInt32, SKIP b, SKIP REGEXP \'^c\')
+typed paths only	JSON(max_dynamic_types=4, max_dynamic_paths=8, a UInt32, SKIP b, SKIP REGEXP \'^c\')
+1	{"a":1}	JSON(max_dynamic_types=4, max_dynamic_paths=8, a UInt64, SKIP b, SKIP REGEXP \'^c\')

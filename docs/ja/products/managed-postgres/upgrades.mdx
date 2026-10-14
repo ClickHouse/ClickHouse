@@ -3,15 +3,17 @@ slug: /cloud/managed-postgres/upgrades
 sidebarTitle: 'アップグレード'
 title: 'アップグレード'
 description: 'ClickHouse Managed Postgres での PostgreSQL のバージョンアップグレードの仕組み'
-keywords: ['managed postgres upgrades', 'postgres version', 'minor upgrade', 'major upgrade', 'maintenance window']
+keywords: ['managed postgres upgrades', 'postgres version', 'minor upgrade', 'major upgrade', 'maintenance window', 'scheduled upgrades']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
-ClickHouse Managed Postgres では、インスタンスの安全性を保ち、最新の状態を維持するために、PostgreSQL のバージョンアップグレードを実施します。マイナーバージョンアップグレードとメジャーバージョンアップグレードの両方に対応しており、影響は最小限に抑えられます。
+ClickHouse Managed Postgres では、インスタンスの安全性を保ち、最新の状態を維持するために、PostgreSQL のバージョンアップグレードを実施します。マイナーバージョンのアップグレードとメジャーバージョンアップグレードの両方に対応しており、影響は最小限に抑えられます。
 
 <div id="maintenance-updates">
   ## メンテナンス更新
@@ -27,14 +29,98 @@ PostgreSQL インスタンスの定期メンテナンスには、次の内容が
 
 [standbys](/ja/products/managed-postgres/high-availability) が有効なインスタンスでは、ダウンタイムを最小限に抑えるため、まずスタンバイにアップグレードが適用され、その後フェイルオーバーが実行されます。
 
-<div id="maintenance-windows">
-  ## メンテナンスウィンドウ
+<div id="scheduled-upgrades">
+  ## スケジュールされたアップグレード
 </div>
 
-デフォルトのメンテナンスウィンドウは、日曜日の 14:00 ～ 16:00 UTC です。
-想定ダウンタイムは、この時間帯の中で 1 分未満です。
+<ScalePlanFeatureBadge feature="スケジュールされたアップグレード" linking_verb_are="true" />
 
-Enterprise Tier の組織では、ClickHouse Managed Postgres でメンテナンスウィンドウがサポートされているため、アップグレードやその他のメンテナンス作業を、ワークロードへの影響が最小となる時間帯にスケジュールできます。メンテナンスウィンドウを設定するための UI と API のサポートは近日中に提供予定です。それまでは、[support](https://clickhouse.com/support/program) に連絡して、インスタンスのメンテナンスウィンドウを設定してください。
+デフォルトでは、新しいリリースの準備が整うと、インスタンスにメンテナンスが適用されます。
+**スケジュールされたアップグレード**では、このメンテナンスを適用できる UTC の 2 時間枠を選択できるため、
+ワークロードへの影響が最も少ない時間帯に短時間のフェイルオーバーを実施できます。想定される
+ダウンタイムは、この時間枠内で 1 分未満です。
+
+Enterprise プランでは、アップグレードを特定の
+[曜日](#days-of-the-week)に限定することもできます。Scale プランでは時間帯のみを選択でき、
+その時間帯内であればどの曜日にもアップグレードが適用される場合があります。
+
+<div id="configure-a-schedule">
+  ### スケジュールを設定する
+</div>
+
+<Steps>
+  <Step title="インスタンス設定を開く" id="open-settings">
+    インスタンスを選択し、左側のメニューから**設定**を選択して、**構成**セクションまでスクロールします。
+  </Step>
+
+  <Step title="スケジュールされたアップグレードのフライアウトを開く" id="open-flyout">
+    **スケジュールされたアップグレード**サブセクションで、**スケジュールを設定**を選択します。すでにスケジュールが設定されている場合は、現在のスケジュールが表示され、ボタンは**スケジュールを編集**と表示されます。
+  </Step>
+
+  <Step title="時間帯を選択する" id="pick-time-period">
+    **時間帯 (UTC) **リストから、12種類の2時間単位のUTC時間帯のいずれかを選択します。時間帯の選択は必須です。
+  </Step>
+
+  <Step title="必要に応じて曜日を制限する" id="pick-days">
+    Enterpriseプランでは、**曜日**で1つ以上の曜日を選択します。時間帯内の任意の曜日にアップグレードを許可するには、すべての曜日を未選択のままにします。
+  </Step>
+
+  <Step title="保存" id="save">
+    **保存**を選択します。スケジュールは直ちに有効になり、**スケジュールされたアップグレード**サブセクションに表示されます。例:
+    `Scheduled upgrades: Sat, Sun at 12:00 a.m. - 2:00 a.m. UTC`
+  </Step>
+</Steps>
+
+スケジュールを変更するには、インスタンスに対する`control-plane:postgres-service:manage`権限が必要です。インスタンスが停止中またはプロビジョニング中の場合も、コントロールは無効になります。
+
+<div id="time-periods">
+  ### 時間帯
+</div>
+
+時間枠は2時間単位で、常にUTCで指定されます。ローカルタイムゾーンを
+選択することはできません。利用可能な時間枠は次のとおりです。
+
+| 1日の前半 (UTC)       | 1日の後半 (UTC)       |
+| ----------------- | ----------------- |
+| 午前12:00 - 午前2:00  | 午後12:00 - 午後2:00  |
+| 午前2:00 - 午前4:00   | 午後2:00 - 午後4:00   |
+| 午前4:00 - 午前6:00   | 午後4:00 - 午後6:00   |
+| 午前6:00 - 午前8:00   | 午後6:00 - 午後8:00   |
+| 午前8:00 - 午前10:00  | 午後8:00 - 午後10:00  |
+| 午前10:00 - 午後12:00 | 午後10:00 - 午前12:00 |
+
+開始時刻や時間枠の長さをカスタマイズすること、および1つのインスタンスに複数の時間枠を設定することは
+サポートされていません。
+
+<div id="days-of-the-week">
+  ### 曜日
+</div>
+
+<EnterprisePlanFeatureBadge feature="アップグレードを特定の曜日に制限" />
+
+曜日の制限は任意です。
+
+* **曜日を選択しない** — 選択した時間帯内であれば、どの曜日にもアップグレードを適用できます。
+* **1 つ以上の曜日を選択する** — 選択した時間帯内では、選択した曜日にのみアップグレードが適用されます。
+  7 日すべてを選択することは、何も選択しないことと同等です。
+
+<div id="schedule-scope">
+  ### スケジュールの適用対象
+</div>
+
+スケジュールの対象となるのは**プラットフォームメンテナンス**のみです。これには、[メンテナンス更新](#maintenance-updates)で説明するマイナーバージョンのアップグレード、マネージドサービスの機能更新、OS パッチが含まれます。
+
+お客様自身で開始した変更は、指定した時間枠まで延期されず、変更後すぐに適用されます。これには、インスタンスの[スケーリング](/ja/products/managed-postgres/scaling)、ストレージのサイズ変更、[設定パラメーター](/ja/products/managed-postgres/settings)の変更が含まれます。
+
+<Note>
+  スケジュールされたアップグレードはベストエフォートで実施されます。インスタンスの健全性を維持するために必要な場合 (たとえばディスク使用率が 95% に達した場合) 、または重大なセキュリティパッチや脆弱性修正が必要な場合には、指定した時間枠外にメンテナンスが適用されることがあります。このような例外については、必要に応じて通知されます。
+</Note>
+
+<div id="read-replicas">
+  ### 読み取りレプリカ
+</div>
+
+[読み取りレプリカ](/ja/products/managed-postgres/read-replicas)には独自のスケジュールがなく、プライマリインスタンスのスケジュールに従うため、**スケジュールされたアップグレード**セクションは表示されません。
 
 <div id="major-version-upgrades">
   ## メジャーバージョンアップグレード

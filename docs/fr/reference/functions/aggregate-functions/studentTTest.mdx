@@ -48,12 +48,15 @@ Renvoie un tuple de deux ou quatre éléments (si le paramètre facultatif `conf
 **Utilisation de base**
 
 ```sql title=Query
+CREATE TABLE student_ttest (sample_data Float64, sample_index UInt8) ENGINE = Memory;
+INSERT INTO student_ttest VALUES (20.3, 0), (21.1, 0), (21.9, 1), (21.7, 0), (19.9, 1), (21.8, 1);
+
 SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
 ```
 
 ```response title=Response
 ┌─studentTTest(sample_data, sample_index)───┐
-│ (-0.21739130434783777,0.8385421208415731) │
+│ (-0.21739130434783777,0.8385421208415734) │
 └───────────────────────────────────────────┘
 ```
 

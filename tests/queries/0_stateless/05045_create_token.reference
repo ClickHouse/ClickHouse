@@ -1,0 +1,57 @@
+-- Without the CREATE TOKEN privilege the query is denied, and the message names the privilege
+Not enough privileges. To execute this query, it's necessary to have the grant CREATE TOKEN ON *.*
+-- The token is a 32-character alphanumeric string, and a new one is generated every time
+1
+1
+tokens differ
+-- The token authenticates as the user, with the full rights of the user
+user
+1
+2
+-- The GRANTS clause limits the rights of the sessions authenticated with the token
+1
+ACCESS_DENIED
+-- The VALID UNTIL clause is stored with the authentication method and is reported back
+2077-01-01 00:00:00
+2
+-- The generated secrets are stored hashed and are not shown by SHOW CREATE USER
+CREATE USER user IDENTIFIED WITH plaintext_password, sha256_password, sha256_password, sha256_password GRANTS (SELECT ON db.t1), sha256_password VALID UNTIL \'2077-01-01 00:00:00\' GRANTS (SELECT ON db.t2)
+-- Without a clause the token lives for create_token_default_ttl_seconds, 30 minutes by default
+1
+-- The reported deadline is the one stored on the authentication method
+1
+-- The setting is honoured, and an explicit clause wins over it
+1
+2077-01-01 00:00:00
+-- A zero setting, and VALID UNTIL 'infinity', create a token which never expires (reported as 0)
+1
+1
+-- An already expired token does not authenticate
+AUTHENTICATION_FAILED
+-- A session authenticated with an unlimited token can create tokens
+1
+-- A session limited by the GRANTS clause cannot, even when CREATE TOKEN is listed and granted
+ACCESS_DENIED
+ACCESS_DENIED
+-- The privilege also authorizes the equivalent ALTER USER ADD IDENTIFIED for the current user
+1
+-- but it does not authorize any other change of the account
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- and it does not authorize adding an authentication method to another user
+ACCESS_DENIED
+-- A huge default TTL saturates at the largest supported deadline instead of overflowing
+1
+-- An unusable FORMAT is rejected before the authentication method is added
+UNKNOWN_FORMAT
+FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT
+UNKNOWN_FORMAT
+no authentication method added
+-- CREATE TOKEN does not support the ON CLUSTER clause
+SYNTAX_ERROR
+-- The user still authenticates with the original password
+1

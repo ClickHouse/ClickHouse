@@ -59,6 +59,7 @@ ClickHouse Cloud 默认是一项高可用且具备副本能力的服务，构建
 * Null
 * Buffer
 * Memory
+* `IcebergS3` 和 `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -68,6 +69,8 @@ ClickHouse Cloud 默认是一项高可用且具备副本能力的服务，构建
 * PostgreSQL
 * S3
 * Kafka
+
+可在部分 ClickHouse Cloud 服务上启用 Experimental `PaimonS3` 和 `PaimonAzure` 表引擎。请联系 Support 确认可用性。
 
 <div id="interfaces">
   ### 接口
@@ -87,6 +90,8 @@ ClickHouse Cloud 支持 HTTPS、原生接口以及 [MySQL wire 协议](/zh/conce
 
 我们支持在云环境中通过联邦 ClickHouse 查询实现跨集群通信，也支持与外部自管理 ClickHouse 集群进行通信。ClickHouse Cloud 目前支持使用以下集成引擎的联邦查询：
 
+* `IcebergS3` 和 `IcebergAzure`
+* `PaimonS3` 和 `PaimonAzure` (实验性；请联系 Support 了解可用性)
 * Deltalake
 * Hudi
 * MySQL
@@ -130,7 +135,7 @@ ClickHouse Cloud 中的用户自定义函数目前处于[Public Beta](/zh/refere
   ### 命名集合
 </div>
 
-ClickHouse Cloud 目前暂不支持[命名集合](/zh/concepts/features/configuration/server-config/named-collections)。
+部分 ClickHouse Cloud 服务支持启用通过 DDL 创建的[命名集合](/zh/concepts/features/configuration/server-config/named-collections)。请联系 Support 确认可用性。由于用户无法修改 ClickHouse Cloud 中的服务器配置文件，因此无法使用在配置文件中定义的命名集合。
 
 <div id="operational-defaults-and-considerations">
   ## 运行默认值与注意事项

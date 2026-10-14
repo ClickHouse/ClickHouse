@@ -155,7 +155,7 @@ endif()
 # Default coverage instrumentation (dumping the coverage map on exit)
 option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
 
-option(WITH_COVERAGE_DEPTH "Shadow call-stack depth tracking via -finstrument-functions-after-inlining (requires WITH_COVERAGE)" OFF)
+option(WITH_COVERAGE_DEPTH "Per-test coverage collection via SYSTEM SET COVERAGE TEST (requires WITH_COVERAGE)" OFF)
 
 option(WITH_COVERAGE_XRAY
     "Use XRay instrumentation for exact call-depth tracking (requires WITH_COVERAGE and ENABLE_XRAY). Builds with -DCLICKHOUSE_XRAY_INSTRUMENT_COVERAGE=1. XRay maps runtime function text addresses to LLVM profile records, solving the PIE FunctionPointer=0 limitation."
@@ -165,7 +165,16 @@ if (WITH_COVERAGE)
     message (STATUS "Enabled instrumentation for code coverage")
 
     # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
-    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
+    # -runtime-counter-relocation makes counter updates go through a bias variable,
+    # which is what lets the profile runtime memory-map the counters straight into
+    # the .profraw file ("continuous mode", the %c pattern in LLVM_PROFILE_FILE).
+    # The file is then valid at every instant, so a process killed with SIGKILL
+    # (integration tests do this on purpose) leaves an intact profile instead of a
+    # half-written one that crashes llvm-profdata later. Without %c at runtime the
+    # flag is inert (the bias stays zero).
+    # Each -mllvm pair is one `SHELL:` group: CMake de-duplicates compile options, so a
+    # repeated bare -mllvm is dropped and orphans its value.
+    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping "SHELL:-mllvm -runtime-counter-relocation")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 
     if (WITH_COVERAGE_DEPTH)
@@ -178,15 +187,12 @@ if (WITH_COVERAGE)
         # LLVMCoverageMapping.cpp, and SYSTEM SET COVERAGE TEST are compiled in.
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_COVERAGE=1")
         set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -DWITH_COVERAGE=1")
-        message (STATUS "Enabled call-depth shadow stack via -finstrument-functions-after-inlining")
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -finstrument-functions-after-inlining")
-        set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -finstrument-functions-after-inlining")
         # -mllvm -enable-value-profiling=true activates indirect-call value profiling so that
         # __llvm_profile_instrument_target() records virtual-dispatch targets at runtime.
         # Without this flag, LLVMProfileData::Values is always NULL and indirect-call data
         # cannot be collected. Only enabled for per-test coverage builds to avoid changing
         # the regular amd_llvm_coverage build behaviour.
-        set (COVERAGE_FLAGS ${COVERAGE_FLAGS} -mllvm -enable-value-profiling=true)
+        set (COVERAGE_FLAGS ${COVERAGE_FLAGS} "SHELL:-mllvm -enable-value-profiling=true")
     endif()
 
     if (WITH_COVERAGE_XRAY)

@@ -92,14 +92,14 @@ namespace
         return ordered;
     }
 
-    void formatScope(const AccessRightsElement & element, const AccessFlags & group_flags, WriteBuffer & buffer)
+    void formatScope(const AccessRightsElement & element, const AccessFlags & group_flags, WriteBuffer & buffer, bool precise = false)
     {
         /// Only a standalone global self-service leaf omits `ON`; mixed groups keep their scope.
         if (isScopeFreeSelfAuthentication(element) && group_flags == element.access_flags)
             return;
 
         buffer << " ";
-        element.formatONClause(buffer);
+        element.formatONClause(buffer, precise);
     }
 
     String toStringImpl(const AccessRightsElement & element, bool with_options)
@@ -186,15 +186,20 @@ void AccessRightsElement::formatFilter(WriteBuffer & buffer) const
     buffer << "(" << backQuoteIfNeed(filter) << ")";
 }
 
-void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
+void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool precise) const
 {
     auto is_enabled_user_name_access_type = true;
     auto is_enabled_read_write_grants = true;
-    if (const auto context = Context::getGlobalContextInstance())
+    /// In precise mode the backward-compatibility rewrites below must not fire, so keep both toggles enabled
+    /// regardless of the server configuration (see the declaration for the rationale).
+    if (!precise)
     {
-        const auto & access_control = context->getAccessControl();
-        is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
-        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+        if (const auto context = Context::getGlobalContextInstance())
+        {
+            const auto & access_control = context->getAccessControl();
+            is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+            is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+        }
     }
 
     buffer << "ON ";
@@ -493,7 +498,7 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
-void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bool precise) const
 {
     AccessRightsElements ordered;
     const auto & elements = orderForFormatting(*this, ordered);
@@ -507,7 +512,9 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
     for (size_t i = 0; i != elements.size(); ++i)
     {
         auto element = elements[i];
-        element.makeBackwardCompatible();
+        /// The backward-compatibility conversion widens grants; skip it in precise mode.
+        if (!precise)
+            element.makeBackwardCompatible();
 
         auto keywords = element.access_flags.toKeywords();
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
@@ -540,7 +547,8 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
             /// Compare backward-compatible versions of both elements so that
             /// the parameter field (cleared by makeBackwardCompatible) matches on both sides.
             auto next_element = elements[i + 1];
-            next_element.makeBackwardCompatible();
+            if (!precise)
+                next_element.makeBackwardCompatible();
             if (element.sameDatabaseAndTableAndParameter(next_element))
             {
                 next_element_on_same_db_and_table = true;
@@ -549,7 +557,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
 
         if (!next_element_on_same_db_and_table)
         {
-            formatScope(element, scope_flags, buffer);
+            formatScope(element, scope_flags, buffer, precise);
             group_flags = {};
             scope_flags = {};
         }
@@ -557,6 +565,13 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
 
     if (no_output)
         buffer << "USAGE ON " << "*.*";
+}
+
+String AccessRightsElements::toStringPrecise() const
+{
+    WriteBufferFromOwnString buffer;
+    formatElementsWithoutOptions(buffer, /*precise=*/true);
+    return buffer.str();
 }
 
 }

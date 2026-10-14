@@ -74,7 +74,7 @@ ClickHouse 可以自动确定 JSON 数据的结构。这可用于直接查询 JS
 使用 [s3 函数](/zh/reference/functions/table-functions/s3) 配合 `DESCRIBE` 命令，可以显示将被推断出的类型。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -117,14 +117,14 @@ SETTINGS describe_compact_output = 1
 
 以下内容假设 JSON 的结构始终一致，并且每个路径都只有一种类型。
 
-我们可以依靠 schema inference 直接对 JSON 数据进行查询。下面我们利用日期和数组会被自动识别这一点，找出每年最活跃的作者。
+我们可以依靠 schema 推断 直接对 JSON 数据进行查询。下面我们利用日期和数组会被自动识别这一点，找出每年最活跃的作者。
 
 ```sql
 SELECT
  toYear(update_date) AS year,
  authors,
     count() AS c
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 GROUP BY
     year,
  authors
@@ -156,7 +156,7 @@ LIMIT 1 BY year
 │ 2024 │ ATLAS Collaboration                        │ 120 │
 └──────┴────────────────────────────────────────────┴─────┘
 
-共 18 行。耗时：20.172 秒。已处理 252 万行，1.39 GB（124.72 千行/秒，68.76 MB/秒）。
+18 rows in set. Elapsed: 20.172 sec. Processed 2.52 million rows, 1.39 GB (124.72 thousand rows/s., 68.76 MB/s.)
 ```
 
 schema 推断使我们无需预先指定 schema 即可查询 JSON 文件，从而加快临时性数据分析任务。
@@ -172,7 +172,7 @@ CREATE TABLE arxiv
 ENGINE = MergeTree
 ORDER BY update_date EMPTY
 AS SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS schema_inference_make_columns_nullable = 0
 ```
 
@@ -202,7 +202,7 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-上述内容是这份数据的正确 schema。schema 推断 基于对数据进行 sampling，并逐行读取数据。系统会根据 format 提取列值，并使用递归 parser 和启发式方法来确定每个值的类型。schema 推断 期间从数据中读取的最大行数和字节数由设置 [`input_format_max_rows_to_read_for_schema_inference`](/zh/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (默认为 25000) 和 [`input_format_max_bytes_to_read_for_schema_inference`](/zh/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (默认为 32MB) 控制。如果检测结果不正确，您可以按[此处](/zh/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)所述提供提示。
+上述内容是这份数据的正确 schema。schema 推断 基于对数据进行采样，并逐行读取数据。系统会根据 format 提取列值，并使用递归 parser 和启发式方法来确定每个值的类型。schema 推断 期间从数据中读取的最大行数和字节数由设置 [`input_format_max_rows_to_read_for_schema_inference`](/zh/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (默认为 25000) 和 [`input_format_max_bytes_to_read_for_schema_inference`](/zh/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (默认为 32MB) 控制。如果检测结果不正确，您可以按[此处](/zh/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)所述提供提示。
 
 <div id="creating-tables-from-snippets">
   ### 根据片段创建表
@@ -249,7 +249,7 @@ ORDER BY update_date
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 ```
 
 ```response
@@ -337,7 +337,7 @@ ClickHouse 通过专用的 [`JSON`](/zh/reference/data-types/newjson) 类型来�
 此数据的一份样本已以换行分隔的 JSON 格式公开提供。如果我们尝试对该文件进行 schema 推断，你会发现性能较差，而且响应内容极其冗长：
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN)
 
 -- result omitted for brevity
 ```
@@ -353,7 +353,7 @@ DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi
 `JSONAsObject` 会将整个输入视为单个 JSON 对象，并将其存储到一个类型为 [`JSON`](/zh/reference/data-types/newjson) 的列中，因此更适合高度动态或嵌套的 JSON 载荷。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
 SETTINGS describe_compact_output = 1
 ```
 
@@ -375,7 +375,7 @@ SETTINGS describe_compact_output = 1
 在这种情况下，ClickHouse 可以对类型冲突进行强制转换，并将列 `a` 处理为 `Nullable(String)`。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -403,7 +403,7 @@ SETTINGS describe_compact_output = 1
 在这种情况下，这里无法进行任何形式的类型转换，因此 `DESCRIBE` 命令会失败：
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN)
 ```
 
 ```response
@@ -419,7 +419,7 @@ Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a
 在这种情况下，`JSONAsObject` 会将每一行视为单个 [`JSON`](/zh/reference/data-types/newjson) 类型 (即支持同一列包含多种类型) 。这一点至关重要：
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
 SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 

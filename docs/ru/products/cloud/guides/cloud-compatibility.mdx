@@ -59,6 +59,7 @@ ClickHouse Cloud по умолчанию — это высокодоступны
 * Null
 * Buffer
 * Memory
+* `IcebergS3` и `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -68,6 +69,8 @@ ClickHouse Cloud по умолчанию — это высокодоступны
 * PostgreSQL
 * S3
 * Kafka
+
+Экспериментальные движки таблиц `PaimonS3` и `PaimonAzure` могут быть включены на некоторых сервисах ClickHouse Cloud. Обратитесь в службу поддержки, чтобы подтвердить доступность.
 
 <div id="interfaces">
   ### Интерфейсы
@@ -87,6 +90,8 @@ ClickHouse Cloud поддерживает HTTPS, нативные интерфе
 
 Мы поддерживаем федеративные запросы ClickHouse для межкластерного взаимодействия в облаке, а также для взаимодействия с внешними самоуправляемыми кластерами ClickHouse. В настоящее время ClickHouse Cloud поддерживает федеративные запросы с использованием следующих интеграционных движков:
 
+* `IcebergS3` и `IcebergAzure`
+* `PaimonS3` и `PaimonAzure` (экспериментальные; для получения доступа обратитесь в службу поддержки)
 * Deltalake
 * Hudi
 * MySQL
@@ -130,7 +135,9 @@ ClickHouse Cloud поддерживает HTTPS, нативные интерфе
   ### Именованные коллекции
 </div>
 
-[Именованные коллекции](/ru/concepts/features/configuration/server-config/named-collections) пока не поддерживаются в ClickHouse Cloud.
+Именованные коллекции, созданные с помощью DDL, можно включить в некоторых сервисах ClickHouse Cloud. Обратитесь в службу поддержки, чтобы уточнить доступность. Именованные коллекции, определенные в файлах конфигурации, недоступны, поскольку пользователи не могут изменять файлы конфигурации сервера в ClickHouse Cloud.
+
+созданные с помощью DDL [именованные коллекции](/ru/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Обратитесь в службу поддержки to confirm availability. Именованные коллекции defined in файлах конфигурации aren&#39;t available because users can&#39;t modify server файлы конфигурации in ClickHouse Cloud.
 
 <div id="operational-defaults-and-considerations">
   ## Значения по умолчанию и особенности эксплуатации

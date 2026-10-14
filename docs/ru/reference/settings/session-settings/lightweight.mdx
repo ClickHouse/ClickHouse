@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="lightweight_delete_mode">
-  ## lightweight_delete_mode
-</div>
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -29,9 +27,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `lightweight_update` - выполнить легковесное обновление, если это возможно; в противном случае выполнить `ALTER UPDATE`.
 * `lightweight_update_force` - выполнить легковесное обновление, если это возможно; в противном случае сгенерировать исключение.
 
-<div id="lightweight_deletes_sync">
-  ## lightweight_deletes_sync
-</div>
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -41,12 +37,12 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Возможные значения:
 
-| Значение | Описание                                                                                                                                                                                      |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`      | Мутации выполняются асинхронно.                                                                                                                                                               |
-| `1`      | Запрос ожидает завершения легковесных удалений на текущем сервере.                                                                                                                            |
-| `2`      | Запрос ожидает завершения легковесных удалений на всех репликах (если они есть).                                                                                                              |
-| `3`      | Запрос ожидает завершения легковесных удалений только на активных репликах. Поддерживается только для `SharedMergeTree`. Для `ReplicatedMergeTree` работает так же, как `mutations_sync = 2`. |
+| Значение | Описание                                                                                                               |
+| -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `0`      | Мутации выполняются асинхронно.                                                                                        |
+| `1`      | Запрос ожидает завершения легковесных удалений на текущем сервере.                                                     |
+| `2`      | Запрос ожидает завершения легковесных удалений на всех репликах (если они есть).                                       |
+| `3`      | Запрос ожидает только активные реплики. Неактивные реплики применяют легковесные удаления, когда становятся активными. |
 
 **См. также**
 

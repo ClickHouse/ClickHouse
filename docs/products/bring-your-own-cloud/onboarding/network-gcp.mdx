@@ -2,7 +2,7 @@
 title: 'BYOC GCP private networking setup'
 slug: /cloud/reference/byoc/onboarding/network-gcp
 sidebarTitle: 'GCP private networking setup'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'vpc peering', 'gcp', 'private service connect']
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'vpc peering', 'gcp', 'private service connect', 'PSC subnet', 'BYO-VPC']
 description: 'Set up VPC Peering or Private Service Connect for BYOC on GCP'
 doc_type: 'reference'
 ---
@@ -71,6 +71,27 @@ GCP PSC (Private Service Connect) provides a secure and private connection to yo
 
 <Note>
 Make sure the **private load balancer** is turned on as a prerequisite.
+</Note>
+
+If your infrastructure runs in a [customer-managed VPC (BYO-VPC)](/cloud/reference/byoc/onboarding/customization-gcp), create a Private Service Connect NAT subnet before enabling private link. ClickHouse Cloud can't create subnets in your VPC, and GCP allocates a NAT IP address from this subnet for each incoming PSC connection.
+
+Create the subnet in the same VPC and region as the infrastructure, in the host project if you use a Shared VPC:
+
+```bash
+gcloud compute networks subnets create <psc-subnet-name> \
+    --project=<vpc-project-id> \
+    --network=<vpc-network-name> \
+    --region=<region> \
+    --range=<cidr-range> \
+    --purpose=PRIVATE_SERVICE_CONNECT
+```
+
+The `<cidr-range>` must be at least a `/29`; see GCP's [NAT subnet sizing guidance](https://cloud.google.com/vpc/docs/about-vpc-hosted-services#subnet-capacity) when sizing for your expected number of connections.
+
+When you enable private link on a BYO-VPC infrastructure, the console asks for the **PSC subnet name**. Enter the name of the subnet you created.
+
+<Note>
+The PSC subnet can't change while private link is enabled. To switch to a different subnet, disable private link and enable it again with the new name.
 </Note>
 
 <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink Enable" />

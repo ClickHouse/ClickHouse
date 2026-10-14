@@ -26,15 +26,6 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^  parts:|^With |^\s+status:|^\s+reason:'
 
 
-echo "--- old analyzer: empirical estimate works ---"
-$CLICKHOUSE_CLIENT -n -q "
-    DROP TABLE IF EXISTS t_hypo_old;
-    CREATE TABLE t_hypo_old (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
-    INSERT INTO t_hypo_old SELECT number, number FROM numbers(10000);
-    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_old (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT * FROM t_hypo_old WHERE b = 42 SETTINGS enable_analyzer = 0;
-" | grep -E '^With |^\s+status:|^\s+source:'
-
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_proj;
     DROP TABLE IF EXISTS t_hypo_empty;

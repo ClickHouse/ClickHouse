@@ -72,7 +72,7 @@ Nous vous recommandons de consulter la documentation ClickHouse suivante avant d
 * [Comment ClickHouse stocke les données : parts et granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) - Guide plus avancé expliquant comment les données sont structurées et interrogées dans ClickHouse, avec une présentation détaillée des granules et des clés primaires.
 * [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree)- Guide de référence avancé sur MergeTree, utile pour les commandes et les détails internes.
 
-Toutes les optimisations décrites ci-dessous peuvent être appliquées directement aux tables sous-jacentes avec le langage ClickHouse SQL standard, soit via la [console SQL de ClickHouse Cloud](/fr/integrations/connectors/sql-clients/sql-console), soit via le [client ClickHouse](/fr/concepts/features/interfaces/cli).
+Toutes les optimisations décrites ci-dessous peuvent être appliquées directement aux tables sous-jacentes avec le langage ClickHouse SQL standard, soit via la [console SQL de ClickHouse Cloud](/fr/integrations/connectors/sql-clients/sql-console), soit via le [client ClickHouse](/fr/concepts/features/interfaces/client).
 
 <div id="materialize-frequently-queried-attributes">
   ## Optimisation 1. Matérialiser les attributs fréquemment interrogés
@@ -596,15 +596,33 @@ font référence à `LogAttributes['key']` bénéficient de cette accélération
 La réécriture de requête nécessite une version de ClickHouse qui prend en charge
 le pruning direct par token sur des colonnes de tableau indexées en texte. ClickStack détecte la
 version du serveur connecté (`SELECT version()`, mise en cache par connexion) et n&#39;émet
-la forme réécrite que lorsque le serveur atteint ou dépasse le seuil. Les
-serveurs plus anciens reviennent automatiquement à la forme d&#39;indice Map d&#39;origine.
+la forme réécrite que lorsque le serveur atteint le seuil correspondant
+indiqué ci-dessous. Les versions plus anciennes reviennent automatiquement à la forme d&#39;indice Map d&#39;origine.
 
-| Branche ClickHouse | Version minimale    |
-| ------------------ | ------------------- |
-| 26.2               | 26.2.19.43          |
-| 26.3               | 26.3.12.3           |
-| 26.4               | 26.4.3.37           |
-| 26.5+              | Toutes les versions |
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    Les builds ClickHouse Cloud et les releases open source utilisent des lignes de version indépendantes.
+    Utilisez les versions minimales de Cloud ci-dessous.
+
+    | Branche ClickHouse | Version minimale de Cloud |
+    | ------------------ | ------------------------- |
+    | 26.2               | `26.2.1.307`              |
+    | 26.3               | `26.3.0.0`                |
+    | 26.4               | `26.4.1.1740`             |
+    | 26.5+              | Toutes les versions       |
+
+    La version minimale `26.3.0.0` est la version de base de la branche ; tous les builds `26.3` sont donc pris en charge.
+  </Tab>
+
+  <Tab title="Open source">
+    | Branche ClickHouse | Version minimale open source |
+    | ------------------ | ---------------------------- |
+    | 26.2               | `26.2.19.43`                 |
+    | 26.3               | `26.3.12.3`                  |
+    | 26.4               | `26.4.3.37`                  |
+    | 26.5+              | Toutes les versions          |
+  </Tab>
+</Tabs>
 
 <Info>
   **Pourquoi ALIAS, et non MATERIALIZED**

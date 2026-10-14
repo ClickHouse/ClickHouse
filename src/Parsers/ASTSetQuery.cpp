@@ -3,22 +3,16 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFromJSON.h>
 
-#include <Databases/DataLake/DataLakeConstants.h>
+#include <Core/SettingsSecrets.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/SecretArguments.h>
 #include <Parsers/formatSettingName.h>
-#include <Storages/Kafka/Kafka_fwd.h>
-#include <Storages/NATS/NATS_fwd.h>
-#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
-#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
-#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
-#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
-static constexpr std::string_view format_avro_schema_registry_url = "format_avro_schema_registry_url";
 
 namespace DB
 {
@@ -27,6 +21,23 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+/// Renders a change whose value is a secret as the SQL text that hides it, and returns `nullopt` for
+/// a change that carries none. `formatImpl` and `hasSecretParts` both go through this, so they cannot
+/// disagree on what is secret.
+std::optional<String> renderSecretChangeValue(const SettingChange & change)
+{
+    /// The queue engines also take every setting, a format setting included, with the legacy `s3queue_` prefix.
+    static constexpr std::string_view s3queue_prefix = "s3queue_";
+    const String setting_name = change.name.starts_with(s3queue_prefix) ? change.name.substr(s3queue_prefix.size()) : change.name;
+
+    if (auto masked = CoreSettings::renderSecretSettingValue(setting_name, change.value))
+        return masked;
+
+    /// The table and database engine settings, declared by each engine in its `SecretArgumentsSpec`.
+    return getSecretArgumentsFinder().renderSecretSetting(setting_name, change.value);
+}
+
 
 class FieldVisitorToSetting : public StaticVisitor<String>
 {
@@ -73,8 +84,24 @@ public:
 };
 
 
-void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
+void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// None of the members below is a child, so the default implementation does not see them.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 112, "If members were added to ASTSetQuery, hash them here unless they are purely cosmetic.");
+
+    /// Not cosmetic: `formatImpl` prints the `SET` keyword only for a standalone query.
+    hash_state.update(is_standalone);
+
+    /// The three lists hold different kinds of entry, and a query parameter is stored with its
+    /// `param_` prefix removed. Their sizes are hashed so that one list cannot be mistaken for
+    /// another, and every value is length-prefixed so that neighbouring entries cannot be read as
+    /// one: `param_x = 0` must not stream the same bytes as `x` set to a UInt64 that happens to
+    /// spell the character `0`.
+    hash_state.update(changes.size());
+    hash_state.update(default_settings.size());
+    hash_state.update(query_parameters.size());
+
     for (const auto & change : changes)
     {
         hash_state.update(change.name.size());
@@ -82,9 +109,27 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
         hash_state.update(change.shorthand);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
+
+    /// `x = DEFAULT` resets a setting and is not recorded in `changes`.
+    for (const auto & setting_name : default_settings)
+    {
+        hash_state.update(setting_name.size());
+        hash_state.update(setting_name);
+    }
+
+    for (const auto & [name, value] : query_parameters)
+    {
+        hash_state.update(name.size());
+        hash_state.update(name);
+        hash_state.update(value.size());
+        hash_state.update(value);
+    }
+
+    /// This override used to skip the base implementation, leaving out the node's own identity.
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const
+void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (is_standalone)
         ostr << "SET ";
@@ -111,80 +156,13 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
         if (change.shorthand && change.value == Field(true))
             continue;
 
-        auto format_if_secret = [&]() -> bool
-        {
-            CustomType custom;
-            if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            {
-                ostr << " = " << custom.toString(/* show_secrets */false);
-                return true;
-            }
+        std::optional<String> masked;
+        if (!format.show_secrets)
+            masked = renderSecretChangeValue(change);
 
-            if (change.name == format_avro_schema_registry_url)
-            {
-                /// Matches `hasSecretParts`: a non-String value cannot embed a URI password, and the
-                /// AST JSON path can carry any `Field` type here.
-                String uri_string;
-                if (!change.value.tryGet<String>(uri_string) || !maskURIPassword(&uri_string))
-                    return false;
-
-                ostr << " = '" << uri_string << "'";
-                return true;
-            }
-
-            /// Intrinsically secret regardless of engine: DataLakeStorageSettings is shared by the
-            /// DataLakeCatalog database engine and the Iceberg*/Paimon*/DeltaLake* table engines.
-            /// Matches the ungated check in hasSecretParts().
-            if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-            {
-                ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                return true;
-            }
-            if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << RabbitMQ::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (NATS::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (Kafka::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << Kafka::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (AzureQueue::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << AzureQueue::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (S3Queue::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << S3Queue::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        if (format.show_secrets || !format_if_secret())
+        if (masked)
+            ostr << " = " << *masked;
+        else
             ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
     }
 
@@ -354,37 +332,8 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
 
 bool ASTSetQuery::hasSecretParts() const
 {
-    for (const auto & change : changes)
-    {
-        CustomType custom;
-        if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            return true;
-        if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-
-        if (change.name == format_avro_schema_registry_url)
-        {
-            /// Secret only if there is actually a password embedded in it. The value need not be a
-            /// String: a valueless `SETTINGS format_avro_schema_registry_url` carries Bool `true`,
-            /// and the AST JSON path can carry any `Field` type. This runs before any settings
-            /// validation - `executeQueryImpl` masks the query for logging first - so demanding a
-            /// String here would report `BAD_GET` instead of the setting's own `TYPE_MISMATCH`.
-            String uri_string;
-            if (change.value.tryGet<String>(uri_string) && maskURIPassword(&uri_string))
-                return true;
-        }
-    }
-    return false;
+    return std::any_of(
+        changes.begin(), changes.end(), [](const auto & change) { return renderSecretChangeValue(change).has_value(); });
 }
 
 }

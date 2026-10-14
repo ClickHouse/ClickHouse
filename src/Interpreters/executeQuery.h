@@ -23,6 +23,7 @@ class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
+struct Settings;
 
 struct QueryResultDetails
 {
@@ -120,11 +121,16 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_inte
 /// If the callback throws, its exception is rethrown after io.onFinish().
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback);
 
-/// Throws if a SETTINGS clause anywhere in the query changes the `allow_experimental_analyzer`
-/// (`enable_analyzer`) setting to a value different from `context_value`: the analyzer cannot be
-/// switched in the middle of query processing. Applied to every query at the start of processing;
-/// also used for generated queries that bypass `executeQuery`, such as in the `eval` table function.
-void validateAnalyzerSettings(ASTPtr ast, bool context_value);
+/// Rewrites `allow_experimental_analyzer = 0` (`enable_analyzer = 0`) to `1` in every SETTINGS clause
+/// and `SET` query anywhere in the AST. The setting is obsolete and frozen at `1`; a disabling value is
+/// accepted for backward compatibility and replaced by the only supported one, so that it is neither
+/// applied to a subquery context nor stored in the definition of a view. Applied to every query at the
+/// start of processing; also used for generated queries that bypass `executeQuery`, such as in the
+/// `eval` table function.
+void normalizeAnalyzerSettings(ASTPtr ast);
+
+/// Parses the query only to produce text with secrets hidden; returns an empty string if the query does not parse.
+String formatQueryForLogging(const String & query, const Settings & settings);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(

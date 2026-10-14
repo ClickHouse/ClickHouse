@@ -1,0 +1,4 @@
+<clickhouse>
+    <mysql_port>9001</mysql_port>
+    <postgresql_port>5433</postgresql_port>
+</clickhouse>
