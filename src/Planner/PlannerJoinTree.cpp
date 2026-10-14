@@ -6,7 +6,6 @@
 #include <Core/Settings.h>
 
 #include <Core/ParallelReplicasMode.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 
@@ -121,6 +120,7 @@
 #include <Common/logger_useful.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <ranges>
 
@@ -158,8 +158,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool optimize_trivial_count_with_sparsity_filter;
@@ -662,7 +660,7 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    if (query_context->isParallelReplicasEnabled() && settings[Setting::max_parallel_replicas] > 1)
     {
         /// Imagine the situation when we have a query with parallel replicas and
         /// this code executed on the remote server.
@@ -788,7 +786,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
 
     /// Disable parallel replicas: otherwise each remote shard would independently
     /// rewrite and the final result would be multiplied by the replica count.
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    if (query_context->isParallelReplicasEnabled() && settings[Setting::max_parallel_replicas] > 1)
     {
         if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
             settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
@@ -1074,6 +1072,11 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     const ContextPtr & query_context)
 {
+    /// A synthetic data source is not a table of the catalog, and it may borrow the name of one,
+    /// so the filters keyed by that name must not be applied to it.
+    if (storage->isSyntheticDataSource())
+        return;
+
     const auto & settings = query_context->getSettingsRef();
 
     auto const & additional_filters = settings[Setting::additional_table_filters].value;
@@ -1950,10 +1953,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, is_single_table_expression, query_context, table_expression_query_info);
         }
 
-        const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
-            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
-        size_t max_streams = memory_limited_max_threads;
-        size_t max_threads_execute_query = memory_limited_max_threads;
+        const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+        size_t max_streams = effective_max_threads;
+        size_t max_threads_execute_query = effective_max_threads;
 
         /**
          * To simultaneously query more remote servers when async_socket_for_remote is off
@@ -2267,7 +2269,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                 }
 
-                if (query_context->canUseParallelReplicasCustomKey())
+                /// A synthetic data source is not split between the replicas: a replica which
+                /// calculates a projection must see all the rows of the block it is given.
+                if (query_context->canUseParallelReplicasCustomKey() && !storage->isSyntheticDataSource())
                 {
                     if (settings[Setting::parallel_replicas_count] > 1)
                     {
