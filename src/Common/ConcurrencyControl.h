@@ -110,8 +110,6 @@ public:
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
 
-        bool hasGrantedSlots() const override { return granted.load(std::memory_order_relaxed) > 0; }
-
         // Raise or lower the allocation's slot ceiling (see ISlotAllocation::setMax).
         void setMax(SlotCount new_max) override;
 
@@ -219,11 +217,6 @@ public:
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
 
-        bool hasGrantedSlots() const override
-        {
-            return noncompeting.load(std::memory_order_relaxed) > 0 || granted.load(std::memory_order_relaxed) > 0;
-        }
-
         // Raise or lower the allocation's slot ceiling (see ISlotAllocation::setMax).
         void setMax(SlotCount new_max) override;
 
@@ -315,11 +308,6 @@ public:
 
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
-
-        bool hasGrantedSlots() const override
-        {
-            return noncompeting.load(std::memory_order_relaxed) > 0 || granted.load(std::memory_order_relaxed) > 0;
-        }
 
         // Raise or lower the allocation's slot ceiling (see ISlotAllocation::setMax).
         void setMax(SlotCount new_max) override;

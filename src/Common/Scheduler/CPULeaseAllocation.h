@@ -174,8 +174,6 @@ public:
     /// It never blocks or waits for slots. Should be used to acquire the master thread for a query.
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
-    bool hasGrantedSlots() const override { return acquirable.load(std::memory_order_relaxed); }
-
     /// Raise (or lower) the soft ceiling on the number of slots to request from the scheduler.
     /// Growing the ceiling kicks off scheduling for the additional capacity (one request at a
     /// time, the natural grant chain fills the rest). Shrinking does not reclaim already-

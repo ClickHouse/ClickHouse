@@ -78,11 +78,6 @@ public:
     // Blocks until there is a granted slot to acquire
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
-    bool hasGrantedSlots() const override
-    {
-        return noncompeting.load(std::memory_order_relaxed) > 0 || granted.load(std::memory_order_relaxed) > 0;
-    }
-
     // For tests only. Returns true iff resource request is enqueued in the scheduler
     bool isRequesting() const override;
 

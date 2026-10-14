@@ -437,7 +437,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                             cpu_slots->setMax(target);
                         }
                     }
-                    spawnThreads({});
+                    slots_outstanding.store(spawnThreads({}), std::memory_order_relaxed);
                 }
                 catch (...)
                 {
@@ -449,17 +449,20 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 break;
             }
 
-            if (pool && cpu_slots->hasGrantedSlots() && tasks.hasTasksForNewThread() && spawn_mutex.try_lock())
+            if (pool && slots_outstanding.load(std::memory_order_relaxed))
             {
-                try
+                if (auto slot = cpu_slots->tryAcquire())
                 {
-                    std::lock_guard lock(spawn_mutex, std::adopt_lock);
-                    spawnThreads({});
-                }
-                catch (...)
-                {
-                    cancel(IProcessor::CancelReason::Exception);
-                    throw;
+                    try
+                    {
+                        std::lock_guard lock(spawn_mutex);
+                        slots_outstanding.store(spawnThreads(std::move(slot)), std::memory_order_relaxed);
+                    }
+                    catch (...)
+                    {
+                        cancel(IProcessor::CancelReason::Exception);
+                        throw;
+                    }
                 }
             }
 
@@ -665,14 +668,14 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
 }
 
-void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
+bool PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 {
     while (cpu_slots)
     {
         if (!slot)
             slot = cpu_slots->tryAcquire();
         if (!slot)
-            return;
+            return true;
 
         size_t thread_num = slot->slot_id;
 
@@ -701,8 +704,9 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         slot.reset(); // To make tidy build happy (bugprone-use-after-move)
 
         if (remaining_capacity == 0)
-            return;
+            return false;
     }
+    return false;
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
@@ -716,7 +720,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
             {
                 std::lock_guard lock(spawn_mutex);
                 // Start at least one thread, could block to acquire the first CPU slot
-                spawnThreads(cpu_slots->acquire());
+                slots_outstanding.store(spawnThreads(cpu_slots->acquire()), std::memory_order_relaxed);
             }
             tasks.processAsyncTasks();
             pool->wait();

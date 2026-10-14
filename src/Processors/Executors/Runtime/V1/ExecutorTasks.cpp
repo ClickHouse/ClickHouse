@@ -218,12 +218,6 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
     return 0; // No new tasks -- no need for new threads
 }
 
-bool ExecutorTasks::hasTasksForNewThread()
-{
-    std::lock_guard lock(mutex);
-    return threads_queue.empty() && (!task_queue.empty() || !fast_task_queue.empty());
-}
-
 void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler)
 {
     num_threads = num_threads_;
