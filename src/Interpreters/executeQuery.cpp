@@ -57,6 +57,8 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -89,6 +91,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageSet.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -2770,6 +2773,13 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     if (!ast)
         return;
 
+    /// `CREATE FUNCTION` and `CREATE`/`ALTER ROW POLICY` only validate and store their expressions
+    /// (the function body, the row filter) — the statement itself never reads the tables those name.
+    /// Collecting them would reattach a table the statement does not use and, since such a statement
+    /// checks its own access only in its interpreter, after the reattach.
+    if (ast->as<ASTCreateSQLFunctionQuery>() || ast->as<ASTCreateRowPolicyQuery>())
+        return;
+
     if (const auto * select = ast->as<ASTSelectQuery>())
     {
         /// This select starts a new alias scope: its own aliases are added to those inherited from the
@@ -3290,6 +3300,17 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             || !table->storesDataOnDisk()
             || context->getActionLocksManager()->hasAny(table))
             continue;
+
+        /// `Set` and `Join` report `storesDataOnDisk` unconditionally, but with `persistent = 0` they do not
+        /// write the inserted rows to disk, so `ATTACH` would restore an empty set or hash table.
+        {
+            StoragePtr storage = table;
+            if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+                storage = proxy->getNested();
+            if (const auto * set_or_join = dynamic_cast<const StorageSetOrJoinBase *>(storage.get());
+                set_or_join && !set_or_join->isPersistent())
+                continue;
+        }
 
         /// A kind-specific metadata probe (`EXISTS VIEW`, `SHOW CREATE DICTIONARY`, ...) on a name that
         /// resolved to a different object kind never touches this table's storage — the outer query

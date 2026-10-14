@@ -30,9 +30,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ttl"
 # A table with an Outdated part that no Active part covers is skipped: the `DETACH`/`ATTACH` cycle
 # reloads the parts from disk and would resurrect that part as Active. `ALTER TABLE ... DETACH PART`
 # leaves such a part behind — the empty covering part it creates is immediately dropped from the
-# working set but stays on disk until the asynchronous cleanup.
+# working set but stays on disk until the asynchronous cleanup. Merges are disabled so that the two
+# parts are not merged before `DETACH PART` names the first one.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_uncovered"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_uncovered (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_uncovered (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_uncovered VALUES (1)"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_uncovered VALUES (2)"
 check_if_detached "SELECT * FROM t_reattach_uncovered FORMAT Null" "t_reattach_uncovered"
@@ -222,3 +223,29 @@ fi
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${REMOTE_USER}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${REMOTE_DB}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_remote_under"
+
+# `Set` and `Join` with `persistent = 0` do not write the inserted rows to disk, so a `DETACH`/`ATTACH`
+# cycle would lose them: the hook must skip them, and the rows must survive the query. The persistent
+# default is reattached like any other table.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t_reattach_join_np;
+    DROP TABLE IF EXISTS t_reattach_set_np;
+    DROP TABLE IF EXISTS t_reattach_join_p;
+    CREATE TABLE t_reattach_join_np (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS persistent = 0;
+    INSERT INTO t_reattach_join_np VALUES (1, 42);
+    CREATE TABLE t_reattach_set_np (k UInt64) ENGINE = Set SETTINGS persistent = 0;
+    INSERT INTO t_reattach_set_np VALUES (1);
+    CREATE TABLE t_reattach_join_p (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);
+    INSERT INTO t_reattach_join_p VALUES (1, 42);
+"
+check_if_not_detached "SELECT * FROM t_reattach_join_np FORMAT Null" "t_reattach_join_np"
+check_if_not_detached "SELECT 1 IN t_reattach_set_np FORMAT Null" "t_reattach_set_np"
+check_if_detached "SELECT * FROM t_reattach_join_p FORMAT Null" "t_reattach_join_p"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM t_reattach_join_np"
+${CLICKHOUSE_CLIENT} -q "SELECT 1 IN t_reattach_set_np"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM t_reattach_join_p"
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE t_reattach_join_np;
+    DROP TABLE t_reattach_set_np;
+    DROP TABLE t_reattach_join_p;
+"
