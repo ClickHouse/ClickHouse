@@ -622,16 +622,19 @@ include(cmake/dbms_glob_sources.cmake)
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
 #
+# The code is compiled with -fPIE, not -fPIC: it is linked into an executable, where the symbol
+# interposition that -fPIC pays for (GOT loads, TLS descriptors) never happens.
+#
 # This has to be configured before the first targets are created, in particular before
 # cmake/linux/default_libs.cmake adds the C++ runtime libraries from contrib: CMake copies the flags
 # into each subdirectory when add_subdirectory is called, so targets created earlier would silently
-# compile without -fPIC. That only breaks with compilers that do not default to PIE
+# compile without -fPIE. That only breaks with compilers that do not default to PIE
 # (clang with CLANG_DEFAULT_PIE_ON_LINUX=OFF, as configured by some distributions), because then the
 # non-relocatable objects of those libraries cannot be linked into the PIE executable.
 if (ARCH_AMD64 OR ARCH_AARCH64)
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 
-    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
+    # -fPIE only makes the code relocatable; whether the executable itself is position independent is
     # the compiler driver's default unless the linker is asked explicitly, so ask it.
     # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
     # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
@@ -642,8 +645,8 @@ endif()
 
 if (ENABLE_POSITION_INDEPENDENT_BINARY)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
 endif()
 
 add_library(global-group INTERFACE)
@@ -657,13 +660,6 @@ elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
 elseif (OS_WASM)
     include(cmake/wasm/default_libs.cmake)
-endif ()
-
-if (ENABLE_POSITION_INDEPENDENT_BINARY)
-    # The C++ runtime libraries are linked only into executables, so they are compiled as PIE (the last flag wins).
-    foreach (runtime_target cxx cxxabi unwind)
-        target_compile_options (${runtime_target} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:-fPIE>)
-    endforeach ()
 endif ()
 
 link_libraries(global-group)
