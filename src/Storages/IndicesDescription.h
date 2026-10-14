@@ -51,6 +51,11 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity{};
 
+    /// Condition of a partial index (`WHERE` clause): only rows satisfying it are indexed. Null if absent.
+    ASTPtr where_ast;
+    ExpressionActionsPtr where_expression;
+    String where_column_name;
+
     /// True if index is created implicitly using settings:
     /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns
     bool is_implicitly_created{};
@@ -84,6 +89,9 @@ struct IndexDescription
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
     bool isSimpleSingleColumnIndex() const;
+
+    /// Columns needed to calculate the index, including the ones of its `WHERE` condition.
+    Names getRequiredColumns() const;
 };
 
 /// All secondary indices in storage

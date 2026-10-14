@@ -673,7 +673,7 @@ static void splitAndModifyMutationCommands(
                     {
                         if (index.name == command.index_name)
                         {
-                            auto required_columns = index.expression->getRequiredColumns();
+                            auto required_columns = index.getRequiredColumns();
                             for (const auto & column : required_columns)
                             {
                                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
@@ -817,7 +817,7 @@ static void splitAndModifyMutationCommands(
             if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
                 continue;
 
-            for (const auto & column : index.expression->getRequiredColumns())
+            for (const auto & column : index.getRequiredColumns())
             {
                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
                 if (column_in_storage && !part_columns.has(*column_in_storage))
@@ -4419,6 +4419,8 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 ASTPtr expr_list = index.expression_list_ast->clone();
                 for (const auto & expr : expr_list->children)
                     indices_recalc_expr_list->children.push_back(expr->clone());
+                if (index.where_ast)
+                    indices_recalc_expr_list->children.push_back(index.where_ast->clone());
             }
         }
     }

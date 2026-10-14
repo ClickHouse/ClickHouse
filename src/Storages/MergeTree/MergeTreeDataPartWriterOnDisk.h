@@ -88,6 +88,8 @@ protected:
     /// and one skip index granule can contain multiple "normal" marks. So skip indices serialization
     /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
+    /// Writes the current granule of the i-th skip index.
+    void serializeSkipIndexGranule(size_t i);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
@@ -140,6 +142,9 @@ protected:
 
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
+    /// Current granule of each partial index (with `WHERE`): whether it is open and whether it got any rows.
+    std::vector<bool> partial_index_granule_open;
+    std::vector<bool> partial_index_granule_has_rows;
 
     /// Optional packed archive shared by all skip-index substreams that stayed under the
     /// per-substream size threshold. Substreams that exceeded it were spilled to standalone

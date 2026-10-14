@@ -477,7 +477,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     for (const auto & index : getSecondaryIndices())
     {
         if (has_dependency(index.name, ColumnDependency::SKIP_INDEX))
-            add_dependent_columns(index.expression->getRequiredColumns(), indices_columns);
+            add_dependent_columns(index.getRequiredColumns(), indices_columns);
     }
 
     for (const auto & projection : getProjections())

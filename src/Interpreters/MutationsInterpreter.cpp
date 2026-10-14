@@ -1335,6 +1335,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto query = (*it).expression_list_ast->clone();
+                if ((*it).where_ast)
+                    query->children.push_back((*it).where_ast->clone());
                 auto syntax_result = TreeRewriter(context).analyze(query, index_all_columns);
                 const auto required_columns = syntax_result->requiredSourceColumns();
                 for (const auto & column : required_columns)
@@ -1571,7 +1573,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
-                        const auto & index_cols = index.expression->getRequiredColumns();
+                        const auto & index_cols = index.getRequiredColumns();
                         if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
                         {
                             switch (index_mode)
@@ -1609,7 +1611,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// availability depend on whether the value had physical files.
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
-                const auto & index_cols = index.expression->getRequiredColumns();
+                const auto & index_cols = index.getRequiredColumns();
                 if (std::find(index_cols.begin(), index_cols.end(), command.column_name) == index_cols.end())
                     continue;
 
@@ -1756,7 +1758,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             continue;
         }
 
-        const auto & index_cols = index.expression->getRequiredColumns();
+        const auto & index_cols = index.getRequiredColumns();
         bool changed = std::any_of(
             index_cols.begin(),
             index_cols.end(),

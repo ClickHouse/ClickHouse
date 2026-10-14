@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -14,6 +15,9 @@
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
+#include <unordered_set>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -23,6 +27,8 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -59,11 +65,15 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
+    , where_ast(other.where_ast ? other.where_ast->clone() : nullptr)
+    , where_column_name(other.where_column_name)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
 {
     if (other.expression)
         expression = other.expression->clone();
+    if (other.where_expression)
+        where_expression = other.where_expression->clone();
 }
 
 
@@ -99,6 +109,18 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     data_types = other.data_types;
     sample_block = other.sample_block;
     granularity = other.granularity;
+
+    if (other.where_ast)
+        where_ast = other.where_ast->clone();
+    else
+        where_ast.reset();
+
+    if (other.where_expression)
+        where_expression = other.where_expression->clone();
+    else
+        where_expression.reset();
+
+    where_column_name = other.where_column_name;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
     return *this;
@@ -155,6 +177,35 @@ IndexDescription IndexDescription::getIndexFromAST(
 
     if (result.column_names.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
+
+    if (auto where = index_definition->getWhere())
+    {
+        /// Text and vector similarity indexes address rows by their position in the index granule.
+        static const std::unordered_set<String> types_with_where = {"minmax", "set", "bloom_filter", "tokenbf_v1", "ngrambf_v1", "sparse_grams"};
+        if (!types_with_where.contains(result.type))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Skip index of type '{}' does not support WHERE", result.type);
+
+        checkExpressionDoesntContainSubqueries(*where);
+
+        using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+        result.where_ast = where->clone();
+        /// Without its own alias the condition column is named the same in the combined index expressions.
+        if (auto * where_with_alias = dynamic_cast<ASTWithAlias *>(result.where_ast.get()))
+            where_with_alias->setAlias("");
+        ReplaceAliasToExprVisitor::Data data{columns, {}};
+        ReplaceAliasToExprVisitor{data}.visit(result.where_ast);
+
+        ASTPtr where_ast = result.where_ast->clone();
+        auto syntax = TreeRewriter(context).analyze(
+            where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+        result.where_expression = ExpressionAnalyzer(where_ast, syntax, context).getActions(true);
+
+        const auto & where_column = result.where_expression->getSampleBlock().getByPosition(0);
+        if (!isUInt8(removeNullable(removeLowCardinality(where_column.type))))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "WHERE condition of skip index '{}' must be of type UInt8 or Bool, got {}", result.name, where_column.type->getName());
+        result.where_column_name = where_column.name;
+    }
 
     if (index_type && index_type->arguments)
     {
@@ -223,6 +274,18 @@ FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
 bool IndexDescription::isSimpleSingleColumnIndex() const
 {
     return expression_list_ast && expression_list_ast->children.size() == 1 && expression_list_ast->children[0]->as<ASTIdentifier>();
+}
+
+Names IndexDescription::getRequiredColumns() const
+{
+    Names result = expression->getRequiredColumns();
+    if (where_expression)
+    {
+        for (const auto & column : where_expression->getRequiredColumns())
+            if (std::find(result.begin(), result.end(), column) == result.end())
+                result.push_back(column);
+    }
+    return result;
 }
 
 
@@ -300,8 +363,12 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
 {
     ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & index : *this)
+    {
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
+        if (index.where_ast)
+            combined_expr_list->children.push_back(index.where_ast->clone());
+    }
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);

@@ -1724,6 +1724,11 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         for (size_t i = 0; i < index_exprs.size(); ++i)
             if (!use_index_expression || use_index_expression(index->index.column_names[i]))
                 combined_expr_list->children.push_back(index_exprs[i]->clone());
+
+        /// The writer reads the condition of a partial index from the block, next to the index columns.
+        const auto & where_ast = index->index.where_ast;
+        if (where_ast && (!use_index_expression || use_index_expression(index->index.where_column_name)))
+            combined_expr_list->children.push_back(where_ast->clone());
     }
 
     if (!key && combined_expr_list->children.empty())
@@ -6204,7 +6209,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         if (!index.isImplicitlyCreated())
         {
-            for (const String & col : index.expression->getRequiredColumns())
+            for (const String & col : index.getRequiredColumns())
                 columns_in_explicit_indices.emplace(col, index.name);
         }
     }
@@ -6590,7 +6595,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const auto & new_indices = new_metadata.getSecondaryIndices();
             for (const auto & old_index : old_metadata.getSecondaryIndices())
             {
-                if (!expression_uses_changed_subcolumn(old_index.expression))
+                /// A partial index's WHERE fixes the indexed row set; a change that flips it leaves a stale index.
+                if (!expression_uses_changed_subcolumn(old_index.expression)
+                    && !(old_index.where_expression && expression_uses_changed_subcolumn(old_index.where_expression)))
                     continue;
 
                 /// Dropped in the same ALTER: nothing to corrupt.

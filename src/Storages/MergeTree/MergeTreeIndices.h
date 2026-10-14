@@ -358,7 +358,7 @@ struct IMergeTreeIndex
     virtual bool isInert() const { return false; }
 
     Names getColumnsRequiredForIndexCalc() const;
-    const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
+    NamesAndTypesList getColumnsWithTypesRequiredForIndexCalc() const;
 
     NameSet getColumnsShadowingMapSubcolumns() const;
 

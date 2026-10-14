@@ -61,7 +61,7 @@ bool leadingParenClosesEarly(std::string_view str)
 }
 
 
-ASTIndexDeclaration::ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_)
+ASTIndexDeclaration::ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_, ASTPtr where)
     : name(name_)
 {
     if (!expression)
@@ -73,6 +73,13 @@ ASTIndexDeclaration::ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const S
         if (!dynamic_cast<const ASTFunction *>(type.get()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
         children.push_back(type);
+    }
+
+    if (where)
+    {
+        if (!type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration with WHERE must have a type");
+        children.push_back(where);
     }
 }
 
@@ -86,7 +93,11 @@ ASTPtr ASTIndexDeclaration::clone() const
     if (type)
         type = type->clone();
 
-    auto res = make_intrusive<ASTIndexDeclaration>(expr, type, name);
+    ASTPtr where = getWhere();
+    if (where)
+        where = where->clone();
+
+    auto res = make_intrusive<ASTIndexDeclaration>(expr, type, name, where);
     res->granularity = granularity;
     /// The flag selects the `CREATE INDEX` formatting; a clone must keep it so it formats identically
     /// to the original (otherwise `clone()->format()` diverges from `format()`).
@@ -124,6 +135,13 @@ boost::intrusive_ptr<ASTFunction> ASTIndexDeclaration::getType() const
     return func_ast;
 }
 
+ASTPtr ASTIndexDeclaration::getWhere() const
+{
+    if (children.size() <= where_idx)
+        return nullptr;
+    return children[where_idx];
+}
+
 void ASTIndexDeclaration::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "IndexDeclaration");
@@ -133,6 +151,7 @@ void ASTIndexDeclaration::writeJSON(WriteBuffer & out) const
         w.writeBool("part_of_create_index_query", true);
     w.writeChild("expression", getExpression());
     w.writeChild("index_type", getType());
+    w.writeChild("where", getWhere());
 }
 
 void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
@@ -154,6 +173,13 @@ void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
         if (!dynamic_cast<const ASTFunction *>(index_type.get()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration type must be a function during AST JSON deserialization");
         children.push_back(index_type);
+    }
+
+    if (auto where = r.readExpressionChild("where"))
+    {
+        if (!index_type)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration with WHERE must have a type during AST JSON deserialization");
+        children.push_back(where);
     }
 }
 
@@ -218,6 +244,15 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 
     /// Always emit so AST round-trip is invariant for every granularity (zero included).
     ostr << " GRANULARITY " << granularity;
+
+    if (auto where = getWhere())
+    {
+        auto where_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(where.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            where_frame.need_parens = true;
+        ostr << " WHERE ";
+        where->format(ostr, s, state, where_frame);
+    }
 }
 
 UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)

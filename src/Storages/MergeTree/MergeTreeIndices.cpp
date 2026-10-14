@@ -83,12 +83,19 @@ String IMergeTreeIndex::getFileName() const
 
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 {
-    return index.expression->getRequiredColumns();
+    return index.getRequiredColumns();
 }
 
-const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
+NamesAndTypesList IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
 {
-    return index.expression->getRequiredColumnsWithTypes();
+    auto columns = index.expression->getRequiredColumnsWithTypes();
+    if (index.where_expression)
+    {
+        for (const auto & column : index.where_expression->getRequiredColumnsWithTypes())
+            if (!columns.contains(column.name))
+                columns.push_back(column);
+    }
+    return columns;
 }
 
 NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
@@ -562,6 +569,26 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
         for (const auto & elem : index.sample_block)
             if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
+
+        if (index.where_expression)
+        {
+            if (index.where_expression->hasArrayJoin())
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "WHERE of secondary index '{}' cannot contain array joins", index.name);
+
+            try
+            {
+                index.where_expression->assertDeterministic();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("for WHERE of secondary index '{}'", index.name));
+                throw;
+            }
+
+            const auto & where_column = index.where_expression->getSampleBlock().getByPosition(0).column;
+            if (where_column && isColumnConst(*where_column))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "WHERE of secondary index '{}' cannot be constant", index.name);
+        }
     }
 
     auto it = validators.find(index.type);
