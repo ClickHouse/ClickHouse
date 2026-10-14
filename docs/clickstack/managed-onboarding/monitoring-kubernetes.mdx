@@ -1,9 +1,10 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'Monitoring Kubernetes with Managed ClickStack'
-description: 'Collect logs, infrastructure metrics, and events from a Kubernetes cluster into Managed ClickStack'
+title: 'Monitoring Kubernetes with ClickHouse Observability'
+sidebarTitle: 'Monitor Kubernetes'
+description: 'Collect logs, infrastructure metrics, and events from a Kubernetes cluster into ClickHouse Observability on the self-configured experience'
 doc_type: 'guide'
-keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
+keywords: ['clickstack', 'kubernetes', 'k8s', 'self-configured', 'ClickHouse Observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -11,7 +12,16 @@ hide_advert: true
 
 import { Image } from "/snippets/components/Image.jsx";
 
-This guide walks you through collecting logs, infrastructure metrics, and Kubernetes events from a cluster into Managed ClickStack, then viewing them in the built-in Kubernetes dashboard.
+<Note>
+**You are on the self-configured route**
+
+You have chosen to set up ClickHouse Observability yourself, using the [self-configured experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
+
+Prefer a serverless experience where ClickHouse handles ingestion, schemas, and compute for you? Use the default ClickHouse Observability experience and follow [Monitoring Kubernetes with OpenTelemetry](/clickstack/managed-onboarding/monitoring-kubernetes-serverless) instead.
+</Note>
+
+
+This guide walks you through collecting logs, infrastructure metrics, and Kubernetes events from a cluster into ClickHouse Observability, then viewing them in the built-in Kubernetes dashboard.
 
 The pattern is the standard OpenTelemetry one: two collectors deployed via the [OpenTelemetry Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), each forwarding to your ClickStack gateway collector via OTLP. A **DaemonSet** runs on every node to collect container logs and kubelet metrics. A **Deployment** with a single replica collects Kubernetes events and cluster-wide metrics. For background on the gateway role, see [Collector roles](/clickstack/ingesting-data/collector#collector-roles).
 

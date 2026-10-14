@@ -1,9 +1,10 @@
 ---
 slug: /use-cases/observability/clickstack/instrument-application
-title: 'Instrument an application in 5 mins with Managed ClickStack'
-description: 'Instrument a Node.js application with OpenTelemetry and send its logs, metrics, and traces into Managed ClickStack'
+title: 'Instrument an application in 5 minutes with ClickHouse Observability'
+sidebarTitle: 'Instrument an application'
+description: 'Instrument a Node.js application with OpenTelemetry and send its logs, metrics, and traces through your own collector into ClickHouse Observability on the self-configured experience'
 doc_type: 'guide'
-keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed', 'observability', 'sdk', 'nodejs', 'agent']
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'self-configured', 'ClickHouse Observability', 'sdk', 'nodejs', 'agent']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -11,7 +12,16 @@ hide_advert: true
 
 import InstrumentApplication from '/snippets/clickstack/_instrument_application.mdx';
 
-This guide walks you through instrumenting a small Node.js application with OpenTelemetry and sending its logs, metrics, traces, and session replays into Managed ClickStack. The backend is instrumented with no changes to the application source code.
+<Note>
+**You are on the self-configured route**
+
+You have chosen to set up ClickHouse Observability yourself, using the [self-configured experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
+
+Prefer a serverless experience where ClickHouse handles ingestion, schemas, and compute for you? Use the default ClickHouse Observability experience and follow [Instrument your application with OpenTelemetry](/clickstack/managed-onboarding/instrument-application-serverless) instead.
+</Note>
+
+
+This guide walks you through instrumenting a small Node.js application with OpenTelemetry and sending its logs, metrics, traces, and session replays into ClickHouse Observability through the collector you run. The backend is instrumented with no changes to the application source code.
 
 The [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) is a Node.js app that queries the HackerNews dataset hosted in the public ClickHouse demo. Every chart, table, and search box is backed by a real ClickHouse query, so every interaction produces a trace whose main span is the HTTPS call from the backend out to ClickHouse.
 
