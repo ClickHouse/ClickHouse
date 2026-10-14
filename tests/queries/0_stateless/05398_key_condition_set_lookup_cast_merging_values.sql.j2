@@ -69,9 +69,17 @@ CREATE TABLE t_array (a Array(Decimal64(4))) ENGINE = MergeTree ORDER BY a SETTI
 INSERT INTO t_array SELECT [d] FROM t_decimal;
 {{ check('t_array', "a IN (SELECT [toDecimal64(1.23, 2)])") }}
 
--- An `Enum` converts into a number exactly, and a number renders into a `String` exactly.
+-- An `Enum` converts exactly into an integer that holds all its values, and a number renders into a `String`
+-- exactly.
 CREATE TABLE t_enum (e Enum8('a' = 1, 'b' = 2, 'c' = 3, 'd' = 4, 'e' = 5, 'f' = 6, 'g' = 7, 'h' = 8)) ENGINE = MergeTree ORDER BY e
 SETTINGS index_granularity = 1;
 INSERT INTO t_enum SELECT number + 1 FROM numbers(8);
 {{ check('t_enum', "e IN (SELECT toUInt8(2))") }}
 {{ check('t_bool', "x IN (SELECT '5')") }}
+
+-- A number converts into an `Enum` by `static_cast`, so the element of value 1 matches 257 and every other
+-- `1 + 256 * n`.
+CREATE TABLE t_wide (x Int64) ENGINE = MergeTree ORDER BY x
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_wide SELECT 1 + 256 * number FROM numbers(8);
+{{ check('t_wide', "x IN (SELECT e FROM t_enum WHERE e = 'a')") }}

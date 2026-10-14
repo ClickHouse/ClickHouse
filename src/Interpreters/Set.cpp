@@ -440,11 +440,7 @@ bool Set::lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTy
     if (isDynamic(to) || isVariant(to) || isObject(to))
         return false;
 
-    const auto is_integer_or_enum = [](const DataTypePtr & type)
-    {
-        return isInteger(type) || WhichDataType(*type).isEnum();
-    };
-    if ((is_integer_or_enum(from) && is_integer_or_enum(to)) || (isNativeNumber(from) && isNativeNumber(to)))
+    if ((isInteger(from) && isInteger(to)) || (isNativeNumber(from) && isNativeNumber(to)))
         return false;
 
     return !conversionPreservesOrder(*from, *to) && !canBeSafelyCast(from, to);

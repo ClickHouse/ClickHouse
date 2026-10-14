@@ -14,3 +14,4 @@ t IN (SELECT CAST((7, 3), 'Tuple(b UInt8, a UInt8)'))	1	1	2
 a IN (SELECT [toDecimal64(1.23, 2)])	1	1	8
 e IN (SELECT toUInt8(2))	1	1	2
 x IN (SELECT '5')	1	1	2
+x IN (SELECT e FROM t_enum WHERE e = 'a')	8	8	8

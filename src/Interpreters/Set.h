@@ -160,11 +160,14 @@ public:
     /// - a `Tuple`, `Array` or `Map` whose elements keep apart. As `CAST` does, two named tuples with a
     ///   common name pair their elements by name, and a source element without a counterpart is dropped;
     /// - any other value cast into a `Dynamic`, `Variant` or `JSON`, which keeps it under its own type;
-    /// - integers, native floats and `Enum` values, which the cast converts exactly or not at all: a scalar
-    ///   that does not fit becomes NULL, and one inside a composite throws. `Bool` is the exception: it takes
-    ///   every nonzero number to `true`;
+    /// - integers and native floats, which the cast converts exactly or not at all: a scalar that does not
+    ///   fit becomes NULL, and one inside a composite throws. `Bool` is the exception: it takes every nonzero
+    ///   number to `true`. An `Enum` is not such a number. `execute` builds its cast without the query
+    ///   settings, so `check_conversion_from_numbers_to_enum` does not apply, and a value converts into or
+    ///   out of an `Enum` by `static_cast`. An `Enum8` element of value 1 thus matches both 1 and 257 of an
+    ///   `Int64` column;
     /// - a conversion that keeps values apart whatever the cast (`conversionPreservesOrder`,
-    ///   `canBeSafelyCast`).
+    ///   `canBeSafelyCast`), such as an `Enum` into an integer that holds all its values.
     /// Any other cast answers true. Many of them truncate: `ts IN (SELECT toDate(...))` matches every time of
     /// a day, and a `DateTime64(6)` value matches the `DateTime64(3)` element it truncates to.
     static bool lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTypePtr & set_type);
