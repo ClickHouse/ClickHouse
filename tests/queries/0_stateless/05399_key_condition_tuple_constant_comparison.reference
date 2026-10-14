@@ -1,8 +1,0 @@
-t = (toFixedString('abc', 8), toUInt8(1))	4	4	8
-t != (toFixedString('abc', 8), toUInt8(1))	4	4	8
-t = (toFixedString('abc', 8), toUInt8(1))	4	4	8
-t = ((toFixedString('abc', 8), toUInt8(1)), toUInt8(2))	4	4	8
-a = [toFixedString('abc', 8)]	2	2	3
-t = CAST((1, 2), 'Tuple(a UInt8, b UInt8)')	4	4	4
-t = CAST(((1, 2), 3), 'Tuple(Tuple(a UInt8, b UInt8), UInt8)')	4	4	4
-a = CAST([(1, 2)], 'Array(Tuple(a UInt8, b UInt8))')	4	4	5

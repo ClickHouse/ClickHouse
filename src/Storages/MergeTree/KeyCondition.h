@@ -621,9 +621,8 @@ private:
         DataTypePtr key_column_type;
         Field value;
         DataTypePtr type;
-        /// Whether `FixedString` padding lets the value stand for a family of values of the key column, which
-        /// no atom over the value describes (see `constantLosesFixedStringPadding`).
-        bool loses_fixed_string_padding = false;
+        /// Whether the value is a `FixedString`, including an active `Variant` or `Dynamic` member.
+        bool is_fixed_string = false;
         /// True when this transformation requires a relaxed atom. Otherwise, subsequent type
         /// conversion and atom construction still determine whether the atom is exact.
         bool requires_relaxed_atom = true;
@@ -645,10 +644,9 @@ private:
         std::optional<size_t> argument_num_of_space_filling_curve;
         Field const_value;
         DataTypePtr const_type;
-        /// Whether `FixedString` padding lets the constant stand for a family of values of the key
-        /// expression, which no atom over the constant describes (see `constantLosesFixedStringPadding`).
+        /// Whether the constant is a `FixedString`, including an active `Variant` or `Dynamic` member.
         /// This describes the candidate's value after any transform, not the predicate's original value.
-        bool const_loses_fixed_string_padding = false;
+        bool const_is_fixed_string = false;
         /// This flag is true when the transformed constant already describes a superset of matching values.
         /// `tryBuildComparisonAtom` can further relax the constraint during type conversion; exact
         /// conversions preserve this initial precision.

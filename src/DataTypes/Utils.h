@@ -39,12 +39,4 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
   */
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
-/** Returns `type` with the element names removed from every tuple that `Nullable`, `Array`, `Map` and `Tuple`
-  * lead to. The layout of a column of `type` stays the same, and `CAST` from the result pairs the elements of
-  * a tuple by position, as the comparison of two tuples does, while `CAST` from a named tuple into another
-  * one pairs them by name. A tuple inside a `Variant` keeps its names: the variant orders its alternatives by
-  * their type names, so renaming one could change the layout.
-  */
-DataTypePtr removeTupleElementNames(const DataTypePtr & type);
-
 }

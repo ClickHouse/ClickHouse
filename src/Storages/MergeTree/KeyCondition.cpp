@@ -2279,66 +2279,34 @@ static bool isFixedStringConstant(
     return false;
 }
 
-/// Whether comparing `value`, the single row of `column` of `type`, with a value of `compared_type` lets the
-/// constant stand for a family of values through `FixedString` padding. A `FixedString(N)` constant is stored
-/// as a `String` `Field` of exactly N bytes, right-padded with '\0', and is compared zero-padded, so it can
-/// match a whole family of values rather than a single one: `toFixedString('abc', 257) = p` is true for a
-/// `String` `p` equal to `'abc'`, `'abc\0'`, `'abc\0\0'`, ... Even a constant that fills its declared width
-/// matches longer `String` values ending in zero bytes.
+/// A `FixedString(N)` constant is stored as a `String` `Field` of exactly N bytes, right-padded with
+/// '\0', and is compared zero-padded, so it can match a whole family of values rather than a single
+/// one: `toFixedString('abc', 257) = p` is true for a `String` `p` equal
+/// to `'abc'`, `'abc\0'`, `'abc\0\0'`, ...
 ///
-/// Converting such a constant into a `String` (or narrower `FixedString`) type drops the padding: the
-/// converted constant stands for one member of the family only, so an atom over it prunes granules holding
-/// the other members. That is a different match set rather than a superset, so the `relaxed` flag cannot
-/// repair it and the candidate has to be dropped. A `FixedString` at least as wide as the constant keeps the
-/// padded bytes, so the conversion stays sound there. `Variant` and `Dynamic` keep the comparison semantics
-/// of their active member type.
-///
-/// Tuple equality compares the elements of the two sides by position, each with its own semantics, so a
-/// padded element widens the match of the whole tuple at any depth:
-/// `(('abc\0', 1), 2) = ((toFixedString('abc', 8), 1), 2)` holds. `Array` and `Map` equality compares in the
-/// common supertype of both sides, which drops the padding just as converting the constant does
-/// (`['abc\0'] = [toFixedString('abc', 8)]` does not hold), so the check does not look inside them.
-static bool constantLosesFixedStringPadding(
-    const Field & value, const IColumn & column, const DataTypePtr & type, const DataTypePtr & compared_type)
+/// Pushing such a constant through a key expression first converts it into the expression input
+/// type, and a `String` (or narrower `FixedString`) input drops the padding: the transformed
+/// constant then stands for one member of the family only, so the resulting atom prunes granules
+/// holding the other members. That is a different match set rather than a superset, so the `relaxed`
+/// flag cannot repair it and the candidate has to be dropped. An input `FixedString` at least as
+/// wide as the constant keeps the padded bytes, so the transform stays sound there.
+/// Even a constant that fills its declared width can match longer `String` values ending in zero
+/// bytes. `Variant` and `Dynamic` retain the comparison semantics of their active member type.
+static bool fixedStringConstantLosesPadding(
+    const Field & value, bool is_fixed_string, const DataTypePtr & key_expression_input_type)
 {
-    const DataTypePtr unwrapped_type = removeLowCardinalityAndNullable(type);
-    const DataTypePtr unwrapped_compared_type = removeLowCardinalityAndNullable(compared_type);
-
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(unwrapped_type.get());
-    const auto * compared_tuple_type = typeid_cast<const DataTypeTuple *>(unwrapped_compared_type.get());
-    if (tuple_type && compared_tuple_type && value.getType() == Field::Types::Tuple)
-    {
-        /// A comparison of tuples of different sizes does not get past query analysis.
-        const auto & element_types = tuple_type->getElements();
-        const auto & compared_element_types = compared_tuple_type->getElements();
-        chassert(element_types.size() == compared_element_types.size());
-
-        const IColumn * tuple_column = &column;
-        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(tuple_column))
-            tuple_column = &nullable_column->getNestedColumn();
-        const auto & element_columns = assert_cast<const ColumnTuple &>(*tuple_column).getColumns();
-        const auto & elements = value.safeGet<Tuple>();
-
-        for (size_t i = 0; i < element_types.size(); ++i)
-            if (constantLosesFixedStringPadding(
-                    elements[i], *element_columns[i], element_types[i], compared_element_types[i]))
-                return true;
-
-        return false;
-    }
-
-    if (!isFixedStringConstant(value, column, type))
+    if (!is_fixed_string)
         return false;
 
     const auto & constant_bytes = value.safeGet<String>();
+    const auto input_type = removeLowCardinalityAndNullable(key_expression_input_type);
 
     /// Even without stored padding, a string input can match additional trailing zero bytes.
-    if (!isStringOrFixedString(unwrapped_compared_type)
-        && (constant_bytes.empty() || constant_bytes.back() != '\0'))
+    if (!isStringOrFixedString(input_type) && (constant_bytes.empty() || constant_bytes.back() != '\0'))
         return false;
 
-    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(unwrapped_compared_type.get());
-    return !fixed_string_type || fixed_string_type->getN() < constant_bytes.size();
+    const auto * fixed_string_input_type = typeid_cast<const DataTypeFixedString *>(input_type.get());
+    return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
 /// Over a type of consecutive integers (the integers, `Date`, `Date32` and `DateTime`), the strict
@@ -2422,6 +2390,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     result.reserve(chains.size());
 
     const Field value = (*constant.column)[0];
+    const bool is_fixed_string = isFixedStringConstant(value, *constant.column, constant.type);
 
     for (const auto & chain : chains)
     {
@@ -2430,7 +2399,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         {
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
-            if (constantLosesFixedStringPadding(value, *constant.column, constant.type, transform_input_type)
+            if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
             makeStrictBoundInclusive(func_name, transform_input_type, normalized_constant);
@@ -2444,15 +2413,15 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             continue;
 
         Field transformed_value = (*transformed_const_column)[0];
-        const bool transformed_loses_padding = constantLosesFixedStringPadding(
-            transformed_value, *transformed_const_column, transformed_const_type, chain.key_column_type);
+        const bool transformed_is_fixed_string
+            = isFixedStringConstant(transformed_value, *transformed_const_column, transformed_const_type);
         result.push_back(
             TransformedConstant{
                 .key_column_num = chain.key_column_num,
                 .key_column_type = chain.key_column_type,
                 .value = std::move(transformed_value),
                 .type = transformed_const_type,
-                .loses_fixed_string_padding = transformed_loses_padding,
+                .is_fixed_string = transformed_is_fixed_string,
                 .requires_relaxed_atom = true,
                 .reverse_comparison = !chain.chain_is_positive});
     }
@@ -3177,19 +3146,17 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     result.reserve(dags.size());
 
     const Field value = (*constant.column)[0];
+    const bool is_fixed_string = isFixedStringConstant(value, *constant.column, constant.type);
 
     for (auto & candidate : dags)
     {
         /// The DAG casts the constant to its input type.
-        if (constantLosesFixedStringPadding(value, *constant.column, constant.type, candidate.dag.input_type))
+        if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type))
             continue;
 
         auto normalized_constant = constant;
         if (!tryNormalizeTextConstantForZonelessDateTimeInput(candidate.dag.input_type, normalized_constant))
             continue;
-
-        /// Tuple comparison pairs elements by position, so the constant converts by position too.
-        normalized_constant.type = removeTupleElementNames(normalized_constant.type);
 
         /// Conversion to the transform's input type can turn a `String` constant into a NaN.
         /// Inspect that value before applying the key expression.
@@ -3245,14 +3212,14 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         if (transformed_value.isNaN())
             continue;
 
-        const bool transformed_loses_padding = constantLosesFixedStringPadding(
-            transformed_value, *transformed_const_column, transformed_const_type, candidate.key_column_type);
+        const bool transformed_is_fixed_string
+            = isFixedStringConstant(transformed_value, *transformed_const_column, transformed_const_type);
         result.push_back(TransformedConstant{
             .key_column_num = candidate.key_column_num,
             .key_column_type = std::move(candidate.key_column_type),
             .value = std::move(transformed_value),
             .type = transformed_const_type,
-            .loses_fixed_string_padding = transformed_loses_padding,
+            .is_fixed_string = transformed_is_fixed_string,
             .requires_relaxed_atom = requires_relaxed_atom});
     }
 
@@ -5636,7 +5603,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             .argument_num_of_space_filling_curve = std::nullopt,
             .const_value = transformed.value,
             .const_type = transformed.type,
-            .const_loses_fixed_string_padding = transformed.loses_fixed_string_padding,
+            .const_is_fixed_string = transformed.is_fixed_string,
             .is_relaxed = is_relaxed,
             .reverse_comparison = transformed.reverse_comparison});
     };
@@ -5689,8 +5656,6 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
 
             /// The predicate expression itself reaches a key column. The discovered chain stays
             /// in the atom, and the constant is used as-is.
-            const bool const_loses_padding = constantLosesFixedStringPadding(
-                const_value, *constant_for_transform.column, const_type, key_expr_type);
             candidates.push_back(ComparisonAtomCandidate{
                 .key_column_num = key_column_num,
                 .key_expr_type = std::move(key_expr_type),
@@ -5698,7 +5663,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 .argument_num_of_space_filling_curve = argument_num_of_space_filling_curve,
                 .const_value = const_value,
                 .const_type = const_type,
-                .const_loses_fixed_string_padding = const_loses_padding,
+                .const_is_fixed_string = isFixedStringConstant(const_value, *constant_for_transform.column, const_type),
                 .is_relaxed = false});
         }
     }
@@ -5903,11 +5868,14 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
                 /// `Nullable` intact. Stripping both wrappers when identifying the constant's type prevents
                 /// these forms from escaping the guard (the key type has both wrappers stripped above).
-                /// The candidate answers this when it is built, against the type of its key expression
-                /// (see `constantLosesFixedStringPadding`), resolving any active `Variant` or `Dynamic`
-                /// member while its source column is still available.
-                if (candidate.const_loses_fixed_string_padding)
-                    return std::nullopt;
+                /// The candidate identifies its own constant's type, resolving any active `Variant`
+                /// or `Dynamic` member while its source column is still available.
+                if (candidate.const_is_fixed_string && isStringOrFixedString(key_expr_type_not_null))
+                {
+                    const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
+                    if (!fixed_key || fixed_key->getN() < const_value.safeGet<String>().size())
+                        return std::nullopt;
+                }
 
                 /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
                 /// constant instead of throwing, so the index must do the same instead of converting.
@@ -5932,11 +5900,6 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
         }
         else
         {
-            /// A tuple constant compares element by element, so a `FixedString` inside it can stand for a
-            /// family of values as a top-level one does above (see `constantLosesFixedStringPadding`).
-            if (candidate.const_loses_fixed_string_padding)
-                return std::nullopt;
-
             /// Convert a float constant to exact integer bounds: no integer exists between
             /// `floor(x)` and `ceil(x)` for non-integer `x`. For example, `id < 100000.5`
             /// is equivalent to `id <= 100000` for an integer key column.
