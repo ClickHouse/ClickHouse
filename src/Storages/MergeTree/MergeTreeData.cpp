@@ -6189,6 +6189,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         {
             if (command.type != AlterCommand::ADD_INDEX)
                 continue;
+            /// The index may be absent from the new metadata, e.g. `ADD INDEX i ..., DROP INDEX i` in one query.
+            if (!new_metadata.secondary_indices.has(command.index_name))
+                continue;
             const auto & added = new_metadata.secondary_indices.getByName(command.index_name);
             if (added.where_expression)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

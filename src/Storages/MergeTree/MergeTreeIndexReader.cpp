@@ -179,7 +179,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         /// A granule of a partial index starts with a flag; a granule without indexed rows is returned as null.
         if (index->index.where_expression)
         {
-            UInt8 has_rows;
+            UInt8 has_rows = 0;
             readBinary(has_rows, *streams.at(MergeTreeIndexSubstream::Type::Regular)->getDataBuffer());
             if (!has_rows)
             {

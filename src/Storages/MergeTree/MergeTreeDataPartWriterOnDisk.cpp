@@ -395,7 +395,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                     {
                         const auto & column = skip_indexes_block.getByName(name);
                         auto filtered = column.column->cut(granule.start_row, granule.rows_to_write)->filter(granule_filter, passed);
-                        filtered_block.insert({std::move(filtered), column.type, name});
+                        filtered_block.insert({filtered, column.type, name});
                     }
                     size_t filtered_pos = 0;
                     skip_indices_aggregators[i]->update(filtered_block, &filtered_pos, passed);
