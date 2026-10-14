@@ -72,26 +72,23 @@ public:
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
-    /// What an earlier execution found by matching the replicas plan into the single-replica plan, so that a later
-    /// one can decide without building a replicas plan to match against: the key of the single-replica plan's
-    /// boundary - the node matched to the top of the replicas plan - and the read below it that the replicas
-    /// coordinate. Only the replicas plan can tell which read that is, so it is remembered by the name the analyzer
-    /// gave its table expression, together with the table, the way the reads of the two plans are paired.
-    struct RememberedBoundary
+    /// The keys of the single-replica plan's boundary - the node matched to the top of the replicas plan - and of
+    /// the read below it that parallel replicas coordinate, both found by an earlier execution, so that a later one
+    /// can find its statistics without building a replicas plan to match against.
+    struct Boundary
     {
         UInt64 boundary_hash = 0;
-        String coordinated_read_table_expression;
-        String coordinated_read_table;
+        UInt64 coordinated_read_hash = 0;
     };
 
     /// `root_key` combines the single-replica plan's root hash with the settings that can move the boundary
     /// without changing that plan.
-    std::optional<RememberedBoundary> getBoundary(UInt64 root_key) const;
+    std::optional<Boundary> getBoundary(UInt64 root_key) const;
 
-    void setBoundary(UInt64 root_key, RememberedBoundary boundary);
+    void setBoundary(UInt64 root_key, Boundary boundary);
 
 private:
-    using BoundaryCache = DB::CacheBase<UInt64, RememberedBoundary>;
+    using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
 
     CachePtr stats_cache;
     std::shared_ptr<BoundaryCache> boundary_cache;

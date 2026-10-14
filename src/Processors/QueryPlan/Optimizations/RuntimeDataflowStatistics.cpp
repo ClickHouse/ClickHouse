@@ -36,16 +36,16 @@ std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCa
     return std::nullopt;
 }
 
-std::optional<RuntimeDataflowStatisticsCache::RememberedBoundary> RuntimeDataflowStatisticsCache::getBoundary(UInt64 root_key) const
+std::optional<RuntimeDataflowStatisticsCache::Boundary> RuntimeDataflowStatisticsCache::getBoundary(UInt64 root_key) const
 {
     if (const auto boundary = boundary_cache->get(root_key))
         return *boundary;
     return std::nullopt;
 }
 
-void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, RememberedBoundary boundary)
+void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, Boundary boundary)
 {
-    boundary_cache->set(root_key, std::make_shared<RememberedBoundary>(std::move(boundary)));
+    boundary_cache->set(root_key, std::make_shared<Boundary>(boundary));
 }
 
 void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
