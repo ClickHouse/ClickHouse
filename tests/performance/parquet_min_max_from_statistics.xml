@@ -1,0 +1,24 @@
+<!--
+    `min` / `max` of columns of a Parquet file with 200 row groups, without GROUP BY or filters: they can be
+    answered from the column chunk statistics instead of reading the data.
+-->
+<test>
+    <fill_query>
+        INSERT INTO FUNCTION file('test_parquet_min_max_from_statistics.parquet', Parquet)
+        SELECT
+            toInt64(sipHash64(number)) AS i,
+            toUInt32(number) AS u,
+            toDate('2020-01-01') + number % 3000 AS d,
+            addMilliseconds(toDateTime64('2020-01-01 00:00:00', 3, 'UTC'), number) AS t,
+            toDecimal64(number, 3) AS dec,
+            if(number % 10 = 0, NULL, toInt64(number)) AS n
+        FROM numbers(20000000)
+        SETTINGS output_format_parquet_row_group_size = 100000, max_block_size = 100000, max_threads = 1, max_insert_threads = 1,
+            engine_file_truncate_on_insert = 1
+    </fill_query>
+
+    <query>SELECT min(i), max(i) FROM file('test_parquet_min_max_from_statistics.parquet') FORMAT Null</query>
+    <query>SELECT max(u) FROM file('test_parquet_min_max_from_statistics.parquet') FORMAT Null</query>
+    <query>SELECT min(d), max(d), min(t), max(t) FROM file('test_parquet_min_max_from_statistics.parquet') FORMAT Null</query>
+    <query>SELECT min(dec), max(dec), min(n), max(n) FROM file('test_parquet_min_max_from_statistics.parquet') FORMAT Null</query>
+</test>

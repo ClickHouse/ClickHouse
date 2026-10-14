@@ -1,0 +1,41 @@
+<test>
+    <!-- `hasAny` on integer arrays, and `hasAll` on `Nullable` integer arrays with nulls. `has_all.xml` covers `hasAll` without nulls. -->
+    <substitutions>
+        <substitution>
+            <name>array_type</name>
+            <values>
+                <value>Int8</value>
+                <value>Int16</value>
+                <value>Int32</value>
+                <value>Int64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- The values of `subset` are never in `set` (0 to 99 against 100 to 199, also for Int8), so `hasAny` reads all of `set`. -->
+    <create_query>CREATE TABLE missing_small_{array_type} (set Array({array_type}), subset Array({array_type})) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE missing_medium_{array_type} (set Array({array_type}), subset Array({array_type})) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- One value in 64 is null, and `subset` is drawn from `set`, so all values are found. -->
+    <create_query>CREATE TABLE nullable_found_small_{array_type} (set Array(Nullable({array_type})), subset Array(Nullable({array_type}))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE nullable_found_medium_{array_type} (set Array(Nullable({array_type})), subset Array(Nullable({array_type}))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- Nulls only in `set`, and the values of `subset` are never in `set`. -->
+    <create_query>CREATE TABLE nullable_missing_medium_{array_type} (set Array(Nullable({array_type})), subset Array(Nullable({array_type}))) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO missing_small_{array_type} SELECT arrayMap(v -> v % 100, groupArraySample(5000)(rand64(1))), arrayMap(v -> 100 + v % 100, groupArraySample(500)(rand64(2))) FROM numbers(10000000) GROUP BY number % 5000</fill_query>
+    <fill_query>INSERT INTO missing_medium_{array_type} SELECT arrayMap(v -> v % 100, groupArraySample(5000)(rand64(1))), arrayMap(v -> 100 + v % 100, groupArraySample(5000)(rand64(2))) FROM numbers(6250000) GROUP BY number % 12500</fill_query>
+    <fill_query>INSERT INTO nullable_found_small_{array_type} SELECT arrayMap(v -> if(v % 64 = 0, NULL, v), groupArraySample(5000)(rand64(1))), arrayMap(v -> if(v % 64 = 0, NULL, v), groupArraySample(500)(rand64(1))) FROM numbers(10000000) GROUP BY number % 5000</fill_query>
+    <fill_query>INSERT INTO nullable_found_medium_{array_type} SELECT arrayMap(v -> if(v % 64 = 0, NULL, v), groupArraySample(5000)(rand64(1))), arrayMap(v -> if(v % 64 = 0, NULL, v), groupArraySample(5000)(rand64(1))) FROM numbers(12500000) GROUP BY number % 25000</fill_query>
+    <fill_query>INSERT INTO nullable_missing_medium_{array_type} SELECT arrayMap(v -> if(v % 64 = 0, NULL, v % 100), groupArraySample(5000)(rand64(1))), arrayMap(v -> toNullable(100 + v % 100), groupArraySample(5000)(rand64(2))) FROM numbers(6250000) GROUP BY number % 12500</fill_query>
+
+    <query>SELECT hasAny(set, subset) FROM missing_small_{array_type} FORMAT Null</query>
+    <query>SELECT hasAny(set, subset) FROM missing_medium_{array_type} FORMAT Null</query>
+    <query>SELECT hasAll(set, subset) FROM nullable_found_small_{array_type} FORMAT Null</query>
+    <query>SELECT hasAll(set, subset) FROM nullable_found_medium_{array_type} FORMAT Null</query>
+    <query>SELECT hasAny(set, subset) FROM nullable_missing_medium_{array_type} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS missing_small_{array_type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS missing_medium_{array_type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_found_small_{array_type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_found_medium_{array_type}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_missing_medium_{array_type}</drop_query>
+</test>
