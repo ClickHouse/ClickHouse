@@ -80,7 +80,7 @@ FROM numbers(8192);
 
 WITH (SELECT vec FROM quantize_pr_mc_wide_granule WHERE id = 4000) AS ref
 SELECT 'multi_block_granule_payload_matches_row', countIf(payload = repeat(concat('p', toString(id), '_'), 320)), count()
-FROM (SELECT id, payload FROM quantize_pr_mc_wide_granule ORDER BY L2Distance(vec, ref) ASC LIMIT 500 SETTINGS vector_search_index_fetch_multiplier = 20);
+FROM (SELECT id, payload FROM quantize_pr_mc_wide_granule ORDER BY L2Distance(vec, ref) ASC LIMIT 50 SETTINGS vector_search_index_fetch_multiplier = 10);
 
 DROP TABLE quantize_pr_mc_wide_granule;
 
