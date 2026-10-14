@@ -974,6 +974,61 @@ def test_takeover_after_partial_snapshot_drops_stale_deleted_rows(started_cluste
     )
 
 
+def test_takeover_after_partial_snapshot_with_lost_slot_drops_stale_deleted_rows(
+    started_cluster,
+):
+    # Same as the test above, but the interrupted snapshot's replication slot has also disappeared
+    # before the retry. There is no completion marker and no slot, which looks like a first startup,
+    # yet the shared nested table still holds the rows copied by the dead worker. The replacement
+    # snapshot must be loaded into an empty table, otherwise the rows PostgreSQL deleted meanwhile
+    # survive as stale copies.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 100
+
+    wait_for_leader(instance)
+
+    instance.stop_clickhouse()
+    instance2.stop_clickhouse()
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    marker_path = KEEPER_PATH_RESOLVED + "/snapshot_completed"
+    assert zk.exists(marker_path) is not None
+    zk.delete(marker_path)
+    zk.stop()
+
+    assert replication_slot_exists()
+    pg_query(f"SELECT pg_drop_replication_slot('{SHARED_SLOT_NAME}')")
+    assert not replication_slot_exists()
+
+    pg_query("DELETE FROM test_table WHERE key >= 50")
+    pg_query("UPDATE test_table SET value = 777 WHERE key = 0")
+
+    instance.start_clickhouse()
+    instance2.start_clickhouse()
+
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 50
+    assert (
+        int(
+            instance.query(
+                "SELECT count() FROM test_database.test_table WHERE key >= 50"
+            )
+        )
+        == 0
+    )
+    assert (
+        int(instance.query("SELECT value FROM test_database.test_table WHERE key = 0"))
+        == 777
+    )
+
 def test_keeper_path_rejects_per_replica_macro(started_cluster):
     # The keeper path is both the coordination namespace and the root of the shared nested tables, so it
     # must resolve to the same value on every replica. A per-replica macro like {replica} would put each

@@ -1419,26 +1419,35 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         if (user_managed_slot)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Having replication slot `{}` from settings, but it does not exist", replication_slot);
 
-        /// A missing shared slot after a completed snapshot is not a first startup. The old slot
-        /// may have acknowledged mutations which are absent from the current PostgreSQL snapshot;
-        /// loading that snapshot on top of the replicated nested tables would preserve deleted rows.
-        /// Start from empty, exactly as the interrupted-snapshot recovery below does.
-        if (coordination_enabled && isInitialSnapshotCompleted())
+        /// In coordinated mode a missing shared slot does not prove a first startup, so the replacement
+        /// snapshot must always be loaded into empty nested tables:
+        /// - after a completed snapshot, the old slot may have acknowledged mutations which are absent
+        ///   from the current PostgreSQL snapshot;
+        /// - after an interrupted snapshot whose slot has also disappeared (no completion marker), the
+        ///   rows the previous worker already copied are still in the nested tables.
+        /// In both cases loading the new snapshot on top of the replicated nested tables would preserve
+        /// rows that PostgreSQL has deleted meanwhile: nothing in the new snapshot overrides them. Start
+        /// from empty, exactly as the interrupted-snapshot recovery below does. On a genuine first startup
+        /// the nested tables are empty or do not exist yet, which makes the truncation a no-op.
+        if (coordination_enabled)
         {
-            LOG_WARNING(log,
-                "Replication slot {} disappeared after the initial snapshot completed. Clearing the nested tables "
-                "and reloading all of them from a new snapshot",
-                replication_slot);
+            if (isInitialSnapshotCompleted())
+            {
+                LOG_WARNING(log,
+                    "Replication slot {} disappeared after the initial snapshot completed. Clearing the nested tables "
+                    "and reloading all of them from a new snapshot",
+                    replication_slot);
 
-            /// The completion marker describes the lost slot, not the replacement snapshot. Remove it
-            /// before changing the shared tables or creating the replacement slot: if this worker dies
-            /// while reloading, the next leader must enter the interrupted-snapshot recovery path instead
-            /// of resuming from the replacement slot's confirmed LSN into a partial snapshot.
-            assertReplicationLeadershipIsLive();
-            const String marker_path = coordination_keeper_path + "/snapshot_completed";
-            const auto code = coordination_zookeeper->tryRemove(marker_path);
-            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                throw zkutil::KeeperException::fromPath(code, marker_path);
+                /// The completion marker describes the lost slot, not the replacement snapshot. Remove it
+                /// before changing the shared tables or creating the replacement slot: if this worker dies
+                /// while reloading, the next leader must enter the interrupted-snapshot recovery path instead
+                /// of resuming from the replacement slot's confirmed LSN into a partial snapshot.
+                assertReplicationLeadershipIsLive();
+                const String marker_path = coordination_keeper_path + "/snapshot_completed";
+                const auto code = coordination_zookeeper->tryRemove(marker_path);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    throw zkutil::KeeperException::fromPath(code, marker_path);
+            }
 
             /// The marker deletion used the same session that owns /leader. Do not proceed if that
             /// session expired while deleting it, because another worker may already be rebuilding.
@@ -2023,9 +2032,9 @@ bool PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable()
 
 void PostgreSQLReplicationHandler::truncateNestedTables()
 {
-    /// Reached from the recovery branches of `startSynchronization` that reload the whole snapshot: the two
-    /// coordinated ones (a slot that disappeared after the initial snapshot completed, and a snapshot that a
-    /// previous active worker never finished) and the plain create-style one, which a refused partial
+    /// Reached from the branches of `startSynchronization` that reload the whole snapshot: the two
+    /// coordinated ones (a missing slot, with or without a completed initial snapshot, and an existing slot
+    /// whose snapshot a previous active worker never finished) and the plain create-style one, which a refused partial
     /// `DROP DATABASE` also routes here.
     /// In coordinated mode the nested tables were created by `ensureNestedTablesExist` and are
     /// Replicated/SharedReplacingMergeTree, so truncating them here clears the shared tree on every replica,
