@@ -352,7 +352,7 @@ void ClusterMetadataManager::initialize()
             [this] { requestSnapshotMaterialization(); });
     }
 
-    materialization_task = context->getSchedulePool().createTask(
+    materialization_task = context->getSchedulePool()->createTask(
         StorageID::createEmpty(), "ClusterMetadataMaterializer", [this] { materializationTask(); });
 
     initialized = true;

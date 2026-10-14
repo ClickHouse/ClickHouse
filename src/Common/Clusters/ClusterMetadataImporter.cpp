@@ -91,7 +91,7 @@ void ClusterMetadataImporter::startup()
     if (shutdown_called)
         return;
 
-    task = context->getSchedulePool().createTask(
+    task = context->getSchedulePool()->createTask(
         StorageID::createEmpty(), "ClusterMetadataImporter", [this] { refreshTask(); });
     task->activateAndSchedule();
 }
