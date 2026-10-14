@@ -26,7 +26,7 @@ struct ExtractNetloc
         {
             pos += 2;
         }
-        else
+        else if (pos == end || *pos != '[')
         {
             Pos scheme_end = data + std::min(size, 16UL);
             for (++pos; pos < scheme_end; ++pos)
@@ -83,7 +83,7 @@ struct ExtractNetloc
                 /// Recognize only a validated IP-literal at this exact bracket.
                 const auto host = getURLHostRFC(data, size);
                 if (!host.empty() && host.data() == pos + 1
-                    && host.size() < static_cast<size_t>(end - host.data()) && host.data()[host.size()] == ']')
+                    && host.size() < static_cast<size_t>(end - host.data()) && *host.end() == ']')
                 {
                     pos = host.data() + host.size();
                     has_ip_literal = true;
