@@ -318,6 +318,21 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
+/// True if `name` resolves to a regular function or a user-defined function that is not deterministic.
+bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr & context)
+{
+    if (const auto resolver = FunctionFactory::instance().tryGet(name, context))
+        if (!resolver->isDeterministic())
+            return true;
+    if (UserDefinedSQLFunctionFactory::instance().tryGet(name))
+        /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+        return true;
+    if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name, context))
+        if (!udf_exec->isDeterministic())
+            return true;
+    return false;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -391,18 +406,16 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
             return true;
 
         for (const auto & name : {std::cref(func->name), std::cref(stripped)})
-        {
-            if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
-                if (!resolver->isDeterministic())
-                    return true;
-            if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
-                /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+            if (namesNonDeterministicRegularFunction(name.get(), context))
                 return true;
-            if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name.get(), context))
-                if (!udf_exec->isDeterministic())
-                    return true;
-        }
     }
+
+    /// A higher-order function accepts a function by its bare name instead of a lambda, e.g.
+    /// `arrayMap(generateUUIDv7, arr)`: the name is an `ASTIdentifier`, not an `ASTFunction`.
+    /// A column with the same name as a non-deterministic function only skips one more query, which is safe.
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && !identifier->compound())
+        if (namesNonDeterministicRegularFunction(identifier->name(), context))
+            return true;
 
     for (const auto & child : ast->children)
     {
