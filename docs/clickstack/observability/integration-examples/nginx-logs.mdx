@@ -9,7 +9,7 @@ doc_type: 'guide'
 import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-Collect JSON access logs from Nginx with an OpenTelemetry collector and send them to your ClickHouse Observability service. Use the [demo dataset](#demo-dataset) to try the integration without an existing Nginx installation.
+Collect JSON access logs from Nginx with an OpenTelemetry collector and send them to ClickHouse Observability or a self-configured deployment. Use the [demo dataset](#demo-dataset) to try the integration without an existing Nginx installation.
 
 ## Prerequisites {#prerequisites}
 
@@ -19,25 +19,27 @@ Collect JSON access logs from Nginx with an OpenTelemetry collector and send the
 
 To try the integration without setting up Nginx or collecting your own logs, use the [demo dataset](#demo-dataset). It includes a standalone collector configuration for the sample data.
 
-### ClickHouse Observability connection details {#demo-connection-details}
+### Connection details {#demo-connection-details}
 
-Open your ClickHouse Observability service and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
+For a managed service, open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
 <Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
 
-Set these variables in the terminal where you will run the collector:
+For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
-export OTEL_EXPORTER_OTLP_API_KEY='YOUR_API_KEY'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
 ```
 
 Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/logs` suffix; the exporter appends the signal path.
 
-## Integration with existing Nginx {#existing-nginx}
+For self-configured deployments, use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-configured getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
 
-<Tabs>
-<Tab title="ClickHouse Observability">
+The endpoint must be reachable from the collector container. For a collector running on your Docker Desktop host, use `host.docker.internal` instead of `localhost`. On Linux, use a shared Docker network and the destination container's name, or another reachable host address.
+
+
+## Integration with existing Nginx {#existing-nginx}
 
 Run a collector on a host that can read your Nginx access logs. The collector parses the logs and forwards them to your service's OTLP HTTP endpoint.
 
@@ -113,7 +115,7 @@ exporters:
   otlp_http/observability:
     endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
     headers:
-      authorization: "Bearer ${env:OTEL_EXPORTER_OTLP_API_KEY}"
+      authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
 
 service:
   pipelines:
@@ -123,7 +125,7 @@ service:
       exporters: [otlp_http/observability]
 ```
 
-This configuration reads new JSON access-log entries, preserves their original timestamps, and sets `service.name` to `nginx`. It forwards logs to your managed OTLP HTTP endpoint using the API key for authentication. Nginx error logs require a separate parser and are not included.
+This configuration reads new JSON access-log entries, preserves their original timestamps, and sets `service.name` to `nginx`. It forwards logs to your OTLP HTTP endpoint using the authentication settings above. Nginx error logs require a separate parser and are not included.
 
 If you already run a collector, merge these components and the `logs/nginx` pipeline into its configuration.
 </Step>
@@ -137,7 +139,7 @@ From the directory containing `nginx-monitoring.yaml`, run:
 docker run --rm --name nginx-collector \
   --memory=512m \
   -e OTEL_EXPORTER_OTLP_ENDPOINT \
-  -e OTEL_EXPORTER_OTLP_API_KEY \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
   -v "$(pwd)/nginx-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
   -v /var/log/nginx:/var/log/nginx:ro \
   otel/opentelemetry-collector-contrib:0.161.0 \
@@ -148,7 +150,7 @@ The collector runs in the foreground and must have permission to read the mounte
 </Step>
 <Step title="Verify logs in ClickHouse Observability" id="verifying-logs">
 
-1. Open **Search** in your ClickHouse Observability service and select **Logs**.
+1. Open **Search** in your UI and select **Logs**.
 2. Filter for `ServiceName:nginx` and select a time range covering your requests.
 3. Expand an entry and select **Column Values** to check fields such as `request`, `request_time`, and `upstream_response_time` under `LogAttributes`.
 
@@ -158,165 +160,9 @@ The following example shows the same view using the demo dataset, with `ServiceN
 </Step>
 </Steps>
 
-</Tab>
-<Tab title="Self configured">
-
-This section covers configuring your existing Nginx installation to send logs to ClickStack by modifying the ClickStack OTel collector configuration.
-If you would like to test the integration before configuring your own existing setup, you can test with our preconfigured setup and sample data in the [following section](/clickstack/integration-examples/nginx-logs#demo-dataset).
-
-##### Prerequisites {#prerequisites-self-configured}
-- ClickStack instance running
-- Existing Nginx installation
-- Access to modify Nginx configuration files
-
-<Steps>
-<Step title="Configure Nginx log format" id="configure-nginx-self-configured">
-First, configure Nginx to output logs in JSON format for easier parsing. Add this log format definition to your nginx.conf:
-
-The `nginx.conf` file is typically located at:
-- **Linux (apt/yum)**: `/etc/nginx/nginx.conf`
-- **macOS (Homebrew)**: `/usr/local/etc/nginx/nginx.conf` or `/opt/homebrew/etc/nginx/nginx.conf`
-- **Docker**: Configuration is usually mounted as a volume
-
-Add this log format definition to the `http` block:
-
-```nginx
-http {
-    log_format json_combined escape=json
-    '{'
-      '"time_local":"$time_local",'
-      '"remote_addr":"$remote_addr",'
-      '"request_method":"$request_method",'
-      '"request_uri":"$request_uri",'
-      '"status":$status,'
-      '"body_bytes_sent":$body_bytes_sent,'
-      '"request_time":$request_time,'
-      '"upstream_response_time":"$upstream_response_time",'
-      '"http_referer":"$http_referer",'
-      '"http_user_agent":"$http_user_agent"'
-    '}';
-
-    access_log /var/log/nginx/access.log json_combined;
-    error_log /var/log/nginx/error.log warn;
-}
-```
-
-After making this change, reload Nginx.
-</Step>
-<Step title="Create custom OTel collector configuration" id="custom-otel-self-configured">
-
-ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
-
-Create a file named nginx-monitoring.yaml with the following configuration:
-
-```yaml
-receivers:
-  filelog:
-    include:
-      - /var/log/nginx/access.log
-      - /var/log/nginx/error.log
-    start_at: end
-    operators:
-      - type: json_parser
-        parse_from: body
-        parse_to: attributes
-      - type: time_parser
-        parse_from: attributes.time_local
-        layout: '%d/%b/%Y:%H:%M:%S %z'
-      - type: add
-        field: attributes.source
-        value: "nginx"
-
-service:
-  pipelines:
-    logs/nginx:
-      receivers: [filelog]
-      processors:
-        - memory_limiter
-        - transform
-        - batch
-      exporters:
-        - clickhouse
-```
-
-This configuration:
-- Reads Nginx Logs from their standard locations
-- Parses JSON log entries
-- Extracts and preserves the original log timestamps
-- Adds source: Nginx attribute for filtering in HyperDX
-- Routes logs to the ClickHouse exporter via a dedicated pipeline
-
-<Note>
-- You only define new receivers and pipelines in the custom config
-- The processors (memory_limiter, transform, batch) and exporters (clickhouse) are already defined in the base ClickStack configuration - you just reference them by name
-- The time_parser operator extracts timestamps from Nginx's time_local field to preserve original log timing
-- The pipelines route data from your receivers to the ClickHouse exporter via the existing processors
-</Note>
-</Step>
-<Step title="Configure ClickStack to load custom configuration" id="load-custom-self-configured">
-
-To enable custom collector configuration in your existing ClickStack deployment, you must:
-
-1. Mount the custom config file at /etc/otelcol-contrib/custom.config.yaml
-2. Set the environment variable CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-3. Mount your Nginx log directories so the collector can read them
-
-##### Option 1: Docker Compose {#docker-compose-self-configured}
-
-Update your ClickStack deployment configuration:
-```yaml
-services:
-  clickstack:
-    # ... existing configuration ...
-    environment:
-      - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-      # ... other environment variables ...
-    volumes:
-      - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
-      - /var/log/nginx:/var/log/nginx:ro
-      # ... other volumes ...
-```
-
-##### Option 2: Docker Run (All-in-One Image) {#all-in-one-self-configured}
-
-If using the all-in-one image with docker run:
-```bash
-docker run --name clickstack \
-  -p 8080:8080 -p 4317:4317 -p 4318:4318 \
-  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
-  -v "$(pwd)/nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
-  -v /var/log/nginx:/var/log/nginx:ro \
-  clickhouse/clickstack-all-in-one:latest
-```
-
-<Note>
-Ensure the ClickStack collector has appropriate permissions to read the nginx log files. In production, use read-only mounts (:ro) and follow the principle of least privilege.
-</Note>
-</Step>
-<Step title="Verifying Logs in HyperDX" id="verifying-logs-self-configured">
-
-Once configured, log into HyperDX and verify logs are flowing:
-
-1. Navigate to the search view
-2. Set source to Logs, and verify you see log entries with fields like request, request_time, upstream_response_time, etc.
-
-This is an example of what you should see:
-
-<Image img="/images/clickstack/nginx-logs-search-view.webp" alt="Log view"/>
-
-<Image img="/images/clickstack/log-view.webp" alt="Log view"/>
-</Step>
-</Steps>
-
-</Tab>
-</Tabs>
-
 ## Demo dataset {#demo-dataset}
 
-<Tabs>
-<Tab title="ClickHouse Observability">
-
-The sample dataset contains 14,743 JSON access-log entries with successful requests, errors, and upstream response timings. You need Docker and a ClickHouse Observability service. Set the [connection environment variables](#demo-connection-details) before starting, and keep the downloaded file and configuration in the same directory.
+The sample dataset contains 14,743 JSON access-log entries with successful requests, errors, and upstream response timings. You need Docker and a ClickHouse Observability service or self-configured deployment. Set the [connection environment variables](#demo-connection-details) before starting, and keep the downloaded file and configuration in the same directory.
 
 <Steps>
 <Step title="Download the sample dataset" id="download-sample">
@@ -330,7 +176,7 @@ curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-int
 
 <Step title="Create test collector configuration" id="test-config">
 
-Save the following complete configuration as `nginx-demo.yaml`. The collector reads the downloaded access logs and forwards them to your managed endpoint.
+Save the following complete configuration as `nginx-demo.yaml`. The collector reads the downloaded access logs and forwards them to your OTLP endpoint.
 
 ```yaml
 receivers:
@@ -373,7 +219,7 @@ exporters:
   otlp_http/observability:
     endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
     headers:
-      authorization: "Bearer ${env:OTEL_EXPORTER_OTLP_API_KEY}"
+      authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
 
 service:
   pipelines:
@@ -387,7 +233,7 @@ service:
 The demo-only `transform/demo_timestamps` processor shifts the sample's timestamps to roughly the past 24 hours, ending two minutes before ingestion, while retaining its traffic pattern. The original `time_local` attribute and log body stay unchanged. Omit this processor for your own Nginx logs so their original timestamps are preserved.
 </Note>
 
-Both examples use OpenTelemetry Collector Contrib `0.161.0`, the version used to validate these configurations.
+The standalone collector examples use OpenTelemetry Collector Contrib `0.161.0`, the version used to validate these configurations.
 </Step>
 <Step title="Run the demo collector" id="run-demo">
 
@@ -397,7 +243,7 @@ From the directory containing `access.log` and `nginx-demo.yaml`, run the OpenTe
 docker run --rm --name nginx-demo-collector \
   --memory=512m \
   -e OTEL_EXPORTER_OTLP_ENDPOINT \
-  -e OTEL_EXPORTER_OTLP_API_KEY \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
   -v "$(pwd)/nginx-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
   -v "$(pwd)/access.log:/var/log/nginx-demo/access.log:ro" \
   otel/opentelemetry-collector-contrib:0.161.0 \
@@ -410,7 +256,7 @@ Leave this terminal open while you verify ingestion. Both mounted files must be 
 
 Once the collector is running:
 
-1. Open your ClickHouse Observability service.
+1. Open your UI.
 2. Navigate to **Search**, select **Logs**, and filter for `ServiceName:nginx-demo`.
 3. Set the time range to **Last 2 days** to include the full shifted dataset.
 
@@ -421,97 +267,13 @@ Expand a log entry and select **Column Values** to inspect the parsed fields und
 </Step>
 </Steps>
 
-</Tab>
-<Tab title="Self configured">
+## Using an existing collector (optional) {#bundled-collector}
 
-For users who want to test the nginx integration before configuring their production systems, we provide a sample dataset of pre-generated nginx access logs with realistic traffic patterns.
+For a self-configured deployment, you can add the `filelog/nginx` receiver from the relevant configuration above to your existing collector. Ensure its distribution includes the filelog receiver and that it can read the Nginx log files.
 
-<Steps>
-<Step title="Download the sample dataset" id="download-sample-self-configured">
+Add `filelog/nginx` to the receivers in your existing logs pipeline, preserving its other receivers, processors, and ClickHouse exporter settings. For the demo, also add the `transform/demo_timestamps` processor definition and include it before the batch processor in that pipeline. Omit the standalone OTLP exporter configuration when your existing pipeline already exports to ClickHouse.
 
-```bash
-# Download the logs
-curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/access.log
-```
-
-The dataset includes:
-- Log entries with realistic traffic patterns
-- Various endpoints and HTTP methods
-- Mix of successful requests and errors
-- Realistic response times and byte counts
-</Step>
-<Step title="Create test collector configuration" id="test-config-self-configured">
-
-Create a file named `nginx-demo.yaml` with the following configuration:
-
-```yaml
-cat > nginx-demo.yaml << 'EOF'
-receivers:
-  filelog:
-    include:
-      - /tmp/nginx-demo/access.log
-    start_at: beginning  # Read from beginning for demo data
-    operators:
-      - type: json_parser
-        parse_from: body
-        parse_to: attributes
-      - type: time_parser
-        parse_from: attributes.time_local
-        layout: '%d/%b/%Y:%H:%M:%S %z'
-      - type: add
-        field: attributes.source
-        value: "nginx-demo"
-
-service:
-  pipelines:
-    logs/nginx-demo:
-      receivers: [filelog]
-      processors:
-        - memory_limiter
-        - transform
-        - batch
-      exporters:
-        - clickhouse
-EOF
-```
-</Step>
-<Step title="Run ClickStack with demo configuration" id="run-demo-self-configured">
-
-Run ClickStack with the demo logs and configuration:
-
-```bash
-docker run --name clickstack-demo \
-  -p 8080:8080 -p 4317:4317 -p 4318:4318 \
-  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
-  -v "$(pwd)/nginx-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
-  -v "$(pwd)/access.log:/tmp/nginx-demo/access.log:ro" \
-  clickhouse/clickstack-all-in-one:latest
-```
-</Step>
-<Step title="Verify logs in HyperDX" id="verify-demo-logs-self-configured">
-
-Once ClickStack is running:
-
-1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
-2. Navigate to the Search view and set the source to `Logs`
-3. Set the time range to **2025-10-19 11:00:00 - 2025-10-22 11:00:00**
-
-Here's what you should see in your search view:
-
-<Info>
-**Timezone Display**
-
-HyperDX displays timestamps in your browser's local timezone. The demo data spans 2025-10-20 11:00:00 - 2025-10-21 11:00:00 UTC. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
-</Info>
-
-<Image img="/images/clickstack/nginx-logs-search-view.webp" alt="Log view"/>
-
-<Image img="/images/clickstack/log-view.webp" alt="Log view"/>
-</Step>
-</Steps>
-
-</Tab>
-</Tabs>
+Mount the log file or directory at the receiver's configured path, then restart the collector using your existing deployment process. See the [self-configured setup guide](/clickstack/self-configured/getting-started/managed) for collector configuration guidance.
 
 ## Dashboards and visualization {#dashboards}
 
@@ -536,73 +298,31 @@ Import a dashboard for request counts, errors, status codes, and average upstrea
 
 Filter the dashboard to `ServiceName:nginx-demo` for the demo dataset, or `ServiceName:nginx` for your own logs. Set the time range to cover the ingested records. For the demo, select **Last 2 days**.
 
+The following dashboard shows the demo dataset:
+
 <Image img="/images/clickstack/observability-nginx-logs-dashboard.png" alt="Nginx logs dashboard in ClickHouse Observability showing requests, errors, status codes, and average upstream response time"/>
 </Step>
 </Steps>
 
 ## Troubleshooting {#troubleshooting}
 
-<Tabs>
-<Tab title="ClickHouse Observability">
 ### Collector fails to start {#troubleshooting-not-loading}
 
-Check the collector's terminal output for configuration errors. Confirm that the YAML file exists at the mounted path and that both connection environment variables are set in the terminal where you run Docker.
+Check the collector's terminal output for configuration errors. Confirm that the YAML file exists at the mounted path. If you use the OTLP exporter configuration, check that the endpoint variable and any required authentication variable are set in the terminal where you run Docker.
 
 ### No logs appearing {#no-logs}
 
-- Check the collector output for authentication or export errors. Verify the endpoint and API key against **Managed Telemetry**.
+- Check the collector output for authentication or export errors. If you use the OTLP exporter, verify the endpoint and authorization header against your [connection details](#demo-connection-details).
 - Confirm Nginx is writing JSON access logs and that the collector can read them. With `start_at: end`, generate new requests after the collector starts.
-- Check the selected **Logs** source, service-name filter, and time range. For the demo, confirm `transform/demo_timestamps` is included in the pipeline and select **Last 2 days**.
-</Tab>
-<Tab title="Self configured">
+- Check the selected **Logs** source and service-name filter: `ServiceName:nginx-demo` for the demo dataset, or `ServiceName:nginx` for your own logs.
+- Set the time range to cover the logs. For the demo, confirm `transform/demo_timestamps` is included in the pipeline and select **Last 2 days**.
 
-Replace `CONTAINER_NAME` with the name of your collector container.
+For your own Nginx logs, check the file on the host and inspect the collector container's mounts. Confirm that the destination path matches the receiver configuration. Replace `CONTAINER_NAME` with your collector container's name, and adjust the host path if needed:
 
-### Custom config not loading {#troubleshooting-not-loading-self-configured}
-
-- Verify the environment variable `CUSTOM_OTELCOL_CONFIG_FILE` is set correctly
-
-```bash
-docker exec CONTAINER_NAME printenv CUSTOM_OTELCOL_CONFIG_FILE
-```
-
-- Check that the custom config file is mounted at `/etc/otelcol-contrib/custom.config.yaml`
-
-```bash
-docker exec CONTAINER_NAME ls -lh /etc/otelcol-contrib/custom.config.yaml
-```
-
-- View the custom config content to verify it's readable
-
-```bash
-docker exec CONTAINER_NAME cat `/etc/otelcol-contrib/custom.config.yaml`
-```
-
-### No logs appearing {#no-logs-self-configured}
-
-- Ensure nginx is writing JSON logs
 ```bash
 tail -f /var/log/nginx/access.log
+docker inspect --format '{{json .Mounts}}' CONTAINER_NAME
 ```
-- Check the collector can read the logs
-```bash
-docker exec CONTAINER_NAME cat /var/log/nginx/access.log
-```
-
-- Verify the effective config includes your filelog receiver
-```bash
-docker exec CONTAINER_NAME cat /etc/otel/supervisor-data/effective.yaml | grep filelog
-```
-
-- Check for errors in the collector logs
-```bash
-docker exec CONTAINER_NAME cat /etc/otel/supervisor-data/agent.log
-```
-
-For production setup guidance, see [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) and select **Self configured**.
-
-</Tab>
-</Tabs>
 
 ## Next steps {#next-steps}
 
