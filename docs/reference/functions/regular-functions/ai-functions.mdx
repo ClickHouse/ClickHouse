@@ -171,12 +171,8 @@ For example, `aiEmbed` can send several rows in one request, and `aiSimilarity` 
 If a query calls multiple AI functions, their counts are added together.
 Use `AIRowsProcessed` to count successful AI results and `AIRowsSkipped` for quota or error defaults.
 
-Cache counters are subsets of `AIInputTokens`, not additional tokens. OpenAI-compatible chat responses report
-cache reads in `usage.prompt_tokens_details.cached_tokens`. Anthropic reports cache reads and writes in
-`usage.cache_read_input_tokens` and `usage.cache_creation_input_tokens`; these are added to its uncached
-`usage.input_tokens` for both metrics and the input-token quota. A provider that omits cache usage contributes
-zero cache tokens. Cache-write usage is collected from Anthropic responses. These metrics report provider usage;
-they do not enable prompt caching or represent the ClickHouse query cache.
+Cache counters are subsets of `AIInputTokens`, not additional tokens. They report provider-emitted cache reads/writes, not any internal ClickHouse caching. A provider that omits cache usage contributes
+zero cache tokens.
 
 Query these events:
 
