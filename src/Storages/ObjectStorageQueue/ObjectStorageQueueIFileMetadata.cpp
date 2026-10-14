@@ -368,7 +368,7 @@ bool ObjectStorageQueueIFileMetadata::isRetriableMarkerExhausted() const
     if (!data.empty())
         retries = NodeMetadata::fromString(data).retries;
 
-    return retries >= max_loading_retries;
+    return retries >= loading_retries_ref.load();
 }
 
 bool ObjectStorageQueueIFileMetadata::tryTerminalizeExhaustedRetriableMarker() const
@@ -461,7 +461,7 @@ bool ObjectStorageQueueIFileMetadata::hasNonProcessableState() const
         return true;
 
     if (state == FileStatus::State::Failed)
-        return file_status->retries && file_status->retries >= max_loading_retries;
+        return file_status->retries && file_status->retries >= loading_retries_ref.load();
 
     if (state == FileStatus::State::Processing)
     {
@@ -497,7 +497,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 
         if (path_state == PathState::Failed)
         {
-            if (keeper_retries >= max_loading_retries)
+            if (keeper_retries >= loading_retries_ref.load())
             {
                 /// The cache's own hot-path Failed state agrees with Keeper that retries
                 /// are exhausted. If a live `.retriable` marker still exists (e.g. retries
@@ -506,7 +506,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
                 /// it would remain a `.retriable` node forever, invisible to both.
                 tryTerminalizeExhaustedRetriableMarker();
                 LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
-                         path, keeper_retries, max_loading_retries);
+                         path, keeper_retries, loading_retries_ref.load());
                 return false;
             }
             /// Keeper's live retry count is under the current limit: allow processing
@@ -563,7 +563,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     if (hasNonProcessableState())
     {
         LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                 path, file_status->state.load(), file_status->retries.load(), max_loading_retries);
+                 path, file_status->state.load(), file_status->retries.load(), loading_retries_ref.load());
         return false;
     }
 
@@ -609,7 +609,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
 
         if (path_state == PathState::Failed)
         {
-            if (keeper_retries >= max_loading_retries)
+            if (keeper_retries >= loading_retries_ref.load())
             {
                 /// The cache's own hot-path Failed state agrees with Keeper that retries
                 /// are exhausted. If a live `.retriable` marker still exists (e.g. retries
@@ -618,7 +618,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
                 /// it would remain a `.retriable` node forever, invisible to both.
                 tryTerminalizeExhaustedRetriableMarker();
                 LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
-                         path, keeper_retries, max_loading_retries);
+                         path, keeper_retries, loading_retries_ref.load());
                 return std::nullopt;
             }
             /// Keeper's live retry count is under the current limit: allow processing
@@ -671,7 +671,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     if (hasNonProcessableState())
     {
         LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                path, file_status->state.load(), file_status->retries.load(), max_loading_retries);
+                path, file_status->state.load(), file_status->retries.load(), loading_retries_ref.load());
         return std::nullopt;
     }
 
