@@ -287,8 +287,8 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
         return;
     }
 
-    /// Only a transported build serializes its key, so a deserialized local build has none. No lookup
-    /// could find its filter. The join task derives its own local filter when it optimizes its fragment.
+    /// Without a key (read from an older peer, or made inert by `pairJoinRuntimeFilters`) no `__applyFilter`
+    /// can look the filter up, so the step is a passthrough.
     if (filter_key.empty())
         return;
 
@@ -433,9 +433,11 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
         writeVectorBinary(tree_exchange->source_buckets, ctx.out);
         writeVarUInt(tree_exchange->fan_in, ctx.out);
     }
-    /// The rendezvous key is random per plan build, so a cache key must not contain it. A local build
-    /// sends no key and stays inert on the worker. The worker plans its own local filters.
-    writeStringBinary(hasFilterExchanges() && !ctx.for_cache_key ? filter_key : String{}, ctx.out);
+    /// The rendezvous key is random per plan build, so a cache key leaves it out, as `ActionsDAG::serialize`
+    /// does with the `__applyFilter` label carrying it. A local build sends its key too: its `__applyFilter`
+    /// is often already in `PREWHERE` of the shipped fragment, and `pairJoinRuntimeFilters` on the receiver
+    /// keeps the key only if that fragment also has the join that consumes it.
+    writeStringBinary(ctx.for_cache_key ? String{} : filter_key, ctx.out);
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
@@ -474,16 +476,20 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         }
 
         readStringBinary(filter_key, ctx.in);
-        /// Only a build with filter exchanges carries its key. A local build must stay inert.
-        if (filter_key.empty() == static_cast<bool>(has_tree_exchange))
+        /// A local build may come without a key (written for a cache key, or made inert), but the partials
+        /// of a build with filter exchanges are registered and merged under it.
+        if (has_tree_exchange && filter_key.empty())
             throw Exception(
-                ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep must carry a rendezvous key exactly when it has filter exchanges");
+                ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep with filter exchanges must carry a rendezvous key");
     }
 
     auto geometry = RuntimeFilterGeometry::fromSettings(ctx.settings);
     if (has_tree_exchange)
         geometry.validateTransported();
 
+    /// A local build is paired with its join by `pairJoinRuntimeFilters`. A build with filter exchanges is
+    /// not: its consumers are in other stages, and it registers its filter in this task's lookup as well.
+    const bool needs_pairing = !filter_key.empty() && !has_tree_exchange;
     auto step = std::make_unique<BuildRuntimeFilterStep>(
         ctx.input_headers.front(),
         std::move(filter_column_name),
@@ -500,6 +506,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
             .distinct_keys_hint_matches_filter_key = false});
     if (has_tree_exchange)
         step->setTreeExchange(std::move(tree_exchange_id), std::move(tree_source_buckets), tree_fan_in);
+    step->needs_pairing = needs_pairing;
     return step;
 }
 
@@ -538,7 +545,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 adds the filter exchange topology.
+    /// Version 1 adds the filter exchange topology and the rendezvous key.
     registry.registerStep(
         "BuildRuntimeFilter",
         BuildRuntimeFilterStep::deserialize,
