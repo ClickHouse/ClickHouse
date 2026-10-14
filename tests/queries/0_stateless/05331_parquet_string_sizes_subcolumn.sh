@@ -144,6 +144,11 @@ SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT '-- a DEFAULT column missing from the file';
 SELECT sum(s.size), sum(length(s)), countIf(s != '') FROM file(currentDatabase() || '_05331_plain.parquet', Parquet, 'n UInt32, x String DEFAULT \'abc\', s String');
 SELECT sum(x.size), sum(length(x)), countIf(x != '') FROM file(currentDatabase() || '_05331_plain.parquet', Parquet, 'n UInt32, x String DEFAULT \'abc\'');
+SELECT '-- a DEFAULT column missing from the file, computed from s';
+SELECT sum(length(s)), sum(length(d)) FROM file(currentDatabase() || '_05331_plain.parquet', Parquet, 'n UInt32, s String, d String DEFAULT concat(s, \'!\')');
+SELECT count(), sum(length(d)) FROM file(currentDatabase() || '_05331_plain.parquet', Parquet, 'n UInt32, s String, d String DEFAULT concat(s, \'!\')') WHERE notEmpty(s);
+SELECT sum(s.size), sum(length(d)) FROM file(currentDatabase() || '_05331_plain.parquet', Parquet, 'n UInt32, s String, d String DEFAULT concat(s, \'!\')')
+SETTINGS optimize_functions_to_subcolumns = 0;
 
 SELECT '-- a hive partition column';
 INSERT INTO FUNCTION file(currentDatabase() || '_05331_hive/s=abc/data.parquet', Parquet) SELECT toUInt32(number) AS n FROM numbers(10);

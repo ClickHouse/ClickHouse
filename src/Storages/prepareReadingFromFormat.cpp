@@ -157,13 +157,24 @@ NameSet getStringColumnsWithNativeSizes(const StorageInMemoryMetadata & metadata
 {
     const auto & columns = metadata.getColumns();
     NameSet lowercase_names;
+    /// `AddingDefaultsTransform` evaluates a missing column's default from the columns read.
+    NameSet needed_by_defaults;
     for (const auto & column : columns)
+    {
         lowercase_names.insert(Poco::toLower(column.name));
+        if (column.default_desc.expression)
+        {
+            RequiredSourceColumnsVisitor::Data inputs;
+            RequiredSourceColumnsVisitor(inputs).visit(column.default_desc.expression);
+            needed_by_defaults.merge(inputs.requiredColumns());
+        }
+    }
 
     NameSet res;
     for (const auto & column : columns.getAllPhysical())
         if (column.type->getTypeId() == TypeIndex::String && !columns.get(column.name).default_desc.expression
-            && !hive_partition_columns.contains(column.name) && !lowercase_names.contains(Poco::toLower(column.name) + ".size"))
+            && !hive_partition_columns.contains(column.name) && !needed_by_defaults.contains(column.name)
+            && !lowercase_names.contains(Poco::toLower(column.name) + ".size"))
             res.insert(column.name);
     return res;
 }

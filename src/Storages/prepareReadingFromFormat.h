@@ -109,8 +109,8 @@ namespace DB
         const PrepareReadingFromFormatHiveParams & hive_parameters = {},
         bool read_string_sizes = false);
 
-    /// String columns whose `.size` the format reads from the file: no default expression, not a hive
-    /// partition column, and no column named `<name>.size` up to case.
+    /// String columns whose `.size` the format reads from the file: no default expression, not an input
+    /// of a default expression, not a hive partition column, and no column named `<name>.size` up to case.
     NameSet getStringColumnsWithNativeSizes(const StorageInMemoryMetadata & metadata, const NameSet & hive_partition_columns);
 
     /// Returns columns_to_read from file.

@@ -78,6 +78,10 @@ abc	7
 -- a DEFAULT column missing from the file
 424477	424477	15000
 60000	60000	20000
+-- a DEFAULT column missing from the file, computed from s
+424477	444477
+15000	439477
+424477	444477
 -- a hive partition column
 0
 30	10	10
