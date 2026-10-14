@@ -844,31 +844,32 @@ private:
         bool is_relaxed = false;
     };
 
-    /// A predicate expression from which deterministic key transforms can derive set atoms.
-    /// The source is a tuple component, a scalar expression, or a tuple expression as a whole.
+    /// A predicate expression from which deterministic key transforms derive set atoms, together with those
+    /// transforms. The source is a tuple component, a scalar expression, or a tuple expression as a whole.
     struct SetTransformSource
     {
         /// The position in the predicate tuple, or 0 for a scalar or whole tuple.
         size_t component = 0;
-        String expr_name;
         /// Whole-tuple sources consume a single packed set column.
         bool is_whole_tuple = false;
+        /// A sub-DAG for every key column computable from the expression; never empty.
+        std::vector<DeterministicKeyDag> key_dags;
     };
 
-    /// Collects predicate components and the whole tuple that appear among the key subexpressions.
-    /// For a scalar predicate expression, only the expression itself is considered.
-    static std::vector<SetTransformSource> collectSetTransformSources(
+    /// Collects the predicate components and the whole tuple from which deterministic functions compute key
+    /// columns. For a scalar predicate expression, only the expression itself is considered.
+    std::vector<SetTransformSource> collectSetTransformSources(
         const RPNBuilderTreeNode & key_arg,
-        const NameSet & key_subexpr_names,
-        size_t args_count);
+        const BuildInfo & info,
+        size_t args_count) const;
 
     struct SetIndexAnalysisResult
     {
         SetAtomCandidate componentwise_candidate;
         /// A tuple expression mapped onto one `Tuple`-typed key column needs a packed set column.
         std::optional<SetAtomCandidate> packed_tuple_candidate;
-        /// Predicate components and whole-tuple expressions that can supply additional atoms.
-        /// Their transformation DAGs are collected only when building the group from the set columns.
+        /// Predicate components and whole-tuple expressions whose deterministic key transforms supply
+        /// additional atoms.
         std::vector<SetTransformSource> transform_sources;
     };
 
@@ -905,9 +906,10 @@ private:
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side
     /// of `IN`, or the element argument of `has`) onto key columns. Each matched tuple component has
     /// one `KeyTuplePositionMapping`, reaching a key column through a monotonic chain or a deterministic
-    /// set-transforming DAG. The result also identifies source expressions for additional wrapped-set
-    /// atoms when multiple-key-column analysis is enabled.
-    /// Returns no result when there are no candidate mappings or source expressions. The set is not materialized.
+    /// set-transforming DAG. When multiple-key-column analysis is enabled, the result also carries the
+    /// deterministic key transforms of additional wrapped-set atoms.
+    /// Returns no result when there are neither candidate mappings nor such transforms, so that the caller
+    /// does not materialize a set that no atom can use. The set is not materialized here.
     std::optional<SetIndexAnalysisResult> tryAnalyzePredicateExpressionForSetIndex(
         const RPNBuilderTreeNode & arg, const BuildInfo & info);
 
@@ -917,7 +919,6 @@ private:
     /// `has_element_type` supplies the occupied element type of a `has` array, so every atom checks
     /// that conversion preserves its comparison semantics.
     void appendSetAtoms(
-        const BuildInfo & info,
         const Columns & set_columns,
         const DataTypes & set_types,
         SetIndexAnalysisResult analysis,

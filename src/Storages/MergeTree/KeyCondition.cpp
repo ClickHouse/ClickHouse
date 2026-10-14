@@ -3204,15 +3204,27 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 
 std::vector<KeyCondition::SetTransformSource> KeyCondition::collectSetTransformSources(
     const RPNBuilderTreeNode & key_arg,
-    const NameSet & key_subexpr_names,
-    size_t args_count)
+    const BuildInfo & info,
+    size_t args_count) const
 {
     std::vector<SetTransformSource> result;
 
+    /// An expression can appear among the key subexpressions without any key column being computable from
+    /// it alone: with `ORDER BY tuple(x, y)`, `x` is a subexpression, but the key column also reads `y`.
+    auto add_source = [&](const RPNBuilderTreeNode & node, size_t component, bool is_whole_tuple)
+    {
+        const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names);
+        if (expr_name.empty())
+            return;
+
+        auto key_dags = collectKeyWrappingDags(expr_name, info, /*first_match_only*/ false);
+        if (!key_dags.empty())
+            result.push_back({.component = component, .is_whole_tuple = is_whole_tuple, .key_dags = std::move(key_dags)});
+    };
+
     if (args_count == 1)
     {
-        if (String expr_name = findKeySubexpressionName(key_arg, key_subexpr_names); !expr_name.empty())
-            result.push_back({.component = 0, .expr_name = std::move(expr_name)});
+        add_source(key_arg, 0, /*is_whole_tuple*/ false);
         return result;
     }
 
@@ -3222,14 +3234,12 @@ std::vector<KeyCondition::SetTransformSource> KeyCondition::collectSetTransformS
     auto tuple_node = key_arg.toFunctionNode();
     chassert(tuple_node.getFunctionName() == "tuple" && tuple_node.getArgumentsSize() == args_count);
     for (size_t i = 0; i < args_count; ++i)
-        if (String expr_name = findKeySubexpressionName(tuple_node.getArgumentAt(i), key_subexpr_names); !expr_name.empty())
-            result.push_back({.component = i, .expr_name = std::move(expr_name)});
+        add_source(tuple_node.getArgumentAt(i), i, /*is_whole_tuple*/ false);
 
     /// A key column can be a deterministic function of the packed tuple itself, such as
     /// `cityHash64(tuple(s, x))` for the predicate `(s, x) IN (...)`. Such a key column is not a
     /// function of any single component, so it is reachable only from the whole tuple.
-    if (String expr_name = findKeySubexpressionName(key_arg, key_subexpr_names); !expr_name.empty())
-        result.push_back({.component = 0, .expr_name = std::move(expr_name), .is_whole_tuple = true});
+    add_source(key_arg, 0, /*is_whole_tuple*/ true);
 
     return result;
 }
@@ -3301,12 +3311,13 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
         add_key_mapping(arg, 0, result.componentwise_candidate);
     }
 
-    /// Record source expressions for additional wrapped-set atoms when multiple-key-column analysis
-    /// is enabled. `appendSetAtoms` collects their transformation DAGs and checks each atom's exactness.
+    /// Collect the key transforms of additional wrapped-set atoms when multiple-key-column analysis is
+    /// enabled. `appendSetAtoms` checks the exactness of each atom built from them.
     if (multiple_key_columns_per_condition)
-        result.transform_sources = collectSetTransformSources(arg, info.key_subexpr_names, result.componentwise_candidate.args_count);
+        result.transform_sources = collectSetTransformSources(arg, info, result.componentwise_candidate.args_count);
 
-    /// Decline unusable predicates before the caller obtains or materializes their set columns.
+    /// Decline unusable predicates before the caller obtains or materializes their set columns. A
+    /// subquery set would otherwise be executed for nothing, even by `EXPLAIN`.
     if (result.componentwise_candidate.column_mappings.empty() && !result.packed_tuple_candidate && result.transform_sources.empty())
         return std::nullopt;
 
@@ -3883,7 +3894,6 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
 }
 
 void KeyCondition::appendSetAtoms(
-    const BuildInfo & info,
     const Columns & set_columns,
     const DataTypes & set_types,
     SetIndexAnalysisResult analysis,
@@ -3919,11 +3929,9 @@ void KeyCondition::appendSetAtoms(
     /// Also add set-wrapping atoms for key columns that are deterministic functions of a predicate
     /// component, a scalar expression, or the packed tuple as a whole, by transforming the corresponding
     /// set values.
-    for (const auto & source : analysis.transform_sources)
+    for (auto & source : analysis.transform_sources)
     {
-        auto candidates = collectKeyWrappingDags(source.expr_name, info, /*first_match_only*/ false);
-
-        for (auto & candidate : candidates)
+        for (auto & candidate : source.key_dags)
         {
             chassert(candidate.key_column_num < num_key_columns);
             if (has_atom_for_key_column[candidate.key_column_num])
@@ -4010,7 +4018,7 @@ void KeyCondition::prepareSetAtomsForIn(
     const auto set_columns = prepared_set->getSetElements();
     const auto set_types = future_set->getTypes();
 
-    appendSetAtoms(info, set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group);
+    appendSetAtoms(set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group);
 }
 
 /// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
@@ -4139,8 +4147,7 @@ void KeyCondition::prepareSetAtomsForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
-    appendSetAtoms(
-        info, set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group, checked_element_type);
+    appendSetAtoms(set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group, checked_element_type);
 }
 
 
