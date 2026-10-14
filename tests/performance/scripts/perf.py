@@ -759,6 +759,8 @@ driver_options = {"send_receive_timeout": 30 * 60} if args.long else {}
 all_connections = [
     clickhouse_driver.Client(**server, settings_is_important=True, **driver_options) for server in servers
 ]
+# Connection 0 is the reference only in a comparison: a single server is the tested one.
+reference = 0 if len(all_connections) > 1 else None
 
 # Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
 # etc.) in parallel so both servers see the same operation at the same wall
@@ -902,7 +904,7 @@ for conn_index, c in enumerate(all_connections):
         c.execute("select 1")
     except Exception:
         # With `--long`, the reference may lack a setting: nothing more runs there.
-        if conn_index != 0 or not args.long:
+        if conn_index != reference or not args.long:
             raise
         setup_error_on_connection[conn_index] = "settings failed on the reference server, running the test on the new server only"
         print(f"{setup_error_on_connection[conn_index]}\n{traceback.format_exc()}", file=sys.stderr)
@@ -969,7 +971,7 @@ if not args.use_existing_tables:
                 print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
             except Exception:
                 # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
-                if index != 0 or not (tolerate_on_reference or args.long):
+                if index != reference or not (tolerate_on_reference or args.long):
                     raise
 
                 message = (
@@ -1172,7 +1174,7 @@ for query_index in queries_to_run:
             no_errors.append(i)
 
     # A failure (error or timeout) of a tested server fails the test, whatever the reference did.
-    tested_failure = next((i for i in range(1, len(all_connections)) if query_error_on_connection[i]), None)
+    tested_failure = next((i for i, e in enumerate(query_error_on_connection) if e and i != reference), None)
     if tested_failure is not None:
         fail_query(query_index, tested_failure, prewarm_exceptions[tested_failure])
         continue
@@ -1308,8 +1310,8 @@ for query_index in queries_to_run:
 
         if failed_run:
             break
-        if any(i != 0 for i in timeouts):
-            failed_run = (next(i for i in timeouts if i != 0), "timed out on the tested server")
+        if any(i != reference for i in timeouts):
+            failed_run = (next(i for i in timeouts if i != reference), "timed out on the tested server")
             break
 
         # Be careful with the counter, after this line it's the next iteration
