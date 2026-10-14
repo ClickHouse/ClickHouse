@@ -434,6 +434,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     /// Start from the retention state currently stored in Keeper so an unrelated ALTER does not revert it.
     new_table_metadata.failed_files_ttl_sec = metadata_from_zk.failed_files_ttl_sec.load();
     new_table_metadata.failed_files_ttl_sec_inherited = metadata_from_zk.failed_files_ttl_sec_inherited.load();
+    new_table_metadata.tracked_files_ttl_sec = metadata_from_zk.tracked_files_ttl_sec.load();
 
     for (const auto & change : changes)
     {
