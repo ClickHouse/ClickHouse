@@ -68,7 +68,7 @@ generator:
     multi:
       size: 20
       create:
-        path: "/test2"
+        path: "/test"
         data:
           random_string:
             size:
@@ -77,12 +77,18 @@ generator:
         remove_factor: 0.8
       set:
         weight: 2
+        path: 
+          - "/test3"
+          - "/test4"
         path:
           children_of: "/test"
         data:
           random_string:
             size: 10
     get:
+      path:
+        - "/test3"
+        - "/test4"
       path:
         children_of: "/test"
       watch_probability: 0.5
@@ -91,8 +97,13 @@ generator:
       weight: 10
       get:
         path:
+          - "/test3"
+          - "/test4"
+        path:
           children_of: "/test"
       list:
+        path:
+          - "/test3"
         path:
           children_of: "/test"
 
@@ -100,6 +111,8 @@ generator:
       path:
         - "/test3"
         - "/test4"
+      path:
+        children_of: "/test"
       watch_probability: 1.0
 
     set:

@@ -2,7 +2,6 @@
 
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/copyData.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
@@ -55,9 +54,7 @@ Prefetcher::~Prefetcher()
 
 void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options)
 {
-    /// `input_format_allow_seeks`. When seeks are disallowed we read the whole file sequentially
-    /// below instead of fetching the footer and the needed column ranges.
-    if (options.format.seekable_read)
+    if (options.seekable_read)
     {
         bool has_file_size = isBufferWithFileSize(*reader_);
         auto * seekable = dynamic_cast<SeekableReadBuffer *>(reader_);
@@ -75,14 +72,7 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
             }
 
             if (reader)
-            {
                 file_size = getFileSizeFromReadBuffer(*seekable);
-                if (auto * file_buf = dynamic_cast<ReadBufferFromFileBase *>(seekable))
-                {
-                    size_t view_offset = 0;
-                    is_local_file = file_buf->isRegularLocalFile(&view_offset);
-                }
-            }
         }
     }
 
