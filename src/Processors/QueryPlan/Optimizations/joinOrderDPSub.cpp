@@ -122,8 +122,6 @@ private:
     template <std::unsigned_integral TUInt>
     struct DPsubMaskData
     {
-        using EquivClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
-
         std::vector<TUInt> edge_source_mask;   /// per edge: source relations
         std::vector<TUInt> edge_pin_mask;      /// per edge: relations that must all be present (if pinned)
         std::vector<char> edge_pinned;         /// per edge: whether a pin applies
@@ -136,7 +134,15 @@ private:
         };
         std::vector<Restriction> restriction_by_rel; /// indexed by relation id
 
-        std::vector<EquivClassPtr> equiv_classes;        /// distinct equivalence classes
+        /// A member of an equivalence class, resolved once: its relation and the distinct values of
+        /// its column, which do not change during the search.
+        struct EquivMember
+        {
+            TUInt relation_bit = 0;
+            std::optional<UInt64> ndv;
+            UInt64 ndv_upper_bound = 0;
+        };
+        std::vector<std::vector<EquivMember>> equiv_classes; /// members of each distinct equivalence class
         std::vector<std::vector<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
 
         std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
@@ -239,7 +245,18 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
         auto [it, inserted] = class_index.try_emplace(class_ptr.get(), static_cast<UInt32>(dpsub_data.equiv_classes.size()));
         if (inserted)
-            dpsub_data.equiv_classes.push_back(class_ptr);
+        {
+            auto & members = dpsub_data.equiv_classes.emplace_back();
+            for (const auto & equiv_member : *class_ptr)
+            {
+                const auto & sources = equiv_member.getSourceRelations();
+                auto relation = sources.getSingleBit();
+                if (!relation || *relation >= num_relations)
+                    continue;
+                auto ndv = getColumnStats(query_graph, dp_table, sources, equiv_member.getColumnName());
+                members.push_back({static_cast<UInt32>(1) << *relation, ndv.ndv, ndv.upper_bound});
+            }
+        }
         dpsub_data.rel_to_classes[*rel].push_back(it->second);
     }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
@@ -566,21 +583,16 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
             UInt64 max_ndv_upper_bound = 0;
             bool has_left = false;
             bool has_right = false;
-            for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
+            for (const auto & equiv_member : dpsub_data.equiv_classes[class_idx])
             {
-                auto relation = equiv_member.getSourceRelations().getSingleBit();
-                if (!relation)
-                    continue;
-                const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
-                if (left_mask & relation_bit)
+                if (left_mask & equiv_member.relation_bit)
                     has_left = true;
-                else if (right_mask & relation_bit)
+                else if (right_mask & equiv_member.relation_bit)
                     has_right = true;
                 else
                     continue;
-                auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
-                max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
-                max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
+                max_ndv = std::max(max_ndv, equiv_member.ndv.value_or(0));
+                max_ndv_upper_bound = std::max(max_ndv_upper_bound, equiv_member.ndv_upper_bound);
             }
             if (has_left && has_right)
                 applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
