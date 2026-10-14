@@ -384,7 +384,9 @@ MultipartUploadMemory S3ObjectStorage::getWriteBufferMemory(const WriteSettings 
     /// without one every upload runs inline, so the writer cannot hold the configured number of detached
     /// buffers at once (see getEffectiveMaxInflightParts). That flag comes from the write settings of the
     /// writer's caller, not from the disk configuration.
-    const auto & request_settings = s3_settings.get()->request_settings;
+    /// Keep the settings version alive: a concurrent config reload may replace it in applyNewSettings.
+    const auto settings_ptr = s3_settings.get();
+    const auto & request_settings = settings_ptr->request_settings;
     auto memory = getMultipartUploadMemory(
         getUploadBufferAllocationSettings(request_settings),
         getEffectiveMaxInflightParts(
