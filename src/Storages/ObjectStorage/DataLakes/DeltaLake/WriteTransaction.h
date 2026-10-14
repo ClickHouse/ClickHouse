@@ -2,6 +2,7 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include <unordered_set>
@@ -35,11 +36,12 @@ public:
         DB::Map paritition_values;
     };
 
-    /// Commit written files to DeltaLake.
-    void commit(const std::vector<CommitFile> & files);
+    /// Commit written files to DeltaLake. `object_storage` holds the table; it is read only after a
+    /// conflict, to tell whether the conflicting log entry is this commit's own.
+    void commit(const std::vector<CommitFile> & files, const DB::IObjectStorage & object_storage);
 
-    /// True after a failed kernel commit call: the kernel validates before it publishes, so the
-    /// log entry may or may not exist and the files it listed must not be deleted.
+    /// True after a failed kernel commit call when it cannot be told whether the log entry exists,
+    /// so the files it listed must not be deleted.
     bool isCommitOutcomeUnknown() const { return commit_outcome_unknown; }
 
     /// Validate if schema is consistent with the write schema of the transaction.

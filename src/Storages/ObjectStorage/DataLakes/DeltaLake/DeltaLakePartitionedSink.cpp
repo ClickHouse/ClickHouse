@@ -448,7 +448,7 @@ void DeltaLakePartitionedSink::onFinish()
 
     try
     {
-        delta_transaction->commit(files);
+        delta_transaction->commit(files, *object_storage);
     }
     catch (...)
     {

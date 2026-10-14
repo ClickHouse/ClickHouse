@@ -17,12 +17,19 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Formats/FormatFactory.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+
 #include <base/scope_guard.h>
 #include <delta_kernel_ffi.hpp>
+#include <charconv>
 #include <ranges>
 #include <fmt/ranges.h>
 
@@ -40,11 +47,13 @@ namespace DB::ErrorCodes
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
     extern const int NETWORK_ERROR;
+    extern const int DELTA_KERNEL_ERROR;
 }
 
 namespace DB::FailPoints
 {
     extern const char delta_lake_commit_response_lost[];
+    extern const char delta_lake_commit_conflict_with_own_entry[];
     extern const char delta_lake_commit_fail_before_log_write[];
 }
 
@@ -137,6 +146,51 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
     std::shared_ptr<arrow::Table> arrow_table;
     arrow_column->chChunkToArrowTable(arrow_table, meta_chunks, names_and_types.size());
     return arrow_table;
+}
+
+/// The kernel FFI reports a commit conflict only as this text.
+std::optional<UInt64> tryParseConflictVersion(std::string_view message)
+{
+    static constexpr std::string_view marker = "commit conflict at version ";
+    const auto pos = message.find(marker);
+    if (pos == std::string_view::npos)
+        return std::nullopt;
+
+    const auto digits = message.substr(pos + marker.size());
+    UInt64 version = 0;
+    if (std::from_chars(digits.data(), digits.data() + digits.size(), version).ec != std::errc{})
+        return std::nullopt;
+    return version;
+}
+
+/// How many of `files` the log entry of `version` adds.
+size_t countFilesAddedByLogEntry(
+    const DB::IObjectStorage & object_storage,
+    const std::string & table_prefix,
+    UInt64 version,
+    const std::vector<WriteTransaction::CommitFile> & files)
+{
+    auto buf = object_storage.readObject(
+        DB::StoredObject(fmt::format("{}_delta_log/{:020}.json", table_prefix, version)),
+        DB::getReadSettingsForMetadata());
+
+    std::unordered_set<std::string> added_paths;
+    std::string line;
+    while (!buf->eof())
+    {
+        line.clear();
+        DB::readStringUntilNewlineInto(line, *buf);
+        DB::skipToNextLineOrEOF(*buf);
+        if (line.empty())
+            continue;
+
+        Poco::JSON::Parser parser;
+        const auto action = parser.parse(line).extract<Poco::JSON::Object::Ptr>();
+        if (action && action->has("add"))
+            added_paths.insert(action->getObject("add")->getValue<std::string>("path"));
+    }
+
+    return std::ranges::count_if(files, [&](const auto & file) { return added_paths.contains(file.file_name); });
 }
 
 }
@@ -240,7 +294,7 @@ void WriteTransaction::validateSchema(const DB::Block & header) const
     }
 }
 
-void WriteTransaction::commit(const std::vector<CommitFile> & files)
+void WriteTransaction::commit(const std::vector<CommitFile> & files, const DB::IObjectStorage & object_storage)
 {
     assertTransactionCreated();
 
@@ -291,10 +345,46 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
         auto * committed_handle = committed.get();
         auto version = ffi::committed_transaction_version(&committed_handle);
 
+        fiu_do_on(DB::FailPoints::delta_lake_commit_conflict_with_own_entry, {
+            throw DB::Exception(DB::ErrorCodes::DELTA_KERNEL_ERROR, "Failpoint for a retried commit: commit conflict at version {}", version);
+        });
+
         LOG_TEST(log, "Commit version: {}", version);
     }
     catch (...)
     {
+        /// A conflict means the log entry exists. Data file names are unique, so it is this commit's
+        /// own (a retried PUT whose response was lost) iff it adds our files; with no files it cannot be told.
+        size_t files_in_entry = 0;
+        std::optional<UInt64> conflict_version;
+        if (!files.empty())
+            conflict_version = tryParseConflictVersion(DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
+        if (conflict_version)
+        {
+            try
+            {
+                files_in_entry = countFilesAddedByLogEntry(object_storage, path_prefix, *conflict_version, files);
+            }
+            catch (...)
+            {
+                DB::tryLogCurrentException(log, "Cannot read the DeltaLake log entry of the conflicting version");
+                conflict_version.reset();
+            }
+        }
+
+        if (conflict_version && files_in_entry == 0)
+        {
+            commit_outcome_unknown = false;
+            throw;
+        }
+
+        if (conflict_version && files_in_entry == files.size())
+        {
+            LOG_INFO(log, "DeltaLake commit reported a conflict with its own log entry of version {}, so it took effect", *conflict_version);
+            commit_outcome_unknown = false;
+            return;
+        }
+
         /// `file_name` is the URI-encoded `add.path`, not the object key for partitioned tables.
         LOG_WARNING(
             log,

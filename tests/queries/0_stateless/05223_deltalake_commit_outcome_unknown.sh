@@ -14,6 +14,8 @@
 # Arm A injects a failure AFTER the log write (the commit is durable) and asserts the rows are
 # still readable. Arm B injects one BEFORE it (the commit provably never happened) and asserts
 # the data files are still cleaned up, so a fix that simply never deletes anything fails here.
+# Arm C reports a conflict with the entry the commit itself stored (what the retried PUT sees):
+# reading that entry back proves the commit took effect, so the INSERT succeeds.
 #
 # The empty Delta tables are bootstrapped by hand (a v0 _delta_log with only protocol +
 # metaData), because ClickHouse cannot initialize a Delta transaction log itself, and because a
@@ -147,6 +149,36 @@ for layout in plain partitioned; do
     echo "${layout}: commits in log: $(count_commits "${T}") (expected 1)"
     echo "${layout}: rows readable: $(read_rows "${T}") (expected [])"
 done
+
+echo
+echo "==== Arm C: the retried PUT conflicted with the entry its own first attempt stored ===="
+echo "-- that entry adds this INSERT's data files, so the commit took effect and the INSERT succeeds"
+
+for layout in plain partitioned; do
+    T="${ROOT}/c_${layout}"
+    if [ "${layout}" = "plain" ]; then
+        bootstrap "${T}" "${SCHEMA_PLAIN}" '[]'
+        ERR=$(insert_with_failpoint "${T}" delta_lake_commit_conflict_with_own_entry "SELECT number::Int32 AS c0 FROM numbers(6)")
+        EXPECTED_PARQUET=1
+    else
+        bootstrap "${T}" "${SCHEMA_PART}" '["part"]'
+        # The encoded `add.path` (`part=a%20b`) is what the entry is matched on.
+        ERR=$(insert_with_failpoint "${T}" delta_lake_commit_conflict_with_own_entry "SELECT number::Int32 AS c0, if(number % 2 = 0, 'a b', 'c d') AS part FROM numbers(6)")
+        EXPECTED_PARQUET=2
+    fi
+
+    echo "${layout}: INSERT failed: $(has "${ERR}" 'DB::Exception')"
+    echo "${layout}: sum(c0) after reopen: $(read_sum "${T}") (expected 15)"
+    echo "${layout}: data files kept: $(count_parquet "${T}") (expected ${EXPECTED_PARQUET})"
+    echo "${layout}: commits in log: $(count_commits "${T}") (expected 2)"
+done
+
+# A zero-row INSERT still commits an entry, but one with no data files, so whose it is cannot be told.
+T="${ROOT}/c_empty"
+bootstrap "${T}" "${SCHEMA_PLAIN}" '[]'
+ERR=$(insert_with_failpoint "${T}" delta_lake_commit_conflict_with_own_entry "SELECT number::Int32 AS c0 FROM numbers(6) WHERE 0")
+echo "empty: reported as unknown outcome: $(has "${ERR}" 'UNKNOWN_STATUS_OF_TRANSACTION')"
+echo "empty: commits in log: $(count_commits "${T}") (expected 2)"
 
 echo
 echo "==== control: an INSERT with no failpoint commits and reads back ===="

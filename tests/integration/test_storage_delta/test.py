@@ -4001,9 +4001,8 @@ def test_concurrent_queries(started_cluster, partitioned):
 
     num_insert_threads = 15
     num_select_threads = 5
-    errors = [[] for _ in range(num_insert_threads)]
+    errors = ["" for _ in range(num_insert_threads)]
     success = [0 for _ in range(num_insert_threads)]
-    failures = [0 for _ in range(num_insert_threads)]
 
     def run_concurrent_queries():
         def select(_):
@@ -4016,8 +4015,7 @@ def test_concurrent_queries(started_cluster, partitioned):
                 )
                 success[i] += 1
             except Exception as e:
-                errors[i].append(str(e))
-                failures[i] += 1
+                errors[i] = str(e)
 
         for _ in range(10):
             insert(_)
@@ -4031,19 +4029,20 @@ def test_concurrent_queries(started_cluster, partitioned):
 
         select(0)
 
-        # A commit that reports an error may still have taken effect, so an INSERT that raised
-        # can legitimately have committed its rows, and a committed one contributes all 50.
-        num_rows = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
-        assert sum(success) * 50 <= num_rows <= (sum(success) + sum(failures)) * 50
-        assert num_rows % 50 == 0
+        num_rows = sum(success) * 50
+        assert num_rows == int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME}",
+            )
+        )
 
     for _ in range(3):
         run_concurrent_queries()
-        if any(errors):
+        if len([e for e in errors if e != ""]) > 0:
             break
         print("Did not catch commit conflict, will retry")
 
-    non_empty_errors = [e for es in errors for e in es]
+    non_empty_errors = [e for e in errors if e != ""]
     assert len(non_empty_errors) > 0
     for e in non_empty_errors:
         assert "commit conflict at version" in e
@@ -4056,10 +4055,10 @@ def test_concurrent_queries(started_cluster, partitioned):
             "snappy.parquet"
         ):
             file_names.append(obj.object_name)
-    # Every failure above is a commit conflict, raised after all of that insert's files were
-    # written, and the files of a failed commit are kept, so this count is exact.
-    files_per_insert = 50 if partitioned else 1
-    assert len(file_names) == (sum(success) + sum(failures)) * files_per_insert
+    if partitioned:
+        assert len(file_names) == sum(success) * 50
+    else:
+        assert len(file_names) == sum(success)
 
 
 def test_writes_spark_compatibility(started_cluster):
