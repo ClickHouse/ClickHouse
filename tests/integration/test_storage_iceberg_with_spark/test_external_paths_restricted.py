@@ -156,6 +156,34 @@ def test_delete_data_on_drop_requires_write_grant_on_external_files(started_clus
     instance.query(f"DROP USER {user}")
 
 
+def test_delete_data_on_drop_write_grant_does_not_normalize_dot_segments(started_cluster):
+    instance = started_cluster.instances["node1"]
+
+    TABLE_NAME = f"test_drop_dot_segment_grant_{get_uuid_str()}"
+    user = f"user_{TABLE_NAME}"
+    bucket = started_cluster.minio_bucket
+    external_prefix = f"external_data/{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster, TABLE_NAME)
+    # The key `outside/../granted/<name>` is distinct from `granted/<name>`.
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster, TABLE_NAME)
+    _rewrite_manifests_and_reupload(
+        started_cluster, host_path, base_path,
+        lambda p: f"s3a://{bucket}/{external_prefix}/outside/../granted/{os.path.basename(p)}")
+    shutil.rmtree(temp_dir)
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT DROP TABLE ON {TABLE_NAME} TO {user}")
+    instance.query(f"GRANT WRITE ON S3('s3a://{bucket}/{external_prefix}/granted/.*') TO {user}")
+
+    error = instance.query_and_get_error(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
+    assert "ACCESS_DENIED" in error, error
+
+    instance.query(f"DROP USER {user}")
+
+
 def test_file_uri_with_remote_authority_is_rejected(started_cluster):
     instance = started_cluster.instances["node1"]
 

@@ -1,4 +1,7 @@
 
+import os
+import shutil
+
 import pytest
 
 from helpers.iceberg_utils import get_uuid_str
@@ -6,6 +9,8 @@ from .external_paths_utils import (
     ALL_ROWS,
     _create_iceberg_s3_table,
     _distribute_table_components,
+    _download_table_for_relocation,
+    _rewrite_manifests_and_reupload,
     _rewrite_paths_to_local_uri,
     create_and_upload_table,
     external_bucket,
@@ -221,6 +226,38 @@ def test_percent_escape_in_external_key_is_not_decoded_for_grant(started_cluster
 
     instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/external_data/.*') TO {user}")
     assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
+
+    instance.query(f"DROP USER {user}")
+
+
+def test_dot_segments_in_external_key_are_not_normalized_for_grant(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_key_segments_grant_{get_uuid_str()}"
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    external_prefix = f"external_data/{TABLE_NAME}"
+    user = f"user_{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    # The key `outside/../granted/<name>` is distinct from `granted/<name>`; the grant is checked before the object is opened.
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    _rewrite_manifests_and_reupload(
+        started_cluster_iceberg_with_spark, host_path, base_path,
+        lambda p: f"s3a://{base_bucket}/{external_prefix}/outside/../granted/{os.path.basename(p)}")
+    shutil.rmtree(temp_dir)
+
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+    table_function = (f"icebergS3('{minio_url}/{base_bucket}/{base_path}/', "
+                      f"'minio', 'ClickHouse_Minio_P@ssw0rd')")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user}")
+    instance.query(f"GRANT READ ON S3('{minio_url}/{base_bucket}/{base_path}/.*') TO {user}")
+    instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/{external_prefix}/granted/.*') TO {user}")
+
+    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id", user=user)
+    assert "ACCESS_DENIED" in error, error
 
     instance.query(f"DROP USER {user}")
 

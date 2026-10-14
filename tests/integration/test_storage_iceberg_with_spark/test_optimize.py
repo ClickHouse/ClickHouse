@@ -242,3 +242,35 @@ def test_optimize_keeps_data_when_it_cannot_remove_metadata(started_cluster_iceb
     assert data_before <= list_dir("data"), \
         f"Data files of the still-current snapshot were deleted: {sorted(data_before - list_dir('data'))}"
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+
+def test_optimize_keeps_data_file_in_every_manifest(started_cluster_iceberg_with_spark):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_shared_data_file_" + storage_type + "_" + get_uuid_str()
+
+    # The second append merges the first manifest into its own, so the first data file is in two manifests.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg
+        TBLPROPERTIES ('format-version' = '2', 'write.delete.mode'='merge-on-read', 'commit.manifest.min-count-to-merge'='2')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(0, 10)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 20)")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 15")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    expected = instance.query("SELECT number FROM numbers(20) WHERE number != 15")
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected
+
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction": 1})
+
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected

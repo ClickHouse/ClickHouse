@@ -396,13 +396,11 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     auto resolved_storage = object_info->getResolvedStorage(object_storage);
     if (resolved_storage != object_storage)
     {
-        auto path = object_info->getPath();
-        if (path.starts_with("/"))
-            path = path.substr(1);
-
+        /// Not joined as `fs::path`: a leading slash is a distinct part of the object key.
+        const auto & key = object_info->getPath();
         if (include_connection_info)
-            return fs::path(resolved_storage->getDescription()) / resolved_storage->getObjectsNamespace() / path;
-        return fs::path(resolved_storage->getObjectsNamespace()) / path;
+            return fmt::format("{}/{}/{}", resolved_storage->getDescription(), resolved_storage->getObjectsNamespace(), key);
+        return fmt::format("{}/{}", resolved_storage->getObjectsNamespace(), key);
     }
 
     return getUniqueStoragePathIdentifier(configuration, *object_info, include_connection_info);

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <map>
 #include <optional>
@@ -84,7 +85,8 @@ struct ManifestFilePlan
 struct DataFilePlan
 {
     IcebergDataObjectInfoPtr data_object_info;
-    std::shared_ptr<ManifestFilePlan> manifest_list;
+    /// Every source manifest that lists the file; a rewritten manifest must keep all of its files.
+    std::vector<std::shared_ptr<ManifestFilePlan>> manifest_files;
 
     Iceberg::IcebergPathFromMetadata patched_path;
     UInt64 new_records_count = 0;
@@ -297,19 +299,22 @@ static Plan getPlan(
                     resolved_storage,
                     resolved_key);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
+                const auto & manifest_file_plan = manifest_files[manifest_file.manifest_file_path];
                 /// Deduplicate by resolved identity: different metadata paths may name the same file.
                 auto path_identifier = Iceberg::IcebergPathFromMetadata::makeStorageIdentity(resolved_storage, resolved_key);
                 if (!plan.path_to_data_file.contains(path_identifier))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
-                        .manifest_list = manifest_files[manifest_file.manifest_file_path],
+                        .manifest_files = {manifest_file_plan},
                         .patched_path = plan.generator.generateDataFileName()});
                     plan.path_to_data_file[path_identifier] = data_file_ptr;
                 }
                 else
                 {
                     data_file_ptr = plan.path_to_data_file[path_identifier];
+                    if (std::ranges::find(data_file_ptr->manifest_files, manifest_file_plan) == data_file_ptr->manifest_files.end())
+                        data_file_ptr->manifest_files.push_back(manifest_file_plan);
                 }
                 plan.partitions[partition_index].push_back(data_file_ptr);
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
@@ -445,7 +450,8 @@ static void writeDataFiles(
             if (chunk.empty())
                 break;
 
-            data_file->manifest_list->statistics.update(chunk);
+            for (const auto & manifest_file : data_file->manifest_files)
+                manifest_file->statistics.update(chunk);
             if (delete_file_transform)
                 delete_file_transform->transform(chunk);
             data_file->new_records_count += chunk.getNumRows();
@@ -460,7 +466,9 @@ static void writeDataFiles(
         }
         output_format->flush();
         output_format->finalize();
-        data_file->manifest_list->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
+        const auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
+        for (const auto & manifest_file : data_file->manifest_files)
+            manifest_file->statistics.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
         write_buffer->finalize();
         auto file_bytes = write_buffer->count();
         if (file_bytes == 0 && !data_file->patched_path.empty())
@@ -1175,8 +1183,11 @@ static bool writeMetadataFiles(
             const auto & partition = plan.partitions[i];
             for (const auto & data_file : partition)
             {
-                grouped_by_manifest_files_partitions[data_file->manifest_list] = i;
-                grouped_by_manifest_files_result[data_file->manifest_list].insert(data_file->patched_path);
+                for (const auto & manifest_file : data_file->manifest_files)
+                {
+                    grouped_by_manifest_files_partitions[manifest_file] = i;
+                    grouped_by_manifest_files_result[manifest_file].insert(data_file->patched_path);
+                }
             }
         }
 

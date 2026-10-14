@@ -101,6 +101,23 @@ bool keyIsInsidePrefix(const std::string & base_key, const std::string & target_
     return target.starts_with(base);
 }
 
+/// A trailing slash is kept by URI normalization, so only the last segment may be empty.
+bool keyHasDotOrEmptySegments(std::string_view key)
+{
+    size_t begin = 0;
+    while (begin < key.size())
+    {
+        size_t end = key.find('/', begin);
+        if (end == std::string_view::npos)
+            end = key.size();
+        const auto segment = key.substr(begin, end - begin);
+        if (segment == "." || segment == ".." || (segment.empty() && end < key.size()))
+            return true;
+        begin = end + 1;
+    }
+    return false;
+}
+
 std::string factoryTypeForScheme(const std::string & normalized_scheme)
 {
     if (normalized_scheme == "s3") return "s3";
@@ -464,9 +481,12 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         }
 
         /// Object keys are used verbatim, while the grant check percent-decodes URIs, so escape `%` to keep the checked key exact.
-        const std::string uri_to_check = target_scheme_normalized == "file"
-            ? local_path_for_grant_check(target_decomposed.key)
-            : boost::replace_all_copy(path, "%", "%25");
+        /// The grant check also drops empty, `.` and `..` segments, so keys with them can only match an unfiltered grant.
+        std::string uri_to_check;
+        if (target_scheme_normalized == "file")
+            uri_to_check = local_path_for_grant_check(target_decomposed.key);
+        else if (!keyHasDotOrEmptySegments(target_decomposed.key))
+            uri_to_check = boost::replace_all_copy(path, "%", "%25");
         if (access_check)
             access_check->granted = context->getAccess()->isGrantedWithFilter(
                 access_check->access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
