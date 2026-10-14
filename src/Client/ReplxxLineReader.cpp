@@ -814,8 +814,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     if (options.vim)
     {
+        vim = true;
         rx.set_escdelay(10);
-        setupVimKeybindings();
+        /// We don't want to allow opening EDITOR in the embedded mode.
+        setupVimKeybindings(/* allow_editor= */ !options.embedded_mode);
     }
 }
 
@@ -915,6 +917,10 @@ ReplxxLineReader::~ReplxxLineReader()
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 {
     input.clear();
+
+    /// Every input starts in insert mode without a pending vim command, however the previous one ended.
+    if (vim)
+        resetVimForNewInput();
 
     const char* cinput = rx.input(prompt);
     if (cinput == nullptr)

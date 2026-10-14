@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <span>
 
 #include <Client/LineReader.h>
@@ -75,17 +76,23 @@ private:
     void suppressHintsForDisplayedLine();
 
     /// Bind the vim-style normal/operator/motion keymap. Defined in VimMode.cpp.
-    void setupVimKeybindings();
-    void fixTrailingNewline(int * pos, std::string * text);
-    void resetVim(int * pos = nullptr, std::string * text = nullptr);
+    void setupVimKeybindings(bool allow_editor);
+    /// Run `func` on the cursor position and text of the input, both in code points.
+    void withVimState(const std::function<void(int &, std::u32string &)> & func);
+    /// Clear any pending vim command and start the next input in insert mode.
+    void resetVimForNewInput();
+    void vimCharwise(int & pos, std::u32string & text, int oldpos);
+    void vimLinewise(int & pos, std::u32string & text, int oldpos);
+    void fixTrailingNewline(int * pos, std::u32string * text);
+    void resetVim(int * pos = nullptr, std::u32string * text = nullptr);
     template <typename T>
     void bindKey(char32_t key, T && func, int mode);
-    void recomputeCurswant(int pos, std::string & text);
+    void recomputeCurswant(int pos, std::u32string & text);
     int vimReps() const;
-    void vimWordMotion(int & pos, std::string & text, char motion);
-    void vimWordObject(int & pos, std::string & text, bool bigword);
-    void vimBracketObject(int & pos, std::string & text, char open_char, char close_char);
-    void find(std::string & text, int & pos, char direction, char c);
+    void vimWordMotion(int & pos, std::u32string & text, char motion);
+    void vimWordObject(int & pos, std::u32string & text, bool bigword);
+    void vimBracketObject(int & pos, std::u32string & text, char open_char, char close_char);
+    void find(std::u32string & text, int & pos, char direction, char32_t c, bool repeat);
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
     bool isCursorAtEndOfInput();
@@ -187,7 +194,8 @@ private:
     int curswant = 0;
     int inclusivity_flip = 0;
 
-    char last_find_char = 0;
+    bool vim = false;
+    char32_t last_find_char = 0;
     char last_find_direction = 0;
 };
 
