@@ -97,6 +97,10 @@ private:
     /// mentions both sides. Skips pinned conditions as those belong to an outer or semi/anti join's
     bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
 
+    /// True when a column equivalence ties the two sides together: some equivalence class has a
+    /// member on each side. The mask counterpart of `QueryGraph::areTransitivelyConnected`.
+    bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
+
     bool useConflictDetector() const
     {
         return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
@@ -144,6 +148,7 @@ private:
         };
         std::vector<std::vector<EquivMember>> equiv_classes; /// members of each distinct equivalence class
         std::vector<std::vector<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
+        std::vector<TUInt> class_relations;             /// per equivalence class: relations of its members
 
         std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
@@ -233,6 +238,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     /// Column-equivalence classes: build a per-relation incidence list so selectivity only
     /// visits the classes touching the left side instead of rescanning the whole member map
     dpsub_data.equiv_classes.clear();
+    dpsub_data.class_relations.clear();
     dpsub_data.rel_to_classes.assign(num_relations, {});
     std::unordered_map<const EquivClass *, UInt32> class_index;
     for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
@@ -247,6 +253,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         if (inserted)
         {
             auto & members = dpsub_data.equiv_classes.emplace_back();
+            auto & relations = dpsub_data.class_relations.emplace_back(0);
             for (const auto & equiv_member : *class_ptr)
             {
                 const auto & sources = equiv_member.getSourceRelations();
@@ -255,6 +262,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                     continue;
                 auto ndv = getColumnStats(query_graph, dp_table, sources, equiv_member.getColumnName());
                 members.push_back({static_cast<UInt32>(1) << *relation, ndv.ndv, ndv.upper_bound});
+                relations |= members.back().relation_bit;
             }
         }
         dpsub_data.rel_to_classes[*rel].push_back(it->second);
@@ -465,7 +473,7 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     /// connectivity with no operator spanning it, thus reject rather than invent an inner join.
     if (!any_involved
         && !hasInnerEdgeAcross(left_mask, right_mask)
-        && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
+        && !areTransitivelyConnectedMask(left_mask, right_mask))
         return std::nullopt;
 
     /// Only cross products were applied, and no operator fixed a kind, so the two sides are joined
@@ -473,7 +481,7 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     /// cross product, and `applyParallelReplicas` and `EXPLAIN` both go by the kind.
     if (kind == JoinKind::Inner && any_involved && !have_non_inner && !have_connecting_op
         && !hasInnerEdgeAcross(left_mask, right_mask)
-        && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
+        && !areTransitivelyConnectedMask(left_mask, right_mask))
         kind = JoinKind::Cross;
 
     return std::make_pair(kind, strictness);
@@ -490,6 +498,16 @@ bool DPSubJoinOrderOptimizer::hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_
         if (sources & ~combined)
             continue;
         if ((sources & left_mask) && (sources & right_mask))
+            return true;
+    }
+    return false;
+}
+
+bool DPSubJoinOrderOptimizer::areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const
+{
+    for (const UInt32 relations : dpsub_data.class_relations)
+    {
+        if ((relations & left_mask) && (relations & right_mask))
             return true;
     }
     return false;

@@ -110,7 +110,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     /// pairs that nothing actually joins; those have to stay `Cross`, because that is what keeps a
     /// cross product local in `applyParallelReplicas`.
     const bool connected = !edge.empty()
-        || optimizer.query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask));
+        || optimizer.areTransitivelyConnectedMask(left_mask, right_mask);
     if (kind == JoinKind::Cross && connected)
         kind = JoinKind::Inner;
     else if (kind == JoinKind::Inner && !connected)
