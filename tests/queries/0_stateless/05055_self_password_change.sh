@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -133,6 +134,30 @@ admin "REVOKE ALL ON *.* FROM $replay; GRANT CURRENT GRANTS(ALTER USER SELF AUTH
 grants=$(admin "SHOW GRANTS FOR $replay FORMAT TSVRaw")
 [[ "$grants" == "GRANT ALTER USER SELF AUTHENTICATION TO $replay" ]] || fail "Incorrect current-grants copy: $grants"
 admin "REVOKE ALL ON *.* FROM $replay"
+
+echo "Mixed parameter types retain formatting round trips"
+for privileges in "ALTER USER SELF AUTHENTICATION, ALTER USER" "ALTER USER, ALTER USER SELF AUTHENTICATION"; do
+    statements=(
+        "GRANT $privileges ON *.* TO $replay"
+        "GRANT $privileges ON *.* TO $replay WITH GRANT OPTION"
+        "REVOKE $privileges ON *.* FROM $replay"
+        "REVOKE GRANT OPTION FOR $privileges ON *.* FROM $replay"
+        "GRANT CURRENT GRANTS($privileges ON *.*) TO $replay"
+        "GRANT $privileges ON *.* TO $replay ON CLUSTER a_cluster"
+    )
+    for statement in "${statements[@]}"; do
+        formatted=$(admin "SELECT formatQuerySingleLine('$statement')")
+        reformatted=$(admin "SELECT formatQuerySingleLine('$formatted')")
+        [[ "$formatted" == "$reformatted" ]] || fail "Formatting is not stable: $statement"
+    done
+    # Execute the formatted grant, then check both independent permissions at global scope.
+    formatted=$(admin "SELECT formatQuerySingleLine('GRANT $privileges ON *.* TO $replay WITH GRANT OPTION')")
+    admin "$formatted"
+    assert_query "SELECT count() FROM system.grants WHERE user_name = '$replay'
+                  AND access_type IN ('ALTER USER', 'ALTER USER SELF AUTHENTICATION')
+                  AND access_object = '' AND grant_option = 1 AND is_partial_revoke = 0" 2
+    admin "REVOKE ALL ON *.* FROM $replay"
+done
 
 echo "Replacement, addition and reset with fresh connections"
 old_password="$alice_password"

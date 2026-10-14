@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Common/re2.h>
+#include <algorithm>
 #include <unordered_set>
 
 
@@ -68,12 +69,33 @@ namespace
         }
     }
 
+    bool isScopeFreeSelfAuthentication(const AccessRightsElement & element)
+    {
+        return element.access_flags == AccessFlags{AccessType::ALTER_USER_SELF_AUTHENTICATION}
+            && element.anyDatabase() && element.anyParameter() && element.anyColumn()
+            && !element.hasFilter() && !element.wildcard;
+    }
+
+    const AccessRightsElements & orderForFormatting(const AccessRightsElements & elements, AccessRightsElements & ordered)
+    {
+        const auto has_scope = [](const auto & element)
+        {
+            return !isScopeFreeSelfAuthentication(element);
+        };
+        if (std::is_partitioned(elements.begin(), elements.end(), has_scope))
+            return elements;
+
+        ordered = elements;
+        /// A scope-free entry before a scoped group would be parsed as sharing the following `ON`.
+        /// Keep other entries in their original order and leave the actual rights unchanged.
+        std::stable_partition(ordered.begin(), ordered.end(), has_scope);
+        return ordered;
+    }
+
     void formatScope(const AccessRightsElement & element, const AccessFlags & group_flags, WriteBuffer & buffer)
     {
         /// Only a standalone global self-service leaf omits `ON`; mixed groups keep their scope.
-        if (group_flags == AccessFlags{AccessType::ALTER_USER_SELF_AUTHENTICATION}
-            && element.anyDatabase() && element.anyParameter() && element.anyColumn()
-            && !element.hasFilter() && !element.wildcard)
+        if (isScopeFreeSelfAuthentication(element) && group_flags == element.access_flags)
             return;
 
         buffer << " ";
@@ -93,8 +115,10 @@ namespace
         return result;
     }
 
-    String toStringImpl(const AccessRightsElements & elements, bool with_options)
+    String toStringImpl(const AccessRightsElements & input_elements, bool with_options)
     {
+        AccessRightsElements ordered;
+        const auto & elements = orderForFormatting(input_elements, ordered);
         if (elements.empty())
             return with_options ? "GRANT USAGE ON *.*" : "USAGE ON *.*";
 
@@ -471,6 +495,8 @@ String AccessRightsElements::toStringWithoutOptions() const { return toStringImp
 
 void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
 {
+    AccessRightsElements ordered;
+    const auto & elements = orderForFormatting(*this, ordered);
     bool no_output = true;
     /// Track which access flags have already been output within the current group
     /// to avoid duplicate keywords after backward-compatible conversion
@@ -478,9 +504,9 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
     AccessFlags group_flags;
     AccessFlags scope_flags;
 
-    for (size_t i = 0; i != size(); ++i)
+    for (size_t i = 0; i != elements.size(); ++i)
     {
-        auto element = (*this)[i];
+        auto element = elements[i];
         element.makeBackwardCompatible();
 
         auto keywords = element.access_flags.toKeywords();
@@ -509,11 +535,11 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         }
 
         bool next_element_on_same_db_and_table = false;
-        if (i != size() - 1)
+        if (i != elements.size() - 1)
         {
             /// Compare backward-compatible versions of both elements so that
             /// the parameter field (cleared by makeBackwardCompatible) matches on both sides.
-            auto next_element = (*this)[i + 1];
+            auto next_element = elements[i + 1];
             next_element.makeBackwardCompatible();
             if (element.sameDatabaseAndTableAndParameter(next_element))
             {

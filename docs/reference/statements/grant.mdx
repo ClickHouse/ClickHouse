@@ -595,7 +595,7 @@ REVOKE ALTER USER SELF AUTHENTICATION FROM alice;
 
 When `self_credential_rotation` is an enabled role, each member can manage their own credentials. Administrative account renames preserve this permission. Supported authentication methods include `no_password`; the privilege does not restrict users to password-based methods.
 
-The permission requires a single target matching the authenticated account, local execution after existing cluster-clause processing, and no explicit access-storage selector. Other account fields, mixed changes, and either form of explicit `VALID UNTIL` require full `ALTER USER`. Existing credential validation, read-only restrictions, and storage restrictions still apply.
+You can use self-service to change authentication only for the user you are logged in as. The statement must name only that user, run locally, and omit the `IN <storage>` clause. Other account fields, mixed changes, and either form of explicit `VALID UNTIL` require full `ALTER USER`. Existing credential validation, read-only restrictions, and storage restrictions still apply.
 
 Grant options are independent:
 

@@ -377,3 +377,81 @@ def test_self_authentication_grants_survive_restart(grant_option):
             f"DROP USER IF EXISTS {direct}, {member}, {recipient};"
             f"DROP ROLE IF EXISTS {role};"
         )
+
+
+@pytest.mark.parametrize(
+    "failpoint",
+    ["self_authentication_before_identity_lookup", "self_authentication_before_update"],
+)
+@pytest.mark.parametrize("change", ["rename_replace", "drop", "drop_replace"])
+def test_self_authentication_identity_race(failpoint, change):
+    user = "self_auth_race_05055"
+    renamed = "self_auth_renamed_05055"
+    password = "InitialPassword_05055"
+    replacement_password = "ReplacementPassword_05055"
+    attempted_password = "DeniedPassword_05055"
+    request = None
+
+    try:
+        instance.query(
+            f"CREATE USER {user} IDENTIFIED WITH sha256_password BY '{password}';"
+            f"GRANT ALTER USER SELF AUTHENTICATION TO {user};"
+        )
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        if_exists = "IF EXISTS " if change.startswith("drop") else ""
+        request = instance.get_query_request(
+            f"ALTER USER {if_exists}{user} IDENTIFIED WITH sha256_password BY '{attempted_password}'",
+            user=user,
+            password=password,
+            timeout=60,
+        )
+        # Wait for the exact execution boundary, rather than racing client connections with sleeps.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=20)
+
+        if change == "rename_replace":
+            instance.query(f"ALTER USER {user} RENAME TO {renamed}")
+        else:
+            instance.query(f"DROP USER {user}")
+
+        if change != "drop":
+            instance.query(
+                f"CREATE USER {user} IDENTIFIED WITH sha256_password BY '{replacement_password}'"
+            )
+
+        survivors = []
+        if change == "rename_replace":
+            survivors.append((renamed, password))
+        if change != "drop":
+            survivors.append((user, replacement_password))
+        definitions = {
+            name: instance.query(f"SHOW CREATE USER {name}")
+            for name, _ in survivors
+        }
+
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        completed_request = request
+        request = None
+        if change == "rename_replace" or (
+            change == "drop_replace" and failpoint.endswith("identity_lookup")
+        ):
+            assert "ACCESS_DENIED" in completed_request.get_error()
+        else:
+            # A disappeared bound ID is skipped; a replacement under the same name is never updated.
+            assert completed_request.get_answer() == ""
+
+        for name, expected_password in survivors:
+            assert instance.query(f"SHOW CREATE USER {name}") == definitions[name]
+            assert instance.query("SELECT 1", user=name, password=expected_password) == "1\n"
+            assert "AUTHENTICATION_FAILED" in instance.query_and_get_error(
+                "SELECT 1", user=name, password=attempted_password
+            )
+        assert instance.query(
+            f"SELECT count() FROM system.users WHERE name IN ('{user}', '{renamed}')"
+        ) == f"{len(survivors)}\n"
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        try:
+            if request is not None:
+                request.get_answer_and_error()
+        finally:
+            instance.query(f"DROP USER IF EXISTS {user}, {renamed}")

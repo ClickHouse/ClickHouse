@@ -9,6 +9,7 @@
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
@@ -40,6 +41,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_DENIED;
+}
+namespace FailPoints
+{
+    extern const char self_authentication_before_identity_lookup[];
+    extern const char self_authentication_before_update[];
 }
 namespace
 {
@@ -279,6 +285,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         if (self_service)
         {
+            FailPointInjection::pauseFailPoint(FailPoints::self_authentication_before_identity_lookup);
             /// Resolve after authorization. `IF EXISTS` may skip a missing target, but a recreated
             /// account must match the authenticated ID. Retain that ID through the storage update.
             self_service_user_id = query.if_exists
@@ -381,6 +388,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         if (self_service_user_id)
         {
+            FailPointInjection::pauseFailPoint(FailPoints::self_authentication_before_update);
             /// `IF EXISTS` can skip a dropped ID but never follows a replacement account by name.
             storage->update(*self_service_user_id, update_func, /* throw_if_not_exists = */ !query.if_exists);
         }
