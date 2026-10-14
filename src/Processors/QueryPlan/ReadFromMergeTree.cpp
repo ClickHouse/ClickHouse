@@ -2316,17 +2316,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             && parts_with_ranges.size() > 1
             && !(settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion);
 
-        /// Even without PrefetchingConcat, split parts into multiple streams
-        /// when the downstream wants parallel streams (e.g. aggregation-in-order).
+        /// Per-part splitting exists only to feed `PrefetchingConcat`, which needs the streams of
+        /// one part to cover contiguous ranges of that part. When the downstream wants parallel
+        /// streams instead (`prefer_multiple_streams`: aggregation-, distinct- or `LIMIT BY`-in-order),
+        /// the distribute-by-streams loop below is better: it balances marks evenly across the
+        /// streams, while per-part splitting rounds the share of every part and can leave a whole
+        /// part to a single stream, which then becomes the critical path of the query.
         ///
         /// Per-part splitting requires at least one stream for every part, so it can
         /// only stay within the `num_streams` budget when there are no more parts than
         /// streams. With more parts than streams we fall through to the original
         /// distribute-by-streams loop below, which groups multiple parts into a single
         /// stream and keeps the total stream count bounded by `num_streams`.
-        const bool can_split_parts =
-            (can_use_per_part_prefetching || (prefer_multiple_streams && num_streams > 1))
-            && parts_with_ranges.size() <= num_streams;
+        const bool can_split_parts = can_use_per_part_prefetching && parts_with_ranges.size() <= num_streams;
 
         /// Read-ahead budget for a stream inside the `PrefetchingConcat` prefetch window: the
         /// budget `SortingStep` gives to a single merge input through `BufferChunksTransform`,
@@ -2463,7 +2465,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         {
             /// Fallback: distribute parts across num_streams streams (original behavior).
             /// Used when per-part splitting is not beneficial (e.g. LIMIT queries where
-            /// early termination is more important than parallel I/O).
+            /// early termination is more important than parallel I/O, or a downstream step
+            /// that wants evenly sized parallel streams rather than `PrefetchingConcat`).
             const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
 
             /// Named distinctly from the outer `split_parts_and_ranges` (used only by the
