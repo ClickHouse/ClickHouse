@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS t_partitioned;
 DROP TABLE IF EXISTS t_named_partitioned;
 DROP TABLE IF EXISTS t_named_hashed;
 DROP TABLE IF EXISTS t_named_monotonic;
+DROP TABLE IF EXISTS t_named_dynamic;
 
 CREATE TABLE t_monotonic (s Nullable(String))
 ENGINE = MergeTree ORDER BY assumeNotNull(s) SETTINGS index_granularity = 1, allow_nullable_key = 1;
@@ -85,6 +86,13 @@ INSERT INTO t_named_monotonic VALUES (('x', 'y'));
 INSERT INTO t_named_monotonic VALUES (('y', 'x'));
 INSERT INTO t_named_monotonic VALUES (('z', 'z'));
 
+CREATE TABLE t_named_dynamic (k Tuple(a String, b String))
+ENGINE = MergeTree ORDER BY cityHash64(k) SETTINGS index_granularity = 1;
+SYSTEM STOP MERGES t_named_dynamic;
+INSERT INTO t_named_dynamic VALUES (('x', 'y'));
+INSERT INTO t_named_dynamic VALUES (('y', 'x'));
+INSERT INTO t_named_dynamic VALUES (('z', 'z'));
+
 -- { echo }
 
 SELECT count() FROM t_monotonic WHERE s <= toFixedString('abc', 4);
@@ -111,6 +119,7 @@ SELECT count() FROM t_named_partitioned WHERE k = CAST(('abc', CAST(toFixedStrin
 -- The constant is not converted to the key type by `CAST`, which would reorder the elements by name.
 SELECT count() FROM t_named_hashed WHERE k = CAST(('abc', toFixedString('abc', 4)) AS Tuple(b String, a FixedString(4)));
 SELECT count() FROM t_named_monotonic WHERE k = CAST(('x', 'y') AS Tuple(b String, a String));
+SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(b String, a String)) AS Dynamic);
 
 -- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
@@ -125,6 +134,9 @@ SELECT count() FROM t_partitioned WHERE k = (CAST('abc' AS Dynamic), toUInt8(1))
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), 'abc', toUInt8(1))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_tuple WHERE k = tuple(toFixedString('abc', 4), 'abc', 1) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_named_monotonic WHERE k = CAST(('x', 'y') AS Tuple(a String, b String)) SETTINGS force_primary_key = 1;
+-- A `Variant` or `Dynamic` constant is judged by the named tuple it actually holds.
+SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(a String, b String)) AS Dynamic) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_named_dynamic WHERE k = CAST(CAST(('x', 'y') AS Tuple(a String, b String)) AS Variant(Tuple(a String, b String), Tuple(b String, a String))) SETTINGS force_primary_key = 1;
 -- Named tuple elements are paired by name, as `CAST` does.
 SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple('abc', toFixedString('abc', 4)) AS Tuple(b String, a FixedString(4)))) SETTINGS force_primary_key = 1;
 
@@ -147,3 +159,4 @@ DROP TABLE t_partitioned;
 DROP TABLE t_named_partitioned;
 DROP TABLE t_named_hashed;
 DROP TABLE t_named_monotonic;
+DROP TABLE t_named_dynamic;
