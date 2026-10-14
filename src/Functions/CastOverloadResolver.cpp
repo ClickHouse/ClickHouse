@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
@@ -24,6 +25,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TYPE_MISMATCH;
 }
 
 /// accurateCastOrNull wraps the result in Nullable to represent conversion failures.
@@ -62,6 +64,48 @@ bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
         return false;
 
     return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
+}
+
+VectorWithMemoryTracking<std::optional<size_t>> getTupleCastElementPositions(const DataTypeTuple & from, const DataTypeTuple & to)
+{
+    VectorWithMemoryTracking<std::optional<size_t>> positions;
+    positions.reserve(to.getElements().size());
+
+    if (from.hasExplicitNames() && to.hasExplicitNames())
+    {
+        const auto & from_names = from.getElementNames();
+        const auto & to_names = to.getElementNames();
+        UnorderedMapWithMemoryTracking<String, size_t> from_positions;
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+
+        bool has_common_name = false;
+        for (const auto & name : to_names)
+        {
+            auto it = from_positions.find(name);
+            if (it == from_positions.end())
+                positions.emplace_back();
+            else
+            {
+                positions.emplace_back(it->second);
+                has_common_name = true;
+            }
+        }
+
+        if (has_common_name)
+            return positions;
+        positions.clear();
+    }
+
+    if (from.getElements().size() != to.getElements().size())
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
+                        "with the same number of elements or from String.\nLeft type: {}, right type: {}",
+                        from.getName(), to.getName());
+
+    for (size_t i = 0; i < to.getElements().size(); ++i)
+        positions.emplace_back(i);
+    return positions;
 }
 
 static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
