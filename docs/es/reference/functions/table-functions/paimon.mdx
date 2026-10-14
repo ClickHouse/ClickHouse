@@ -15,9 +15,7 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 
 Proporciona una interfaz similar a una tabla de solo lectura para tablas de Apache [Paimon](https://paimon.apache.org/) en Amazon S3, Azure, HDFS o almacenadas localmente.
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
@@ -31,24 +29,24 @@ paimonHDFS(path_to_table, [,format] [,compression_method])
 paimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 La descripción de estos argumentos coincide con la de las funciones de tabla `s3`, `azureBlobStorage`, `HDFS` y `file`, respectivamente.
 `format` indica el formato de los archivos de datos de la tabla Paimon.
 
 Para `paimonS3`, puede usarse un parámetro opcional, `extra_credentials`, para pasar un `role_arn` y habilitar el acceso basado en roles en ClickHouse Cloud. Consulta [Secure S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver los pasos de configuración.
 
-<div id="returned-value">
-  ### Valor de retorno
-</div>
+### Valor de retorno {#returned-value}
 
 Una tabla con la estructura especificada para leer datos de la tabla de Paimon indicada.
 
-<div id="defining-a-named-collection">
-  ## Definir una colección con nombre
-</div>
+## Limitaciones {#limitations}
+
+La fusión durante la lectura no está implementada, por lo que **no se pueden leer tablas con clave primaria**: el componente de lectura devuelve la unión sin procesar de los
+archivos de datos de la instantánea, que aún contiene versiones de filas sustituidas por operaciones posteriores de inserción o actualización. Por tanto, leer una tabla cuyo esquema
+declara `primary-key` genera una excepción.
+
+## Definir una colección con nombre {#defining-a-named-collection}
 
 A continuación se muestra un ejemplo de cómo configurar una colección con nombre para almacenar la URL y las credenciales:
 
@@ -71,15 +69,11 @@ SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
 DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="aliases">
-  ## Alias
-</div>
+## Alias {#aliases}
 
 La función de tabla `paimon` ahora es un alias de `paimonS3`.
 
-<div id="virtual-columns">
-  ## Columnas virtuales
-</div>
+## Columnas virtuales {#virtual-columns}
 
 * `_path` — Ruta del archivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
@@ -87,13 +81,11 @@ La función de tabla `paimon` ahora es un alias de `paimonS3`.
 * `_time` — Hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
 * `_etag` — El etag del archivo. Tipo: `LowCardinality(String)`. Si se desconoce el etag, el valor es `NULL`.
 
-<div id="data-types-supported">
-  ## Tipos de datos admitidos
-</div>
+## Tipos de datos admitidos {#data-types-supported}
 
 | Tipo de dato de Paimon            | Tipo de dato de ClickHouse |
 | --------------------------------- | -------------------------- |
-| BOOLEAN                           | Int8                       |
+| BOOLEAN                           | Bool                       |
 | TINYINT                           | Int8                       |
 | SMALLINT                          | Int16                      |
 | INTEGER                           | Int32                      |
@@ -111,9 +103,7 @@ La función de tabla `paimon` ahora es un alias de `paimonS3`.
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
 
-<div id="partition-supported">
-  ## Particiones admitidas
-</div>
+## Particiones admitidas {#partition-supported}
 
 Tipos de datos admitidos en las claves de partición de Paimon:
 
@@ -132,9 +122,7 @@ Tipos de datos admitidos en las claves de partición de Paimon:
 * `FLOAT`
 * `DOUBLE`
 
-<div id="see-also">
-  ## Véase también
-</div>
+## Véase también {#see-also}
 
 * [Función de tabla de clúster de Paimon](/es/reference/functions/table-functions/paimonCluster)
 
