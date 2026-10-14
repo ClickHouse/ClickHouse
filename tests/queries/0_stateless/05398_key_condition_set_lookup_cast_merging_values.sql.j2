@@ -64,10 +64,14 @@ INSERT INTO t_names SELECT (number % 4, number) FROM numbers(8);
 {{ check('t_names', "t IN (SELECT CAST((3, 0), 'Tuple(a UInt8, c UInt8)'))") }}
 {{ check('t_names', "t IN (SELECT CAST((7, 3), 'Tuple(b UInt8, a UInt8)'))") }}
 
--- An array casts element by element.
+-- An array casts element by element, and an array of pairs casts into a `Map` pair by pair.
 CREATE TABLE t_array (a Array(Decimal64(4))) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_array SELECT [d] FROM t_decimal;
 {{ check('t_array', "a IN (SELECT [toDecimal64(1.23, 2)])") }}
+
+CREATE TABLE t_pairs (a Array(Tuple(Decimal64(4), UInt8))) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_pairs SELECT [(d, toUInt8(1))] FROM t_decimal;
+{{ check('t_pairs', "a IN (SELECT map(toDecimal64(1.23, 2), toUInt8(1)))") }}
 
 -- An `Enum` converts exactly into an integer that holds all its values, and a number renders into a `String`
 -- exactly.

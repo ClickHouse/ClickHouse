@@ -426,8 +426,15 @@ bool Set::lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTy
 
     if (const auto * from_array = typeid_cast<const DataTypeArray *>(from.get()))
     {
-        const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
-        return !to_array || lookupCastMayMergeValues(from_array->getNestedType(), to_array->getNestedType());
+        if (const auto * to_array = typeid_cast<const DataTypeArray *>(to.get()))
+            return lookupCastMayMergeValues(from_array->getNestedType(), to_array->getNestedType());
+
+        /// `CAST` turns an array of pairs into a `Map` pair by pair, by position, and keeps repeated keys.
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+        const auto * pair = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
+        return !to_map || !pair || pair->getElements().size() != 2
+            || lookupCastMayMergeValues(pair->getElements()[0], to_map->getKeyType())
+            || lookupCastMayMergeValues(pair->getElements()[1], to_map->getValueType());
     }
 
     if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.get()))
@@ -440,7 +447,7 @@ bool Set::lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTy
     if (isDynamic(to) || isVariant(to) || isObject(to))
         return false;
 
-    if ((isInteger(from) && isInteger(to)) || (isNativeNumber(from) && isNativeNumber(to)))
+    if ((isInteger(from) || isFloat(from)) && (isInteger(to) || isFloat(to)))
         return false;
 
     return !conversionPreservesOrder(*from, *to) && !canBeSafelyCast(from, to);
