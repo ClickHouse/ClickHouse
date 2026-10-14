@@ -279,6 +279,127 @@ def test_cache_arena_isolation(started_cluster):
     node.query("DROP TABLE t_arena_page_cache SYNC")
 
 
+def test_text_index_lookahead(started_cluster):
+    """Text index readers visit blocks out of file order, so `use_page_cache_lookahead_for_text_index`
+    keeps their page cache lookahead at one block by default. A longer lookahead is abandoned at the
+    next seek, and the S3 connection is reset. A plain sequential scan keeps the normal lookahead."""
+    node = cluster.instances["node1"]
+
+    node.query(
+        "drop table if exists t_text_index_lookahead;"
+        "drop table if exists t_text_index_lookahead_seq;"
+    )
+
+    # 40 tokens, 8 of them (searched below) with much larger cardinalities than the 32 filler tokens.
+    # A hash shuffle interleaves every token's rows, so its own postings cannot compress into one short run.
+    node.query(
+        """
+        create table t_text_index_lookahead
+        (
+            s String,
+            index idx s type text(tokenizer = 'splitByNonAlpha', dictionary_block_size = 4, posting_list_block_size = 256)
+        )
+        engine = MergeTree order by tuple()
+        settings storage_policy = 's3', min_bytes_for_wide_part = 0,
+            min_compress_block_size = 256, max_compress_block_size = 256;
+
+        insert into t_text_index_lookahead (s)
+        select concat('kwneedle', leftPad(toString(token_idx_and_rows.1), 2, '0'))
+        from
+        (
+            select arrayJoin(arrayZip(
+                range(40),
+                [2500, 1000, 1000, 1000, 1000, 15000, 1000, 1000, 1000, 1000,
+                 7500, 1000, 1000, 1000, 1000, 20000, 1000, 1000, 1000, 1000,
+                 12500, 1000, 1000, 1000, 1000, 5000, 1000, 1000, 1000, 1000,
+                 17500, 1000, 1000, 1000, 1000, 10000, 1000, 1000, 1000, 1000]
+            )) as token_idx_and_rows
+        ) as tokens
+        array join range(token_idx_and_rows.2) as row_in_token
+        order by sipHash64(row_in_token, token_idx_and_rows.1);
+
+        optimize table t_text_index_lookahead final;
+
+        create table t_text_index_lookahead_seq (n UInt64)
+        engine = MergeTree order by tuple()
+        settings storage_policy = 's3', min_bytes_for_wide_part = 0,
+            min_compress_block_size = 256, max_compress_block_size = 256;
+
+        insert into t_text_index_lookahead_seq select sipHash64(number) from numbers(150000);
+
+        optimize table t_text_index_lookahead_seq final;
+        """
+    )
+
+    # The 8 tokens are listed in file order, but are actually read rarest-first; the *_cache settings
+    # disable the server-wide text index caches, so the query reads through the page cache.
+    search_query = """
+        select count() from t_text_index_lookahead
+        where hasAnyTokens(s, ['kwneedle00', 'kwneedle05', 'kwneedle10', 'kwneedle15', 'kwneedle20', 'kwneedle25', 'kwneedle30', 'kwneedle35'])
+        settings
+            use_page_cache_for_disks_without_file_cache = 1,
+            page_cache_block_size = 1024,
+            max_threads = 1,
+            use_text_index_tokens_cache = 0,
+            use_text_index_negative_tokens_cache = 0,
+            use_text_index_pattern_bypass_cache = 0,
+            use_text_index_header_cache = 0,
+            use_text_index_postings_cache = 0,
+            use_query_condition_cache = 0,
+            use_page_cache_lookahead_for_text_index = {}
+        """
+
+    def run_cold(query):
+        node.query("system drop page cache")
+        query_id = uuid.uuid4().hex
+        result = node.query(query, query_id=query_id)
+        return result, query_id
+
+    default_result, default_query_id = run_cold(search_query.format(0))
+    setting_on_result, setting_on_query_id = run_cold(search_query.format(1))
+    seq_result, seq_query_id = run_cold(
+        "select sum(n) from t_text_index_lookahead_seq settings "
+        "use_page_cache_for_disks_without_file_cache = 1, page_cache_block_size = 1024, max_threads = 1"
+    )
+
+    assert default_result == "90000\n"
+    assert setting_on_result == "90000\n"
+    assert seq_result == "15975038870141670131\n"
+
+    node.query("system flush logs query_log")
+
+    def get_events(query_id):
+        tsv = node.query(
+            "select ProfileEvents['PageCacheMisses'], ProfileEvents['DiskConnectionsReset'], ProfileEvents['S3GetObject'] "
+            f"from system.query_log where query_id = '{query_id}' and type = 'QueryFinish'"
+        )
+        misses, resets, gets = map(int, tsv.split())
+        return {"misses": misses, "resets": resets, "gets": gets}
+
+    # Default: many misses, but almost nothing is abandoned.
+    events = get_events(default_query_id)
+    logging.info(f"default: {events}")
+    assert events["misses"] >= 100
+    assert events["resets"] <= 2
+
+    # With the normal lookahead, many more connections are abandoned.
+    events = get_events(setting_on_query_id)
+    logging.info(f"setting on: {events}")
+    assert events["resets"] > 2
+
+    # Sequential scan: many misses, still grouped into few requests by the normal lookahead.
+    events = get_events(seq_query_id)
+    logging.info(f"sequential: {events}")
+    assert events["misses"] >= 100
+    assert events["gets"] * 8 < events["misses"]
+
+    node.query(
+        "drop table t_text_index_lookahead sync;"
+        "drop table t_text_index_lookahead_seq sync;"
+        "system drop page cache;"
+    )
+
+
 def test_size_adjustment(started_cluster):
     if is_sanitizer:
         pytest.skip("sanitizer build has higher memory consumption; also it is slow")
