@@ -146,7 +146,7 @@ for f in truncated_ip.pcap truncated_raw_ip.pcap; do
 done
 
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap sll2.pcap dot3.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap sll2.pcap dot3.pcap options.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
@@ -238,3 +238,26 @@ $CLICKHOUSE_LOCAL -q "
 SELECT number, link_type, protocols, eth_src, eth_dst, eth_type, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port
 FROM file('$DATA_DIR/dot3.pcap', PCAP)
 ORDER BY number FORMAT TSV"
+
+echo "--- end-of-options padding: the headers are dissected, the payload starts after the padding ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, protocols, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port, payload_length, payload
+FROM file('$DATA_DIR/options.pcap', PCAP)
+WHERE ip_version = 4
+ORDER BY number FORMAT TSV"
+
+echo "--- non-first IPv6 fragment: the extension-header chain stops at the Fragment header ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, protocols, ip_protocol, src_port, dst_port, payload_length
+FROM file('$DATA_DIR/options.pcap', PCAP)
+WHERE ip_version = 6 FORMAT TSV"
+
+echo "--- explicit structure: the columns are converted to the requested types ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, toTypeName(number), dst_port, toTypeName(dst_port)
+FROM file('$DATA_DIR/packets.pcap', PCAP, 'number UInt32, dst_port Nullable(String)')
+ORDER BY number FORMAT TSV"
+$CLICKHOUSE_LOCAL -q "
+SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP, 'no_such_column UInt64')" 2>&1 | grep -o -m1 'THERE_IS_NO_COLUMN'
+$CLICKHOUSE_LOCAL -q "
+SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP, 'src_addr UInt8')" 2>&1 | grep -o -m1 'CANNOT_CONVERT_TYPE\|TYPE_MISMATCH\|CANNOT_PARSE[A-Z_]*' | head -n1

@@ -32,3 +32,7 @@ rewrite each other's files.
 - `null.pcap`, `sll.pcap` — an IPv4 TCP packet behind a BSD loopback header
   (`LINKTYPE_NULL`) and an IPv4 UDP packet behind a Linux cooked capture header
   (`LINKTYPE_LINUX_SLL`), link types that are dissected by `libtins`.
+- `options.pcap` — IPv4 and TCP headers whose options are the end-of-options
+  marker followed by padding, so the payload starts at the captured header
+  length, and a non-first IPv6 fragment whose data looks like an extension
+  header, so the extension-header chain stops at the Fragment header.

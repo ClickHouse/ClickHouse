@@ -233,3 +233,41 @@ stp = dot3(bytes.fromhex("424203") + bytes(35))
 stp_padded = stp + b"\xee" * (60 - len(stp))
 dot3_frames = [snap_ip, stp_padded, ethernet(ipv4(17, udp))]
 write_pcap(out_dir / "dot3.pcap", [(packet, len(packet)) for packet in dot3_frames])
+
+# Headers with padding after the end-of-options marker, which a reader must skip
+# through the length field of the header (RFC 791, section 3.1, and RFC 9293):
+# an IPv4 header with `IHL = 6` whose options are the end-of-options marker and
+# three bytes of padding, carrying UDP; an IPv4 TCP packet whose TCP header has
+# `data offset = 6` and the same options; and both at once. The payload is `ping`
+# in every packet, and the address and port columns are filled.
+def ipv4_with_options(protocol, options, payload):
+    assert len(options) % 4 == 0
+    header_length = 20 + len(options)
+    return (
+        bytes([0x40 | (header_length // 4), 0])
+        + struct.pack(">HHH", header_length + len(payload), 0, 0x4000)
+        + bytes.fromhex("40")
+        + bytes([protocol])
+        + bytes.fromhex("0000c0000201c0000202")
+        + options
+        + payload
+    )
+
+
+end_of_options = bytes(4)
+udp_ping = struct.pack(">HHHH", 5353, 5353, 12, 0) + b"ping"
+tcp_ping = struct.pack(">HHIIBBHHH", 12345, 80, 1, 0, 0x60, 0x18, 1024, 0, 0) + end_of_options + b"ping"
+padded_options = [
+    ethernet(ipv4_with_options(17, end_of_options, udp_ping)),
+    ethernet(ipv4(6, tcp_ping)),
+    ethernet(ipv4_with_options(6, end_of_options, tcp_ping)),
+]
+
+# A non-first IPv6 fragment (offset 2) of a datagram with a Destination Options
+# header before UDP: the Fragment header names Destination Options (60), but that
+# header is in the first fragment, and the bytes after the Fragment header are
+# UDP application data that happen to look like a Destination Options header
+# naming TCP. Only the type named by the Fragment header is known.
+non_first_fragment = bytes([60, 0]) + struct.pack(">HI", 2 << 3, 0x12345678) + bytes.fromhex("0600000000000000") + b"data"
+padded_options.append(ethernet(ipv6(44, non_first_fragment), ether_type=0x86DD))
+write_pcap(out_dir / "options.pcap", [(packet, len(packet)) for packet in padded_options])

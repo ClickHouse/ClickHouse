@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/ErrnoException.h>
 
@@ -50,6 +51,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 /// One row per packet; up to this many packets per Chunk.
@@ -150,10 +152,28 @@ static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
     return name_to_idx;
 }
 
+static const DataTypes & getColumnTypes()
+{
+    static const DataTypes types = getHeaderForPCAP().getTypes();
+    return types;
+}
+
+/// The PCAP format has a fixed set of columns, so a name that is not one of them can not be read.
+static size_t getColumnIdx(const std::string & name)
+{
+    const auto & name_to_idx = getColumnNameToIdx();
+    auto it = name_to_idx.find(name);
+    if (it == name_to_idx.end())
+        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", name);
+    return it->second;
+}
+
 PCAPBlockInputFormat::PCAPBlockInputFormat(
     ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, size_t max_block_size_rows_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), max_block_size_rows(max_block_size_rows_)
 {
+    for (const std::string & name : getPort().getHeader().getNames())
+        getColumnIdx(name);
 }
 
 PCAPBlockInputFormat::~PCAPBlockInputFormat()
@@ -436,16 +456,6 @@ Tins::PDU::PDUType carriedProtocol(const Tins::PDU & layer)
     return Tins::Internals::ether_type_to_pdu_flag(static_cast<Tins::Constants::Ethernet::e>(type));
 }
 
-/// Byte offset of `target` inside the frame that starts with `root`: the sum of the header
-/// sizes of the layers above it.
-size_t offsetOfLayer(const Tins::PDU & root, const Tins::PDU & target)
-{
-    size_t offset = 0;
-    for (const Tins::PDU * layer = &root; layer != nullptr && layer != &target; layer = layer->inner_pdu())
-        offset += layer->header_size();
-    return offset;
-}
-
 /// The IPv6 extension headers (RFC 8200 and RFC 7045). `No Next Header` (59) and `ESP` (50)
 /// end the chain, so they are not listed here.
 bool isIPv6ExtensionHeader(UInt8 header)
@@ -466,16 +476,27 @@ bool isIPv6ExtensionHeader(UInt8 header)
     }
 }
 
+struct IPv6HeaderChain
+{
+    /// The protocol carried by the packet.
+    UInt8 next_header = 0;
+    /// Byte offset in the frame where the extension-header chain ends.
+    size_t end = 0;
+};
+
 /// Walks the extension-header chain (Hop-by-Hop options, Routing, Fragment, ...) of an IPv6
 /// packet, calling `on_extension_header` with the type of every extension header in the chain,
 /// and returns the protocol carried by the packet: the `next header` value of the last header of
-/// the chain, or the value from the fixed header when there is no chain. `libtins` strips the
-/// `next header` byte of every extension header it parses and exposes only the one from the
-/// fixed header, so the chain is walked over the raw bytes of the frame. When the snapshot length
-/// cuts the chain, the type of the last extension header that is still known is returned: the walk
-/// stops at the first extension header that was not captured completely.
+/// the chain, or the value from the fixed header when there is no chain, together with the offset
+/// where the chain ends. `libtins` strips the `next header` byte of every extension header it
+/// parses and exposes only the one from the fixed header, so the chain is walked over the raw
+/// bytes of the frame. When the snapshot length cuts the chain, the type of the last extension
+/// header that is still known is returned: the walk stops at the first extension header that was
+/// not captured completely. The walk also stops after the Fragment header of a non-first fragment:
+/// the headers that follow it are present only in the first fragment (RFC 8200, section 4.5), so
+/// the bytes after it are fragment data, and only the type it names is known.
 template <typename OnExtensionHeader>
-UInt8 walkIPv6ExtensionHeaders(
+IPv6HeaderChain walkIPv6ExtensionHeaders(
     const Tins::IPv6 & ipv6, const unsigned char * frame, size_t frame_size, size_t ipv6_offset, OnExtensionHeader && on_extension_header)
 {
     static constexpr size_t fixed_header_size = 40;
@@ -506,15 +527,46 @@ UInt8 walkIPv6ExtensionHeaders(
         if (pos + header_length > frame_size)
             break;
 
+        /// The fragment offset is in the upper 13 bits of the third and the fourth bytes.
+        const bool is_non_first_fragment = next == Tins::IPv6::FRAGMENT && ((frame[pos + 2] << 8) | frame[pos + 3]) >> 3 != 0;
+
         pos += header_length;
         next = following;
+
+        if (is_non_first_fragment)
+            break;
     }
-    return next;
+    return {next, pos};
 }
 
 UInt8 ipv6FinalNextHeader(const Tins::IPv6 & ipv6, const unsigned char * frame, size_t frame_size, size_t ipv6_offset)
 {
-    return walkIPv6ExtensionHeaders(ipv6, frame, frame_size, ipv6_offset, [](UInt8) {});
+    return walkIPv6ExtensionHeaders(ipv6, frame, frame_size, ipv6_offset, [](UInt8) {}).next_header;
+}
+
+/// Size of the header of `layer`, which starts at `offset` in the frame, as it was captured.
+/// `PDU::header_size` is computed again from the fields that `libtins` kept, so it differs from
+/// the captured size when the header has bytes that are not kept: the padding after the
+/// end-of-options marker of `IPv4` and `TCP`, or the padding of `IPv6` extension headers.
+size_t capturedHeaderSize(const Tins::PDU & layer, const unsigned char * frame, size_t frame_size, size_t offset)
+{
+    if (const auto * ip = dynamic_cast<const Tins::IP *>(&layer))
+        return ip->head_len() * sizeof(uint32_t);
+    if (const auto * tcp = dynamic_cast<const Tins::TCP *>(&layer))
+        return tcp->data_offset() * sizeof(uint32_t);
+    if (const auto * ipv6 = dynamic_cast<const Tins::IPv6 *>(&layer))
+        return walkIPv6ExtensionHeaders(*ipv6, frame, frame_size, offset, [](UInt8) {}).end - offset;
+    return layer.header_size();
+}
+
+/// Byte offset of `target` inside the frame that starts with `root`: the sum of the captured
+/// header sizes of the layers above it.
+size_t offsetOfLayer(const Tins::PDU & root, const Tins::PDU & target, const unsigned char * frame, size_t frame_size)
+{
+    size_t offset = 0;
+    for (const Tins::PDU * layer = &root; layer != nullptr && layer != &target; layer = layer->inner_pdu())
+        offset += capturedHeaderSize(*layer, frame, frame_size, offset);
+    return offset;
 }
 
 /// Name of the IANA protocol number found in the IPv4 `protocol` field or after the IPv6
@@ -585,10 +637,9 @@ Chunk PCAPBlockInputFormat::read()
     initializeIfNeeded();
 
     const auto & header = getPort().getHeader();
-    const auto & column_name_to_idx = getColumnNameToIdx();
     std::array<bool, COL_COUNT> need{};
     for (const std::string & name : header.getNames())
-        need[column_name_to_idx.at(name)] = true;
+        need[getColumnIdx(name)] = true;
 
     /// LowCardinality(String) columns are built directly via insertData.
     static const auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -723,7 +774,7 @@ Chunk PCAPBlockInputFormat::read()
                 /// are taken from the raw bytes and listed right after the IPv6 layer.
                 if (const auto * ipv6_layer = dynamic_cast<const Tins::IPv6 *>(p))
                 {
-                    walkIPv6ExtensionHeaders(*ipv6_layer, data, caplen, offsetOfLayer(*pdu, *ipv6_layer), [&](UInt8 extension_header)
+                    walkIPv6ExtensionHeaders(*ipv6_layer, data, caplen, offsetOfLayer(*pdu, *ipv6_layer, data, caplen), [&](UInt8 extension_header)
                     {
                         String header_name = ipProtocolName(extension_header);
                         col_protocols_data->insertData(header_name.data(), header_name.size());
@@ -869,7 +920,7 @@ Chunk PCAPBlockInputFormat::read()
             if (ipv4)
                 name = ipProtocolName(ipv4->protocol());
             else if (ipv6)
-                name = ipProtocolName(ipv6FinalNextHeader(*ipv6, data, caplen, offsetOfLayer(*pdu, *ipv6)));
+                name = ipProtocolName(ipv6FinalNextHeader(*ipv6, data, caplen, offsetOfLayer(*pdu, *ipv6, data, caplen)));
             col_ip_protocol->insertData(name.data(), name.size());
         }
 
@@ -910,14 +961,13 @@ Chunk PCAPBlockInputFormat::read()
             if (tcp) inner = tcp->inner_pdu();
             else if (udp) inner = udp->inner_pdu();
 
-            /// The payload is a contiguous range of the captured frame, so it is sliced from the frame
-            /// instead of being serialized again. Its size comes from the dissected layers, which leave
-            /// out the bytes past the IP length, such as the Ethernet padding of short frames.
-            if (inner != nullptr)
+            /// `libtins` keeps the bytes after the TCP or UDP header as a raw PDU, which copies them
+            /// from the captured frame. They leave out the bytes past the IP length, such as the
+            /// Ethernet padding of short frames.
+            if (const auto * raw_payload = dynamic_cast<const Tins::RawPDU *>(inner))
             {
-                const size_t offset = std::min<size_t>(offsetOfLayer(*pdu, *inner), caplen);
-                const size_t size = std::min<size_t>(inner->size(), caplen - offset);
-                payload = std::string_view(reinterpret_cast<const char *>(data) + offset, size);
+                const auto & bytes = raw_payload->payload();
+                payload = std::string_view(reinterpret_cast<const char *>(bytes.data()), bytes.size());
             }
 
             if (need[COL_PAYLOAD_LENGTH])
@@ -972,14 +1022,16 @@ Chunk PCAPBlockInputFormat::read()
     built[COL_PAYLOAD] = std::move(col_payload);
     built[COL_RAW] = std::move(col_raw);
 
+    /// The requested header may declare types other than the ones produced above.
+    const auto & native_types = getColumnTypes();
     Columns cols;
     cols.reserve(header.columns());
-    for (const std::string & name : header.getNames())
+    for (const auto & requested : header)
     {
-        size_t idx = column_name_to_idx.at(name);
-        if (idx >= COL_COUNT || !built[idx])
-            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Unexpected PCAP column index");
-        cols.push_back(built[idx]);
+        size_t idx = getColumnIdx(requested.name);
+        ColumnWithTypeAndName column(built[idx], native_types[idx], requested.name);
+        castColumnToRequestedType(column, requested.type);
+        cols.push_back(std::move(column.column));
     }
 
     return Chunk(std::move(cols), num_rows);
