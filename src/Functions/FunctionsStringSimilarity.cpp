@@ -770,8 +770,8 @@ For input strings longer than 32,768 bytes, it has the same shortcut and excepti
         "SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕжзи', 'АбвгдЕЖЗИ')",
         R"(
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕжзи', 'АбвгдЕЖЗИ')─┐
-│                                                      1 │
-└────────────────────────────────────────────────────────┘
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
         )"
     }
     };
