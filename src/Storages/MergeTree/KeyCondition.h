@@ -269,6 +269,14 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
+    /// could not be evaluated on a range (rather than because it is not monotonic there). Such an answer is an
+    /// over-approximation, so it supports no exactness claim derived from `matchesExactContinuousRange`, and it
+    /// contradicts none either. The caller takes a snapshot before a check and compares after it: the analysis of a
+    /// part runs on one thread, and the counter is the only channel that reaches through every path applying a chain,
+    /// including `MergeTreeSetIndex`.
+    static size_t getNumUnevaluableChainApplications();
+
     bool matchesExactContinuousRange() const;
 
     /// Extract plain ranges of the condition.
@@ -387,6 +395,10 @@ public:
         /// construction, such RPNElements get converted to FUNCTION_ARGS_IN_HYPERRECTANGLE operating
         /// on the key column directly (see findHyperrectanglesForArgumentsOfSpaceFillingCurves).
         std::optional<size_t> argument_num_of_space_filling_curve;
+
+        /// Position of this element in the RPN built from the filter. An element that
+        /// `findHyperrectanglesForArgumentsOfSpaceFillingCurves` collapses takes the position of its first atom.
+        std::optional<size_t> position_in_filter_rpn;
 
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
@@ -600,7 +612,8 @@ private:
     /// The result of pushing the predicate's constant through a key-side recipe.
     /// The transformed `value` and `type` live in the key space of `key_column_num`
     /// and compare against that column directly. An exact atom requires an injective
-    /// transform whose input contains no NaN; otherwise the atom must be relaxed.
+    /// transform, a normalization of the constant that loses nothing, no NaN in the transform
+    /// input, and no `NULL` that the key value hides; otherwise the atom must be relaxed.
     struct TransformedConstant
     {
         size_t key_column_num = 0;
@@ -762,10 +775,14 @@ private:
     /// comparisons are not preserved. A float zero equals the zero of the other sign, so a scalar
     /// zero produces a candidate only when `f` maps both signs equally. A constant holding a nested
     /// float zero produces no candidate, because the transform can distinguish combinations of signs.
+    /// `nested_null_is_ordinary_value` is set for a null-safe comparison. There a `NULL` nested in a
+    /// `Tuple` is an ordinary value that matches only a `NULL` at the same position, so a transform that
+    /// hides it does not relax the atom.
     std::vector<TransformedConstant> transformConstantByDeterministicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
-        const ColumnWithTypeAndName & constant) const;
+        const ColumnWithTypeAndName & constant,
+        bool nested_null_is_ordinary_value) const;
 
     /// This is a key-side recipe like `KeyWrappingChain`, except that the computation
     /// is an arbitrary deterministic sub-DAG instead of a chain of single-argument
@@ -857,8 +874,16 @@ private:
     /// Unpacks the set layout and converts its columns using each mapping's comparison type and
     /// optional key transform. `set_types` records the unpacked source types, before conversion.
     /// Returns false when the layout or value transformation cannot be used for set-index analysis.
+    /// `membership_compares_carriers` is set for `IN`, whose `Set` compares the type that a value
+    /// carries before the value itself; `has` compares by value. `out_is_exact` reports whether the
+    /// converted set names exactly the key points of the original elements; otherwise the atom must
+    /// be relaxed.
     static bool tryPrepareSetColumnsForIndex(
-        Columns & set_columns, DataTypes & set_types, const SetAtomCandidate & candidate);
+        Columns & set_columns,
+        DataTypes & set_types,
+        const SetAtomCandidate & candidate,
+        bool membership_compares_carriers,
+        bool & out_is_exact);
 
     /// Checks that conversion preserves the raw element comparison used by `has`. A relaxed candidate
     /// needs only a sound positive membership condition; an exact candidate also needs its complement.
