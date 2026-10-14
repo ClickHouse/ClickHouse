@@ -105,7 +105,7 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
     {
         if (!elem.column)
             continue;
-        /// the index of a `LowCardinality` row is sized for the whole part after the scan
+        /// the scan sizes the index of a `LowCardinality` row for the whole part at its end
         if (elem.column->lowCardinality())
             continue;
         if (elem.column->valuesHaveFixedSize())
