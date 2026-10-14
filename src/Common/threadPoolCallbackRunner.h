@@ -59,20 +59,20 @@ struct CallbackRunnerTask
             if constexpr (std::is_void_v<Result>)
             {
                 {
-                    ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
                     callback();
                 }
-                /// The ThreadGroupSwitcher is destroyed (thread group detached) and the callback is
-                /// released before satisfying the promise, otherwise the waiter could race with the
-                /// detaching thread (see "Destroy ThreadGroupSwitcher before set value in std::future").
+                /// The ThreadGroupSwitcher (which took the task's group reference) is destroyed and the callback
+                /// released before satisfying the promise: otherwise the waiter could race with the detaching
+                /// thread, or end the query and free what the group's trackers point to.
                 promise.set_value();
             }
             else
             {
                 std::optional<Result> res;
                 {
-                    ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
                     res.emplace(callback());
                 }
@@ -90,15 +90,15 @@ struct CallbackRunnerTask
         if (was_run)
             return;
 
-        /// Release the callback under the task's thread group and BEFORE satisfying the promise, so a
-        /// woken waiter cannot tear down state the captures reference (same ordering as run()).
+        /// Release the callback (under the task's thread group) and the group reference BEFORE satisfying the
+        /// promise, so a woken waiter cannot tear down state they reference (same ordering as run()).
         /// When scheduleOrThrowOnError() throws synchronously, this destructor runs during stack
         /// unwinding on the SCHEDULING thread, which is usually a query thread already attached to its
         /// own group; only then allow borrowing it (the switcher saves and restores that group, instead
         /// of the LOGICAL_ERROR that would abort debug/sanitizer builds). A drop that is not an unwind
         /// (e.g. shutdown drain) runs on a group-less pool worker and must keep asserting.
         {
-            ThreadGroupSwitcher switcher(thread_group, thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
+            ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
             SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
         }
 
@@ -229,7 +229,7 @@ private:
         {
             FunctionResult res;
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
                 res = callback();
                 callback = {};
             }
@@ -251,7 +251,7 @@ private:
         try
         {
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
                 callback();
                 callback = {};
             }
