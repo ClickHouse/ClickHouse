@@ -148,6 +148,16 @@ template <typename T, typename U>
     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. {}", to_family_name, reason);
 }
 
+/// Whether the integer `value` keeps its value when cast to the signed intermediate type `To`.
+template <typename To, typename From>
+bool fitsIntermediate(From value)
+{
+    if constexpr (is_unsigned_v<From> && sizeof(From) >= sizeof(To))
+        return value <= static_cast<From>(std::numeric_limits<To>::max());
+    else
+        return true;
+}
+
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
@@ -470,7 +480,17 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
     else
     {
         if constexpr (is_big_int_v<FromFieldType>)
+        {
+            if (!fitsIntermediate<Int256>(value))
+            {
+                if constexpr (throw_exception)
+                    throwDecimalRangeOverflow(
+                        ToDataType::family_name, value, std::numeric_limits<ToNativeType>::min(), std::numeric_limits<ToNativeType>::max());
+                else
+                    return ReturnType(false);
+            }
             return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal256>, ToDataType, ReturnType>(static_cast<Int256>(value), 0, scale, result));
+        }
         else if constexpr (std::is_same_v<FromFieldType, UInt64>)
             return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal128>, ToDataType, ReturnType>(static_cast<Int128>(value), 0, scale, result));
         else
@@ -548,7 +568,8 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             for (size_t i = 0; i < size; ++i)
             {
                 WideType converted_value = static_cast<WideType>(from[i]);
-                bool overflow = converted_value < std::numeric_limits<ToNativeType>::min()
+                bool overflow = !fitsIntermediate<WideType>(from[i])
+                             || converted_value < std::numeric_limits<ToNativeType>::min()
                              || converted_value > std::numeric_limits<ToNativeType>::max();
 
                 if constexpr (has_nullmap)
@@ -579,7 +600,8 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
                 WideType converted_value;
                 bool overflow = bounds.mulOverflow(static_cast<WideType>(from[i]), converted_value);
 
-                overflow |= converted_value < std::numeric_limits<ToNativeType>::min()
+                overflow |= !fitsIntermediate<WideType>(from[i])
+                         || converted_value < std::numeric_limits<ToNativeType>::min()
                          || converted_value > std::numeric_limits<ToNativeType>::max();
 
                 if constexpr (has_nullmap)

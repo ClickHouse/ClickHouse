@@ -123,3 +123,14 @@ SELECT CAST(materialize(toInt32(5789604)) AS Decimal(76, 70)), accurateCastOrNul
 SELECT CAST(materialize(toInt32(5789605)) AS Decimal(76, 70)); -- { serverError DECIMAL_OVERFLOW }
 SELECT toDecimal256(materialize(toInt64(-5789605)), 70); -- { serverError DECIMAL_OVERFLOW }
 SELECT accurateCastOrNull(materialize(toInt64(5789605)), 'Decimal(76, 70)'), accurateCastOrNull(toInt64(-5789605), 'Decimal(76, 70)'), accurateCastOrNull(materialize(toInt128(5789605)), 'Decimal(76, 70)');
+
+SELECT '-- an unsigned integer that does not fit the signed intermediate';
+SELECT toDecimal256(materialize(toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819967')), 0), toDecimal256(toUInt256(5), 70), toDecimal256(materialize(toUInt256(5)), 1);
+SELECT toDecimal256(bitNot(toUInt256(0)), 1); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal256(materialize(bitNot(toUInt256(0))), 1); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal256(toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819968'), 0); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal256(materialize(toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819968')), 0); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal128(materialize(bitNot(toUInt256(0))), 0); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal64(bitNot(toUInt256(0)), 5); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal32(materialize(bitNot(toUInt256(0))), 1); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal256(arrayJoin([toUInt256(1), bitNot(toUInt256(0)), toUInt256(7)]), 0); -- { serverError DECIMAL_OVERFLOW }
