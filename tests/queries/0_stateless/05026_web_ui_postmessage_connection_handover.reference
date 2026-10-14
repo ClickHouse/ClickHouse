@@ -12,3 +12,4 @@ play terminal_route=prefixed terminal_query=preserved credential_store=endpoint 
 play derived_url_scheme=gated relay_target_guard=validated terminal_probe=live docs_query=preserved terminal_handover=gated
 schema credential_store=endpoint credential_retrieval=endpoint auto_probe=endpoint
 play initial_probe=endpoint
+handover dashboard=invalidated schema=invalidated jemalloc=invalidated processors_profile=invalidated

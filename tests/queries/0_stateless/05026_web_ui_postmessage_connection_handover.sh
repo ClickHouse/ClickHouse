@@ -224,3 +224,24 @@ initial_probe=$(echo "$content" | grep -qxF "if (!is_docs_relay) checkURL(isOwnS
     && ! echo "$content" | grep -qxF "checkURL(true);" \
     && echo endpoint || echo any)
 echo "play initial_probe=${initial_probe}"
+
+# A handover can arrive while the page is still working on the previous connection, and every page
+# reads the connection fields afresh for each request. So the work in flight has to be invalidated
+# before the fields change; otherwise its next request - the query text found on the previous server,
+# the dashboard definitions it returned, the saved login the page was looking up - goes to the new
+# server, or overrides the connection the host handed over.
+handover_body()
+{
+    fetch_page "$1" | sed -n '/^ *function applyConnectionFromHost(data) {$/,/^ *}$/p'
+}
+dashboard=$(handover_body dashboard | grep -qxF "    cancelQueries();" && echo invalidated || echo kept)
+schema=$(handover_body schema | grep -qxF "    ++autoLoadGeneration;" \
+    && fetch_page schema | sed -n '/^async function autoLoadOnOpen()/,/^}/p' | grep -qF "if (myAutoLoad !== autoLoadGeneration) return;" \
+    && echo invalidated || echo kept)
+jemalloc=$(handover_body jemalloc | grep -qxF "    connectionAbortController.abort();" \
+    && handover_body jemalloc | grep -qxF "    loadStats(true);" \
+    && echo invalidated || echo kept)
+processors_profile=$(handover_body processors-profile | grep -qxF "            ++connectionGeneration;" \
+    && handover_body processors-profile | grep -qxF "            ++profileGeneration;" \
+    && echo invalidated || echo kept)
+echo "handover dashboard=${dashboard} schema=${schema} jemalloc=${jemalloc} processors_profile=${processors_profile}"

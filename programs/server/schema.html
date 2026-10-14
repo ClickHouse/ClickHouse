@@ -2324,7 +2324,14 @@ function isOwnServerTarget(value) {
 /// returns a previously granted credential or nothing, so opening the page stays non-interactive.
 /// This completes the `play.html`-style remembered auth (`play.html` needs no retrieval step
 /// because it never auto-contacts a server on open).
+///
+/// A connection handed over by a host page supersedes this auto-load too, even while the retrieval
+/// is pending: a handover without credentials leaves the URL unchanged and the fields empty, which
+/// the checks below cannot tell apart from the state they started in, so the saved login would be
+/// filled in over the host's connection. The handover bumps `autoLoadGeneration` instead.
+let autoLoadGeneration = 0;
 async function autoLoadOnOpen() {
+    const myAutoLoad = ++autoLoadGeneration;
     /// Gated on the full endpoint identity, not merely on the same origin: the password manager keys
     /// its entry by page origin, so on a path-routed proxy the login saved or autofilled for
     /// `https://proxy.example/a/` would otherwise be sent to a `?url=https://proxy.example/b/` visit.
@@ -2343,6 +2350,7 @@ async function autoLoadOnOpen() {
         try {
             cred = await navigator.credentials.get({ password: true, mediation: 'silent' });
         } catch (e) { console.warn('credentials.get failed:', e); }
+        if (myAutoLoad !== autoLoadGeneration) return;
         if ($('url').value !== url || $('user').value || $('password').value) return;
         if (cred && cred.password) {
             $('user').value = cred.id;
@@ -2388,8 +2396,10 @@ function isTrustedHostOrigin(origin) {
 /// arrive from a trusted host together with the server they belong to - `url` is optional and
 /// defaults to the one already configured, while the credentials are always replaced wholesale, so
 /// none of them can outlive the connection they belong to. `loadAll` is generation-guarded, so it
-/// may start while the load from `autoLoadOnOpen` is still in flight.
+/// may start while the load from `autoLoadOnOpen` is still in flight; a saved-login retrieval of
+/// `autoLoadOnOpen` that is still pending is abandoned, so it cannot override this connection.
 function applyConnectionFromHost(data) {
+    ++autoLoadGeneration;
     if (data.url !== undefined) $('url').value = data.url;
     $('user').value = data.user || '';
     $('password').value = data.password || '';
