@@ -364,16 +364,6 @@ public:
                 carried_values.push_back(carried);
         }
 
-        /// What something below the `LIMIT` reads.
-        {
-            ActionsDAG::NodeRawConstPtrs roots = merged.filter_nodes;
-            roots.append_range(merged.join_condition_nodes);
-            roots.append_range(merged.step_read_nodes);
-            roots.append_range(sort_key_nodes);
-            roots.append_range(carried_values);
-            needed = findReachableNodes(roots);
-        }
-
         NameSet carried_names;
         for (const auto * value : carried_values)
             if (!carried_names.insert(value->result_name).second || !planCarrying(value))
@@ -1204,7 +1194,6 @@ private:
     /// each crossing value the column it is carried in.
     std::vector<const ActionsDAG::Node *> carried_values;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> carried_as;
-    NodeSet needed;
 
     /// Per step, the nodes of its own DAG to output besides what it did, and the values they are.
     std::unordered_map<const QueryPlan::Node *, std::vector<std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>>> added_outputs;
