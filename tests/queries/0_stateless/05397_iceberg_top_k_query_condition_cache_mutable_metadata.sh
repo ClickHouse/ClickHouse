@@ -12,24 +12,24 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-ICEBERG_DIR="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05395"
+ICEBERG_DIR="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05397"
 rm -rf "${ICEBERG_DIR}"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05395"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05397"
 ${CLICKHOUSE_CLIENT} --output_format_parquet_row_group_size 1000 --query "
-    CREATE TABLE t_05395 (k Int64) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')"
+    CREATE TABLE t_05397 (k Int64) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')"
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 --max_insert_threads 1 --query "
-    INSERT INTO t_05395 SELECT 1000000 + number FROM numbers(10000)"
+    INSERT INTO t_05397 SELECT 1000000 + number FROM numbers(10000)"
 ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 --max_insert_threads 1 --query "
-    INSERT INTO t_05395 SELECT number FROM numbers(10000)"
+    INSERT INTO t_05397 SELECT number FROM numbers(10000)"
 
-FIRST_FILE=$(${CLICKHOUSE_CLIENT} --query "SELECT _path FROM t_05395 WHERE k = 1000000")
+FIRST_FILE=$(${CLICKHOUSE_CLIENT} --query "SELECT _path FROM t_05397 WHERE k = 1000000")
 
 # Both data files are older than the bound of the condition.
 find "${ICEBERG_DIR}" -name '*.parquet' -exec touch -d '2020-01-01 00:00:00' {} +
 
-QUERY="SELECT k FROM t_05395 WHERE _time < toDateTime('2021-01-01 00:00:00', 'UTC') ORDER BY k DESC LIMIT 3
+QUERY="SELECT k FROM t_05397 WHERE _time < toDateTime('2021-01-01 00:00:00', 'UTC') ORDER BY k DESC LIMIT 3
     SETTINGS use_query_condition_cache = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000,
     input_format_parquet_use_native_reader_v3 = 1, max_threads = 1"
 
@@ -38,5 +38,5 @@ ${CLICKHOUSE_CLIENT} --query "$QUERY"
 touch -d '2026-01-01 00:00:00' "/${FIRST_FILE#/}"
 ${CLICKHOUSE_CLIENT} --query "$QUERY"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05395"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05397"
 rm -rf "${ICEBERG_DIR}"
