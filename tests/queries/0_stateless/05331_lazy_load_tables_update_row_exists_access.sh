@@ -11,10 +11,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 db="${CLICKHOUSE_DATABASE}_lazy"
 user_del="${CLICKHOUSE_DATABASE}_del_05331"
 user_upd="${CLICKHOUSE_DATABASE}_upd_05331"
+user_sel="${CLICKHOUSE_DATABASE}_sel_05331"
 
 $CLICKHOUSE_CLIENT -q "
 DROP DATABASE IF EXISTS $db;
-DROP USER IF EXISTS $user_del, $user_upd;
+DROP USER IF EXISTS $user_del, $user_upd, $user_sel;
 CREATE DATABASE $db ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 CREATE TABLE $db.t (id UInt32, val UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
@@ -24,6 +25,8 @@ CREATE USER $user_del IDENTIFIED WITH plaintext_password BY 'password';
 GRANT SELECT, ALTER DELETE ON $db.t TO $user_del;
 CREATE USER $user_upd IDENTIFIED WITH plaintext_password BY 'password';
 GRANT SELECT, ALTER UPDATE ON $db.t TO $user_upd;
+CREATE USER $user_sel IDENTIFIED WITH plaintext_password BY 'password';
+GRANT SELECT ON $db.t TO $user_sel;
 "
 
 function reattach()
@@ -40,6 +43,11 @@ function run_as()
         -q "UPDATE $db.t SET _row_exists = 0 WHERE id = $id" 2>&1 | grep -q -F 'ACCESS_DENIED' && echo "$user denied" || echo "$user allowed"
 }
 
+# Neither right: the statement is rejected without loading the table.
+reattach
+run_as "$user_sel" 1 | sed "s/$user_sel/sel/"
+$CLICKHOUSE_CLIENT -q "SELECT 'still cold engine', engine FROM system.tables WHERE database = '$db' AND name = 't'"
+
 # Only `ALTER UPDATE`: a delete in disguise must be rejected.
 reattach
 run_as "$user_upd" 1 | sed "s/$user_upd/upd/"
@@ -52,5 +60,5 @@ $CLICKHOUSE_CLIENT -q "SELECT 'count', count() FROM $db.t"
 
 $CLICKHOUSE_CLIENT -q "
 DROP DATABASE $db;
-DROP USER $user_del, $user_upd;
+DROP USER $user_del, $user_upd, $user_sel;
 "
