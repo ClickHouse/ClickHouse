@@ -43,6 +43,9 @@ constexpr std::string_view global_row_index_name = "__global_row_index";
 /// Whether a join matched a row, computed from the row index of a source the join can leave unmatched.
 constexpr std::string_view mask_column_prefix = "__lazy_mask_";
 
+/// A copy of a value that crosses the `LIMIT` as a column, under a name of its own, which every step passes through.
+constexpr std::string_view carried_column_prefix = "__lazy_carried_";
+
 String makeRowIndexName(size_t source)
 {
     return fmt::format("{}_{}", global_row_index_name, source);
@@ -53,9 +56,14 @@ String makeMaskName(size_t source)
     return fmt::format("{}{}", mask_column_prefix, source);
 }
 
+String makeCarriedName(size_t number)
+{
+    return fmt::format("{}{}", carried_column_prefix, number);
+}
+
 bool isNameOfThisPass(std::string_view name)
 {
-    return name.starts_with(global_row_index_name) || name.starts_with(mask_column_prefix);
+    return name.starts_with(global_row_index_name) || name.starts_with(mask_column_prefix) || name.starts_with(carried_column_prefix);
 }
 
 /// `if(mask, value, default)`: the value where the join matched the row, and the default where it stuffed
@@ -200,18 +208,28 @@ bool canReadLazily(const QueryPlan::Node & source, const QueryPlanOptimizationSe
     return false;
 }
 
-/// The row index of a read, under `index_name`, after the other columns of `read_header`, in their order, so that the
-/// columns of the read keep their positions and the index comes after them. The columns at `index_positions` are what
-/// the index is computed from - for MergeTree the offset of the part in the read and the offset of the row in its part,
-/// for an object storage read the index it produces itself - and are consumed here unless the read had them before,
-/// which `consumed_positions` says. Below a join that can leave the source unmatched the index is `Nullable`, so that
-/// the join stands it at NULL for the rows it stuffs.
-ActionsDAG makeRowIndexDAG(
+/// A copy of the column at `position`, under `name`. The position is one among the columns the read had before this rebuild
+/// added its own, which the read can have put anywhere.
+struct ColumnCopy
+{
+    size_t position = 0;
+    String name;
+};
+
+/// What this rebuild adds to a read: the row index, under `index_name` unless that is empty, then the `copies`, after
+/// the other columns of `read_header`, in their order, so that the columns of the read keep their positions and the
+/// added ones come after them. The columns at `index_positions` are what the index is computed from - for MergeTree the
+/// offset of the part in the read and the offset of the row in its part, for an object storage read the index it
+/// produces itself - and are consumed here unless the read had them before, which `consumed_positions` says. Below a
+/// join that can leave the source unmatched the index is `Nullable`, so that the join stands it at NULL for the rows it
+/// stuffs.
+ActionsDAG makeAboveReadDAG(
     const Block & read_header,
     const std::vector<size_t> & index_positions,
     const std::vector<size_t> & consumed_positions,
     const String & index_name,
-    bool nullable)
+    bool nullable,
+    const std::vector<ColumnCopy> & copies)
 {
     ActionsDAG dag(read_header.getColumnsWithTypeAndName());
     const auto inputs = dag.getInputs();
@@ -222,21 +240,66 @@ ActionsDAG makeRowIndexDAG(
         if (std::ranges::find(consumed_positions, position) == consumed_positions.end())
             outputs.push_back(inputs[position]);
 
-    const ActionsDAG::Node * index = inputs.at(index_positions.front());
-    if (index_positions.size() == 2)
+    /// The columns the read had before, in their order.
+    const ActionsDAG::NodeRawConstPtrs kept = outputs;
+
+    if (!index_name.empty())
     {
-        auto plus = FunctionFactory::instance().get("plus", nullptr);
-        index = &dag.addFunction(plus, {index, inputs.at(index_positions.back())}, {});
+        const ActionsDAG::Node * index = inputs.at(index_positions.front());
+        if (index_positions.size() == 2)
+        {
+            auto plus = FunctionFactory::instance().get("plus", nullptr);
+            index = &dag.addFunction(plus, {index, inputs.at(index_positions.back())}, {});
+        }
+
+        if (nullable)
+        {
+            auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
+            index = &dag.addFunction(to_nullable, {index}, {});
+        }
+
+        outputs.push_back(&dag.addAlias(*index, index_name));
     }
 
-    if (nullable)
-    {
-        auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
-        index = &dag.addFunction(to_nullable, {index}, {});
-    }
+    for (const auto & copy : copies)
+        outputs.push_back(&dag.addAlias(*kept.at(copy.position), copy.name));
 
-    outputs.push_back(&dag.addAlias(*index, index_name));
     return dag;
+}
+
+/// Makes `step_node` of an expression or a filter step the last column of its header, under `name`. The columns the
+/// step passes through without reading become outputs of its DAG first, in their order, so that none of them comes
+/// after it.
+void appendOutputToStep(IQueryPlanStep & step, const ActionsDAG::Node & step_node, const String & name)
+{
+    ActionsDAG * dag = nullptr;
+    if (auto * expression = typeid_cast<ExpressionStep *>(&step))
+        dag = &expression->getExpression();
+    else
+        dag = &typeid_cast<FilterStep &>(step).getExpression();
+
+    const auto input_header = step.getInputHeaders().front();
+    const auto former_header = step.getOutputHeader();
+
+    const auto header_columns = mapHeaderColumnsToInputs(dag->getInputs(), *input_header);
+    auto & outputs = dag->getOutputs();
+    for (size_t position = 0; position < header_columns.size(); ++position)
+        if (header_columns.passesThrough(position))
+            outputs.push_back(&dag->addInput(input_header->getByPosition(position)));
+    outputs.push_back(&dag->addAlias(step_node, name));
+
+    step.updateInputHeader(input_header);
+
+    /// The steps above match the columns by position.
+    const auto & header = *step.getOutputHeader();
+    bool kept_columns = header.columns() == former_header->columns() + 1;
+    for (size_t position = 0; kept_columns && position < former_header->columns(); ++position)
+        kept_columns = header.getByPosition(position).name == former_header->getByPosition(position).name
+            && header.getByPosition(position).type->equals(*former_header->getByPosition(position).type);
+    if (!kept_columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Adding the output {} to {} changed its header from [{}] to [{}]",
+            name, step.getName(), former_header->dumpStructure(), header.dumpStructure());
 }
 
 /// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter and JoinStepLogical ->
@@ -245,11 +308,10 @@ ActionsDAG makeRowIndexDAG(
 /// The main branch is the original plan with fewer columns: every step is kept, with its own expressions
 /// and names, and `removeUnusedColumns` takes away what nothing below the `LIMIT` needs any more, each
 /// step once its children are built.
-/// A value that crosses the `LIMIT` keeps the name the plan gives it, and is kept by each step it passes.
-/// Where a step used to consume it, because what the step computed from it is now computed above the
-/// `LIMIT`, the step outputs it as well. Each lazily read source adds its row index above the read, which
-/// the joins pass through, and above the `LIMIT` one `JoinLazyColumnsStep` per such source reads its
-/// deferred columns by that index.
+/// A value that crosses the `LIMIT` is copied where it is computed under a name of this rebuild, and every
+/// step above passes the copy through, the joins because they are told to. Each lazily read source adds
+/// its row index above the read, which goes up the same way, and above the `LIMIT` one `JoinLazyColumnsStep`
+/// per such source reads its deferred columns by that index.
 ///
 /// `prepare` checks everything without touching the plan and declines where the rebuild cannot carry the
 /// frontier out; `apply` then changes the plan and does not decline any more.
@@ -279,7 +341,7 @@ public:
         if (merged.sources.size() < 2)
             return false;
 
-        collectParents();
+        collectNodes();
 
         const auto & outputs = merged.getOutputs();
         for (size_t position : sort_key_positions)
@@ -296,78 +358,33 @@ public:
             if (placed.above == Placement::Above::Crossing && !sort_key_nodes.contains(node))
                 crossing_values.push_back(node);
 
-        /// A value carries the name of the step it is computed in, and a step above may compute another value
-        /// under the same name - `join_use_nulls` makes a join output `toNullable(x)` as `x`. So where the only
-        /// thing above the `LIMIT` that reads a crossing value is a node computed from it alone, that node
-        /// crosses instead. The plan computes it anyway, in its own step, and the column it is carried in is
-        /// the one the rest of the plan knows: the analyzer's rename of a table's column right above the read,
-        /// the join's `toNullable`, a subquery's output.
-        std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>> parents_of;
-        for (const auto & node : merged.getDAG().getNodes())
-            for (const auto * child : node.children)
-                parents_of[child].push_back(&node);
-
-        const NodeSet outputs_set(outputs.begin(), outputs.end());
-        const auto lift = [&](const ActionsDAG::Node * value) -> const ActionsDAG::Node *
-        {
-            if (outputs_set.contains(value))
-                return nullptr;
-
-            const auto it = parents_of.find(value);
-            if (it == parents_of.end())
-                return nullptr;
-
-            const ActionsDAG::Node * reader = nullptr;
-            for (const auto * parent : it->second)
-            {
-                if (frontier.at(parent).above != Placement::Above::Recomputed || parent == reader)
-                    continue;
-                if (reader)
-                    return nullptr;
-                reader = parent;
-            }
-
-            if (!reader)
-                return nullptr;
-
-            if (reader->type == ActionsDAG::ActionType::FUNCTION)
-            {
-                if (!reader->function_base->isDeterministicInScopeOfQuery() || reader->function_base->isStateful())
-                    return nullptr;
-                for (const auto * child : reader->children)
-                    if (child != value && child->type != ActionsDAG::ActionType::COLUMN)
-                        return nullptr;
-            }
-            else if (reader->type != ActionsDAG::ActionType::ALIAS)
-                return nullptr;
-
-            return reader;
-        };
-
+        std::vector<const ActionsDAG::Node *> carried_values;
         for (const auto * value : crossing_values)
+            if (std::ranges::find(carried_values, value) == carried_values.end())
+                carried_values.push_back(value);
+
+        /// Each value crosses as a copy of its own, made where it is computed: of the column the step there outputs, or of
+        /// a value an expression or a filter computes without outputting it, which that step outputs then. Every step
+        /// above passes the copy through.
+        for (size_t number = 0; number < carried_values.size(); ++number)
         {
-            /// The nodes that are the same value as the one carried: an alias is, a function of it is not.
-            std::vector<const ActionsDAG::Node *> same_value{value};
-            const auto * carried = value;
-            while (const auto * reader = lift(carried))
-            {
-                if (reader->type != ActionsDAG::ActionType::ALIAS)
-                    same_value.clear();
-                same_value.push_back(reader);
-                carried = reader;
-            }
+            const auto * value = carried_values[number];
+            const auto & origin = merged.getOrigin(value);
 
-            for (const auto * link : same_value)
-                carried_as.emplace(link, carried);
-
-            if (!sort_key_nodes.contains(carried) && std::ranges::find(carried_values, carried) == carried_values.end())
-                carried_values.push_back(carried);
-        }
-
-        NameSet carried_names;
-        for (const auto * value : carried_values)
-            if (!carried_names.insert(value->result_name).second || !planCarrying(value))
+            Carrying carrying{.value = value, .node = origin.plan_node, .name = makeCarriedName(number)};
+            const auto & values = merged.step_outputs.at(origin.plan_node);
+            if (const auto it = std::ranges::find(values, value); it != values.end())
+                carrying.position = it - values.begin();
+            else if (origin.step_node
+                && (typeid_cast<const ExpressionStep *>(origin.plan_node->step.get())
+                    || typeid_cast<const FilterStep *>(origin.plan_node->step.get())))
+                carrying.step_node = origin.step_node;
+            else
                 return false;
+
+            added_names.insert(carrying.name);
+            carryings.push_back(std::move(carrying));
+        }
 
         return true;
     }
@@ -376,19 +393,18 @@ public:
     void apply(QueryPlan & query_plan, QueryPlan::Nodes & nodes, QueryPlan::Node & root, QueryPlan::Node * sorting_node,
         const std::vector<size_t> & sort_key_positions)
     {
-        /// The values carried up are added to the outputs of the steps that would drop them, and the headers
-        /// above are brought in line.
-        for (auto * node : top_down_nodes | std::views::reverse)
-            addCarriedOutputs(node);
+        /// An expression or a filter computing a carried value it does not output outputs a copy of it last. The steps
+        /// above it still have its former header, which the copy comes after, as the other columns this rebuild adds.
+        for (const auto & carrying : carryings)
+            if (carrying.step_node)
+                appendOutputToStep(*carrying.node->step, *carrying.step_node, carrying.name);
 
-        /// What the chain hands over: the sort keys and the values crossing the `LIMIT`, and nothing else.
+        /// What the chain hands over: the sort keys and the copies of the values crossing the `LIMIT`. The header of the
+        /// chain is the outputs of the merged DAG.
         std::vector<size_t> unneeded;
-        {
-            const auto & values = header_values.at(chain_top);
-            for (size_t position = 0; position < values.size(); ++position)
-                if (!sort_key_nodes.contains(values[position]) && std::ranges::find(carried_values, values[position]) == carried_values.end())
-                    unneeded.push_back(position);
-        }
+        for (size_t position = 0; position < merged.getOutputs().size(); ++position)
+            if (!std::ranges::binary_search(sort_key_positions, position))
+                unneeded.push_back(position);
         auto assembled = assemble(unneeded, nodes);
         auto & main_plan = assembled.plan;
 
@@ -403,34 +419,26 @@ public:
             ActionsDAG projection(header.getColumnsWithTypeAndName());
             const auto inputs = projection.getInputs();
 
-            /// The chain keeps the columns of its former header it did not drop, in their order, so a value is found where
-            /// it was, less the dropped positions before it. A row index has a name of its own.
-            const auto & former_values = header_values.at(chain_top);
+            /// The chain keeps the columns of its former header it did not drop, in their order, so a sort key is found where
+            /// it was, less the dropped positions before it. A copy of a carried value and a row index have names of their
+            /// own.
             const auto & dropped = assembled.dropped_positions;
-            auto find_value = [&](const ActionsDAG::Node * value)
-            {
-                for (size_t position = 0; position < former_values.size(); ++position)
-                {
-                    if (former_values[position] != value || std::ranges::binary_search(dropped, position))
-                        continue;
-                    const auto dropped_before = std::ranges::lower_bound(dropped, position) - dropped.begin();
-                    return inputs.at(position - dropped_before);
-                }
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lazy materialization lost the value {} below the LIMIT", value->result_name);
-            };
-
             auto & projection_outputs = projection.getOutputs();
             projection_outputs.clear();
             for (size_t position : sort_key_positions)
             {
-                projection_outputs.push_back(find_value(outputs[position]));
+                if (std::ranges::binary_search(dropped, position))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Lazy materialization lost the sort key {} below the LIMIT", outputs[position]->result_name);
+                const auto dropped_before = std::ranges::lower_bound(dropped, position) - dropped.begin();
+                projection_outputs.push_back(inputs.at(position - dropped_before));
                 slots.push_back(outputs[position]);
                 slot_indexes.emplace_back();
             }
-            for (const auto * value : carried_values)
+            for (const auto & carrying : carryings)
             {
-                projection_outputs.push_back(find_value(value));
-                slots.push_back(value);
+                projection_outputs.push_back(inputs.at(header.getPositionByName(carrying.name)));
+                slots.push_back(carrying.value);
                 slot_indexes.emplace_back();
             }
             for (const auto & [source, index_name] : index_names)
@@ -546,11 +554,6 @@ public:
                 if (slots[position])
                     positions.emplace(slots[position], position);
 
-            /// A value crosses as the column it is carried in, which may be a rename of it.
-            for (const auto & [value, carried] : carried_as)
-                if (const auto it = positions.find(carried); it != positions.end())
-                    positions.emplace(value, it->second);
-
             auto above = buildAboveLimitDAG(merged, frontier, positions, mask_slots, header, context);
 
             auto step = std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(above));
@@ -577,10 +580,10 @@ private:
         LazyObjectStorageFileRegistryPtr row_index_registry;
     };
 
-    /// Records the parent of every node between `chain_top` and the sources: the ones the walk building the merged DAG
-    /// entered. Records the nodes top-down as well, the sources included, with the right subtree of a node before the left
-    /// one, so that in reverse they come bottom-up, left to right.
-    void collectParents()
+    /// Records the nodes between `chain_top` and the sources, the ones the walk building the merged DAG entered, top-down,
+    /// the sources included, with the right subtree of a node before the left one, so that in reverse they come
+    /// bottom-up, left to right.
+    void collectNodes()
     {
         std::vector<QueryPlan::Node *> stack{chain_top};
         while (!stack.empty())
@@ -593,10 +596,7 @@ private:
                 continue;
 
             for (auto * child : node->children)
-            {
-                parents.emplace(child, node);
                 stack.push_back(child);
-            }
         }
     }
 
@@ -742,192 +742,6 @@ private:
         return !lazy_by_source.empty();
     }
 
-    /// Plans how `value` gets from the step computing it to the top of the chain under its own name: which
-    /// steps have to output it besides what they did, and whether a column of the same name is in the way.
-    bool planCarrying(const ActionsDAG::Node * value)
-    {
-        const auto & name = value->result_name;
-        if (isNameOfThisPass(name))
-            return false;
-
-        const auto & origin = merged.getOrigin(value);
-        const QueryPlan::Node * below = nullptr;
-        for (const auto * node = origin.plan_node; node; below = node, node = parentOf(node))
-        {
-            const auto & values = merged.step_outputs.at(node);
-            const auto & header = *node->step->getOutputHeader();
-
-            /// Another column of the same name would be taken for this one.
-            for (size_t position = 0; position < values.size(); ++position)
-                if (header.getByPosition(position).name == name && values[position] != value)
-                    return false;
-
-            const bool is_output = std::ranges::find(values, value) != values.end();
-
-            /// A column the step below outputs only now is new to this step, which passes it through by
-            /// itself - a join only if it is told to.
-            const bool arrives_new = below && std::ranges::find(merged.step_outputs.at(below), value) == merged.step_outputs.at(below).end();
-            if (!is_output && arrives_new)
-            {
-                if (typeid_cast<const JoinStepLogical *>(node->step.get()))
-                    join_pass_through[node].push_back(value);
-            }
-            else if (!is_output)
-            {
-                /// The step computes it, or reads it from below, and does not output it.
-                const ActionsDAG::Node * step_node = nullptr;
-                if (node == origin.plan_node)
-                {
-                    if (typeid_cast<const JoinStepLogical *>(node->step.get()))
-                        return false;
-                    step_node = origin.step_node;
-                }
-                else
-                {
-                    const auto mapping = merged.step_mappings.find(node);
-                    if (mapping == merged.step_mappings.end())
-                        return false;
-                    for (const auto & [original, merged_node] : mapping->second)
-                        if (original->type == ActionsDAG::ActionType::INPUT && merged_node == value)
-                            step_node = original;
-                }
-
-                if (!step_node)
-                    return false;
-                added_outputs[node].emplace_back(step_node, value);
-            }
-
-            /// Left and right columns of a join never share a name.
-            if (const auto * join = typeid_cast<const JoinStepLogical *>(node->step.get()); join && below)
-            {
-                const size_t other_side = node->children.front() == below ? 1 : 0;
-                if (join->getInputHeaders().at(other_side)->has(name))
-                    return false;
-            }
-
-            if (node == chain_top)
-                return true;
-        }
-
-        return false;
-    }
-
-    const QueryPlan::Node * parentOf(const QueryPlan::Node * node) const
-    {
-        const auto it = parents.find(node);
-        return it == parents.end() ? nullptr : it->second;
-    }
-
-    /// The value of each column of `node`'s output header, as it is now.
-    ActionsDAG::NodeRawConstPtrs computeHeaderValues(const QueryPlan::Node * node) const
-    {
-        if (source_numbers.contains(node))
-            return merged.step_outputs.at(node);
-
-        const auto * step = node->step.get();
-        if (typeid_cast<const BuildRuntimeFilterStep *>(step))
-            return header_values.at(node->children.front());
-
-        const auto & to_merged = merged.step_mappings.at(node);
-        ActionsDAG::NodeRawConstPtrs values;
-
-        if (const auto * join = typeid_cast<const JoinStepLogical *>(step))
-        {
-            for (const auto * output : join->getActionsDAG().getOutputs())
-            {
-                const auto passed = join_passed_values.find(output);
-                values.push_back(passed != join_passed_values.end() ? passed->second : to_merged.at(output));
-            }
-            return values;
-        }
-
-        const ActionsDAG * dag = nullptr;
-        String removed_filter_column;
-        if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
-            dag = &expression->getExpression();
-        else
-        {
-            const auto & filter = typeid_cast<const FilterStep &>(*step);
-            dag = &filter.getExpression();
-            if (filter.removesFilterColumn())
-                removed_filter_column = filter.getFilterColumnName();
-        }
-
-        for (const auto * output : dag->getOutputs())
-        {
-            if (!removed_filter_column.empty() && output->result_name == removed_filter_column)
-            {
-                removed_filter_column.clear();
-                continue;
-            }
-            values.push_back(to_merged.at(output));
-        }
-
-        /// Then what the step passes through without reading.
-        const auto & child_values = header_values.at(node->children.front());
-        const auto header_columns = mapHeaderColumnsToInputs(dag->getInputs(), *step->getInputHeaders().front());
-        for (size_t position = 0; position < header_columns.size(); ++position)
-            if (header_columns.passesThrough(position))
-                values.push_back(child_values.at(position));
-
-        return values;
-    }
-
-    /// Adds the outputs `planCarrying` found missing to the step of a node, and refreshes its header after its children's,
-    /// which are done before it. Records what each column of the header holds.
-    void addCarriedOutputs(QueryPlan::Node * node)
-    {
-        if (!source_numbers.contains(node))
-        {
-            auto * step = node->step.get();
-            if (const auto it = added_outputs.find(node); it != added_outputs.end())
-            {
-                for (const auto & [step_node, value] : it->second)
-                {
-                    if (auto * join = typeid_cast<JoinStepLogical *>(step))
-                        join->addInputToOutputs(step_node);
-                    else if (auto * expression = typeid_cast<ExpressionStep *>(step))
-                        expression->getExpression().getOutputs().push_back(step_node);
-                    else
-                        typeid_cast<FilterStep &>(*step).getExpression().getOutputs().push_back(step_node);
-                }
-            }
-
-            SharedHeaders input_headers;
-            for (const auto * child : node->children)
-                input_headers.push_back(child->step->getOutputHeader());
-
-            /// A join passes a carried value through from the side it comes from.
-            if (const auto it = join_pass_through.find(node); it != join_pass_through.end())
-            {
-                auto & join = typeid_cast<JoinStepLogical &>(*step);
-                for (const auto * value : it->second)
-                {
-                    for (size_t side = 0; side < 2; ++side)
-                    {
-                        const auto & side_values = header_values.at(node->children[side]);
-                        const auto position = std::ranges::find(side_values, value) - side_values.begin();
-                        if (position == static_cast<ptrdiff_t>(side_values.size()))
-                            continue;
-
-                        join.addPassThroughColumn(
-                            input_headers[side]->getByPosition(position), side == 0 ? JoinTableSide::Left : JoinTableSide::Right);
-                        join_passed_values.emplace(join.getActionsDAG().getOutputs().back(), value);
-                    }
-                }
-            }
-
-            step->updateInputHeaders(std::move(input_headers));
-        }
-
-        auto values = computeHeaderValues(node);
-        if (values.size() != node->step->getOutputHeader()->columns())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Lazy materialization lost track of the columns of {}: {} values for {}",
-                node->step->getName(), values.size(), node->step->getOutputHeader()->dumpNames());
-        header_values[node] = std::move(values);
-    }
-
     bool isAddedColumn(const String & name) const { return added_names.contains(name); }
 
     /// A rebuilt node: its plan, and the positions of its former header it no longer has. Its header is the former one
@@ -970,13 +784,19 @@ private:
     /// `unneeded` is what is not needed of `chain_top`.
     Assembled assemble(const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
+        /// A node a value is carried from keeps the column it is copied from.
         std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> unneeded_of{{chain_top, unneeded}};
         for (auto * node : top_down_nodes)
         {
+            auto & node_unneeded = unneeded_of.at(node);
+            for (const auto & carrying : carryings)
+                if (carrying.node == node && !carrying.step_node)
+                    std::erase(node_unneeded, carrying.position);
+
             if (source_numbers.contains(node))
                 continue;
 
-            auto child_unneeded = node->step->getUnneededColumns(unneeded_of.at(node));
+            auto child_unneeded = node->step->getUnneededColumns(node_unneeded);
             for (size_t child = 0; child < node->children.size(); ++child)
                 unneeded_of[node->children[child]] = std::move(child_unneeded.at(child));
         }
@@ -999,10 +819,44 @@ private:
                 assembled.erase(child_it);
             }
 
-            assembled.emplace(node, assembleStep(node, node_unneeded, children));
+            auto result = assembleStep(node, node_unneeded, children);
+            addCopiesOfCarriedColumns(node, result);
+            assembled.emplace(node, std::move(result));
         }
 
         return std::move(assembled.at(chain_top));
+    }
+
+    /// The copies of the values carried from the columns `node` outputs, positions of its former header, which the steps
+    /// above pass through. A read makes them with its row index.
+    std::vector<ColumnCopy> copiesOfCarriedColumns(const QueryPlan::Node * node, const std::vector<size_t> & dropped_positions) const
+    {
+        std::vector<ColumnCopy> copies;
+        for (const auto & carrying : carryings)
+        {
+            if (carrying.node != node || carrying.step_node)
+                continue;
+
+            if (std::ranges::binary_search(dropped_positions, carrying.position))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Lazy materialization lost the carried value {} of {}", carrying.value->result_name, node->step->getName());
+            const auto dropped_before = std::ranges::lower_bound(dropped_positions, carrying.position) - dropped_positions.begin();
+            copies.push_back({carrying.position - dropped_before, carrying.name});
+        }
+        return copies;
+    }
+
+    void addCopiesOfCarriedColumns(const QueryPlan::Node * node, Assembled & assembled)
+    {
+        auto copies = copiesOfCarriedColumns(node, assembled.dropped_positions);
+        if (copies.empty())
+            return;
+
+        auto dag = makeAboveReadDAG(*assembled.plan.getCurrentHeader(), {}, {}, {}, false, copies);
+        auto step = std::make_unique<ExpressionStep>(assembled.plan.getCurrentHeader(), std::move(dag));
+        step->setStepDescription("Columns carried across the LIMIT");
+        steps_above_child.insert(step.get());
+        assembled.plan.addStep(std::move(step));
     }
 
     /// Prunes and assembles the step of a node on top of its assembled children.
@@ -1033,7 +887,7 @@ private:
         if (children.size() == 1)
         {
             result.plan = std::move(children.front().plan);
-            const bool is_above_row_index = row_index_steps.contains(result.plan.getRootNode()->step.get());
+            const bool is_above_row_index = steps_above_child.contains(result.plan.getRootNode()->step.get());
             result.plan.addStep(std::move(node->step));
             if (is_above_row_index)
                 mergeRowIndexIntoParent(*result.plan.getRootNode());
@@ -1109,9 +963,20 @@ private:
         if (lazy && (!lazy_header || lazy_header->columns() != lazy->inputs.size()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The lazy read of source {} does not read the columns it was chosen for", source);
 
+        const auto copies = copiesOfCarriedColumns(node, result.dropped_positions);
         const bool masks_stuffing = std::ranges::any_of(mask_sources, [&](const auto & mask_source) { return mask_source.second == source; });
         if (!lazy && !masks_stuffing)
+        {
+            if (!copies.empty())
+            {
+                auto above_read = makeAboveReadDAG(*plan.getCurrentHeader(), {}, {}, {}, false, copies);
+                auto step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(above_read));
+                step->setStepDescription("Columns carried across the LIMIT");
+                steps_above_child.insert(step.get());
+                plan.addStep(std::move(step));
+            }
             return result;
+        }
 
         /// The columns the row index is computed from, and the ones of them the read did not produce before.
         std::vector<size_t> index_positions;
@@ -1142,10 +1007,10 @@ private:
         const auto & source_inputs = merged.sources[source].inputs;
         const bool nullable_index = !source_inputs.empty() && merged.getNearestStuffing(source_inputs.front()) != nullptr;
 
-        auto above_read = makeRowIndexDAG(*plan.getCurrentHeader(), index_positions, consumed_positions, index_name, nullable_index);
+        auto above_read = makeAboveReadDAG(*plan.getCurrentHeader(), index_positions, consumed_positions, index_name, nullable_index, copies);
         auto step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(above_read));
         step->setStepDescription("Row index");
-        row_index_steps.insert(step.get());
+        steps_above_child.insert(step.get());
         plan.addStep(std::move(step));
         return result;
     }
@@ -1182,27 +1047,26 @@ private:
 
     QueryPlan::Node * chain_top = nullptr;
     std::unordered_map<const QueryPlan::Node *, size_t> source_numbers;
-    std::unordered_map<const QueryPlan::Node *, const QueryPlan::Node *> parents;
     /// The nodes from `chain_top` to the sources, top-down, see `collectParents`.
     std::vector<QueryPlan::Node *> top_down_nodes;
     NodeSet sort_key_nodes;
     std::map<size_t, LazySource> lazy_by_source;
-    /// The steps computing the row index right above a read, to be merged into the step above when that can take it.
-    std::unordered_set<const IQueryPlanStep *> row_index_steps;
+    /// The steps this rebuild adds right above a step - the row index and the copies of the carried values - to be
+    /// merged into the step above when that can take it.
+    std::unordered_set<const IQueryPlanStep *> steps_above_child;
 
-    /// The values crossing the `LIMIT` besides the sort keys, as the columns they are carried in, and for
-    /// each crossing value the column it is carried in.
-    std::vector<const ActionsDAG::Node *> carried_values;
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> carried_as;
+    /// A value crossing the `LIMIT` besides the sort keys, carried from `node` as a copy under `name`: of the column at
+    /// `position` of its header, or, without such a column, of `step_node` of its step, which outputs it last.
+    struct Carrying
+    {
+        const ActionsDAG::Node * value = nullptr;
+        const QueryPlan::Node * node = nullptr;
+        String name;
+        size_t position = 0;
+        const ActionsDAG::Node * step_node = nullptr;
+    };
 
-    /// Per step, the nodes of its own DAG to output besides what it did, and the values they are.
-    std::unordered_map<const QueryPlan::Node *, std::vector<std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>>> added_outputs;
-    std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> header_values;
-
-    /// Per join, the carried values it passes through because a step below outputs them only now, and the
-    /// outputs of its DAG that pass them.
-    std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> join_pass_through;
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> join_passed_values;
+    std::vector<Carrying> carryings;
 
     /// The row index of every source that has one, either for a lazy read or for a mask.
     std::map<size_t, String> index_names;
