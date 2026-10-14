@@ -541,6 +541,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
 
     const auto & src_header = pipeline.getSharedHeader();
+    /// Only a final aggregation carries the bucket-local Top-K (see `setFinal`): the adaptive merge prunes by the
+    /// counts of the final conversion, so a partial aggregation with it would drop groups.
+    chassert(final || !params.bucket_top_k);
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
     if (!grouping_sets_params.empty())
@@ -1525,6 +1528,10 @@ void AggregatingStep::setFinal(bool new_value)
         return;
 
     final = new_value;
+    /// A partial aggregation has no final conversion to run the bucket-local Top-K in, and the adaptive merge prunes by
+    /// the counts that conversion produces.
+    if (!final)
+        params.bucket_top_k = 0;
 
     /// Output header is different for partial and final result, so it needs to be updated when we switch between them.
     updateOutputHeader();
