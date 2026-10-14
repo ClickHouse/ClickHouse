@@ -107,6 +107,14 @@ ThreadGroupPtr CurrentThread::getGroup()
     return current_thread->getThreadGroup();
 }
 
+bool CurrentThread::hasGroup()
+{
+    if (unlikely(!current_thread))
+        return false;
+
+    return current_thread->hasThreadGroup();
+}
+
 ContextPtr CurrentThread::tryGetQueryContext()
 {
     if (unlikely(!current_thread))

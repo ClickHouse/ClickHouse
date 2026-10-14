@@ -103,14 +103,22 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             std::lock_guard lock(reader_mutex);
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
+            /// The code that split the file into buckets may have parsed the footer already.
+            if (buckets_to_read && buckets_to_read->file_metadata)
+                reader->reader.file_metadata = buckets_to_read->file_metadata;
+            else
+                reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
         }
     }
 }
 
-parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher) const
+static std::shared_ptr<const parquet::format::FileMetaData> readFileMetadataWithCache(
+    Parquet::Prefetcher & prefetcher,
+    const Parquet::ReadOptions & read_options,
+    const ParquetMetadataCachePtr & metadata_cache,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata)
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
     {
@@ -120,10 +128,14 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
         return metadata_cache->getOrSetMetadata(
             cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size); });
     }
-    else
-    {
-        return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
-    }
+
+    return std::make_shared<const parquet::format::FileMetaData>(
+        Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size));
+}
+
+std::shared_ptr<const parquet::format::FileMetaData> ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher) const
+{
+    return readFileMetadataWithCache(prefetcher, read_options, metadata_cache, object_with_metadata);
 }
 
 Chunk ParquetV3BlockInputFormat::read()
@@ -136,10 +148,9 @@ Chunk ParquetV3BlockInputFormat::read()
         /// Don't init Reader and ReadManager if we only need file metadata.
         Parquet::Prefetcher temp_prefetcher;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
-        parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
+        auto file_metadata = getFileMetadata(temp_prefetcher);
 
-
-        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
+        auto chunk = getChunkForCount(size_t(file_metadata->num_rows));
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
@@ -184,7 +195,7 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
         if (produced_rows)
             matched.push_back(row_group.row_group_idx);
     }
-    return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
+    return std::make_pair(std::move(matched), reader->reader.file_metadata->row_groups.size());
 }
 
 std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
@@ -324,7 +335,9 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
             filtered.push_back(rg);
     if (filtered.empty())
         return nullptr;
-    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
+    auto result = std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
+    result->file_metadata = file_metadata;
+    return result;
 }
 
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
@@ -369,6 +382,48 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
         result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
     }
     return result;
+}
+
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitForParallelReading(
+    size_t max_buckets,
+    ReadBuffer & buf,
+    const FormatSettings & format_settings_,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata,
+    const ContextPtr & context)
+{
+    /// Each bucket is read by its own reader, and they deliver rows in no particular order.
+    if (max_buckets < 2 || format_settings_.parquet.preserve_order)
+        return {};
+
+    Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
+    Parquet::Prefetcher prefetcher;
+    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
+    auto metadata = readFileMetadataWithCache(prefetcher, read_options, context->tryGetParquetMetadataCache(), object_with_metadata);
+
+    std::vector<size_t> row_groups;
+    for (size_t i = 0; i < metadata->row_groups.size(); ++i)
+        if (metadata->row_groups[i].num_rows > 0)
+            row_groups.push_back(i);
+
+    size_t num_buckets = std::min(max_buckets, row_groups.size());
+    if (num_buckets < 2)
+        return {};
+
+    /// Interleave the row groups between the buckets, rather than giving each bucket a contiguous
+    /// range: rows with similar values tend to be close to each other in the file, so the row groups
+    /// that survive filtering by min/max statistics, or that contain most of the rows passing the
+    /// filter, are spread across all readers instead of falling to one of them.
+    std::vector<std::shared_ptr<ParquetFileBucketInfo>> buckets(num_buckets);
+    for (auto & bucket : buckets)
+    {
+        bucket = std::make_shared<ParquetFileBucketInfo>();
+        bucket->file_metadata = metadata;
+        bucket->row_group_ids.reserve(row_groups.size() / num_buckets + 1);
+    }
+    for (size_t i = 0; i < row_groups.size(); ++i)
+        buckets[i % num_buckets]->row_group_ids.push_back(row_groups[i]);
+
+    return {buckets.begin(), buckets.end()};
 }
 
 void registerInputFormatParquet(FormatFactory & factory);

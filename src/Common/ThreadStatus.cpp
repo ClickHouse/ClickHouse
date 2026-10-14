@@ -191,6 +191,12 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
     return thread_group;
 }
 
+bool ThreadStatus::hasThreadGroup() const
+{
+    chassert(current_thread == this);
+    return thread_group != nullptr;
+}
+
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 {
     chassert(query_id.empty());

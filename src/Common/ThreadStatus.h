@@ -296,6 +296,7 @@ public:
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
+    bool hasThreadGroup() const;
 
     void setQueryId(std::string && new_query_id) noexcept;
     void clearQueryId() noexcept;

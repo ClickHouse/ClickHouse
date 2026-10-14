@@ -66,9 +66,10 @@ public:
     using Base = CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetMetadataCacheWeightFunction>;
     ParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio);
     static ParquetMetadataCacheKey createKey(const String & file_path, const String & file_attr);
-    /// Get or load Parquet metadata with caching
+    /// Get or load Parquet metadata with caching. The result shares ownership with the cache entry
+    /// instead of copying it: the footer of a file with many row groups and columns is large.
     template <typename LoadFunc>
-    parquet::format::FileMetaData getOrSetMetadata(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
+    std::shared_ptr<const parquet::format::FileMetaData> getOrSetMetadata(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
     {
         auto load_fn_wrapper = [&]()
         {
@@ -87,7 +88,7 @@ public:
             LOG_TRACE(log, "cache hit {} | {}", key.file_path, key.etag);
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
         }
-        return result.first->metadata;
+        return std::shared_ptr<const parquet::format::FileMetaData>(result.first, &result.first->metadata);
     }
 
 private:

@@ -523,7 +523,8 @@ struct Reader
     FormatFilterInfoPtr format_filter_info;
     Prefetcher prefetcher;
 
-    parq::FileMetaData file_metadata;
+    /// Immutable, so it can be shared between readers of the same file, and with `ParquetMetadataCache`.
+    std::shared_ptr<const parq::FileMetaData> file_metadata;
     std::deque<RowGroup> row_groups;
 
     /// Don't get confused in different column numberings (sorry there are so many):
