@@ -1,0 +1,4 @@
+f32_fill_zero	[1,1,0,0]
+f32_missing_nan	[1,1,0,0]
+f64_fill_nan	[1,1,0,0]
+f64_missing_zero	[1,1,0,0]

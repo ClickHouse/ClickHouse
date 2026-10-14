@@ -139,6 +139,9 @@ private:
     UInt64 file_size = 0;
 
     UInt64 current_row = 0;
+    /// The number of rows of a chunk, bounded by `input_format_max_block_size_bytes` or by a default
+    /// budget, so that a chunk of a few wide values does not take an unreasonable amount of memory.
+    UInt64 max_chunk_rows = 0;
     size_t approx_bytes_read_for_chunk = 0;
 };
 

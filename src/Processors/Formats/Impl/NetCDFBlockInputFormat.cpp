@@ -22,6 +22,8 @@
 #include <base/arithmeticOverflow.h>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -43,6 +45,12 @@ namespace
 /// A range of elements smaller than this is read contiguously even when most of it is not needed
 /// by the chunk: one large read is cheaper than collecting the needed elements run by run.
 constexpr UInt64 min_sparse_read_range_bytes = 8 * 1024 * 1024;
+
+/// The budget of the values of one chunk when `input_format_max_block_size_bytes` is not set. The
+/// number of rows of a chunk is otherwise bounded only by the number of rows of the file, and a
+/// wide value broadcast over many rows, such as a long `char` label of a large grid, would be
+/// materialized in every row of the chunk before a `LIMIT` could stop the query.
+constexpr UInt64 default_max_chunk_bytes = 16 * 1024 * 1024;
 
 /// Checks that the data of every variable is inside the file, which the header alone does not
 /// guarantee: it stores the offset of the data of a variable, and the number of records, without
@@ -411,6 +419,7 @@ void NetCDFBlockInputFormat::resetParser()
     seekable_in = nullptr;
     file_size = 0;
     current_row = 0;
+    max_chunk_rows = 0;
     approx_bytes_read_for_chunk = 0;
 }
 
@@ -503,6 +512,26 @@ void NetCDFBlockInputFormat::initialize()
 
         states.push_back(std::move(state));
     }
+
+    /// The approximate size of one row in memory: the value of every column, the offset of a
+    /// String and the byte of the null map of a Nullable column.
+    UInt64 row_bytes = 0;
+    for (const auto & state : states)
+    {
+        const auto & column = *state.column;
+        UInt64 value_bytes = column.variable ? column.element_size : sizeof(UInt64);
+        if (column.is_string)
+            value_bytes += sizeof(UInt64);
+        if (column.type->isNullable())
+            value_bytes += 1;
+        if (common::addOverflow(row_bytes, value_bytes, row_bytes))
+            row_bytes = std::numeric_limits<UInt64>::max();
+    }
+
+    UInt64 max_chunk_bytes = format_settings.max_block_size_bytes ? format_settings.max_block_size_bytes : default_max_chunk_bytes;
+    max_chunk_rows = DEFAULT_BLOCK_SIZE;
+    if (row_bytes != 0)
+        max_chunk_rows = std::clamp<UInt64>(max_chunk_bytes / row_bytes, 1, DEFAULT_BLOCK_SIZE);
 }
 
 void NetCDFBlockInputFormat::readElements(
@@ -684,6 +713,34 @@ void insertNumbers(IColumn & column, const char * data, UInt64 first_element, co
     if (null_map)
         null_map->resize_fill(old_size + indexes.size(), 0);
 
+    /// A floating-point sentinel is compared by value, as the reference implementation does it,
+    /// rather than by its bytes: `-0.0` equals the sentinel `+0.0`, and a NaN sentinel matches every
+    /// NaN, whatever its payload is.
+    std::vector<T> float_sentinels;
+    bool has_nan_sentinel = false;
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        if (null_map)
+        {
+            for (const auto & sentinels : null_values)
+            {
+                if (sentinels.value_size != sizeof(T))
+                    continue;
+
+                for (size_t offset = 0; offset + sizeof(T) <= sentinels.data.size(); offset += sizeof(T))
+                {
+                    T sentinel;
+                    memcpy(&sentinel, sentinels.data.data() + offset, sizeof(T));
+                    transformEndianness<std::endian::native, std::endian::big>(sentinel);
+                    if (std::isnan(sentinel))
+                        has_nan_sentinel = true;
+                    else
+                        float_sentinels.push_back(sentinel);
+                }
+            }
+        }
+    }
+
     for (size_t i = 0; i < indexes.size(); ++i)
     {
         const char * from = data + (indexes[i] - first_element) * sizeof(T);
@@ -693,7 +750,18 @@ void insertNumbers(IColumn & column, const char * data, UInt64 first_element, co
         transformEndianness<std::endian::native, std::endian::big>(value);
         data_to[old_size + i] = value;
 
-        if (null_map && isNullValue(null_values, from, sizeof(T)))
+        if (!null_map)
+            continue;
+
+        bool is_null = false;
+        if constexpr (std::is_floating_point_v<T>)
+            is_null = std::isnan(value)
+                ? has_nan_sentinel
+                : std::find(float_sentinels.begin(), float_sentinels.end(), value) != float_sentinels.end();
+        else
+            is_null = isNullValue(null_values, from, sizeof(T));
+
+        if (is_null)
             (*null_map)[old_size + i] = 1;
     }
 }
@@ -805,7 +873,7 @@ Chunk NetCDFBlockInputFormat::read()
 
     approx_bytes_read_for_chunk = 0;
 
-    UInt64 count = std::min<UInt64>(DEFAULT_BLOCK_SIZE, layout.num_rows - current_row);
+    UInt64 count = std::min<UInt64>(max_chunk_rows, layout.num_rows - current_row);
     const auto & result_header = getPort().getHeader();
 
     Columns result;
