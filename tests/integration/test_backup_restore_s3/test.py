@@ -1292,6 +1292,7 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
         """
         DROP TABLE IF EXISTS sample_alias SYNC;
         DROP TABLE IF EXISTS sample_alias_copy SYNC;
+        DROP TABLE IF EXISTS ts SYNC;
         DROP TABLE IF EXISTS sample SYNC;
         DROP TABLE IF EXISTS mv SYNC;
         DROP TABLE IF EXISTS src SYNC;
@@ -1362,6 +1363,23 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
         f"BACKUP TABLE sample PARTITIONS 0 TO S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
     )
     assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
+
+    # A `TimeSeries` table whose tags are in `Memory` keeps data that the storage doesn't provide, though its other inner
+    # tables are on such a policy, so its data can't be left out of the backup.
+    instance.query(
+        f"""
+        CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
+        DATA INNER ENGINE = MergeTree SETTINGS storage_policy = '{policy}'
+        TAGS INNER ENGINE = Memory
+        METRICS INNER ENGINE = ReplacingMergeTree SETTINGS storage_policy = '{policy}'
+        """,
+        settings={"allow_experimental_time_series_table": 1},
+    )
+    err = instance.query_and_get_error(
+        f"BACKUP TABLE ts TO S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
+    )
+    assert "NOT_IMPLEMENTED" in err and "Some inner tables of" in err, err
+    instance.query("DROP TABLE ts SYNC")
 
     # The restored table keeps its UUID, so it can't be restored next to the source table.
     err = instance.query_and_get_error(

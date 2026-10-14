@@ -169,19 +169,24 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
 namespace
 {
 
-/// The storages that keep the data of `storage` on a storage policy, each with the kind of the inner table it is, if it
-/// is one. Of the tables that keep their data, only `MergeTreeData` keeps it on a storage policy. Other storages that
-/// report a policy keep no data of their own: `Alias`, `Distributed` and the `StorageProxy` wrappers report the policy of
-/// another table, or of their insert queue.
+/// The storages that keep the data of `storage`, each with the kind of the inner table it is, if it is one. The data of a
+/// materialized view or a `TimeSeries` table is in its inner tables, which count whatever their engine: an inner table on
+/// no storage policy, e.g. `Memory`, keeps data that the storage policy doesn't provide. A standalone table counts only if
+/// it is a `MergeTreeData`, the only kind of table that keeps its data on a storage policy: other storages that report a
+/// policy keep no data of their own, `Alias`, `Distributed` and the `StorageProxy` wrappers report the policy of another
+/// table, or of their insert queue.
 std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStorages(const StoragePtr & storage, const ContextPtr & context)
 {
     std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> data_storages;
-    auto add_if_keeps_data = [&](std::optional<ViewTarget::Kind> target_kind, const StoragePtr & data_storage)
+
+    /// A lazily loaded table is reached through `StorageTableProxy`, which reports no storage policy, so the loaded table
+    /// is used. Backing up or restoring the table loads it anyway.
+    auto add_inner_table = [&](ViewTarget::Kind target_kind, const StoragePtr & target)
     {
-        /// A lazily loaded table is reached through `StorageTableProxy`, which reports no storage policy, so the loaded
-        /// table is kept. Backing up or restoring the table loads it anyway.
-        if (auto merge_tree = castStorage<MergeTreeData>(data_storage, DeferredTable::Load))
+        if (auto merge_tree = castStorage<MergeTreeData>(target, DeferredTable::Load))
             data_storages.emplace_back(target_kind, std::move(merge_tree));
+        else
+            data_storages.emplace_back(target_kind, target);
     };
 
     if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
@@ -189,7 +194,7 @@ std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStora
         if (materialized_view->hasInnerTable())
         {
             if (auto target = materialized_view->tryGetTargetTable())
-                add_if_keeps_data(ViewTarget::To, target);
+                add_inner_table(ViewTarget::To, target);
         }
     }
     else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
@@ -199,13 +204,13 @@ std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStora
             if (time_series->isInnerTable(target_kind))
             {
                 if (auto target = time_series->tryGetTargetTable(target_kind, context))
-                    add_if_keeps_data(target_kind, target);
+                    add_inner_table(target_kind, target);
             }
         }
     }
-    else
+    else if (auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load))
     {
-        add_if_keeps_data(std::nullopt, storage);
+        data_storages.emplace_back(std::nullopt, std::move(merge_tree));
     }
     return data_storages;
 }
