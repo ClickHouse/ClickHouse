@@ -123,6 +123,11 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
             /// Ask the child parser which row it had reached while it is still alive, then let
             /// the outer `catch` report the exception.
             rows_reached_on_parse_error = input_format->getRowsReachedOnParseError();
+            /// The row offset of a later unit comes from the segmentation engine, which also counts the
+            /// header rows that the first parser read (and did not count as data rows).
+            if (current_ticket_number != 0 && rows_reached_on_parse_error)
+                rows_reached_on_parse_error = std::max<size_t>(*rows_reached_on_parse_error, header_rows_in_first_unit + 1)
+                    - header_rows_in_first_unit;
             throw;
         }
 
@@ -131,6 +136,7 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
         {
             column_mapping = input_format->getColumnMapping();
             column_mapping->is_set = true;
+            header_rows_in_first_unit = input_format->getNumberOfHeaderRows();
             first_parser_finished.set();
         }
 

@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -347,6 +348,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_stores_typed_numeric_values = false;
     bool format_always_skips_unknown_fields = false;
     bool format_allows_missing_named_columns = true;
+    bool format_read_rows_ahead_to_detect_header = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -389,10 +391,24 @@ String getInsertDataSchemaMismatchDescription(
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
         format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
         format_allows_missing_named_columns = schema_reader->allowsMissingNamedColumns();
+        format_read_rows_ahead_to_detect_header = schema_reader->readRowsAheadToDetectHeaderAndFoundNone();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Best-effort: keep the conservative defaults above; it is Ok to ignore the exception.
+    }
+
+    /// The header auto-detection of a plain `CSV` / `TSV` / `CustomSeparated` (`*_detect_header`) reads
+    /// the first rows regardless of the row bound above and keeps their types when it decides that
+    /// there is no header — so with `"1",x` and `"1",x,extra` the unreached second row would turn the
+    /// failure in the first one into a bogus three-column mismatch. The reader has already decided that
+    /// the first row is data, so disable the detection for the inference passes below, which then
+    /// honor the row bound.
+    if (rows_reached_by_parser && format_read_rows_ahead_to_detect_header)
+    {
+        format_settings.csv.try_detect_header = false;
+        format_settings.tsv.try_detect_header = false;
+        format_settings.custom.try_detect_header = false;
     }
 
     /// Some formats read a schema during inference that the real parser then ignores — the
@@ -1279,6 +1295,23 @@ String getInsertDataSchemaMismatchDescription(
             if (!expected_is_numeric)
                 return true;
 
+            /// The binary formats that store typed values (`BSONEachRow`, `MsgPack`) read a wide integer
+            /// (`Int128`, `UInt128`, `Int256`, `UInt256`) from binary data of exactly its size, which their
+            /// schema readers report as `String`. Such a value is a genuine mismatch only when its size
+            /// differs (a string of the same size is not told apart from binary data here, staying on the
+            /// low-false-positive side).
+            if (format_stores_typed_numeric_values
+                && (which_expected.isInt128() || which_expected.isUInt128() || which_expected.isInt256()
+                    || which_expected.isUInt256()))
+            {
+                if (!evidence.column_index)
+                    return true;
+                const size_t value_size = expected_unwrapped->getSizeOfValueInMemory();
+                return sampled_string_values_satisfy(
+                           *evidence.column_index, evidence.path, [&](const String & value) { return value.size() == value_size; })
+                    .value_or(true);
+            }
+
             /// The formats that cast a decoded source `String` column to the destination type (the
             /// columnar formats and `Native`) accept a numeric string such as `"1"` into a numeric
             /// column, exactly like the text formats do — but the second inference pass cannot tell
@@ -1302,17 +1335,41 @@ String getInsertDataSchemaMismatchDescription(
             if (!type_is_confirmed_text(evidence.numbers_inferred_type))
                 return true;
 
-            /// The whole-text formats (`Form`, `JSONStringsEachRow`, ...) re-parse the content of the
-            /// string with the whole-text deserializer of the destination type. The numbers-from-strings
-            /// inference pass does not cover every one of them (`Form` keeps a value such as `1` as
-            /// `String` there), so before reporting a value as genuine text, validate the sampled values
-            /// with the same deserializer: `1` is valid for a `UInt8` column, `x` and `1.5` are not.
-            /// The `Nullable` wrapper is kept, as its whole-text deserializer also accepts the `NULL`
-            /// literal.
-            if (format_reads_string_values_as_whole_text && evidence.column_index)
-                return sampled_string_values_are_valid_text_for(
-                           *evidence.column_index, evidence.path, removeLowCardinality(expected_type))
+            /// A `String` in both inference passes still does not prove non-numeric content: the
+            /// inference policies keep some numbers as `String` on purpose — a number with a leading zero
+            /// (`01`), every value of `TSV` / `CSV` with `input_format_*_use_best_effort_in_schema_inference`
+            /// disabled, and every value of the whole-text formats such as `Form` — while the parser reads
+            /// them into a numeric column just fine. So before reporting a value as genuine text, validate
+            /// the sampled values with the whole-text deserializer of the destination type (`01` and `1`
+            /// are valid for a `UInt8` column), keeping the `Nullable` wrapper, as its whole-text
+            /// deserializer also accepts the `NULL` literal. The whole-text formats re-parse the string
+            /// with exactly that deserializer, so a value it rejects (`1.5` for `UInt8`) is a mismatch
+            /// there. The other formats read the field as a number, and a number that does not fit the
+            /// destination (`1.5` for `UInt8`) is a value-level error, as when inference types it as
+            /// `Float64` — so there only a value that is not a number at all (`x`) is a mismatch.
+            if (evidence.column_index)
+            {
+                const auto destination = removeLowCardinality(expected_type);
+                const auto destination_serialization = destination->getDefaultSerialization();
+                const auto number_type = std::make_shared<DataTypeFloat64>();
+                const auto number_serialization = number_type->getDefaultSerialization();
+                auto is_valid_text = [&](const DataTypePtr & type, const SerializationPtr & serialization, const String & text)
+                {
+                    auto column = type->createColumn();
+                    ReadBufferFromString buffer(text);
+                    return serialization->tryDeserializeWholeText(*column, buffer, format_settings);
+                };
+                return sampled_string_values_satisfy(
+                           *evidence.column_index,
+                           evidence.path,
+                           [&](const String & text)
+                           {
+                               return is_valid_text(destination, destination_serialization, text)
+                                   || (!format_reads_string_values_as_whole_text
+                                       && is_valid_text(number_type, number_serialization, text));
+                           })
                     .value_or(false);
+            }
 
             return false;
         }
@@ -1326,6 +1383,17 @@ String getInsertDataSchemaMismatchDescription(
         /// which cannot be built from a single scalar, stays a mismatch.
         if (inferred_is_numeric)
             return !expected_is_nested;
+
+        /// The formats that cast a decoded source column to the destination type (`Native`, `Parquet`,
+        /// `Arrow`, `ORC`, ...) convert between scalar types with `castColumn`, which succeeds or fails
+        /// depending on the values rather than on the types: `Date32` -> `UInt8`, `Decimal` -> `Float64`
+        /// and `FixedString(1)` -> `UInt8` are all valid. So a scalar source into a scalar destination is
+        /// not a structure mismatch there (the scalar destinations that never accept a number — `UUID`,
+        /// `IPv6` — were already handled above). Only a nested source or destination stays a mismatch.
+        const bool inferred_is_nested = which_inferred.isArray() || which_inferred.isTuple() || which_inferred.isMap()
+            || which_inferred.isObject();
+        if (format_casts_string_source_columns && !inferred_is_nested && !expected_is_nested && !which_expected.isObject())
+            return true;
 
         return false;
     };

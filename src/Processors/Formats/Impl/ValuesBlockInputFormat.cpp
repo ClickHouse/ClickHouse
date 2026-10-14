@@ -17,6 +17,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/LiteralTokenInfo.h>
@@ -26,6 +27,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromString.h>
 
 namespace DB
@@ -845,6 +847,39 @@ void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters
     }
 }
 
+namespace
+{
+
+/// The type of the query parameter `{name:Type}` that `value` consists of, or `nullptr` if it is not a
+/// query parameter. `ValuesBlockInputFormat` parses such a value as an expression and substitutes the
+/// parameter, converted to `Type`, so that type is exactly what the parser reads.
+DataTypePtr tryGetQueryParameterType(std::string_view value)
+{
+    if (value.size() < 2 || value.front() != '{' || value.back() != '}')
+        return nullptr;
+
+    std::string_view content = value.substr(1, value.size() - 2);
+    const size_t colon = content.find(':');
+    if (colon == std::string_view::npos)
+        return nullptr;
+
+    std::string_view name = content.substr(0, colon);
+    trimLeft(name);
+    trimRight(name);
+    if (name.empty() || !std::ranges::all_of(name, [](char c) { return isWordCharASCII(c); }))
+        return nullptr;
+
+    std::string_view type_name = content.substr(colon + 1);
+    trimLeft(type_name);
+    trimRight(type_name);
+    if (type_name.empty())
+        return nullptr;
+
+    return DataTypeFactory::instance().tryGet(String(type_name));
+}
+
+}
+
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowSchemaReader(buf, format_settings_), buf(in_)
 {
@@ -875,7 +910,9 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
         }
 
         readQuotedField(value, buf);
-        auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        auto type = tryGetQueryParameterType(value);
+        if (!type)
+            type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
         skipWhitespaceIfAny(buf);
     }

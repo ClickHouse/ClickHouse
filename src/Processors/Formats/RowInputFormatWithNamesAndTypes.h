@@ -51,6 +51,7 @@ protected:
     void setReadBuffer(ReadBuffer & in_) override;
     void readPrefix() override;
     bool supportsCustomSerializations() const override { return true; }
+    size_t getNumberOfHeaderRows() const override { return number_of_header_rows; }
 
     const FormatSettings format_settings;
     DataTypes data_types;
@@ -78,6 +79,7 @@ private:
     bool try_detect_header;
     bool allow_variable_number_of_columns;
     bool is_header_detected = false;
+    size_t number_of_header_rows = 0;
 };
 
 /// Base class for parsing data in input formats with -WithNames and -WithNamesAndTypes suffixes.
@@ -229,6 +231,11 @@ public:
     /// (see `ColumnMapping::addColumns`), honoring `input_format_column_name_matching_mode`.
     bool honorsColumnNameMatchingMode() const override { return true; }
 
+    bool readRowsAheadToDetectHeaderAndFoundNone() const override
+    {
+        return header_detection_attempted && !names_detected_from_data && !types_detected_from_data;
+    }
+
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
@@ -254,6 +261,7 @@ private:
     bool try_detect_header;
     bool names_detected_from_data = false;
     bool types_detected_from_data = false;
+    bool header_detection_attempted = false;
     DataTypes buffered_types;
 };
 

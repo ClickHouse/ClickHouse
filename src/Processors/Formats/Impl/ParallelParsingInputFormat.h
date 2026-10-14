@@ -290,6 +290,9 @@ private:
     /// See getRowsReachedOnParseError. Recorded under `mutex` together with `background_exception`
     /// (and only for the first exception, whose rethrow the value must match).
     std::optional<size_t> background_exception_rows_reached;
+    /// The header rows read by the parser of the first unit (see IInputFormat::getNumberOfHeaderRows).
+    /// Written before `first_parser_finished` is set, and the later units are scheduled only after that.
+    size_t header_rows_in_first_unit = 0;
 
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.

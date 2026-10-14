@@ -287,6 +287,13 @@ public:
     /// a structure mismatch for such a format.
     virtual bool allowsMissingNamedColumns() const { return true; }
 
+    /// True when `readSchema` read rows ahead to auto-detect a header (`*_detect_header`) and decided
+    /// that the data has none. That lookahead reads up to a few rows regardless of
+    /// `input_format_max_rows_to_read_for_schema_inference` and keeps their types, so a caller that
+    /// needs inference to honor a strict row bound has to disable the detection: the first row is data
+    /// then, exactly as the reader decided.
+    virtual bool readRowsAheadToDetectHeaderAndFoundNone() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
