@@ -285,12 +285,9 @@ public:
         const OriginInfo & origin_info = {},
         bool is_initial_load = false) const = 0;
 
-    /// `is_space_reservation_complete`: no space reservation can run for the entry during the call.
-    /// `final_size`: the size which the entry can grow to (the size of its file segment).
     virtual bool tryIncreasePriority(
         Iterator & iterator,
         bool is_space_reservation_complete,
-        size_t final_size,
         CacheStateGuard & state_guard) = 0;
 
     virtual void shuffle() = 0;

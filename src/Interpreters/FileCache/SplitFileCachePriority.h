@@ -70,7 +70,6 @@ public:
     bool tryIncreasePriority(
         Iterator & iterator,
         bool is_space_reservation_complete,
-        size_t final_size,
         CacheStateGuard & state_guard) override;
 
     EvictionInfoPtr collectEvictionInfo(
