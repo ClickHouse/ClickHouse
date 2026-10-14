@@ -91,16 +91,31 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// exempt, so existing tables always load; the write-time guard in `ParquetBlockOutputFormat` still
     /// protects such legacy tables. A plain `CREATE ... ON CLUSTER` is not a replay: every host runs it
     /// from the distributed DDL queue as a `CREATE`, so it is rejected on each of them.
-    if (configuration->isIcebergConfiguration()
-        && ((column_field_ids_in_definition && !format_settings->parquet.column_field_ids.empty())
-            || (auto_assign_field_ids_in_definition && format_settings->parquet.auto_assign_field_ids))
+    const bool fresh_definition_supplies_field_ids
+        = ((column_field_ids_in_definition && !format_settings->parquet.column_field_ids.empty())
+           || (auto_assign_field_ids_in_definition && format_settings->parquet.auto_assign_field_ids))
         && (args.mode == LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax)))
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax));
+    if (configuration->isIcebergConfiguration() && fresh_definition_supplies_field_ids)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
             "cannot be used in the definition of an Iceberg table: the table metadata provides its own "
             "column-id mapping, so every write to such a table would fail");
+
+    /// The other datalake engines (e.g. `DeltaLake`) derive the header handed to the Parquet writer
+    /// from their own metadata rather than from the definition: an existing partitioned Delta table
+    /// takes its partition columns from the Delta log and keeps them out of the data files
+    /// (`DeltaLakePartitionedSink`), so neither the declared columns nor `PARTITION BY` describe the
+    /// writer header. The settings cannot be validated against that header here, so reject them
+    /// rather than accept a definition whose every `INSERT` might fail.
+    if (configuration->isDataLakeConfiguration() && fresh_definition_supplies_field_ids)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
+            "cannot be used in the definition of a {} table: the columns written to its data files are "
+            "derived from the table metadata, so the settings cannot be validated against them",
+            configuration->getEngineName());
 
     /// A plain (non-Iceberg) table freezes these settings the same way, so an invalid
     /// definition-supplied `field_id` map would be accepted here and then fail every `INSERT` —
