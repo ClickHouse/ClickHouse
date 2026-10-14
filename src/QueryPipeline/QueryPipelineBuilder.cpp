@@ -605,7 +605,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t min_block_size_bytes,
     size_t max_streams,
     IQueryPlanStep * join_step,
-    bool keep_left_read_in_order,
+    bool keep_left_pipeline_layout,
     const std::optional<String> & seal_gate,
     Processors * collected_processors)
 {
@@ -661,7 +661,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     if (join->supportParallelJoin() && !right->hasTotals())
     {
-        if (!keep_left_read_in_order)
+        if (!keep_left_pipeline_layout)
         {
             left->resize(max_streams);
             num_streams = max_streams;
