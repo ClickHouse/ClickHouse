@@ -1,0 +1,314 @@
+---
+slug: /clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless
+title: 'Collecting AWS CloudWatch logs with OpenTelemetry'
+sidebarTitle: 'Collect CloudWatch logs'
+description: 'Run one small OpenTelemetry Collector that polls your CloudWatch log groups and sends the events straight to ClickHouse Observability, then search them by log group and stream.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'AWS', 'CloudWatch', 'CloudWatch Logs', 'OpenTelemetry collector', 'aws_cloudwatch', 'OTLP', 'Lambda logs']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from '/snippets/components/Image.jsx';
+import { TrackedLink } from '/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx';
+
+<Info>
+**TL;DR**
+
+Pick the CloudWatch log groups you want, paste the exporter block from your service's **Collector config** tab into a small OpenTelemetry Collector configuration, and start it with Docker Compose. It polls the log groups and sends every event straight to ClickHouse Observability, tagged with its log group and stream.
+
+Time required: about 15 minutes
+</Info>
+
+You have created your ClickHouse Observability service. This guide is for when the logs you want are already in CloudWatch: Lambda functions, ECS tasks, RDS, VPC flow logs, or anything else that writes to a log group.
+
+The pattern is standard OpenTelemetry. One collector with the [`aws_cloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) polls your log groups through the CloudWatch Logs API and sends the events directly to your service's OTLP endpoint. It runs anywhere with Docker and AWS API access. An EC2 instance in the same region as the log groups keeps API latency and data transfer costs down.
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service. If you do not have one yet, follow the [Getting started guide](/clickstack/observability/getting-started).
+- An AWS account with one or more CloudWatch log groups, and permission to create or use credentials that can read them.
+- A host with Docker, the [AWS CLI](https://aws.amazon.com/cli/), and outbound HTTPS access on port `4318` to your service's telemetry endpoint.
+
+Run the AWS and Docker commands from one shell on that host. The collector takes its AWS credentials from that shell's environment.
+
+## Set up the collector {#set-up-the-collector}
+
+<Steps>
+<Step title="Set up AWS credentials" id="set-up-aws-credentials">
+The receiver uses the standard AWS SDK credential chain, so anything that works for the AWS CLI works for the collector. The credentials need to list log groups and read their events:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudWatchLogsRead",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+    }
+  ]
+}
+```
+
+Replace `YOUR_ACCOUNT_ID` with your AWS account ID. Export the credentials, then confirm they work:
+
+<Tabs>
+<Tab title="AWS SSO" id="aws-sso">
+
+```shell
+aws sso login --profile YOUR_PROFILE_NAME
+eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+aws sts get-caller-identity
+```
+
+SSO credentials expire, typically after 8 to 12 hours. Rerun these commands and restart the collector when they do. Access keys or an instance role avoid the interruption.
+
+</Tab>
+<Tab title="IAM access keys" id="iam-access-keys">
+
+```shell
+export AWS_ACCESS_KEY_ID="your-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+export AWS_REGION="us-east-1"
+aws sts get-caller-identity
+```
+
+</Tab>
+</Tabs>
+
+<Info>
+**Production credentials**
+
+For production, attach the policy to the host instead of exporting keys: an IAM role on EC2, IRSA on EKS, or a task role on ECS. The collector then resolves credentials from the instance metadata service, and the Compose file below needs no AWS variables at all.
+</Info>
+</Step>
+
+<Step title="Pick your log groups" id="pick-your-log-groups">
+List the log groups in your region so you can use exact names and confirm the region is right:
+
+```shell
+aws logs describe-log-groups --region us-east-1 \
+  --query 'logGroups[].logGroupName' --output table
+```
+
+Note the names you want. Groups that share a prefix, such as `/aws/lambda/`, can be picked up together when you write the configuration.
+</Step>
+
+<Step title="Copy your connection details" id="copy-connection-details">
+Open your ClickHouse Observability service. Until data arrives it shows the **Start sending telemetry** page.
+
+<Image img="/images/clickstack/getting-started/observability-start-sending-telemetry.png" alt="Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides" size="lg" />
+
+Under **Use an existing OpenTelemetry setup**, select **View connection details**, then open the **Collector config** tab. It shows a ready-made exporter block for your service: the endpoint, and an `authorization` header that already carries your API key with its `Bearer` prefix. Select **Reveal key** to show the full key, then use the copy button.
+
+<Image img="/images/clickstack/getting-started/observability-collector-config.png" alt="Set up OpenTelemetry dialog with the Collector config tab selected, showing an otlphttp exporter with the masked endpoint and a Bearer authorization header" size="md" />
+
+The block has this shape. You paste it into the collector configuration in the next step exactly as copied:
+
+```yaml
+exporters:
+  otlphttp:
+    endpoint: https://YOUR_OTEL_ENDPOINT:4318
+    headers:
+      authorization: Bearer <your-api-key>
+```
+
+You can find the same values at any time under **Team Settings → Managed Telemetry**.
+</Step>
+
+<Step title="Write the collector configuration" id="write-the-configuration">
+Create `otel-collector-config.yaml` from the variant that matches how you want to select log groups, then replace its `exporters` block with the one you copied. Both variants read the last hour of events on startup.
+
+<Tabs>
+<Tab title="Named log groups" id="named-log-groups">
+
+```yaml
+receivers:
+  aws_cloudwatch:
+    region: us-east-1
+    logs:
+      poll_interval: 1m
+      initial_lookback: 1h
+      groups:
+        named:
+          /aws/lambda/payment-processor:
+          /aws/lambda/order-service:
+          /ecs/api-gateway:
+
+processors:
+  batch:
+    timeout: 10s
+
+exporters:
+  otlphttp:
+    endpoint: https://YOUR_OTEL_ENDPOINT:4318
+    headers:
+      authorization: Bearer <your-api-key>
+
+service:
+  pipelines:
+    logs:
+      receivers: [aws_cloudwatch]
+      processors: [batch]
+      exporters: [otlphttp]
+```
+
+Each key under `named` is a log group. Leave the value empty to read every stream in the group, or add `names:` or `prefixes:` under it to read only some streams.
+
+</Tab>
+<Tab title="Autodiscover by prefix" id="autodiscover-by-prefix">
+
+```yaml
+receivers:
+  aws_cloudwatch:
+    region: us-east-1
+    logs:
+      poll_interval: 1m
+      initial_lookback: 1h
+      groups:
+        autodiscover:
+          limit: 100
+          prefix: /aws/lambda/
+
+processors:
+  batch:
+    timeout: 10s
+
+exporters:
+  otlphttp:
+    endpoint: https://YOUR_OTEL_ENDPOINT:4318
+    headers:
+      authorization: Bearer <your-api-key>
+
+service:
+  pipelines:
+    logs:
+      receivers: [aws_cloudwatch]
+      processors: [batch]
+      exporters: [otlphttp]
+```
+
+This reads every log group whose name starts with the prefix, up to `limit`, including groups created later. Use `pattern` instead of `prefix` to match a substring anywhere in the name.
+
+</Tab>
+</Tabs>
+
+The exporter name `otlphttp` matches what the tab gives you. Recent collector releases call it `otlp_http` and keep `otlphttp` as an alias, so both work, and the collector logs `"otlphttp" alias is deprecated` once at startup. That warning is harmless. If you rename the exporter, rename it in the pipeline too. Keep the endpoint as the base URL: do not append `/v1/logs`, because the exporter adds the signal path itself. The file now holds your API key, so keep it out of version control and readable only by the user that runs Docker, for example with `chmod 600 otel-collector-config.yaml`.
+
+Settings to adjust:
+
+- `region`: where the log groups live.
+- `initial_lookback`: how far back to read when the collector starts. Without it, the receiver reads each group's entire retained history, which can mean a large one-off backfill and the API calls to match. To backfill from a specific point instead, replace it with `start_from` and an RFC 3339 timestamp.
+- `poll_interval`: `1m` by default. Shorter intervals give fresher logs in exchange for more API calls.
+- Restarts re-read the lookback window, so the last hour appears twice after a restart. For a long-running deployment, add the `file_storage` extension and set the receiver's `storage` option so it resumes where it left off.
+
+The receiver's [README](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) covers the remaining options, including stream filters and reading from linked accounts.
+
+<Accordion title="Optional: use the log group as the service name">
+CloudWatch events carry no service name, so `ServiceName` is empty in Search and the service filters do nothing. To fill it from the log group, add a `transform` processor and place it before `batch` in the pipeline:
+
+```yaml
+processors:
+  transform:
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["service.name"], attributes["cloudwatch.log.group.name"])
+  batch:
+    timeout: 10s
+
+service:
+  pipelines:
+    logs:
+      receivers: [aws_cloudwatch]
+      processors: [transform, batch]
+      exporters: [otlphttp]
+```
+</Accordion>
+</Step>
+
+<Step title="Start it with Docker Compose" id="start-with-docker-compose">
+Create `docker-compose.yaml` next to the configuration. It mounts the configuration and passes your AWS credentials from the shell into the container:
+
+```yaml
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.162.0
+    command: ["--config=/etc/otel-config.yaml"]
+    volumes:
+      - type: bind
+        source: ./otel-collector-config.yaml
+        target: /etc/otel-config.yaml
+        read_only: true
+    environment:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_REGION
+    restart: unless-stopped
+```
+
+Start it and watch the logs:
+
+```shell
+docker compose up -d
+docker compose logs -f otel-collector
+```
+
+A healthy start ends with `Everything is ready. Begin running and processing data.` The first poll happens one `poll_interval` after start, so allow a minute or two. Errors to recognise:
+
+- `panic: runtime error: invalid memory address or nil pointer dereference` in `ensureSession`, after which the container restarts: the collector could not authenticate to AWS. The credentials are missing, invalid, or expired, or the STS endpoint is unreachable. Collector 0.162.0 reports this as a crash rather than an error message, tracked upstream in [issue 50961](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50961). Run `aws sts get-caller-identity` on the host, fix the credentials, and restart.
+- `AccessDeniedException`: the credentials lack `logs:FilterLogEvents` or `logs:DescribeLogGroups` on the group.
+- `ResourceNotFoundException`: a log group name is misspelled or lives in a different region.
+- `401` or `403` from the exporter: the `authorization` value in the configuration is wrong. It must read `Bearer` followed by the full key, as the Collector config tab gives it. Fix the file and run `docker compose restart otel-collector`.
+- `404` from the exporter: a signal path such as `/v1/logs` was appended to the endpoint.
+</Step>
+</Steps>
+
+## Confirm data is arriving {#confirm-data-is-arriving}
+
+Return to the **Start sending telemetry** page in your service and select **Check for data**. Once telemetry has arrived, the service status changes to **Data received** and **Start exploring** becomes available.
+
+<Image img="/images/clickstack/getting-started/observability-data-received.png" alt="Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled" size="lg" />
+
+Select **Start exploring** to open **Search**, select the **Logs** source, and set the time range to **Last 15 minutes**. Events appear within a couple of poll intervals. Each one carries its origin as resource attributes:
+
+- `aws.region`: the region you configured.
+- `cloudwatch.log.group.name`: the source log group.
+- `cloudwatch.log.stream`: the source log stream.
+- `cloud.account.id`: the AWS account the events came from.
+
+To see them as columns, replace the `SELECT` with `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`:
+
+<Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" alt="Search showing CloudWatch events with the region, log group, and log stream resource attributes as columns" size="lg" />
+
+Select an event and open **Column Values** to inspect its attributes:
+
+<Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" alt="Log detail view showing the aws.region, cloudwatch.log.group.name, and cloudwatch.log.stream resource attributes of a CloudWatch event" size="lg" />
+
+## If nothing shows up {#if-nothing-shows-up}
+
+- Read the collector logs first with `docker compose logs -f otel-collector`. AWS and exporter problems are both reported there with the messages listed above.
+- Run `aws sts get-caller-identity` on the host to confirm the credentials are still valid. SSO sessions expire, and the collector crashes rather than logging an error when they do.
+- Confirm the group received events recently, because the receiver only reads events written inside the lookback window and after. For example: `aws logs filter-log-events --log-group-name /aws/lambda/order-service --region us-east-1 --limit 5`.
+- Widen the time range in **Search** and remove any filters. The default source may be set to **Traces** rather than **Logs**.
+- To rule out the service itself, go to **Team Settings → Managed Telemetry** and use **Send a Test Log**. If that log appears in **Search**, the service is receiving data and the problem is between the collector and CloudWatch or the endpoint.
+
+## Import the CloudWatch dashboard (optional) {#import-the-cloudwatch-dashboard}
+
+A prebuilt dashboard shows log volume by log group, a severity breakdown, and where errors come from. <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Download `cloudwatch-logs-dashboard.json`</TrackedLink>, then open **Dashboards**, select **Import**, upload the file, and select **Finish Import**. The charts filter on the resource attributes above, so they fill in as soon as events arrive.
+
+{/* TODO(dale): screenshot of the imported CloudWatch Logs dashboard in ClickHouse Observability. */}
+
+## Next steps {#next-steps}
+
+- [Alerts](/clickstack/observability/features/alerts): alert when a log group's error count rises.
+- [Search](/clickstack/observability/features/search): query by log group, stream, and body with Lucene-style syntax or SQL.
+- [Connecting an OpenTelemetry Collector](/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless): add more receivers to this collector, such as host metrics from the instance it runs on, through the same exporter.
+- [Monitoring Kubernetes with OpenTelemetry](/clickstack/managed-onboarding/monitoring-kubernetes-serverless): collect container logs and metrics directly from EKS instead of through CloudWatch.
