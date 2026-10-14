@@ -91,3 +91,5 @@ FROM
 )
 GROUP BY name
 ORDER BY name;
+
+DROP TABLE {% for name, columns in tables %}t_{{ name }}, {% endfor %}t_other, results;
