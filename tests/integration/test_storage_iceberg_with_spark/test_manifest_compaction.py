@@ -664,9 +664,10 @@ def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_s
         TBLPROPERTIES ('format-version' = '2')
         """
     )
-    for lo in range(0, 80, 20):
+    # More manifests than buckets, so `OPTIMIZE ... MANIFEST` has something to consolidate.
+    for lo in range(0, 80, 10):
         spark.sql(
-            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 20})"
+            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 10})"
         )
 
     default_upload_directory(
@@ -699,6 +700,10 @@ def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_s
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
+    # Compaction committed a manifest rewrite, so Spark reads the manifests ClickHouse wrote.
+    assert get_current_snapshot_summary(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    ).get("operation") == "replace"
     spark_rows = spark.read.format("iceberg").load(
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
     ).collect()
