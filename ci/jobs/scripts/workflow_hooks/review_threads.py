@@ -1,8 +1,9 @@
 """Unresolved-review-threads CI gate (https://github.com/ClickHouse/ClickHouse/issues/114724).
 
-When a PR has unresolved review threads, the full test suite is a waste: the
-code is going to change again once the review comments are addressed. This
-module implements the gate in three places:
+When a PR has unresolved blocking review threads, the full test suite is a
+waste: the code is going to change again once the review comments are
+addressed. Informational threads (`is_blocking_review_thread`) do not hold the
+gate. This module implements the gate in three places:
 
 - As a `Config Workflow` pre-hook (`__main__` here), it stores the number of
   unresolved review threads and whether the `ignore-unresolved-threads` label
@@ -23,6 +24,7 @@ CI cache, so only the previously skipped jobs actually run).
 """
 
 import json
+import re
 import sys
 
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -52,10 +54,30 @@ KV_PIPELINE_LIMITED = "unresolved_review_threads_pipeline_limited"
 POLICY_FAILURE_MARKER = "REVIEW_THREADS_GATE: blocked by unresolved review threads"
 
 
+# Only blocking threads hold the gate. A thread is informational when its first
+# comment starts with a non-blocking severity tag, such as the `[P2]` or `[Major]`
+# that the AI review puts on its findings (see `.claude/skills/review/SKILL.md`:
+# only blockers must be fixed before merge). Every other thread blocks: a human
+# comment or an untagged one is not known to be optional.
+# Also hard-coded in .github/workflows/rerun_on_review_threads.yml - keep them in sync.
+NON_BLOCKING_THREAD_PATTERN = re.compile(r"^\s*(\[(P2|P3|Major|Minor|Nit)\]|Nit:)", re.IGNORECASE)
+
+
+def is_blocking_review_thread(thread) -> bool:
+    """Whether an unresolved review thread must be resolved before full CI and merge."""
+    if thread["isResolved"]:
+        return False
+    comments = thread.get("comments", {}).get("nodes") or []
+    if not comments:
+        return True
+    return not NON_BLOCKING_THREAD_PATTERN.match(comments[0].get("body") or "")
+
+
 def get_unresolved_review_threads_count(pr=None, repo=None) -> int:
-    """The number of unresolved review threads on the PR. Raises on API failure."""
+    """The number of unresolved blocking review threads on the PR (see
+    `is_blocking_review_thread`). Raises on API failure."""
     threads = GH.list_pr_review_threads(pr=pr, repo=repo)
-    return sum(1 for thread in threads if not thread["isResolved"])
+    return sum(1 for thread in threads if is_blocking_review_thread(thread))
 
 
 def review_threads_gate_bypassed(labels) -> bool:

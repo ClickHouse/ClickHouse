@@ -162,7 +162,10 @@ jobs:
             exit 0
           fi
 
-          # --- Live unresolved review thread count ---
+          # --- Live unresolved blocking review thread count ---
+          # A thread whose first comment starts with a non-blocking severity tag
+          # does not count. Keep the pattern in sync with
+          # NON_BLOCKING_THREAD_PATTERN in ci/jobs/scripts/workflow_hooks/review_threads.py.
           owner="${GH_REPO%%/*}"
           name="${GH_REPO##*/}"
           unresolved=$(api_with_retries graphql --paginate \
@@ -171,13 +174,16 @@ jobs:
                 pullRequest(number: $pr) {
                   reviewThreads(first: 100, after: $endCursor) {
                     pageInfo { hasNextPage endCursor }
-                    nodes { isResolved }
+                    nodes { isResolved comments(first: 1) { nodes { body } } }
                   }
                 }
               }
             }' \
             -f owner="$owner" -f name="$name" -F pr="$pr" \
-            --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length' \
+            --jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+                   | select(.isResolved | not)
+                   | select((.comments.nodes[0].body // "") | test("^\\s*(\\[(P2|P3|Major|Minor|Nit)\\]|Nit:)"; "i") | not)
+                  ] | length' \
             | awk '{s+=$1} END {print s+0}')
 
           desired_blocked=false
