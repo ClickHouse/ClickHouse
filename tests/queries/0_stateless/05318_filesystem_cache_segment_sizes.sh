@@ -34,17 +34,15 @@ $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_segment_sizes;
     DROP TABLE IF EXISTS t_segment_sizes_small;
     CREATE TABLE t_segment_sizes (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key
-    SETTINGS min_bytes_for_wide_part = 0,
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
         disk = disk(type = cache, name = '$cache_name', path = '$cache_name/', max_size = '1Gi', $disk_settings);
     CREATE TABLE t_segment_sizes_small (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key
-    SETTINGS min_bytes_for_wide_part = 0,
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
         disk = disk(type = cache, name = '$small_cache_name', path = '$small_cache_name/', max_size = '6Mi', $disk_settings);
-    INSERT INTO t_segment_sizes SELECT number, cityHash64(number) FROM numbers(1000000);
-    INSERT INTO t_segment_sizes_small SELECT number, cityHash64(number) FROM numbers(1000000);
-    OPTIMIZE TABLE t_segment_sizes FINAL;
-    OPTIMIZE TABLE t_segment_sizes_small FINAL;
     SYSTEM STOP MERGES t_segment_sizes;
     SYSTEM STOP MERGES t_segment_sizes_small;
+    INSERT INTO t_segment_sizes SELECT number, cityHash64(number) FROM numbers(1000000);
+    INSERT INTO t_segment_sizes_small SELECT number, cityHash64(number) FROM numbers(1000000);
 "
 
 # Whether the segment counts and the bytes per bucket of the cache match its file segments.
