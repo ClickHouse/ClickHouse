@@ -3984,6 +3984,11 @@ class ClickHouseCluster:
                         "Got exception in docker compose up: %s", kwargs["exception"]
                     )
 
+            def compose_up(cmd, **kwargs):
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, cmd, **kwargs
+                )
+
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
                 logging.debug(
@@ -3994,9 +3999,7 @@ class ClickHouseCluster:
                         shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
-                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
-                )
+                compose_up(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
 
                 self.wait_zookeeper_secure_to_start()
@@ -4101,9 +4104,7 @@ class ClickHouseCluster:
                                 ),
                             )
 
-                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
-                )
+                compose_up(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
 
                 self.wait_zookeeper_to_start()
@@ -4339,7 +4340,7 @@ class ClickHouseCluster:
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug("Setup Mongo")
-                run_and_check(self.base_mongo_cmd + common_opts)
+                compose_up(self.base_mongo_cmd + common_opts)
                 self.up_called = True
                 self.wait_mongo_to_start(30)
 
@@ -4384,7 +4385,7 @@ class ClickHouseCluster:
                     "Trying to create Minio instance by command %s",
                     " ".join(map(str, minio_start_cmd)),
                 )
-                run_and_check(minio_start_cmd)
+                compose_up(minio_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
@@ -4517,9 +4518,7 @@ class ClickHouseCluster:
             )
             self.up_called = True
 
-            retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                run_and_check, clickhouse_start_cmd
-            )
+            compose_up(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
             if self.with_dolor:
@@ -6196,7 +6195,13 @@ class ClickHouseInstance:
                         raise
                     time.sleep(time_to_sleep)
 
-        raise Exception("Cannot start ClickHouse, see additional info in logs")
+        # Every attempt above fails the same way when docker removed the container's interface;
+        # say so, the CI job reports that as an infrastructure error.
+        lost_interface = self.describe_lost_network_interface()
+        raise Exception(
+            (f"{lost_interface} " if lost_interface else "")
+            + "Cannot start ClickHouse, see additional info in logs"
+        )
 
     def stop_clickhouse_client(self, signal="INT"):
         client_pid = self.get_process_pid("clickhouse client")
