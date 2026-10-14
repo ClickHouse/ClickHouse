@@ -1,7 +1,10 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <algorithm>
+
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -199,6 +202,96 @@ String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr
     return std::move(out.str());
 }
 
+/// Whether `modulo(dividend, divisor)` returns the same value as `moduloLegacy(dividend, divisor)` for every
+/// dividend, judging by the argument types (and the divisor, if it is a constant).
+///
+/// `moduloLegacy` applies the C++ `%` to its arguments and casts the result to the signed type of the divisor's
+/// width if either argument is signed. `modulo` returns the mathematical remainder, whose sign follows the dividend.
+/// With both arguments signed or both unsigned the two agree: `|result| < |divisor|` always fits.
+/// With mixed signs they agree only if:
+///  * the usual arithmetic conversions of `%` end in a signed type, i.e. the signed operand is wider than the
+///    unsigned one, or both are narrower than `int` (`Int32 % UInt32` converts a negative dividend to unsigned);
+///  * and the remainder fits the signed type of the divisor's width. A non-negative remainder (unsigned dividend)
+///    always does. One of a signed dividend does when the dividend is not wider than the divisor, and
+///    otherwise only when the constant divisor is small enough: `Int32 % 16` is fine, `Int32 % 200` is not
+///    (`-199` does not fit `Int8`), and neither is `Int32 % 129` (`128` does not).
+bool isModuloSameAsModuloLegacy(const ActionsDAG::Node & modulo_node)
+{
+    if (modulo_node.children.size() != 2)
+        return false;
+
+    const auto & divisor_node = *modulo_node.children[1];
+    const auto dividend_type = removeNullable(removeLowCardinality(modulo_node.children[0]->result_type));
+    const auto divisor_type = removeNullable(removeLowCardinality(divisor_node.result_type));
+    const WhichDataType dividend(dividend_type);
+    const WhichDataType divisor(divisor_type);
+
+    auto is_integer = [](const WhichDataType & type) { return type.isInt() || type.isUInt(); };
+    if (!is_integer(dividend) || !is_integer(divisor))
+        return false;
+
+    if (dividend.isInt() == divisor.isInt())
+        return true;
+
+    const size_t dividend_size = dividend_type->getSizeOfValueInMemory();
+    const size_t divisor_size = divisor_type->getSizeOfValueInMemory();
+    const size_t signed_size = dividend.isInt() ? dividend_size : divisor_size;
+    const size_t unsigned_size = dividend.isInt() ? divisor_size : dividend_size;
+
+    if (!(signed_size > unsigned_size || (signed_size < 4 && unsigned_size < 4)))
+        return false;
+
+    if (!dividend.isInt())
+        return true;
+
+    if (dividend_size <= divisor_size)
+        return true;
+
+    /// The remainder reaches `divisor - 1` in magnitude, which has to fit the signed type of the divisor's width.
+    if (divisor_size > sizeof(UInt64))
+        return false;
+
+    const ActionsDAG::Node * constant = &divisor_node;
+    while (constant->type == ActionsDAG::ActionType::ALIAS)
+        constant = constant->children.front();
+
+    if (constant->type != ActionsDAG::ActionType::COLUMN || !constant->column || !isColumnConst(*constant->column))
+        return false;
+
+    const Field value = (*constant->column)[0];
+    if (value.getType() != Field::Types::UInt64 || value.safeGet<UInt64>() == 0)
+        return false;
+
+    return value.safeGet<UInt64>() - 1 <= (UInt64(1) << (8 * divisor_size - 1)) - 1;
+}
+
+/// Whether every `modulo` in the expression can be replaced with `moduloLegacy` without changing the value.
+/// The names of lambdas are not inspected, so an expression with one is declined.
+bool canReplaceModuloWithModuloLegacy(const ActionsDAG::Node & node)
+{
+    switch (node.type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            return true;
+        case ActionsDAG::ActionType::COLUMN:
+            return !node.column || !typeid_cast<const ColumnFunction *>(&node.column->getDataColumn());
+        case ActionsDAG::ActionType::ALIAS:
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+            return canReplaceModuloWithModuloLegacy(*node.children.front());
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            if (typeid_cast<const ExecutableFunctionCapture *>(node.function.get()))
+                return false;
+
+            if (node.function_base->getName() == "modulo" && !isModuloSameAsModuloLegacy(node))
+                return false;
+
+            return std::ranges::all_of(node.children, [](const auto * child) { return canReplaceModuloWithModuloLegacy(*child); });
+        }
+    }
+}
+
 const ActionsDAG::Node * getNodeWithoutAlias(const ActionsDAG::Node * node)
 {
     const ActionsDAG::Node * result = node;
@@ -223,8 +316,11 @@ std::string RPNBuilderTreeNode::getColumnName() const
     return getColumnNameWithoutAlias(*dag_node, getContext());
 }
 
-std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
+std::optional<std::string> RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
 {
+    if (!canReplaceModuloWithModuloLegacy(*dag_node))
+        return std::nullopt;
+
     return getColumnNameWithoutAlias(*dag_node, getContext(), true /*legacy*/);
 }
 
