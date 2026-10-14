@@ -37,7 +37,6 @@ SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-
     FunctionDocumentation documentation_fragment = {description_fragment, syntax_fragment, arguments_fragment, {}, returned_value_fragment, examples_fragment, introduced_in_fragment, category_fragment};
 
     factory.registerFunction<FunctionFragment>(documentation_fragment);
-    factory.registerAlias("url_extract_fragment", "fragment", FunctionFactory::Case::Insensitive);
 }
 
 }

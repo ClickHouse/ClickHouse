@@ -265,7 +265,6 @@ Like [`countMatches`](#countMatches) but performs case-insensitive matching.
     FunctionDocumentation documentation_case_insensitive = {description_case_insensitive, syntax_case_insensitive, arguments_case_insensitive, {}, returned_value_case_insensitive, examples_case_insensitive, introduced_in_case_insensitive, category_case_insensitive};
 
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>(documentation_case_sensitive);
-    factory.registerAlias("REGEXP_COUNT", FunctionCountMatchesCaseSensitive::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>(documentation_case_insensitive);
 }
 

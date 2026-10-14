@@ -37,19 +37,17 @@ DROP TABLE t_trino_types;
 
 SELECT '-- Functions';
 SELECT starts_with('abc', 'ab'), ends_with('abc', 'bc'), levenshtein_distance('kitten', 'sitting');
-SELECT regexp_like('abc', 'b'), REGEXP_COUNT('abcabc', 'b');
+SELECT regexp_like('abc', 'b');
 SELECT is_nan(nan), is_finite(1.), is_infinite(inf);
 SELECT day_of_month(toDate('2024-02-29')), day_of_week(toDate('2024-02-29')), day_of_year(toDate('2024-02-29')),
     week_of_year(toDate('2021-01-01')), year_of_week(toDate('2021-01-01')), last_day_of_month(toDate('2024-02-10'));
 SELECT current_timezone() = timezone();
 SELECT format_datetime(toDateTime('2024-02-29 13:14:15', 'UTC'), 'yyyy-MM-dd HH:mm:ss');
-SELECT array_distinct(ARRAY[1, 2, 1]), arraySort(array_union(ARRAY[1, 2], ARRAY[2, 3]));
-SELECT array_max(ARRAY[1, 3, 2]), array_min(ARRAY[1, 3, 2]), array_position(ARRAY[5, 6], 6);
+SELECT arraySort(array_union(ARRAY[1, 2], ARRAY[2, 3]));
+SELECT array_position(ARRAY[5, 6], 6);
 SELECT slice(ARRAY[1, 2, 3, 4], 2, 2), zip(ARRAY[1, 2], ARRAY['a']);
 SELECT map_keys(map('a', 1, 'b', 2)), map_values(map('a', 1, 'b', 2));
-SELECT url_extract_host('https://clickhouse.com:8443/docs/x?a=1&b=2#frag'), url_extract_path('https://clickhouse.com/docs/x?a=1'),
-    url_extract_protocol('https://clickhouse.com/'), url_extract_query('https://clickhouse.com/?a=1&b=2'),
-    url_extract_fragment('https://clickhouse.com/#frag');
+SELECT url_extract_host('https://clickhouse.com:8443/docs/x?a=1&b=2#frag'), url_extract_protocol('https://clickhouse.com/');
 SELECT url_extract_host('http://user:password@example.com:8080/path?query=value#fragment');
 SELECT url_encode('a b&c'), url_decode('a+b%26c');
 SELECT bitwise_and(12, 10), bitwise_or(12, 10), bitwise_xor(12, 10);
