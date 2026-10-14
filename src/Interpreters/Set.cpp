@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <atomic>
 #include <optional>
 #include <shared_mutex>
@@ -17,12 +16,8 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/Utils.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -378,82 +373,6 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
     }
 
     return types;
-}
-
-
-bool Set::lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTypePtr & set_type)
-{
-    const DataTypePtr from = removeLowCardinalityAndNullable(column_type);
-    const DataTypePtr to = removeLowCardinalityAndNullable(set_type);
-
-    /// `Bool` is a `UInt8` under another name, which `equals` does not tell apart.
-    if (isBool(to) && !isBool(from))
-        return true;
-
-    if (isNothing(to) || from->equals(*to))
-        return false;
-
-    if (isDynamic(to))
-        return false;
-    if (const auto * to_variant = typeid_cast<const DataTypeVariant *>(to.get()))
-        return !to_variant->tryGetVariantDiscriminator(from->getName());
-
-    if (isStringOrFixedString(from))
-        return !isString(to);
-
-    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get()))
-    {
-        const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
-        if (!to_tuple || to_tuple->getElements().size() != from_tuple->getElements().size())
-            return true;
-
-        const auto & to_names = to_tuple->getElementNames();
-        const bool pair_by_name = from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
-            && std::ranges::any_of(
-                to_names, [&](const String & name) { return from_tuple->tryGetPositionByName(name).has_value(); });
-
-        for (size_t i = 0; i < to_names.size(); ++i)
-        {
-            size_t from_position = i;
-            if (pair_by_name)
-            {
-                const auto position = from_tuple->tryGetPositionByName(to_names[i]);
-                if (!position)
-                    return true;
-                from_position = *position;
-            }
-
-            if (lookupCastMayMergeValues(from_tuple->getElements()[from_position], to_tuple->getElements()[i]))
-                return true;
-        }
-
-        return false;
-    }
-
-    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from.get()))
-    {
-        if (const auto * to_array = typeid_cast<const DataTypeArray *>(to.get()))
-            return lookupCastMayMergeValues(from_array->getNestedType(), to_array->getNestedType());
-
-        /// `CAST` turns an array of pairs into a `Map` pair by pair, by position, and keeps repeated keys.
-        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
-        const auto * pair = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
-        return !to_map || !pair || pair->getElements().size() != 2
-            || lookupCastMayMergeValues(pair->getElements()[0], to_map->getKeyType())
-            || lookupCastMayMergeValues(pair->getElements()[1], to_map->getValueType());
-    }
-
-    if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.get()))
-    {
-        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
-        return !to_map || lookupCastMayMergeValues(from_map->getKeyType(), to_map->getKeyType())
-            || lookupCastMayMergeValues(from_map->getValueType(), to_map->getValueType());
-    }
-
-    if ((isInteger(from) || isFloat(from)) && (isInteger(to) || isFloat(to)))
-        return false;
-
-    return !conversionPreservesOrder(*from, *to) && !canBeSafelyCast(from, to);
 }
 
 

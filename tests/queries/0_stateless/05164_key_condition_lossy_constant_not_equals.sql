@@ -90,10 +90,9 @@ SELECT count() FROM t_lossy_const_plain WHERE d NOT IN (SELECT '2023-02-01 12:00
 SELECT countIf(d NOT IN (SELECT '2023-02-01 12:00:00')) FROM t_lossy_const_plain;
 
 -- A lossless element keeps its pruning here too: one row of the subquery plus the row of the part the
--- set index did not exclude. The element has the key's own type: the lookup casts the key into the set's
--- type, so a `DateTime64(0)` element would match every `12:00:00.xxx` key and could not be exact.
+-- set index did not exclude.
 SELECT 'a lossless set element prunes';
-SELECT count() FROM t_lossy_const_plain WHERE d NOT IN (SELECT toDateTime64('2023-02-01 12:00:00', 3, 'UTC'))
+SELECT count() FROM t_lossy_const_plain WHERE d NOT IN (SELECT toDateTime64('2023-02-01 12:00:00', 0, 'UTC'))
     SETTINGS max_rows_to_read = 2, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0,
         enable_parallel_replicas = 0;
 
