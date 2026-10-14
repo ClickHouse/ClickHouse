@@ -1776,6 +1776,7 @@ target_compile_options(musl-rcrt1 PRIVATE
     # (`GETFUNCSYM` in arch/x86_64/reloc.h). LTO does not see that reference, drops `__dls2`,
     # and the link fails with "undefined hidden symbol: __dls2".
     -fno-lto
+    -fno-whole-program-vtables
 )
 add_dependencies(musl-rcrt1 musl-headers)
 
@@ -1799,6 +1800,7 @@ target_compile_options(musl-crt1 PRIVATE
     -fno-builtin
     # The entry points are referenced only from inline asm, which LTO cannot see (see musl-rcrt1).
     -fno-lto
+    -fno-whole-program-vtables
 )
 add_dependencies(musl-crt1 musl-headers)
 
