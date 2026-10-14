@@ -1,5 +1,7 @@
 #include <Functions/AI/OpenAIProvider.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -83,18 +85,15 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
     setCommonHeaders(http_request, ai_request);
     http_request.setContentLength(body.size());
 
-    auto & out_stream = session->sendRequest(http_request);
-    out_stream << body;
+    auto request_body = sendHTTPRequest(*session, http_request);
+    writeString(body, *request_body);
+    request_body->finalize();
 
     Poco::Net::HTTPResponse http_response;
-    auto & in_stream = session->receiveResponse(http_response);
+    auto response_stream = receiveHTTPResponse(*session, http_response);
 
     String response_body;
-    {
-        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        ss << in_stream.rdbuf();
-        response_body = std::move(ss).str();
-    }
+    readStringUntilEOF(response_body, *response_stream);
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
@@ -194,18 +193,15 @@ void OpenAIProvider::embed(
     setCommonHeaders(http_request, ai_embedding_request);
     http_request.setContentLength(body.size());
 
-    auto & out_stream = session->sendRequest(http_request);
-    out_stream << body;
+    auto request_body = sendHTTPRequest(*session, http_request);
+    writeString(body, *request_body);
+    request_body->finalize();
 
     Poco::Net::HTTPResponse http_response;
-    auto & in_stream = session->receiveResponse(http_response);
+    auto response_stream = receiveHTTPResponse(*session, http_response);
 
     String response_body;
-    {
-        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        ss << in_stream.rdbuf();
-        response_body = std::move(ss).str();
-    }
+    readStringUntilEOF(response_body, *response_stream);
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)

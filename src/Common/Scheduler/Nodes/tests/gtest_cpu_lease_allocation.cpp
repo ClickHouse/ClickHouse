@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/Scheduler/CPULeaseAllocation.h>
-#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
+#include <Common/Scheduler/Nodes/TimeShared/RequestQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
 #include <Common/setThreadName.h>
@@ -33,7 +33,7 @@ TEST(SchedulerCPULeaseAllocation, FullPreemptionReturnsConsumedSlots)
 {
     TimeSharedScheduler scheduler;
     auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 1);
-    auto queue = std::make_shared<FifoQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
     queue->basename = "queue";
     semaphore->attachChild(queue);
     scheduler.attachChild(semaphore);
