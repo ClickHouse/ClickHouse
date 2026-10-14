@@ -47,6 +47,28 @@ private:
         return res;
     }
 
+    /// Converts only the rows in [row_begin, row_end). If it is not the whole block, the columns are cut to this range
+    /// and the rows are renumbered from zero. Otherwise, e.g. a window function that adds one row at a time
+    /// would convert the whole block for every row.
+    ConvertedColumns convertRange(size_t row_begin, size_t row_end, const IColumn ** columns, ssize_t if_argument_pos = -1) const
+    {
+        if (row_begin == 0 && row_end == columns[0]->size())
+            return convert(columns, if_argument_pos);
+
+        size_t num_columns = std::max(num_arguments, static_cast<size_t>(if_argument_pos + 1));
+        Columns cut_columns(num_columns);
+        std::vector<const IColumn *> cut_pointers(num_columns); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            cut_columns[i] = columns[i]->cut(row_begin, row_end - row_begin);
+            cut_pointers[i] = cut_columns[i].get();
+        }
+
+        auto res = convert(cut_pointers.data(), if_argument_pos);
+        res.holder.insert(res.holder.end(), cut_columns.begin(), cut_columns.end());
+        return res;
+    }
+
 public:
     AggregateFunctionVariantAdapter(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const DataTypes & nested_arguments, const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionVariantAdapter>(arguments, params, nested_function_->getResultType())
@@ -82,56 +104,55 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         /// Slow path, the batch methods below are used in most cases.
-        Columns rows(num_arguments);
-        std::vector<const IColumn *> row_pointers(num_arguments); // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        for (size_t i = 0; i < num_arguments; ++i)
-        {
-            rows[i] = columns[i]->cut(row_num, 1);
-            row_pointers[i] = rows[i].get();
-        }
-        auto converted = convert(row_pointers.data());
+        auto converted = convertRange(row_num, row_num + 1, columns);
         nested_function->add(place, converted.pointers.data(), 0, arena);
     }
 
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
     {
-        nested_function->addManyDefaults(place, convert(columns).pointers.data(), length, arena);
+        /// Only the first row is used.
+        nested_function->addManyDefaults(place, convertRange(0, 1, columns).pointers.data(), length, arena);
     }
 
     void addBatch(
         size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
         const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
-        nested_function->addBatch(row_begin, row_end, places, place_offset, convert(columns, if_argument_pos).pointers.data(), arena, if_argument_pos);
+        auto converted = convertRange(row_begin, row_end, columns, if_argument_pos);
+        nested_function->addBatch(0, row_end - row_begin, places + row_begin, place_offset, converted.pointers.data(), arena, if_argument_pos);
     }
 
     void addBatchWithNonNullPlaces(
         size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
         const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
+        auto converted = convertRange(row_begin, row_end, columns, if_argument_pos);
         nested_function->addBatchWithNonNullPlaces(
-            row_begin, row_end, places, place_offset, convert(columns, if_argument_pos).pointers.data(), arena, if_argument_pos);
+            0, row_end - row_begin, places + row_begin, place_offset, converted.pointers.data(), arena, if_argument_pos);
     }
 
     void addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place,
         const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
-        nested_function->addBatchSinglePlace(row_begin, row_end, place, convert(columns, if_argument_pos).pointers.data(), arena, if_argument_pos);
+        auto converted = convertRange(row_begin, row_end, columns, if_argument_pos);
+        nested_function->addBatchSinglePlace(0, row_end - row_begin, place, converted.pointers.data(), arena, if_argument_pos);
     }
 
     void addBatchSinglePlaceNotNull(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place,
         const IColumn ** columns, const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos) const override
     {
+        auto converted = convertRange(row_begin, row_end, columns, if_argument_pos);
         nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, place, convert(columns, if_argument_pos).pointers.data(), null_map, arena, if_argument_pos);
+            0, row_end - row_begin, place, converted.pointers.data(), null_map + row_begin, arena, if_argument_pos);
     }
 
     void addBatchArray(
         size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
         const IColumn ** columns, const UInt64 * offsets, Arena * arena) const override
     {
+        /// The rows of the nested arrays are not contiguous with `row_begin`, so the whole columns are converted. It is called once per block.
         nested_function->addBatchArray(row_begin, row_end, places, place_offset, convert(columns).pointers.data(), offsets, arena);
     }
 
@@ -139,15 +160,18 @@ public:
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, size_t place_stride,
         const IColumn ** columns, Arena * arena) const override
     {
-        nested_function->addBatchConsecutivePlaces(row_begin, row_end, place, place_stride, convert(columns).pointers.data(), arena);
+        auto converted = convertRange(row_begin, row_end, columns);
+        nested_function->addBatchConsecutivePlaces(0, row_end - row_begin, place, place_stride, converted.pointers.data(), arena);
     }
 
     void addBatchLookupTable8(
         size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
         std::function<void(AggregateDataPtr &)> init, const UInt8 * key, const IColumn ** columns, Arena * arena) const override
     {
+        /// `places` is the lookup table indexed by `key`, not by row.
+        auto converted = convertRange(row_begin, row_end, columns);
         nested_function->addBatchLookupTable8(
-            row_begin, row_end, places, place_offset, std::move(init), key, convert(columns).pointers.data(), arena);
+            0, row_end - row_begin, places, place_offset, std::move(init), key + row_begin, converted.pointers.data(), arena);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
