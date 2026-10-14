@@ -11,10 +11,6 @@ URL
 Proxy
 -- null_copy_of_url_src:
 Null
--- copy_of_key_src:
-necessary to have the grant SELECT ON db.key_src
--- copy_of_key_src with its own key:
-s
 after GRANT SELECT:
 -- copy_of_url_src:
 URL

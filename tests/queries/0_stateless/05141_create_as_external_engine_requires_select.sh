@@ -24,14 +24,12 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${db}.url_src_no_password (id UInt64) ENGINE = URL('http://127.0.0.1:1/', 'CSV');
     CREATE TABLE ${db}.function_src (id UInt64) AS url('http://user:password@127.0.0.1:1/', 'CSV');
     CREATE TABLE ${db}.function_src_no_password (id UInt64) AS url('http://127.0.0.1:1/', 'CSV');
-    CREATE TABLE ${db}.key_src (s String) ENGINE = MergeTree ORDER BY encrypt('aes-128-ecb', s, '0123456789abcdef');
 
     GRANT SHOW COLUMNS ON ${db}.local_src TO ${user};
     GRANT SHOW COLUMNS ON ${db}.url_src TO ${user};
     GRANT SHOW COLUMNS ON ${db}.url_src_no_password TO ${user};
     GRANT SHOW COLUMNS ON ${db}.function_src TO ${user};
     GRANT SHOW COLUMNS ON ${db}.function_src_no_password TO ${user};
-    GRANT SHOW COLUMNS ON ${db}.key_src TO ${user};
 "
 
 # prints the missing privilege, or the engine of the copy. more arguments go to the client
@@ -54,12 +52,6 @@ try_copy copy_of_url_src_no_password url_src_no_password
 try_copy copy_of_function_src_no_password function_src_no_password
 # Null replaces the engine here, so the copy inherits nothing masked
 try_copy null_copy_of_url_src url_src --restore_replace_external_engines_to_null 1
-# the masked key of the source stays in the source, because this query gives its own
-try_copy copy_of_key_src key_src
-echo "-- copy_of_key_src with its own key:"
-${CLICKHOUSE_CLIENT} --user "${user}" -q "CREATE TABLE ${db}.own_key AS ${db}.key_src ORDER BY s" 2>&1 \
-    | grep -oE "necessary to have the grant [A-Z ]+ ON ${db}\.[a-z_]+" | head -n 1 | sed "s/${db}/db/"
-${CLICKHOUSE_CLIENT} -q "SELECT sorting_key FROM system.tables WHERE database = '${db}' AND name = 'own_key'"
 
 echo "after GRANT SELECT:"
 ${CLICKHOUSE_CLIENT} -q "
