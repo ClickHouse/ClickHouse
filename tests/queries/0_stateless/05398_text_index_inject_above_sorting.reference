@@ -1,0 +1,41 @@
+-- the ORDER BY column is not added to the result
+1
+1
+0
+1
+1
+0
+1
+1
+0
+1
+1
+0
+1
+1
+0
+-- a filter below the sorting step
+1
+1
+1	1
+1	2
+-- the outer ORDER BY does not include the function result
+1	1
+2	1
+3	0
+1	1
+2	1
+3	0
+-- the subquery keeps the name of the indexed column
+2
+2
+2
+1	1
+2	1
+3	0
+-- tokenizer
+1
+1
+0
+2
+2
