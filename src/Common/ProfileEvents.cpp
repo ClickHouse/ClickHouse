@@ -1064,9 +1064,10 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationDrainedRecords, "How many delayed records the adaptive aggregation drained into the shared table at merge time.", ValueType::Number) \
     M(AdaptiveAggregationPressureSweeps, "How many times the adaptive aggregation drained staged records early because of memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationPressureDrainedRecords, "How many staged records the adaptive aggregation drained early under memory pressure.", ValueType::Number) \
+    M(AdaptiveAggregationSpillDrains, "How many spill requests from the memory scheduler the adaptive aggregation served by writing staged records or shared drain residue to disk instead of leaving the adaptive path.", ValueType::Number) \
     M(AdaptiveAggregationSpillBacklogSheds, "How many times the adaptive aggregation shed the staged backlog because a thread on the baseline algorithm - one the thaw put back there, or one that stood down on its own - was about to spill while staged records were still resident.", ValueType::Number) \
     M(AdaptiveAggregationResidueReleases, "How many times the adaptive aggregation wrote its shared drain table out because a thread back on the baseline algorithm was about to spill on account of it.", ValueType::Number) \
-    M(AdaptiveAggregationSharedTableSpills, "How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.", ValueType::Number) \
+    M(AdaptiveAggregationSharedTableSpills, "How many times the adaptive aggregation wrote its shared drain table out under memory pressure, at the part bound or on an explicit spill request.", ValueType::Number) \
     M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.", ValueType::Number) \
     M(AggregationBucketTopKConversions, "Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).", ValueType::Number) \
     M(AggregationHavingPrefilterGroupsSkipped, "Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).", ValueType::Number) \
@@ -1651,6 +1652,9 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryReservationDecreases, "Total number of approved memory reservation decrease requests", ValueType::Number) \
     M(MemoryReservationKilled, "Total number of memory reservation kill signals", ValueType::Number) \
     M(MemoryReservationFailed, "Total number of failed memory reservations", ValueType::Number) \
+    M(MemoryReservationReclaimableBytes, "Memory that became reclaimable (spillable) by the query", ValueType::Bytes) \
+    M(MemoryReservationSpilledBytes, "Total number of spilled to disk memory", ValueType::Bytes) \
+    M(MemoryReservationSpillingMicroseconds, "Amount of time spilling takes", ValueType::Microseconds) \
     \
     M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
     M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \
@@ -1695,6 +1699,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
     M(ParquetTopKSkippedRowGroups, "The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
+    M(ParquetReadMinMaxFromStatistics, "The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)", ValueType::Number) \
     M(ParquetReadPages, "The total number of Parquet data pages read", ValueType::Number) \
     M(ParquetPrunedPages, "The total number of pages pruned from parquet data via column index", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
@@ -1774,6 +1779,8 @@ The server successfully detected this situation and will download merged part fr
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
+    \
+    M(YTsaurusLookupThrottled, "Number of lookup requests to YTsaurus that were throttled", ValueType::Number) \
     \
     M(StatelessWorkerRequested, "Number of stateless workers requested by queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvided, "Number of stateless workers provided to queries for distributed query execution.", ValueType::Number) \
