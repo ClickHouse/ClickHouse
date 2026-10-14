@@ -79,9 +79,9 @@ DROP TABLE t3;
 "
 
 echo "--- in an Ordinary database, the name is all there is to identify the table by ---"
-# In an Ordinary database the dependency carries no UUID, so when the name is taken by another table
-# afterwards, the stale dependency cannot be told apart from a dependency of that table: the drop is
-# refused until the name is freed. The check is deliberately imprecise in this direction.
+# In an Ordinary database the dependency carries no UUID, so a stale dependency could not be told apart
+# from a dependency of a table created under the name afterwards. The failed create removes the
+# dependencies it registered, so none is left behind to be confused with the new table.
 ${CLICKHOUSE_CLIENT} --send_logs_level=error -m -q "
 SET allow_deprecated_database_ordinary = 1;
 CREATE DATABASE ${ORDINARY_DB} ENGINE = Ordinary;
@@ -90,11 +90,10 @@ ${CLICKHOUSE_CLIENT} -m -q "
 CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'ThisFormatDoesNotExist';
 CREATE TABLE ${ORDINARY_DB}.t (x UInt32) ENGINE = URL(${NC}); -- { serverError UNKNOWN_FORMAT }
 CREATE TABLE ${ORDINARY_DB}.t (x UInt32) ENGINE = Memory;
-DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
-DROP TABLE ${ORDINARY_DB}.t;
-DROP DATABASE ${ORDINARY_DB};
 DROP NAMED COLLECTION ${NC};
 SELECT count() FROM system.named_collections WHERE name = '${NC}';
+DROP TABLE ${ORDINARY_DB}.t;
+DROP DATABASE ${ORDINARY_DB};
 "
 
 echo "--- and in a detached database, where the table has no metadata to be attached from ---"

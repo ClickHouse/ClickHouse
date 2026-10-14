@@ -601,6 +601,28 @@ void NamedCollectionFactory::removeDependency(const String & collection_name, co
     }
 }
 
+void NamedCollectionFactory::removeDependenciesOfFailedCreate(const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+
+    auto & idx = dependencies.get<TableName>();
+    auto range = idx.equal_range(std::make_tuple(table_id.database_name, table_id.table_name));
+
+    std::vector<decltype(range.first)> to_erase;
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (it->table_id.uuid == table_id.uuid)
+            to_erase.push_back(it);
+    }
+
+    for (auto it : to_erase)
+    {
+        LOG_TRACE(log, "Removing dependency of a failed create: collection={}, dependent={}",
+            it->collection_name, getDependencyNameForLogs(it->table_id));
+        idx.erase(it);
+    }
+}
+
 void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool exchange)
 {
     std::lock_guard lock(mutex);

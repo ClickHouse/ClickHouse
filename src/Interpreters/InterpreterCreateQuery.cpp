@@ -2723,6 +2723,20 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
         database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
+    /// The named collection dependencies of the table are registered while the engine arguments are
+    /// resolved, before anything below that can still fail. An entry left behind by a failed create would
+    /// be taken for a dependency of a table created later under the same name and UUID with another
+    /// collection (`CREATE TABLE ... UUID`), refusing `DROP NAMED COLLECTION` of the old collection while
+    /// no metadata references it any more. The `DDLGuard` of the table name is held by this query, so the
+    /// entries recorded under the exact name and UUID are its own. A failed `ATTACH` of a detached table
+    /// keeps its detached entry, which is not touched here and keeps refusing the drop.
+    bool committed = false;
+    const StorageID created_table_id{create.getDatabase(), create.getTable(), create.uuid};
+    SCOPE_EXIT({
+        if (!committed)
+            NamedCollectionFactory::instance().removeDependenciesOfFailedCreate(created_table_id);
+    });
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -2835,6 +2849,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             = res->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
+    committed = true;
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
     /// when data directory moved, but table has not been created due to some error.

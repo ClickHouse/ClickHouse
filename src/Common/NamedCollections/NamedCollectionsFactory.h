@@ -106,6 +106,13 @@ public:
     /// everything under the entry's UUID could remove the live dependency of an in-flight
     /// `CREATE TABLE ... UUID` that reuses the UUID under a different table name.
     void removeDependency(const String & collection_name, const StorageID & table_id);
+    /// Removes the entries of every collection recorded for exactly this `StorageID` (database, table and
+    /// UUID). A `CREATE TABLE` or `ATTACH TABLE` that fails before the table is committed to the catalog
+    /// uses it to drop the entries it registered while the engine arguments were resolved: the query holds
+    /// the `DDLGuard` of the table name, so every entry under the exact name and UUID is its own. Entries
+    /// recorded under the same UUID with another name (a concurrent `CREATE TABLE ... UUID` reusing it) are
+    /// left alone.
+    void removeDependenciesOfFailedCreate(const StorageID & table_id);
     /// Follows a `RENAME TABLE`: moves the entries recorded under the exact old name to the new one.
     /// An `EXCHANGE` calls this once with `exchange = true`, which swaps the entries of the two names.
     void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool exchange);
