@@ -13,10 +13,10 @@ namespace DB
 struct SlidingIndex
 {
     std::vector<bool> partition_starts;
-    std::vector<bool> peer_group_starts;
-    /// Peer group starts by the ORDER BY values whatever the frame type, filled only if
+    std::vector<int64_t> peer_group_indexes;
+    /// Peer group indexes by the ORDER BY values whatever the frame type, filled only if
     /// WindowTransformParams::separate_order_by_peer_groups is set.
-    std::vector<bool> order_by_peer_group_starts;
+    std::vector<int64_t> order_by_peer_group_indexes;
 };
 
 class SlidingIndexes
@@ -31,6 +31,8 @@ private:
     const bool has_order_by_collation;
     std::optional<Columns> last_partition_key;
     std::optional<Columns> last_order_key;
+    int64_t last_peer_group_index = -1;
+    int64_t last_order_by_peer_group_index = -1;
 };
 
 }
