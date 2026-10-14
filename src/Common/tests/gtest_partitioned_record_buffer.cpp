@@ -1,13 +1,18 @@
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/PartitionedRecordBuffer.h>
+#include <Common/ThreadStatus.h>
+#include <base/unit.h>
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <string>
 #include <thread>
+#include <vector>
 
 using namespace DB;
 
@@ -26,6 +31,28 @@ std::string readPartition(const PartitionedRecordBuffer & buffer, size_t partiti
     std::string result;
     buffer.forEachChunk(partition, [&](std::string_view chunk) { result.append(chunk); });
     return result;
+}
+
+/// Runs `body` in a thread with untracked-memory batching disabled, so its memory tracker sees each block
+/// of a buffer as it is allocated.
+void runTracked(const std::function<void(const MemoryTracker &)> & body)
+{
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.untracked_memory_limit = 0;
+        body(thread_status.memory_tracker);
+    }).join();
+}
+
+/// The memory an append allocates: the block it starts, if any, since a record that fits a shared chunk
+/// allocates nothing else.
+size_t allocatedByAppend(
+    const MemoryTracker & tracker, PartitionedRecordBuffer & buffer, size_t partition, const std::string & record)
+{
+    const Int64 before = tracker.get();
+    appendRecord(buffer, partition, record);
+    return static_cast<size_t>(tracker.get() - before);
 }
 
 }
@@ -147,4 +174,61 @@ TEST(PartitionedRecordBuffer, RecordCountsWhileAppending)
     EXPECT_EQ(buffer.recordsOf(0), 301);
     buffer.releasePartition(0);
     EXPECT_EQ(buffer.recordsOf(0), 0);
+}
+
+TEST(PartitionedRecordBuffer, GroupBlocksGrowFromTheFirstChunks)
+{
+    runTracked([](const MemoryTracker & tracker)
+    {
+        /// Two groups of 16 partitions and a last group of 4. A group's first block takes the first
+        /// chunks of its partitions.
+        PartitionedRecordBuffer buffer(36, 16);
+        const std::string record(1000, 'x');
+        constexpr size_t later_blocks = 5;
+        std::vector<size_t> blocks;
+        blocks.reserve(later_blocks);
+        const Int64 initial = tracker.get();
+        EXPECT_EQ(allocatedByAppend(tracker, buffer, 0, record), 32_KiB);
+        EXPECT_EQ(allocatedByAppend(tracker, buffer, 16, record), 32_KiB);
+        EXPECT_EQ(allocatedByAppend(tracker, buffer, 32, record), 8_KiB);
+
+        /// Each later block is as large as the group's blocks together, up to the cap of 256 KiB, so
+        /// the group's total doubles up to the cap and then grows by it.
+        while (blocks.size() < later_blocks)
+            if (const size_t allocated = allocatedByAppend(tracker, buffer, 0, record))
+                blocks.push_back(allocated);
+        EXPECT_EQ(blocks, (std::vector<size_t>{32_KiB, 64_KiB, 128_KiB, 256_KiB, 256_KiB}));
+
+        /// Appends resumed after `finishAppending` continue the growth: a new chunk of the group
+        /// starts a block of the cap.
+        buffer.finishAppending();
+        EXPECT_EQ(allocatedByAppend(tracker, buffer, 1, record), 256_KiB);
+
+        /// `clear` frees every block and starts every group over from its first block.
+        buffer.clear();
+        EXPECT_EQ(tracker.get(), initial);
+        EXPECT_EQ(allocatedByAppend(tracker, buffer, 0, record), 32_KiB);
+    });
+}
+
+TEST(PartitionedRecordBuffer, FirstBlockSizes)
+{
+    runTracked([](const MemoryTracker & tracker)
+    {
+        /// The first block rounds the first chunks of its group up to a power of two: those of 24
+        /// partitions take 48 KiB. The cap of 256 KiB bounds the first chunks of 256 partitions, which
+        /// take 512 KiB.
+        const std::string record(1000, 'x');
+        PartitionedRecordBuffer rounded(24, 24);
+        EXPECT_EQ(allocatedByAppend(tracker, rounded, 0, record), 64_KiB);
+        PartitionedRecordBuffer capped(256, 256);
+        EXPECT_EQ(allocatedByAppend(tracker, capped, 0, record), 256_KiB);
+
+        /// A chunk larger than the group's next block gets a block of its own size: the first block of
+        /// a group of one partition is 2 KiB, below the chunk of a record of 3000 bytes.
+        PartitionedRecordBuffer single(1, 1);
+        const size_t allocated = allocatedByAppend(tracker, single, 0, std::string(3000, 'x'));
+        EXPECT_GT(allocated, 3000 + PartitionedRecordBuffer::tail_padding_bytes);
+        EXPECT_LT(allocated, 4_KiB);
+    });
 }
