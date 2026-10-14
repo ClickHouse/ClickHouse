@@ -3963,7 +3963,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments];
 
     /// Protected is full, so promoting the probationary entry downgrades (moves) the protected one, not evicts it.
-    ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, state_guard));
+    ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, /* final_size */10, state_guard));
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);

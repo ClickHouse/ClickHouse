@@ -99,6 +99,7 @@ public:
     bool tryIncreasePriority(
         Iterator & iterator_,
         bool is_space_reservation_complete,
+        size_t final_size,
         CacheStateGuard & state_guard) override;
 
     void shuffle() override;

@@ -315,10 +315,11 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
 bool SplitFileCachePriority::tryIncreasePriority(
     Iterator & iterator,
     bool is_space_reservation_complete,
+    size_t final_size,
     CacheStateGuard & state_guard)
 {
     const auto type = getPriorityType(iterator.getEntry()->getKeyMetadata()->origin->segment_type);
-    return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, state_guard);
+    return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, final_size, state_guard);
 }
 
 void SplitFileCachePriority::resetEvictionPos(EvictionCursor cursor)

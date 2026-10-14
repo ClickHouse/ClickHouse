@@ -617,6 +617,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 bool SLRUFileCachePriority::tryIncreasePriority(
     Iterator & iterator_,
     bool is_space_reservation_complete,
+    size_t final_size,
     CacheStateGuard & state_guard)
 {
     auto & iterator = dynamic_cast<SLRUFileCachePriority::SLRUIterator &>(iterator_);
@@ -627,16 +628,17 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     if (iterator.is_protected)
     {
         return protected_queue.tryIncreasePriority(
-            iterator.lru_iterator, is_space_reservation_complete, state_guard);
+            iterator.lru_iterator, is_space_reservation_complete, final_size, state_guard);
     }
-    else if (!is_space_reservation_complete)
+    else if (!is_space_reservation_complete || final_size > protected_queue.max_size)
     {
         /// The move must not run concurrently with a space reservation for this entry: the reservation
         /// holds space and collects eviction candidates in the queue where the entry was when it started.
         /// So a file segment which can be downloaded concurrently only gets a higher priority in
         /// probationary (see `FileSegment::increasePriority`).
+        /// After the move the entry grows only in the protected queue, so it must fit there whole.
         return probationary_queue.tryIncreasePriority(
-            iterator.lru_iterator, is_space_reservation_complete, state_guard);
+            iterator.lru_iterator, is_space_reservation_complete, final_size, state_guard);
     }
 
     chassert(iterator.lru_iterator.cache_priority == &probationary_queue);
@@ -707,7 +709,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         prev_entry->resetFlag(/* from_state */Entry::State::Moving);
 
         return probationary_queue.tryIncreasePriority(
-            iterator.lru_iterator, is_space_reservation_complete, state_guard);
+            iterator.lru_iterator, is_space_reservation_complete, final_size, state_guard);
     }
 
     eviction_candidates.evict();

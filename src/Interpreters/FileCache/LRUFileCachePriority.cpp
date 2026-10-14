@@ -748,6 +748,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfoForResize(
 bool LRUFileCachePriority::tryIncreasePriority(
     Iterator & iterator,
     bool /* is_space_reservation_complete */,
+    size_t /* final_size */,
     CacheStateGuard &)
 {
     assertNotSealed("tryIncreasePriority");

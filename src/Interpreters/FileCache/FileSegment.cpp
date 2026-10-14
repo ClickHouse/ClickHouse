@@ -1515,7 +1515,7 @@ void FileSegment::increasePriority()
             /// safe while we hold its downloader role, because only the downloader reserves.
             const auto downloader_guard = tryTakeDownloaderOfPartiallyDownloaded();
 
-            if (!cache->tryIncreasePriority(*it, downloader_guard || isCompleted()))
+            if (!cache->tryIncreasePriority(*it, downloader_guard || isCompleted(), range().size()))
                 ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
             /// Used only for system.filesystem_cache.
