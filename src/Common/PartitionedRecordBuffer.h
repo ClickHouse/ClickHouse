@@ -72,7 +72,6 @@ public:
     template <typename Callback>
     void forEachChunk(size_t partition, Callback && callback) const;
 
-    bool hasRecords(size_t partition) const { return chains[partition].first != nullptr; }
     UInt64 recordsOf(size_t partition) const { return chains[partition].closed_chunk_records + cursors[partition].records; }
 
     /// Releases the partition's chunks and resets its cursor. Consumers may release distinct partitions

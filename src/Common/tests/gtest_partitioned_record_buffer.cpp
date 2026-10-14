@@ -101,7 +101,6 @@ TEST(PartitionedRecordBuffer, ReleaseAndResumeAppending)
     buffer.finishAppending();
     buffer.releasePartition(0);
 
-    EXPECT_FALSE(buffer.hasRecords(0));
     EXPECT_EQ(buffer.recordsOf(0), 0);
     EXPECT_EQ(readPartition(buffer, 1), "retained");
 
@@ -117,8 +116,8 @@ TEST(PartitionedRecordBuffer, ReleaseAndResumeAppending)
     appendRecord(buffer, 0, std::string(10000, 'x'));
     buffer.clear();
     EXPECT_EQ(buffer.allocatedChunkBytes(), 0);
-    EXPECT_FALSE(buffer.hasRecords(0));
-    EXPECT_FALSE(buffer.hasRecords(1));
+    EXPECT_EQ(buffer.recordsOf(0), 0);
+    EXPECT_EQ(buffer.recordsOf(1), 0);
 
     appendRecord(buffer, 1, "reused");
     buffer.finishAppending();
@@ -151,7 +150,7 @@ TEST(PartitionedRecordBuffer, ConcurrentPartitionRelease)
     }
 
     for (size_t partition = 0; partition < partitions; ++partition)
-        EXPECT_FALSE(buffer.hasRecords(partition));
+        EXPECT_EQ(buffer.recordsOf(partition), 0);
 }
 
 TEST(PartitionedRecordBuffer, RecordCountsWhileAppending)
