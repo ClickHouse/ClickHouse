@@ -359,4 +359,28 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
+DataTypePtr removeTupleElementNames(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        return makeNullable(removeTupleElementNames(nullable_type->getNestedType()));
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(removeTupleElementNames(array_type->getNestedType()));
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(
+            removeTupleElementNames(map_type->getKeyType()), removeTupleElementNames(map_type->getValueType()));
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes element_types;
+        element_types.reserve(tuple_type->getElements().size());
+        for (const auto & element_type : tuple_type->getElements())
+            element_types.push_back(removeTupleElementNames(element_type));
+        return std::make_shared<DataTypeTuple>(element_types);
+    }
+
+    return type;
+}
+
 }
