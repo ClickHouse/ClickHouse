@@ -21,8 +21,10 @@ Ratio of aggregation operator limit_ratio must not be NaN
 -- Such an empty result keeps the evaluation time grid, in an instant and in a range query.
 []	2023-11-14 22:13:20.000	7
 []	[('2023-11-14 22:12:20.000',7),('2023-11-14 22:12:50.000',7),('2023-11-14 22:13:20.000',7)]
--- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary, reproducible subsets.
-r=0.5:  host2 host4 host6 
-r=-0.5: host1 host3 host5 
+-- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary subsets, the same ones as Prometheus.
+r=0.5:  host1 host2 host3 host4 host6 
+r=-0.5: host5 
+r=0.2:  host1 host4 
+r=-0.3: host5 
 -- limit_ratio keeps the original series labels (including the metric name).
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1

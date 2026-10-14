@@ -99,9 +99,11 @@ $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --p
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 \
     -q "SELECT * FROM prometheusQueryRange(ts, 'limit_ratio(1, clamp(up, 1, -1)) or vector(7)', 1699999940, 1700000000, 30)"
 
-echo "-- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary, reproducible subsets."
+echo "-- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary subsets, the same ones as Prometheus."
 echo -n "r=0.5:  "; promql_instances "limit_ratio(0.5, up)"
 echo -n "r=-0.5: "; promql_instances "limit_ratio(-0.5, up)"
+echo -n "r=0.2:  "; promql_instances "limit_ratio(0.2, up)"
+echo -n "r=-0.3: "; promql_instances "limit_ratio(-0.3, up)"
 
 echo "-- limit_ratio keeps the original series labels (including the metric name)."
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 \

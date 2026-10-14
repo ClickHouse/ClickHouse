@@ -217,14 +217,43 @@ namespace
         }
     }
 
-    /// Whether a series is kept for ratio `r`, given its sampling offset off = sampling_key / 2^64 in [0, 1):
-    /// if(r >= 0, off < r, off >= 1 + r). This is Prometheus's ratio sampler, and it depends only on the series
-    /// itself - no comparison against the other series of the group, and so no `by`/`without` effect.
+    /// The length prefix Prometheus writes before a label name or value when it hashes the labels.
+    ASTPtr makeLabelSizePrefix(UInt64 tuple_index)
+    {
+        auto size = [&] { return makeASTFunction("length", makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(tuple_index))); };
+        auto size_byte = [&](UInt64 shift)
+        {
+            return makeASTFunction("char", makeASTFunction("modulo", makeASTFunction("intDiv", size(), make_intrusive<ASTLiteral>(UInt64{1} << shift)), make_intrusive<ASTLiteral>(256u)));
+        };
+        /// if(size < 255, char(size), char(255) || 3 little-endian bytes of size)
+        return makeASTFunction("if",
+            makeASTFunction("less", size(), make_intrusive<ASTLiteral>(255u)),
+            makeASTFunction("char", size()),
+            makeASTFunction("concat", makeASTFunction("char", make_intrusive<ASTLiteral>(255u)), size_byte(0), size_byte(8), size_byte(16)));
+    }
+
+    /// Prometheus's Labels.Hash(): xxHash64 of the sorted labels, each name and value prefixed with its length.
+    ASTPtr makePrometheusLabelsHash()
+    {
+        auto label = makeASTFunction("concat",
+            makeLabelSizePrefix(1),
+            makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(1u)),
+            makeLabelSizePrefix(2),
+            makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(2u)));
+
+        return makeASTFunction("xxHash64",
+            makeASTFunction("arrayStringConcat",
+                makeASTFunction("arrayMap",
+                    makeASTLambda({"t"}, std::move(label)),
+                    makeASTFunction("arraySort", makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group))))));
+    }
+
+    /// Whether a series is kept for ratio `r`, given its sampling offset off = labels_hash / 2^64 in [0, 1):
+    /// if(r >= 0, off < r, off >= 1 + r). This is Prometheus's ratio sampler with Prometheus's labels hash.
     ASTPtr makeRatioCondition(ASTPtr r)
     {
         auto offset = makeASTFunction("divide",
-            makeASTFunction("toFloat64",
-                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group))),
+            makeASTFunction("toFloat64", makePrometheusLabelsHash()),
             make_intrusive<ASTLiteral>(18446744073709551616.0)); /// 2^64
 
         /// Build the branches in separate statements: the order of evaluation of function arguments is unspecified,
