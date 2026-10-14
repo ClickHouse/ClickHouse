@@ -38,6 +38,9 @@ public:
     bool isDeleteMD5Rejected() const;
     bool setDeleteMD5Rejected();
 
+    /// Atomically marks batch delete as unsupported, only if it is still undecided. Returns true if this call changed the state.
+    bool setBatchDeleteUnsupportedIfUndecided();
+
     /// Y.Cloud S3 implementation support proxy for connection
     const bool support_proxy{false};
 

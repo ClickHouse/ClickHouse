@@ -344,21 +344,31 @@ void deleteFilesFromS3(
                 /// A digest error can also be a transient fault, such as a body altered in transit. It means that `DeleteObjects`
                 /// is unsupported only if every automatic digest has been rejected, and only while that is still undecided:
                 /// once `DeleteObjects` has worked, flipping the capability would be a mismatch (`setIsBatchDeleteSupported`).
+                /// That check and the update are one atomic step (`setBatchDeleteUnsupportedIfUndecided`).
                 /// An explicit algorithm and `S3Express` are never second-guessed. `GCS` only has `Content-MD5`.
                 const bool digest_rejected = err.GetExceptionName() == "MissingContentMD5" || err.GetExceptionName() == "InvalidDigest";
                 const bool automatic_digests_exhausted = !explicit_checksum_algorithm && !s3_client->isS3ExpressBucket()
                     && (!use_checksum_header || checksum_algorithm == S3::RequestChecksum::Algorithm::SHA256);
-                const bool digest_means_unsupported
-                    = digest_rejected && automatic_digests_exhausted && !s3_capabilities.isBatchDeleteSupported().has_value();
+                const bool generic_unsupported = (err.GetExceptionName() == "InvalidRequest")
+                    || (err.GetExceptionName() == "InvalidArgument") || (err.GetExceptionName() == "NotImplemented");
 
-                if ((err.GetExceptionName() == "InvalidRequest") || (err.GetExceptionName() == "InvalidArgument")
-                    || (err.GetExceptionName() == "NotImplemented") || digest_means_unsupported)
+                bool fall_back = false;
+                if (generic_unsupported)
                 {
-                    LOG_TRACE(log, "DeleteObjects is not supported: {} (Code: {}). Retrying with plain DeleteObject.",
-                              err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
                     /// Multiple threads can call deleteFilesFromS3() with a reference to the same `s3_capabilities`,
                     /// and the following line doesn't cause a race because `s3_capabilities` is protected with mutex.
                     s3_capabilities.setIsBatchDeleteSupported(false);
+                    fall_back = true;
+                }
+                else
+                {
+                    fall_back = digest_rejected && automatic_digests_exhausted && s3_capabilities.setBatchDeleteUnsupportedIfUndecided();
+                }
+
+                if (fall_back)
+                {
+                    LOG_TRACE(log, "DeleteObjects is not supported: {} (Code: {}). Retrying with plain DeleteObject.",
+                              err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
                     need_retry_with_plain_delete_object = true;
                     break;
                 }
