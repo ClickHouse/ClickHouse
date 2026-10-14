@@ -11,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
@@ -177,7 +178,17 @@ bool isMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
     if (!merge_tree)
         return false;
     auto policy = merge_tree->getStoragePolicy();
-    return policy && policy->isBackupMetadataOnly();
+    if (!policy || !policy->isBackupMetadataOnly())
+        return false;
+
+    /// `RESTORE` creates a `ReplicatedMergeTree` table in a mode that refuses the existing parts it finds on the storage.
+    if (castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "{} is a ReplicatedMergeTree table on a storage policy marked backup_metadata_only, BACKUP and RESTORE support such "
+            "policies only for tables of other MergeTree engines",
+            storage->getStorageID().getNameForLogs());
+    return true;
 }
 
 }

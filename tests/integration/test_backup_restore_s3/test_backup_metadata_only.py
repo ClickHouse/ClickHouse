@@ -57,3 +57,43 @@ def test_partitions_of_table_not_created_on_replica(start_cluster):
         node2.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
         for node in [node1, node2]:
             node.query("DROP DATABASE IF EXISTS rdb SYNC")
+
+
+def test_disk_made_writable_by_config_reload(start_cluster):
+    # The policy is checked when it is created, and the reload keeps it when its new version fails the check, but the
+    # disk can still be made writable by the reload. Then the data written to it would be left out of the backup.
+    policy = "policy_s3_plain_backup_metadata_only"
+    config = "/etc/clickhouse-server/config.d/disk_s3.xml"
+    node1.query(
+        f"CREATE TABLE t_reload (key Int) ENGINE = MergeTree ORDER BY key SETTINGS storage_policy = '{policy}'"
+    )
+    node1.replace_in_config(config, "<readonly>true</readonly>", "<readonly>false</readonly>")
+    try:
+        node1.query("SYSTEM RELOAD CONFIG")
+        err = node1.query_and_get_error(
+            f"BACKUP TABLE t_reload TO S3('http://minio1:9001/root/data/backups/{uuid.uuid4().hex}', 'minio', '{minio_secret_key}')"
+        )
+        assert "INVALID_CONFIG_PARAMETER" in err and "is not read-only" in err, err
+    finally:
+        node1.replace_in_config(config, "<readonly>false</readonly>", "<readonly>true</readonly>")
+        node1.query("SYSTEM RELOAD CONFIG")
+        node1.query("DROP TABLE IF EXISTS t_reload SYNC")
+
+
+def test_replicated_merge_tree_is_refused(start_cluster):
+    # `RESTORE` creates a `ReplicatedMergeTree` table in a mode that refuses the parts it finds on the storage, so such a
+    # table on a storage policy marked `backup_metadata_only` couldn't be restored from a backup of its definition.
+    policy = "policy_s3_plain_backup_metadata_only"
+    node1.query(
+        f"""
+        CREATE TABLE t_replicated (key Int) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid.uuid4().hex}', 'r1')
+        ORDER BY key SETTINGS storage_policy = '{policy}'
+        """
+    )
+    try:
+        backup_destination = f"S3('http://minio1:9001/root/data/backups/{uuid.uuid4().hex}', 'minio', '{minio_secret_key}')"
+        err = node1.query_and_get_error(f"BACKUP TABLE t_replicated TO {backup_destination}")
+        assert "NOT_IMPLEMENTED" in err and "is a ReplicatedMergeTree table" in err, err
+        node1.query(f"BACKUP TABLE t_replicated TO {backup_destination} SETTINGS structure_only = 1")
+    finally:
+        node1.query("DROP TABLE IF EXISTS t_replicated SYNC")
