@@ -343,9 +343,7 @@ FilterStep::FilterStep(
     actions_dag.removeUnusedActions(false, false);
 }
 
-/// A node with the name and type of `node` that computes nothing the predicate depends on: inputs and constants as they
-/// are, a column constant in the stream that constant, a lambda, which has no default, captured over such nodes,
-/// anything else a default.
+/// Stream headers must match, constness included, and a lambda type has no default value.
 static const ActionsDAG::Node & addNodeWithoutPredicate(ActionsDAG & dag, const ActionsDAG::Node & node, const ColumnPtr & stream_column)
 {
     const auto * source = &node;
@@ -370,9 +368,7 @@ static const ActionsDAG::Node & addNodeWithoutPredicate(ActionsDAG & dag, const 
         dag.addColumn(node.result_type->createColumnConstWithDefaultValue(0), node.result_type, node.result_name));
 }
 
-/// The actions of the step for the stream that skips the predicate: the same columns, but those a function computes
-/// are defaults, because only the predicate reads them. `stream_header` is `dag.updateHeader` of the stream's header,
-/// so it starts with the outputs in their order.
+/// `stream_header` is `dag.updateHeader` of the stream's header, so it starts with the outputs in their order.
 static ExpressionActionsPtr makeActionsWithoutPredicate(
     const ActionsDAG & dag, const String & filter_column_name, bool remove_filter_column, const Block & stream_header,
     const ExpressionActionsSettings & settings)
