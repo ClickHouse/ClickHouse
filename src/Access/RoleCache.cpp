@@ -1,12 +1,14 @@
 #include <Access/RoleCache.h>
 #include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Access/resolveEffectiveSettings.h>
 #include <Access/AccessControl.h>
 #include <boost/container/flat_set.hpp>
 #include <base/FnTraits.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 
@@ -18,54 +20,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace
-{
-    void collectRoles(EnabledRolesInfo & roles_info,
-                      boost::container::flat_set<UUID> & skip_ids,
-                      Fn<RolePtr(const UUID &)> auto && get_role_function,
-                      const UUID & role_id,
-                      bool is_current_role,
-                      bool with_admin_option)
-    {
-        if (roles_info.enabled_roles.count(role_id))
-        {
-            if (is_current_role)
-                roles_info.current_roles.emplace(role_id);
-            if (with_admin_option)
-                roles_info.enabled_roles_with_admin_option.emplace(role_id);
-            return;
-        }
-
-        if (skip_ids.count(role_id))
-            return;
-
-        auto role = get_role_function(role_id);
-
-        if (!role)
-        {
-            skip_ids.emplace(role_id);
-            return;
-        }
-
-        roles_info.enabled_roles.emplace(role_id);
-        if (is_current_role)
-            roles_info.current_roles.emplace(role_id);
-        if (with_admin_option)
-            roles_info.enabled_roles_with_admin_option.emplace(role_id);
-
-        roles_info.names_of_roles[role_id] = role->getName();
-        roles_info.access.makeUnion(role->access);
-        roles_info.settings_from_enabled_roles.merge(role->settings, /* normalize= */ false);
-
-        for (const auto & granted_role : role->granted_roles.getGranted())
-            collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, false);
-
-        for (const auto & granted_role : role->granted_roles.getGrantedWithAdminOption())
-            collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, true);
-    }
-}
-
-
 RoleCache::RoleCache(const AccessControl & access_control_, int expiration_time_seconds)
     : access_control(access_control_), cache(expiration_time_seconds * 1000ll /* 10 minutes by default*/)
 {
@@ -190,15 +144,14 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled_roles, scope_guard * 
 
     /// Collect enabled roles. That includes the current roles, the roles granted to the current roles, and so on.
     auto new_info = std::make_shared<EnabledRolesInfo>();
-    boost::container::flat_set<UUID> skip_ids;
+    UnorderedSetWithMemoryTracking<UUID> skip_ids;
 
     auto get_role_function = [this](const UUID & id) TSA_NO_THREAD_SAFETY_ANALYSIS { return getRole(id); };
 
-    for (const auto & current_role : enabled_roles.params.current_roles)
-        collectRoles(*new_info, skip_ids, get_role_function, current_role, true, false);
-
-    for (const auto & current_role : enabled_roles.params.current_roles_with_admin_option)
-        collectRoles(*new_info, skip_ids, get_role_function, current_role, true, true);
+    for (const auto & role_id : enabled_roles.params.current_roles)
+        collectRoles(*new_info, skip_ids, get_role_function, role_id, true, false);
+    for (const auto & role_id : enabled_roles.params.current_roles_with_admin_option)
+        collectRoles(*new_info, skip_ids, get_role_function, role_id, true, true);
 
     /// Remember which roles take part in this enabled set, so that a later change to one of them triggers
     /// a recalculation (and a change to a role nobody uses does not).

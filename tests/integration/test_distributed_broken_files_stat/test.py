@@ -36,9 +36,8 @@ def _shard_queue_path(node, table):
         .rstrip("/")
     )
     # The actual subdirectory name (shardN_replicaM, shardN_all_replicas, or the
-    # legacy `user@host:port` form) depends on the cluster definition and the
-    # `use_compact_format_in_distributed_parts_names` setting, so discover it
-    # from disk rather than hardcoding.
+    # legacy `user@host:port` form left by an older server) depends on the cluster
+    # definition, so discover it from disk rather than hardcoding.
     listing = (
         node.exec_in_container(["bash", "-c", f"ls -1 {data_path}"])
         .strip()

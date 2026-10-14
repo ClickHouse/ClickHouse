@@ -207,6 +207,9 @@ public:
     /// Check if object with name exists in configuration
     bool has(const String & name) const;
 
+    /// Returns whether the object is loaded on first use instead of eagerly.
+    bool isObjectLazy(const ObjectConfig & config) const;
+
     /// Unloads a loaded object, releasing its memory. It will be reloaded lazily on next access.
     bool unload(const String & name) const;
 
@@ -239,7 +242,7 @@ protected:
         IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
 
     /// Returns whether the object's configuration overrides lazy loading, or no value to follow the loader-wide setting.
-    virtual std::optional<bool> isObjectLazy(
+    virtual std::optional<bool> getObjectLazyLoadOverride(
         const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const { return {}; }
 
     Strings getAllTriedToLoadNames() const;

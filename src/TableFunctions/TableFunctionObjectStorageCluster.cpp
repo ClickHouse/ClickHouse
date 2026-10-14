@@ -1,6 +1,9 @@
 #include "config.h"
+#include <Databases/DataLake/DataLakeConstants.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -178,6 +181,7 @@ For details on optimizing the performance of the s3 function see [our detailed g
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
 - [s3 table function](/reference/functions/table-functions/s3)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        s3TableFunctionSecretArguments(true),
         {.allow_readonly = false}
     );
 #endif
@@ -262,6 +266,7 @@ See [azureBlobStorage](/reference/functions/table-functions/azureBlobStorage#usi
 - [AzureBlobStorage engine](/reference/engines/table-engines/integrations/azureBlobStorage)
 - [azureBlobStorage table function](/reference/functions/table-functions/azureBlobStorage)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        azureTableFunctionSecretArguments(true),
         {.allow_readonly = false}
     );
 #endif
@@ -324,6 +329,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 - [HDFS engine](/reference/engines/table-engines/integrations/hdfs)
 - [HDFS table function](/reference/functions/table-functions/hdfs)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        SecretArgumentsSpec{},
         {.allow_readonly = false}
     );
 #endif
@@ -344,6 +350,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
             .syntax = "icebergLocalCluster(cluster, filename, format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 
@@ -396,6 +403,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
 - [Iceberg engine](/reference/engines/table-engines/integrations/iceberg)
 - [Iceberg table function](/reference/functions/table-functions/iceberg)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 
@@ -405,6 +413,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
             .syntax = "icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -416,6 +425,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
             .syntax = "icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -427,6 +437,7 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
             .syntax = "icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 #endif
@@ -480,6 +491,7 @@ A table with the specified structure for reading data from cluster in the specif
 
 - [Paimon table function](/reference/functions/table-functions/paimon)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 
@@ -489,6 +501,7 @@ A table with the specified structure for reading data from cluster in the specif
             .syntax = "paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -500,6 +513,7 @@ A table with the specified structure for reading data from cluster in the specif
             .syntax = "paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -511,6 +525,7 @@ A table with the specified structure for reading data from cluster in the specif
             .syntax = "paimonHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 #endif
@@ -569,6 +584,7 @@ A table with the specified structure for reading data from cluster in the specif
 - [deltaLake engine](/reference/engines/table-engines/integrations/deltalake)
 - [deltaLake table function](/reference/functions/table-functions/deltalake)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
     factory.registerFunction<TableFunctionDeltaLakeS3Cluster>(
@@ -577,6 +593,7 @@ A table with the specified structure for reading data from cluster in the specif
             .syntax = "deltaLakeS3Cluster(cluster, url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -589,6 +606,7 @@ A table with the specified structure for reading data from cluster in the specif
                       "deltaLakeAzureCluster(cluster, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -640,6 +658,7 @@ A table with the specified structure for reading data from cluster in the specif
 - [Hudi engine](/reference/engines/table-engines/integrations/hudi)
 - [Hudi table function](/reference/functions/table-functions/hudi)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 }
