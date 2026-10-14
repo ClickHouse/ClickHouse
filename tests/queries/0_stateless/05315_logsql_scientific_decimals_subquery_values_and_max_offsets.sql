@@ -21,7 +21,7 @@ INSERT INTO logs_05315 VALUES
     ('2024-01-01 00:00:02', 'status 200 ok', 10.50000000000000000002, 0, NULL, 'b', 3),
     ('2024-01-01 00:00:03', 'status 5000 other', 11, 0, NULL, 'b', 4);
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_05315';
 SET dialect = 'logsql';
 
