@@ -564,8 +564,8 @@ struct HashMethodSerialized
         {
             range_end = std::min(row_range.end, key_columns[0]->size());
             range_begin = std::min(row_range.begin, range_end);
-            /// A cache over fewer than two rows cannot produce a hit.
-            if (range_end - range_begin < 2)
+            /// A slot is filled at the second row of a key new to the table, so it first hits at the third.
+            if (range_end - range_begin < 3)
                 return;
         }
 
