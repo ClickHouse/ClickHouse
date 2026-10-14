@@ -381,10 +381,11 @@ bool isMetadataQuery(const IAST * ast)
             /// may read the sources it selects from, also through other views.
             bool has_select = create->select != nullptr;
             bool reads_table_function = create->as_table_function != nullptr;
-            /// A table engine without the columns infers the structure from its data (e.g. `URL`, `File`, `S3`).
+            /// A table engine without the columns infers the structure from its data (e.g. `URL`, `File`, `S3`),
+            /// also for a full `ATTACH`. A short `ATTACH` has no engine: it takes the stored definition.
             bool has_columns = create->columns_list && create->columns_list->columns && !create->columns_list->columns->children.empty();
             bool is_table = create->table != nullptr; /// Not a database
-            bool infers_structure = is_table && !create->attach && !create->isView() && !create->is_dictionary && create->storage
+            bool infers_structure = is_table && !create->isView() && !create->is_dictionary && create->storage
                 && create->storage->engine && !has_columns && !create->select && create->as_table.empty();
             return !has_select && !reads_table_function && !infers_structure && !create->is_populate && !create->is_clone_as
                 && !create->has_attach_from_path;

@@ -149,6 +149,7 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         run_times_out(node_off, "create view v as select x from t", workload="regular")
         run_times_out(node_off, "create view v2 as select * from numbers(10)", workload="regular")
         run_times_out(node_off, "create table t2 engine=URL('http://localhost:8123/?query=select+1', 'TSV')", workload="regular")
+        run_times_out(node_off, "attach table t2 engine=URL('http://localhost:8123/?query=select+1', 'TSV')", workload="regular")
         run_times_out(node_off, "optimize table t final", workload="regular")
         run_times_out(node_off, "alter table t freeze", workload="regular")
         run_times_out(node_off, "alter table t update x = x + 1 where 1", workload="regular")
