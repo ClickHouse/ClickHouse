@@ -2345,6 +2345,11 @@ UInt64 estimateNeededMemoryForMerge(
     /// (MergeProjectionPartsTask, which merges up to max_parts_to_merge_in_one_level of them at once), so
     /// price one set of writer streams plus a read-back that can hold that many reader-buffer sets. For a
     /// table without projections all of this adds exactly nothing.
+    /// The projections are processed one at a time, so their IO is priced at the largest single footprint,
+    /// not the sum: MergeProjectionsStage::executeStep runs one nested merge (of the existing projection
+    /// parts, or of the temporary parts of a rebuilt projection) at a time and moves on only after it has
+    /// finished, and the temporary parts of rebuilt projections are written one after another
+    /// (writeTempProjectionPart), each writer finalized before the next one is created.
     UInt64 projection_memory = 0;
     const auto projection_mode = settings[MergeTreeSetting::deduplicate_merge_projection_mode];
     const bool merge_processes_projections = !future_part.parts.empty()
@@ -2454,7 +2459,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// A projection part is never subject to a pending on-fly rename (renaming a column used
                 /// in a projection is forbidden, and the nested merge runs over the projection's own
                 /// columns), so the recursion needs no mutations snapshot.
-                projection_memory += estimateNeededMemoryForMerge(
+                projection_memory = std::max(projection_memory, estimateNeededMemoryForMerge(
                     projection_future_part,
                     projection.metadata,
                     context,
@@ -2462,7 +2467,7 @@ UInt64 estimateNeededMemoryForMerge(
                     /*mutations_snapshot=*/ nullptr,
                     time_of_merge,
                     output_on_remote_disk,
-                    remote_write_buffer_memories);
+                    remote_write_buffer_memories));
             }
             else
             {
@@ -2742,7 +2747,7 @@ UInt64 estimateNeededMemoryForMerge(
                         projection_skip_index_streams, eager_stream_buffers_with_marks(projection_max_compress_block_size)),
                     estimatePackedSkipIndexAccumulators(
                         projection.metadata, settings, context, /*source_parts=*/ {}, projection_max_compress_block_size));
-                projection_memory = saturatingAdd(
+                projection_memory = std::max(
                     projection_memory,
                     saturatingAdd(
                         std::min(projection_worst_case, projection_data_bound),
