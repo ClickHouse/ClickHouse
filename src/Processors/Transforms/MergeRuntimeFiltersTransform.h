@@ -13,6 +13,19 @@ constexpr UInt64 MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES = 256ULL * 1024 * 10
 /// Header of the stream carrying serialized partial runtime filters between tasks.
 SharedHeader runtimeFilterPartialsHeader();
 
+/// One-row chunk of `runtimeFilterPartialsHeader` that carries `state`. Counts the state as sent to
+/// `num_destinations` streams.
+Chunk makeRuntimeFilterPartialsChunk(const String & state, size_t num_destinations);
+
+/// Registers a filter that gets no more merges, so `__applyFilter` can use it at once.
+void registerCompleteRuntimeFilter(
+    IRuntimeFilterLookup & lookup,
+    const String & filter_key,
+    const String & filter_name,
+    const RuntimeFilterGeometry & geometry,
+    AdaptiveSetRuntimeFilter && filter,
+    bool enable_index_analysis);
+
 /// Merges one serialized partial runtime filter from each input as it arrives. When every input
 /// has delivered, `RegisterUnion` registers the union under `filter_key` and `ForwardUnion` sends it
 /// as one row. If an input ends without a state, or a state is larger than

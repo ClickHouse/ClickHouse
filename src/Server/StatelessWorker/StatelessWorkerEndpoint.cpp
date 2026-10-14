@@ -116,13 +116,7 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
             writeStringBinary(descriptor.filter_key, out);
             writeStringBinary(descriptor.filter_name, out);
             encodeDataType(descriptor.key_column_type, out);
-            writeVarUInt(descriptor.geometry.exact_values_limit, out);
-            writeVarUInt(descriptor.geometry.exact_bytes_limit, out);
-            writeVarUInt(descriptor.geometry.bloom_filter_bytes, out);
-            writeVarUInt(descriptor.geometry.bloom_filter_hash_functions, out);
-            writeBinary(descriptor.geometry.pass_ratio_threshold_for_disabling, out);
-            writeVarUInt(descriptor.geometry.blocks_to_skip_before_reenabling, out);
-            writeBinary(descriptor.geometry.max_ratio_of_set_bits_in_bloom_filter, out);
+            descriptor.geometry.write(out);
             writeStringBinary(descriptor.stream.exchange_id, out);
             writeStringBinary(descriptor.stream.source_bucket, out);
             writeStringBinary(descriptor.stream.destination_bucket, out);
@@ -238,13 +232,7 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
             readStringBinary(descriptor.filter_name, in);
             /// Trusted server-to-server task: decode types without the input complexity limit.
             descriptor.key_column_type = decodeDataType(in, /*max_complexity=*/0);
-            readVarUInt(descriptor.geometry.exact_values_limit, in);
-            readVarUInt(descriptor.geometry.exact_bytes_limit, in);
-            readVarUInt(descriptor.geometry.bloom_filter_bytes, in);
-            readVarUInt(descriptor.geometry.bloom_filter_hash_functions, in);
-            readBinary(descriptor.geometry.pass_ratio_threshold_for_disabling, in);
-            readVarUInt(descriptor.geometry.blocks_to_skip_before_reenabling, in);
-            readBinary(descriptor.geometry.max_ratio_of_set_bits_in_bloom_filter, in);
+            descriptor.geometry = RuntimeFilterGeometry::read(in);
             readStringBinary(descriptor.stream.exchange_id, in);
             readStringBinary(descriptor.stream.source_bucket, in);
             readStringBinary(descriptor.stream.destination_bucket, in);

@@ -1,14 +1,12 @@
 #pragma once
-#include <base/types.h>
+#include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 
 namespace DB
 {
 
 struct QueryPlanSerializationSettings;
-
-/// Runtime bloom filter should be small and fast otherwise it is pointless
-static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
-static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
+class ReadBuffer;
+class WriteBuffer;
 
 /// First plan version that can carry runtime filter exchanges (step version 1 of `BuildRuntimeFilter`),
 /// the `MergeRuntimeFilters` step and the `join_runtime_filter_exact_bytes_limit` plan setting.
@@ -33,6 +31,9 @@ struct RuntimeFilterGeometry
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
     static RuntimeFilterGeometry fromSettings(const QueryPlanSerializationSettings & settings);
+
+    void write(WriteBuffer & out) const;
+    static RuntimeFilterGeometry read(ReadBuffer & in);
 
     /// Throws if a geometry read from the wire is out of bounds.
     void validateTransported() const;

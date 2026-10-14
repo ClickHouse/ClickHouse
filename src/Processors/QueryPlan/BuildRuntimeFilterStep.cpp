@@ -20,22 +20,15 @@
 
 #include <algorithm>
 #include <mutex>
-#include <Columns/ColumnString.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/ISink.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
+#include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
-#include <Common/ProfileEvents.h>
-
-namespace ProfileEvents
-{
-extern const Event RuntimeFilterStatesSent;
-extern const Event RuntimeFilterStateBytesSent;
-}
 
 namespace DB
 {
@@ -97,7 +90,7 @@ public:
         std::shared_ptr<TaskPartialFilter> task_filter_,
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
-        const RuntimeFilterGeometry & geometry,
+        const RuntimeFilterGeometry & geometry_,
         String filter_key_,
         String filter_name_,
         ContextPtr query_context_)
@@ -108,7 +101,7 @@ public:
         , filter_column_target_type(filter_column_type_)
         , filter_key(std::move(filter_key_))
         , filter_name(std::move(filter_name_))
-        , runtime_filter_config{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling}
+        , geometry(geometry_)
         , query_context(std::move(query_context_))
         , partial(
               std::make_unique<AdaptiveSetRuntimeFilter>(
@@ -212,18 +205,15 @@ public:
         /// same stage. All streams have merged in, so it expects no more merges.
         if (!query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterPartialTransform");
-        auto filter = std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, runtime_filter_config, std::move(*task_filter->filter));
-        if (query_context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])
-            filter->enableIndexAnalysis();
-        query_context->getRuntimeFilterLookup()->add(filter_key, filter_name, std::move(filter));
+        registerCompleteRuntimeFilter(
+            *query_context->getRuntimeFilterLookup(),
+            filter_key,
+            filter_name,
+            geometry,
+            std::move(*task_filter->filter),
+            query_context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis]);
         task_filter->filter.reset();
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesSent);
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterStateBytesSent, out.str().size());
-        auto column = ColumnString::create();
-        column->insertData(out.str().data(), out.str().size());
-        Columns columns;
-        columns.emplace_back(std::move(column));
-        partial_chunk = Chunk(std::move(columns), 1);
+        partial_chunk = makeRuntimeFilterPartialsChunk(out.str(), /*num_destinations=*/1);
         has_partial_chunk = true;
     }
 
@@ -236,7 +226,7 @@ private:
 
     const String filter_key;
     const String filter_name;
-    const RuntimeFilterConfig runtime_filter_config;
+    const RuntimeFilterGeometry geometry;
     ContextPtr query_context;
     std::unique_ptr<AdaptiveSetRuntimeFilter> partial;
     Chunk data_chunk;
@@ -324,7 +314,8 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
     if (it == tree_exchange->source_buckets.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BuildRuntimeFilterStep: bucket {} is not among the build stage buckets", bucket_id);
     const size_t bucket_index = it - tree_exchange->source_buckets.begin();
-    const ExchangeStreamId destination_stream(tree_exchange->exchange_id, bucket_id, toString(bucket_index / tree_exchange->fan_in));
+    const ExchangeStreamId destination_stream(
+        tree_exchange->exchange_id, bucket_id, toString(MergeRuntimeFiltersStep::parentIndex(bucket_index, tree_exchange->fan_in)));
 
     pipeline.transform(
         [&](OutputPortRawPtrs ports)

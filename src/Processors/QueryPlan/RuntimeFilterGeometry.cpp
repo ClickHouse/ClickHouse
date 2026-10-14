@@ -1,3 +1,5 @@
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Common/Exception.h>
@@ -46,6 +48,30 @@ void RuntimeFilterGeometry::validateTransported() const
             bloom_filter_bytes,
             bloom_filter_hash_functions,
             exact_bytes_limit);
+}
+
+void RuntimeFilterGeometry::write(WriteBuffer & out) const
+{
+    writeVarUInt(exact_values_limit, out);
+    writeVarUInt(exact_bytes_limit, out);
+    writeVarUInt(bloom_filter_bytes, out);
+    writeVarUInt(bloom_filter_hash_functions, out);
+    writeBinary(pass_ratio_threshold_for_disabling, out);
+    writeVarUInt(blocks_to_skip_before_reenabling, out);
+    writeBinary(max_ratio_of_set_bits_in_bloom_filter, out);
+}
+
+RuntimeFilterGeometry RuntimeFilterGeometry::read(ReadBuffer & in)
+{
+    RuntimeFilterGeometry geometry;
+    readVarUInt(geometry.exact_values_limit, in);
+    readVarUInt(geometry.exact_bytes_limit, in);
+    readVarUInt(geometry.bloom_filter_bytes, in);
+    readVarUInt(geometry.bloom_filter_hash_functions, in);
+    readBinary(geometry.pass_ratio_threshold_for_disabling, in);
+    readVarUInt(geometry.blocks_to_skip_before_reenabling, in);
+    readBinary(geometry.max_ratio_of_set_bits_in_bloom_filter, in);
+    return geometry;
 }
 
 RuntimeFilterGeometry RuntimeFilterGeometry::fromSettings(const QueryPlanSerializationSettings & settings)

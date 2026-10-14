@@ -37,6 +37,32 @@ SharedHeader runtimeFilterPartialsHeader()
     return std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "partial")});
 }
 
+Chunk makeRuntimeFilterPartialsChunk(const String & state, size_t num_destinations)
+{
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesSent, num_destinations);
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterStateBytesSent, state.size() * num_destinations);
+    auto column = ColumnString::create();
+    column->insertData(state.data(), state.size());
+    Columns columns;
+    columns.emplace_back(std::move(column));
+    return Chunk(std::move(columns), 1);
+}
+
+void registerCompleteRuntimeFilter(
+    IRuntimeFilterLookup & lookup,
+    const String & filter_key,
+    const String & filter_name,
+    const RuntimeFilterGeometry & geometry,
+    AdaptiveSetRuntimeFilter && filter,
+    bool enable_index_analysis)
+{
+    const RuntimeFilterConfig config{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling};
+    auto complete_filter = std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, config, std::move(filter));
+    if (enable_index_analysis)
+        complete_filter->enableIndexAnalysis();
+    lookup.add(filter_key, filter_name, std::move(complete_filter));
+}
+
 MergeRuntimeFiltersTransform::MergeRuntimeFiltersTransform(
     SharedHeader partials_header,
     size_t num_inputs,
@@ -207,13 +233,8 @@ void MergeRuntimeFiltersTransform::finalize()
 
     if (mode == Mode::RegisterUnion)
     {
-        /// Every input has delivered, so the union is complete and the published filter expects no
-        /// further merges: `add` finishes it right away and `__applyFilter` can start pruning.
-        const RuntimeFilterConfig config{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling};
-        auto filter = std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, config, std::move(*accumulated));
-        if (enable_index_analysis)
-            filter->enableIndexAnalysis();
-        filter_lookup->add(filter_key, filter_name, std::move(filter));
+        /// Every input has delivered, so the union is complete.
+        registerCompleteRuntimeFilter(*filter_lookup, filter_key, filter_name, geometry, std::move(*accumulated), enable_index_analysis);
         accumulated.reset();
         return;
     }
@@ -236,14 +257,7 @@ void MergeRuntimeFiltersTransform::finalize()
         return;
     }
 
-    ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesSent, num_forward_destinations);
-    ProfileEvents::increment(ProfileEvents::RuntimeFilterStateBytesSent, out.str().size() * num_forward_destinations);
-
-    auto column = ColumnString::create();
-    column->insertData(out.str().data(), out.str().size());
-    Columns columns;
-    columns.emplace_back(std::move(column));
-    output_chunk = Chunk(std::move(columns), 1);
+    output_chunk = makeRuntimeFilterPartialsChunk(out.str(), num_forward_destinations);
     has_output_chunk = true;
 }
 

@@ -46,6 +46,33 @@ MergeRuntimeFiltersStep::MergeRuntimeFiltersStep(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeRuntimeFiltersStep requires an input exchange, source buckets and outputs");
 }
 
+VectorWithMemoryTracking<ExchangeStreamId>
+MergeRuntimeFiltersStep::inputStreams(const String & exchange_id, const Strings & source_buckets, size_t bucket_index, size_t fan_in)
+{
+    const String bucket_id = toString(bucket_index);
+    const size_t children_begin = bucket_index * fan_in;
+    const size_t children_end = std::min(children_begin + fan_in, source_buckets.size());
+    VectorWithMemoryTracking<ExchangeStreamId> streams;
+    for (size_t child = children_begin; child < children_end; ++child)
+        streams.emplace_back(exchange_id, source_buckets[child], bucket_id);
+    return streams;
+}
+
+std::vector<ExchangeStreamId>
+MergeRuntimeFiltersStep::outputStreams(const std::vector<Output> & outputs, size_t bucket_index, size_t fan_in)
+{
+    const String bucket_id = toString(bucket_index);
+    std::vector<ExchangeStreamId> streams;
+    for (const auto & output : outputs)
+    {
+        if (output.destination_buckets.empty())
+            streams.emplace_back(output.exchange_id, bucket_id, toString(parentIndex(bucket_index, fan_in)));
+        for (const String & destination_bucket : output.destination_buckets)
+            streams.emplace_back(output.exchange_id, bucket_id, destination_bucket);
+    }
+    return streams;
+}
+
 QueryPipelineBuilderPtr
 MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
@@ -55,9 +82,8 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
     const String bucket_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
     const size_t bucket_index = parse<size_t>(bucket_id);
 
-    const size_t children_begin = bucket_index * fan_in;
-    const size_t children_end = std::min(children_begin + fan_in, source_buckets.size());
-    if (children_begin >= children_end)
+    const auto input_streams = inputStreams(input_exchange_id, source_buckets, bucket_index, fan_in);
+    if (input_streams.empty())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "MergeRuntimeFiltersStep task {} has no child buckets: {} sources with fan-in {}",
@@ -66,21 +92,8 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
             fan_in);
 
     auto partials_header = runtimeFilterPartialsHeader();
-
-    VectorWithMemoryTracking<ExchangeStreamId> input_streams;
-    for (size_t child = children_begin; child < children_end; ++child)
-        input_streams.emplace_back(input_exchange_id, source_buckets[child], bucket_id);
-
-    /// Destination streams, in the order the sinks are attached below.
-    std::vector<ExchangeStreamId> destination_streams;
-    for (const auto & output : outputs)
-    {
-        if (output.destination_buckets.empty())
-            destination_streams.emplace_back(output.exchange_id, bucket_id, toString(bucket_index / fan_in));
-        else
-            for (const String & destination_bucket : output.destination_buckets)
-                destination_streams.emplace_back(output.exchange_id, bucket_id, destination_bucket);
-    }
+    /// In the order the sinks are attached below.
+    const auto destination_streams = outputStreams(outputs, bucket_index, fan_in);
 
     /// One stream per child: the merge counts the states it receives per input.
     auto pipeline = std::make_unique<QueryPipelineBuilder>(receiveExchangeStreams(
@@ -89,7 +102,7 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
     pipeline->addTransform(
         std::make_shared<MergeRuntimeFiltersTransform>(
             partials_header,
-            children_end - children_begin,
+            input_streams.size(),
             MergeRuntimeFiltersTransform::Mode::ForwardUnion,
             filter_name,
             /*filter_key_=*/String{},

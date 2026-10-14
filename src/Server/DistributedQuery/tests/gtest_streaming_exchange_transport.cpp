@@ -681,7 +681,8 @@ std::pair<std::optional<int>, size_t> receiveThroughLookup(const ExchangeTest::F
 
     const auto header = makeHeader();
     const VectorWithMemoryTracking<ExchangeStreamId> stream_ids{stream_id};
-    auto builder = receiveExchangeStreams(header, stream_id.exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false, advisory);
+    auto builder = receiveExchangeStreams(
+        header, stream_id.exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false, advisory);
     auto sink = std::make_shared<CollectingSink>(header);
     builder.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));

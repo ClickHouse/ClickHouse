@@ -1,4 +1,5 @@
 #pragma once
+#include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 
@@ -21,8 +22,8 @@ constexpr size_t RUNTIME_FILTER_MERGE_FAN_IN = 16;
 /// exchange sources feed a `MergeRuntimeFiltersTransform` whose output ends in exchange sinks.
 ///
 /// The step is the same for all tasks of a stage. Task `i` reads child buckets
-/// `[i * fan_in, (i + 1) * fan_in)` of `source_buckets` and feeds parent `i / fan_in`; the wiring
-/// uses the same rule for the plan's stream lists.
+/// `[i * fan_in, (i + 1) * fan_in)` of `source_buckets` and feeds parent `i / fan_in`. The wiring
+/// takes the plan's stream lists from `inputStreams` and `outputStreams`, so both use one rule.
 class MergeRuntimeFiltersStep final : public IQueryPlanStep
 {
 public:
@@ -44,6 +45,16 @@ public:
         std::vector<Output> outputs_);
 
     MergeRuntimeFiltersStep(const MergeRuntimeFiltersStep & other) = default;
+
+    /// The index of the task one level up that task `index` sends its state to.
+    static size_t parentIndex(size_t index, size_t fan_in) { return index / fan_in; }
+
+    /// The streams that task `bucket_index` reads: one from each of its children.
+    static VectorWithMemoryTracking<ExchangeStreamId>
+    inputStreams(const String & exchange_id, const Strings & source_buckets, size_t bucket_index, size_t fan_in);
+
+    /// The streams that task `bucket_index` writes, in the order of `outputs`.
+    static std::vector<ExchangeStreamId> outputStreams(const std::vector<Output> & outputs, size_t bucket_index, size_t fan_in);
 
     String getName() const override { return "MergeRuntimeFilters"; }
 

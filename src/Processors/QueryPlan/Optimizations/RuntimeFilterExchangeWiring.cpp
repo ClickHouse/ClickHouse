@@ -223,7 +223,8 @@ TransportBudget makeTransportBudget(const BuildRuntimeFilterStep & step)
 
 /// True when sending the filter to this apply site can prune rows: the build key set must be
 /// smaller than the site's key set and row count, and a raised budget needs a known site row count.
-bool siteAdmitsRuntimeFilterTransport(const FilterConsumerSite & site, const BuildRuntimeFilterStep & producer, const TransportBudget & budget)
+bool siteAdmitsRuntimeFilterTransport(
+    const FilterConsumerSite & site, const BuildRuntimeFilterStep & producer, const TransportBudget & budget)
 {
     const UInt64 estimated_keys = *budget.estimated_keys;
     /// The estimate runs on the cut fragment and cannot see across exchange boundaries;
@@ -300,8 +301,8 @@ std::vector<ReceivingStage> selectReceivingStages(
         if (stage_name == producer.stage)
             continue;
 
-        if (budget.estimated_keys
-            && std::ranges::none_of(sites, [&](const auto & site) { return siteAdmitsRuntimeFilterTransport(site, *producer.step, budget); }))
+        auto admits = [&](const FilterConsumerSite & site) { return siteAdmitsRuntimeFilterTransport(site, *producer.step, budget); };
+        if (budget.estimated_keys && std::ranges::none_of(sites, admits))
             continue;
 
         /// If the build stage already depends on this stage (a join that sends its filter to the
@@ -393,8 +394,6 @@ private:
     Strings level_stages;
     Strings broadcast_exchanges; /// One per receiving stage.
 
-    static String parentBucket(size_t index) { return toString(index / fan_in); }
-
     std::vector<DistributedQueryTask> & buildTasks() { return distributed_plan.stages.at(producer.stage).tasks; }
 
     void addExchange(const String & name, size_t source_bucket_count, size_t destination_bucket_count)
@@ -411,7 +410,8 @@ private:
         for (size_t index = 0; index < tasks.size(); ++index)
         {
             buckets.push_back(taskBucketId(tasks[index]));
-            tasks[index].output_exchange_streams.emplace_back(level_exchanges[0], buckets.back(), parentBucket(index));
+            tasks[index].output_exchange_streams.emplace_back(
+                level_exchanges[0], buckets.back(), toString(MergeRuntimeFiltersStep::parentIndex(index, fan_in)));
         }
         producer.step->setTreeExchange(level_exchanges[0], buckets, fan_in);
         return buckets;
@@ -428,7 +428,13 @@ private:
         DistributedQueryStage stage;
         stage.filter_only = true;
         stage.query_plan_fragment.addStep(std::make_unique<MergeRuntimeFiltersStep>(
-            producer.step->getFilterName(), producer.step->getFilterColumnType(), geometry, level_exchanges[level], child_buckets, fan_in, outputs));
+            producer.step->getFilterName(),
+            producer.step->getFilterColumnType(),
+            geometry,
+            level_exchanges[level],
+            child_buckets,
+            fan_in,
+            outputs));
 
         Strings buckets;
         for (size_t index = 0; index < level_sizes[level]; ++index)
@@ -466,18 +472,9 @@ private:
         task.task_id = level_stages[level] + "_" + bucket;
         task.parameters.parameters["bucket_id"] = Field(bucket);
 
-        const size_t children_begin = index * fan_in;
-        const size_t children_end = std::min(children_begin + fan_in, child_buckets.size());
-        for (size_t child = children_begin; child < children_end; ++child)
-            task.input_exchange_streams.emplace_back(level_exchanges[level], child_buckets[child], bucket);
-
-        for (const auto & output : outputs)
-        {
-            if (output.destination_buckets.empty())
-                task.output_exchange_streams.emplace_back(output.exchange_id, bucket, parentBucket(index));
-            for (const auto & destination_bucket : output.destination_buckets)
-                task.output_exchange_streams.emplace_back(output.exchange_id, bucket, destination_bucket);
-        }
+        auto inputs = MergeRuntimeFiltersStep::inputStreams(level_exchanges[level], child_buckets, index, fan_in);
+        task.input_exchange_streams.assign(inputs.begin(), inputs.end());
+        task.output_exchange_streams = MergeRuntimeFiltersStep::outputStreams(outputs, index, fan_in);
         return task;
     }
 
