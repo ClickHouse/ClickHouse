@@ -241,6 +241,10 @@ Hostnames are matched case-insensitively, as DNS names are case-insensitive: the
 lowercased before matching, exact `host` values are compared after lowercasing, and a `host_regexp`
 is compiled as case-insensitive (regexp captures substituted into a `backend_template` are therefore
 lowercase). `user` and `database` are matched case-sensitively.
+A server resolves an omitted or empty user name to its `default_session_user`, which the proxy does
+not know. So a connection with an omitted or empty user name is rejected (and the `on_unknown` hook
+runs) when it reaches a rule that matches on `user` and whose other criteria it matches, instead of
+falling through to the following rules or the listener's default pool.
 
 Values can be matched exactly (or as a comma-separated list) or by a regular expression. A regular
 expression may contain capture groups whose values are substituted for `$1` … `$9` in a

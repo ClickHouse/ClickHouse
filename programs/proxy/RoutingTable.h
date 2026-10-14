@@ -22,6 +22,10 @@ public:
         String pool_name;                       /// A reference to a configured pool, or
         std::optional<BackendConfig> backend;   /// a concrete backend produced by the rule.
         bool authorized_key_matched = false;    /// The rule required, and matched, an SSH public key allowlist.
+        /// The user name is empty, and the first rule matching the other attributes also matches on the user name.
+        /// A server resolves an omitted or empty user name to its `default_session_user`, which the proxy
+        /// does not know, so whether the rule matches cannot be decided. Neither target is set then.
+        bool user_unknown = false;
     };
 
     /// Returns the target of the first matching rule, or nothing if no rule matches.

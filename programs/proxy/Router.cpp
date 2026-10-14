@@ -259,6 +259,13 @@ Router::Decision Router::resolvePool(const RouteAttributes & attributes, const L
     Decision decision;
     if (auto target = table->resolve(attributes))
     {
+        /// Not routed to the listener's default pool: the session could authenticate as a user
+        /// that the rule routes elsewhere.
+        if (target->user_unknown)
+        {
+            decision.user_unknown = true;
+            return decision;
+        }
         decision.authorized_key_matched = target->authorized_key_matched;
         if (target->backend)
         {
@@ -291,12 +298,13 @@ bool Router::keyIsAcceptable(const RouteAttributes & attributes)
 {
     if (auto target = table->resolve(attributes))
     {
-        if (!target->authorized_key_matched)
+        if (target->user_unknown || !target->authorized_key_matched)
             return false;
         /// Whether the dynamic backend can be created and is alive is checked once the key is proven.
         if (target->backend)
             return true;
-        return pools.at(target->pool_name)->choose(attributes) != nullptr;
+        /// Not `choose`: it advances the load balancing state, so every probe would consume a slot.
+        return pools.at(target->pool_name)->hasAliveBackends();
     }
     /// The listener's default pool does not authorize anyone.
     return false;

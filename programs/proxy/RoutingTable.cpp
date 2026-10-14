@@ -316,6 +316,14 @@ std::optional<IRoutingTable::Target> ConfigRoutingTable::resolve(const RouteAttr
         std::vector<String> captures;
         if (!rule.host.matches(attributes.host, captures))
             continue;
+        if (rule.user.specified() && attributes.user.empty())
+        {
+            if (!rule.database.matches(attributes.database, captures))
+                continue;
+            Target target;
+            target.user_unknown = true;
+            return target;
+        }
         if (!rule.user.matches(attributes.user, captures))
             continue;
         if (!rule.database.matches(attributes.database, captures))

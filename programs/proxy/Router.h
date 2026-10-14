@@ -22,10 +22,12 @@ public:
     struct Decision
     {
         BackendPoolPtr pool;    /// Null if no rule matched and the listener has no default pool,
-                                /// or if the matched rule needs a new dynamic backend and their limit is reached.
+                                /// or if the matched rule needs a new dynamic backend and their limit is reached,
+                                /// or if the user name is unknown (see `IRoutingTable::Target::user_unknown`).
         BackendPtr backend;     /// Null if the pool has no alive backends.
         bool authorized_key_matched = false;   /// The pool was chosen by a rule that matched an SSH key allowlist.
         bool dynamic_backends_exhausted = false;   /// A rule matched, but `max_dynamic_backends` is reached.
+        bool user_unknown = false;   /// The user name is empty, but the rule to decide on matches on it.
     };
 
     /// May run hooks (shell commands) and wait for backends; call only from a fiber.
@@ -94,7 +96,7 @@ private:
     void runFirstSeenHook(const String & command, const char * kind, const String & pool_name, const String & value,
         std::map<SeenKey, bool> & seen, const RouteAttributes & attributes);
     bool runHook(const String & command, const char * kind, const RouteAttributes & attributes);
-    /// Fills `pool`, `authorized_key_matched` and `dynamic_backends_exhausted` of the decision.
+    /// Fills `pool`, `authorized_key_matched`, `dynamic_backends_exhausted` and `user_unknown` of the decision.
     Decision resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener);
     BackendPoolPtr poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener);
 };

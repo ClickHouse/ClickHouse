@@ -136,9 +136,12 @@ RouteResult routeConnection(const FrontendContext & ctx, const RouteAttributes &
 
     if (!decision.pool)
     {
-        result.failure_reason = decision.dynamic_backends_exhausted
-            ? "a routing rule matched, but the limit of dynamic backends (`max_dynamic_backends`) is reached"
-            : "no routing rule matched and the listener has no default pool";
+        if (decision.dynamic_backends_exhausted)
+            result.failure_reason = "a routing rule matched, but the limit of dynamic backends (`max_dynamic_backends`) is reached";
+        else if (decision.user_unknown)
+            result.failure_reason = "the user name is empty, but the routing rule to apply matches on it";
+        else
+            result.failure_reason = "no routing rule matched and the listener has no default pool";
         LOG_WARNING(ctx.log, "Cannot route {} connection (host='{}', user='{}', database='{}'): {}",
             toString(attributes.protocol), attributes.host, attributes.user, attributes.database, result.failure_reason);
         return result;
