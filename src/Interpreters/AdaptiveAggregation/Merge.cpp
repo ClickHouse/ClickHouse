@@ -1005,7 +1005,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     using Table = std::decay_t<decltype(dest_method.data.impls[0])>;
     static_assert(std::decay_t<decltype(dest_method.data)>::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     auto & table = dest_method.data.impls[bucket];
-    Arena * arena = dest.adaptive_merge_bucket_arenas[bucket].get();
+    /// The unit being merged creates its states in the arena of the bucket's slot, which takes a fresh arena for every
+    /// unit (see below).
+    auto & arena_slot = dest.adaptive_merge_bucket_arenas[bucket];
+    Arena * arena = arena_slot.get();
 
     const AdaptivePartitionLayout layout = session.layout;
     const size_t partitions_per_bucket = layout.partitionsPerBucket();
@@ -1170,9 +1173,9 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         else
         {
             /// Drains the spill stream of partition `sub` of the unit a block at a time, each before the next one
-            /// overwrites it, so the table copies the string keys it keeps into the bucket's arena, which lives until
-            /// the bucket retires. Out of line, like the drain itself, so the code of the units that did not spill
-            /// stays as it is.
+            /// overwrites it, so the table copies the string keys it keeps into the unit's arena, which lives until the
+            /// unit is converted. Out of line, like the drain itself, so the code of the units that did not spill stays
+            /// as it is.
             const auto drain_spill = [&](size_t sub, const auto & filter) NO_INLINE
             {
                 size_t skipped = 0;
@@ -1231,6 +1234,15 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// The conversion copied the keys out of the records, so the unit's records go now.
         for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
             staged.release(sub);
+
+        /// The next unit creates its states in a fresh arena, so the states of this one free with its arena: at once
+        /// where the conversion copied their results out, or with the chunk where they are part of it, as the non-final
+        /// and -State results are, whose columns captured the arena.
+        if (unit + 1 < units)
+        {
+            arena_slot = std::make_shared<Arena>();
+            arena = arena_slot.get();
+        }
     }
 
     if (pruned_records)
@@ -1248,10 +1260,11 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         std::swap(table, counting_table);
     }
 
-    /// Every unit converted successfully: the output chunks either copied the values out of the bucket's arena slot or
-    /// captured its ownership, so the slot retires now. A throw or a cancellation returns before this and leaves every
-    /// slot that is not retired to the ordinary destruction of the destination.
-    dest.adaptive_merge_bucket_arenas[bucket].reset();
+    /// Every unit converted successfully: the output chunks either copied the values out of the arenas of their units or
+    /// captured their ownership, so the slot, which holds the arena of the last unit, retires now. A throw or a
+    /// cancellation returns before this and leaves every slot that is not retired to the ordinary destruction of the
+    /// destination.
+    arena_slot.reset();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
     return chunks;
 }
@@ -1263,12 +1276,13 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
     destination->keys_size = params.keys_size;
     destination->key_sizes = key_sizes;
     destination->init(convertToTwoLevelTypeIfPossible(method_chosen));
-    /// The drain and the merge create the destination's states in per-bucket arenas, for two reasons. Fresh arenas,
-    /// rather than a source table's, because with a zero-size aggregate state (`Nothing`) an arena returns one address
-    /// for every allocation, so a drained state would alias that table's states and the bucket merge would see a state
-    /// merged into itself. And per bucket, rather than per source, so a converted bucket's states free with its slot
-    /// when the bucket retires. The slots live outside `aggregates_pools`, which every bucket's output columns capture
-    /// wholesale; each conversion is handed its own slot instead.
+    /// The drain and the merge create the destination's states in per-unit arenas, which the slot of each bucket holds
+    /// one at a time, for two reasons. Fresh arenas, rather than a source table's, because with a zero-size aggregate
+    /// state (`Nothing`) an arena returns one address for every allocation, so a drained state would alias that table's
+    /// states and the bucket merge would see a state merged into itself. And per unit, rather than per source, so a
+    /// converted unit's states free with its arena (see `mergeAndConvertAdaptiveBucket`). The slots live outside
+    /// `aggregates_pools`, which every bucket's output columns capture wholesale; each conversion is handed its own slot
+    /// instead.
     destination->adaptive_merge_bucket_arenas.resize(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     for (auto & slot : destination->adaptive_merge_bucket_arenas)
         slot = std::make_shared<Arena>();
