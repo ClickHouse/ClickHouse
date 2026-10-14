@@ -1772,6 +1772,13 @@ namespace
             auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
             if (row_num < column_vector.size())
                 return;
+            /// Without an explicit default in the schema the field defaults to an empty string, which is
+            /// not a valid UUID: insert the nil UUID (which is the same for `UUID` and `UUID2`).
+            if (!field_descriptor.has_default_value())
+            {
+                column_vector.insertDefault();
+                return;
+            }
             UUID value = default_function();
             if (is_uuid2)
                 value = UUIDHelpers::swapHalves(value);
