@@ -67,10 +67,18 @@ public:
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
-    /// The number of copies of this `INSERT` that run at the same time, e.g. the nested `INSERT` that
-    /// every branch of a forwarding storage (`Alias`) runs. They share the memory budget of the squashing
-    /// stages, see `InsertDependenciesBuilder::getNumSquashesSharingRootBudget`.
-    void setNumConcurrentCopies(size_t value) { num_concurrent_copies = std::max<size_t>(1, value); }
+    /// This `INSERT` is one of `copies` copies that run at the same time, e.g. the nested `INSERT` that every
+    /// branch of the fan-out of a forwarding storage (`Alias`) runs. Keep it single-stream: with the fan-out
+    /// already in place, letting every copy fan out again would multiply the number of real sink branches
+    /// (part writers, squashing and compression buffers) up to `max_insert_threads^2`. The squashing stages
+    /// of the copies share the memory budget, see `InsertDependenciesBuilder::getNumSquashesSharingRootBudget`.
+    /// Unlike setting `max_insert_threads` to one in the context, this leaves the setting to the forwarding
+    /// storages that the nested `INSERT` reaches in turn, so every hop counts the copies of the outermost fan-out.
+    void setOneOfConcurrentCopies(size_t copies)
+    {
+        num_concurrent_copies = std::max<size_t>(1, copies);
+        max_insert_threads = 1;
+    }
 
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
