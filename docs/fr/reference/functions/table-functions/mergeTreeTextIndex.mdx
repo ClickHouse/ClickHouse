@@ -13,17 +13,13 @@ Représente le dictionnaire d’un index de texte intégral dans les tables Merg
 Renvoyer les tokens avec leurs métadonnées de posting list.
 Peut être utilisé pour l’introspection.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 mergeTreeTextIndex(database, table, index_name)
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 | Argument     | Description                                                                 |
 | ------------ | --------------------------------------------------------------------------- |
@@ -31,15 +27,13 @@ mergeTreeTextIndex(database, table, index_name)
 | `table`      | Le nom de la table où se trouve l’index de texte intégral à lire.           |
 | `index_name` | Le nom de l’index de texte intégral à lire.                                 |
 
-<div id="returned-value">
-  ## Valeur retournée
-</div>
+## Valeur retournée {#returned-value}
 
-Un objet table contenant les tokens et leurs métadonnées de posting list.
+Un objet table contenant les jetons et leurs métadonnées de posting list.
 
-<div id="usage-example">
-  ## Exemple d’utilisation
-</div>
+Si l’index utilise le tokeniseur `keyValuePairs`, chaque jeton correspond à une paire `(key, value)` d’une colonne `Map`. Le résultat comporte alors deux colonnes supplémentaires, `token_key` et `token_value`, qui contiennent les parties décodées du jeton.
+
+## Exemple d’utilisation {#usage-example}
 
 ```sql title="Query"
 CREATE TABLE tab
