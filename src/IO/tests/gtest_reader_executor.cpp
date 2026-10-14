@@ -582,7 +582,8 @@ TEST_F(ReaderExecutorTest, PlanLookAheadShrinksUnderMemoryPressure)
 
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
             ReaderExecutor::Options{
-                .block_size = block, .plan_look_ahead = base_look_ahead, .cache_chain = std::move(chain)});
+                .window_size = base_look_ahead / 2, .block_size = block, .plan_look_ahead = base_look_ahead,
+                .cache_chain = std::move(chain)});
         ex.readNextWindow();
 
         mt.adjustWithUntrackedMemory(-amount);
@@ -592,7 +593,7 @@ TEST_F(ReaderExecutorTest, PlanLookAheadShrinksUnderMemoryPressure)
     EXPECT_EQ(resolvedReach(50), base_look_ahead);        /// Normal
     EXPECT_EQ(resolvedReach(80), base_look_ahead / 2);    /// Elevated
     EXPECT_EQ(resolvedReach(92), base_look_ahead / 8);    /// High
-    EXPECT_EQ(resolvedReach(99), base_look_ahead / 32);   /// Critical, at the 128 KiB floor
+    EXPECT_EQ(resolvedReach(99), base_look_ahead / 16);   /// Critical: twice the window, which stops at 128 KiB
 }
 
 TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)

@@ -169,9 +169,11 @@ ReaderExecutor::ReaderExecutor(
     , cache_chain(std::move(options.cache_chain))
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , max_tail_for_drain(options.max_tail_for_drain)
-    , plan_look_ahead(options.plan_look_ahead)   /// `getReadSettings` enforces `>= block_size`
+    , plan_look_ahead(options.plan_look_ahead)
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
+    /// `getReadSettings` enforces it; `sampleWindowSizes` keeps it at every pressure level.
+    chassert(plan_look_ahead >= 2 * window_size);
     offset_map.build(objects);
     log_file_path = objects.empty() ? "" : objects.front().remote_path;
     LOG_DEBUG(log, "Created: source={}, objects={}, total_size={}, block_size={}, long_connections={}",
@@ -626,8 +628,9 @@ ReaderExecutor::BlockAndWindowSizes ReaderExecutor::sampleWindowSizes() const
     const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
     const size_t window = sizeAtPressure(pressure, window_size, WINDOW_REDUCTION);
     const size_t block = std::min(sizeAtPressure(pressure, block_size, BLOCK_REDUCTION), window);
-    /// The floor holds `getReadSettings`' `plan_look_ahead >= block_size` at every level.
-    const size_t plan = std::max(sizeAtPressure(pressure, plan_look_ahead, PLAN_LOOK_AHEAD_REDUCTION), block);
+    /// At least twice the window at every level: the lazy refill in `ensureResolved` then keeps a whole window
+    /// resolved ahead, so the plan never cuts a fetch.
+    const size_t plan = std::max(sizeAtPressure(pressure, plan_look_ahead, PLAN_LOOK_AHEAD_REDUCTION), 2 * window);
     return {.window_bytes = window, .block_bytes = block, .plan_bytes = plan};
 }
 
