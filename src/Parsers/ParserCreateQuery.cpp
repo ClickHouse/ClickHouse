@@ -24,6 +24,7 @@
 #include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserViewTargets.h>
 #include <Common/typeid_cast.h>
+#include <Poco/String.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Core/UUID.h>
@@ -130,7 +131,21 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserFunction().parse(pos, node, expected);
+    /// Keep the name as written: the function parser can normalize the names of special functions, e.g. `OVERLAY` to `overlay`,
+    /// but it is the name of an engine here, like `Overlay`.
+    ASTPtr name;
+    auto begin = pos;
+    if (!ParserIdentifier().parse(pos, name, expected))
+        return false;
+    pos = begin;
+
+    if (!ParserFunction().parse(pos, node, expected))
+        return false;
+
+    String written_name = getIdentifierName(name);
+    if (auto * function = node->as<ASTFunction>(); function && Poco::toLower(function->name) == Poco::toLower(written_name))
+        function->name = std::move(written_name);
+    return true;
 }
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2552,6 +2567,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
 - For distributed query processing, temporary tables with Memory engine used in a query are passed to remote servers.
+- The number of temporary tables in a session and their sizes can be limited with the [max_temporary_tables](/reference/settings/session-settings/max-temporary#max_temporary_tables), [max_temporary_table_memory_usage](/reference/settings/session-settings/max-temporary#max_temporary_table_memory_usage) (for the `Memory` engine), [max_temporary_table_size_bytes_compressed](/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_compressed) and [max_temporary_table_size_bytes_uncompressed](/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_uncompressed) (for the `MergeTree` family) settings.
 
 ## Syntax {#syntax}
 
@@ -2794,6 +2810,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
+
+Codec names are case-insensitive, so `CODEC(ZSTD)`, `CODEC(zstd)` and `CODEC(ZStd)` all name the same codec.
 
 <Tip>
 You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
@@ -3752,6 +3770,11 @@ key_name3 = 'some value' [[NOT] OVERRIDABLE],
 `OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
 replaces it entirely: keys and overridability flags absent from the new definition are removed.
 
+Overriding a stored key when using the collection requires `SHOW NAMED COLLECTIONS SECRETS` on that collection,
+including keys marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` cannot be overridden.
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored.
+When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
+
 **Example**
 
 ```sql
@@ -3845,6 +3868,8 @@ ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ## Attach MergeTree table as ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 Allows to attach non-replicated MergeTree table as ReplicatedMergeTree. ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings. It is also possible to attach a replicated table as a regular MergeTree.
+
+The conversion is supported for tables in `Atomic` and `Ordinary` databases. A table in an `Ordinary` database has no UUID, so the conversion generates a UUID, expands `default_replica_path` with it once, and stores the resulting path explicitly in the engine arguments of the converted table. To add further replicas of such a table, specify this path explicitly in the first argument of the `ReplicatedMergeTree` engine; it can be found in the `zookeeper_path` column of `system.replicas`. Because the stored path no longer contains the `{uuid}` macro, the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{uuid}` in `default_replica_name` is not supported for any conversion.
 
 Note that table's data in ZooKeeper is not affected in this query. This means you have to add metadata in ZooKeeper using `SYSTEM RESTORE REPLICA` or clear it with `SYSTEM DROP REPLICA ... FROM ZKPATH ...` after attach.
 

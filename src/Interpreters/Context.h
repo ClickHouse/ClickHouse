@@ -111,6 +111,10 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class ColumnsCache;
+using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
+struct ColumnsCacheWriteBudget;
+using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
@@ -620,6 +624,9 @@ protected:
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
+    /// True for a query that originates from server-owned SQL text. It must be inherited by interpreters
+    /// which serialize and reparse a part of that text.
+    bool parse_server_owned_query_without_limits = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
     /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
@@ -630,6 +637,8 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
+    /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
+    bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -698,6 +707,11 @@ protected:
 
     /// Used at query runtime to save per-query runtime-filter handles and find them by (random) names.
     RuntimeFilterLookupPtr runtime_filter_lookup;
+
+    /// Per-query shared accounting for columns cache writes. Created in
+    /// makeQueryContext and shared across all of the query's read pools so the
+    /// columns-cache write budgets apply per query rather than per pool.
+    ColumnsCacheWriteBudgetPtr columns_cache_write_budget;
 
 public:
     /// Some counters for current query execution.
@@ -875,6 +889,7 @@ public:
         CLICKHOUSE_BUILT_WITH_COVERAGE,
         CLICKHOUSE_BUILT_WITH_SANITIZERS,
         CLICKHOUSE_LOGGING_LEVEL_TEST,
+        CUSTOM_DISK_NOT_ALLOWED_BY_REMOTE_URL_ALLOW_HOSTS,
         SERVER_CPU_OVERLOAD,
         SERVER_MEMORY_OVERLOAD,
         SERVER_RUN_UNDER_DEBUGGER,
@@ -1313,7 +1328,7 @@ public:
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
-    /// Reset settings to default value
+    /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
     void resetSettingsToDefaultValue(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
@@ -1651,6 +1666,12 @@ public:
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
 
+    void setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    /// `default_size` is the size to use when `columns_cache_size` is absent from `config`, see `getDefaultColumnsCacheSize`.
+    void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t default_size, size_t max_cache_size);
+    ColumnsCachePtr getColumnsCache() const;
+    void clearColumnsCache() const;
+
     /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
     SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;
     void allowSystemAllocateMemory(bool allow);
@@ -1932,10 +1953,16 @@ public:
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
 
+    bool shouldParseServerOwnedQueryWithoutLimits() const { return parse_server_owned_query_without_limits; }
+    void setParseServerOwnedQueryWithoutLimits(bool value) { parse_server_owned_query_without_limits = value; }
+
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
 
     bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
+
+    bool skipsForcedProjectionCheck() const { return skip_forced_projection_check; }
+    void setSkipForcedProjectionCheck() { skip_forced_projection_check = true; }
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
@@ -2091,7 +2118,17 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    /// Whether parallel replicas are enabled, in any `parallel_replicas_mode`. Use it rather than reading
+    /// `enable_parallel_replicas`: in `read_tasks` mode `automatic_parallel_replicas_mode` decides instead, so they do
+    /// not count as enabled there, although the setting stays on for cluster engines.
+    bool isParallelReplicasEnabled() const;
+    /// `automatic_parallel_replicas_mode`, except that forcing parallel replicas (`enable_parallel_replicas = 2`) turns the
+    /// automatic mode off. Read the mode through it rather than from the setting.
+    static UInt64 getAutomaticParallelReplicasMode(const Settings & settings_ref);
     bool canUseTaskBasedParallelReplicas() const;
+    /// Whether a cluster engine (`s3`, `url`, a table of a data lake catalog, ...) may be replaced by its `*Cluster`
+    /// variant over `cluster_for_parallel_replicas`, which ships the query text to the replicas.
+    bool canReplaceClusterEngineWithClusterVariant() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
     bool canUseParallelReplicasCustomKey() const;
@@ -2114,12 +2151,17 @@ public:
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
 
+    /// Per-query shared accounting for columns cache writes (see ColumnsCacheWriteBudget).
+    /// Shared across all read pools of the query so the write budgets apply per query.
+    ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
+
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
 
     /// A pinned storage snapshot to be returned by the table's getStorageSnapshot instead of a fresh one.
     /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE`.
     void setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot);
+    /// Looks in this context, then in its query context. Returns nullptr if the table has no pin.
     StorageSnapshotPtr getPinnedStorageSnapshot(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
@@ -2132,6 +2174,11 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
+    /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
+    /// they are enabled.
+    bool canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const;
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
@@ -2228,6 +2275,14 @@ public:
     ThrottlerPtr getLocalReadThrottler(std::optional<UInt64> bandwidth = {}) const;
     ThrottlerPtr getLocalWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
 
+    /// The server-wide throttlers, without the per-query limit (and, for the remote pair, the per-user
+    /// limit) that the getters above compose on top of them. Use these to report a server-wide limit, not
+    /// to throttle a request.
+    ThrottlerPtr getServerWideRemoteReadThrottler() const;
+    ThrottlerPtr getServerWideRemoteWriteThrottler() const;
+    ThrottlerPtr getServerWideLocalReadThrottler() const;
+    ThrottlerPtr getServerWideLocalWriteThrottler() const;
+
     ThrottlerPtr getBackupsThrottler() const;
 
     ThrottlerPtr getMutationsThrottler() const;
@@ -2235,6 +2290,12 @@ public:
 
     ThrottlerPtr getDistributedCacheReadThrottler() const;
     ThrottlerPtr getDistributedCacheWriteThrottler() const;
+
+    /// The bare server-wide distributed-cache throttlers, for reporting a server-wide limit rather than
+    /// throttling: getDistributedCacheReadThrottler() may compose a request-scoped throttler (e.g. the
+    /// per-user network limit) on top of the server-wide one; these return it unwrapped.
+    ThrottlerPtr getServerWideDistributedCacheReadThrottler() const;
+    ThrottlerPtr getServerWideDistributedCacheWriteThrottler() const;
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;

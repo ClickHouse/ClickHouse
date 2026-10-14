@@ -145,11 +145,14 @@ There is no statement which drops a single token. To revoke all the tokens of a 
 authentication methods, e.g. with `ALTER USER <name> IDENTIFIED WITH ...`, or use
 `ALTER USER <name> RESET AUTHENTICATION METHODS TO NEW` to keep only the most recently added one. The
 number of authentication methods a user may have at once is limited by the
-`max_authentication_methods_per_user` server setting.
+`max_authentication_methods_per_user` server setting. Expired tokens do not count against it for long: like
+every `ALTER USER`, `CREATE TOKEN` drops the authentication methods of the user whose deadline has already
+passed before it adds the new one, so tokens with a `VALID UNTIL` or `VALID FOR` clause (or the default TTL)
+can be created indefinitely. See [`VALID UNTIL`](/reference/statements/create/user#valid-until-clause).
 
 The secret is generated and stored by the query itself, so a `CREATE TOKEN` whose result never reaches the
 client - a connection lost while the row is being sent, or an `INTO OUTFILE` which the client cannot open -
-leaves an authentication method behind which nobody can use and which still counts against that limit. Nobody
+leaves an authentication method behind which nobody can use and which counts against that limit until it expires. Nobody
 holds such a secret: it exists only while the query runs. A query rejected before it runs, including one whose
 `FORMAT` clause names a format that cannot be used, adds nothing.
 

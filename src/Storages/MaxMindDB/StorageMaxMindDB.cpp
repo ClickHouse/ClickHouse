@@ -7,6 +7,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/castColumn.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -16,6 +17,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/KVStorageUtils.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
@@ -492,6 +494,49 @@ void registerStorageMaxMindDB(StorageFactory & factory)
                 args.storage_def->primary_key ? args.storage_def->primary_key->ptr() : ASTPtr{},
                 local_context);
         },
+        {.custom = [](FunctionSecretArgumentsFinder & finder)
+        {
+            s3DatabaseSecretArguments().custom(finder);
+            auto positional = finder.classifyPositionalArguments();
+            std::erase_if(positional, [&](size_t index)
+            {
+                const auto function = finder.function->arguments->at(index)->getFunction();
+                return function && (function->name() == "headers" || function->name() == "extra_credentials");
+            });
+            if (!finder.isNamedCollectionName(0))
+            {
+                String source;
+                if (!positional.empty() && finder.tryGetStringFromArgument(positional[0], &source)
+                    && source.find_first_of("@?#") != String::npos)
+                {
+                    finder.result.replaced_arguments.erase(positional[0]);
+                    finder.markSecretArgument(positional[0]);
+                }
+                String second;
+                const bool no_sign = positional.size() == 2 && finder.tryGetStringFromArgument(positional[1], &second) && second == "NOSIGN";
+                if (!no_sign)
+                    for (size_t slot = 1; slot < positional.size(); ++slot)
+                        finder.markSecretArgument(positional[slot]);
+            }
+            for (size_t i = 1; i < finder.function->arguments->size(); ++i)
+            {
+                const auto equals = finder.function->arguments->at(i)->getFunction();
+                if (!equals || equals->name() != "equals" || !equals->hasArguments() || equals->arguments->size() != 2)
+                    continue;
+                String key;
+                if (!equals->arguments->at(0)->tryGetString(&key, true) || key == "access_key_id" || key.starts_with("headers."))
+                    finder.markSecretArgument(i, true);
+                else if (key == "url")
+                {
+                    String url;
+                    if (!equals->arguments->at(1)->tryGetString(&url, false) || url.find_first_of("@?#") != String::npos)
+                    {
+                        finder.result.replaced_arguments.erase(i);
+                        finder.markSecretArgument(i, true);
+                    }
+                }
+            }
+        }},
         {
             .supports_settings = true,
             .supports_sort_order = true,

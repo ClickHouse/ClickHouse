@@ -40,26 +40,15 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     auto location_uri = Poco::URI(location, enable_url_encoding);
     if (!location_uri.isRelative())
         return location_uri;
-    /// Location header contains relative path. So we need to concatenate it
-    /// with path from the original URI and normalize it.
-    auto path = std::filesystem::weakly_canonical(std::filesystem::path(prev_uri.getPath()) / location);
-    location_uri = prev_uri;
-    location_uri.setPath(path);
-    return location_uri;
+    /// Location header contains a relative reference. Resolve it against the
+    /// previous URI per RFC 3986: this keeps the query string of the target and
+    /// correctly handles both absolute-path ("/data.csv") and relative-path
+    /// ("data.csv") references.
+    Poco::URI resolved_uri(prev_uri);
+    resolved_uri.resolve(location_uri);
+    resolved_uri.normalize();
+    return resolved_uri;
 }
-
-class ReadBufferFromSessionResponse : public DB::ReadBufferFromIStream
-{
-private:
-    DB::HTTPSessionPtr session;
-
-public:
-    ReadBufferFromSessionResponse(DB::HTTPSessionPtr && session_, std::istream & rstr, size_t size)
-    : ReadBufferFromIStream(rstr, size)
-    , session(std::move(session_))
-    {
-    }
-};
 
 }
 
@@ -106,12 +95,6 @@ namespace FailPoints
     extern const char storage_url_pause_before_retry_attempt[];
 }
 
-std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
-{
-    chassert(session);
-    return std::make_unique<ReadBufferFromSessionResponse>(std::move(session), *response_stream, buf_size);
-}
-
 bool ReadWriteBufferFromHTTP::withPartialContent() const
 {
     /**
@@ -126,7 +109,7 @@ size_t ReadWriteBufferFromHTTP::getOffset() const
     return read_range.begin.value_or(0) + offset_from_begin_pos;
 }
 
-void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const
+void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range, bool with_request_body) const
 {
     const bool same_origin = current_uri.getScheme() == initial_uri.getScheme() && current_uri.getHost() == initial_uri.getHost()
         && current_uri.getPort() == initial_uri.getPort();
@@ -135,14 +118,14 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
     else
         request.setHost(current_uri.getHost());
 
-    if (out_stream_callback)
+    if (out_stream_callback && with_request_body)
     {
         if (out_stream_fixed_content_length)
             request.setContentLength(static_cast<std::streamsize>(*out_stream_fixed_content_length));
         else
             request.setChunkedTransferEncoding(true);
     }
-    else if (method == Poco::Net::HTTPRequest::HTTP_POST)
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
         request.setContentLength(0);    /// No callback - no body
 
     for (const auto & [header, value] : http_header_entries)
@@ -316,34 +299,48 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 }
 
 ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
-    Poco::Net::HTTPResponse & response, const std::string & method_, const std::optional<HTTPRange> & range, bool allow_redirects) const
+    Poco::Net::HTTPResponse & response,
+    const std::string & method_,
+    const std::optional<HTTPRange> & range,
+    bool allow_redirects,
+    bool with_request_body) const
 {
     if (remote_host_filter)
         remote_host_filter->checkURL(current_uri);
 
     Poco::Net::HTTPRequest request(method_, current_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-    prepareRequest(request, range);
+    prepareRequest(request, range, with_request_body);
 
     auto session = makeHTTPSession(connection_group, current_uri, timeouts, proxy_config);
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
-    auto & stream_out = session->sendRequest(request);
-    if (out_stream_callback)
-        out_stream_callback(stream_out);
+    auto body_out = sendHTTPRequest(*session, request, buffer_size);
+    if (out_stream_callback && with_request_body)
+        out_stream_callback(*body_out);
+    body_out->finalize();
 
-    auto & resp_stream = session->receiveResponse(response);
+    /// In the external buffer mode the caller hands its own memory to every read, so the body
+    /// buffer needs none of its own.
+    auto response_body = receiveHTTPResponse(session, response, use_external_buffer ? 0 : buffer_size);
 
-    assertResponseIsOk(
-        current_uri.toString(), response, resp_stream, allow_redirects, hide_body);
+    assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects, hide_body);
 
-    return ReadWriteBufferFromHTTP::CallResult(std::move(session), resp_stream);
+    return response_body;
 }
 
 ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
     Poco::Net::HTTPResponse & response, const String & method_, const std::optional<HTTPRange> & range)
 {
-    auto result = callImpl(response, method_, range, true);
+    /// A `303 See Other` redirect changes the method of the follow-up request to `GET` and drops the
+    /// request body (RFC 9110, 15.4.4), so the method and the body cannot simply be replayed on every hop.
+    /// The rewrite is sticky across retries: `current_uri` may already be the target of a `303` from a
+    /// previous attempt, and that target expects `GET`. A `HEAD` probe keeps its method in any case.
+    const bool is_head_request = method_ == Poco::Net::HTTPRequest::HTTP_HEAD;
+    String effective_method = rewritten_to_get_by_redirect && !is_head_request ? Poco::Net::HTTPRequest::HTTP_GET : method_;
+    bool with_request_body = !(rewritten_to_get_by_redirect && !is_head_request);
+
+    auto result = callImpl(response, effective_method, range, true, with_request_body);
 
     while (isRedirect(response.getStatus()))
     {
@@ -361,8 +358,15 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
         if (redirect_callback)
             redirect_callback(current_uri, uri_redirect);
 
+        if (response.getStatus() == Poco::Net::HTTPResponse::HTTP_SEE_OTHER && !is_head_request)
+        {
+            effective_method = Poco::Net::HTTPRequest::HTTP_GET;
+            with_request_body = false;
+            rewritten_to_get_by_redirect = true;
+        }
+
         current_uri = uri_redirect;
-        result = callImpl(response, method_, range, true);
+        result = callImpl(response, effective_method, range, true, with_request_body);
     }
 
     return result;
@@ -558,8 +562,7 @@ bool ReadWriteBufferFromHTTP::isReadCancelled() const
 void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
 {
     /// Holds the thread right before the check, so that a test can deliver a cancellation to a
-    /// request which had already failed on its own, see
-    /// 04869_url_function_stale_metadata_error_after_soft_cancel.
+    /// request which had already failed on its own.
     FailPointInjection::pauseFailPoint(FailPoints::http_read_buffer_pause_before_metadata_fallback);
 
     try
@@ -688,7 +691,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
     if (!read_range.end && response.hasContentLength())
         file_info = parseFileInfo(response, range.has_value() ? getOffset() : 0);
 
-    return std::move(result).transformToReadBuffer(use_external_buffer ? 0 : buffer_size);
+    return result;
 }
 
 bool ReadWriteBufferFromHTTP::nextImpl()
@@ -794,7 +797,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                     hide_body);
             }
 
-            copyFromIStreamWithProgressCallback(*result.response_stream, to, n, progress_callback, &bytes_copied, &is_canceled);
+            copyFromReadBufferWithProgressCallback(*result, to, n, progress_callback, &bytes_copied, &is_canceled);
 
             ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
 
