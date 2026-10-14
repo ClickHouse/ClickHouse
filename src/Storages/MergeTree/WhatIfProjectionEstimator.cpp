@@ -10,7 +10,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
@@ -96,9 +95,12 @@ struct ProjectionPartData
 };
 
 /// a dictionary column has no size for each row, its size depends on the rows of the block
-bool hasDictionary(const DataTypePtr & type)
+/// a column of a type such as `Variant` or `Dynamic` can hold a dictionary column at any depth
+bool hasDictionary(const IColumn & column)
 {
-    return !recursiveRemoveLowCardinality(type)->equals(*type);
+    bool found = column.lowCardinality();
+    column.forEachSubcolumnRecursively([&](const IColumn & subcolumn) { found |= subcolumn.lowCardinality(); });
+    return found;
 }
 
 /// the key expression computes a dictionary column from a dictionary column
@@ -107,14 +109,14 @@ bool keyFromDictionary(const ActionsDAG & dag)
 {
     for (const auto * output : dag.getOutputs())
     {
-        if (output->type == ActionsDAG::ActionType::INPUT || !hasDictionary(output->result_type))
+        if (output->type == ActionsDAG::ActionType::INPUT || !hasDictionary(*output->result_type->createColumn()))
             continue;
         std::vector<const ActionsDAG::Node *> nodes{output};
         while (!nodes.empty())
         {
             const auto * node = nodes.back();
             nodes.pop_back();
-            if (node->type == ActionsDAG::ActionType::INPUT && hasDictionary(node->result_type))
+            if (node->type == ActionsDAG::ActionType::INPUT && hasDictionary(*node->result_type->createColumn()))
                 return true;
             nodes.insert(nodes.end(), node->children.begin(), node->children.end());
         }
@@ -178,7 +180,7 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
         if (!elem.column)
             continue;
         /// a sample does not show the dictionary of the rows it does not read, as with values of different sizes
-        if (hasDictionary(elem.type))
+        if (hasDictionary(*elem.column))
         {
             variable_width = true;
             continue;
@@ -326,7 +328,7 @@ bool buildProjectionPart(
         /// the writer chooses the part format before the key expression and sizes the granules after it
         out.format_bytes += block.bytes();
         for (const auto & elem : block)
-            if (hasDictionary(elem.type))
+            if (hasDictionary(*elem.column))
                 out.stored_dictionaries.insert(elem.name);
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
@@ -339,7 +341,7 @@ bool buildProjectionPart(
             appendRowSizes(out.row_bytes, out.variable_width, block);
             for (const auto & elem : block)
             {
-                if (!hasDictionary(elem.type))
+                if (!hasDictionary(*elem.column))
                     continue;
                 auto & [type, whole] = dictionary_columns[elem.name];
                 if (!whole)
@@ -456,6 +458,12 @@ struct PartFromSample
         return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row));
     }
     UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
+    /// the bytes of the key columns that the part does not store
+    UInt64 keyBytes() const
+    {
+        const size_t key_bytes = sample.bytes > sample.format_bytes ? sample.bytes - sample.format_bytes : 0;
+        return static_cast<UInt64>(UInt128(key_bytes) * rows / sample.rows);
+    }
 };
 
 /// end of the block a writer gets at `row`: at most `rows_limit` rows and `bytes_limit` bytes, but at least one row
@@ -478,7 +486,7 @@ std::vector<size_t> simulateWriterMarks(
     bool adaptive_marks,
     size_t block_rows_limit,
     size_t block_bytes_limit,
-    StoredDictionaries stored)
+    const std::function<UInt64(size_t, size_t)> & bytes_of_block)
 {
     const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     const size_t fixed_granularity_rows = mt_settings[MergeTreeSetting::index_granularity];
@@ -489,7 +497,7 @@ std::vector<size_t> simulateWriterMarks(
     {
         const size_t end = blockEnd(part, row, block_rows_limit, block_bytes_limit);
         const size_t block_rows = end - row;
-        const size_t block_bytes = part.blockBytes(row, end, stored);
+        const size_t block_bytes = bytes_of_block(row, end);
         row = end;
 
         const size_t granule_rows = computeIndexGranularity(
@@ -570,17 +578,34 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
             primary = uneven_rows ? 2 : 1;
     }
     /// a merge can give the writer the blocks of a source as they are, an insert can read a table, both keep the source dictionary
-    /// the part does not record the index width of that dictionary, so the layouts go from the narrowest to the widest index
     if (!data.stored_dictionaries.empty())
     {
         const auto [likeliest_rows, likeliest_bytes, likeliest_stored] = chunkings[primary];
         chunkings.emplace_back(whole_part.rows, 0, StoredDictionaries::Shared);
-        chunkings.emplace_back(likeliest_rows, likeliest_bytes, StoredDictionaries::SharedWidestIndex);
+        /// a merged part does not record the index width of that dictionary, so the layouts go from the narrowest to the widest index
+        if (parent_part->info.level > 0)
+            chunkings.emplace_back(likeliest_rows, likeliest_bytes, StoredDictionaries::SharedWidestIndex);
     }
 
     std::vector<std::vector<size_t>> layouts;
     for (const auto & [rows_limit, bytes_limit, stored] : chunkings)
-        layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit, stored));
+        layouts.push_back(simulateWriterMarks(
+            whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit,
+            [&](size_t begin, size_t end) { return whole_part.blockBytes(begin, end, stored); }));
+
+    /// an insert can give the writer a dictionary that keeps values its rows do not use, and the part does not record them
+    /// a level-zero part comes from one insert block, and the granules of the parent part measure the bytes of that block
+    /// the projection stores some of the columns of that block, so its block has at most those bytes and its key columns
+    const auto & parent_granularity_info = parent_part->index_granularity_info;
+    if (parent_part->info.level == 0 && !data.stored_dictionaries.empty() && parent_granularity_info.mark_type.adaptive
+        && parent_granularity_info.index_granularity_bytes != 0)
+    {
+        const size_t parent_granule_rows = std::max<size_t>(parent_part->index_granularity->getMarkRows(0), 1);
+        const UInt64 insert_block_bytes
+            = (parent_part->rows_count / parent_granule_rows + 1) * parent_granularity_info.index_granularity_bytes + whole_part.keyBytes();
+        layouts.push_back(simulateWriterMarks(
+            whole_part, part_type, mt_settings, adaptive_marks, whole_part.rows, 0, [&](size_t, size_t) { return insert_block_bytes; }));
+    }
 
     auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
     {
@@ -925,7 +950,7 @@ void setVerdict(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, and the layout a merge would leave is not recorded in a part, so the "
+            "{} against {} from the base table, and a part does not record the blocks that its writer got, so the "
             "comparison comes out both ways over `marks_span`",
             marks_text(projection_marks),
             baseline_marks);

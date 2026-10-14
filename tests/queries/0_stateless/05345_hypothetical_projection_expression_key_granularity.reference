@@ -38,15 +38,32 @@ marks: 79
 verdict: chosen
 real: ReadFromMergeTree (p_sa)
 real: Granules: 79/158
+-- a stored Variant(LowCardinality(String), UInt64) column
+Baseline (after PK + partition + existing indexes):
+marks: 77
+With p_v (normal projection, hypothetical):
+marks: 39
+verdict: chosen
+real: ReadFromMergeTree (p_v)
+real: Granules: 39/77
 -- a LowCardinality(String) column from a filtered insert from a table
 Baseline (after PK + partition + existing indexes):
 marks: 106
 With p_w (normal projection, hypothetical):
 marks: 100
-marks_span: 100 to 143
+marks_span: 100 to 108
 verdict: too close to call
 real: from the base table
 real with force_optimize_projection: Granules: 106/106
+-- a LowCardinality(String) column from a filtered insert that keeps the whole dictionary
+Baseline (after PK + partition + existing indexes):
+marks: 6000
+With p_rt (normal projection, hypothetical):
+marks: 100
+marks_span: 100 to 6000
+verdict: too close to call
+real: from the base table
+real with force_optimize_projection: Granules: 6000/6000
 -- a key that computes LowCardinality from a stored LowCardinality column
 Baseline (after PK + partition + existing indexes):
 marks: 10

@@ -80,6 +80,26 @@ SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM sa_real WHERE b < 50)
 WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
 
+-- a LowCardinality column inside a Variant has a dictionary too
+CREATE TABLE v_est (a UInt64, b UInt64, c Variant(LowCardinality(String), UInt64)) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 8192, use_const_adaptive_granularity = 0, ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE v_real AS v_est;
+ALTER TABLE v_real ADD PROJECTION p_v (SELECT a, b, c ORDER BY b);
+INSERT INTO v_est SELECT number, number % 100,
+    CAST(toLowCardinality(repeat(concat('x', toString(number % 5)), 30)), 'Variant(LowCardinality(String), UInt64)')
+    FROM numbers(3000);
+INSERT INTO v_real SELECT number, number % 100,
+    CAST(toLowCardinality(repeat(concat('x', toString(number % 5)), 30)), 'Variant(LowCardinality(String), UInt64)')
+    FROM numbers(3000);
+CREATE HYPOTHETICAL PROJECTION p_v ON v_est (SELECT a, b, c ORDER BY b);
+SELECT '-- a stored Variant(LowCardinality(String), UInt64) column';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line FROM (EXPLAIN WHATIF SELECT a, b, c FROM v_est WHERE b < 50)
+WHERE match(line, '^(Baseline|With |marks:|verdict:)');
+SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM v_real WHERE b < 50)
+WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
+
 -- an insert from a table can keep the dictionary of the source and its two-byte index for the two values that the filter leaves
 -- no sparse columns in the source, an insert from a table gives the writer sparse columns as they are
 CREATE TABLE w_src (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY a
@@ -102,6 +122,37 @@ SELECT if(explain LIKE '%ReadFromMergeTree (p_w)%', 'real: from the projection',
 FROM (EXPLAIN SELECT a, b, c FROM w_real WHERE b < 100) WHERE explain LIKE '%ReadFromMergeTree%';
 SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM w_real WHERE b < 100 SETTINGS force_optimize_projection = 1)
+WHERE match(trim(explain), '^Granules:');
+
+-- a filter keeps the whole dictionary of an in-memory LowCardinality column, and the insert gives it to the writer
+-- the part keeps only the two values, but its parent part measures the bytes of the insert block with its granules
+CREATE TABLE rt_est (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 8192, use_const_adaptive_granularity = 0, ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE rt_real AS rt_est;
+ALTER TABLE rt_real ADD PROJECTION p_rt (SELECT a, b, c ORDER BY b);
+INSERT INTO rt_est SELECT * FROM
+(
+    SELECT number AS a, number % 100 AS b, toLowCardinality(if(number < 6000, toString(number % 2), repeat(toString(number), 3000))) AS c
+    FROM numbers(6300)
+)
+WHERE c IN ('0', '1')
+    SETTINGS max_block_size = 10000, max_threads = 1, min_insert_block_size_rows = 100000, max_insert_block_size = 100000;
+INSERT INTO rt_real SELECT * FROM
+(
+    SELECT number AS a, number % 100 AS b, toLowCardinality(if(number < 6000, toString(number % 2), repeat(toString(number), 3000))) AS c
+    FROM numbers(6300)
+)
+WHERE c IN ('0', '1')
+    SETTINGS max_block_size = 10000, max_threads = 1, min_insert_block_size_rows = 100000, max_insert_block_size = 100000;
+CREATE HYPOTHETICAL PROJECTION p_rt ON rt_est (SELECT a, b, c ORDER BY b);
+SELECT '-- a LowCardinality(String) column from a filtered insert that keeps the whole dictionary';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line FROM (EXPLAIN WHATIF SELECT a, b, c FROM rt_est WHERE b < 100)
+WHERE match(line, '^(Baseline|With |marks:|marks_span:|verdict:)');
+SELECT if(explain LIKE '%ReadFromMergeTree (p_rt)%', 'real: from the projection', 'real: from the base table')
+FROM (EXPLAIN SELECT a, b, c FROM rt_real WHERE b < 100) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM rt_real WHERE b < 100 SETTINGS force_optimize_projection = 1)
 WHERE match(trim(explain), '^Granules:');
 
 -- a key that computes a LowCardinality column from a stored one can take the dictionary of the source
@@ -225,9 +276,13 @@ DROP TABLE s_est;
 DROP TABLE s_real;
 DROP TABLE sa_est;
 DROP TABLE sa_real;
+DROP TABLE v_est;
+DROP TABLE v_real;
 DROP TABLE w_src;
 DROP TABLE w_est;
 DROP TABLE w_real;
+DROP TABLE rt_est;
+DROP TABLE rt_real;
 DROP TABLE k_src;
 DROP TABLE k_est;
 DROP TABLE k_real;
