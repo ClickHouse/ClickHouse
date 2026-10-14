@@ -1038,21 +1038,27 @@ private:
     void adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeTask & task) const;
 
     /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
-    /// cells, the records in memory of every partition `for_each_partition` hands out and the records of every spilled
-    /// block `for_each_spilled_block` reads back, in the count bins `alive_bins` keeps (all bins when null), and puts
-    /// the hashes of its best groups by the count into `task.best_hashes`. The counting table and `top_k` copy the
-    /// string-like keys of spilled records they keep into `arena`. With a descending order `top_k` keeps the best
-    /// groups up to date while they are counted, and `pruning`, if any, drops those below its threshold; an ascending
-    /// order selects them by a pass over the counted groups. Adds the records the bins skipped to `pruned_records`.
-    /// Returns the unit's group count.
-    template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachPartition, typename ForEachSpilledBlock>
+    /// cells, the records in memory of every partition `for_each_in_memory_partition` hands out and the records of
+    /// every spilled block `for_each_spilled_block` reads back, in the count bins `alive_bins` keeps (all bins when
+    /// null), and puts the hashes of its best groups by the count into `task.best_hashes`. The counting table and
+    /// `top_k` copy the string-like keys of spilled records they keep into `arena`. With a descending order `top_k`
+    /// keeps the best groups up to date while they are counted, and `pruning`, if any, drops those below its
+    /// threshold; an ascending order selects them by a pass over the counted groups. Adds the records the bins
+    /// skipped to `pruned_records`. Returns the unit's group count.
+    template <
+        typename Method,
+        typename Table,
+        typename Cells,
+        typename TopK,
+        typename ForEachInMemoryPartition,
+        typename ForEachSpilledBlock>
     size_t selectCountFirstBestGroups(
         Table & counting_table,
         const Cells & cells,
         const bool * alive_bins,
         TopK * top_k,
         const AdaptiveTopKPruning * pruning,
-        const ForEachPartition & for_each_partition,
+        const ForEachInMemoryPartition & for_each_in_memory_partition,
         const ForEachSpilledBlock & for_each_spilled_block,
         Arena * arena,
         AdaptiveMergeTask & task,

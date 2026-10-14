@@ -279,8 +279,10 @@ namespace
     }
 
     /// The staged records of the bucket that a merge task merges, partition by partition: the producers' chunks of a
-    /// partition, which `collect` hands out, and its spill stream (see `AdaptiveAggregationSession::SpilledPartition`),
-    /// which `readBackSpilled` reads back a block at a time, once per pass of the caller. `release` frees both.
+    /// partition and its spill stream (see `AdaptiveAggregationSession::SpilledPartition`). A merge unit takes the
+    /// partitions [first_sub, end_sub): `forEachInMemoryPartition` hands out their records in memory, valid until
+    /// `release`, and `forEachSpilledBlock` reads their spilled records back a block at a time, once per pass of the
+    /// caller, each block valid only during its call. `release` frees both.
     class AdaptiveBucketRecords
     {
     public:
@@ -299,19 +301,37 @@ namespace
             return records;
         }
 
-        /// The records of partition `sub` of the bucket in memory, its chunks of every producer.
-        void collect(size_t sub, DB::AdaptiveRecordRanges & ranges) const
+        /// Calls `f(ranges)` with the records in memory of each partition in [first_sub, end_sub), its chunks of every
+        /// producer.
+        template <typename F>
+        void forEachInMemoryPartition(size_t first_sub, size_t end_sub, DB::AdaptiveRecordRanges & ranges, F && f) const
         {
-            ranges.clear();
-            for (const auto & producer : session.producer_buffers)
-                producer->forEachChunk(first_partition + sub, [&](std::string_view records) { ranges.push_back(records); });
+            for (size_t sub = first_sub; sub < end_sub; ++sub)
+            {
+                ranges.clear();
+                for (const auto & producer : session.producer_buffers)
+                    producer->forEachChunk(first_partition + sub, [&](std::string_view records) { ranges.push_back(records); });
+                f(ranges);
+            }
         }
 
-        /// Reads the spill stream of partition `sub` back a block at a time, if the partition spilled (see
-        /// `SpilledPartition::readBack`).
-        void readBackSpilled(size_t sub, const std::function<bool(const DB::PaddedPODArray<char> &)> & callback)
+        /// Calls `f(ranges)` with the records of each block of the spill streams of the partitions in [first_sub,
+        /// end_sub), read back a block at a time (see `SpilledPartition::readBack`), until a call returns false. Out of
+        /// line, so the code of the units that did not spill stays as it is.
+        template <typename F>
+        void NO_INLINE forEachSpilledBlock(size_t first_sub, size_t end_sub, DB::AdaptiveRecordRanges & ranges, F && f)
         {
-            spilledOf(sub).readBack(callback);
+            bool keep_reading = true;
+            for (size_t sub = first_sub; sub < end_sub && keep_reading; ++sub)
+            {
+                spilledOf(sub).readBack([&](const DB::PaddedPODArray<char> & block)
+                {
+                    ranges.clear();
+                    ranges.emplace_back(block.data(), block.size());
+                    keep_reading = f(ranges);
+                    return keep_reading;
+                });
+            }
         }
 
         /// Frees the records of partition `sub` of the bucket: the producers' chunks and its spill stream, which a unit
@@ -694,14 +714,14 @@ void Aggregator::adoptSourceCells(Table & table, Cells & cells, const Filter & f
     }
 }
 
-template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachPartition, typename ForEachSpilledBlock>
+template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachInMemoryPartition, typename ForEachSpilledBlock>
 size_t Aggregator::selectCountFirstBestGroups(
     Table & counting_table,
     const Cells & cells,
     const bool * alive_bins,
     TopK * top_k,
     const AdaptiveTopKPruning * pruning,
-    const ForEachPartition & for_each_partition,
+    const ForEachInMemoryPartition & for_each_in_memory_partition,
     const ForEachSpilledBlock & for_each_spilled_block,
     Arena * arena,
     AdaptiveMergeTask & task,
@@ -740,7 +760,7 @@ size_t Aggregator::selectCountFirstBestGroups(
     /// and the top copy the keys they keep into `arena`.
     const auto count_records = [&](const auto & filter)
     {
-        for_each_partition([&](const AdaptiveRecordRanges & ranges)
+        for_each_in_memory_partition([&](const AdaptiveRecordRanges & ranges)
         {
             pruned_records += countPartitionGroups<Method, /*copy_keys=*/false>(counting_table, arena, ranges, filter, update_candidates);
         });
@@ -1132,33 +1152,23 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         }
 
         /// Calls `f` with the records in memory of each partition of the unit.
-        const auto for_each_partition = [&](auto && f)
+        const auto for_each_in_memory_partition = [&](auto && f)
         {
-            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-            {
-                staged.collect(sub, task.ranges);
-                f(task.ranges);
-            }
+            staged.forEachInMemoryPartition(unit_first_sub, unit_end_sub, task.ranges, f);
         };
 
-        /// Calls `f` with the records of each block of the spill streams of the unit's partitions, read back a block at
-        /// a time: the next block overwrites them, so whatever keeps a string-like key past the call copies it into the
-        /// unit's arena, which lives until the unit is converted. Out of line, so the code of the units that did not
-        /// spill stays as it is.
-        const auto for_each_spilled_block = [&](auto && f) NO_INLINE
+        /// Calls `f` with the records of each block of the spill streams of the unit's partitions, valid only during
+        /// the call: whatever keeps a string-like key past it copies the key into the unit's arena, which lives until
+        /// the unit is converted. The read ends once the query is cancelled.
+        const auto for_each_spilled_block = [&](auto && f)
         {
-            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
+            staged.forEachSpilledBlock(unit_first_sub, unit_end_sub, task.ranges, [&](const AdaptiveRecordRanges & ranges)
             {
-                staged.readBackSpilled(sub, [&](const PaddedPODArray<char> & block)
-                {
-                    if (is_cancelled.load(std::memory_order_seq_cst))
-                        return false;
-                    task.ranges.clear();
-                    task.ranges.emplace_back(block.data(), block.size());
-                    f(task.ranges);
-                    return true;
-                });
-            }
+                if (is_cancelled.load(std::memory_order_seq_cst))
+                    return false;
+                f(ranges);
+                return true;
+            });
         };
 
         /// Merges the source cells and the records of the unit that `filter` takes into the bucket's table: the records
@@ -1171,7 +1181,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             if (!task.places.empty())
                 mergeAdaptiveSourceStates(task.places, task.source_slots, task, session, arena, is_cancelled);
             size_t skipped = 0;
-            for_each_partition([&](const AdaptiveRecordRanges & ranges)
+            for_each_in_memory_partition([&](const AdaptiveRecordRanges & ranges)
             {
                 skipped += drainAdaptivePartition<Method, /*copy_keys=*/false>(table, arena, ranges, filter, task.places, task.records);
             });
@@ -1198,7 +1208,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     alive_bins,
                     top_k ? &*top_k : nullptr,
                     pruning,
-                    for_each_partition,
+                    for_each_in_memory_partition,
                     for_each_spilled_block,
                     arena,
                     task,
