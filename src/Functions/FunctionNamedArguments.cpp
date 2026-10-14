@@ -34,9 +34,9 @@ void FunctionNamedArguments::validate(const String & function_name) const
     }
 }
 
-std::vector<size_t> FunctionNamedArguments::bind(const String & function_name, const std::vector<String> & passed_names) const
+std::vector<size_t> FunctionNamedArguments::bind(const String & function_name, const std::vector<String> & passed_names) const // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    std::vector<std::optional<size_t>> positions(arguments.size());
+    std::vector<std::optional<size_t>> positions(arguments.size()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
     bool has_named = false;
 
     for (size_t i = 0; i < passed_names.size(); ++i)
@@ -77,7 +77,7 @@ std::vector<size_t> FunctionNamedArguments::bind(const String & function_name, c
         if (positions[position])
             bound_size = position + 1;
 
-    std::vector<size_t> result;
+    std::vector<size_t> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     result.reserve(bound_size);
     for (size_t position = 0; position < positions.size(); ++position)
     {

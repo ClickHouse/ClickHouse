@@ -18,13 +18,13 @@ struct FunctionNamedArguments
         bool optional = false;
     };
 
-    std::vector<Argument> arguments;
+    std::vector<Argument> arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Throws if a name is not an identifier or is not unique, or if a required argument follows an optional one.
     void validate(const String & function_name) const;
 
     /// For each bound position, the index of the passed argument. `passed_names` is empty for positional ones.
-    std::vector<size_t> bind(const String & function_name, const std::vector<String> & passed_names) const;
+    std::vector<size_t> bind(const String & function_name, const std::vector<String> & passed_names) const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 }
