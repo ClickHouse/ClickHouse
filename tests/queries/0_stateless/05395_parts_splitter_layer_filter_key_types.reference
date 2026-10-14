@@ -11,6 +11,7 @@ int128	1	1	1	1	1
 interval	1	1	1	1	1
 ipv6	1	1	1	1	1
 lowcardinality	1	1	1	1	1
+repeated_key	1	1	1	1	1
 string	1	1	1	1	1
 tuple	1	1	1	1	1
 uuid	1	1	1	1	1

@@ -1,7 +1,8 @@
 -- The primary key range layers of a read must together return exactly the rows of the same read without
 -- layers, for every key type the layer split accepts: FINAL, a split ordinary read, a join sharded by
 -- primary key ranges and a distributed FINAL. Each row of the result is one key type, and every column
--- compares the layered read with the read without layers.
+-- compares the layered read with the read without layers. `repeated_key` repeats its key column, and keeps both
+-- components in the index.
 
 SET enable_parallel_replicas = 0;
 
@@ -22,6 +23,7 @@ SET enable_parallel_replicas = 0;
     ('interval', 'IntervalSecond', 'toIntervalSecond(number)'),
     ('array', 'Array(UInt16)', '[toUInt16(intDiv(number, 10)), toUInt16(number % 10)]'),
     ('tuple', 'Tuple(String, UInt16)', "(leftPad(toString(intDiv(number, 10)), 3, '0'), toUInt16(number % 10))"),
+    ('repeated_key', 'UInt64', 'number'),
 ] -%}
 
 {% set layers_final = 'max_threads = 4, max_final_threads = 4, do_not_merge_across_partitions_select_final = 0, split_parts_ranges_into_intersecting_and_non_intersecting_final = 1' -%}
@@ -32,7 +34,12 @@ SET enable_parallel_replicas = 0;
 CREATE TABLE results (name String, arm String, rows UInt64, hash UInt64) ENGINE = Memory;
 
 {% for name, type, value in types -%}
+{% if name == 'repeated_key' -%}
+CREATE TABLE t_{{ name }} (k {{ type }}, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY (k, k)
+SETTINGS index_granularity = 2, allow_suspicious_indices = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0;
+{% else -%}
 CREATE TABLE t_{{ name }} (k {{ type }}, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 2;
+{% endif -%}
 SYSTEM STOP MERGES t_{{ name }};
 {% for batch in range(3) -%}
 INSERT INTO t_{{ name }} SELECT {{ value }}, {{ batch }} * 10000 + number, {{ batch }} * 1000000 + number FROM numbers({{ batch * 200 }}, 600) SETTINGS optimize_on_insert = 0;

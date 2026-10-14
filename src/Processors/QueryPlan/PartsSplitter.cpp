@@ -909,14 +909,20 @@ static ActionsDAG buildLayerFilter(
     /// instead give different values for a key expression whose result type depends on a setting
     /// (`CAST(json.b, 'String')` under `cast_keep_nullable`), and rows the table sorted into a layer
     /// would fall out of that layer's filter.
+    /// A key may repeat a column (`ORDER BY (k, k)`), and `ActionsDAG::merge` binds every input to its own output.
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
     ActionsDAG::NodeRawConstPtrs key_columns;
     for (size_t i = 0; i < num_key_columns; ++i)
     {
+        const auto & name = primary_key.column_names.at(i);
         const auto & type = primary_key.data_types.at(i);
         /// The callers split only by keys accepted by `isSafePrimaryDataKeyType`.
         if (type->isNullable())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot split by the Nullable primary key column {}", primary_key.column_names.at(i));
-        key_columns.push_back(&dag.addInput(primary_key.column_names.at(i), type));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot split by the Nullable primary key column {}", name);
+        auto & input = inputs[name];
+        if (!input)
+            input = &dag.addInput(name, type);
+        key_columns.push_back(input);
     }
 
     auto lexicographically_greater = [&](size_t border_index) -> const ActionsDAG::Node *
