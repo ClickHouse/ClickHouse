@@ -18,6 +18,7 @@
 
 #include <Core/Defines.h>
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <Common/HashTable/Hash.h>
 
@@ -374,11 +375,17 @@ public:
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
   * Therefore, when aggregating by several strings, there is no ambiguity.
   */
-template <typename Value, typename Mapped, bool nullable, bool prealloc>
+template <
+    typename Value,
+    typename Mapped,
+    bool nullable,
+    bool prealloc,
+    /// Built over a sub-range of the block (see `SubRangeState`), so its position cache covers only the rows of the range.
+    bool for_sub_range = false>
 struct HashMethodSerialized
-    : public columns_hashing_impl::HashMethodBase<HashMethodSerialized<Value, Mapped, nullable, prealloc>, Value, Mapped, false>
+    : public columns_hashing_impl::HashMethodBase<HashMethodSerialized<Value, Mapped, nullable, prealloc, for_sub_range>, Value, Mapped, false>
 {
-    using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
+    using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc, for_sub_range>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
     using EmplaceResult = typename Base::EmplaceResult;
     using FindResult = typename Base::FindResult;
@@ -421,6 +428,9 @@ struct HashMethodSerialized
     std::vector<size_t> lc_strides;
     ColumnRawPtrs lc_index_columns;
     std::vector<LcCacheValue> lc_cache;
+    /// The rows a sub-range state's cache is valid for: the keys constant over them are not part of the position.
+    size_t lc_range_begin = 0;
+    size_t lc_range_end = 0;
     /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
     /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
     /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
@@ -451,7 +461,7 @@ struct HashMethodSerialized
     /// (e.g. `executeOnBlockSmall` with non-zero `row_begin`).
     size_t calibration_row = PrefetchingHelper::iterationsToMeasure();
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context, RowRange /*rows*/ = {})
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context, RowRange row_range = {})
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
         const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
@@ -479,7 +489,7 @@ struct HashMethodSerialized
         if constexpr (!nullable && Base::has_mapped)
         {
             if (!hash_serialized_context->settings.simple_count)
-                initLowCardinalityCache();
+                initLowCardinalityCache(row_range);
         }
 
         if constexpr (prealloc)
@@ -541,10 +551,20 @@ struct HashMethodSerialized
 
     /// Set up the dense `LowCardinality` position cache when every key column is a non-nullable
     /// `LowCardinality` and the product of the dictionary sizes is small enough for a dense array.
-    void initLowCardinalityCache()
+    /// A sub-range state leaves out the keys that are constant over its range and builds the cache only if it has
+    /// no more slots than the range has rows.
+    void initLowCardinalityCache(RowRange row_range)
     {
         if (keys_size < 2)
             return;
+
+        size_t range_begin = 0;
+        size_t range_end = 0;
+        if constexpr (for_sub_range)
+        {
+            range_end = std::min(row_range.end, key_columns[0]->size());
+            range_begin = std::min(row_range.begin, range_end);
+        }
 
         std::vector<size_t> dict_sizes;
         dict_sizes.reserve(keys_size);
@@ -556,6 +576,12 @@ struct HashMethodSerialized
             if (!low_cardinality || low_cardinality->getDictionary().nestedColumnIsNullable())
                 return;
 
+            if constexpr (for_sub_range)
+            {
+                if (isConstantOnRange(low_cardinality->getIndexes(), range_begin, range_end))
+                    continue;
+            }
+
             const size_t dict_size = low_cardinality->getDictionary().size();
             if (dict_size == 0 || product > lc_cache_max_size / dict_size)
                 return;
@@ -565,12 +591,31 @@ struct HashMethodSerialized
             lc_index_columns.push_back(low_cardinality->getIndexesPtr().get());
         }
 
-        lc_strides.assign(keys_size, 1);
-        for (size_t i = keys_size - 1; i > 0; --i)
-            lc_strides[i - 1] = lc_strides[i] * dict_sizes[i];
+        if constexpr (for_sub_range)
+        {
+            if (product > range_end - range_begin)
+                return;
+            lc_range_begin = range_begin;
+            lc_range_end = range_end;
+        }
+
+        const size_t num_cached_keys = dict_sizes.size();
+        lc_strides.assign(num_cached_keys, 1);
+        for (size_t i = num_cached_keys; i > 1; --i)
+            lc_strides[i - 2] = lc_strides[i - 1] * dict_sizes[i - 1];
 
         lc_cache.assign(product, nullptr);
         lc_cache_enabled = true;
+    }
+
+    /// Whether all values of a fixed-width column are equal on the rows [begin, end).
+    static bool isConstantOnRange(const IColumn & column, size_t begin, size_t end)
+    {
+        if (end - begin < 2)
+            return true;
+        const size_t width = column.sizeOfValueIfFixed();
+        const char * data = column.getRawData().data() + begin * width;
+        return memcmp(data, data + width, (end - begin - 1) * width) == 0;
     }
 
     ALWAYS_INLINE size_t getLowCardinalityPosition(size_t row) const
@@ -588,6 +633,8 @@ struct HashMethodSerialized
         {
             if (lc_cache_enabled)
             {
+                if constexpr (for_sub_range)
+                    chassert(row >= lc_range_begin && row < lc_range_end);
                 LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
                 if (cached != nullptr)
                     return EmplaceResult(cached, cached, false);
@@ -608,6 +655,8 @@ struct HashMethodSerialized
         {
             if (lc_cache_enabled)
             {
+                if constexpr (for_sub_range)
+                    chassert(row >= lc_range_begin && row < lc_range_end);
                 LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
                 if (cached != nullptr)
                     return FindResult(&cached, true, 0);
@@ -701,6 +750,15 @@ struct HashMethodSerialized
             serializeKeysToPoolContiguous(row, keys_size, key_columns, pool, &serialization_settings),
             pool};
     }
+};
+
+/// Only a state that can build the position cache has a sub-range variant; the per-run in-order path never builds a
+/// `prealloc` state (`Aggregator::method_chosen_for_in_order`).
+template <typename Value, typename Mapped>
+requires (!std::is_void_v<Mapped>)
+struct SubRangeStateOf<HashMethodSerialized<Value, Mapped, false, false, false>>
+{
+    using Type = HashMethodSerialized<Value, Mapped, false, false, true>;
 };
 
 }
