@@ -44,6 +44,7 @@ using ColumnsHashing::HashMethodContextPtr;
 using ColumnsHashing::LastElementCacheStats;
 
 class CompiledAggregateFunctionsHolder;
+struct MemoryTrackerSwitcher;
 class NativeWriter;
 struct OutputBlockColumns;
 
@@ -166,6 +167,8 @@ public:
         bool enable_adaptive_aggregator = false;
         UInt64 adaptive_aggregator_freeze_threshold = 0;
         UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
+
+        bool use_aggregation_memory_tracker = true;
 
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
@@ -337,7 +340,8 @@ public:
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
-            UInt64 adaptive_aggregator_freeze_threshold_bytes_);
+            UInt64 adaptive_aggregator_freeze_threshold_bytes_,
+            bool use_aggregation_memory_tracker_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -456,7 +460,14 @@ public:
     bool drainStagedChunksBatchUnderMemoryPressure(
         AdaptiveAggregationSession & shared,
         PaddedPODArray<AggregateDataPtr> & places_scratch,
-        size_t & drained_records_out) const;
+        size_t & drained_records_out,
+        size_t & drained_bytes_out,
+        bool only_over_trigger) const;
+
+    /// The same valve driven by an explicit spill request instead of the external threshold:
+    /// writes even a below-floor tail, including any existing shared drain residue. Stops once
+    /// at least this many bytes are released or there is nothing left. Returns the bytes released.
+    size_t drainStagedChunksForSpill(AdaptiveAggregationSession & shared, size_t at_least_bytes) const;
 
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
     /// merge goes external, spilling at the part bound as it goes, and throws if anything
@@ -635,6 +646,10 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
+    /// Flushes the table on request of the memory scheduler; returns the released bytes.
+    /// Requires a two-level or convertible table and temporary data storage.
+    size_t spill(AggregatedDataVariants & data_variants, bool no_more_keys) const;
+
     /// Flushes the variants like `writeToTemporaryFile` and consumes them: the table comes back
     /// invalidated and stripped of its arenas instead of re-armed for further aggregation, for
     /// callers that destroy it next.
@@ -653,6 +668,8 @@ public:
 
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
+
+    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
 
 
 private:
@@ -725,6 +742,10 @@ private:
     Int64 memory_usage_before_aggregation = 0;
     /// Track memory held by the aggreagation state during execution.
     std::unique_ptr<MemoryTracker> memory_tracker;
+
+    /// Redirects the thread's accounting to the per-table tracker (created on demand under the
+    /// aggregator tracker). Returns the aggregator tracker, nullptr when there is none to switch to.
+    MemoryTracker * switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///
@@ -893,7 +914,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     template <typename LocalMethod, typename SharedMethod>
     requires MapAggregationMethod<LocalMethod>
@@ -907,7 +929,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     /// The set counterpart: with no aggregate functions there are no places to record and no states to
     /// advance, so a hit is just the probe and a miss stages the key alone.
@@ -923,7 +946,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     /// Groups the current block's staged misses by bucket (counting sort) into one staged chunk
     /// and hands it to `stageChunk`. Key bytes are copied exactly once, straight from
