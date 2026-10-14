@@ -56,8 +56,9 @@ BUILD_TYPE_TO_CMAKE = {
 
 # sccache-warmup builds (MasterCI only) reuse the cmake configuration of the
 # matching release build verbatim - the rest of their special handling (skip
-# the official-build flag, strip debug symbols like a PR build, compile without
-# linking, do not package) is keyed off PR_CACHE_WARMUP_BUILD_TYPES below.
+# the official-build flag, strip debug symbols like a PR build, compile every
+# object but link only the server binary, do not package) is keyed off
+# PR_CACHE_WARMUP_BUILD_TYPES below.
 PR_CACHE_WARMUP_TO_RELEASE = {
     BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP: BuildTypes.AMD_RELEASE,
     BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP: BuildTypes.ARM_RELEASE,
@@ -284,7 +285,7 @@ def main():
     info = Info()
 
     # Cache-warmup build (MasterCI): compile with the PR release build's cmake
-    # flags (no official-build flag, debug symbols stripped, no PGO/BOLT) so the
+    # flags (no official-build flag, debug symbols stripped) so the
     # object files it compiles share sccache keys with PR builds, while keeping
     # the shared sccache read-write (master, pr_number == 0).
     cache_warmup = build_type in PR_CACHE_WARMUP_BUILD_TYPES
@@ -314,13 +315,13 @@ def main():
     ):
         cmake_cmd += " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
 
-    # PGO/BOLT profile integration for release builds. The sccache-warmup builds
-    # are deliberately excluded: they exist only to populate the shared compiler
-    # cache, and PGO/BOLT belong to the real release builds.
+    # PGO/BOLT profile integration for release builds. A sccache-warmup build
+    # takes the decision of the release build it mirrors, as a PR build does.
     pgo_profile = "/opt/clickhouse-profiles/clickhouse-pgo.profdata"
     bolt_profile = "/opt/clickhouse-profiles/clickhouse-bolt.fdata"
-    use_pgo = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
-    use_bolt = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+    pgo_bolt_type = PR_CACHE_WARMUP_TO_RELEASE.get(build_type, build_type)
+    use_pgo = pgo_bolt_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
+    use_bolt = pgo_bolt_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
@@ -499,6 +500,8 @@ def main():
             # target keeps the whole tree - dbms, functions, programs and the `OS_WASM`
             # platform arms - building for this target.
             targets = "clickhouse"
+        elif cache_warmup:
+            targets = "clickhouse-self-extracting"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
@@ -512,16 +515,15 @@ def main():
             targets = "clickhouse-bundle"
 
         if cache_warmup:
-            # Warm sccache by compiling every translation unit but skip linking
-            # the final binaries. sccache caches per-TU compilation; the
-            # ThinLTO/PGO link step produces nothing cacheable yet dominates a
-            # release build's wall time, so there is no reason to run it here.
-            # Build every object-file target ninja knows about; ninja pulls in
-            # the generated headers each object depends on. xargs batches the
-            # list to stay within the command-line length limit.
+            # Warm sccache by compiling every object-file target ninja knows
+            # about; ninja pulls in the generated headers each object depends
+            # on. xargs batches the list to stay within the command-line length
+            # limit. Then link only the server binary: it is the reference of
+            # the PR performance comparison (ci/jobs/performance_tests.py).
             build_command = (
                 "ninja -t targets all | cut -d: -f1 | grep -E '[.]o$' "
                 "| xargs --no-run-if-empty ninja"
+                f" && command time -v ninja {targets}"
             )
         elif shard:
             build_command = lambda: build_tidy_shard(*shard)
@@ -553,7 +555,7 @@ def main():
             if retry_cmake.is_ok():
                 retry_build = Result.from_commands_run(
                     name="Build ClickHouse (retry without PGO)",
-                    command=f"command time -v ninja {targets}",
+                    command=build_command,
                     workdir=build_dir_normalized,
                 )
                 if retry_build.is_ok():
