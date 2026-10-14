@@ -165,6 +165,14 @@
             "integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting"
           ]
         },
+        {
+          "group": "Striim",
+          "pages": [
+            "integrations/connectors/data-ingestion/etl-tools/striim/index",
+            "integrations/connectors/data-ingestion/etl-tools/striim/get-started",
+            "integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
+          ]
+        },
         "integrations/connectors/data-ingestion/etl-tools/nifi-and-clickhouse",
         "integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse",
         {
