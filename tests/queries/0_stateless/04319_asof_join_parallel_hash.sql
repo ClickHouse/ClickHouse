@@ -1,10 +1,7 @@
--- An ASOF JOIN must return the same rows when one thread builds it and when four threads do. Each join
--- runs once serially, with `max_threads = 1`, and once in parallel, and stores its rows. The two results
--- are compared row by row with EXCEPT in both directions. Comparing count() and sum() would not work: the
--- two builds return rows in different orders, and that changes sum() over floats.
--- The join order optimization gives an ASOF join no estimate of the right table size, so the join always
--- builds the parallel layout. On one thread it has one slot, and no rows are split between slots. The join
--- reads `max_threads` from the whole query and not from a subquery, so each build runs in its own query.
+-- An ASOF JOIN must return the same rows with the serial and the parallel layout. Each join runs once with
+-- `parallel_hash_join_threshold = 18446744073709551615` (serial) and once with `0` (parallel), and stores its rows.
+-- The two results are compared row by row with EXCEPT in both directions. Comparing count() and sum()
+-- would not work: the two builds return rows in different orders, and that changes sum() over floats.
 
 SET max_threads = 4;
 SET join_algorithm = 'hash';
@@ -38,7 +35,7 @@ SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left AS l
 ASOF INNER JOIN asof_right AS r
     ON l.k = r.k AND l.t >= r.t
-SETTINGS max_threads = 1, log_comment = '04319_inner_serial';
+SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_inner_serial';
 
 CREATE TABLE inner_parallel ENGINE = Memory AS
 SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
@@ -56,7 +53,7 @@ SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left AS l
 ASOF LEFT JOIN asof_right AS r
     ON l.k = r.k AND l.t >= r.t
-SETTINGS max_threads = 1, log_comment = '04319_left_serial';
+SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_left_serial';
 
 CREATE TABLE left_parallel ENGINE = Memory AS
 SELECT l.k AS k, l.t AS t, l.v AS lv, r.v AS rv
@@ -95,7 +92,7 @@ SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left2 AS l
 ASOF INNER JOIN asof_right2 AS r
     ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-SETTINGS max_threads = 1, log_comment = '04319_two_keys_inner_serial';
+SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_two_keys_inner_serial';
 
 CREATE TABLE two_keys_inner_parallel ENGINE = Memory AS
 SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
@@ -112,7 +109,7 @@ SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
 FROM asof_left2 AS l
 ASOF LEFT JOIN asof_right2 AS r
     ON l.a = r.a AND l.b = r.b AND l.t >= r.t
-SETTINGS max_threads = 1, log_comment = '04319_two_keys_left_serial';
+SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '04319_two_keys_left_serial';
 
 CREATE TABLE two_keys_left_parallel ENGINE = Memory AS
 SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
@@ -127,8 +124,9 @@ SELECT count() FROM (SELECT * FROM two_keys_left_parallel EXCEPT SELECT * FROM t
 DROP TABLE asof_left2;
 DROP TABLE asof_right2;
 
--- Both builds of each pair have the parallel layout. A `Replicated` database also logs each
--- `CREATE TABLE ... AS SELECT` as a secondary query of its DDL worker, so only initial queries count.
+-- The first build of each pair has the serial layout and the second the parallel one. A `Replicated`
+-- database also logs each `CREATE TABLE ... AS SELECT` as a secondary query of its DDL worker, so only
+-- initial queries count.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
 FROM system.query_log

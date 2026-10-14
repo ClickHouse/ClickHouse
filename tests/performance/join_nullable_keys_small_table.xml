@@ -84,6 +84,6 @@
         LEFT JOIN (SELECT toNullable(number % 25) AS a, toNullable(number % 30) AS b FROM numbers(2000)) AS rhs
             ON (lhs.k = rhs.a AND lhs.cond) OR (lhs.k = rhs.b)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='hash', join_use_nulls=1, max_joined_block_size_rows=1024
+        SETTINGS max_threads=8, join_algorithm='hash', join_use_nulls=1, max_joined_block_size_rows=1024, parallel_hash_join_threshold=18446744073709551615
     </query>
 </test>

@@ -85,5 +85,5 @@
 04107_right_reverse	1	1
 04107_full	1	1
 04107_full_reverse	1	1
-04107_asof_left_serial	0	1
+04107_asof_left_serial	1	0
 04107_asof_left_parallel	0	1
