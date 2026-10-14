@@ -25,7 +25,8 @@ SET enable_parallel_replicas = 0;
 ] -%}
 
 {% set layers_final = 'max_threads = 4, max_final_threads = 4, do_not_merge_across_partitions_select_final = 0, split_parts_ranges_into_intersecting_and_non_intersecting_final = 1' -%}
-{% set distributed = 'distributed_plan_fallback_to_local_execution = 0, distributed_plan_default_reader_bucket_count = 4, distributed_plan_max_rows_to_broadcast = 0' -%}
+{# make_distributed_plan rejects aggregation under a global max_rows_to_group_by, which the CI test profile sets. #}
+{% set distributed = 'distributed_plan_fallback_to_local_execution = 0, distributed_plan_default_reader_bucket_count = 4, distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0' -%}
 {% set join = "join_algorithm = 'full_sorting_merge', max_threads = 4" -%}
 
 CREATE TABLE results (name String, arm String, rows UInt64, hash UInt64) ENGINE = Memory;
