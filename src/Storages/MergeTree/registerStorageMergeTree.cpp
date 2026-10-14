@@ -1946,6 +1946,8 @@ For `ReplicatedMergeTree` tables and `ON CLUSTER` DDL, upgrade all consumers bef
 `allow_projection_column_codecs_in_replicated_or_distributed_ddl = 1`. This setting is disabled
 by default. `ON CLUSTER` also requires `distributed_ddl_entry_format_version >= 2`;
 `CREATE TABLE ... AS` copying a projection with column codecs requires version 3 or newer.
+With versions 1 and 2, each worker resolves the source independently and rejects a codec-bearing
+copy before creating its table. If workers have different sources, the DDL can partially succeed.
 
 ### Projection indexes {#projection-index}
 

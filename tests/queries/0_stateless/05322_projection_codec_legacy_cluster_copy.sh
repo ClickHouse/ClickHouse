@@ -17,7 +17,8 @@ CREATE TABLE ${CLICKHOUSE_DATABASE}.src
 ENGINE = MergeTree ORDER BY k;
 "
 
-# A legacy entry copies its source on each worker; it cannot publish a codec projection safely.
+# A legacy entry copies its source on each worker; that worker rejects a codec projection
+# before publishing its destination.
 if codec_copy_error=$(${CLICKHOUSE_CLIENT} \
     --allow_projection_column_codecs_in_replicated_or_distributed_ddl 1 \
     --distributed_ddl_entry_format_version 2 --distributed_ddl_output_mode throw -q "
@@ -36,7 +37,7 @@ printf 'legacy_rejected\n'
 ${CLICKHOUSE_CLIENT} -q "
 SELECT count() FROM system.tables
 WHERE database = currentDatabase() AND name = 'dst_legacy';
-SELECT count() = 0 FROM system.distributed_ddl_queue
+SELECT count() = 1 FROM system.distributed_ddl_queue
 WHERE startsWith(query, 'CREATE TABLE ') AND query LIKE '%${CLICKHOUSE_DATABASE}%dst_legacy%';
 "
 

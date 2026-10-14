@@ -2142,9 +2142,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
     }
 
-    /// `CREATE ... AS table` has copied projections in `properties`, even if the submitted
-    /// query did not contain a projection declaration. Check before either DDL queue or the
-    /// ReplicatedMergeTree constructor can publish the normalized definition.
+    /// `CREATE ... AS table` can inherit projections absent from the submitted query.
+    /// Legacy `ON CLUSTER` workers resolve the source themselves, so reject a codec-bearing
+    /// copy before publishing their table. Newer DDL validates on the initiator before queueing.
     const bool queued_ddl = !create.cluster.empty() || (database && database->getEngineName() == "Replicated");
     if (!as_table_saved.empty() && getContext()->isDDLOrOnClusterInternal()
         && !getContext()->isRecoveryFromStoredMetadata() && hasProjectionColumnCodecs(properties.projections))
@@ -3726,26 +3726,6 @@ BlockIO InterpreterCreateQuery::execute()
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
-            /// Older DDL entries expand `CREATE TABLE ... AS source` on each worker. If the
-            /// destination inherits codec-bearing projections, reject on the initiator before
-            /// publishing an entry that every worker would reject independently.
-            if (!is_create_database && !create.isView() && !create.as_table.empty()
-                && (!create.storage || !create.storage->engine || endsWith(create.storage->engine->name, "MergeTree")))
-            {
-                const String source_database = getContext()->resolveDatabase(create.as_database);
-                getContext()->checkAccess(AccessType::SHOW_COLUMNS, source_database, create.as_table);
-                auto source = resolveStorageProxyLoading(
-                    DatabaseCatalog::instance().getTable({source_database, create.as_table}, getContext()));
-                const bool copies_projections = (create.storage && create.storage->engine)
-                    || endsWith(source->getName(), "MergeTree");
-                auto source_metadata = source->getInMemoryMetadataPtr(getContext(), false);
-                if (copies_projections && hasProjectionColumnCodecs(source_metadata->getProjections()))
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "CREATE ... AS with projection column codecs requires distributed_ddl_entry_format_version >= {} "
-                        "to normalize the source on the ON CLUSTER initiator",
-                        DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION);
-            }
-
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
             if (is_create_database && create.storage && create.storage->engine
