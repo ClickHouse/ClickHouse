@@ -213,6 +213,11 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     if (!stealing_allowed_since)
         stealing_allowed_since = std::chrono::steady_clock::now() + wait_for_owner;
 
+    /// The loop exits in one of two ways:
+    /// - returns a file of the replica with the most remaining bytes among the replicas whose files can be taken:
+    ///   the current replica, replicas that have already asked for tasks, or any replica once `wait_for_owner` has passed;
+    /// - returns nothing when no unprocessed files are left.
+    /// Otherwise it waits until a new replica asks for tasks or until `wait_for_owner` passes, and then checks again.
     while (!unprocessed_files.empty())
     {
         const bool deadline_passed = std::chrono::steady_clock::now() >= *stealing_allowed_since;
