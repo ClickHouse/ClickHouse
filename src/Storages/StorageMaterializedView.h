@@ -53,6 +53,11 @@ public:
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
+    bool mayReadViewSource(const StorageID & view_source_id) const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->mayReadViewSource(view_source_id);
+    }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 

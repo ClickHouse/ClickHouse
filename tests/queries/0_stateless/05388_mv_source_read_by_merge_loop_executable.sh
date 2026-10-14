@@ -82,6 +82,20 @@ CREATE MATERIALIZED VIEW db_05388.mv_executable TO db_05388.dst AS
         (SELECT sum(x) FROM executable('echo_rows.sh', 'TSV', 'x UInt64', (SELECT x FROM db_05388.src WHERE x > 0))) AS value
     FROM db_05388.src;
 
+-- 'Alias', 'Buffer' and a materialized view forward the read to the 'Executable' table.
+CREATE TABLE db_05388.e (x UInt64) ENGINE = Executable('echo_rows.sh', 'TSV', (SELECT x FROM db_05388.src WHERE x > 0));
+CREATE TABLE db_05388.e_alias ENGINE = Alias(db_05388, e);
+CREATE TABLE db_05388.e_buffer (x UInt64) ENGINE = Buffer(db_05388, e, 1, 1000, 1000, 1000000000, 1000000000, 1000000000, 1000000000);
+CREATE TABLE db_05388.other (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW db_05388.e_mv TO db_05388.e AS SELECT x FROM db_05388.other;
+
+CREATE MATERIALIZED VIEW db_05388.mv_alias TO db_05388.dst AS
+    SELECT 'alias' AS name, count() AS block_rows, (SELECT sum(x) FROM db_05388.e_alias) AS value FROM db_05388.src;
+CREATE MATERIALIZED VIEW db_05388.mv_buffer TO db_05388.dst AS
+    SELECT 'buffer' AS name, count() AS block_rows, (SELECT sum(x) FROM db_05388.e_buffer) AS value FROM db_05388.src;
+CREATE MATERIALIZED VIEW db_05388.mv_materialized_view TO db_05388.dst AS
+    SELECT 'materialized view' AS name, count() AS block_rows, (SELECT sum(x) FROM db_05388.e_mv) AS value FROM db_05388.src;
+
 INSERT INTO db_05388.src SELECT number + 1 FROM numbers(3) SETTINGS ${BLOCK_PER_ROW};
 
 SELECT * FROM db_05388.dst ORDER BY name, value;

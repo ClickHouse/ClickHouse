@@ -4,6 +4,15 @@ loop	1	3
 merge	1	1
 merge	1	2
 merge	1	3
+alias	1	1
+alias	1	2
+alias	1	3
+buffer	1	1
+buffer	1	2
+buffer	1	3
 executable	1	1
 executable	1	2
 executable	1	3
+materialized view	1	1
+materialized view	1	2
+materialized view	1	3
