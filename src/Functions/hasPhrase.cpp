@@ -416,7 +416,9 @@ because "brown" appears between "quick" and "fox".
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionHasPhraseOverloadResolver>(documentation);
+    FunctionNamedArguments named_arguments = {{{"input"}, {"phrase"}, {"tokenizer", /*optional=*/ true}}};
+
+    factory.registerFunction<FunctionHasPhraseOverloadResolver>(documentation, FunctionFactory::Case::Sensitive, std::move(named_arguments));
     factory.registerAlias("matchPhrase", FunctionHasPhraseOverloadResolver::name);
 }
 
