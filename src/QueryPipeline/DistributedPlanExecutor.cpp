@@ -1012,20 +1012,16 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     for (const auto & descriptor : task.runtime_filter_descriptors)
     {
         const auto partials_header = runtimeFilterPartialsHeader();
-        /// All streams of a descriptor belong to one exchange. One input per stream: the merge
-        /// expects one state from each.
-        chassert(!descriptor.streams.empty());
-        VectorWithMemoryTracking<ExchangeStreamId> streams(descriptor.streams.begin(), descriptor.streams.end());
         auto partials = receiveExchangeStreams(
             partials_header,
-            descriptor.streams.front().exchange_id,
-            streams,
+            descriptor.stream.exchange_id,
+            {descriptor.stream},
             pipeline_settings,
             /*spread_over_max_threads*/ false,
             /*advisory*/ true);
         auto merge = std::make_shared<MergeRuntimeFiltersTransform>(
             partials_header,
-            descriptor.streams.size(),
+            /*num_inputs=*/1,
             MergeRuntimeFiltersTransform::Mode::RegisterUnion,
             descriptor.filter_name,
             descriptor.filter_key,

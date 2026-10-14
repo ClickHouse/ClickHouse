@@ -28,7 +28,6 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/ResizeProcessor.h>
-#include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Common/ProfileEvents.h>
 
@@ -98,14 +97,12 @@ public:
         std::shared_ptr<TaskPartialFilter> task_filter_,
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
-        size_t num_destinations_,
         const RuntimeFilterGeometry & geometry,
         String filter_key_,
         String filter_name_,
         ContextPtr query_context_)
         : IProcessor({header}, {header, std::move(partials_header)})
         , task_filter(std::move(task_filter_))
-        , num_destinations(num_destinations_)
         , filter_column_position(header->getPositionByName(filter_column_name_))
         , filter_column_original_type(header->getByPosition(filter_column_position).type)
         , filter_column_target_type(filter_column_type_)
@@ -213,18 +210,15 @@ public:
         task_filter->filter->serialize(out);
         /// Register the finished filter in this task's lookup for the `__applyFilter` sites of the
         /// same stage. All streams have merged in, so it expects no more merges.
-        if (!filter_key.empty())
-        {
-            if (!query_context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterPartialTransform");
-            auto filter = std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, runtime_filter_config, std::move(*task_filter->filter));
-            if (query_context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])
-                filter->enableIndexAnalysis();
-            query_context->getRuntimeFilterLookup()->add(filter_key, filter_name, std::move(filter));
-        }
+        if (!query_context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterPartialTransform");
+        auto filter = std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, runtime_filter_config, std::move(*task_filter->filter));
+        if (query_context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])
+            filter->enableIndexAnalysis();
+        query_context->getRuntimeFilterLookup()->add(filter_key, filter_name, std::move(filter));
         task_filter->filter.reset();
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesSent, num_destinations);
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterStateBytesSent, out.str().size() * num_destinations);
+        ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesSent);
+        ProfileEvents::increment(ProfileEvents::RuntimeFilterStateBytesSent, out.str().size());
         auto column = ColumnString::create();
         column->insertData(out.str().data(), out.str().size());
         Columns columns;
@@ -235,7 +229,6 @@ public:
 
 private:
     std::shared_ptr<TaskPartialFilter> task_filter;
-    const size_t num_destinations;
     const size_t filter_column_position;
     const DataTypePtr filter_column_original_type;
     const DataTypePtr filter_column_target_type;
@@ -282,15 +275,9 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
         geometry.exact_bytes_limit = geometry.bloom_filter_bytes;
 }
 
-void BuildRuntimeFilterStep::addExchange(String exchange_id_, Strings destination_buckets_)
-{
-    chassert(!tree_exchange);
-    exchanges.push_back(FilterExchange{std::move(exchange_id_), std::move(destination_buckets_)});
-}
-
 void BuildRuntimeFilterStep::setTreeExchange(String exchange_id_, Strings source_buckets_, size_t fan_in_)
 {
-    chassert(exchanges.empty() && !tree_exchange);
+    chassert(!tree_exchange);
     tree_exchange = TreeExchange{std::move(exchange_id_), std::move(source_buckets_), fan_in_};
 }
 
@@ -332,23 +319,12 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
     const String bucket_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
     auto partials_header = runtimeFilterPartialsHeader();
 
-    /// Destination streams of this task's single serialized partial. With a merge tree it goes out
-    /// once, to the parent merge task; with broadcast exchanges it goes to every destination bucket.
-    std::vector<ExchangeStreamId> destination_streams;
-    if (tree_exchange)
-    {
-        const auto it = std::find(tree_exchange->source_buckets.begin(), tree_exchange->source_buckets.end(), bucket_id);
-        if (it == tree_exchange->source_buckets.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "BuildRuntimeFilterStep: bucket {} is not among the build stage buckets", bucket_id);
-        const size_t bucket_index = it - tree_exchange->source_buckets.begin();
-        destination_streams.emplace_back(tree_exchange->exchange_id, bucket_id, toString(bucket_index / tree_exchange->fan_in));
-    }
-    else
-    {
-        for (const auto & exchange : exchanges)
-            for (const String & destination_bucket : exchange.destination_buckets)
-                destination_streams.emplace_back(exchange.exchange_id, bucket_id, destination_bucket);
-    }
+    /// The task sends its partial once, to its parent merge task.
+    const auto it = std::find(tree_exchange->source_buckets.begin(), tree_exchange->source_buckets.end(), bucket_id);
+    if (it == tree_exchange->source_buckets.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BuildRuntimeFilterStep: bucket {} is not among the build stage buckets", bucket_id);
+    const size_t bucket_index = it - tree_exchange->source_buckets.begin();
+    const ExchangeStreamId destination_stream(tree_exchange->exchange_id, bucket_id, toString(bucket_index / tree_exchange->fan_in));
 
     pipeline.transform(
         [&](OutputPortRawPtrs ports)
@@ -366,7 +342,6 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
                     task_filter,
                     filter_column_name,
                     filter_column_type,
-                    destination_streams.size(),
                     build_options.geometry,
                     filter_key,
                     filter_name,
@@ -379,10 +354,9 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
             OutputPort * partial_output = &resize->getOutputs().front();
             result.emplace_back(std::move(resize));
 
-            /// All legs of one filter use exchanges of the same kind, so one serializer (none for a
-            /// persisted exchange) serves every destination and the copies share its packets.
+            /// A persisted exchange has no serializer.
             SharedHeader stream_header = partials_header;
-            if (auto serializer = settings.exchange_lookup->createSerializer(partials_header, destination_streams.front().exchange_id))
+            if (auto serializer = settings.exchange_lookup->createSerializer(partials_header, destination_stream.exchange_id))
             {
                 connect(*partial_output, serializer->getInputs().front());
                 partial_output = &serializer->getOutputs().front();
@@ -390,25 +364,9 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
                 result.emplace_back(std::move(serializer));
             }
 
-            if (destination_streams.size() > 1)
-            {
-                auto copy = std::make_shared<CopyTransform>(stream_header, destination_streams.size());
-                connect(*partial_output, copy->getInputs().front());
-                auto output = copy->getOutputs().begin();
-                for (const auto & stream : destination_streams)
-                {
-                    auto sink = settings.exchange_lookup->createSink(stream_header, stream, /*advisory*/ true);
-                    connect(*output++, sink->getPort());
-                    result.emplace_back(std::move(sink));
-                }
-                result.emplace_back(std::move(copy));
-            }
-            else
-            {
-                auto sink = settings.exchange_lookup->createSink(stream_header, destination_streams.front(), /*advisory*/ true);
-                connect(*partial_output, sink->getPort());
-                result.emplace_back(std::move(sink));
-            }
+            auto sink = settings.exchange_lookup->createSink(stream_header, destination_stream, /*advisory*/ true);
+            connect(*partial_output, sink->getPort());
+            result.emplace_back(std::move(sink));
 
             return result;
         },
@@ -466,13 +424,6 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
         writeVectorBinary(tree_exchange->source_buckets, ctx.out);
         writeVarUInt(tree_exchange->fan_in, ctx.out);
     }
-    writeVarUInt(exchanges.size(), ctx.out);
-    for (const auto & exchange : exchanges)
-    {
-        writeStringBinary(exchange.exchange_id, ctx.out);
-        writeVectorBinary(exchange.destination_buckets, ctx.out);
-    }
-
     /// The rendezvous key is random per plan build, so a cache key must not contain it. A local build
     /// sends no key and stays inert on the worker. The worker plans its own local filters.
     writeStringBinary(hasFilterExchanges() && !ctx.for_cache_key ? filter_key : String{}, ctx.out);
@@ -498,7 +449,6 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String tree_exchange_id;
     Strings tree_source_buckets;
     size_t tree_fan_in = 0;
-    std::vector<FilterExchange> exchanges;
     String filter_key;
     if (ctx.step_version >= 1)
     {
@@ -514,28 +464,15 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep has a malformed tree exchange");
         }
 
-        size_t num_exchanges = 0;
-        readVarUInt(num_exchanges, ctx.in);
-        if (has_tree_exchange && num_exchanges != 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep has both a tree exchange and broadcast exchanges");
-        for (size_t i = 0; i < num_exchanges; ++i)
-        {
-            FilterExchange exchange;
-            readStringBinary(exchange.exchange_id, ctx.in);
-            readVectorBinary(exchange.destination_buckets, ctx.in);
-            if (exchange.exchange_id.empty() || exchange.destination_buckets.empty())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep has an exchange without an id or destinations");
-            exchanges.push_back(std::move(exchange));
-        }
-
         readStringBinary(filter_key, ctx.in);
         /// Only a build with filter exchanges carries its key. A local build must stay inert.
-        if (!filter_key.empty() && !has_tree_exchange && exchanges.empty())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep without filter exchanges carries a rendezvous key");
+        if (filter_key.empty() == static_cast<bool>(has_tree_exchange))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep must carry a rendezvous key exactly when it has filter exchanges");
     }
 
     auto geometry = RuntimeFilterGeometry::fromSettings(ctx.settings);
-    if (has_tree_exchange || !exchanges.empty())
+    if (has_tree_exchange)
         geometry.validateTransported();
 
     auto step = std::make_unique<BuildRuntimeFilterStep>(
@@ -554,8 +491,6 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
             .distinct_keys_hint_matches_filter_key = false});
     if (has_tree_exchange)
         step->setTreeExchange(std::move(tree_exchange_id), std::move(tree_source_buckets), tree_fan_in);
-    for (auto & exchange : exchanges)
-        step->addExchange(std::move(exchange.exchange_id), std::move(exchange.destination_buckets));
     return step;
 }
 

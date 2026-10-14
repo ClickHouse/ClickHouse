@@ -242,14 +242,8 @@ void expectConsumerDescriptors(const DistributedQueryPlan & plan, const String &
         expectGeometryEq(desc.geometry, build.getGeometry());
         desc.geometry.validateTransported();
 
-        std::multiset<String> descriptor_streams;
-        for (const auto & stream : desc.streams)
-            descriptor_streams.insert(stream.toString());
-        std::multiset<String> input_streams;
-        for (const auto & stream : task.input_exchange_streams)
-            input_streams.insert(stream.toString());
-        EXPECT_EQ(descriptor_streams, input_streams);
-        EXPECT_FALSE(desc.streams.empty());
+        ASSERT_EQ(task.input_exchange_streams.size(), 1u);
+        EXPECT_EQ(task.input_exchange_streams.front().toString(), desc.stream.toString());
     }
 }
 

@@ -657,7 +657,7 @@ RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataType
         .blocks_to_skip_before_reenabling = 7,
         .max_ratio_of_set_bits_in_bloom_filter = 0.4,
     };
-    descriptor.streams = {stream};
+    descriptor.stream = stream;
     return descriptor;
 }
 

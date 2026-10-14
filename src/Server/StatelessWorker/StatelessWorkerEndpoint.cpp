@@ -123,13 +123,9 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
             writeBinary(descriptor.geometry.pass_ratio_threshold_for_disabling, out);
             writeVarUInt(descriptor.geometry.blocks_to_skip_before_reenabling, out);
             writeBinary(descriptor.geometry.max_ratio_of_set_bits_in_bloom_filter, out);
-            writeVarUInt(descriptor.streams.size(), out);
-            for (const auto & stream : descriptor.streams)
-            {
-                writeStringBinary(stream.exchange_id, out);
-                writeStringBinary(stream.source_bucket, out);
-                writeStringBinary(stream.destination_bucket, out);
-            }
+            writeStringBinary(descriptor.stream.exchange_id, out);
+            writeStringBinary(descriptor.stream.source_bucket, out);
+            writeStringBinary(descriptor.stream.destination_bucket, out);
         }
     }
 }
@@ -231,7 +227,6 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         readVarUInt(descriptors_size, in);
         /// Limits against a corrupt task; real tasks are far below them.
         constexpr size_t max_runtime_filter_receive_descriptors = 1000;
-        constexpr size_t max_streams_per_runtime_filter_descriptor = 1000;
         if (descriptors_size > max_runtime_filter_receive_descriptors)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Too many runtime filter receive descriptors: {}", descriptors_size);
         task.runtime_filter_descriptors.resize(descriptors_size);
@@ -250,22 +245,14 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
             readBinary(descriptor.geometry.pass_ratio_threshold_for_disabling, in);
             readVarUInt(descriptor.geometry.blocks_to_skip_before_reenabling, in);
             readBinary(descriptor.geometry.max_ratio_of_set_bits_in_bloom_filter, in);
-            size_t streams_size = 0;
-            readVarUInt(streams_size, in);
-            if (streams_size > max_streams_per_runtime_filter_descriptor)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many streams on a runtime filter receive descriptor: {}", streams_size);
-            descriptor.streams.resize(streams_size);
-            for (size_t j = 0; j < streams_size; ++j)
-            {
-                readStringBinary(descriptor.streams[j].exchange_id, in);
-                readStringBinary(descriptor.streams[j].source_bucket, in);
-                readStringBinary(descriptor.streams[j].destination_bucket, in);
-            }
+            readStringBinary(descriptor.stream.exchange_id, in);
+            readStringBinary(descriptor.stream.source_bucket, in);
+            readStringBinary(descriptor.stream.destination_bucket, in);
 
             if (descriptor.filter_key.empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter receive descriptor has an empty filter key");
-            if (descriptor.streams.empty())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter receive descriptor has no streams");
+            if (descriptor.stream.exchange_id.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter receive descriptor has no exchange");
             if (!seen_filter_keys.insert(descriptor.filter_key).second)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA, "Duplicate runtime filter receive descriptor for key {}", descriptor.filter_key);

@@ -364,15 +364,15 @@ struct QueryPlanParameters
     std::unordered_map<String, Field> parameters;
 };
 
-/// One transported runtime filter this task receives: the executor reads the partial states from
-/// `streams`, unions them, and registers the result under `filter_key` in the task's filter lookup.
+/// One transported runtime filter this task receives: the executor reads the filter from `stream`
+/// (the broadcast of the merge root) and registers it under `filter_key` in the task's filter lookup.
 struct RuntimeFilterReceiveDescriptor
 {
     String filter_key;
     String filter_name;
     DataTypePtr key_column_type;
     RuntimeFilterGeometry geometry;
-    std::vector<ExchangeStreamId> streams;
+    ExchangeStreamId stream;
 };
 
 /// Represents a single local task in a distributed query plan

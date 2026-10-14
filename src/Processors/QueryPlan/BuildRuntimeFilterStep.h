@@ -34,12 +34,6 @@ public:
     const RuntimeFilterGeometry & getGeometry() const { return build_options.geometry; }
     void setGeometry(const RuntimeFilterGeometry & geometry_) { build_options.geometry = geometry_; }
 
-    struct FilterExchange
-    {
-        String exchange_id;
-        Strings destination_buckets;
-    };
-
     struct TreeExchange
     {
         String exchange_id;
@@ -48,16 +42,11 @@ public:
         size_t fan_in = 0;
     };
 
-    /// Sends the partial directly to the consuming-stage task buckets, over one exchange per receiving
-    /// stage. `wireRuntimeFilterExchangeTopology` does not use it: every transported filter goes through a
-    /// merge stage (`setTreeExchange`), even from a single build task.
-    void addExchange(String exchange_id_, Strings destination_buckets_);
-
     /// Sends the partial through a merge tree: each build task sends it once, to its parent merge task
-    /// (see `TreeExchange::source_buckets`). Mutually exclusive with `addExchange`.
+    /// (see `TreeExchange::source_buckets`).
     void setTreeExchange(String exchange_id_, Strings source_buckets_, size_t fan_in_);
 
-    bool hasFilterExchanges() const { return !exchanges.empty() || tree_exchange; }
+    bool hasFilterExchanges() const { return tree_exchange.has_value(); }
 
     void setEstimatedBuildRows(std::optional<UInt64> estimated_build_rows_) { estimated_build_rows = estimated_build_rows_; }
     std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
@@ -102,9 +91,7 @@ private:
 
     RuntimeFilterBuildOptions build_options;
 
-    /// Both empty: local build mode (register in this task's lookup). The distributed split assigns
-    /// the filter exchange(s) afterwards; then exactly one of the two is set.
-    std::vector<FilterExchange> exchanges;
+    /// Empty: local build mode (register in this task's lookup). The distributed split sets it afterwards.
     std::optional<TreeExchange> tree_exchange;
 
     /// Row estimate stamped before the plan is cut; consumed only by the initiator when sizing the

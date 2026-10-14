@@ -492,7 +492,7 @@ private:
             {
                 ExchangeStreamId stream(broadcast_exchanges[index], "0", taskBucketId(task));
                 task.runtime_filter_descriptors.push_back(
-                    {producer.key, producer.step->getFilterName(), producer.step->getFilterColumnType(), geometry, {stream}});
+                    {producer.key, producer.step->getFilterName(), producer.step->getFilterColumnType(), geometry, stream});
                 task.input_exchange_streams.push_back(std::move(stream));
             }
             if (receiver.has_completion_edge)
