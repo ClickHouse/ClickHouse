@@ -258,6 +258,7 @@ public:
         /// Find the extremal key first, resetting the nested state of the destination whenever its key is replaced,
         /// then merge the nested states of all sources having that key in one pass.
         AggregateDataPtr dst = places[0];
+        size_t last_setter = 0;
         for (size_t i = 1; i < places.size(); ++i)
         {
             if ((isMin && data(dst).data().setIfSmaller(data(places[i]).data(), arena))
@@ -265,13 +266,18 @@ public:
             {
                 nested_function->destroy(dst);
                 nested_function->create(dst);
+                last_setter = i;
             }
         }
 
+        /// Select the same sources as the serial merge: the one that installed the final key, even if the key is not
+        /// equal to itself (`NaN`), and the later ones having an equal key. The earlier ones were discarded by the reset.
         AggregateDataPtrs selected;
-        selected.reserve(places.size());
+        selected.reserve(places.size() - last_setter + 1);
         selected.push_back(dst);
-        for (size_t i = 1; i < places.size(); ++i)
+        if (last_setter)
+            selected.push_back(places[last_setter]);
+        for (size_t i = last_setter + 1; i < places.size(); ++i)
             if (data(dst).data().isEqualTo(data(places[i]).data()))
                 selected.push_back(places[i]);
 

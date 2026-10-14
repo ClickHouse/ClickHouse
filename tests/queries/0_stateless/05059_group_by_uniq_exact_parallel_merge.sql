@@ -254,3 +254,10 @@ SETTINGS max_threads = 4, distributed_aggregation_memory_efficient = 0;
 SELECT uniqExactForEach([n]) AS one, uniqExactForEach(if(n % 2 = 0, [n, n + 1], [n])) AS two
 FROM (SELECT number AS n FROM numbers_mt(240000))
 SETTINGS max_threads = 4;
+
+-- ArgMin / ArgMax keep the source that installed the extremal key even if the key is `NaN`, which is not equal
+-- to itself: the merge without keys of the states of the threads that saw no matching row and of the thread
+-- that saw the only one, with key `NaN`, is the same as the serial merge.
+SELECT uniqExactArgMinIf(n, nan, n = 777777) AS mn, uniqExactArgMaxIf(n, nan, n = 777777) AS mx
+FROM (SELECT number AS n FROM numbers_mt(1000000))
+SETTINGS max_threads = 8, max_block_size = 1000;
