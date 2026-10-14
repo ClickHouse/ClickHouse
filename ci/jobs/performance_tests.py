@@ -1690,15 +1690,17 @@ def dashboard_run_id(info):
     identities = []
     for item in dashboard_list(data, "items"):
         identity = item.get("identity") if isinstance(item, dict) else None
-        if not isinstance(identity, dict) or not all(isinstance(identity.get(k), str) for k in ("newSha", "runId")):
-            raise PerfDashboardError("malformed dashboard answer: [items] row without [identity.newSha, identity.runId]")
+        if not isinstance(identity, dict) or not all(
+            isinstance(identity.get(k), str) and identity[k] for k in ("newSha", "runId", "runTime")
+        ):
+            raise PerfDashboardError(
+                "malformed dashboard answer: [items] row without [identity.newSha, identity.runId, identity.runTime]"
+            )
         if identity["newSha"] == info.sha:
             identities.append(identity)
     if not identities:
         raise PerfDashboardUnavailable(f"no master run for sha {info.sha} yet")
-    identities.sort(
-        key=lambda identity: identity.get("runTime", ""), reverse=True
-    )
+    identities.sort(key=lambda identity: identity["runTime"], reverse=True)
     return identities[0]["runId"]
 
 
