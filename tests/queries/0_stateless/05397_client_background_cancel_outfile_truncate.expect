@@ -1,0 +1,93 @@
+#!/usr/bin/expect -f
+
+# Cancelling a background `INTO OUTFILE ... TRUNCATE` after its output has started must keep the old file.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+set export_dir $CLICKHOUSE_TMP/$basename.dir
+file delete -force $export_dir
+file mkdir $export_dir
+set export_file $export_dir/export.tsv
+set handle [open $export_file w]
+puts -nonewline $handle "old\n"
+close $handle
+
+log_user 0
+set timeout 60
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+submit [format {\bg SELECT number FROM numbers(100000) WHERE NOT ignore(sleepEachRow(0.001)) INTO OUTFILE '%s' TRUNCATE FORMAT TSV SETTINGS max_block_size = 10, max_threads = 1} $export_file]
+expect ":) "
+
+# Wait until the job has written to its temporary file.
+set started 0
+for {set attempt 0} {$attempt < 300 && !$started} {incr attempt} {
+    foreach tmp_file [glob -nocomplain $export_dir/tmp_*] {
+        if {[file size $tmp_file] > 0} {
+            set started 1
+        }
+    }
+    if {!$started} {
+        after 100
+    }
+}
+if {!$started} {
+    exit 1
+}
+
+submit {\cancel 1}
+expect ":) "
+
+set cancelled 0
+for {set attempt 0} {$attempt < 200 && !$cancelled} {incr attempt} {
+    submit {\jobs}
+    expect {
+        -re {(?i)\[1\][^\r\n]*cancel+ed} {
+            set cancelled 1
+            expect ":) "
+        }
+        -re {(?i)\[1\][^\r\n]*(succeeded|completed|failed)} {
+            exit 1
+        }
+        ":) " {
+            after 100
+        }
+    }
+}
+if {!$cancelled} {
+    exit 1
+}
+
+send -- "\4"
+expect eof
+
+set handle [open $export_file r]
+set content [read $handle]
+close $handle
+if {$content ne "old\n"} {
+    exit 1
+}
+if {[llength [glob -nocomplain $export_dir/tmp_*]] != 0} {
+    exit 1
+}
+
+file delete -force $history_file $export_dir
