@@ -44,6 +44,14 @@ partitioned: commits in log: 2 (expected 2)
 empty: reported as unknown outcome: yes
 empty: commits in log: 2 (expected 2)
 
+==== Arm D: a non-conflict error quoting an object key that contains the conflict text ====
+-- the commit is durable, as in arm A, so its data files must be kept
+marker: the error quotes the key: yes
+marker: reported as unknown outcome: yes
+marker: sum(c0) after reopen: 15 (expected 15)
+marker: data files kept: 1 (expected 1)
+marker: commits in log: 2 (expected 2)
+
 ==== control: an INSERT with no failpoint commits and reads back ====
 control: sum(c0): 15 (expected 15)
 control: data files: 1 (expected 1)

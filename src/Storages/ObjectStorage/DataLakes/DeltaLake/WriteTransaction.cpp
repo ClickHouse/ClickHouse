@@ -148,19 +148,44 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
     return arrow_table;
 }
 
-/// The kernel FFI reports a commit conflict only as this text.
-std::optional<UInt64> tryParseConflictVersion(std::string_view message)
+/// The kernel FFI reports a commit conflict only as this `GenericError`, as wrapped by `KernelUtils::throwError`.
+/// Any other error may quote an object key, which can contain the same text.
+std::optional<UInt64> tryParseConflictVersion(std::exception_ptr exception)
 {
-    static constexpr std::string_view marker = "commit conflict at version ";
-    const auto pos = message.find(marker);
-    if (pos == std::string_view::npos)
-        return std::nullopt;
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (const DB::Exception & e)
+    {
+        static const std::string prefix = fmt::format(
+            "Received DeltaLake kernel error {}: Generic delta kernel error: commit conflict at version ", ffi::KernelError::GenericError);
+        static constexpr std::string_view suffix = " (in commit)";
 
-    const auto digits = message.substr(pos + marker.size());
-    UInt64 version = 0;
-    if (std::from_chars(digits.data(), digits.data() + digits.size(), version).ec != std::errc{})
+        const std::string_view message = e.message();
+        if (e.code() != DB::ErrorCodes::DELTA_KERNEL_ERROR || message.size() <= prefix.size() + suffix.size()
+            || !message.starts_with(prefix) || !message.ends_with(suffix))
+            return std::nullopt;
+
+        const auto digits = message.substr(prefix.size(), message.size() - prefix.size() - suffix.size());
+        UInt64 version = 0;
+        const auto [end, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), version);
+        if (ec != std::errc{} || end != digits.data() + digits.size())
+            return std::nullopt;
+        return version;
+    }
+    catch (...)
+    {
+        /// Ok: not a `DB::Exception`, so not a kernel error.
         return std::nullopt;
-    return version;
+    }
+}
+
+/// Raises `message` the way the kernel FFI reports an error of `etype` from `ffi::commit`.
+[[maybe_unused]] [[noreturn]] void throwAsKernelCommitError(ffi::KernelError etype, const std::string & message)
+{
+    DeltaLake::KernelUtils::throwError(
+        DeltaLake::KernelUtils::allocateError(etype, DeltaLake::KernelUtils::toDeltaString(message)), "commit");
 }
 
 /// How many of `files` the log entry of `version` adds.
@@ -338,15 +363,17 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files, const DB::I
             ffi::commit(transaction.release(), engine.get()),
             "commit"));
 
-        fiu_do_on(DB::FailPoints::delta_lake_commit_response_lost, {
-            throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a lost commit response enabled");
-        });
-
         auto * committed_handle = committed.get();
         auto version = ffi::committed_transaction_version(&committed_handle);
 
+        fiu_do_on(DB::FailPoints::delta_lake_commit_response_lost, {
+            throwAsKernelCommitError(ffi::KernelError::ObjectStoreError, fmt::format(
+                "Error interacting with object store: Failpoint for a lost commit response, PUT {}_delta_log/{:020}.json",
+                path_prefix, version));
+        });
+
         fiu_do_on(DB::FailPoints::delta_lake_commit_conflict_with_own_entry, {
-            throw DB::Exception(DB::ErrorCodes::DELTA_KERNEL_ERROR, "Failpoint for a retried commit: commit conflict at version {}", version);
+            throwAsKernelCommitError(ffi::KernelError::GenericError, fmt::format("Generic delta kernel error: commit conflict at version {}", version));
         });
 
         LOG_TEST(log, "Commit version: {}", version);
@@ -358,7 +385,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files, const DB::I
         size_t files_in_entry = 0;
         std::optional<UInt64> conflict_version;
         if (!files.empty())
-            conflict_version = tryParseConflictVersion(DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
+            conflict_version = tryParseConflictVersion(std::current_exception());
         if (conflict_version)
         {
             try

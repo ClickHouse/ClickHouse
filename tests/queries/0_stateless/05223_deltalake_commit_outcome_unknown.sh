@@ -16,6 +16,8 @@
 # the data files are still cleaned up, so a fix that simply never deletes anything fails here.
 # Arm C reports a conflict with the entry the commit itself stored (what the retried PUT sees):
 # reading that entry back proves the commit took effect, so the INSERT succeeds.
+# Arm D is arm A on a table whose key contains the conflict text, which the error quotes: it is
+# not a conflict, so the files must still be kept.
 #
 # The empty Delta tables are bootstrapped by hand (a v0 _delta_log with only protocol +
 # metaData), because ClickHouse cannot initialize a Delta transaction log itself, and because a
@@ -179,6 +181,19 @@ bootstrap "${T}" "${SCHEMA_PLAIN}" '[]'
 ERR=$(insert_with_failpoint "${T}" delta_lake_commit_conflict_with_own_entry "SELECT number::Int32 AS c0 FROM numbers(6) WHERE 0")
 echo "empty: reported as unknown outcome: $(has "${ERR}" 'UNKNOWN_STATUS_OF_TRANSACTION')"
 echo "empty: commits in log: $(count_commits "${T}") (expected 2)"
+
+echo
+echo "==== Arm D: a non-conflict error quoting an object key that contains the conflict text ===="
+echo "-- the commit is durable, as in arm A, so its data files must be kept"
+
+T="${ROOT}/d_plain/commit conflict at version 0"
+bootstrap "${T}" "${SCHEMA_PLAIN}" '[]'
+ERR=$(insert_with_failpoint "${T}" delta_lake_commit_response_lost "SELECT number::Int32 AS c0 FROM numbers(6)")
+echo "marker: the error quotes the key: $(has "${ERR}" 'commit conflict at version 0/_delta_log/')"
+echo "marker: reported as unknown outcome: $(has "${ERR}" 'UNKNOWN_STATUS_OF_TRANSACTION')"
+echo "marker: sum(c0) after reopen: $(read_sum "${T}") (expected 15)"
+echo "marker: data files kept: $(count_parquet "${T}") (expected 1)"
+echo "marker: commits in log: $(count_commits "${T}") (expected 2)"
 
 echo
 echo "==== control: an INSERT with no failpoint commits and reads back ===="
