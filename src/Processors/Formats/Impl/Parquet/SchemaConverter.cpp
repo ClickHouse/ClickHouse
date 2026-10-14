@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypeDynamic.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
 #include <Common/StringUtils.h>
