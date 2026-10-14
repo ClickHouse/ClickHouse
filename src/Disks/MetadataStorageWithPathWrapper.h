@@ -324,6 +324,11 @@ public:
         return delegate->hasDeadBlobsQueue();
     }
 
+    void setDeadBlobsQueuedCallback(std::function<void()> callback) override
+    {
+        delegate->setDeadBlobsQueuedCallback(std::move(callback));
+    }
+
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override
     {
         return delegate->getBlobsToReplicate(cluster, max_count);

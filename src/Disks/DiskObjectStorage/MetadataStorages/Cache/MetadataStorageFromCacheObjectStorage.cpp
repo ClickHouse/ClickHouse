@@ -270,12 +270,36 @@ bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
     /// A storage that removes its blobs synchronously has to write to the object storage for that, so over
     /// a read-only one it never removes anything either. A storage with a deferred removal queue of its own
     /// (`local`) may still commit a removal, so the queue is kept for it.
-    /// The object storage is asked every time: its `readonly` setting can change on config reload, and
-    /// `BlobKillerThread::applyNewSettings` re-evaluates this after the object storage got the new settings.
+    /// The object storage is asked every time: its `readonly` setting can change on config reload.
+    /// `BlobKillerThread` re-evaluates this after every round and after the object storage got the new
+    /// settings, and a commit that is still in flight during the reload wakes it up in `submitForRemoval`.
     if (object_storage->isReadOnly() && !underlying->hasDeadBlobsQueue())
         return false;
 
     return true;
+}
+
+void MetadataStorageFromCacheObjectStorage::setDeadBlobsQueuedCallback(std::function<void()> callback)
+{
+    std::lock_guard guard(dead_blobs_queued_callback_mutex);
+    dead_blobs_queued_callback = std::move(callback);
+}
+
+void MetadataStorageFromCacheObjectStorage::submitForRemoval(const StoredObjects & blobs)
+{
+    if (blobs.empty())
+        return;
+
+    {
+        std::lock_guard guard(removed_objects_mutex);
+        objects_to_remove.submitForRemoval(blobs);
+    }
+
+    /// Called after the blobs are queued, so `hasDeadBlobsQueue` already answers `true` in the woken up round.
+    /// The mutex is held during the call, so that the callback is not unregistered while it is running.
+    std::lock_guard guard(dead_blobs_queued_callback_mutex);
+    if (dead_blobs_queued_callback)
+        dead_blobs_queued_callback();
 }
 
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
@@ -332,11 +356,7 @@ MetadataStorageFromCacheObjectStorageTransaction::MetadataStorageFromCacheObject
 void MetadataStorageFromCacheObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
     underlying->commit(options);
-
-    {
-        std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
-    }
+    metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
 }
 
 TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
@@ -344,10 +364,7 @@ TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction
     auto result = underlying->tryCommit(options);
 
     if (isSuccessfulOutcome(result))
-    {
-        std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
-    }
+        metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
 
     return result;
 }

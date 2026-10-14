@@ -17,6 +17,7 @@ class BlobKillerThread
 
     int64_t trigger();
     void waitRound(int64_t expected_round);
+    void activateTask();
 
 public:
     BlobKillerThread(

@@ -268,10 +268,15 @@ BlobKillerThread::BlobKillerThread(
 {
     task = context->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
     task->deactivate();
+
+    /// Scheduling does nothing while the task is deactivated, so the callback is harmless before `startup`
+    /// and after `shutdown`.
+    metadata_storage->setDeadBlobsQueuedCallback([this]() { task->schedule(); });
 }
 
 BlobKillerThread::~BlobKillerThread()
 {
+    metadata_storage->setDeadBlobsQueuedCallback({});
     task->deactivate();
 }
 
@@ -291,6 +296,14 @@ void BlobKillerThread::run()
     finished_rounds.fetch_add(1);
     finished_rounds.notify_all();
 
+    /// The queue is drained and nothing new can be queued, e.g. a cache layer over a `plain` disk that was
+    /// reloaded as read-only. The task stays active: the metadata storage schedules it when it queues blobs.
+    if (!metadata_storage->hasDeadBlobsQueue())
+    {
+        LOG_TEST(log, "Nothing more to clean up, not rescheduling");
+        return;
+    }
+
     if (removed_blobs < static_cast<int64_t>(0.9 * static_cast<double>(round_request_batch)))
     {
         const int64_t interval = reschedule_interval_sec.load();
@@ -309,16 +322,24 @@ void BlobKillerThread::startup()
 {
     started = true;
 
-    if (!metadata_storage->hasDeadBlobsQueue())
-    {
-        LOG_INFO(log, "Execution is not needed: the metadata storage does not defer blob removal");
-        return;
-    }
-
     if (enabled)
+        activateTask();
+}
+
+void BlobKillerThread::activateTask()
+{
+    /// The task is activated even when there is nothing to do, so that `trigger` and the metadata storage
+    /// can schedule it later. It is only scheduled when the metadata storage may have dead blobs.
+    task->activate();
+
+    if (metadata_storage->hasDeadBlobsQueue())
     {
         LOG_INFO(log, "Execution started");
-        task->activateAndSchedule();
+        task->schedule();
+    }
+    else
+    {
+        LOG_INFO(log, "Execution is not needed: the metadata storage does not defer blob removal");
     }
 }
 
@@ -361,7 +382,7 @@ void BlobKillerThread::waitRound(int64_t expected_round)
 
 void BlobKillerThread::triggerAndWait()
 {
-    /// The task is never scheduled for such a storage, so waiting for a round to finish would never return.
+    /// There is nothing to wait for in such a storage.
     /// The wrapped storage of a cache layer may still have dead blobs of its own, so wait for it anyway.
     if (!metadata_storage->hasDeadBlobsQueue())
     {
@@ -392,8 +413,8 @@ void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration 
 
     LOG_INFO(log, "Applying new settings: Enabled: {}, Started: {}", enabled.load(), started.load());
 
-    if (enabled && started && metadata_storage->hasDeadBlobsQueue())
-        task->activateAndSchedule();
+    if (enabled && started)
+        activateTask();
     else
         task->deactivate();
 }

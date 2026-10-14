@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -348,6 +349,12 @@ public:
     /// `plain` and `plain_rewritable` remove blobs synchronously inside the transaction and the `web`
     /// storages are read-only, so for them the task would only wake up every second to find nothing to do.
     virtual bool hasDeadBlobsQueue() const { return true; }
+
+    /// For a storage whose `hasDeadBlobsQueue` may change from `false` to `true` at runtime (a cache layer over
+    /// a read-only `plain` disk, which still drains the blobs queued before a reload), `BlobKillerThread` stops
+    /// polling once there is nothing left to do. The storage calls `callback` after it queued new dead blobs,
+    /// so that the blob killer wakes up. An empty `callback` unregisters it.
+    virtual void setDeadBlobsQueuedCallback(std::function<void()> /*callback*/) {}
 
     struct BlobsReplication
     {
