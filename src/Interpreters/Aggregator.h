@@ -45,6 +45,7 @@ using ColumnsHashing::HashMethodContextPtr;
 using ColumnsHashing::LastElementCacheStats;
 
 class CompiledAggregateFunctionsHolder;
+struct MemoryTrackerSwitcher;
 class NativeWriter;
 struct OutputBlockColumns;
 
@@ -424,6 +425,14 @@ public:
     /// barrier, so the session holds every producer's contribution by the time the last finisher assembles the merge.
     void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
 
+    /// Serves a spill request of the memory scheduler for an adaptive producer: writes its staged records to the
+    /// session's spill streams and, while that releases less than `at_least_bytes`, its table to disk. A table on the
+    /// adaptive path is written as over the external-aggregation threshold, and its producer learns again; a table on
+    /// the baseline path is spilled as with the feature off. The staged records go first: the merge reads them back
+    /// unit by unit, while a written table takes the whole merge external. Returns the released bytes.
+    size_t spillAdaptiveProducer(
+        AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, bool no_more_keys, size_t at_least_bytes) const;
+
     /// Decides once, after the finish barrier of an engaged aggregation and before its merge starts, whether the merge
     /// prunes by the top-K, and orders the buckets for it by their bounds. The bounds need every source's rows, in the
     /// count bins or in a table that the merge counts. A producer without the adaptive context (another aggregator of a
@@ -601,6 +610,10 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
+    /// Flushes the table on request of the memory scheduler; returns the released bytes.
+    /// Requires a two-level or convertible table and temporary data storage.
+    size_t spill(AggregatedDataVariants & data_variants, bool no_more_keys) const;
+
     bool hasTemporaryData() const;
 
     /// Peak memory of the aggregation state across all threads. Unavailable when the states
@@ -614,6 +627,8 @@ public:
 
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
+
+    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
 
 
 private:
@@ -695,6 +710,10 @@ private:
     Int64 memory_usage_before_aggregation = 0;
     /// Track memory held by the aggreagation state during execution.
     std::unique_ptr<MemoryTracker> memory_tracker;
+
+    /// Redirects the thread's accounting to the per-table tracker (created on demand under the
+    /// aggregator tracker). Returns the aggregator tracker, nullptr when there is none to switch to.
+    MemoryTracker * switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///
@@ -916,6 +935,8 @@ private:
 
     /// The frozen consume path: rows whose key the local table holds are aggregated in place,
     /// the other rows are appended to the producer's partitions as delayed records for the merge.
+    /// The growth of the local states goes to `local_memory_tracker` when it is given, the staging to
+    /// the caller's tracker.
     void executeFrozen(
         const Columns & columns,
         size_t row_begin,
@@ -924,7 +945,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     template <typename LocalMethod, typename SharedMethod>
     requires MapAggregationMethod<LocalMethod>
@@ -938,7 +960,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     /// The set counterpart: with no aggregate functions there are no places to record and no states to
     /// advance, so a hit is just the probe and a miss stages the key alone.
@@ -954,7 +977,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     /// Collects the misses of a block of an aggregation by a lone `count` into the producer's batch: a row whose key the
     /// local table holds adds one to the key's inline count, and the other rows become count records, each with the
@@ -1095,13 +1119,15 @@ private:
         ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const;
 
     /// Writes the producer's staged records to the session's spill streams, a block per partition, and frees them; the
-    /// producer then keeps appending into new chunks. Called over the external-aggregation threshold.
+    /// producer then keeps appending into new chunks. Called over the external-aggregation threshold and on request of
+    /// the memory scheduler (see `spillAdaptiveProducer`).
     void spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const;
 
-    /// Writes the producer's frozen table to disk as a part of the ordinary external aggregation, then lets the
-    /// producer learn its keys again in an empty single-level table. Called over the external-aggregation threshold
-    /// when the write frees enough memory (see `adaptiveFrozenTableWorthSpilling`).
-    void spillFrozenAdaptiveTable(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t max_temp_file_size) const;
+    /// Writes the producer's learning or frozen table to disk as a part of the ordinary external aggregation, then lets
+    /// the producer learn its keys again in an empty single-level table. Called for a frozen table over the
+    /// external-aggregation threshold when the write frees enough memory (see `adaptiveFrozenTableWorthSpilling`), and
+    /// on request of the memory scheduler (see `spillAdaptiveProducer`).
+    void spillAdaptiveTable(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t max_temp_file_size) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,

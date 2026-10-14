@@ -8,6 +8,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -70,7 +71,8 @@ void Aggregator::executeFrozen(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
     AdaptiveAggregationProducer & adaptive,
-    bool all_keys_are_const) const
+    bool all_keys_are_const,
+    MemoryTracker * local_memory_tracker) const
 {
     /// The rows of the block are the base of the thaw's staged share (see `adaptiveStagingRepeats`).
     std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase).rows += row_end - row_begin;
@@ -87,7 +89,8 @@ void Aggregator::executeFrozen(
             key_columns, \
             aggregate_instructions, \
             adaptive, \
-            all_keys_are_const);
+            all_keys_are_const, \
+            local_memory_tracker);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -111,7 +114,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction *,
     AdaptiveAggregationProducer & adaptive,
-    bool all_keys_are_const) const
+    bool all_keys_are_const,
+    MemoryTracker *) const
 {
     using RecordKey = AdaptiveRecordKey<SharedMethod>;
     static_assert(SharedMethod::Data::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
@@ -342,7 +346,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
     AdaptiveAggregationProducer & adaptive,
-    bool all_keys_are_const) const
+    bool all_keys_are_const,
+    MemoryTracker * local_memory_tracker) const
 {
     using RecordKey = AdaptiveRecordKey<SharedMethod>;
     static_assert(SharedMethod::Data::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
@@ -391,6 +396,11 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         {
             if (!is_simple_count && params.aggregates_size)
             {
+                /// Local state growth belongs to this table, even while staging uses the shared tracker.
+                std::optional<MemoryTrackerSwitcher> local_scope;
+                if (local_memory_tracker)
+                    local_scope.emplace(local_memory_tracker);
+
                 /// Apply the whole range to the single place, mirroring the ordinary
                 /// all-keys-are-const handling.
                 for (size_t i = 0; i < aggregate_functions.size(); ++i)
@@ -486,6 +496,12 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     /// With no local hits every place is null and the batch pass would only skip rows; the
     /// staged records carry the block's whole contribution.
     if (hits != 0)
+    {
+        /// Keep the scratch allocations and staged records outside the local table's estimate.
+        std::optional<MemoryTrackerSwitcher> local_scope;
+        if (local_memory_tracker)
+            local_scope.emplace(local_memory_tracker);
+
         executeAggregateInstructions(
             aggregates_pool,
             row_begin,
@@ -497,6 +513,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             /*all_keys_are_const=*/false,
             /*all_places_are_non_null=*/false,
             /*use_compiled_functions=*/false);
+    }
 }
 
 template <typename RecordKey, typename State>

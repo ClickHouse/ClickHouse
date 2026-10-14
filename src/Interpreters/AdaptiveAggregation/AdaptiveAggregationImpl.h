@@ -60,7 +60,7 @@ constexpr size_t adaptive_spill_min_bytes = 16 << 20;
 /// streams' buffer size: the compression input, the compressed block and the file's write buffer. Their buffer size
 /// therefore follows the external-aggregation threshold, so that the streams together take at most an eighth of it,
 /// but not below this floor, under which the writes and the compressed blocks get too small, and not above the buffer
-/// size configured for temporary files.
+/// size configured for temporary files. Without a threshold they take the floor.
 constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// The merge takes a bucket's partitions in units of about this many records and source cells each, so a unit's
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
@@ -448,6 +448,8 @@ struct AdaptiveAggregationProducer
     /// The records this producer staged, created by its freeze; a producer that stands down keeps them for the
     /// merge. Handed over to the session when the producer finishes.
     std::unique_ptr<PartitionedRecordBuffer> partitions;
+    /// Memory that the staged records in `partitions` take.
+    size_t stagedBytes() const { return partitions ? partitions->allocatedChunkBytes() : 0; }
     /// The producer's staged records, including those already written to disk, for the merge-work estimate.
     size_t total_staged_records = 0;
 

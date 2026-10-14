@@ -9,6 +9,8 @@
 #include <boost/noncopyable.hpp>
 
 
+class MemoryTracker;
+
 namespace DB
 {
 
@@ -49,6 +51,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     using Arenas = std::vector<ArenaPtr>;
     Arenas aggregates_pools;
     Arena * aggregates_pool{};    /// The pool that is currently used for allocation.
+
+    /// Accounts for the whole state of this table, including memory that aggregate
+    /// states allocate outside the arenas. Attached by the aggregator on the first block.
+    std::unique_ptr<MemoryTracker> memory_tracker;
 
     /** Specialization for the case when there are no keys, and for keys not fitted into max_rows_to_group_by.
       */
@@ -500,6 +506,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Bytes that the keys and states took in the arenas. Unlike the arenas' allocated bytes,
     /// which grow by whole chunks of doubling size, they follow every allocation.
     size_t usedArenaBytes() const;
+    /// Tracked size of the state; without a tracker (merge-only aggregation) only arenas and
+    /// hash table are known.
+    size_t memoryUsage() const;
 
     /// The adaptive bucket-parallel merge's arena slots, one per bucket, populated on the merge
     /// destination (see `Aggregator::createAdaptiveMergeDestination`). A slot holds the arena of

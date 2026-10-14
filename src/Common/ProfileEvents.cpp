@@ -1054,10 +1054,10 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationStagedRecords, "How many delayed records the adaptive aggregation staged into its partition buffers.", ValueType::Number) \
     M(AdaptiveAggregationStagedBytes, "How many key bytes the adaptive aggregation staged into its partition buffers.", ValueType::Bytes) \
     M(AdaptiveAggregationDrainedRecords, "How many staged records the adaptive aggregation drained into the merge's tables.", ValueType::Number) \
-    M(AdaptiveAggregationSpills, "How many times a thread of the adaptive aggregation wrote its staged records to disk because the query crossed the external aggregation threshold.", ValueType::Number) \
+    M(AdaptiveAggregationSpills, "How many times a thread of the adaptive aggregation wrote its staged records to disk, because the query crossed the external aggregation threshold or the memory scheduler asked for a spill.", ValueType::Number) \
     M(AdaptiveAggregationSpilledRecords, "How many staged records the adaptive aggregation wrote to disk under memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationSpilledBytes, "How many bytes of staged records the adaptive aggregation wrote to disk under memory pressure, before compression.", ValueType::Bytes) \
-    M(AdaptiveAggregationFrozenTableSpills, "How many times a thread of the adaptive aggregation wrote its frozen local table to disk because the query crossed the external aggregation threshold while the table's aggregate states kept growing.", ValueType::Number) \
+    M(AdaptiveAggregationFrozenTableSpills, "How many times a thread of the adaptive aggregation wrote its frozen local table to disk, because the query crossed the external aggregation threshold while the table's aggregate states kept growing, or the memory scheduler asked for a spill.", ValueType::Number) \
     M(AdaptiveAggregationMergeUnits, "How many merge units, runs of the partitions of a two-level bucket merged in one table, the adaptive aggregation merged and converted.", ValueType::Number) \
     M(AdaptiveAggregationPrunedUnits, "How many merge units the adaptive aggregation skipped without draining them, because no group in them could reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.", ValueType::Number) \
     M(AdaptiveAggregationPrunedRecords, "How many staged records the adaptive aggregation's merge skipped, because their group could not reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.", ValueType::Number) \
@@ -1646,6 +1646,9 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryReservationDecreases, "Total number of approved memory reservation decrease requests", ValueType::Number) \
     M(MemoryReservationKilled, "Total number of memory reservation kill signals", ValueType::Number) \
     M(MemoryReservationFailed, "Total number of failed memory reservations", ValueType::Number) \
+    M(MemoryReservationReclaimableBytes, "Memory that became reclaimable (spillable) by the query", ValueType::Bytes) \
+    M(MemoryReservationSpilledBytes, "Total number of spilled to disk memory", ValueType::Bytes) \
+    M(MemoryReservationSpillingMicroseconds, "Amount of time spilling takes", ValueType::Microseconds) \
     \
     M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
     M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \

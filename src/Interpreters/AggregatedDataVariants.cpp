@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Poco/Logger.h>
 #include <Common/HashTable/HashTableTraits.h>
+#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
@@ -186,6 +187,13 @@ size_t AggregatedDataVariants::usedArenaBytes() const
     for (const auto & pool : aggregates_pools)
         res += pool->usedBytes();
     return res;
+}
+
+size_t AggregatedDataVariants::memoryUsage() const
+{
+    if (memory_tracker)
+        return std::max<Int64>(memory_tracker->get(), 0);
+    return allocatedBytes();
 }
 
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const

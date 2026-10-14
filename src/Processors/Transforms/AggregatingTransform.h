@@ -6,6 +6,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/SpillableAdapter.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -175,10 +176,18 @@ public:
     PipelineUpdate updatePipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
+    std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, 1}; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+    const TemporaryDataOnDiskScope * getSpillScope() const { return params->aggregator.getSpillScope(); }
+
 protected:
     void consume(Chunk chunk);
 
 private:
+    SpillableAdapter<AggregatingTransform> spillable{*this};
+    ISpillable * const spillable_ptr = &spillable;
+
     size_t getGeneratingStepGroup() const;
 
     /// Rebuilds `variants` to the shared kept key set (see ManyAggregatedData::SharedKeptKeys).

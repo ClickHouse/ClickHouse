@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <optional>
 
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -156,9 +157,10 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
 {
     const auto layout = AdaptivePartitionLayout::forProducers(producers, params.max_bytes_before_external_group_by);
     TemporaryDataOnDiskScopePtr spill_scope;
-    if (tmp_data && params.max_bytes_before_external_group_by)
+    if (tmp_data)
     {
-        /// An eighth of the threshold over the three buffers of each of the streams, one per partition.
+        /// An eighth of the threshold over the three buffers of each of the streams, one per partition. The memory
+        /// scheduler can ask for a spill without a threshold, and then the streams take the floor.
         const size_t buffers_share = params.max_bytes_before_external_group_by / (8 * 3 * layout.numPartitions());
         const size_t buffer_bytes = std::min(tmp_data->getSettings().buffer_size, std::max(buffers_share, adaptive_spill_min_buffer_bytes));
         spill_scope = tmp_data->childScope(tmp_data->getSettings().metrics, buffer_bytes);
@@ -352,7 +354,7 @@ UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const
     return top_k_pruning ? top_k_pruning->bucketToMerge(claim) : claim;
 }
 
-void Aggregator::spillFrozenAdaptiveTable(
+void Aggregator::spillAdaptiveTable(
     AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t max_temp_file_size) const
 {
     chassert(result.hasData());
@@ -364,9 +366,39 @@ void Aggregator::spillFrozenAdaptiveTable(
     result.convertToTwoLevel();
     writeToTemporaryFile(result, max_temp_file_size);
     result.resetToSingleLevel();
+    if (adaptive.isFrozen())
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationFrozenTableSpills);
     adaptive.learnAgain();
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationFrozenTableSpills);
-    LOG_TRACE(log, "Adaptive aggregation: wrote the frozen table of {} keys to disk over the external-aggregation threshold", keys);
+    LOG_TRACE(log, "Adaptive aggregation: wrote the local table of {} keys to disk", keys);
+}
+
+size_t Aggregator::spillAdaptiveProducer(
+    AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, bool no_more_keys, size_t at_least_bytes) const
+{
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
+    MemoryTracker * session_shared_tracker = switchToOwnTracker(result, memory_tracker_switcher);
+
+    size_t released = 0;
+    if (const size_t staged_bytes = adaptive.stagedBytes())
+    {
+        /// The staging runs under the aggregator's tracker (see `executeOnBlock`), and so does the release of its records.
+        std::optional<MemoryTrackerSwitcher> session_scope;
+        if (session_shared_tracker)
+            session_scope.emplace(session_shared_tracker);
+        spillAdaptivePartitions(adaptive);
+        released = staged_bytes - adaptive.stagedBytes();
+    }
+    if (released >= at_least_bytes)
+        return released;
+    if (adaptive.isBaseline())
+        return released + spill(result, no_more_keys);
+    if (!result.hasData())
+        return released;
+
+    const size_t before = result.memoryUsage();
+    spillAdaptiveTable(result, adaptive, before + params.min_free_disk_space);
+    const size_t after = result.memoryUsage();
+    return released + (before > after ? before - after : 0);
 }
 
 void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const

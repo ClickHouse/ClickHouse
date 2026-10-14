@@ -2351,13 +2351,16 @@ bool Aggregator::executeOnBlock(Columns columns,
     bool & no_more_keys,
     AdaptiveAggregationProducer * adaptive) const
 {
-    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
-    /// and query memory trackers, and accounts for the aggregation state across all threads.
-    const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
-        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (use_own_tracker)
-        memory_tracker_switcher.emplace(memory_tracker.get());
+    MemoryTracker * session_shared_tracker = switchToOwnTracker(result, memory_tracker_switcher);
+
+    /// The staged records of an adaptive producer are not part of this table: the table's tracker measures what
+    /// writing the table releases, so the staging runs under the aggregator's tracker instead.
+    const auto session_scope = [&](std::optional<MemoryTrackerSwitcher> & scope)
+    {
+        if (session_shared_tracker)
+            scope.emplace(session_shared_tracker);
+    };
 
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
@@ -2458,8 +2461,11 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// The frozen adaptive path updates hits in the local table and stages misses as delayed records
         /// in the producer's partition buffers for the merge.
+        std::optional<MemoryTrackerSwitcher> scope;
+        session_scope(scope);
         executeFrozen(
-            columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const);
+            columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const,
+            session_shared_tracker ? result.memory_tracker.get() : nullptr);
     }
     else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
              && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold)
@@ -2477,6 +2483,8 @@ bool Aggregator::executeOnBlock(Columns columns,
             = executeImplUntilAdaptiveFreeze(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data());
         if (split < row_end)
         {
+            std::optional<MemoryTrackerSwitcher> scope;
+            session_scope(scope);
             freezeAdaptive(result, *adaptive);
             executeFrozen(
                 columns,
@@ -2486,7 +2494,8 @@ bool Aggregator::executeOnBlock(Columns columns,
                 key_columns,
                 aggregate_functions_instructions.data(),
                 *adaptive,
-                /*all_keys_are_const=*/false);
+                /*all_keys_are_const=*/false,
+                session_shared_tracker ? result.memory_tracker.get() : nullptr);
         }
     }
     else
@@ -2500,8 +2509,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
-    Int64 result_size_bytes = use_own_tracker && params.use_aggregation_memory_tracker
-        ? memory_tracker->get()
+    Int64 result_size_bytes = session_shared_tracker && params.use_aggregation_memory_tracker
+        ? session_shared_tracker->get()
         : current_memory_usage - memory_usage_before_aggregation;
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
@@ -2509,7 +2518,14 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /// An adaptive producer advances its phase in place of the conversion below, until it is on the baseline path. Like
     /// the baseline, it checks the limits after the transition and before its table goes to disk.
-    if (adaptive && advanceAdaptiveProducer(result, *adaptive, worth_convert_to_two_level, current_memory_usage))
+    bool stays_adaptive = false;
+    if (adaptive)
+    {
+        std::optional<MemoryTrackerSwitcher> scope;
+        session_scope(scope);
+        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, worth_convert_to_two_level, current_memory_usage);
+    }
+    if (stays_adaptive)
     {
         /// Checking the constraints.
         if (!checkLimits(result_size, no_more_keys))
@@ -2521,7 +2537,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         if (adaptive->isFrozen() && params.max_bytes_before_external_group_by
             && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
             && adaptiveFrozenTableWorthSpilling(result, *adaptive))
-            spillFrozenAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
+            spillAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
         return true;
     }
 
@@ -2563,6 +2579,23 @@ Block Aggregator::getSpilledStatesHeader() const
     for (size_t i = 0; i < params.aggregates_size; ++i)
         header.insert({aggregate_state_types[i]->createColumn(), aggregate_state_types[i], params.aggregates[i].column_name});
     return header;
+}
+
+MemoryTracker * Aggregator::switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const
+{
+    if (params.only_merge || !CurrentThread::getMemoryTracker())
+        return nullptr;
+
+    /// The aggregator tracker is inserted between the thread and query trackers and accounts for the
+    /// aggregation state across all threads; the per-table tracker under it accounts for one table only.
+    MemoryTracker * tracker = memory_tracker.get();
+    if (!tracker || CurrentThread::getMemoryTracker()->getParent() != tracker->getParent())
+        return nullptr;
+
+    if (!result.memory_tracker || result.memory_tracker->getParent() != tracker)
+        result.memory_tracker = std::make_unique<MemoryTracker>(tracker, VariableContext::Thread);
+    switcher.emplace(result.memory_tracker.get());
+    return tracker;
 }
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
@@ -2623,6 +2656,26 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         static_cast<double>(rows) / elapsed_seconds,
         ReadableSize(static_cast<double>(uncompressed_size) / elapsed_seconds),
         ReadableSize(static_cast<double>(compressed_size) / elapsed_seconds));
+}
+
+size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_keys) const
+{
+    /// An emptied two-level table retains its buffers, but spilling it again cannot reclaim them.
+    if (!data_variants.hasData())
+        return 0;
+    if (!spillAllowedUnderKeptKeysCutoff(no_more_keys, data_variants))
+        return 0;
+
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
+    switchToOwnTracker(data_variants, memory_tracker_switcher);
+
+    size_t before = data_variants.memoryUsage();
+    if (!data_variants.isTwoLevel())
+        data_variants.convertToTwoLevel();
+    writeToTemporaryFile(data_variants, before + params.min_free_disk_space);
+    reseedKeptKeysAfterSpill(data_variants);
+    size_t after = data_variants.memoryUsage();
+    return before > after ? before - after : 0;
 }
 
 namespace

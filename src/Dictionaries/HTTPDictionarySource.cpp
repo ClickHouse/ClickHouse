@@ -8,7 +8,6 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -207,12 +206,10 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
 
     auto block = blockForIds(dict_struct, ids);
 
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](WriteBuffer & out)
     {
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out, block.cloneEmpty());
         formatBlock(output_format, block);
-        out_buffer.finalize();
     };
 
     Poco::URI uri(configuration.url);
@@ -240,12 +237,10 @@ BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const Vector
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
 
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
+    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](WriteBuffer & out)
     {
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out, block.cloneEmpty());
         formatBlock(output_format, block);
-        out_buffer.finalize();
     };
 
     Poco::URI uri(configuration.url);
