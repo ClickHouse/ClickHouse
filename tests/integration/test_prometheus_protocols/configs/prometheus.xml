@@ -146,6 +146,13 @@
                     <table>default.prometheus_datetime</table>
                 </handler>
             </my_rule_17>
+            <labels_edge_cases>
+                <url_prefix>/edge</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_edge</table>
+                </handler>
+            </labels_edge_cases>
         </handlers>
     </prometheus>
 </clickhouse>

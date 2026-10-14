@@ -84,8 +84,26 @@ def setup():
             "SETTINGS store_min_time_and_max_time = 0"
         )
         node.query(
+            "CREATE TABLE prometheus_edge ENGINE=TimeSeries "
+            "SETTINGS tags_to_columns = {'job': 'job_column'}"
+        )
+        node.query(
             "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
             "('cpu_usage', {'host': 'server1'}, [(toDateTime64(1000, 3), 0.5)])"
+        )
+        # A row written directly into the inner tags table: the metric name is only in the tags Map.
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prometheus_no_bounds) (metric_name, tags) VALUES "
+            "('', {'__name__': 'bar', 'x': '1'})"
+        )
+        # A row written directly into the inner tags table: the metric name is only in the `metric_name` column.
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prometheus_no_bounds) (metric_name, tags) VALUES "
+            "('baz', {'y': '1'})"
+        )
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prometheus_edge) (metric_name, tags, job_column) VALUES "
+            "('metric', {'job': 'map-job'}, 'column-job')"
         )
         # Timestamps are whole seconds: each series has one sample, at the second given by its `sample_time` label.
         node.query(
@@ -122,6 +140,28 @@ def test_label_values_tag_stored_in_dedicated_column():
         "server1",
         "server2",
     ]
+
+
+def test_label_values_tag_stored_only_in_tags_map():
+    # The `metric_name` column of the row written directly into the inner tags table is empty,
+    # so the endpoint reads its metric name from the `__name__` tag in the Map.
+    data = get_json_from_api(
+        "/no_bounds/api/v1/label/__name__/values", params={"match[]": '{x="1"}'}
+    )["data"]
+    assert data == ["bar"]
+
+
+def test_label_values_metric_name_stored_only_in_dedicated_column():
+    # The `baz` row has no `__name__` tag in its Map, so the endpoint reads its metric name
+    # from the `metric_name` column.
+    data = get_json_from_api(
+        "/no_bounds/api/v1/label/__name__/values", params={"match[]": '{y="1"}'}
+    )["data"]
+    assert data == ["baz"]
+
+
+def test_label_values_rejects_conflicting_tag_sources():
+    get_bad_data_from_api("/edge/api/v1/label/job/values")
 
 
 def test_label_values_unknown_label_returns_empty():
@@ -281,4 +321,31 @@ def test_label_values_records_query_finish():
             )
         )
         > 0
+    )
+
+
+def test_label_values_reads_tags_table_without_series_id_registry():
+    get_json_from_api("/api/v1/label/__name__/values")
+    get_json_from_api("/api/v1/label/host/values")
+    get_json_from_api("/api/v1/label/datacenter/values")
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' "
+                "AND query LIKE '%groupUniqArray%' AND query LIKE '%metric_name%' "
+                "AND query NOT LIKE '%query_log%'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' "
+                "AND (query LIKE '%timeSeriesStoreTags%' OR query LIKE '%timeSeriesIdToTags%') "
+                "AND query NOT LIKE '%query_log%'"
+            )
+        )
+        == 0
     )
