@@ -109,7 +109,7 @@ SET allow_experimental_database_materialized_postgresql = 1;
 CREATE DATABASE db_04546_pg_settings ENGINE = MaterializedPostgreSQL(pg_settings_nc_db, postgresql_connection_pool_size = 50); -- { serverError BAD_ARGUMENTS }
 
 SELECT '--- the MaterializedPostgreSQL table engine rejects pool settings ---';
-SET allow_experimental_materialized_postgresql_table = 1;
+SET enable_materialized_postgresql_table = 1;
 CREATE TABLE t_pg_settings (x Int32)
 ENGINE = MaterializedPostgreSQL(pg_settings_nc, postgresql_connection_pool_size = 50)
 ORDER BY x; -- { serverError BAD_ARGUMENTS }

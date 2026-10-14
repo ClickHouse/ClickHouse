@@ -5,6 +5,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
@@ -17,6 +22,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+bool isBareSelectQuery(const IAST * node)
+{
+    return node
+        && (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSelectIntersectExceptQuery>()
+            || node->as<ASTProjectionSelectQuery>());
+}
+
+bool hasQueryOutputOptions(const IAST * node)
+{
+    const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(node);
+    return query_with_output && query_with_output->hasOutputOptions();
 }
 
 ASTPtr JSONObjectReader::readIdentifierChild(const char * key) const
@@ -90,6 +108,33 @@ ASTPtr JSONObjectReader::readExpressionChild(const char * key) const
     if (child)
         rejectArgumentlessFunctions(*child, key);
     return child;
+}
+
+ASTs JSONObjectReader::readExpressionChildren() const
+{
+    ASTs result = readChildren();
+    for (const auto & child : result)
+    {
+        if (child)
+            rejectArgumentlessFunctions(*child, "children");
+    }
+    return result;
+}
+
+ASTPtr JSONObjectReader::readFunctionChildWithExpressionArguments(const char * key) const
+{
+    ASTPtr child = readChildOfType<ASTFunction>(key);
+    if (child)
+    {
+        if (const auto & arguments = child->as<ASTFunction &>().arguments)
+            rejectArgumentlessFunctions(*arguments, key);
+    }
+    return child;
+}
+
+void JSONObjectReader::screenArgumentlessFunctions(const IAST & ast, const char * key)
+{
+    rejectArgumentlessFunctions(ast, key);
 }
 
 ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const
@@ -184,6 +229,9 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Structured Field value exceeds maximum AST depth limit ({}) during JSON AST deserialization",
             max_depth);
+
+    /// The limit above counts `Field` levels, which is not a stack budget at any value.
+    checkStackSize();
 
     /// Count every `Field` value (scalar or structured) against the element-count budget too, so a
     /// wide literal payload (e.g. one huge `Array`) cannot bypass `max_ast_elements` while adding no

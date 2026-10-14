@@ -33,6 +33,8 @@ public:
 
     std::string getName() const override { return "FullSortingMergeJoin"; }
 
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::FULL_SORTING_MERGE); }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool isCloneSupported() const override
@@ -56,7 +58,7 @@ public:
     /// set, so listing the parallel variant as a fallback does not silently change behavior.
     bool isParallel() const { return is_parallel; }
 
-    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
+    bool addBlockToJoin(const Block & /* block */, size_t /* num_rows */, JoinBuildContext /* context */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addBlockToJoin should not be called");
     }

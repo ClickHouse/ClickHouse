@@ -7,3 +7,6 @@
 --- Positive control: a plain projection read still writes QCC entries
 1
 04658_plain_prime	1
+--- Projection TopK part-set changes use a fresh QCC key
+2
+3

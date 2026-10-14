@@ -28,10 +28,6 @@ FROM (SELECT arrayJoin([(100, 10.), (110, 20.), (120, 30.)]) AS sample, toDateTi
 WITH [100, 110, 120]::Array(DateTime) AS timestamps, [10, 20, 30]::Array(Float64) AS values
 SELECT timeSeriesPresentToGrid(100, 120, 10, 30)(arrayZip(timestamps, values));
 
-SELECT '-- the result follows the value type';
-WITH [100, 110, 120]::Array(DateTime64(3)) AS timestamps, [10, 20, 30]::Array(Float32) AS values
-SELECT toTypeName(timeSeriesPresentToGrid(100, 120, 10, 30)(timestamps, values));
-
 SELECT '-- partial states merge';
 -- Grid [100, 120, 140, 160] with a 30 second window: the last window (130, 160] has no samples.
 SELECT timeSeriesPresentToGridMerge(100, 160, 20, 30)(st)

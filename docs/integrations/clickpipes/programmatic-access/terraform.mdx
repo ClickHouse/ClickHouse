@@ -216,11 +216,17 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 
   source {
     kinesis {
-      format         = "JSONEachRow"
+      format         = "AvroConfluent"
       stream_name    = "my-stream"
       region         = "us-east-1"
       iterator_type  = "TRIM_HORIZON"
       authentication = "IAM_USER"
+
+      schema_registry {
+        type               = "glue"
+        glue_region        = "us-east-1"
+        glue_registry_name = "my-registry"
+      }
 
       access_key {
         access_key_id = var.aws_access_key_id
@@ -247,6 +253,49 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
     columns {
       name = "message"
       type = "String"
+    }
+  }
+}
+```
+
+#### Kinesis with an uploaded Protobuf schema {#kinesis-protobuf-schema}
+
+Set `format` to `Protobuf` and use `protobuf_schema` for a base64-encoded `.proto` file or serialized `FileDescriptorSet`. Do not configure `schema_registry` when uploading a schema.
+
+```hcl
+resource "clickhouse_clickpipe" "kinesis_protobuf_clickpipe" {
+  name       = "My Kinesis Protobuf ClickPipe"
+  service_id = var.service_id
+
+  source {
+    kinesis {
+      format          = "Protobuf"
+      stream_name     = "my-stream"
+      region          = "us-east-1"
+      iterator_type   = "TRIM_HORIZON"
+      authentication  = "IAM_USER"
+      protobuf_schema = filebase64("${path.module}/event.proto")
+
+      access_key {
+        access_key_id = var.aws_access_key_id
+        secret_key    = var.aws_secret_key
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
     }
   }
 }

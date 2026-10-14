@@ -24,7 +24,6 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
-#include <Poco/String.h>
 #include <base/find_symbols.h>
 
 namespace ProfileEvents
@@ -168,12 +167,15 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     if (skip_indices.empty())
         return;
 
-    ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
+    CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 
     PackedFilesWriter * packed_writer_for_streams
         = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+
+    /// Compact columns all live in one `data.bin`, so `MergeTreeDataPartWriterCompact::addStreams`
+    /// registers no column base and the index side has nothing to be checked against here.
+    const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact;
+    const StreamBaseManifestPtr manifest = is_compact_part ? nullptr : settings.stream_base_manifest;
 
     for (const auto & skip_index : skip_indices)
     {
@@ -205,11 +207,25 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
             SizeAdaptivePacking packing;
             if (packs_this_index)
+            {
+                /// Size decides at write time which of the two names this substream takes, so the
+                /// stream claims each one in the branch that creates it: the archive key at the
+                /// packed commit, the on-disk name at the spill.
                 packing = {
                     packed_writer_for_streams,
                     logical_stream_name + index_substream.extension,
                     logical_stream_name + marks_file_extension,
-                    packed_spill_threshold};
+                    packed_spill_threshold,
+                    manifest,
+                    logical_stream_name,
+                    on_disk_stream_name,
+                    skip_index->index.name};
+            }
+            else if (manifest)
+            {
+                manifest->registerStreamBase(
+                    on_disk_stream_name, {StreamBaseManifest::Kind::SkipIndex, skip_index->index.name});
+            }
 
             auto stream = std::make_unique<MergeTreeIndexWriterStream>(
                 on_disk_stream_name,

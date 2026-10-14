@@ -143,8 +143,8 @@ The `JSON` type is compatible with JavaScript. To ensure this, some characters a
 - ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. 
 - Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. 
 
-For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. 
-To remove the quotes, you can set the configuration parameter [`output_format_json_quote_64bit_integers`](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) to `0`.
+64-bit or bigger integers (like `Int64`, `UInt64` or `Int128`) are output without quotes by default. 
+For compatibility with JavaScript, you can enclose them in double quotes by setting the configuration parameter [`output_format_json_quote_64bit_integers`](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) to `1`.
 
 ClickHouse supports [NULL](/reference/syntax), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals) to `1`.
 

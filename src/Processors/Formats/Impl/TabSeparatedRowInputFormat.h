@@ -46,7 +46,7 @@ public:
     TabSeparatedFormatReader(PeekableReadBuffer & in_, const FormatSettings & format_settings, bool is_raw_);
 
     bool readField(IColumn & column, const DataTypePtr & type,
-                   const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+                   const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
