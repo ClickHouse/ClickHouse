@@ -1073,6 +1073,7 @@ def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
             return None
         return cidb.last_error
     error = None
+    hard_error = None
     while (remaining := deadline - time.monotonic()) > 0:
         if cidb.do_insert_query(
             query=query,
@@ -1086,6 +1087,8 @@ def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
             return f"rejected: {error}"
         if table not in DASHBOARD_INPUT_TABLES:
             return error
+        if not cidb.last_unavailable and hard_error is None:
+            hard_error = error
         pause = min(
             CIDB_UPLOAD_RETRY_INTERVAL_SEC,
             deadline - time.monotonic() - Settings.CI_DB_INSERT_TIMEOUT_SEC,
@@ -1097,7 +1100,9 @@ def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
     if error is None:
         return NotAttemptedReason(f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent")
     reason = f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
-    return CIDBUnavailableReason(reason) if cidb.last_unavailable else reason
+    if hard_error is None:
+        return CIDBUnavailableReason(reason)
+    return reason if hard_error == error else f"{reason}, earlier error: {hard_error}"
 
 
 def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, deadline):
@@ -1652,8 +1657,8 @@ def dashboard_api_get(path, params=None, timeout_sec=60):
     except urllib.error.HTTPError as e:
         try:
             body = e.read().decode("utf-8", errors="replace").strip()
-        except (OSError, http.client.IncompleteRead):
-            body = ""
+        except (OSError, http.client.IncompleteRead) as read_error:
+            raise PerfDashboardUnavailable(f"HTTP {e.code} for [{url}], body cut short: {read_error!r}") from e
         error_type = PerfDashboardUnavailable if dashboard_did_not_answer(e.code, body) else PerfDashboardError
         raise error_type(f"HTTP {e.code} for [{url}]: {body[:300]}") from e
     except urllib.error.URLError as e:
@@ -1682,11 +1687,13 @@ def dashboard_run_id(info):
     if info.pr_number:
         return f"pr-{info.pr_number}-{info.sha}"
     data = dashboard_api_get("/runs", {"scope": "master", "q": info.sha[:12]})
-    identities = [
-        item.get("identity") or {}
-        for item in dashboard_list(data, "items")
-        if (item.get("identity") or {}).get("newSha") == info.sha
-    ]
+    identities = []
+    for item in dashboard_list(data, "items"):
+        identity = item.get("identity") if isinstance(item, dict) else None
+        if not isinstance(identity, dict) or not all(isinstance(identity.get(k), str) for k in ("newSha", "runId")):
+            raise PerfDashboardError("malformed dashboard answer: [items] row without [identity.newSha, identity.runId]")
+        if identity["newSha"] == info.sha:
+            identities.append(identity)
     if not identities:
         raise PerfDashboardUnavailable(f"no master run for sha {info.sha} yet")
     identities.sort(
@@ -1718,10 +1725,10 @@ def dashboard_has_shard(run_id, arch, test):
     data = dashboard_api_get(
         f"/runs/{urllib.parse.quote(run_id)}/tests/{urllib.parse.quote(test)}"
     )
-    return any(
-        f" {arch} " in (table.get("title") or "")
-        for table in dashboard_list(data, "testTimes")
-    )
+    tables = dashboard_list(data, "testTimes")
+    if not all(isinstance(table, dict) and isinstance(table.get("title"), str) for table in tables):
+        raise PerfDashboardError("malformed dashboard answer: [testTimes] row without [title]")
+    return any(f" {arch} " in table["title"] for table in tables)
 
 
 def dashboard_query_link(run_id, test, query_index):
@@ -1739,13 +1746,22 @@ def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
     )
     rows = []
     for row in dashboard_list(data, "slowdowns"):
+        confidence = row.get("confidence") if isinstance(row, dict) else None
+        tier = confidence.get("tier") if isinstance(confidence, dict) else None
+        if (
+            not (isinstance(tier, str) and tier)
+            or not all(isinstance(row.get(k), str) for k in ("arch", "metric", "test"))
+            or type(row.get("queryIndex")) is not int
+        ):
+            raise PerfDashboardError(
+                "malformed dashboard answer: [slowdowns] row without [arch, metric, test, queryIndex, confidence.tier]"
+            )
         if row.get("arch") != arch:
             continue
         if row.get("metric") != DASHBOARD_GATE_METRIC:
             continue
         if (row.get("test"), row.get("queryIndex")) not in shard_queries:
             continue
-        confidence = row.get("confidence") or {}
         rows.append(
             {
                 "test": row.get("test"),
@@ -1753,7 +1769,7 @@ def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
                 "old": row.get("oldValue"),
                 "new": row.get("newValue"),
                 "diff_percent": row.get("diffPercent"),
-                "tier": confidence.get("tier") or "unknown",
+                "tier": tier,
                 "reason": confidence.get("reason") or "",
                 "confirmation_threshold": confidence.get("confirmationThreshold"),
                 "link": dashboard_query_link(
@@ -1791,6 +1807,7 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
         )
 
     run_id = None
+    hard_reason = None
     while True:
         try:
             if run_id is None:
@@ -1799,12 +1816,15 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
                 rows = fetch_dashboard_slowdowns(run_id, arch, shard_queries)
                 break
             reason = f"run [{run_id}] has no {arch} data for test [{tests[0]}] yet"
-            error_type = PerfDashboardUnavailable
+        except PerfDashboardUnavailable as e:
+            reason = str(e)
         except PerfDashboardError as e:
             reason = str(e)
-            error_type = type(e)
+            hard_reason = hard_reason or reason
         if time.monotonic() >= deadline:
-            raise error_type(
+            if hard_reason not in (None, reason):
+                reason = f"{reason}; earlier: {hard_reason}"
+            raise (PerfDashboardError if hard_reason else PerfDashboardUnavailable)(
                 "dashboard did not serve this shard within "
                 f"{DASHBOARD_INGEST_TIMEOUT_SEC}s: {reason}"
             )
