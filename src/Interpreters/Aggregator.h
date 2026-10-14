@@ -426,10 +426,13 @@ public:
     void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
 
     /// Serves a spill request of the memory scheduler for an adaptive producer: writes its staged records to the
-    /// session's spill streams and, while that releases less than `at_least_bytes`, its table to disk. A table on the
+    /// session's spill streams and, if that releases less than `at_least_bytes`, its table to disk. A table on the
     /// adaptive path is written as over the external-aggregation threshold, and its producer learns again; a table on
     /// the baseline path is spilled as with the feature off. The staged records go first: the merge reads them back
-    /// unit by unit, while a written table takes the whole merge external. Returns the released bytes.
+    /// unit by unit, while a written table takes the whole merge external. Unlike the writes over the threshold, these
+    /// skip the floors of `adaptive_spill_min_bytes` and `adaptive_frozen_spill_min_hits`: the scheduler asks for
+    /// memory now, in amounts of at least `min_bytes_to_spill`, while the floors keep a query that stays over the
+    /// threshold from writing on every block. Returns the released bytes.
     size_t spillAdaptiveProducer(
         AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, bool no_more_keys, size_t at_least_bytes) const;
 
