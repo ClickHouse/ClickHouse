@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -36,6 +37,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsString insert_deduplication_token;
+}
 
 namespace TimeSeriesSetting
 {
@@ -382,6 +388,14 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->context = Context::createCopy(getContext());
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
 
+    /// These pipelines are created again for each block, so a deduplication token is made unique per block.
+    if ((kind == ViewTarget::Tags) || (kind == ViewTarget::TagsMinMax))
+    {
+        const auto & token = getContext()->getSettingsRef()[Setting::insert_deduplication_token].value;
+        if (!token.empty())
+            pipeline->context->setSetting("insert_deduplication_token", fmt::format("{}:{}:{}", token, kind, input_block_number));
+    }
+
     InterpreterInsertQuery interpreter(
         insert_query,
         pipeline->context,
@@ -457,6 +471,8 @@ void TimeSeriesSink::consume(Chunk & chunk)
 
     if (insert_metric_families)
         consumeMetricFamilies(block);
+
+    ++input_block_number;
 }
 
 
@@ -515,7 +531,12 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion());
     auto [timestamp_type, value_type] = splitTimeSeriesType(getHeader().getByName(samples_column_name).type);
 
-    if (settings[TimeSeriesSetting::store_min_time_and_max_time])
+    /// Since version MIN_WITH_SEPARATE_TAGS_MIN_MAX the time range of a time series is stored in its own
+    /// target table, which keeps the row of a time series in the "tags" table immutable.
+    store_min_max_in_separate_table
+        = settings[TimeSeriesSetting::store_min_time_and_max_time] && time_series_storage.hasTarget(ViewTarget::TagsMinMax);
+
+    if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !store_min_max_in_separate_table)
     {
         /// Use Nullable(timestamp_type) as min_max_time_type.
         /// This part is different from class PrometheusRemoteWriteProtocol.
@@ -571,6 +592,18 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
     tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
+
+    /// Build source header for the min/max time block.
+    if (store_min_max_in_separate_table)
+    {
+        auto min_max_time_type = makeNullable(timestamp_type);
+        Block tags_min_max_header;
+        tags_min_max_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
+        tags_min_max_header.insert(ColumnWithTypeAndName{metric_name_type, TimeSeriesColumnNames::MetricName});
+        tags_min_max_header.insert(ColumnWithTypeAndName{min_max_time_type, TimeSeriesColumnNames::MinTime});
+        tags_min_max_header.insert(ColumnWithTypeAndName{min_max_time_type, TimeSeriesColumnNames::MaxTime});
+        tags_min_max_pipeline = createTargetPipeline(ViewTarget::TagsMinMax, tags_min_max_header);
+    }
 
     /// Build source header for samples block.
     Block samples_header;
@@ -671,17 +704,20 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_col.type);
 
     /// Optionally fill min_time and max_time columns if enabled in settings.
-    MutableColumnPtr min_time_column;
-    MutableColumnPtr max_time_column;
+    /// They go either to the tags block or to the min/max time block, so they are kept immutable here.
+    ColumnPtr min_time_column;
+    ColumnPtr max_time_column;
     DataTypePtr min_max_time_type;
     if (settings[TimeSeriesSetting::store_min_time_and_max_time])
     {
         min_max_time_type = makeNullable(timestamp_type);
-        min_time_column = min_max_time_type->createColumn();
-        max_time_column = min_max_time_type->createColumn();
-        min_time_column->reserve(num_time_series);
-        max_time_column->reserve(num_time_series);
-        fillMinMaxTimeColumns(filter, ts_offsets, ts_timestamps, *min_time_column, *max_time_column);
+        auto new_min_time_column = min_max_time_type->createColumn();
+        auto new_max_time_column = min_max_time_type->createColumn();
+        new_min_time_column->reserve(num_time_series);
+        new_max_time_column->reserve(num_time_series);
+        fillMinMaxTimeColumns(filter, ts_offsets, ts_timestamps, *new_min_time_column, *new_max_time_column);
+        min_time_column = std::move(new_min_time_column);
+        max_time_column = std::move(new_max_time_column);
     }
 
     /// Step 3. Assemble the tags block.
@@ -702,10 +738,10 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         tags_block.insert(ColumnWithTypeAndName{new_tags_column, tags_map_type, TimeSeriesColumnNames::AllTags});
     }
 
-    if (min_time_column)
+    if (min_time_column && !store_min_max_in_separate_table)
     {
-        tags_block.insert(ColumnWithTypeAndName{std::move(min_time_column), min_max_time_type, TimeSeriesColumnNames::MinTime});
-        tags_block.insert(ColumnWithTypeAndName{std::move(max_time_column), min_max_time_type, TimeSeriesColumnNames::MaxTime});
+        tags_block.insert(ColumnWithTypeAndName{min_time_column, min_max_time_type, TimeSeriesColumnNames::MinTime});
+        tags_block.insert(ColumnWithTypeAndName{max_time_column, min_max_time_type, TimeSeriesColumnNames::MaxTime});
     }
 
     /// Calculate IDs using precomputed ExpressionActions.
@@ -715,15 +751,49 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     if (tags_block.has(TimeSeriesColumnNames::AllTags))
         tags_block.erase(TimeSeriesColumnNames::AllTags);
 
+    /// Step 3a. Assemble the min/max time block, one row per time series like the tags block.
+    /// It takes `metric_name` before step 4 filters the tags block, which replaces that column.
+    Block tags_min_max_block;
+    if (store_min_max_in_separate_table)
+    {
+        tags_min_max_block.insert(ColumnWithTypeAndName{id_column, id_type, TimeSeriesColumnNames::ID});
+        tags_min_max_block.insert(tags_block.getByName(TimeSeriesColumnNames::MetricName));
+        tags_min_max_block.insert(ColumnWithTypeAndName{min_time_column, min_max_time_type, TimeSeriesColumnNames::MinTime});
+        tags_min_max_block.insert(ColumnWithTypeAndName{max_time_column, min_max_time_type, TimeSeriesColumnNames::MaxTime});
+    }
+
     /// Step 4. Push the tags block without the time series already written to the "tags" table.
     if (tags_deduplication_cache)
         tags_block = tags_deduplication_cache->filterOutWrittenRows(
             tags_block, /* key_column_index = */ tags_block.getPositionByName(TimeSeriesColumnNames::ID), pending_tags);
 
-    /// Tags are pushed first so that if the samples insert fails,
-    /// we don't end up with sample rows referencing IDs that were never written to the tags table.
+    /// A push is not a commit: a target pipeline can keep rows until `finish`. So the tags and the bounds of a block
+    /// are committed before its samples are pushed, which also covers a block with no new tags.
     if (tags_block.rows())
+    {
+        if (!tags_pipeline)
+            tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_block.cloneEmpty());
         tags_pipeline->push(std::move(tags_block));
+    }
+    if (tags_pipeline)
+    {
+        tags_pipeline->executor->finish();
+        tags_pipeline.reset();
+        /// The pending rows are in the table for sure now.
+        if (tags_deduplication_cache && !pending_tags.empty())
+            tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
+    }
+
+    /// Step 4a. Push the min/max time block. It is pushed for every block, including one whose tags rows
+    /// were all skipped above, because the time range of a time series changes with every block.
+    if (store_min_max_in_separate_table)
+    {
+        if (!tags_min_max_pipeline)
+            tags_min_max_pipeline = createTargetPipeline(ViewTarget::TagsMinMax, tags_min_max_block.cloneEmpty());
+        tags_min_max_pipeline->push(std::move(tags_min_max_block));
+        tags_min_max_pipeline->executor->finish();
+        tags_min_max_pipeline.reset();
+    }
 
     /// Step 5. Assemble and push the samples block.
     if (total_samples)
@@ -842,6 +912,8 @@ void TimeSeriesSink::onFinish()
         if (tags_deduplication_cache && !pending_tags.empty())
             tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
     }
+    if (tags_min_max_pipeline)
+        tags_min_max_pipeline->executor->finish();
     if (samples_pipeline)
         samples_pipeline->executor->finish();
     if (recent_samples_pipeline)

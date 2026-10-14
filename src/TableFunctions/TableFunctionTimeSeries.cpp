@@ -1,5 +1,7 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -76,6 +78,9 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const ContextPtr & context) const
 {
+    /// Reading needs SELECT and writing needs INSERT (see `executeImpl`), so finding the target needs one of them.
+    if (!context->getAccess()->isGranted(AccessType::INSERT, time_series_storage_id.database_name, time_series_storage_id.table_name))
+        context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     return time_series_storage->getTargetTable(target_kind, context);
 }
@@ -87,9 +92,18 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
-    return getTargetTable(context);
+    auto target_table = getTargetTable(context);
+    /// A write needs INSERT on the TimeSeries table and on the target, like `INSERT INTO` the TimeSeries table.
+    if (is_insert_query)
+    {
+        context->checkAccess(AccessType::INSERT, time_series_storage_id);
+        context->checkAccess(AccessType::INSERT, target_table->getStorageID());
+    }
+    else
+        context->checkAccess(AccessType::SELECT, time_series_storage_id);
+    return target_table;
 }
 
 template <ViewTarget::Kind target_kind>
@@ -160,6 +174,21 @@ The following queries are equivalent:
 SELECT * FROM timeSeriesTags(db_name.time_series_table);
 SELECT * FROM timeSeriesTags('db_name.time_series_table');
 SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::TagsMinMax>>(
+        {.description = R"DOCS_MD(
+`timeSeriesTagsMinMax(db_name.time_series_table)` - Returns the [tags min max](/reference/engines/table-engines/integrations/time-series#tags-min-max-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine.
+That table exists from [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 8, only while
+`store_min_time_and_max_time` is enabled and only if the tags table is an inner one; an earlier table, or one with an external
+tags table, keeps `min_time` and `max_time` in its tags table, where [timeSeriesTags](/reference/table-functions/timeSeriesTags) returns them.
+
+```sql
+SELECT * FROM timeSeriesTagsMinMax(db_name.time_series_table);
+SELECT * FROM timeSeriesTagsMinMax('db_name.time_series_table');
+SELECT * FROM timeSeriesTagsMinMax('db_name', 'time_series_table');
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 

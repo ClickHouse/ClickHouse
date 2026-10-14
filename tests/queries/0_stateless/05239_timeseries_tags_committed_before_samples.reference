@@ -1,0 +1,14 @@
+--- a failed tags insert leaves no samples, also when the later blocks are hits of the tags cache ---
+0
+--- the same without the tags cache ---
+0
+--- a failed bounds insert leaves no samples a time-bounded selector would miss ---
+0
+0
+--- each block commits its tags and bounds before its samples ---
+1	8	8	1	1
+1	1
+--- with a deduplication token, the tags and bounds of later blocks are kept, and a retry is deduplicated ---
+4
+4	1
+4	8	4	8

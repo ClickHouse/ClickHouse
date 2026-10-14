@@ -1,0 +1,26 @@
+-- with SELECT:
+timeSeriesSamples: grant INSERT ON db.ts (ACCESS_DENIED)
+timeSeriesTags: grant INSERT ON db.ts (ACCESS_DENIED)
+timeSeriesTagsMinMax: grant INSERT ON db.ts (ACCESS_DENIED)
+timeSeriesMetricFamilies: grant INSERT ON db.ts (ACCESS_DENIED)
+0	0	0	0
+-- with SELECT, INSERT on the TimeSeries table:
+timeSeriesSamples: grant INSERT ON db.<samples target> (ACCESS_DENIED)
+timeSeriesTags: grant INSERT ON db.<tags target> (ACCESS_DENIED)
+timeSeriesTagsMinMax: grant INSERT ON db.<tagsminmax target> (ACCESS_DENIED)
+timeSeriesMetricFamilies: grant INSERT ON db.<metricfamilies target> (ACCESS_DENIED)
+0	0	0	0
+-- with SELECT, INSERT on the TimeSeries table and its targets:
+timeSeriesSamples: OK
+timeSeriesTags: OK
+timeSeriesTagsMinMax: OK
+timeSeriesMetricFamilies: OK
+1	1	1	1
+-- with INSERT on the TimeSeries table and its targets:
+timeSeriesSamples: OK
+timeSeriesTags: OK
+timeSeriesTagsMinMax: OK
+timeSeriesMetricFamilies: OK
+2	2	2	2
+-- reading still needs SELECT:
+grant SELECT ON db.ts (ACCESS_DENIED)
