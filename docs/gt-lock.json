@@ -7,42 +7,42 @@
       "versionId": "73de02de6a1c10aebc177a6490cb2186e3f533fab0787962e38279fb457e9325",
       "translations": {
         "zh": {
-          "updatedAt": "2026-10-14T14:46:55.924Z",
+          "updatedAt": "2026-10-14T15:09:11.075Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "ja": {
-          "updatedAt": "2026-10-14T14:46:56.169Z",
+          "updatedAt": "2026-10-14T15:09:10.318Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "ru": {
-          "updatedAt": "2026-10-14T14:46:56.358Z",
+          "updatedAt": "2026-10-14T15:09:10.883Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "es": {
-          "updatedAt": "2026-10-14T14:46:56.555Z",
+          "updatedAt": "2026-10-14T15:09:10.126Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-14T14:46:56.759Z",
+          "updatedAt": "2026-10-14T15:09:10.690Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "ko": {
-          "updatedAt": "2026-10-14T14:46:56.995Z",
+          "updatedAt": "2026-10-14T15:09:10.504Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "ar": {
-          "updatedAt": "2026-10-14T14:46:57.196Z",
+          "updatedAt": "2026-10-14T15:09:11.259Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         },
         "fr": {
-          "updatedAt": "2026-10-14T14:46:57.399Z",
+          "updatedAt": "2026-10-14T15:09:11.463Z",
           "fileName": "docs.json",
           "postProcessHash": "6689dc74d2d530dbba0f456c4c2fdce71c988653d634ad39b321cd1d790be30c"
         }
@@ -48977,51 +48977,50 @@
     },
     {
       "fileId": "4ade23bfbca3894d8b3ed10c46f090685fa5068ef847e68ea14530506cb5ea58",
-      "versionId": "e4fc1e7ec69c74e421c4efff06609ea5ac56ddbfb03b1e6c3f7e52b71b37616c",
+      "versionId": "1c6d6586b255c55659269729c312491d243985a521305ba1edde789759c93668",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.741Z",
-          "fileName": "es/products/managed-postgres/monitoring/query-insights.mdx",
-          "postProcessHash": "05e2315da4e0a8cf795ad042ede1d35d27b7759c3b3098bcb2cad6a3dbbb454f"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.741Z",
-          "fileName": "ja/products/managed-postgres/monitoring/query-insights.mdx",
-          "postProcessHash": "69cb42e30038ddbef9d589c3f9884a18793cdb87f28a861055208e0a8bbfc820"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.741Z",
-          "fileName": "ko/products/managed-postgres/monitoring/query-insights.mdx",
-          "postProcessHash": "b093059df9f2f8e8217b23926dc7ff95ee53c2d5358988d427e17f0cb1935e4d"
+        "zh": {
+          "updatedAt": "2026-10-14T15:09:15.117Z",
+          "fileName": "zh/products/managed-postgres/monitoring/query-insights.mdx",
+          "postProcessHash": "a2472015f96a2a6713024201fcb41d2cbca165ca0807113c3103ebbc5168b219"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.741Z",
+          "updatedAt": "2026-10-14T15:09:15.118Z",
           "fileName": "pt-BR/products/managed-postgres/monitoring/query-insights.mdx",
-          "postProcessHash": "32794167411799319924023907453b988b6df26baea65baad1fa1af5daab86af"
+          "postProcessHash": "6ff5ff7b8aab95b6af5b0ed8d2872b11a57ae7b2b5a046992ab95c5d1c8f5fe1"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.741Z",
-          "fileName": "ru/products/managed-postgres/monitoring/query-insights.mdx",
-          "postProcessHash": "9a326062616a2e175411ea15adfba74bc7fead1516806831bc2a45465b159047"
+        "ja": {
+          "updatedAt": "2026-10-14T15:09:15.118Z",
+          "fileName": "ja/products/managed-postgres/monitoring/query-insights.mdx",
+          "postProcessHash": "927d738b1653677de307c8cfcdacc111da2d2b70b2d7688922e0c8e41a129d00"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.742Z",
-          "fileName": "zh/products/managed-postgres/monitoring/query-insights.mdx",
-          "postProcessHash": "233a2b30f9e994ae672d944eb69dfe8c90a4a254cee9cd4a83e447c786e34324"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.742Z",
-          "fileName": "ar/products/managed-postgres/monitoring/query-insights.mdx",
-          "postProcessHash": "440189d407b9d17c7d9af7261e8e95e4a9ab5e8aa1c3c9ecfa6fb1ecbf65c898"
+        "es": {
+          "updatedAt": "2026-10-14T15:09:15.119Z",
+          "fileName": "es/products/managed-postgres/monitoring/query-insights.mdx",
+          "postProcessHash": "dd3aa6bfe85daf1a27671f4b001252ea12c7bb845e45a03bac1da2b78c838792"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.742Z",
+          "updatedAt": "2026-10-14T15:09:15.121Z",
           "fileName": "fr/products/managed-postgres/monitoring/query-insights.mdx",
-          "postProcessHash": "64721f160d87e79da4322c9f4ce6b522a969bcf3ebcadcbac274c9e107609e16"
+          "postProcessHash": "6c3596f0066dca988da41740345e116c4e1667f43ae6575db7e5ba29b3f3e262"
+        },
+        "ru": {
+          "updatedAt": "2026-10-14T15:09:15.123Z",
+          "fileName": "ru/products/managed-postgres/monitoring/query-insights.mdx",
+          "postProcessHash": "f4cff5ef6659874ecb66ed63b9f5a7934ff612edc6d00fdc0074978715448944"
+        },
+        "ar": {
+          "updatedAt": "2026-10-14T15:09:15.123Z",
+          "fileName": "ar/products/managed-postgres/monitoring/query-insights.mdx",
+          "postProcessHash": "3c5a6c1f70f642f79c4137b813b0aa5e07b3e7b947d3e93a84c634da081c74b9"
+        },
+        "ko": {
+          "updatedAt": "2026-10-14T15:09:15.123Z",
+          "fileName": "ko/products/managed-postgres/monitoring/query-insights.mdx",
+          "postProcessHash": "b22e701754e9b163d215063231d55a731e8a9bb3699fa07a4b6be226511fae5d"
         }
       },
-      "fileName": "products/managed-postgres/monitoring/query-insights.mdx",
-      "staged": false
+      "fileName": "products/managed-postgres/monitoring/query-insights.mdx"
     },
     {
       "fileId": "f0f94c848b89173e008bedb6fa885ae36439e73435b2f58ab42dec2170059786",
@@ -66085,47 +66084,47 @@
     },
     {
       "fileId": "7ed5349a06a9e9f516a5f7b6af36a424875a6e22f174836fb8715f821a8cd318",
-      "versionId": "20f9e6c5cd665ee32dd2ddfe86e18575da7d330844dbc865974f979b3e622f84",
+      "versionId": "16d55689cf659b53c61a2455694566a7c6e5fb49ce9c3a003defe04738be3e38",
       "translations": {
-        "ar": {
-          "updatedAt": "2026-10-14T14:46:57.496Z",
-          "fileName": "ar/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "521f9a4ce4aa59101332829728f022a91cb8b138f1fb6107c935dccb983b10e7"
-        },
-        "ja": {
-          "updatedAt": "2026-10-14T14:46:57.534Z",
-          "fileName": "ja/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "cc6f368d76ba5b1159f62624cfa6bca2d084ec66e55d4006859f877fb24e2277"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-10-14T14:46:57.556Z",
-          "fileName": "pt-BR/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "8d5b6d879327c37714598879d865241a7090ff36dc6087751c46289ca00ed2ff"
-        },
         "es": {
-          "updatedAt": "2026-10-14T14:46:57.567Z",
+          "updatedAt": "2026-10-14T15:09:15.119Z",
           "fileName": "es/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "05674c0dcd4109e44d67c37008c8e2b3463c29752d0c8cbec765f6b9af90a0b9"
+          "postProcessHash": "183ecb7a34510a4adef193ca57f0ebb94a57871430c697475cd6292b55962458"
         },
         "zh": {
-          "updatedAt": "2026-10-14T14:46:57.569Z",
+          "updatedAt": "2026-10-14T15:09:15.120Z",
           "fileName": "zh/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "334a94d41509e38815d266994e4043564576df832f2ab36605c0bcfb667f5080"
+          "postProcessHash": "b6127800dc6fd92ee9b70f70c8362aec8b60e7b8db555a09340bfe661636870e"
+        },
+        "ja": {
+          "updatedAt": "2026-10-14T15:09:15.121Z",
+          "fileName": "ja/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "07187f722dde890aceab2855b09ec4696d5976c552ac99daa1d2330cc3208a43"
         },
         "ru": {
-          "updatedAt": "2026-10-14T14:46:57.587Z",
+          "updatedAt": "2026-10-14T15:09:15.122Z",
           "fileName": "ru/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "4a0bc64492b9fb57c7f20ed17373b563f6bf2b6ed9d81a8516d503b13be1093d"
+          "postProcessHash": "825833ea2c841a4500d3b91b7a051a5ff5a02be54e0a98205d6c28b952414cca"
         },
-        "fr": {
-          "updatedAt": "2026-10-14T14:46:57.589Z",
-          "fileName": "fr/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "a96164520f2b39a61e238800664b8c264d7c8ad49099ee064d48aa23e1326c8a"
+        "pt-BR": {
+          "updatedAt": "2026-10-14T15:09:15.124Z",
+          "fileName": "pt-BR/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "808b022aad009102225dc94f83724d87bb2591bf29bc54e654dbbf235e06db00"
         },
         "ko": {
-          "updatedAt": "2026-10-14T14:46:57.629Z",
+          "updatedAt": "2026-10-14T15:09:15.125Z",
           "fileName": "ko/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "4e32d26f32b5d6ed23c9e0ebac656ec921ae2cd5225f4c52b6bed62a99a473fc"
+          "postProcessHash": "619bd91964a4f102d29c4a266f1808be4d4446a626552dd41d4248a8f173db54"
+        },
+        "ar": {
+          "updatedAt": "2026-10-14T15:09:15.126Z",
+          "fileName": "ar/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "32d634550e8fcf4340fa84635d512c3fb6a76be458a9650b05d5273061f4e1f3"
+        },
+        "fr": {
+          "updatedAt": "2026-10-14T15:09:15.127Z",
+          "fileName": "fr/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "1a4615f1fbb9b8fc27135e2c287d0c5369c57b2d2196ca2d46d64fbdbbe1ef4b"
         }
       },
       "fileName": "reference/settings/server-settings/_server_settings_outside_source.mdx"

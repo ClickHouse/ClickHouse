@@ -65,8 +65,8 @@ title: 源代码之外的服务器设置
     ('compare_collected_metadata', 'Bool', '如果为 true，则将已收集的元数据与现有元数据进行比较，以确保它们在备份期间未发生变化。', 'true'),
     ('create_table_timeout', 'UInt64', '恢复期间创建表的超时时间（毫秒）。', '300000'),
     ('max_attempts_after_bad_version', 'UInt64', '在协调备份/恢复过程中遇到 bad version 错误后，允许重试的最大次数。', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '下次尝试收集元数据前的最长休眠时间（毫秒）。', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '下次尝试收集元数据前的最短休眠时间（毫秒）。', '5000'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '下次尝试收集元数据前的最长休眠时间（毫秒）。', '5000'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '下次尝试收集元数据前的最短休眠时间（毫秒）。', '100'),
     ('remove_backup_files_after_failure', 'Bool', '如果 `BACKUP` 命令失败，ClickHouse 会尝试删除失败前已复制到备份中的文件；否则将保留这些已复制的文件。', 'true'),
     ('sync_period_ms', 'UInt64', '协调备份/恢复的同步周期（毫秒）。', '5000'),
     ('test_inject_sleep', 'Bool', '与测试相关的休眠时间', 'false'),
@@ -87,8 +87,8 @@ title: 源代码之外的服务器设置
 | `compare_collected_metadata`                        | Bool   | 如果为 true，则将收集到的元数据与现有元数据进行比较，以确保它们在备份期间未发生变化。                  | `true`                |
 | `create_table_timeout`                              | UInt64 | 恢复期间创建表的超时时间 (毫秒) 。                                            | `300000`              |
 | `max_attempts_after_bad_version`                    | UInt64 | 在协调备份/恢复过程中遇到 bad version 错误后，允许重试的最大次数。                       | `3`                   |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 下次尝试收集元数据前的最长休眠时间 (毫秒) 。                                       | `100`                 |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 下次尝试收集元数据前的最短休眠时间 (毫秒) 。                                       | `5000`                |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 下次尝试收集元数据前的最长休眠时间 (毫秒) 。                                       | `5000`                |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 下次尝试收集元数据前的最短休眠时间 (毫秒) 。                                       | `100`                 |
 | `remove_backup_files_after_failure`                 | Bool   | 如果 `BACKUP` 命令失败，ClickHouse 会尝试删除在失败前已复制到备份中的文件；否则会保留这些已复制的文件。 | `true`                |
 | `sync_period_ms`                                    | UInt64 | 协调备份/恢复的同步周期 (毫秒) 。                                            | `5000`                |
 | `test_inject_sleep`                                 | Bool   | 用于测试的休眠设置                                                      | `false`               |
