@@ -746,7 +746,7 @@ mortonDecode(range_mask, code)
 
 - `tuple_size` — Integer value no more than 8. [`UInt8/16/32/64`](/reference/data-types/int-uint)
 - `range_mask` — For the expanded mode, the mask for each argument. The mask is a tuple of unsigned integers. Each number in the mask configures the amount of range shrink. [`Tuple(UInt8/16/32/64)`](/reference/data-types/tuple)
-- `code` — UInt64 code. [`UInt64`](/reference/data-types/int-uint)
+- `code` — Morton code to decode, as produced by `mortonEncode`. Only the low `N * intDiv(64, N)` bits form the input domain, where `N` is the resulting tuple size. Results for larger codes are unspecified and can differ between builds. [`UInt64`](/reference/data-types/int-uint)
 
 **Returned value**
 
