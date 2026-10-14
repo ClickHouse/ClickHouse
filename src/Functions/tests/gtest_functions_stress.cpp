@@ -14,6 +14,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
@@ -565,6 +566,7 @@ ContextMutablePtr makeContext()
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_introspection_functions", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
+    context->setSetting("enable_ipcrypt", 1);
     return context;
 }
 
@@ -1150,6 +1152,16 @@ bool isAnyArgumentDynamicallyTyped(const ColumnsWithTypeAndName & args)
     return found;
 }
 
+/// `IColumnDummy::isDefaultAt` throws. A dummy (`Nothing`) column holds no values, so its rows count as default.
+bool isDefaultOrDummyAt(const IColumn & column, size_t n)
+{
+    if (column.isDummy())
+        return true;
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+        return std::ranges::all_of(tuple->getColumns(), [n](const auto & element) { return isDefaultOrDummyAt(*element, n); });
+    return column.isDefaultAt(n);
+}
+
 }
 
 struct FunctionsStressTestThread;
@@ -1715,7 +1727,7 @@ struct FunctionsStressTestThread
                         /// Note: this is incorrect (?) for nullable enums, where the IColumn's
                         /// "default" value (0) is different from the IDataType's "default" value
                         /// (first enumerand) and may not be a valid enum value.
-                        if (null_map[i] && !nested.isDefaultAt(i))
+                        if (null_map[i] && !isDefaultOrDummyAt(nested, i))
                         {
                             if (stats)
                                 stats->add(S_NONDEFAULT_NULL, 1);
