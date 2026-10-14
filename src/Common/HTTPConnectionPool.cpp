@@ -19,12 +19,9 @@
 
 #include <IO/SocketPeerClosed.h>
 
-#include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
@@ -562,53 +559,10 @@ private:
             return now - Session::getLastRequest();
         }
 
-        void flushRequest() override
+        /// Installs IO scheduling hooks and per-thread throttlers on the session.
+        /// It has to run before any socket I/O of the exchange starts, so both send entrypoints call it.
+        void installTransportHooks(const Poco::Net::HTTPRequest & request)
         {
-            if (bool(request_stream))
-            {
-                request_stream->flush();
-
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthOutputStream *>(request_stream))
-                {
-                    request_stream_completed = fixed_steam->isComplete();
-                }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedOutputStream *>(request_stream))
-                {
-                    chunked_steam->rdbuf()->close();
-                    request_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPOutputStream *>(request_stream))
-                {
-                    request_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    request_stream_completed = false;
-                }
-            }
-            request_stream = nullptr;
-
-            Session::flushRequest();
-        }
-
-        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
-        {
-            /// Sampled before Poco's sendRequest, which updates the session's last-request
-            /// timestamp. Only for a request that is going to be logged: the pool is shared by
-            /// many callers that never read it, and they should not pay for the sampling.
-            ///
-            /// The connection is published only after Poco's sendRequest returns, i.e. once the
-            /// request has actually been written to the socket. Anything that throws before that -
-            /// a failed reconnect of a dead keep-alive socket, the IO scheduler refusing the
-            /// request in the data hooks - leaves the slot empty, so the row the caller writes for
-            /// the error does not claim a connection that never carried it.
-            const bool capture_connection_info = isHTTPConnectionInfoCaptureEnabled();
-            if (capture_connection_info)
-            {
-                sampleIdleTime();
-                beginHTTPConnectionInfoRequest();
-            }
-
             // Set data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
@@ -618,77 +572,64 @@ private:
                 Session::setReceiveThrottler(throttler);
             if (auto throttler = CurrentThread::getWriteThrottler())
                 Session::setSendThrottler(throttler);
+        }
 
-            /// Drop the streams of the previous request before issuing this one. Poco frees them
-            /// inside its `sendRequest`, which can then throw - a borrowed keep-alive socket that
-            /// turns out to be dead and whose reconnect fails - leaving the pointers below dangling
-            /// for the destructor to dereference.
-            request_stream = nullptr;
-            request_stream_completed = false;
+        /// Runs one of Poco's send entrypoints, recording the connection that carried the request.
+        ///
+        /// The idle time is sampled before the send, which updates the session's last-request
+        /// timestamp. Only for a request that is going to be logged: the pool is shared by
+        /// many callers that never read it, and they should not pay for the sampling.
+        ///
+        /// The connection is published only after the send returns, i.e. once the request has
+        /// actually been written to the socket. Anything that throws before that - a failed
+        /// reconnect of a dead keep-alive socket, the IO scheduler refusing the request in the
+        /// data hooks - leaves the slot empty, so the row the caller writes for the error does
+        /// not claim a connection that never carried it.
+        template <typename Send>
+        decltype(auto) sendWithConnectionInfo(const Poco::Net::HTTPRequest & request, Send && send)
+        {
+            const bool capture_connection_info = isHTTPConnectionInfoCaptureEnabled();
+            if (capture_connection_info)
+            {
+                sampleIdleTime();
+                beginHTTPConnectionInfoRequest();
+            }
 
-            response_stream = nullptr;
-            response_stream_completed = false;
+            installTransportHooks(request);
 
-            std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
-            chassert(result.exceptions() & std::ios::badbit);
+            decltype(auto) result = send();
             if (capture_connection_info)
                 publishConnectionInfo();
             ++requests_on_socket;
 
-            request_stream = &result;
-
             return result;
         }
 
-        std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
+        Poco::Net::HTTPClientSession::BodyInfo
+        sendRequestHeaders(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
-            std::istream & result = Session::receiveResponse(response);
-            chassert(result.exceptions() & std::ios::badbit);
+            return sendWithConnectionInfo(request, [&]() { return Session::sendRequestHeaders(request, connect_time, first_byte_time); });
+        }
 
-            response_stream = &result;
-            response_stream_completed = false;
-
-            return result;
+        /// `getConnection` hands out a full `Poco::Net::HTTPClientSession`, so callers may still use the
+        /// legacy iostream API. It does not go through `sendRequestHeaders`, hence the separate override.
+        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
+        {
+            return sendWithConnectionInfo(request, [&]() -> std::ostream & { return Session::sendRequest(request, connect_time, first_byte_time); });
         }
 
         void reset() override
         {
-            request_stream = nullptr;
-            request_stream_completed = false;
-
-            response_stream = nullptr;
-            response_stream_completed = false;
-
             Session::reset();
             forgetSocketIdentity();
         }
 
         ~PooledConnection() override
         {
-            if (bool(response_stream))
-            {
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
-                {
-                    response_stream_completed = fixed_steam->isComplete();
-                }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
-                {
-                    response_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
-                {
-                    response_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    response_stream_completed = false;
-                }
-            }
             /// Unregister from live_connections first, before tearing down session internals,
             /// so that the async metrics thread cannot dereference a partially-destructed session.
             group->atConnectionDestroy(this);
 
-            response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
             Session::setSendThrottler();
@@ -845,9 +786,14 @@ private:
             }
         }
 
-        bool isCompleted() const
+        /// A connection can only be reused when both the request and the response of the last
+        /// exchange were transferred to the end: anything left unsent or unread would be taken
+        /// for a part of the next request or response.
+        /// Not `const`: for a chunked response body the check has to peek into the socket to tell
+        /// a body that ended exactly at the last chunk from a truncated one.
+        bool isCompleted()
         {
-            return request_stream_completed && response_stream_completed;
+            return Session::isRequestBodyComplete() && Session::isResponseBodyComplete();
         }
 
         EndpointConnectionPool::WeakPtr pool;
@@ -856,12 +802,6 @@ private:
         bool isExpired = false;
 
         LoggerPtr log = getLogger("PooledConnection");
-
-        std::ostream * request_stream = nullptr;
-        std::istream * response_stream = nullptr;
-
-        bool request_stream_completed = true;
-        bool response_stream_completed = true;
 
         /// State of the current TCP connection, reset together whenever a socket we have not seen
         /// before turns up, so the numbers reported always describe one and the same socket.
