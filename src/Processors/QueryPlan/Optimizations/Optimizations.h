@@ -253,6 +253,9 @@ size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, Quer
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Let a format source answer key-less, unfiltered `min` / `max` of its columns from format statistics.
+size_t tryMinMaxFromFormatStatistics(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 /// Whether the plan-based parallel replicas may make this `MergeTree` read part of a shipped fragment.
 bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read);
 
@@ -290,6 +293,7 @@ inline const auto & getOptimizations()
          &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
+        {tryMinMaxFromFormatStatistics, "minMaxFromFormatStatistics", &QueryPlanOptimizationSettings::min_max_from_files},
     });
 
     return optimizations;

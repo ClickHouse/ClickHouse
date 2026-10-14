@@ -662,7 +662,7 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    if (query_context->isParallelReplicasEnabled() && settings[Setting::max_parallel_replicas] > 1)
     {
         /// Imagine the situation when we have a query with parallel replicas and
         /// this code executed on the remote server.
@@ -788,7 +788,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
 
     /// Disable parallel replicas: otherwise each remote shard would independently
     /// rewrite and the final result would be multiplied by the replica count.
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    if (query_context->isParallelReplicasEnabled() && settings[Setting::max_parallel_replicas] > 1)
     {
         if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
             settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
@@ -2493,6 +2493,25 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                         column_checks_passed = false;
                                         break;
                                     }
+
+                                    /// Any other name the view does not declare is either one of its
+                                    /// virtual columns, materialized the same way on both paths, or a
+                                    /// subcolumn of a view column: `arr.size0`, a `Tuple` element, `m.keys`,
+                                    /// `n.null`, a `JSON` path, a `Dynamic` typed subcolumn. Subcolumns are
+                                    /// read straight from a table, so the outer query holds a plain column
+                                    /// node named after the subcolumn; the inlined body projects the view's
+                                    /// columns and not their subcolumns, so after the rewrite that node would
+                                    /// name a column the subquery does not produce and planning would fail
+                                    /// with `NOT_FOUND_COLUMN_IN_BLOCK`. `readImpl` instead wraps the body as
+                                    /// `SELECT <subcolumn> FROM (<body>)`, where the analyzer rewrites the
+                                    /// read into `getSubcolumn(<column>, '<subcolumn>')` over the body's
+                                    /// output, so fall back to it.
+                                    if (!storage_snapshot->metadata->virtuals.has(name))
+                                    {
+                                        column_checks_passed = false;
+                                        break;
+                                    }
+
                                     continue;
                                 }
                                 auto it = inner_types.find(name);
