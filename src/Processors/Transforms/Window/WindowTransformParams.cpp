@@ -109,7 +109,18 @@ int compareCalendarRangeOffset(
     /// A shifted key may leave the range of the key type, so a Date key is shifted as an ExtendedDayNum too:
     /// the DayNum overload of addMonths saturates below 1970-01-01 and wraps above 2149-06-06.
     static_assert(std::is_same_v<T, UInt16> || std::is_same_v<T, Int32>);
-    const Int64 shifted_rhs = time_zone->addMonths(ExtendedDayNum(rhs_value), delta);
+    const ExtendedDayNum rhs_day(rhs_value);
+
+    /// The ExtendedDayNum overload saturates in turn a month outside the representable calendar to its first or
+    /// last day, which a Date32 key can equal. Such a bound is below or above every key.
+    const UInt32 rhs_yyyymm = time_zone->toNumYYYYMM(rhs_day);
+    const Int64 shifted_month_index = static_cast<Int64>(rhs_yyyymm / 100) * 12 + rhs_yyyymm % 100 - 1 + delta;
+    if (shifted_month_index < static_cast<Int64>(DATE_LUT_MIN_REPRESENTABLE_YEAR) * 12)
+        return 1;
+    if (shifted_month_index > static_cast<Int64>(DATE_LUT_MAX_REPRESENTABLE_YEAR) * 12 + 11)
+        return -1;
+
+    const Int64 shifted_rhs = time_zone->addMonths(rhs_day, delta);
 
     const Int64 lhs = lhs_value;
     if (lhs < shifted_rhs)

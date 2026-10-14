@@ -84,6 +84,25 @@ SELECT dt,
 FROM (SELECT arrayJoin([toDate('2149-05-01'), toDate('2149-05-20'), toDate('2149-06-01')]) AS dt)
 ORDER BY dt;
 
+-- The same for a Date32 key, whose range is [0000-01-01, 9999-12-31]: a bound past it is below or above every key.
+SELECT 'Date32 key, INTERVAL MONTH and YEAR bounds below 0000-01-01';
+SELECT dt,
+    count() OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS month_preceding,
+    count() OVER (ORDER BY dt RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 MONTH PRECEDING) AS before_month_preceding,
+    count() OVER (ORDER BY dt DESC RANGE BETWEEN INTERVAL 1 MONTH FOLLOWING AND UNBOUNDED FOLLOWING) AS desc_after_month_following,
+    count() OVER (ORDER BY dt RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 YEAR PRECEDING) AS before_year_preceding
+FROM (SELECT arrayJoin([toDate32('0000-01-01'), toDate32('0000-01-15'), toDate32('0000-02-20')]) AS dt)
+ORDER BY dt;
+
+SELECT 'Date32 key, INTERVAL MONTH and YEAR bounds above 9999-12-31';
+SELECT dt,
+    count() OVER (ORDER BY dt RANGE BETWEEN CURRENT ROW AND INTERVAL 1 MONTH FOLLOWING) AS month_following,
+    count() OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 MONTH FOLLOWING AND UNBOUNDED FOLLOWING) AS after_month_following,
+    count() OVER (ORDER BY dt DESC RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW) AS desc_month_preceding,
+    count() OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 YEAR FOLLOWING AND UNBOUNDED FOLLOWING) AS after_year_following
+FROM (SELECT arrayJoin([toDate32('9999-11-30'), toDate32('9999-12-15'), toDate32('9999-12-31')]) AS dt)
+ORDER BY dt;
+
 SELECT 'Windows differing only by unit are not merged';
 SELECT dt, val,
     sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS by_day,
