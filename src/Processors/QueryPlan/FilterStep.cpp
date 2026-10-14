@@ -6,7 +6,9 @@
 #include <ranges>
 #include <stack>
 #include <unordered_set>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -341,6 +343,60 @@ FilterStep::FilterStep(
     actions_dag.removeUnusedActions(false, false);
 }
 
+/// A node with the name and type of `node` that computes nothing the predicate depends on: inputs and constants as they
+/// are, a column constant in the stream that constant, a lambda, which has no default, captured over such nodes,
+/// anything else a default.
+static const ActionsDAG::Node & addNodeWithoutPredicate(ActionsDAG & dag, const ActionsDAG::Node & node, const ColumnPtr & stream_column)
+{
+    const auto * source = &node;
+    while (source->type == ActionsDAG::ActionType::ALIAS)
+        source = source->children.front();
+
+    if (source->type == ActionsDAG::ActionType::INPUT || source->column)
+        return node;
+
+    if (const auto * stream_constant = stream_column ? typeid_cast<const ColumnConst *>(stream_column.get()) : nullptr)
+        return dag.addColumn(ColumnConst::create(stream_constant->getDataColumnPtr(), 0), node.result_type, node.result_name);
+
+    if (typeid_cast<const DataTypeFunction *>(node.result_type.get()))
+    {
+        ActionsDAG::NodeRawConstPtrs children;
+        for (const auto * child : source->children)
+            children.push_back(&addNodeWithoutPredicate(dag, *child, nullptr));
+        return dag.addFunction(source->function_base, std::move(children), node.result_name);
+    }
+
+    return dag.materializeNode(
+        dag.addColumn(node.result_type->createColumnConstWithDefaultValue(0), node.result_type, node.result_name));
+}
+
+/// The actions of the step for the stream that skips the predicate: the same columns, but those a function computes
+/// are defaults, because only the predicate reads them. `stream_header` is `dag.updateHeader` of the stream's header,
+/// so it starts with the outputs in their order.
+static ExpressionActionsPtr makeActionsWithoutPredicate(
+    const ActionsDAG & dag, const String & filter_column_name, bool remove_filter_column, const Block & stream_header,
+    const ExpressionActionsSettings & settings)
+{
+    auto result = dag.clone();
+    auto & outputs = result.getOutputs();
+    for (size_t i = 0; i < outputs.size(); ++i)
+        outputs[i] = &addNodeWithoutPredicate(result, *outputs[i], stream_header.getByPosition(i).column);
+
+    if (remove_filter_column)
+        outputs.erase(std::ranges::find(outputs, &result.findInOutputs(filter_column_name)));
+
+    result.removeUnusedActions(/*allow_remove_inputs=*/ false, /*allow_constant_folding=*/ false);
+
+    /// removeUnusedActions keeps every arrayJoin, also one that only the predicate reads.
+    std::unordered_set<const ActionsDAG::Node *> array_joins;
+    for (const auto & node : result.getNodes())
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            array_joins.insert(&node);
+    result.removeNodes(array_joins);
+
+    return std::make_shared<ExpressionActions>(std::move(result), settings);
+}
+
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     std::vector<ActionsAndName> and_atoms;
@@ -357,8 +413,12 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
         auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
-        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
+        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
+            if (skip_extremes && stream_type == QueryPipelineBuilder::StreamType::Extremes)
+                return std::make_shared<ExpressionTransform>(
+                    header, makeActionsWithoutPredicate(expression->getActionsDAG(), and_atom.name, true, *transformed_header, settings.getActionsSettings()));
+
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
 
             /// Each split atom gets the same query condition cache key.
@@ -369,8 +429,12 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
     auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
+        if (skip_extremes && stream_type == QueryPipelineBuilder::StreamType::Extremes)
+            return std::make_shared<ExpressionTransform>(
+                header, makeActionsWithoutPredicate(expression->getActionsDAG(), filter_column_name, remove_filter_column, *transformed_header, settings.getActionsSettings()));
+
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         return std::make_shared<FilterTransform>(header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
     });

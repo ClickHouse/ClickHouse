@@ -22,6 +22,10 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (!expression_step && !filter_step)
         return 0;
 
+    /// The extremes skip the predicate of such a filter, but not an `ArrayJoinStep` made from it.
+    if (filter_step && filter_step->skipsExtremes())
+        return 0;
+
     auto & dag = expression_step ? expression_step->getExpression() : filter_step->getExpression();
     if (!dag.hasArrayJoin())
         return 0;
