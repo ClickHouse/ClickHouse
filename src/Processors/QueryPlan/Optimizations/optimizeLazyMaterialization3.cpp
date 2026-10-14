@@ -347,21 +347,23 @@ public:
         for (size_t position : sort_key_positions)
             sort_key_nodes.insert(outputs[position]);
 
-        std::vector<const ActionsDAG::Node *> kept_by_read;
+        NodeSet kept_by_read;
         if (!chooseLazyReads(kept_by_read) || !keepColumnsOfUnreadJoinSides(kept_by_read))
             return false;
 
-        /// The values that cross the `LIMIT`: what the frontier says, and the columns meant for a lazy read
-        /// that the main read keeps anyway. A sort key crosses as a column the sorting needs.
-        std::vector<const ActionsDAG::Node *> crossing_values = std::move(kept_by_read);
-        for (const auto & [node, placed] : frontier.placement)
-            if (placed.above == Placement::Above::Crossing && !sort_key_nodes.contains(node))
-                crossing_values.push_back(node);
-
+        /// The values that cross the `LIMIT`: what the frontier says, and the columns meant for a lazy read that the main
+        /// read keeps anyway. A sort key crosses as a column the sorting needs. In the order of the merged DAG, so that the
+        /// copies are numbered and cross the `LIMIT` the same way every time.
         std::vector<const ActionsDAG::Node *> carried_values;
-        for (const auto * value : crossing_values)
-            if (std::ranges::find(carried_values, value) == carried_values.end())
-                carried_values.push_back(value);
+        for (const auto & node : merged.getDAG().getNodes())
+        {
+            if (sort_key_nodes.contains(&node))
+                continue;
+
+            const auto it = frontier.placement.find(&node);
+            if (kept_by_read.contains(&node) || (it != frontier.placement.end() && it->second.above == Placement::Above::Crossing))
+                carried_values.push_back(&node);
+        }
 
         /// Each value crosses as a copy of its own, made where it is computed: of the column the step there outputs, or of
         /// a value an expression or a filter computes without outputting it, which that step outputs then. Every step
@@ -603,7 +605,7 @@ private:
     /// Picks the columns each source reads lazily. A column the frontier wants read lazily that something
     /// below the `LIMIT` reads as well, or that the read keeps anyway, stays in the main read and crosses the
     /// `LIMIT` as a column instead; those are returned in `kept_by_read`.
-    bool chooseLazyReads(std::vector<const ActionsDAG::Node *> & kept_by_read)
+    bool chooseLazyReads(NodeSet & kept_by_read)
     {
         for (size_t source = 0; source < merged.sources.size(); ++source)
         {
@@ -616,7 +618,9 @@ private:
             if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(step))
             {
                 /// The positions the main read need not produce: nothing below the `LIMIT` reads them, and they do not
-                /// cross it. The inputs of a source follow its header.
+                /// cross it - the ones meant for the lazy read, and the ones nothing needs at all. The latter matter as
+                /// well: the main read is pruned of them anyway, and a column of storage read for several positions is
+                /// left out of the read only if none of them is needed. The inputs of a source follow its header.
                 const auto & inputs = merged.sources[source].inputs;
                 std::vector<size_t> unneeded;
                 for (size_t position = 0; position < inputs.size(); ++position)
@@ -627,21 +631,27 @@ private:
                 }
 
                 /// A column meant for the lazy read that the main read reads anyway, such as one FINAL merges by or
-                /// PREWHERE reads, crosses the `LIMIT` instead.
+                /// PREWHERE reads, crosses the `LIMIT` instead. Those the read can leave out are some of the unneeded
+                /// ones, in their order, so both lists are followed at once.
                 const auto readable = merge_tree->getLazilyReadablePositions(unneeded);
+                auto next_readable = readable.begin();
                 for (size_t position = 0; position < inputs.size(); ++position)
                 {
+                    const bool is_readable = next_readable != readable.end() && *next_readable == position;
+                    if (is_readable)
+                        ++next_readable;
+
                     const auto * input = inputs[position];
                     if (frontier.at(input).above != Placement::Above::LazyRead)
                         continue;
 
-                    if (std::ranges::binary_search(unneeded, position) && std::ranges::binary_search(readable, position))
+                    if (is_readable)
                     {
                         lazy.positions.push_back(position);
                         lazy.inputs.push_back(input);
                     }
                     else
-                        kept_by_read.push_back(input);
+                        kept_by_read.insert(input);
                 }
 
                 if (!lazy.inputs.empty())
@@ -659,7 +669,7 @@ private:
                 {
                     lazy.eager_names.insert(input->result_name);
                     if (placed.above == Placement::Above::LazyRead)
-                        kept_by_read.push_back(input);
+                        kept_by_read.insert(input);
                 }
             }
 
@@ -675,7 +685,7 @@ private:
                 else
                 {
                     lazy.eager_names.insert(input->result_name);
-                    kept_by_read.push_back(input);
+                    kept_by_read.insert(input);
                 }
             }
 
@@ -691,52 +701,60 @@ private:
     }
 
     /// A join keeps the first input of a side no condition of it reads when nothing else of that side is needed below the
-    /// `LIMIT`, so that input has to stay in the main read: one meant for a lazy read crosses the `LIMIT` instead. A value
-    /// computed below the join would need the columns it reads kept as well, which is not followed, so that gives up.
-    bool keepColumnsOfUnreadJoinSides(std::vector<const ActionsDAG::Node *> & kept_by_read)
+    /// `LIMIT`, for the number of rows, so that input is computed below the `LIMIT`, and the columns of the reads it is
+    /// computed from have to stay in the main read: those meant for a lazy read cross the `LIMIT` instead. The input can
+    /// be a column of a read, under whatever name the steps between give it, a value computed from columns of one read
+    /// or of several, or a constant, which reads none.
+    bool keepColumnsOfUnreadJoinSides(NodeSet & kept_by_read)
     {
-        const auto is_needed_below = [&](const ActionsDAG::Node * value)
-        {
-            const auto placed = frontier.at(value);
-            return placed.computed_below || placed.above == Placement::Above::Crossing
-                || std::ranges::find(kept_by_read, value) != kept_by_read.end();
-        };
-
         for (const auto & side_inputs : merged.unread_join_sides)
         {
-            if (std::ranges::any_of(side_inputs, is_needed_below))
+            bool is_any_needed_below = false;
+            for (const auto * input : side_inputs)
+            {
+                const auto placed = frontier.at(input);
+                if (placed.computed_below || placed.above == Placement::Above::Crossing || kept_by_read.contains(input))
+                {
+                    is_any_needed_below = true;
+                    break;
+                }
+            }
+
+            if (is_any_needed_below)
                 continue;
 
-            /// The column of the read the kept input is, under whatever name the steps between give it.
-            const auto * kept = side_inputs.front();
-            while (kept->type == ActionsDAG::ActionType::ALIAS)
-                kept = kept->children.front();
-            const auto & kept_sources = merged.getSources(kept);
-            if (kept_sources.count() != 1)
-                return false;
-            const auto source = *kept_sources.begin();
-            if (std::ranges::find(merged.sources[source].inputs, kept) == merged.sources[source].inputs.end())
-                return false;
+            for (const auto * column : findReachableNodes({side_inputs.front()}))
+            {
+                if (column->type != ActionsDAG::ActionType::INPUT)
+                    continue;
 
-            const auto lazy_it = lazy_by_source.find(source);
-            if (lazy_it == lazy_by_source.end())
-                continue;
+                /// An input of the merged DAG is a column of exactly one read.
+                const auto & column_sources = merged.getSources(column);
+                if (column_sources.count() != 1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Input {} of the merged plan DAG reads {} sources", column->result_name, column_sources.count());
+                const auto source = *column_sources.begin();
+                const auto lazy_it = lazy_by_source.find(source);
+                if (lazy_it == lazy_by_source.end())
+                    continue;
 
-            auto & lazy = lazy_it->second;
-            const auto input_it = std::ranges::find(lazy.inputs, kept);
-            if (input_it == lazy.inputs.end())
-                continue;
+                /// A column the read does not leave to its lazy read is in the main read already.
+                auto & lazy = lazy_it->second;
+                const auto input_it = std::ranges::find(lazy.inputs, column);
+                if (input_it == lazy.inputs.end())
+                    continue;
 
-            const auto index = input_it - lazy.inputs.begin();
-            lazy.inputs.erase(input_it);
-            if (!lazy.positions.empty())
-                lazy.positions.erase(lazy.positions.begin() + index);
-            else
-                lazy.eager_names.insert(kept->result_name);
-            kept_by_read.push_back(kept);
+                const auto index = input_it - lazy.inputs.begin();
+                lazy.inputs.erase(input_it);
+                if (!lazy.positions.empty())
+                    lazy.positions.erase(lazy.positions.begin() + index);
+                else
+                    lazy.eager_names.insert(column->result_name);
+                kept_by_read.insert(column);
 
-            if (lazy.inputs.empty())
-                lazy_by_source.erase(lazy_it);
+                if (lazy.inputs.empty())
+                    lazy_by_source.erase(lazy_it);
+            }
         }
 
         return !lazy_by_source.empty();
