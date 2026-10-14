@@ -81,9 +81,10 @@ FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM sa_real WHERE b <
 WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
 
 -- an insert from a table can keep the dictionary of the source and its two-byte index for the two values that the filter leaves
+-- no sparse columns in the source, an insert from a table gives the writer sparse columns as they are
 CREATE TABLE w_src (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-        merge_max_block_size = 8192, use_const_adaptive_granularity = 0;
+        merge_max_block_size = 8192, use_const_adaptive_granularity = 0, ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO w_src SELECT number, number % 100, if(number < 6000, toString(number % 2), toString(number)) FROM numbers(6300)
     SETTINGS max_block_size = 10000, max_threads = 1;
 CREATE TABLE w_est AS w_src;
@@ -105,9 +106,10 @@ WHERE match(trim(explain), '^Granules:');
 
 -- a key that computes a LowCardinality column from a stored one can take the dictionary of the source
 -- the part does not record the size of that dictionary
+-- no sparse columns in the source, an insert from a table gives the writer sparse columns as they are
 CREATE TABLE k_src (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-        merge_max_block_size = 8192, use_const_adaptive_granularity = 0;
+        merge_max_block_size = 8192, use_const_adaptive_granularity = 0, ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO k_src SELECT number, number % 100, repeat(if(number < 600, toString(number % 2), toString(number)), 3000) FROM numbers(630)
     SETTINGS max_block_size = 10000, max_threads = 1;
 CREATE TABLE k_est AS k_src;
