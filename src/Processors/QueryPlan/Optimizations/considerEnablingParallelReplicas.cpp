@@ -1160,18 +1160,6 @@ static bool decideAtBoundary(
     const QueryPlanPtr & plan_with_parallel_replicas,
     const QueryPlan::Node * const replicas_plan_boundary)
 {
-    /// The funnel events are counted as the call returns, unless it asks for the replicas plan: the call with
-    /// the plan then decides again and counts them, so that each query ends in one of them either way.
-    std::vector<std::pair<ProfileEvents::Event, UInt64>> events;
-    SCOPE_EXIT({
-        for (const auto & [event, amount] : events)
-            ProfileEvents::increment(event, amount);
-    });
-    const auto count = [&](ProfileEvents::Event event, UInt64 amount = 1)
-    {
-        events.emplace_back(event, amount);
-    };
-
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
     /// estimate the number of bytes replicas would send to the initiator: the reading step records only
@@ -1181,7 +1169,7 @@ static bool decideAtBoundary(
     /// parallel replicas for plans that are cheaper to execute locally. Skip the optimization instead.
     if (single_replica_plan_boundary->step.get() == source_reading_step)
     {
-        count(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
@@ -1193,7 +1181,7 @@ static bool decideAtBoundary(
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
     {
-        count(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
         return false;
     }
@@ -1208,14 +1196,14 @@ static bool decideAtBoundary(
     /// the parallel-replicas plan cannot be relied on to reproduce.
     if (analysis->readFromProjection())
     {
-        count(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "The read is served from a projection. Skipping optimization");
         return false;
     }
     const auto rows_to_read = analysis->selected_rows;
     if (!rows_to_read)
     {
-        count(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Index analysis result doesn't contain selected rows. Skipping optimization");
         return false;
     }
@@ -1228,9 +1216,13 @@ static bool decideAtBoundary(
         bool apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode != 2;
         if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
         {
+            /// Statistics are recollected only with the replicas plan; the call with it counts the event.
+            if (!plan_with_parallel_replicas)
+                return true;
+
             /// With the hash: without it there is no way to tell genuine drift on one plan from two
             /// different plans sharing a cache entry, and the two look identical in the log.
-            count(ProfileEvents::AutoParallelReplicasStatisticsDrifted);
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasStatisticsDrifted);
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
                 "Significant difference in total rows from storage detected for hash {} (previously {}, now {}). Recollecting statistics",
@@ -1272,12 +1264,33 @@ static bool decideAtBoundary(
             const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
             const auto replicas_plan_cost_estimation
                 = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / output_replicas_divisor;
-            count(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
+            /// Winning on time is necessary but not sufficient. Only the coordinated read is split; every
+            /// other read of the subtree runs on each replica in full, so the cluster does
+            /// `num_replicas` times that work for no change in wall-clock time - the comparison above
+            /// cannot see it, because the term cancels on both sides. Decline a query that would spend
+            /// more of the cluster on reading than the setting allows, however the time comparison turned
+            /// out. The ratio is deliberately independent of `num_replicas`: it asks what share of the
+            /// reading is duplicated, not how much work that adds up to, so adding replicas does not by
+            /// itself make the query less likely to be distributed.
+            const auto total_read_bytes = stats->input_bytes + stats->duplicated_bytes;
+            const double duplicated_read_ratio
+                = total_read_bytes ? static_cast<double>(stats->duplicated_bytes) / static_cast<double>(total_read_bytes) : 0.0;
+            const bool replicas_plan_is_cheaper = local_plan_cost_estimation > replicas_plan_cost_estimation;
+            const bool rejected_by_duplicated_reads = replicas_plan_is_cheaper
+                && duplicated_read_ratio > static_cast<double>(optimization_settings.automatic_parallel_replicas_max_duplicated_read_ratio);
+            const bool rejected_by_threshold = replicas_plan_is_cheaper
+                && optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
+                && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
+            /// Applying needs the replicas plan; the call with it counts the events.
+            if (replicas_plan_is_cheaper && !rejected_by_duplicated_reads && !rejected_by_threshold && !plan_with_parallel_replicas)
+                return true;
+
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
             /// Unconditionally, before the decision. Recording it only when the threshold turns a
             /// query away would show only which queries a lower threshold would let through, never
             /// what a higher one would cost - and the queries it would start turning away are exactly
             /// the ones being applied here.
-            count(
+            ProfileEvents::increment(
                 ProfileEvents::AutoParallelReplicasBytesPerReplica, stats->input_bytes / num_replicas);
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
@@ -1290,22 +1303,9 @@ static bool decideAtBoundary(
                 output_replicas_divisor,
                 local_plan_cost_estimation,
                 replicas_plan_cost_estimation);
-            /// Winning on time is necessary but not sufficient. Only the coordinated read is split; every
-            /// other read of the subtree runs on each replica in full, so the cluster does
-            /// `num_replicas` times that work for no change in wall-clock time - the comparison above
-            /// cannot see it, because the term cancels on both sides. Decline a query that would spend
-            /// more of the cluster on reading than the setting allows, however the time comparison turned
-            /// out. The ratio is deliberately independent of `num_replicas`: it asks what share of the
-            /// reading is duplicated, not how much work that adds up to, so adding replicas does not by
-            /// itself make the query less likely to be distributed.
-            const auto total_read_bytes = stats->input_bytes + stats->duplicated_bytes;
-            const double duplicated_read_ratio
-                = total_read_bytes ? static_cast<double>(stats->duplicated_bytes) / static_cast<double>(total_read_bytes) : 0.0;
-            if (local_plan_cost_estimation > replicas_plan_cost_estimation
-                && duplicated_read_ratio
-                    > static_cast<double>(optimization_settings.automatic_parallel_replicas_max_duplicated_read_ratio))
+            if (rejected_by_duplicated_reads)
             {
-                count(ProfileEvents::AutoParallelReplicasRejectedByDuplicatedReads);
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByDuplicatedReads);
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
                     "Parallel replicas are not used: {}x of the {} bytes read are read by every replica "
@@ -1318,14 +1318,13 @@ static bool decideAtBoundary(
                 return false;
             }
 
-            if (local_plan_cost_estimation > replicas_plan_cost_estimation)
+            if (replicas_plan_is_cheaper)
             {
-                if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
-                    && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
+                if (rejected_by_threshold)
                 {
                     /// The size is already recorded above, for every query that reaches the cost
                     /// model rather than only the ones turned away here.
-                    count(ProfileEvents::AutoParallelReplicasRejectedByThreshold);
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByThreshold);
                     LOG_TRACE(
                         getLogger("AutoParallelReplicas"),
                         "Not enabling parallel replicas reading because the read of {} bytes gives {} per replica, "
@@ -1336,18 +1335,12 @@ static bool decideAtBoundary(
                     return false;
                 }
 
-                if (!plan_with_parallel_replicas)
-                {
-                    events.clear();
-                    return true;
-                }
-
                 /// Every read of the candidate has to be given its analysis. One that is not would read
                 /// every mark, so the candidate is worse than the plan it replaces; decline rather than run it.
                 if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
                 {
                     /// `transplantAnalysisToAllReads` has logged which read could not be paired and why.
-                    count(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
                     return false;
                 }
                 /// The candidate's reads have their filter actions only now, so the pass that tags a filter
@@ -1394,12 +1387,12 @@ static bool decideAtBoundary(
                 /// does not: building the plan above increments it even when the plan is thrown away. Counted
                 /// after the swap, not before: both calls above can throw, and a query that failed on the way
                 /// there did not get the optimization applied to it.
-                count(ProfileEvents::AutoParallelReplicasApplied);
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
                 return false;
             }
             else if (!plan_with_parallel_replicas)
             {
-                count(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
                     "Parallel replicas are not used: decided from the statistics of {}, so no plan with parallel replicas was built",
@@ -1407,7 +1400,7 @@ static bool decideAtBoundary(
             }
             else
             {
-                count(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
                     "The cost model does not favour parallel replicas for hash {}. Not enabling parallel replicas reading",
@@ -1417,7 +1410,10 @@ static bool decideAtBoundary(
     }
     else
     {
-        count(ProfileEvents::AutoParallelReplicasNoStatistics);
+        /// Statistics are collected only with the replicas plan; the call with it counts the event.
+        if (!plan_with_parallel_replicas)
+            return true;
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasNoStatistics);
         LOG_TRACE(getLogger("AutoParallelReplicas"), "No stats found for hash {}", single_replica_plan_boundary_hash);
     }
 
@@ -1429,10 +1425,7 @@ static bool decideAtBoundary(
         /// by design, and statistics collected at a wrong node would keep confirming it; going through the replicas
         /// plan here re-checks the mapping whenever the statistics are refreshed anyway.
         if (!plan_with_parallel_replicas)
-        {
-            events.clear();
             return true;
-        }
 
         auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
