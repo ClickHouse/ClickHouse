@@ -8,8 +8,8 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
+#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -87,6 +87,8 @@ struct ProjectionPartData
     size_t format_bytes = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
+    /// the `LowCardinality` dictionaries, one for the part as a fresh part has
+    size_t shared_bytes = 0;
     /// some stored column has values of different sizes
     bool variable_width = false;
 };
@@ -103,10 +105,10 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
     {
         if (!elem.column)
             continue;
-        /// a row of a `LowCardinality` column stores only its index, the column stores one dictionary
-        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(elem.column.get()))
-            fixed += static_cast<UInt32>(low_cardinality->getSizeOfIndexType());
-        else if (elem.column->valuesHaveFixedSize())
+        /// the index of a `LowCardinality` row is sized for the whole part after the scan
+        if (elem.column->lowCardinality())
+            continue;
+        if (elem.column->valuesHaveFixedSize())
             fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
         else
         {
@@ -221,6 +223,8 @@ bool buildProjectionPart(
     PullingPipelineExecutor executor(pipeline);
 
     MutableColumns key_columns;
+    /// the `LowCardinality` columns of the whole part, as the writer of a fresh part gets them
+    std::unordered_map<String, MutableColumnPtr> low_cardinality;
     Block block;
     while (executor.pull(block))
     {
@@ -253,7 +257,18 @@ bool buildProjectionPart(
         proj_key.expression->execute(block);
         out.bytes += getBlockSizeForGranularity(block);
         if (need_row_bytes)
+        {
             appendRowSizes(out.row_bytes, out.variable_width, block);
+            for (const auto & elem : block)
+            {
+                if (!elem.column->lowCardinality())
+                    continue;
+                auto & whole = low_cardinality[elem.name];
+                if (!whole)
+                    whole = elem.column->cloneEmpty();
+                whole->insertRangeFrom(*elem.column, 0, elem.column->size());
+            }
+        }
 
         if (key_columns.empty())
             for (const auto & name : proj_key.column_names)
@@ -268,6 +283,14 @@ bool buildProjectionPart(
 
     if (key_columns.empty() || key_columns[0]->empty())
         return true;
+
+    for (const auto & [_, column] : low_cardinality)
+    {
+        const auto & whole = assert_cast<const ColumnLowCardinality &>(*column);
+        for (auto & row_size : out.row_bytes)
+            row_size += static_cast<UInt32>(whole.getSizeOfIndexType());
+        out.shared_bytes += whole.getDictionary().byteSize();
+    }
 
     out.rows = key_columns[0]->size();
     /// projection indexes also store the parent offset
@@ -321,10 +344,13 @@ struct PartFromSample
         const size_t sample_row = sampleRow(part_row);
         if (sample_row == sample.rows)
             return bytes();
-        return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row));
+        return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row)) + sharedBefore(part_row);
     }
 
-    UInt64 bytes() const { return bytes_before_sample_row.back(); }
+    /// the dictionaries belong to the whole part, so each row takes an equal share
+    UInt64 sharedBefore(size_t part_row) const { return static_cast<UInt64>(UInt128(sample.shared_bytes) * part_row / rows); }
+
+    UInt64 bytes() const { return bytes_before_sample_row.back() + sample.shared_bytes; }
     UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
 };
 
