@@ -523,9 +523,13 @@ Columns IMergeTreeReader::refreshSharedOffsetsFromSibling(
     if (split.second.empty())
         return cached_offsets;
 
-    /// Only subcolumns of a `Nested` structure share their outermost offsets.
-    auto nested_column = storage_snapshot->metadata->getColumns().tryGetColumn(GetColumnsOptions::AllPhysical, split.first);
-    if (!nested_column || !isNested(nested_column->type))
+    /// Only subcolumns of a `Nested` structure share their outermost offsets. With `flatten_nested`
+    /// (the default) the structure is stored as flat `n.a`, `n.b` array columns and there is no
+    /// physical column `n`, so look for flattened siblings as well as for a non-flattened `Nested`.
+    const auto & columns_description = storage_snapshot->metadata->getColumns();
+    auto nested_column = columns_description.tryGetColumn(GetColumnsOptions::AllPhysical, split.first);
+    bool is_nested = nested_column ? isNested(nested_column->type) : columns_description.hasNested(split.first);
+    if (!is_nested)
         return cached_offsets;
 
     /// The cached offsets were taken from the part in `fillMissingColumns`. Patches and on-fly
