@@ -1518,7 +1518,8 @@ void AggregatingTransform::capturePerStreamKeptKeysSeed()
 
     /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, and only when the
     /// table can actually be flushed to disk: the seed is needed to re-fill it after the flush.
-    if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.max_bytes_before_external_group_by)
+    /// Scheduler spills are possible even with `max_bytes_before_external_group_by` disabled.
+    if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.tmp_data_scope)
         return;
 
     /// Already captured — the flag stays set for the rest of the aggregation.
@@ -1614,7 +1615,12 @@ size_t AggregatingTransform::spill(size_t)
         adaptive_context->standDown(AdaptiveAggregationProducer::BaselineState::Reason::MemoryPressure);
     }
 
-    return params->aggregator.spill(variants);
+    /// Another producer may have frozen the kept keys while this one was idle.
+    if (const auto & shared = many_data->shared_kept_keys;
+        shared && !no_more_keys && shared->frozen.load(std::memory_order_acquire))
+        applySharedKeptKeysCutoff(/*may_freeze=*/false);
+
+    return params->aggregator.spill(variants, no_more_keys);
 }
 
 void AggregatingTransform::initGenerate()

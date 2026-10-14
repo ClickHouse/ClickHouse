@@ -2712,10 +2712,12 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     flushToTemporaryFile(data_variants, max_temp_file_size, /*reinitialize=*/true);
 }
 
-size_t Aggregator::spill(AggregatedDataVariants & data_variants) const
+size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_keys) const
 {
     /// An emptied two-level table retains its buffers, but spilling it again cannot reclaim them.
     if (!data_variants.hasData())
+        return 0;
+    if (!spillAllowedUnderKeptKeysCutoff(no_more_keys, data_variants))
         return 0;
 
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
@@ -2725,6 +2727,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants) const
     if (!data_variants.isTwoLevel())
         data_variants.convertToTwoLevel();
     writeToTemporaryFile(data_variants);
+    reseedKeptKeysAfterSpill(data_variants);
     size_t after = data_variants.memoryUsage();
     return before > after ? before - after : 0;
 }

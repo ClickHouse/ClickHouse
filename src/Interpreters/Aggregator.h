@@ -648,7 +648,7 @@ public:
 
     /// Flushes the table on request of the memory scheduler; returns the released bytes.
     /// Requires a two-level or convertible table and temporary data storage.
-    size_t spill(AggregatedDataVariants & data_variants) const;
+    size_t spill(AggregatedDataVariants & data_variants, bool no_more_keys) const;
 
     /// Flushes the variants like `writeToTemporaryFile` and consumes them: the table comes back
     /// invalidated and stripped of its arenas instead of re-armed for further aggregation, for
