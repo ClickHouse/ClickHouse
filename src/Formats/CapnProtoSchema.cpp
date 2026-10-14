@@ -15,6 +15,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string/join.hpp>
+#include <capnp/compiler/compiler.h>
 #include <capnp/schema.h>
 #include <capnp/schema-parser.h>
 #include <kj/parse/char.h>
@@ -79,6 +80,9 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
         readStringUntilEOF(content, in);
 
         size_t depth = 0;
+        /// Depth of the expression tree the parser builds: every `.member` and `(...)` suffix adds a level.
+        struct ExpressionDepth { size_t current = 0; size_t finished = 0; };
+        std::vector<ExpressionDepth> expressions(1);
         /// The last identifier seen before the current position, to recognize `import "..."`.
         String last_word;
         /// Whether `last_word` has already been terminated by whitespace, a comment or a byte order mark,
@@ -167,12 +171,35 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
                     if (depth > DBMS_DEFAULT_MAX_PARSER_DEPTH)
                         throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA,
                             "The CapnProto schema is nested too deeply: the limit is {}", DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                    expressions.emplace_back();
                 }
                 else if (c == ')' || c == ']' || c == '}')
                 {
                     if (depth > 0)
                         --depth;
+                    if (expressions.size() > 1)
+                    {
+                        const size_t inner = std::max(expressions.back().current, expressions.back().finished);
+                        expressions.pop_back();
+                        if (c == '}')
+                            expressions.back().current = 0;
+                        else
+                            expressions.back().current = std::max(expressions.back().current, inner) + 1;
+                    }
                 }
+                else if (c == '.')
+                {
+                    ++expressions.back().current;
+                }
+                else if (c == ',' || c == ';')
+                {
+                    expressions.back().finished = std::max(expressions.back().finished, expressions.back().current);
+                    expressions.back().current = 0;
+                }
+
+                if (expressions.back().current > DBMS_DEFAULT_MAX_PARSER_DEPTH)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA,
+                        "The CapnProto schema is nested too deeply: the limit is {}", DBMS_DEFAULT_MAX_PARSER_DEPTH);
             }
         }
     }
@@ -182,6 +209,9 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
 
 capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaInfo & schema_info)
 {
+    /// Bounds the compiler's recursion over chains of declarations, which the text check cannot see.
+    [[maybe_unused]] static const bool stack_check_installed = (capnp::compiler::setStackCheck(&checkStackSize), true);
+
     checkCapnProtoSchemaNestingDepth(schema_info.schemaDirectory(), schema_info.schemaPath());
 
     capnp::ParsedSchema schema;
@@ -197,6 +227,9 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
         /// That's not good to determine the type of error by its description, but
         /// this is the only way to do it here, because kj doesn't specify the type of error.
         auto description = std::string_view(e.getDescription().cStr());
+        if (e.getType() == kj::Exception::Type::OVERLOADED && description.contains("nested too deeply"))
+            throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA, "The CapnProto schema is nested too deeply");
+
         if (description.contains("No such file or directory") || description.contains("no such directory") || description.contains("no such file"))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot open CapnProto schema, file {} doesn't exists", schema_info.absoluteSchemaPath());
 
