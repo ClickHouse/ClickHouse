@@ -465,7 +465,7 @@ def test_additional_table_filters_refuse_the_read():
                 "A PromQL selector is not supported on table default.ts_all",
                 "additional_table_filters entry for it",
             )
-        # Keyed to the shard-local table: applied by every shard, so refused by every shard; not this
+        # Keyed to the shard-local table: refused on the initiator before any shard is read; not this
         # single table.
         assert (
             node.query(
@@ -475,8 +475,8 @@ def test_additional_table_filters_refuse_the_read():
         )
         assert_refused(
             query_response(DIST, "m", "prom_filter_shard_local"),
-            "A PromQL selector is not supported on table shard_",
-            "additional_table_filters entry for it",
+            "A prometheus query over a Distributed table is not supported on table",
+            "additional_table_filters entry for its shard-local table `ts_local`",
         )
         assert query(LOCAL, "m", "prom_filter_shard_local") == unfiltered_local
         for user in UNRESTRICTED_FILTER_USERS:

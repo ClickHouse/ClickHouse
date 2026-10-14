@@ -158,6 +158,8 @@ CREATE TABLE shard_0.ts_moved_to ENGINE = TimeSeries;
 CREATE TABLE shard_1.ts_moved_to ENGINE = TimeSeries;
 INSERT INTO shard_0.ts_moved_to (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(140, 3), 1000000)]);
 -- Recreated under the same UUID, which is what the stored table names it by.
+-- 3 allows an explicit UUID in a Replicated database without the warning that 1 logs.
+SET database_replicated_allow_explicit_uuid = 3;
 CREATE TABLE ts_moved UUID '05055000-0000-4000-8000-000000000001' AS shard_0.ts_local
     ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local);
 CREATE TABLE ts_stored AS prometheusQuery(ts_moved, 'sum(m)', 140);
