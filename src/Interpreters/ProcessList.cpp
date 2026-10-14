@@ -6,6 +6,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -111,6 +112,18 @@ static bool isUnlimitedQuery(const IAST * ast)
         return false;
     }
 
+    return false;
+}
+
+/// A subquery anywhere in a statement (e.g. a scalar subquery in an engine argument) may be executed
+/// while the statement is analyzed.
+static bool hasSubquery(const IAST & ast)
+{
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectQuery>())
+        return true;
+    for (const auto & child : ast.children)
+        if (child && hasSubquery(*child))
+            return true;
     return false;
 }
 
@@ -340,7 +353,7 @@ static bool isMetadataAlterCommand(const ASTAlterCommand & command)
 
 bool isMetadataQuery(const IAST * ast)
 {
-    if (!ast)
+    if (!ast || hasSubquery(*ast))
         return false;
 
     switch (ast->getQueryKind())
