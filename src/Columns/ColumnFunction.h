@@ -6,6 +6,8 @@
 #include <Core/Field.h>
 #include <Common/Exception.h>
 
+#include <optional>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -32,7 +34,8 @@ private:
         bool is_function_compiled_ = false,
         bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
         bool allow_lazy_replicated_captures_ = false,
-        ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_ = nullptr);
+        ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_ = nullptr,
+        std::optional<size_t> short_circuit_eager_argument_ = {});
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -228,6 +231,11 @@ private:
     /// if the argument can be executed before the arguments that precede it, see ExpressionActions.cpp for details.
     /// The function uses these statistics to choose the order in which it executes such arguments.
     ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics;
+
+    /// Set for a lazy executed short-circuit function with commutative arguments (`and`, `or`), if the argument that
+    /// is executed first was chosen instead of the one from `arguments_with_disabled_lazy_execution`,
+    /// see `processShortCircuitFunctions` in ExpressionActions.cpp.
+    std::optional<size_t> short_circuit_eager_argument;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };

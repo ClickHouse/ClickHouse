@@ -50,7 +50,10 @@ namespace ErrorCodes
 }
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
-    const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation, bool reorder_arguments);
+    const ActionsDAG & actions_dag,
+    ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
+    bool reorder_arguments,
+    std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments);
 
 static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
     const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
@@ -61,8 +64,12 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     , settings(settings_)
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
+    std::unordered_map<const ActionsDAG::Node *, size_t> short_circuit_eager_arguments;
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
-        actions_dag, settings.short_circuit_function_evaluation, settings.short_circuit_function_evaluation_reorder_arguments);
+        actions_dag,
+        settings.short_circuit_function_evaluation,
+        settings.short_circuit_function_evaluation_reorder_arguments,
+        short_circuit_eager_arguments);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
@@ -73,7 +80,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     if (settings.short_circuit_function_evaluation_reorder_arguments && !lazy_executed_nodes.empty())
         reorderable_short_circuit_arguments = findReorderableShortCircuitArguments(actions_dag, lazy_executed_nodes);
 
-    linearizeActions(lazy_executed_nodes, reorderable_short_circuit_arguments);
+    linearizeActions(lazy_executed_nodes, reorderable_short_circuit_arguments, short_circuit_eager_arguments);
 
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
@@ -364,7 +371,10 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node, std::unord
 }
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
-    const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation, bool reorder_arguments)
+    const ActionsDAG & actions_dag,
+    ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
+    bool reorder_arguments,
+    std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments)
 {
     if (short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
         return {};
@@ -405,6 +415,8 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
                     if (isCheapForShortCircuitEvaluation(node.children[i], is_cheap_cache))
                     {
                         short_circuit_settings.arguments_with_disabled_lazy_execution = {i};
+                        /// If the function itself is executed lazily, it executes this argument first as well.
+                        short_circuit_eager_arguments[&node] = i;
                         break;
                     }
 
@@ -519,7 +531,8 @@ static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitA
 
 void ExpressionActions::linearizeActions(
     const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
-    const std::unordered_set<const ActionsDAG::Node *> & reorderable_short_circuit_arguments)
+    const std::unordered_set<const ActionsDAG::Node *> & reorderable_short_circuit_arguments,
+    const std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments)
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
     /// Algorithm traverses DAG starting from nodes without children.
@@ -614,6 +627,8 @@ void ExpressionActions::linearizeActions(
         auto & action = actions.emplace_back(Action{node, arguments, free_position, lazy_executed_nodes.contains(node)});
         if (reorderable_short_circuit_arguments.contains(node))
             action.short_circuit_argument_statistics = std::make_shared<ShortCircuitArgumentStatistics>();
+        if (auto it = short_circuit_eager_arguments.find(node); it != short_circuit_eager_arguments.end())
+            action.short_circuit_eager_argument = it->second;
 
         for (const auto & parent : cur_info.parents)
         {
@@ -868,7 +883,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     action.node->is_function_compiled,
                     /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
                     /*allow_lazy_replicated_captures_=*/ false,
-                    action.short_circuit_argument_statistics);
+                    action.short_circuit_argument_statistics,
+                    action.short_circuit_eager_argument);
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
