@@ -459,7 +459,7 @@ namespace
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale);
 
             scale = scale_;
         }
@@ -612,10 +612,6 @@ namespace
         String getName() const override { return name; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
-        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-        /// row references it, so the throwing variant must not be executed on the whole dictionary -
-        /// the empty string is not a date and it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }

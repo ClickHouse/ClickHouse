@@ -219,7 +219,7 @@ IProcessor::Status FilterTransform::prepare()
 
     auto status = ISimpleTransform::prepare();
 
-    if (status == IProcessor::Status::Finished && !isCancelled())
+    if (status == IProcessor::Status::Finished)
         writeIntoQueryConditionCache({});
 
     return status;
@@ -230,20 +230,6 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 {
     if (remove_filter_column)
         columns.erase(columns.begin() + filter_column_position);
-}
-
-void FilterTransform::onCancel() noexcept
-{
-    ISimpleTransform::onCancel();
-    if (expression)
-    {
-        const auto & nodes = expression->getNodes();
-        for (const auto & node : nodes)
-        {
-            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
-                node.function->cancelExecution();
-        }
-    }
 }
 
 void FilterTransform::transform(Chunk & chunk)
@@ -308,20 +294,8 @@ void FilterTransform::doTransform(Chunk & chunk)
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
-        if (isCancelled())
-        {
-            stopReading();
-            return;
-        }
-
         if (expression)
-            expression->execute(block, num_rows_before_filtration, false, false, &getCancellationFlag());
-
-        if (isCancelled())
-        {
-            stopReading();
-            return;
-        }
+            expression->execute(block, num_rows_before_filtration);
 
         columns = block.getColumns();
         types = block.getDataTypes();
@@ -456,7 +430,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
 {
-    if (!query_condition_cache || isCancelled())
+    if (!query_condition_cache)
         return;
 
     /// A transform between the reading step and this filter (e.g. `FilterSortedStreamByRange`
