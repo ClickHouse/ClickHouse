@@ -3,7 +3,6 @@
 #include <Storages/BigQuery/BigQueryClient.h>
 #include <Storages/BigQuery/BigQueryConfiguration.h>
 #include <Storages/BigQuery/BigQuerySchema.h>
-#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/IStorage.h>
 #include <Common/logger_useful.h>
 
@@ -83,8 +82,5 @@ private:
 
     LoggerPtr log;
 };
-
-/// The `SecretArgumentsSpec` of `bigquery` and the `BigQuery` table engine.
-SecretArgumentsSpec bigQuerySecretArguments();
 
 }

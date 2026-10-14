@@ -68,6 +68,7 @@ function run_query_with_pure_parallel_replicas () {
         --cluster_for_parallel_replicas "parallel_replicas" \
         --automatic_parallel_replicas_mode 0 \
         --enable_parallel_replicas 1 \
+        --parallel_replicas_only_with_analyzer 0 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
     |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }' | sort -n -k2 -b | grep -Pv "\t0 estimated parallel replicas"

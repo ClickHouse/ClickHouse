@@ -204,8 +204,7 @@ private:
 
             if (const auto left_arg_typed = checkAndGetColumn<Column>(left_arg))
             {
-                res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count);
-                if (res)
+                if ((res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count)))
                     return true;
 
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
@@ -213,8 +212,7 @@ private:
             }
             if (const auto left_arg_typed = checkAndGetColumnConst<Column>(left_arg))
             {
-                res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count);
-                if (res)
+                if ((res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count)))
                     return true;
 
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
