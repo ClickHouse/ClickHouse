@@ -178,7 +178,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
 
-        {"query_plan", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON), "The query plan of the query this row describes, serialized as JSON, with per-step runtime statistics. Unlike `EXPLAIN ANALYZE`, which runs the query a second time, this is the plan the query itself was running. Only filled when the `log_query_plans` setting is enabled, and empty for `QueryStart` rows, because no plan exists yet at that point. On a row for a query that threw, the plan is the one the query had built when it threw, and it carries no statistics: a query that failed while running had its plan executed in part, and one that failed before running never executed it at all."},
+        {"query_plan", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON), "The query plan of the query this row describes, serialized as JSON, with per-step runtime statistics. Only filled when the `log_query_plans` setting is enabled, and empty for `QueryStart` rows, because no plan exists yet at that point. On a row for a query that threw, the plan is the one the query had built when it threw, and it carries no statistics: a query that failed while running had its plan executed in part, and one that failed before running never executed it at all."},
     };
 }
 
