@@ -32,33 +32,43 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
 INSERT INTO tab VALUES ('zzz'), ('a b');
 
--- Populate the QCC via the index path. The text index drops the 'a b' granule (false negative),
--- and that exclusion is cached under the profiled (skip-index) key.
-SELECT 'index_path', count() FROM tab WHERE hasToken(s, 'a')
-SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+-- The row-level predicate now follows the index definition, so a wrongly consulted entry is no longer
+-- visible as a wrong count; assert the consultation via QueryConditionCacheHits instead.
+
+-- Populate the QCC via the index path: the exclusion is cached under the profiled (skip-index) key.
+SELECT count() FROM tab WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, log_comment = '02346_qcc_populate_idx' FORMAT Null;
 
 -- Same predicate with skip indexes disabled must NOT consult the skip-index-derived entry.
--- Correct row-level answer is 1 ('a b' contains token 'a'). Before the fix this returned 0.
-SELECT 'skip_indexes_off', count() FROM tab WHERE hasToken(s, 'a')
-SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0, log_comment = '02346_qcc_skip_off' FORMAT Null;
 
--- Sanity: cache-off path agrees.
-SELECT 'no_cache', count() FROM tab WHERE hasToken(s, 'a')
-SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
+-- ignore_data_skipping_indices = 'idx' disables 'idx' while use_skip_indexes stays true, a different
+-- effective profile, so the skip-index entry must not be consulted.
+SELECT count() FROM tab WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, ignore_data_skipping_indices = 'idx', log_comment = '02346_qcc_ignore_idx' FORMAT Null;
 
--- Re-populate via the index path, then rerun ignoring the named index. ignore_data_skipping_indices
--- = 'idx' disables 'idx' while use_skip_indexes stays true, a different effective profile, so the
--- skip-index entry must not be consulted. Correct answer is 1; before the fix this returned 0.
-SELECT 'index_path', count() FROM tab WHERE hasToken(s, 'a')
-SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+-- The same profile still reuses the cached exclusion, so the profiled key did not disable skip-index caching.
+SELECT count() FROM tab WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, log_comment = '02346_qcc_reuse_idx' FORMAT Null;
 
-SELECT 'ignore_index', count() FROM tab WHERE hasToken(s, 'a')
-SETTINGS use_query_condition_cache = 1, ignore_data_skipping_indices = 'idx';
+SYSTEM FLUSH LOGS query_log;
 
--- The skip-index path keeps pruning for a query with the same profile (the cached exclusion is
--- still reused, so this stays 0). Confirms the profiled key did not disable skip-index caching.
-SELECT 'index_path_still_prunes', count() FROM tab WHERE hasToken(s, 'a')
-SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+SELECT 'skip_off_consults_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_skip_off'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+SELECT 'ignore_idx_consults_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_ignore_idx'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+SELECT 'reuse_idx_reuses_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_reuse_idx'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+-- Sanity: every profile agrees on the answer.
+SELECT 'rows_index_path', count() FROM tab WHERE hasToken(s, 'a') SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0;
+SELECT 'rows_skip_off', count() FROM tab WHERE hasToken(s, 'a') SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
 
 DROP TABLE tab;
 
@@ -98,13 +108,27 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 INSERT INTO tab_two VALUES ('zzz', 'zzz'), ('a b', 'a b');
 
 -- Run with idx_a active (idx_b ignored): idx_a drops the 'a b' granule for hasToken(a, 'a').
-SELECT 'two_idx_populate_a', count() FROM tab_two WHERE hasToken(a, 'a')
-SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'idx_b';
+SELECT count() FROM tab_two WHERE hasToken(a, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'idx_b', log_comment = '02346_qcc_two_pop_a' FORMAT Null;
 
 -- Same predicate, but now idx_a is the ignored one (idx_b active): a different effective set, so the
--- entry above must not be consulted. Correct row-level answer is 1.
-SELECT 'two_idx_ignore_a', count() FROM tab_two WHERE hasToken(a, 'a')
-SETTINGS use_query_condition_cache = 1, ignore_data_skipping_indices = 'idx_a';
+-- entry above must not be consulted.
+SELECT count() FROM tab_two WHERE hasToken(a, 'a')
+SETTINGS use_query_condition_cache = 1, ignore_data_skipping_indices = 'idx_a', log_comment = '02346_qcc_two_ignore_a' FORMAT Null;
+
+-- Same profile as the populate: must reuse.
+SELECT count() FROM tab_two WHERE hasToken(a, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'idx_b', log_comment = '02346_qcc_two_reuse_a' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'two_idx_ignore_a_consults_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_two_ignore_a'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+SELECT 'two_idx_reuse_a_reuses_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_two_reuse_a'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE tab_two;
 
@@ -126,17 +150,23 @@ CREATE TABLE tab_alter
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 INSERT INTO tab_alter VALUES ('zzz'), ('a b');
 
--- Populate via the index path: the text index drops the 'a b' granule (false negative), cached.
-SELECT 'alter_populate', count() FROM tab_alter WHERE hasToken(s, 'a')
-SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+-- Populate via the index path: the exclusion is cached.
+SELECT count() FROM tab_alter WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, log_comment = '02346_qcc_alter_pop' FORMAT Null;
 
 -- Pending type change on the indexed column. Merges are stopped so the mutation stays on the fly.
 SYSTEM STOP MERGES tab_alter;
 ALTER TABLE tab_alter MODIFY COLUMN s LowCardinality(String) SETTINGS mutations_sync = 0, alter_sync = 0;
 
--- canUseIndex now rejects idx for the part, so the stale exclusion must not be consulted. Correct is 1.
-SELECT 'alter_no_stale_read', count() FROM tab_alter WHERE hasToken(s, 'a')
-SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
+-- canUseIndex now rejects idx for the part, so the stale exclusion must not be consulted.
+SELECT count() FROM tab_alter WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, log_comment = '02346_qcc_alter_read' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'alter_no_stale_read_consults_entry', ProfileEvents['QueryConditionCacheHits']
+FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_qcc_alter_read'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE tab_alter;
 
