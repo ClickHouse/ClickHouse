@@ -62,8 +62,8 @@ public:
 
 private:
     /// A persistent pipeline for inserting blocks into one target table.
-    /// Exactly one of `executor` and `async_executor` is set: the asynchronous executor
-    /// runs the pipeline in background threads, so several target tables are written in parallel.
+    /// Exactly one of `executor` and `async_executor` is set. The samples pipeline and the
+    /// recent samples pipeline use the asynchronous executor, so those two tables are written together.
     struct TargetPipeline
     {
         ContextMutablePtr context;
@@ -77,20 +77,12 @@ private:
         ~TargetPipeline();
     };
 
-    /// A samples block waits until the tags rows it references are committed, see `pushDelayedSamples`.
-    struct DelayedSamplesBlock
-    {
-        Block block;
-        size_t tags_push_index = 0;
-    };
-
     void initTagsAndSamplesPipelines();
     void initMetricFamiliesPipeline();
-    std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header, bool sequential);
+    std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header, bool parallel);
 
     void consumeTagsAndSamples(const Block & block);
     void consumeMetricFamilies(const Block & block);
-    void pushDelayedSamples(bool all);
 
     /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
     ColumnPtr calculateId(const Block & tags_block) const;
@@ -121,9 +113,8 @@ private:
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
 
-    /// The number of blocks pushed to `tags_pipeline` so far.
-    size_t tags_pushes = 0;
-    std::deque<DelayedSamplesBlock> delayed_samples_blocks;
+    /// Samples blocks written after the tags pipeline finishes.
+    std::deque<Block> stashed_samples_blocks;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
     TimeSeriesDeduplicationCachePtr tags_deduplication_cache;

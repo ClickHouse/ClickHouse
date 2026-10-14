@@ -1,5 +1,4 @@
--- A TimeSeries insert writes the samples and recent samples tables in background pipelines.
--- Tags commit first. Samples and recent samples are written in parallel after that.
+-- A TimeSeries insert finishes the tags table, then writes the samples and recent samples tables together.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';

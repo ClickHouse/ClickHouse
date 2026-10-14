@@ -6,7 +6,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -377,7 +376,7 @@ ColumnPtr TimeSeriesSink::calculateId(const Block & tags_block) const
 
 
 std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipeline(
-    ViewTarget::Kind kind, const Block & header, bool sequential)
+    ViewTarget::Kind kind, const Block & header, bool parallel)
 {
     auto pipeline = std::make_unique<TargetPipeline>();
 
@@ -394,24 +393,20 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->context = Context::createCopy(getContext());
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
 
-    /// A sequential pipeline passes every block to a single sink in the order of pushes, see `pushDelayedSamples`.
-    if (sequential)
-        pipeline->context->setSetting("max_insert_threads", Field{1});
-
-    /// The blocks are already squashed by the insert into the TimeSeries table. Squashing here again
-    /// would hold every block until the pipeline finishes, so the target tables could not be written in parallel.
+    /// The samples and recent samples pipelines skip squashing. The TimeSeries insert already
+    /// squashed these blocks, and a second squash would hold each block until `finish`.
     InterpreterInsertQuery interpreter(
         insert_query,
         pipeline->context,
         /* allow_materialized= */ true,
-        /* no_squash= */ true,
+        /* no_squash= */ parallel,
         /* no_destination= */ false,
         async_insert);
 
     pipeline->io = interpreter.execute();
 
     const Block * target_header = nullptr;
-    if (!sequential && pipeline->io.pipeline.getNumThreads() > 1)
+    if (parallel && pipeline->io.pipeline.getNumThreads() > 1)
     {
         /// The outer insert already reports the read progress of these rows.
         pipeline->async_executor = std::make_unique<PushingAsyncPipelineExecutor>(pipeline->io.pipeline, /* report_read_progress= */ false);
@@ -599,7 +594,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
             tags_header.insert(column);
     }
 
-    tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header, /* sequential= */ true);
+    tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header, /* parallel= */ false);
     tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
 
     /// Build source header for samples block.
@@ -607,11 +602,11 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
-    samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header, /* sequential= */ false);
+    samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header, /* parallel= */ true);
 
     /// The recent samples table (if any) receives a copy of every samples block.
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header, /* sequential= */ false);
+        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header, /* parallel= */ true);
 }
 
 
@@ -750,15 +745,11 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         tags_block = tags_deduplication_cache->filterOutWrittenRows(
             tags_block, /* key_column_index = */ tags_block.getPositionByName(TimeSeriesColumnNames::ID), pending_tags);
 
-    /// Tags are pushed first so that if the samples insert fails,
-    /// we don't end up with sample rows referencing IDs that were never written to the tags table.
+    /// Tags are pushed first. The samples block waits until the tags pipeline finishes.
     if (tags_block.rows())
-    {
         tags_pipeline->push(std::move(tags_block));
-        ++tags_pushes;
-    }
 
-    /// Step 5. Assemble the samples block and delay it until its tags are committed.
+    /// Step 5. Assemble the samples block. `onFinish` writes it after the tags pipeline finishes.
     if (total_samples)
     {
         /// Build columns for the samples block.
@@ -782,32 +773,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), value_type, TimeSeriesColumnNames::Value});
 
-        delayed_samples_blocks.push_back({std::move(samples_block), tags_pushes});
-    }
-
-    pushDelayedSamples(/* all= */ false);
-}
-
-
-void TimeSeriesSink::pushDelayedSamples(bool all)
-{
-    /// `tags_pipeline->push` returns after the tags sink has consumed the previous block, and a MergeTree sink
-    /// commits a block when it consumes the next one. So the tags block of push `k` is committed once push `k + 2`
-    /// has returned or the tags pipeline has finished. A samples block whose tags were all written by earlier
-    /// inserts has `tags_push_index == 0` and does not wait.
-    while (!delayed_samples_blocks.empty())
-    {
-        auto & delayed = delayed_samples_blocks.front();
-        if (!all && delayed.tags_push_index != 0 && tags_pushes < delayed.tags_push_index + 2)
-            break;
-
-        /// The samples and recent samples tables are written in parallel when their pipelines
-        /// run in the background. The copy is cheap: a Block copy only copies column pointers.
-        samples_pipeline->push(delayed.block);
-        if (recent_samples_pipeline)
-            recent_samples_pipeline->push(std::move(delayed.block));
-
-        delayed_samples_blocks.pop_front();
+        stashed_samples_blocks.push_back(std::move(samples_block));
     }
 }
 
@@ -834,7 +800,7 @@ void TimeSeriesSink::initMetricFamiliesPipeline()
     metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Help).type, TimeSeriesColumnNames::Help});
 
-    metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header, /* sequential= */ false);
+    metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header, /* parallel= */ false);
     metric_families_deduplication_cache = time_series_storage.getMetricFamiliesDeduplicationCache();
 }
 
@@ -894,7 +860,23 @@ void TimeSeriesSink::onFinish()
     }
     if (samples_pipeline)
     {
-        pushDelayedSamples(/* all= */ true);
+        while (!stashed_samples_blocks.empty())
+        {
+            Block block = std::move(stashed_samples_blocks.front());
+            stashed_samples_blocks.pop_front();
+
+            /// The samples and recent samples tables are written together when their pipelines
+            /// run in the background. The copy is cheap: a Block copy only copies column pointers.
+            if (recent_samples_pipeline)
+            {
+                samples_pipeline->push(block);
+                recent_samples_pipeline->push(std::move(block));
+            }
+            else
+            {
+                samples_pipeline->push(std::move(block));
+            }
+        }
         samples_pipeline->finish();
     }
     if (recent_samples_pipeline)
