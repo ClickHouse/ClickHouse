@@ -400,20 +400,29 @@ ALWAYS_INLINE inline T withSign(T value, bool negative)
 /// Accurately", PLDI 1990), with the same bounds as fast_float's clinger_fast_path_impl. It skips fast_float's
 /// scan, which is a branch per digit. Anything else goes to fast_float directly, except a token starting with
 /// 16 digits, which may be a long integer for the unsigned __int128 paths of parseFloatFromRange.
+/// `padded` means at least 15 bytes after `last` are readable (ReadBuffer::isPadded), as in column data.
 template <typename T>
 ALWAYS_INLINE inline fast_float::from_chars_result_t<char>
-parseUnsignedFloatFromBuffer(T & x, const char * first, const char * last)
+parseUnsignedFloatFromBuffer(T & x, const char * first, const char * last, [[maybe_unused]] bool padded)
 {
 #if defined(__x86_64__) || defined(__aarch64__)
     /// The byte masks assume little-endian lane order.
-    if (std::endian::native != std::endian::little || unlikely(last - first < short_decimal_read_bytes))
+    if (std::endian::native != std::endian::little || unlikely(last - first < short_decimal_read_bytes && !padded))
         return parseFloatFromRange(x, first, last);
 
     /// The token is the run of digits and dots at `first`.
     using U8x16 = uint8_t __attribute__((vector_size(16)));
     const auto bytes = unalignedLoad<U8x16>(first);
-    const uint64_t digit_mask = byteMask16((bytes - '0') < 10);
-    const uint64_t dot_mask = byteMask16(bytes == '.');
+    uint64_t digit_mask = byteMask16((bytes - '0') < 10);
+    uint64_t dot_mask = byteMask16(bytes == '.');
+    /// Bytes past `last` belong to the next value (e.g. the next row of a column): drop them from the token.
+    /// With them gone every later load ends within 15 bytes after `last`.
+    if (last - first < 16)
+    {
+        const uint64_t inside = (uint64_t(1) << ((last - first) * mask_bits_per_byte)) - 1;
+        digit_mask &= inside;
+        dot_mask &= inside;
+    }
     const unsigned len = std::countr_zero(~(digit_mask | dot_mask)) / mask_bits_per_byte;
     if (len >= 16)
     {
@@ -434,7 +443,7 @@ parseUnsignedFloatFromBuffer(T & x, const char * first, const char * last)
     /// At most one dot (`len - num_digits` counts the dots; "1.2.3" is left to fast_float), at least one
     /// digit, and no exponent (`| 0x20` maps 'E' to 'e').
     constexpr unsigned max_digits = std::is_same_v<T, double> ? 15 : 7;
-    if (len - num_digits > 1 || num_digits == 0 || num_digits > max_digits || (*end | 0x20) == 'e')
+    if (len - num_digits > 1 || num_digits == 0 || num_digits > max_digits || (end < last && (*end | 0x20) == 'e'))
         return fast_float::from_chars(first, last, x, fast_float::chars_format::general);
 
     const uint64_t mantissa = parseDigits16(first, int_len) * common::exp10_i64(frac_len) + parseDigits16(first + int_len + 1, frac_len);
@@ -451,7 +460,7 @@ parseUnsignedFloatFromBuffer(T & x, const char * first, const char * last)
 /// parsing mixed-sign decimals (seen with `perf record -b`), and plain `general` (no `allow_leading_plus`)
 /// selects fast_float's instantiation specialized for that format (fast_float PR 413).
 template <typename T>
-ALWAYS_INLINE inline fast_float::from_chars_result_t<char> parseFloatFromBuffer(T & x, const char * first, const char * last)
+ALWAYS_INLINE inline fast_float::from_chars_result_t<char> parseFloatFromBuffer(T & x, const char * first, const char * last, bool padded)
 {
     const bool negative = *first == '-';
     const char * const begin = first + (negative || *first == '+');
@@ -459,7 +468,7 @@ ALWAYS_INLINE inline fast_float::from_chars_result_t<char> parseFloatFromBuffer(
     /// not a sign either, so this does not depend on whether there is one.
     if (unlikely(begin == last || *begin == '-' || *begin == '+'))
         return {first, std::errc::invalid_argument};
-    auto res = parseUnsignedFloatFromBuffer(x, begin, last);
+    auto res = parseUnsignedFloatFromBuffer(x, begin, last, padded);
     /// On a parse failure `x` is left as the caller passed it.
     if (likely(res.ec == std::errc() || res.ec == std::errc::result_out_of_range))
         x = withSign(x, negative);
@@ -578,7 +587,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         auto * initial_position = buf.position();
         auto * const buf_end = buf.buffer().end();
 
-        auto res = parseFloatFromBuffer(x, initial_position, buf_end);
+        auto res = parseFloatFromBuffer(x, initial_position, buf_end, buf.isPadded());
 
         /// result_out_of_range means overflow/underflow: fast_float has already set x to +-inf or +-0,
         /// matching strtod semantics. Only a genuine parse failure is an error.
