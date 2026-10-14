@@ -2033,6 +2033,49 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
 }
 
 
+/// Approving a decrease can change which increase is processed next. The update that publishes the new
+/// increase must also carry the next queued decrease: while the approval descends, every ancestor has
+/// already cleared its decrease, so without it the limit evaluates the new increase as if no release were
+/// pending. Here approving `b`'s decrease makes `b`'s grow the next increase (its key drops below `a`'s);
+/// that grow overflows the limit until `d`'s queued decrease is applied, after which every grow fits.
+TEST(SchedulerSpaceShared, NoKillWhenDecreaseApprovalReselectsIncrease)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation a(queue, "a", 3500);
+    ManualAllocation b(queue, "b", 3500);
+    ManualAllocation d(queue, "d", 3000);
+
+    // Park the scheduler so all requests below arrive in one activation.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    b.decreaseAsync(1500);
+    d.decreaseAsync(3000);
+    a.increaseAsync(1000); // key 4500: the next increase until `b`'s decrease is approved
+    b.increaseAsync(2000); // key 5500, then 4000 after `b`'s decrease: 8500 + 2000 > 10000 until `d` releases
+
+    release.set_value();
+
+    // After both decreases (5500) both grows fit (8500 <= 10000): nobody needs to be evicted.
+    a.waitSynced();
+    b.waitSynced();
+    d.waitSynced();
+    ASSERT_EQ(a.killCount(), 0u);
+    ASSERT_EQ(b.killCount(), 0u);
+    ASSERT_EQ(d.killCount(), 0u);
+    EXPECT_EQ(a.size(), 4500);
+    EXPECT_EQ(b.size(), 4000);
+    EXPECT_EQ(d.size(), 0);
+}
+
+
 /// `eviction_score` controls eviction order under memory pressure: the reservation with the highest
 /// `eviction_score` is evicted first, even when it is not the largest. Here `small_hi` is smaller than
 /// `big` but has a higher score, so `small_hi` is the victim even though the largest-first tie-break alone

@@ -410,6 +410,12 @@ void AllocationQueue::approveDecrease()
 
     setDecrease();
 
+    // Ancestors cleared their decrease while descending into this approval. A reselected increase must be
+    // published together with the next decrease, so the limit does not evict for a grow that a queued
+    // release would satisfy.
+    if (update)
+        update.setDecrease(decrease);
+
     // Propagate after releasing the lock: propagation can re-enter this queue's
     // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.
     lock.unlock();
