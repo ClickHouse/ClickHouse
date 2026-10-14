@@ -398,6 +398,7 @@ public:
 
         /// Position of this element in the RPN built from the filter. An element that
         /// `findHyperrectanglesForArgumentsOfSpaceFillingCurves` collapses takes the position of its first atom.
+        /// Atoms of a `FUNCTION_ATOM_GROUP` have none; the group carries the position of its predicate leaf.
         std::optional<size_t> position_in_filter_rpn;
 
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
