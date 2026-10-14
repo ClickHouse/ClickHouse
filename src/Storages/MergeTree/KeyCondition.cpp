@@ -3423,29 +3423,19 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             && !recursiveRemoveLowCardinality(set_element_type)->equals(*key_column_type))
             out_is_exact = false;
 
-        /// The same cast of the key into the set's type decides membership for a string-ish column the
-        /// predicate reads, and there it is a parse: many spellings map to one value, so
-        /// `s IN (SELECT toUInt8(2))` matches both `'2'` and `'02'`, and `s IN (SELECT toDateTime64(...))`
-        /// matches `'2023-02-01 12:00:00'` as well as `'2023-02-01 12:00:00.000'`. The index renders the
-        /// element into a single spelling instead and would read every other one as certainly not in the
-        /// set - a pruned row that the predicate keeps, which relaxing the atom cannot repair, because a
-        /// relaxed atom still prunes on the points it holds. The index is not used for such a set. A
-        /// `String` element is cast the other way only by padding a `FixedString` key, which keeps the
-        /// atom a superset. A `Dynamic`, `Variant` or `JSON` element gets no exemption either, top-level or
-        /// inside a composite such as `Map(String, Dynamic)`: the key is cast into it by parsing as well -
-        /// `JSON` accepts only objects, a `Variant` infers an alternative from the spelling (`CAST('42',
-        /// 'Variant(Date)')` throws), and a `Dynamic` does so under `cast_string_to_dynamic_use_inference` -
-        /// so the full scan may match another spelling or raise a conversion error that pruning would hide.
-        if (membership_compares_carriers)
-        {
-            const DataTypePtr predicate_column_type
-                = removeLowCardinalityAndNullable(mapping.set_transform ? mapping.set_transform->input_type : key_column_type);
-            const DataTypePtr element_type = removeLowCardinalityAndNullable(set_element_type);
-
-            if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
-                && !element_type->equals(*predicate_column_type))
-                return false;
-        }
+        /// The same cast of the key into the set's type decides membership: an element matches every value of
+        /// the column the predicate reads that the cast maps onto it, so `s IN (SELECT toUInt8(2))` matches
+        /// both `'2'` and `'02'`, and `ts IN (SELECT toDate(...))` matches every time of that day. The index
+        /// converts each element into a single value of that column and would read every other one as
+        /// certainly not in the set - a pruned row that the predicate keeps, which relaxing the atom cannot
+        /// repair, because a relaxed atom still prunes on the points it holds. The index is not used for a
+        /// set whose lookup cast can map different values onto one (see `Set::lookupCastMayMergeValues`), so
+        /// the query also raises the conversion errors of the full scan, which pruning would hide. A wrapped
+        /// mapping reads the input of its key transform.
+        if (membership_compares_carriers
+            && Set::lookupCastMayMergeValues(
+                mapping.set_transform ? mapping.set_transform->input_type : key_column_type, set_element_type))
+            return false;
 
         if (mapping.set_transform)
         {

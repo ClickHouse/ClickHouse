@@ -147,6 +147,28 @@ public:
 
     static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
+    /// Whether the cast that `execute` applies to a value of `column_type` before looking it up in a set of
+    /// `set_type` can map two different values onto one element, so that the element matches more values than
+    /// its own conversion into `column_type`. Only the casts known to keep values apart answer false:
+    /// - a string-ish value cast into `String`, which drops nothing but the padding of a `FixedString`. Any
+    ///   other target parses, and many spellings name one value: `s IN (SELECT toUInt8(2))` matches both
+    ///   `'2'` and `'02'`, `s IN (SELECT toDateTime64(...))` matches `'2023-02-01 12:00:00'` as well as
+    ///   `'2023-02-01 12:00:00.000'`, and casting into `FixedString` pads `'abc'` and `'abc\0'` alike. A
+    ///   `Dynamic`, `Variant` or `JSON` target parses as well: `JSON` accepts only objects, a `Variant`
+    ///   infers an alternative from the spelling (`CAST('42', 'Variant(Date)')` throws), and a `Dynamic` does
+    ///   so under `cast_string_to_dynamic_use_inference`;
+    /// - a `Tuple`, `Array` or `Map` whose elements keep apart. As `CAST` does, two named tuples with a
+    ///   common name pair their elements by name, and a source element without a counterpart is dropped;
+    /// - any other value cast into a `Dynamic`, `Variant` or `JSON`, which keeps it under its own type;
+    /// - integers, native floats and `Enum` values, which the cast converts exactly or not at all: a scalar
+    ///   that does not fit becomes NULL, and one inside a composite throws. `Bool` is the exception: it takes
+    ///   every nonzero number to `true`;
+    /// - a conversion that keeps values apart whatever the cast (`conversionPreservesOrder`,
+    ///   `canBeSafelyCast`).
+    /// Any other cast answers true. Many of them truncate: `ts IN (SELECT toDate(...))` matches every time of
+    /// a day, and a `DateTime64(6)` value matches the `DateTime64(3)` element it truncates to.
+    static bool lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTypePtr & set_type);
+
     /// Limitations on the maximum size of the set
     const SizeLimits limits;
 

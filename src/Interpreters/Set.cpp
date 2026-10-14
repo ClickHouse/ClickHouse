@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <optional>
 #include <shared_mutex>
@@ -16,8 +17,11 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Utils.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -373,6 +377,77 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
     }
 
     return types;
+}
+
+
+bool Set::lookupCastMayMergeValues(const DataTypePtr & column_type, const DataTypePtr & set_type)
+{
+    const DataTypePtr from = removeLowCardinalityAndNullable(column_type);
+    const DataTypePtr to = removeLowCardinalityAndNullable(set_type);
+
+    /// `Bool` is a `UInt8` under another name, which `equals` does not tell apart.
+    if (isBool(to) && !isBool(from))
+        return true;
+
+    if (isNothing(to) || from->equals(*to))
+        return false;
+
+    if (isStringOrFixedString(from))
+        return !isString(to);
+
+    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get()))
+    {
+        const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+        if (!to_tuple || to_tuple->getElements().size() != from_tuple->getElements().size())
+            return true;
+
+        const auto & to_names = to_tuple->getElementNames();
+        const bool pair_by_name = from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+            && std::ranges::any_of(
+                to_names, [&](const String & name) { return from_tuple->tryGetPositionByName(name).has_value(); });
+
+        for (size_t i = 0; i < to_names.size(); ++i)
+        {
+            size_t from_position = i;
+            if (pair_by_name)
+            {
+                const auto position = from_tuple->tryGetPositionByName(to_names[i]);
+                if (!position)
+                    return true;
+                from_position = *position;
+            }
+
+            if (lookupCastMayMergeValues(from_tuple->getElements()[from_position], to_tuple->getElements()[i]))
+                return true;
+        }
+
+        return false;
+    }
+
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from.get()))
+    {
+        const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+        return !to_array || lookupCastMayMergeValues(from_array->getNestedType(), to_array->getNestedType());
+    }
+
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.get()))
+    {
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+        return !to_map || lookupCastMayMergeValues(from_map->getKeyType(), to_map->getKeyType())
+            || lookupCastMayMergeValues(from_map->getValueType(), to_map->getValueType());
+    }
+
+    if (isDynamic(to) || isVariant(to) || isObject(to))
+        return false;
+
+    const auto is_integer_or_enum = [](const DataTypePtr & type)
+    {
+        return isInteger(type) || WhichDataType(*type).isEnum();
+    };
+    if ((is_integer_or_enum(from) && is_integer_or_enum(to)) || (isNativeNumber(from) && isNativeNumber(to)))
+        return false;
+
+    return !conversionPreservesOrder(*from, *to) && !canBeSafelyCast(from, to);
 }
 
 
