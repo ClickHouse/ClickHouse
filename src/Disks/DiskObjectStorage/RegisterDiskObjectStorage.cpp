@@ -27,11 +27,14 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         const String & config_prefix,
         ContextPtr context,
         const DisksMap & /* map */,
-        bool /* attach */,
+        bool attach,
         bool custom_disk) -> DiskPtr
     {
         const bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
-        const bool run_remote_host_filter_check = custom_disk;
+        /// Custom disk from a query: a rejection throws. Custom disk loaded from existing metadata (attach:
+        /// server start, UNDROP): a rejection is reported. A user ATTACH, short or with a definition, is not attach here.
+        const auto remote_host_filter_check = !custom_disk ? RemoteHostFilterCheck::None
+            : attach ? RemoteHostFilterCheck::Warn : RemoteHostFilterCheck::Enforce;
 
         std::unordered_map<Location, ObjectStoragePtr> object_storage_registry;
         std::unordered_map<Location, LocationInfo> cluster_registry;
@@ -46,14 +49,14 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
                 const std::string object_storage_config_prefix = config_prefix + ".locations." + location;
                 const bool local = config.getBool(object_storage_config_prefix + ".local");
                 const bool enabled = config.getBool(object_storage_config_prefix + ".enabled");
-                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, /*skip_access_check=*/skip_access_check || !enabled, run_remote_host_filter_check);
+                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, /*skip_access_check=*/skip_access_check || !enabled, remote_host_filter_check);
                 object_storage_registry[location] = object_storage;
                 cluster_registry[location] = {enabled, local, object_storage_config_prefix};
             }
         }
         else
         {
-            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check, run_remote_host_filter_check);
+            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check, remote_host_filter_check);
             object_storage_registry["main"] = object_storage;
             cluster_registry["main"] = { .enabled = true, .local = true, .config_prefix = config_prefix };
         }
