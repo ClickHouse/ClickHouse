@@ -12,7 +12,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -984,24 +983,16 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
     }
 }
 
-NameSet parseExcludeStatisticsColumns(const String & value, std::string_view setting_name)
-{
-    try
-    {
-        return parseColumnNameList(value);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("(in the value of setting '{}')", setting_name);
-        throw;
-    }
-}
-
 ColumnsStatistics collectStatisticsToMaterialize(const ColumnsDescription & columns, const NameSet & exclude_columns)
 {
-    ColumnsStatistics statistics(columns);
-    for (const auto & column_name : exclude_columns)
-        statistics.erase(column_name);
+    /// Like the constructor of `ColumnsStatistics`, but does not create the statistics of the excluded columns.
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+    ColumnsStatistics statistics;
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty() && !exclude_columns.contains(column.name))
+            statistics.emplace(column.name, factory.get(column));
+    }
     return statistics;
 }
 

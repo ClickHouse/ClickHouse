@@ -41,6 +41,7 @@
 #include <Common/quoteString.h>
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -907,8 +908,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (global_settings[Setting::materialize_statistics_on_insert] && metadata_snapshot->hasStatistics())
     {
         /// Parse the exclusion list before the table size check below, so that an invalid value fails
-        /// the INSERT into every table with statistics, not only into the small ones.
-        const NameSet exclude_columns = parseExcludeStatisticsColumns(
+        /// the INSERT into every table with statistics, not only into the small ones. It is parsed for every
+        /// written part, but the default empty value costs nothing.
+        const NameSet exclude_columns = parseColumnNameList(
             global_settings[Setting::exclude_materialize_statistics_on_insert].value, "exclude_materialize_statistics_on_insert");
 
         const UInt64 max_table_size = global_settings[Setting::materialize_statistics_on_insert_max_table_size];

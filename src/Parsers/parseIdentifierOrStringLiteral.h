@@ -28,8 +28,9 @@ bool parseIdentifiersOrStringLiterals(IParser::Pos & pos, Expected & expected, S
   * `n` is named `n.x`) or a non-empty string literal. An empty or whitespace-only string gives an empty
   * set. Unlike the functions above, it throws CANNOT_PARSE_TEXT if the string is not such a list, so
   * that `n.x` or `a b` are not silently read as `n` or `a`. It uses the default parser limits, so that
-  * the result does not depend on the query settings.
+  * the result does not depend on the query settings. If `setting_name` is not empty, `str` is the value
+  * of this setting, and the error message says so.
   */
-NameSet parseColumnNameList(std::string_view str);
+NameSet parseColumnNameList(std::string_view str, std::string_view setting_name = {});
 
 }

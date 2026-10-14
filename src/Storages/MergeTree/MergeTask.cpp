@@ -22,6 +22,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -957,7 +958,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         global_ctx->gathered_data.statistics = collectStatisticsToMaterialize(
             global_ctx->metadata_snapshot->getColumns(),
-            parseExcludeStatisticsColumns(
+            parseColumnNameList(
                 (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_statistics_on_merge].value,
                 "exclude_materialize_statistics_on_merge"));
     }

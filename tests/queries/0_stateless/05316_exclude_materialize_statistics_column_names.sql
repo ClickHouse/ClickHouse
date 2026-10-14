@@ -22,7 +22,7 @@ SETTINGS
 
 SET materialize_statistics_on_insert = 1;
 
--- Not a list of column names. These were silently read as a prefix of the list before ('a b' as 'a').
+-- Not a list of column names: rejected, not read as a prefix of the list ('a b' as 'a').
 INSERT INTO tab SELECT 1, [1], [1], 1, 1, 1 SETTINGS exclude_materialize_statistics_on_insert = 'a b'; -- { serverError CANNOT_PARSE_TEXT }
 INSERT INTO tab SELECT 1, [1], [1], 1, 1, 1 SETTINGS exclude_materialize_statistics_on_insert = 'a,'; -- { serverError CANNOT_PARSE_TEXT }
 INSERT INTO tab SELECT 1, [1], [1], 1, 1, 1 SETTINGS exclude_materialize_statistics_on_insert = ',a'; -- { serverError CANNOT_PARSE_TEXT }

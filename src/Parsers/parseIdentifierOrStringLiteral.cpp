@@ -63,8 +63,20 @@ bool parseIdentifiersOrStringLiterals(IParser::Pos & pos, Expected & expected, S
 }
 
 
-NameSet parseColumnNameList(std::string_view str)
+NameSet parseColumnNameList(std::string_view str, std::string_view setting_name)
 {
+    /// The settings that take such a list are empty by default, and some are parsed for every written part.
+    if (str.empty())
+        return {};
+
+    /// What the error messages call `str`. Built only to throw.
+    auto describe_str = [&]
+    {
+        if (setting_name.empty())
+            return quoteString(str);
+        return fmt::format("the value {} of setting {}", quoteString(str), quoteString(setting_name));
+    };
+
     Tokens tokens(str.data(), str.data() + str.size());
     IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     Expected expected;
@@ -84,7 +96,7 @@ NameSet parseColumnNameList(std::string_view str)
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_TEXT,
                         "Cannot parse {} as a comma-separated list of column names: a column name cannot be empty",
-                        quoteString(str));
+                        describe_str());
                 result.insert(std::move(name));
                 return true;
             }
@@ -119,7 +131,7 @@ NameSet parseColumnNameList(std::string_view str)
             ErrorCodes::CANNOT_PARSE_TEXT,
             "Cannot parse {} as a comma-separated list of column names: unexpected {} at position {}. "
             "Separate the names with commas and write a name with special characters in backquotes",
-            quoteString(str),
+            describe_str(),
             unexpected.isEnd() ? "end of string" : quoteString(std::string_view(unexpected.begin, unexpected.end)),
             unexpected.begin - str.data() + 1);
     }

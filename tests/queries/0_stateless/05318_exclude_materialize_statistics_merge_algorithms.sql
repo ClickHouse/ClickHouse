@@ -8,7 +8,8 @@ DROP TABLE IF EXISTS tab_vertical;
 DROP TABLE IF EXISTS tab_replacing;
 
 -- The vertical algorithm merges the sorting key column `a` in its first stage and the other columns one by one in
--- its second stage: exclude a column of each stage.
+-- its second stage: exclude a column of each stage. A merge into a packed part is horizontal, so packed parts are
+-- disabled, and part_log shows that the merge was vertical.
 CREATE TABLE tab_vertical
 (
     a UInt64,
@@ -27,7 +28,8 @@ SETTINGS
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
-    vertical_merge_algorithm_min_bytes_to_activate = 0;
+    vertical_merge_algorithm_min_bytes_to_activate = 0,
+    min_bytes_for_full_part_storage = 0;
 
 SYSTEM STOP MERGES tab_vertical;
 INSERT INTO tab_vertical SELECT number, number, number FROM numbers(100);
@@ -35,7 +37,12 @@ INSERT INTO tab_vertical SELECT number + 100, number, number FROM numbers(100);
 SYSTEM START MERGES tab_vertical;
 OPTIMIZE TABLE tab_vertical FINAL;
 
+SYSTEM FLUSH LOGS part_log;
+
 SELECT 'Vertical merge excludes a and b';
+SELECT DISTINCT merge_algorithm
+FROM system.part_log
+WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 'tab_vertical' AND event_type = 'MergeParts';
 SELECT column, statistics != [] AS has_stats
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'tab_vertical' AND active

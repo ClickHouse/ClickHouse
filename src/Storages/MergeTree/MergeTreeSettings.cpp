@@ -15,8 +15,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/Statistics/Statistics.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
@@ -3265,7 +3265,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
 
     /// Merges parse the list. Reject an invalid one when the table metadata is created or altered, or the
     /// server starts with it in the `merge_tree` config section, instead of letting every merge fail.
-    parseExcludeStatisticsColumns(
+    parseColumnNameList(
         (*this)[MergeTreeSetting::exclude_materialize_statistics_on_merge].value, "exclude_materialize_statistics_on_merge");
 }
 

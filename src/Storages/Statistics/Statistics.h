@@ -239,13 +239,10 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 
-/// Parses `value`, the value of the setting `setting_name` (`exclude_materialize_statistics_on_insert`
-/// or `exclude_materialize_statistics_on_merge`), a list of column names in the syntax of
-/// `parseColumnNameList`. Throws CANNOT_PARSE_TEXT, naming the setting, if it is not such a list.
-NameSet parseExcludeStatisticsColumns(const String & value, std::string_view setting_name);
-
 /// Creates the statistics of `columns` to build for a new part during an INSERT or a merge: those of
-/// every column with statistics, except the columns in `exclude_columns`.
+/// every column with statistics, except the columns in `exclude_columns` (the value of
+/// `exclude_materialize_statistics_on_insert` or `exclude_materialize_statistics_on_merge` parsed by
+/// `parseColumnNameList`). The statistics of the excluded columns are not even created.
 ColumnsStatistics collectStatisticsToMaterialize(const ColumnsDescription & columns, const NameSet & exclude_columns);
 
 /// Whether statistics record the exact minimum and maximum of a column of this type. Only
