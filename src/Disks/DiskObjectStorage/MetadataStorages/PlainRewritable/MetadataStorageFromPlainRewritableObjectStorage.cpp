@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -665,7 +666,18 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
                     /// The root directory has a metadata object only in the explicit form, and it is stored under the reserved remote path.
                     if (remote_path == PlainRewritableLayout::ROOT_DIRECTORY_TOKEN)
+                    {
+                        /// The metadata object of the root always contains its logical path `/`, so an object without it
+                        /// was being written when the process died (`LocalObjectStorage` writes to the final key directly).
+                        /// The root is still loaded, from the listing of its own prefix, but its explicit file list is lost,
+                        /// and the blobs it linked outside of this prefix may be the ones named by the pending markers.
+                        if (local_path.empty())
+                        {
+                            LOG_WARNING(log, "The metadata object of the root directory with the key '{}' is empty", object_path);
+                            has_unreadable_directories = true;
+                        }
                         local_path.clear();
+                    }
                     else if (normalizePath(local_path).empty())
                     {
                         /// Only the reserved metadata object maps to the logical root, so an empty logical path here means that
@@ -1223,12 +1235,40 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedPath
         affected_paths.push_back(std::move(normalized_path));
 }
 
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addLinkRemovalPath(const std::string & path)
+{
+    auto normalized_path = normalizePath(path).string();
+    if (normalized_path.empty())
+        return;
+
+    /// The committed snapshot, where the shared blobs are looked up, has the files that an earlier operation of this
+    /// transaction moved to this path (or under it) at their paths before the moves, so these paths are added too.
+    std::string original_path = normalized_path;
+    for (const auto & [moved_from, moved_to] : std::views::reverse(moved_paths))
+    {
+        if (original_path == moved_to)
+            original_path = moved_from;
+        else if (original_path.starts_with(moved_to + "/"))
+            original_path = moved_from + original_path.substr(moved_to.size());
+    }
+
+    if (original_path != normalized_path && !original_path.empty())
+        link_removal_paths.push_back(std::move(original_path));
+    link_removal_paths.push_back(std::move(normalized_path));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addMovedPath(const std::string & path_from, const std::string & path_to)
+{
+    auto normalized_path_from = normalizePath(path_from).string();
+    auto normalized_path_to = normalizePath(path_to).string();
+    if (!normalized_path_from.empty() && !normalized_path_to.empty())
+        moved_paths.emplace_back(std::move(normalized_path_from), std::move(normalized_path_to));
+}
+
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::addRemovedDirectoryPath(const std::string & path)
 {
     addAffectedPath(path);
-
-    if (auto normalized_path = normalizePath(path).string(); !normalized_path.empty())
-        link_removal_paths.push_back(std::move(normalized_path));
+    addLinkRemovalPath(path);
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedFilePath(const std::string & path, bool may_remove_link)
@@ -1237,8 +1277,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedFile
 
     /// Writing, unlinking or replacing a file may remove a link to its blob (or to the blob of the file it replaces).
     if (may_remove_link)
-        if (auto normalized_file_path = normalizePath(path).string(); !normalized_file_path.empty())
-            link_removal_paths.push_back(std::move(normalized_file_path));
+        addLinkRemovalPath(path);
 
     /// An operation on a file of a directory in the explicit form rewrites the whole `prefix.path` of the directory, which
     /// lists all of its files, so it must exclude the operations on the other files of the directory: otherwise one of
@@ -1364,6 +1403,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
     addAffectedPath(path_to);
     checkNotReservedPath(path_to, uncommitted_state);
     uncommitted_state.moveDirectory(path_from, path_to);
+    addMovedPath(path_from, path_to);
 
     const auto directory_from = normalizePath(path_from).string();
     const auto directory_to = normalizePath(path_to).string();
@@ -1527,6 +1567,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
     addAffectedFilePath(path_to, /*may_remove_link=*/false);
     checkNotReservedPath(path_to, uncommitted_state);
     planFileMove(normalizePath(path_from), normalizePath(path_to));
+    addMovedPath(path_from, path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/false,
@@ -1546,6 +1587,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(con
     addAffectedFilePath(path_to);
     checkNotReservedPath(path_to, uncommitted_state);
     planFileMove(normalizePath(path_from), normalizePath(path_to));
+    addMovedPath(path_from, path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/true,

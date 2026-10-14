@@ -169,8 +169,14 @@ protected:
     /// A subset of `affected_paths`: it does not include the directories locked only to serialize the rewrites
     /// of their `prefix.path`, which do not remove links. The shared blobs under these paths are locked as well.
     std::vector<std::string> link_removal_paths;
+    /// Normalized source and target paths of the files and directories moved by the operations, in their order.
+    std::vector<std::pair<std::string, std::string>> moved_paths;
 
     void addAffectedPath(const std::string & path);
+    /// Adds a path to `link_removal_paths`, together with the path it had before the earlier moves of this transaction.
+    void addLinkRemovalPath(const std::string & path);
+    /// Records a move, to be called after the paths of the move are added.
+    void addMovedPath(const std::string & path_from, const std::string & path_to);
     /// The same for a directory whose subtree the operation removes.
     void addRemovedDirectoryPath(const std::string & path);
     /// The same for a file, and also for its directory if the operation may rewrite the `prefix.path` of the directory.
