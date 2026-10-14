@@ -26,19 +26,29 @@ namespace ErrorCodes
 
 /// Plan-based parallel replicas build an ordinary local plan and only later, in
 /// `QueryPlanOptimizations::applyParallelReplicas`, serialize a fragment of it for the replicas.
-static bool mayShipPlanFragmentToParallelReplicas(const ContextPtr & context)
+static bool usesPlanBasedParallelReplicas(const ContextPtr & context)
 {
     return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
 }
 
 /// A plan built with `make_distributed_plan` may be split into fragments by
-/// `QueryPlan::convertToDistributed` and shipped to workers. The setting is checked on the local
-/// context; the sticky `SelectQueryOptions::building_distributed_plan` (or the parent planner
-/// context) covers a subquery that turned the setting off in its own SETTINGS clause while the
-/// enclosing query is still planned distributed.
-static bool mayShipPlanFragmentToDistributedWorkers(const ContextPtr & context)
+/// `QueryPlan::convertToDistributed` and shipped to workers.
+static bool usesDistributedPlan(const ContextPtr & context)
 {
     return context->getSettingsRef()[Setting::make_distributed_plan];
+}
+
+/// The settings are checked on both the local and the query-level context. The local context
+/// applies the SETTINGS clause of a subquery, and some storages (e.g. `StorageView`,
+/// `StorageTimeSeries`, the PromQL storages) plan a generated query with fresh `SelectQueryOptions`,
+/// so neither the local settings nor the sticky `SelectQueryOptions::building_distributed_plan` see
+/// the enclosing query's mode in every case. The query-level context is the one the outer
+/// interpreter optimizes the top-level plan under, and no nested SETTINGS clause can change it.
+/// This is the same rule the query result cache checks in `Planner` use.
+static bool mayShipPlanFragment(const ContextPtr & context)
+{
+    const auto may_ship = [](const ContextPtr & ctx) { return usesDistributedPlan(ctx) || usesPlanBasedParallelReplicas(ctx); };
+    return may_ship(context) || (context->hasQueryContext() && may_ship(context->getQueryContext()));
 }
 
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const QueryTreeNodePtr & column_node)
@@ -105,8 +115,7 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerCo
     , is_ast_level_optimization_allowed(!(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY || select_query_options_.ignore_ast_optimizations))
     , may_be_serialized_for_remote_execution(select_query_options_.build_logical_plan
         || select_query_options_.building_distributed_plan
-        || mayShipPlanFragmentToDistributedWorkers(query_context)
-        || mayShipPlanFragmentToParallelReplicas(query_context))
+        || mayShipPlanFragment(query_context))
 {}
 
 PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_)
@@ -114,8 +123,7 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextP
     , global_planner_context(planner_context_->global_planner_context)
     , is_ast_level_optimization_allowed(planner_context_->is_ast_level_optimization_allowed)
     , may_be_serialized_for_remote_execution(planner_context_->may_be_serialized_for_remote_execution
-        || mayShipPlanFragmentToDistributedWorkers(query_context)
-        || mayShipPlanFragmentToParallelReplicas(query_context))
+        || mayShipPlanFragment(query_context))
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
