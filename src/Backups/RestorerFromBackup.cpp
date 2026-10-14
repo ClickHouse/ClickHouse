@@ -1072,6 +1072,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         create_table_query_from_backup = table_info.create_table_query;
     }
 
+    /// Throws for a table whose data is only partly on such policies, e.g. a `TimeSeries` table with tags in `Memory`.
     if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context))
     {
         skipTableDataOnBackupMetadataOnlyStoragePolicy(table_name, storage, partitions, create_table_query_from_backup);

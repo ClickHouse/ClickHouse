@@ -170,8 +170,10 @@ namespace
 {
 
 /// The storages that keep the data of `storage`, each with the kind of the inner table it is, if it is one. Every inner
-/// table of a view or a `TimeSeries` table counts, whatever its engine. A standalone table counts only if it is a
-/// `MergeTreeData`: `Alias`, `Distributed` and `StorageProxy` report a storage policy but keep no data of their own.
+/// table of a view or a `TimeSeries` table counts, whatever its engine: e.g. `TAGS INNER ENGINE = Memory` keeps data that
+/// no storage policy provides, so it makes the table mixed and refused, instead of its data being left out. A standalone
+/// table counts only if it is a `MergeTreeData`: `Alias`, `Distributed` and `StorageProxy` report a storage policy but
+/// keep no data of their own.
 std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStorages(const StoragePtr & storage, const ContextPtr & context)
 {
     std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> data_storages;
