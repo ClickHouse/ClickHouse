@@ -36,7 +36,7 @@ public:
     virtual bool isTruncated() const = 0;
 
     /// Returns the smallest run that a builder writes, which is the smaller of 16 MiB and
-    /// `max_bytes_before_external_set`. The builder writes no keys to disk before it buffers that many
+    /// a nonzero `max_bytes_before_external_set`. The builder writes no keys to disk before it buffers that many
     /// bytes of them.
     static size_t getMinBytesInRun(size_t max_bytes_before_external_set);
 
@@ -49,7 +49,8 @@ public:
 /// Creates a builder of a `DiskSet` of `Key` keys, where `Key` is an unsigned integer of 8 to 256 bits.
 /// `tmp_data` holds the runs of the sorter and the finished set, and `limits` are the size limits of the set.
 /// `max_bytes_before_external_set` is the spill threshold of the set: the builder writes a run of buffered
-/// keys only while tracked query memory exceeds it.
+/// keys only while tracked query memory exceeds it. With 0, requested spills write bounded runs regardless
+/// of query memory.
 template <typename Key>
 std::unique_ptr<DiskSetBuilder> createDiskSetBuilder(
     TemporaryDataOnDiskScopePtr tmp_data,
