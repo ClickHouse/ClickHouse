@@ -1,0 +1,6 @@
+stand-in	TableProxy
+in system.replicas	0
+loaded	ReplicatedMergeTree
+in system.replicas	1
+in system.replication_queue	0
+after restart	1
