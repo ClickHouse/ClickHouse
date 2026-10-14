@@ -38,6 +38,15 @@ marks: 79
 verdict: chosen
 real: ReadFromMergeTree (p_sa)
 real: Granules: 79/158
+-- a LowCardinality(String) column from a filtered insert from a table
+Baseline (after PK + partition + existing indexes):
+marks: 106
+With p_w (normal projection, hypothetical):
+marks: 100
+marks_span: 100 to 143
+verdict: too close to call
+real: from the base table
+real with force_optimize_projection: Granules: 106/106
 -- a key with many distinct values
 Baseline (after PK + partition + existing indexes):
 marks: 72

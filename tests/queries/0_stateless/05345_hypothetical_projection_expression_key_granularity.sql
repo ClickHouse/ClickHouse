@@ -80,6 +80,29 @@ SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM sa_real WHERE b < 50)
 WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
 
+-- an insert from a table can keep the dictionary of the source and its two-byte index for the two values that the filter leaves
+CREATE TABLE w_src (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 8192, use_const_adaptive_granularity = 0;
+INSERT INTO w_src SELECT number, number % 100, if(number < 6000, toString(number % 2), toString(number)) FROM numbers(6300)
+    SETTINGS max_block_size = 10000, max_threads = 1;
+CREATE TABLE w_est AS w_src;
+CREATE TABLE w_real AS w_src;
+ALTER TABLE w_real ADD PROJECTION p_w (SELECT a, b, c ORDER BY b);
+INSERT INTO w_est SELECT * FROM w_src WHERE c IN ('0', '1')
+    SETTINGS max_threads = 1, min_insert_block_size_rows = 100000, max_insert_block_size = 100000;
+INSERT INTO w_real SELECT * FROM w_src WHERE c IN ('0', '1')
+    SETTINGS max_threads = 1, min_insert_block_size_rows = 100000, max_insert_block_size = 100000;
+CREATE HYPOTHETICAL PROJECTION p_w ON w_est (SELECT a, b, c ORDER BY b);
+SELECT '-- a LowCardinality(String) column from a filtered insert from a table';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line FROM (EXPLAIN WHATIF SELECT a, b, c FROM w_est WHERE b < 100)
+WHERE match(line, '^(Baseline|With |marks:|marks_span:|verdict:)');
+SELECT if(explain LIKE '%ReadFromMergeTree (p_w)%', 'real: from the projection', 'real: from the base table')
+FROM (EXPLAIN SELECT a, b, c FROM w_real WHERE b < 100) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM w_real WHERE b < 100 SETTINGS force_optimize_projection = 1)
+WHERE match(trim(explain), '^Granules:');
+
 -- with many distinct values the dictionary is a large part of the block, and the index needs two bytes
 CREATE TABLE t_est_many AS t_est;
 CREATE TABLE t_real_many AS t_est;
@@ -176,6 +199,9 @@ DROP TABLE s_est;
 DROP TABLE s_real;
 DROP TABLE sa_est;
 DROP TABLE sa_real;
+DROP TABLE w_src;
+DROP TABLE w_est;
+DROP TABLE w_real;
 DROP TABLE t_est_many;
 DROP TABLE t_real_many;
 DROP TABLE m_est;

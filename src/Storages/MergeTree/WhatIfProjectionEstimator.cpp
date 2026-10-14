@@ -101,18 +101,33 @@ bool hasDictionary(const ColumnWithTypeAndName & column)
     return !recursiveRemoveLowCardinality(column.type)->equals(*column.type);
 }
 
-/// the bytes of the dictionaries that a column owns at any depth, `byteSize` leaves out a shared one
-size_t dictionaryBytes(const IColumn & column)
+/// how a writer block holds the stored dictionary columns
+enum class StoredDictionaries : uint8_t
 {
-    size_t bytes = 0;
-    auto add = [&](const IColumn & subcolumn)
+    /// the block has its own dictionaries, as an insert that parses its data or a merge that mixes its sources
+    Own,
+    /// a source shares its dictionaries, so the writer counts only the indexes
+    Shared,
+    /// the same, but each index has the widest type, a source can keep a wide index for a few values that a filter leaves
+    SharedWidestIndex,
+};
+
+/// the bytes of a column if a source shares its dictionaries at any depth, `byteSize` leaves out a shared dictionary
+size_t bytesWithSharedDictionaries(const IColumn & column, bool widest_index)
+{
+    size_t bytes = column.byteSize();
+    auto share = [&](const IColumn & subcolumn)
     {
-        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&subcolumn))
-            if (!low_cardinality->isSharedDictionary())
-                bytes += low_cardinality->getDictionary().byteSize();
+        const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&subcolumn);
+        if (!low_cardinality)
+            return;
+        if (!low_cardinality->isSharedDictionary())
+            bytes -= low_cardinality->getDictionary().byteSize();
+        if (widest_index)
+            bytes += low_cardinality->size() * sizeof(UInt64) - low_cardinality->getIndexes().byteSize();
     };
-    add(column);
-    column.forEachSubcolumnRecursively(add);
+    share(column);
+    column.forEachSubcolumnRecursively(share);
     return bytes;
 }
 
@@ -369,7 +384,7 @@ struct PartFromSample
             const size_t part_rows_covered = firstPartRow(sample_row + 1) - firstPartRow(sample_row);
             bytes_before_sample_row[sample_row + 1] = bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * part_rows_covered;
         }
-        dictionary_bytes = blockBytes(0, rows, /* shared_dictionaries */ false) - rowBytesBefore(rows);
+        dictionary_bytes = blockBytes(0, rows, StoredDictionaries::Own) - rowBytesBefore(rows);
     }
 
     size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
@@ -392,8 +407,7 @@ struct PartFromSample
     }
 
     /// the bytes of a writer block, with the dictionary columns as the block holds them
-    /// a shared dictionary is not in the block bytes, the writer counts only the index of a stored column
-    UInt64 blockBytes(size_t begin, size_t end, bool shared_dictionaries) const
+    UInt64 blockBytes(size_t begin, size_t end, StoredDictionaries stored) const
     {
         UInt64 result = rowBytesBefore(end) - rowBytesBefore(begin);
         const size_t first = firstSampleRowFrom(begin);
@@ -404,9 +418,9 @@ struct PartFromSample
             auto block_column = column.type->createColumn();
             for (size_t sample_row = first; sample_row < last; ++sample_row)
                 block_column->insertFrom(*column.column, sample.order[sample_row]);
-            UInt64 column_bytes = block_column->byteSize();
-            if (shared_dictionaries && sample.stored_dictionaries.contains(column.name))
-                column_bytes -= dictionaryBytes(*block_column);
+            const UInt64 column_bytes = stored != StoredDictionaries::Own && sample.stored_dictionaries.contains(column.name)
+                ? bytesWithSharedDictionaries(*block_column, stored == StoredDictionaries::SharedWidestIndex)
+                : block_column->byteSize();
             /// each sample row stands for several part rows
             result += last > first ? static_cast<UInt64>(UInt128(column_bytes) * (end - begin) / (last - first)) : 0;
         }
@@ -443,7 +457,7 @@ std::vector<size_t> simulateWriterMarks(
     bool adaptive_marks,
     size_t block_rows_limit,
     size_t block_bytes_limit,
-    bool shared_dictionaries)
+    StoredDictionaries stored)
 {
     const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     const size_t fixed_granularity_rows = mt_settings[MergeTreeSetting::index_granularity];
@@ -454,7 +468,7 @@ std::vector<size_t> simulateWriterMarks(
     {
         const size_t end = blockEnd(part, row, block_rows_limit, block_bytes_limit);
         const size_t block_rows = end - row;
-        const size_t block_bytes = part.blockBytes(row, end, shared_dictionaries);
+        const size_t block_bytes = part.blockBytes(row, end, stored);
         row = end;
 
         const size_t granule_rows = computeIndexGranularity(
@@ -521,27 +535,31 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
     /// one granule of bytes is the finest block size that matters
     const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
-    /// the rows and bytes of the blocks, and if the blocks share the stored dictionaries with the source
-    std::vector<std::tuple<size_t, size_t, bool>> chunkings;
+    /// the rows and bytes of the blocks, and how they hold the stored dictionaries
+    std::vector<std::tuple<size_t, size_t, StoredDictionaries>> chunkings;
     size_t primary = 0;
-    chunkings.emplace_back(whole_part.rows, 0, false);
+    chunkings.emplace_back(whole_part.rows, 0, StoredDictionaries::Own);
     if (granularity_per_block)
     {
-        chunkings.emplace_back(merge_rows, merge_bytes, false);
-        chunkings.emplace_back(merge_rows, granule_bytes, false);
+        chunkings.emplace_back(merge_rows, merge_bytes, StoredDictionaries::Own);
+        chunkings.emplace_back(merge_rows, granule_bytes, StoredDictionaries::Own);
         /// the writer writes a level-zero part in one block and a merged part in merge blocks
         /// when the row widths differ, the merge also cuts a block at each source
         if (parent_part->info.level > 0)
             primary = uneven_rows ? 2 : 1;
     }
     /// a merge can give the writer the blocks of a source as they are, an insert can read a table, both keep the source dictionary
+    /// the part does not record the index width of that dictionary, so the layouts go from the narrowest to the widest index
     if (!data.stored_dictionaries.empty())
-        chunkings.emplace_back(whole_part.rows, 0, true);
+    {
+        const auto [likeliest_rows, likeliest_bytes, likeliest_stored] = chunkings[primary];
+        chunkings.emplace_back(whole_part.rows, 0, StoredDictionaries::Shared);
+        chunkings.emplace_back(likeliest_rows, likeliest_bytes, StoredDictionaries::SharedWidestIndex);
+    }
 
     std::vector<std::vector<size_t>> layouts;
-    for (const auto & [rows_limit, bytes_limit, shared_dictionaries] : chunkings)
-        layouts.push_back(
-            simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit, shared_dictionaries));
+    for (const auto & [rows_limit, bytes_limit, stored] : chunkings)
+        layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit, stored));
 
     auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
     {
@@ -669,10 +687,10 @@ struct SampledPart
     MergeTreeDataPartPtr synthetic;
 };
 
-/// scenario 0 has every part in its likeliest layout, scenarios 1 to 4 have every part in one layout each
+/// scenario 0 has every part in its likeliest layout, scenarios 1 to 5 have every part in one layout each
 struct Scenarios
 {
-    std::array<HypotheticalProjectionPtr, 5> scenarios;
+    std::array<HypotheticalProjectionPtr, 6> scenarios;
     bool layouts_differ = false;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
