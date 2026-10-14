@@ -955,6 +955,26 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "CLONE AS requires a source table name, not a SELECT query or table function");
 
+    /// Materialize the `uuid_type_version` setting into the CREATE query AST on the initiator: column and
+    /// dictionary attribute types, and cast type literals inside column default expressions and the
+    /// `AS SELECT` / view definition, from which column types may be inferred. This is gated to a primary,
+    /// user-issued CREATE only, so a normalized query re-executed on a DDL worker or restored from a backup
+    /// keeps its already-materialized types. A full-definition `ATTACH TABLE ... (...) ENGINE = ...`
+    /// (including `ATTACH ... FROM '/path/'`) is create-like user input rather than a replay of stored
+    /// metadata, so it takes the same materialization; the short `ATTACH TABLE t` syntax and internal
+    /// server-issued queries replay already-materialized metadata and are excluded.
+    /// This must run before `setEngine`: the storage definition (or the table function) it copies from the table of
+    /// the `AS` / `CLONE AS` clause is stored metadata, where a bare `UUID` already denotes the historical type, so it
+    /// must be inherited as is - otherwise the inherited keys would silently change their semantics, and
+    /// `CLONE AS` would reject a source table with a `UUID` in its keys.
+    const bool is_create_like_attach = create.attach && !create.attach_short_syntax && !internal;
+    if ((mode < LoadingStrictnessLevel::SECONDARY_CREATE || is_create_like_attach)
+        && !getContext()->isDDLOrOnClusterInternal()
+        && !is_restore_from_backup)
+    {
+        materializeUUIDTypeVersion(create, getContext()->getSettingsRef()[Setting::uuid_type_version]);
+    }
+
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
@@ -965,22 +985,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
-
-    /// Materialize the `uuid_type_version` setting into the CREATE query AST on the initiator: column and
-    /// dictionary attribute types, and cast type literals inside column default expressions and the
-    /// `AS SELECT` / view definition, from which column types may be inferred. This is gated to a primary,
-    /// user-issued CREATE only, so a normalized query re-executed on a DDL worker or restored from a backup
-    /// keeps its already-materialized types. A full-definition `ATTACH TABLE ... (...) ENGINE = ...`
-    /// (including `ATTACH ... FROM '/path/'`) is create-like user input rather than a replay of stored
-    /// metadata, so it takes the same materialization; the short `ATTACH TABLE t` syntax and internal
-    /// server-issued queries replay already-materialized metadata and are excluded.
-    const bool is_create_like_attach = create.attach && !create.attach_short_syntax && !internal;
-    if ((mode < LoadingStrictnessLevel::SECONDARY_CREATE || is_create_like_attach)
-        && !getContext()->isDDLOrOnClusterInternal()
-        && !is_restore_from_backup)
-    {
-        materializeUUIDTypeVersion(create, getContext()->getSettingsRef()[Setting::uuid_type_version]);
-    }
 
     TableProperties properties;
     TableLockHolder as_storage_lock;
