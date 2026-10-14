@@ -20,6 +20,9 @@ SET explain_query_plan_default = 'legacy';
 -- flips the `EXPLAIN` result and trips the `max_rows_to_read` guards below.
 SET optimize_use_projections = 1;
 SET optimize_projection_skip_index_ratio = 0.5;
+-- `EXPLAIN` (without `ANALYZE`) turns `use_skip_indexes_on_data_read` off for the explained query,
+-- which applies the skip indexes during planning and hides what this test checks. The explained
+-- queries below enable it again in their own `SETTINGS`, which are applied after that override.
 
 DROP TABLE IF EXISTS tab;
 
@@ -50,7 +53,7 @@ SELECT COUNT(*) FROM tab WHERE id2 > 'k3';
 -- (8) than the `id2`-ordered projection would read for `id2 > 'k3'` (123). The `EXPLAIN` confirms
 -- the read source is the main table (`default.tab`), not the projection.
 SELECT trimLeft(explain) FROM (
-    EXPLAIN SELECT COUNT(*) FROM tab WHERE id2 > 'k3' AND v1 <= 500
+    EXPLAIN SELECT COUNT(*) FROM tab WHERE id2 > 'k3' AND v1 <= 500 SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%ReadFromMergeTree%';
 -- The skip index must actually be applied to the base read (issue #100783): reading more than
 -- 10 granules would mean the index was ignored and the whole table scanned.
@@ -62,7 +65,7 @@ SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990';
 -- marks), while the `id2`-ordered projection reads a single mark for `id2 >= 'k9990'`. The `EXPLAIN`
 -- confirms the read source is the projection (`proj1`).
 SELECT trimLeft(explain) FROM (
-    EXPLAIN SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990' AND v1 >= 5000
+    EXPLAIN SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990' AND v1 >= 5000 SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%ReadFromMergeTree%';
 SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990' AND v1 >= 5000 SETTINGS max_rows_to_read = 128; -- 2 granules
 

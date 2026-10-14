@@ -40,7 +40,6 @@ namespace Setting
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
-    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsFloat optimize_projection_skip_index_ratio;
 }
 
@@ -755,14 +754,20 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// The pass is driven only by the base table's deferred skip indexes and the ratio: a projection
     /// can win against the primary-key-only estimate because of its sort order or its granularity
     /// even when its own primary key does not help with the filter.
+    ///
+    /// The setting `use_skip_indexes_on_data_read` alone does not mean the parent deferred its skip
+    /// indexes: `supportsSkipIndexesOnDataRead` turns the deferral off for JOINs, `max_rows_to_read`
+    /// with `read_overflow_mode = 'throw'`, pending mutations and vector similarity indexes, and then
+    /// the parent analysis has already applied the skip indexes. Check the flag the analysis recorded,
+    /// so that such reads do not run the skip indexes a second time.
     if (!relax_projection_checks
-        && context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
         && static_cast<double>(best_candidate->sum_marks) > static_cast<double>(parent_reading_marks) * ratio
         && query.filter_node != nullptr)
     {
         const auto * parent_indexes = reading->getIndexes() ? &*reading->getIndexes() : nullptr;
         if (parent_indexes != nullptr
             && parent_indexes->use_skip_indexes
+            && parent_indexes->use_skip_indexes_on_data_read
             && !parent_indexes->skip_indexes.useful_indices.empty())
         {
             /// Copy the parent's Indexes and disable the data-read deferral so that
