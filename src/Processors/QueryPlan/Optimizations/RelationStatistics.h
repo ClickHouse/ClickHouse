@@ -45,8 +45,11 @@ void addTransformation(std::unordered_map<String, ColumnStats> & column_stats, C
 /// synthetic override explicitly supplies that planner contract. "Exact" refers to row coverage,
 /// not to the estimate's numerical error.
 bool isExactDistinctCount(const ColumnStatsProvenance & provenance);
-/// The true distinct count cannot exceed the estimate, or a test-only synthetic override explicitly
-/// supplies that planner contract.
+/// The distinct count was measured on a superset of the rows the relation will produce or derived from an
+/// exact row count, or a test-only synthetic override explicitly supplies that planner contract. As above,
+/// "upper bound" refers to row coverage: rows dropped after the measurement cannot make the value too small.
+/// It is not a proven numerical bound. A sketch can underestimate the distinct count of the rows it covers
+/// (e.g. `uniq_v2` above 256 distinct values), and NULLs are not counted.
 bool isDistinctCountUpperBound(const ColumnStatsProvenance & provenance);
 
 /// The following predicates also govern `ColumnStats::null_fraction`: it is a value fact for the

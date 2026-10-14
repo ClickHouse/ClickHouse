@@ -9,6 +9,7 @@ namespace DB
 enum class ColumnStatsOrigin : UInt8
 {
     Unknown,
+    /// Measured by part statistics. A distinct count is the estimate of an approximate sketch.
     PartStatistics,
     /// A heuristic derived in the absence of a distinct-count statistic.
     SyntheticFallback,
