@@ -28,9 +28,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 **데이터베이스 백업과 스냅샷**: 백업은 데이터를 별도의 사본으로 보관해 내구성 있는 장기 저장을 제공합니다. 스냅샷은 추가 데이터 사본을 생성하지 않으며, 일반적으로 더 빠르고 더 나은 RPO를 제공합니다.
 
-<div id="database-backups">
-  ## 데이터베이스 Backup
-</div>
+## 데이터베이스 Backup {#database-backups}
 
 기본 서비스의 Backup을 보유하면 기본 서비스에 장애가 발생했을 때 해당 Backup을 활용해 복원할 수 있으므로 효과적입니다.
 ClickHouse Cloud는 Backup에 대해 다음과 같은 기능을 지원합니다.
@@ -56,7 +54,9 @@ ClickHouse Cloud는 Backup에 대해 다음과 같은 기능을 지원합니다.
 고객은 RPO를 개선하기 위해 [Backup을 구성하여](/ko/products/cloud/guides/backups/configurable-backups) 최대 6시간마다 Backup이 수행되도록 설정할 수 있습니다.
 더 긴 보존 기간도 설정할 수 있습니다.
 
-현재 서비스에서 사용할 수 있는 Backup은 ClickHouse Cloud 콘솔의 &quot;backups&quot; 페이지에 나열됩니다.
+Backup 주기에 따라 최신 복원 지점이 최악의 경우 얼마나 오래전 시점인지가 결정되며, 이는 곧 RPO에 영향을 줍니다. 보존 기간은 Backup 데이터를 얼마나 오래 유지할지 결정할 뿐, 최신 복원 지점을 더 최근 시점으로 만들지는 않습니다. 예를 들어 보존 기간을 1일, Backup 주기를 48시간으로 설정한 서비스에서는 최신 복원 지점이 거의 48시간 전일 수 있습니다.
+
+현재 서비스에서 사용할 수 있는 Backup은 ClickHouse Cloud 콘솔의 “backups” 페이지에 나열됩니다.
 이 섹션에서는 각 Backup의 성공/실패 상태도 확인할 수 있습니다.
 
 <div id="restoring-from-a-backup">
