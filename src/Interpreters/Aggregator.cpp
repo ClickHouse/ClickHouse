@@ -2728,7 +2728,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
     size_t before = data_variants.memoryUsage();
     if (!data_variants.isTwoLevel())
         data_variants.convertToTwoLevel();
-    writeToTemporaryFile(data_variants);
+    writeToTemporaryFile(data_variants, before + params.min_free_disk_space);
     reseedKeptKeysAfterSpill(data_variants);
     size_t after = data_variants.memoryUsage();
     return before > after ? before - after : 0;
@@ -2736,7 +2736,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
 
 void Aggregator::consumeToTemporaryFile(AggregatedDataVariants & data_variants) const
 {
-    flushToTemporaryFile(data_variants, 0, /*reinitialize=*/false);
+    flushToTemporaryFile(data_variants, data_variants.memoryUsage() + params.min_free_disk_space, /*reinitialize=*/false);
     /// The conversion does not clear the tables (the inline-count method returns before its
     /// shrink), so tear the variants down here: the consumer holds them only to destroy them,
     /// and the buffers should return to the allocator now, not when the last owner drops.
