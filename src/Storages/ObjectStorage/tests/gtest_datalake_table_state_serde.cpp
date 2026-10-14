@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Core/ProtocolDefines.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 
 namespace DB::ErrorCodes
 {
@@ -178,20 +179,29 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoNulloptFileStats)
 }
 
 
-TEST(DatalakeStateSerde, IcebergObjectSerializableInfoExternalPathRejectedBeforeAbsolutePathProtocol)
+TEST(DatalakeStateSerde, ClusterFunctionReadTaskResponseExternalPathRejectedBeforeAbsolutePathProtocol)
 {
-    auto info = makeObjectInfo();
-    info.requires_external_storage = true;
-    String str;
-    WriteBufferFromString write_buffer{str};
-    try
+    ClusterFunctionReadTaskResponse response;
+    response.path = "path/to/file.parquet";
+    response.iceberg_info = makeObjectInfo();
+    response.iceberg_info->requires_external_storage = true;
+
+    for (size_t protocol_version : {
+             DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION,
+             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA,
+             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS})
     {
-        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
-        FAIL() << "External storage accepted by the old protocol";
-    }
-    catch (const DB::Exception & e)
-    {
-        ASSERT_EQ(e.code(), ErrorCodes::PROTOCOL_VERSION_MISMATCH);
+        String str;
+        WriteBufferFromString write_buffer{str};
+        try
+        {
+            response.serialize(write_buffer, protocol_version);
+            FAIL() << "External storage accepted by protocol version " << protocol_version;
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::PROTOCOL_VERSION_MISMATCH);
+        }
     }
 }
 

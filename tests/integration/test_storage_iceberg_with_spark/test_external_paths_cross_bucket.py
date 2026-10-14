@@ -173,6 +173,26 @@ def test_gs_path_is_not_served_by_same_named_s3_bucket(started_cluster_iceberg_w
     instance.query(f"DETACH TABLE {TABLE_NAME}")
 
 
+def test_versioned_s3_path_is_rejected(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_versioned_s3_path_{get_uuid_str()}"
+    data_bucket = external_bucket(started_cluster_iceberg_with_spark)
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    _rewrite_manifests_and_reupload(
+        started_cluster_iceberg_with_spark, host_path, base_path,
+        lambda p: f"{minio_url}/{data_bucket}/{base_path}/data/{os.path.basename(p)}?versionId=v1")
+    shutil.rmtree(temp_dir)
+
+    args = get_query_args("s3", started_cluster_iceberg_with_spark, base_path)
+    error = instance.query_and_get_error(f"SELECT * FROM icebergS3({args}) ORDER BY id")
+    assert "reading S3 object versions is not supported" in error, error
+
+
 def test_unsupported_scheme_is_still_reported_by_system_iceberg_files(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
 

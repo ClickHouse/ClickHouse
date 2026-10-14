@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -43,6 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int PATH_ACCESS_DENIED;
 }
 
@@ -219,6 +221,21 @@ std::pair<std::string, std::string> splitAbfsAuthority(const std::string & autho
     if (auto suffix_pos = account_name.find('.'); suffix_pos != std::string::npos)
         account_name = account_name.substr(0, suffix_pos);
     return {authority.substr(0, at_pos), account_name};
+}
+
+/// ABFS authorities name the DFS endpoint or only the account; the client needs the Blob endpoint of the same account.
+std::string azureServiceUrlFromAbfsAuthority(const std::string & authority)
+{
+    auto at_pos = authority.find('@');
+    if (at_pos == std::string::npos || at_pos + 1 == authority.size())
+        return "";
+
+    auto host = Poco::toLower(authority.substr(at_pos + 1));
+    if (!host.contains('.'))
+        host += ".blob.core.windows.net";
+    else if (auto dfs_pos = host.find(".dfs."); dfs_pos != std::string::npos)
+        host.replace(dfs_pos, 5, ".blob.");
+    return "https://" + host;
 }
 
 std::pair<ObjectStoragePtr, std::string> getOrCreateStorage(
@@ -462,6 +479,13 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     if (target_scheme_normalized == "s3" || target_scheme_normalized == "https" || target_scheme_normalized == "http")
     {
         auto s3_uri = parseMetadataS3URI(path, target_decomposed);
+
+        /// Storages are shared per bucket and read the latest object version, so a pinned version cannot be honored.
+        if (!s3_uri.version_id.empty() && !access_check)
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg metadata references a specific version of S3 object '{}', reading S3 object versions is not supported",
+                maskCredentialsInURI(path));
 
         std::string key_to_use = s3_uri.key;
 
@@ -819,7 +843,18 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     }
 #endif
 
-    if (!target_decomposed.authority.empty())
+    std::string azure_service_url;
+    if (target_scheme_normalized == "abfs")
+    {
+        azure_service_url = azureServiceUrlFromAbfsAuthority(target_decomposed.authority);
+        if (azure_service_url.empty() && !access_check)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS, "Azure path '{}' does not specify a storage account", path);
+    }
+
+    if (!azure_service_url.empty())
+        check_remote_host(azure_service_url);
+    else if (!target_decomposed.authority.empty())
         check_remote_host(target_scheme_normalized + "://" + target_decomposed.authority + "/");
 
     check_access();
@@ -842,7 +877,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             {
                 const auto [container_name, account_name] = splitAbfsAuthority(target_decomposed.authority);
 
+                cfg.setString(config_prefix + ".storage_account_url", azure_service_url);
                 cfg.setString(config_prefix + ".container_name", container_name);
+                /// Reads must not create a missing container.
+                cfg.setBool(config_prefix + ".container_already_exists", true);
                 if (!account_name.empty())
                     cfg.setString(config_prefix + ".account_name", account_name);
             }

@@ -25,7 +25,6 @@ namespace DB::ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int UNKNOWN_PROTOCOL;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int PROTOCOL_VERSION_MISMATCH;
 }
 
 using namespace DB::Iceberg;
@@ -206,17 +205,6 @@ std::optional<String> IcebergDataObjectInfo::getExternalLocalPath() const
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const
 {
     checkVersion(protocol_version);
-
-    if (requires_external_storage && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
-    {
-        throw Exception(
-            ErrorCodes::PROTOCOL_VERSION_MISMATCH,
-            "Iceberg data file '{}' is outside of the table location, "
-            "worker needs to have protocol version >= {}, but has {}. ",
-            data_object_file_path_key,
-            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH,
-            protocol_version);
-    }
 
     auto path_for_protocol = [&](const String & path) -> String
     {

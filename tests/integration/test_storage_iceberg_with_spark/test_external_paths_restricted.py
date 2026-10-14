@@ -212,3 +212,26 @@ def test_external_endpoint_is_rejected_by_remote_host_filter(started_cluster):
 
     # Permanent path rejection must not make `DatabaseCatalog` retry this drop forever.
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+def test_external_azure_endpoint_is_derived_from_authority(started_cluster):
+    instance = started_cluster.instances["node1"]
+
+    TABLE_NAME = f"test_azure_endpoint_{get_uuid_str()}"
+    base_bucket = started_cluster.minio_bucket
+
+    create_and_upload_table(started_cluster, TABLE_NAME)
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster, TABLE_NAME)
+    _rewrite_manifests_and_reupload(
+        started_cluster, host_path, base_path,
+        lambda p: f"abfss://container@someaccount.dfs.core.windows.net/{base_path}/data/{os.path.basename(p)}")
+    shutil.rmtree(temp_dir)
+
+    minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
+    args = f"s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{base_bucket}/'"
+
+    # The client must connect to the Blob endpoint of the account named by the path.
+    error = instance.query_and_get_error(f"SELECT * FROM icebergS3({args})")
+    assert "not allowed in configuration file" in error, error
+    assert "https://someaccount.blob.core.windows.net" in error, error
