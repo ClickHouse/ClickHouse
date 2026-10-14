@@ -1,3 +1,4 @@
+#include <Common/StackWithMemoryTracking.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <stack>
@@ -165,7 +166,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     auto expression_list = make_intrusive<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
-    std::stack<ASTPtr> ast_nodes_to_update;
+    StackWithMemoryTracking<ASTPtr> ast_nodes_to_update;
     ast_nodes_to_update.push(expression_list);
 
     while (!ast_nodes_to_update.empty())

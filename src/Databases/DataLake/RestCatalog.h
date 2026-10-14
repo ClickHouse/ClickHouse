@@ -68,6 +68,12 @@ public:
     /// Inherited by every catalog based on the Iceberg REST protocol.
     DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
 
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
+    bool assignsLocationToNewNamespaces() const override { return true; }
+
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
@@ -78,6 +84,13 @@ public:
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
+
+    Poco::JSON::Object::Ptr removeSnapshots(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const std::vector<Int64> & snapshot_ids,
+        const std::vector<String> & ref_names) const override;
 
     bool isTransactional() const override { return true; }
 
@@ -143,6 +156,8 @@ protected:
         DB::ContextPtr context_);
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
+
+    std::optional<std::string> getNamespaceLocation(const std::string & namespace_name) const;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;
@@ -213,7 +228,8 @@ protected:
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
-    virtual void sendRequest(
+    /// Returns the body of the response, empty with `ignore_result`.
+    virtual String sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
@@ -279,6 +295,10 @@ public:
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
+
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
 
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 

@@ -2,6 +2,7 @@
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Common/Exception.h>
+#include <Common/maskURIPassword.h>
 
 #if USE_MONGODB
 #include <Dictionaries/MongoDBDictionarySource.h>
@@ -9,7 +10,6 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
-#include <Common/maskURIPassword.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
@@ -34,6 +34,16 @@ namespace ErrorCodes
     #else
     extern const int SUPPORT_IS_DISABLED;
     #endif
+}
+
+/// A connection string or option list given as an SQL string literal in a dictionary `SOURCE`, keeping its quotes.
+static bool maskQuotedMongoDBConnectionString(String & literal)
+{
+    String value = literal.substr(1, literal.size() - 2);
+    if (!maskMongoDBConnectionString(value))
+        return false;
+    literal = "'" + value + "'";
+    return true;
 }
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
@@ -121,7 +131,11 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source, Documentation{
+    factory.registerSource("mongodb", create_dictionary_source,
+        SecretArgumentsSpec{
+            .secret_keys = {"password"},
+            .partial = {{"uri", maskQuotedMongoDBConnectionString}, {"options", maskQuotedMongoDBConnectionString}}},
+        Documentation{
         .description = R"DOCS_MD(
 # MongoDB dictionary source
 
@@ -289,7 +303,8 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const Vec
 
 std::string MongoDBDictionarySource::toString() const
 {
-    std::string uri = configuration->uri->to_string();
+    /// Shown in `system.dictionaries` and in the logs.
+    String uri = configuration->uri->to_string();
     maskMongoDBConnectionString(uri);
     return fmt::format("MongoDB: {}", uri);
 }
