@@ -17,7 +17,8 @@ SET analyze_index_with_multiple_key_columns_per_condition = 1;
 -- intersection of the hyperrectangles of its leaves. Granule n holds the points (2^n, 0) and (0, 2^n): each
 -- granule meets the strips `x = 0` and `y = 0`, but none meets [0, 0] × [0, 0].
 CREATE TABLE t_curve (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY (mortonEncode(x, y), x + 1, y + 1)
-SETTINGS index_granularity = 2048, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 2048, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_curve SELECT
     if(number % 2048 < 1024, bitShiftLeft(toUInt32(1), intDiv(number, 2048)), 0),
     if(number % 2048 < 1024, 0, bitShiftLeft(toUInt32(1), intDiv(number, 2048)))
