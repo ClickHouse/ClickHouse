@@ -164,10 +164,10 @@ The previous behavior can be restored using setting `h3togeo_lon_lat_result_orde
             "Get coordinates from H3 index",
             "SELECT h3ToGeo(644325524701193974) AS coordinates",
             R"(
-┌─coordinates───────────────────────────┐
-├──────────latitude─┬─────────longitude─┤
-│ 55.71290243145667 │ 37.79506616830249 │
-└───────────────────┴───────────────────┘
+┌─coordinates────────────────────────────┐
+├──────────latitude─┬──────────longitude─┤
+│ 55.71290243145667 │ 37.795066168302505 │
+└───────────────────┴────────────────────┘
             )"
         }
     };
