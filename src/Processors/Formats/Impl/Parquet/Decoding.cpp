@@ -662,7 +662,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         size_t remaining_bytes = end - data;
         size_t min_bytes_per_block = miniblocks_per_block + 1;
         size_t max_blocks = remaining_bytes / min_bytes_per_block;
-        size_t max_values;
+        size_t max_values = 0;
         if (common::mulOverflow(max_blocks, size_t(values_per_block), max_values) || common::addOverflow(max_values, size_t(1), max_values))
             max_values = std::numeric_limits<size_t>::max();
         if (total_values_remaining > max_values)

@@ -278,6 +278,17 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
     parq::FileMetaData file_metadata = {};
     deserializeThriftStruct(file_metadata, buf.data() + buf_offset, metadata_size);
 
+    /// Thrift deserialization stores any integer in the enum field, and loading an out-of-range enum value is
+    /// undefined behavior, hence the copy to the underlying type. Check right after deserialization: the metadata is
+    /// copied (e.g. by `ParquetMetadataCache`) and the schema traversal looks ahead at the repetition types of descendants.
+    for (const auto & element : file_metadata.schema)
+    {
+        std::underlying_type_t<parq::FieldRepetitionType::type> repetition_type = 0;
+        memcpy(&repetition_type, &element.repetition_type, sizeof(repetition_type));
+        if (repetition_type < parq::FieldRepetitionType::REQUIRED || repetition_type > parq::FieldRepetitionType::REPEATED)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition type {} of parquet column {}", repetition_type, element.name);
+    }
+
     /// Some writers incorrectly set dictionary_page_offset offset to 0 when there's no dictionary
     /// page at offset 0 in the file. Work around it.
     for (auto & rg : file_metadata.row_groups)
