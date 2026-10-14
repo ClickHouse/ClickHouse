@@ -138,6 +138,7 @@ extern const int UNKNOWN_TABLE;
 extern const int PARAMETER_OUT_OF_BOUND;
 extern const int UNSUPPORTED_METHOD;
 extern const int INCOMPATIBLE_COLUMNS;
+extern const int ILLEGAL_PREWHERE;
 }
 
 namespace
@@ -1934,7 +1935,18 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         storage_snapshot_,
         modified_query_info);
 
+    /// A child's row policy is applied above its read, too late for a child that processes the query itself.
+    if (row_policy_data_opt && storage_stage > QueryProcessingStage::FetchColumns)
+        throw Exception(
+            ErrorCodes::ILLEGAL_PREWHERE,
+            "Row policy filter for {} cannot be applied by {}, because the table processes the query remotely. "
+            "Define the policy on the underlying tables instead; note that such a policy is not applied to reads "
+            "shipped with `serialize_query_plan = 1`",
+            storage->getStorageID().getNameForLogs(),
+            storage_merge->getStorageID().getNameForLogs());
+
     QueryPlan plan;
+    bool applies_row_policy = false;
 
     bool must_return_interpreter_select_query_plan
         = processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
@@ -1987,9 +1999,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         auto & planner = interpreter.getPlanner();
         planner.buildQueryPlanIfNeeded();
         plan = std::move(planner).extractQueryPlan();
+        applies_row_policy = true;
     }
 
-    return ChildPlan{std::move(plan), storage_stage};
+    return ChildPlan{.plan = std::move(plan), .stage = storage_stage, .applies_row_policy = applies_row_policy};
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
@@ -2325,7 +2338,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     }
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
-    if (row_policy_data_opt)
+    if (row_policy_data_opt && !child.applies_row_policy)
         row_policy_data_opt->addFilterTransform(child.plan, local_context);
 
     /** Output headers may differ from what StorageMerge expects in some cases.

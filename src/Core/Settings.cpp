@@ -6817,7 +6817,7 @@ If true, mutations (UPDATEs and DELETEs) which are not materialized in data part
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
 Allow to use lightweight updates.
-)", BETA, allow_experimental_lightweight_update, \
+)", 0, allow_experimental_lightweight_update, \
         {"25.8", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."}, \
         {"25.5", false, false, "A new setting. At the time the setting was named `allow_experimental_lightweight_update`, which is now an alias of it."}) \
     DECLARE(Bool, apply_patch_parts, true, R"(
@@ -9539,6 +9539,14 @@ Enable automatic switching to execution with parallel replicas based on collecte
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL, \
         {"25.12", 0, 0, "New setting"}) \
+    DECLARE(Bool, automatic_parallel_replicas_remember_boundary, true, R"(
+Lets automatic parallel replicas remember, per query plan, where the replicas' share of the work ends, so that a
+repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
+replicas.
+
+Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
+)", 0, \
+        {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
