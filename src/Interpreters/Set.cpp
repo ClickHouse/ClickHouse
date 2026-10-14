@@ -113,14 +113,15 @@ ColumnPtr computeDiskSetKeys(const ColumnRawPtrs & key_columns, const Sizes & ke
 
 void Set::setSpillSettings(SetSpillSettings spill_settings_)
 {
+    std::lock_guard lock(rwlock);
     chassert(!isCreated());
     spill_settings = std::move(spill_settings_);
 }
 
 void Set::finishInsert()
 {
-    /// Only a set that `CreatingSetsTransform` fills can spill, and such a set is read only after
-    /// `is_created` publishes it, so publishing the disk set here takes no lock.
+    /// Consumers may already expose this set to the scheduler while its builder is still running.
+    std::lock_guard lock(rwlock);
     if (disk_set_builder)
     {
         disk_set = disk_set_builder->finish();
@@ -128,6 +129,42 @@ void Set::finishInsert()
         disk_set_builder.reset();
     }
     is_created = true;
+}
+
+ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
+{
+    if (!spill_settings.tmp_data || !data || data->empty() || !data->getTotalRowCount()
+        || spill_after_build_started.load())
+        return {};
+
+    ProcessorMemoryStats stats;
+    stats.spillable_memory_bytes = data->getTotalByteCount();
+    stats.need_reserved_memory_bytes = DiskSetBuilder::estimateMemoryToWriteRun(
+        0, spill_settings.max_block_size, getDiskSetKeyBytes(), spill_settings.tmp_data->getSettings().buffer_size);
+    return stats;
+}
+
+ProcessorMemoryStats Set::getMemoryStats() const
+{
+    std::shared_lock lock(rwlock);
+    return getMemoryStatsUnlocked();
+}
+
+size_t Set::spill(size_t /*at_least_bytes*/)
+{
+    std::unique_lock lock(rwlock);
+    const size_t bytes = getMemoryStatsUnlocked().spillable_memory_bytes;
+    if (!bytes)
+        return 0;
+
+    if (isCreated())
+    {
+        lock.unlock();
+        return spillAfterBuild("memory scheduler request", /*force=*/ true);
+    }
+
+    spill("memory scheduler request", /*force=*/ true);
+    return bytes;
 }
 
 bool Set::isLargeEnoughToSpill() const
@@ -171,7 +208,7 @@ bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t ro
     return insert_memory > available_memory - spill_memory;
 }
 
-void Set::spill(std::string_view reason)
+void Set::spill(std::string_view reason, bool force)
 {
     logSpill("while it is built", reason);
 
@@ -184,7 +221,7 @@ void Set::spill(std::string_view reason)
     data->callOnMethod([&]<typename Method>(const Method & method)
     {
         compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
-        disk_set_builder = createDiskSetBuilderWithKeys(method, limits);
+        disk_set_builder = createDiskSetBuilderWithKeys(method, limits, force);
     });
 
     data.reset();
@@ -198,11 +235,12 @@ bool Set::isSpillNeeded() const
         && isLargeEnoughToSpill();
 }
 
-void Set::spillAfterBuild() const
+size_t Set::spillAfterBuild(std::string_view reason, bool force) const
 {
     if (spill_after_build_started.exchange(true))
-        return;
+        return 0;
 
+    size_t bytes = 0;
     std::unique_ptr<DiskSet> new_disk_set;
     ComputeDiskSetKeys new_compute_disk_set_keys = nullptr;
     {
@@ -212,12 +250,13 @@ void Set::spillAfterBuild() const
 
         /// Only the lookup that started the spill replaces the table, so the table is still in memory here.
         chassert(data && !disk_set);
-        logSpill("while it is used", "query memory exceeds the spill threshold");
+        bytes = data->getTotalByteCount();
+        logSpill("while it is used", reason);
 
         data->callOnMethod([&]<typename Method>(const Method & method)
         {
             /// The keys are final, so the builder applies no size limits and keeps all of them.
-            new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{})->finish();
+            new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{}, force)->finish();
             new_compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
         });
     }
@@ -234,6 +273,7 @@ void Set::spillAfterBuild() const
         table = std::move(data);
     }
     ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
+    return bytes;
 }
 
 void Set::logSpill(std::string_view stage, std::string_view reason) const
@@ -254,14 +294,15 @@ size_t Set::getDiskSetKeyBytes() const
 }
 
 template <typename Method>
-std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(const Method & method, const SizeLimits & builder_limits) const
+std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(
+    const Method & method, const SizeLimits & builder_limits, bool force) const
 {
     using Key = DiskSetKey<Method>;
 
     auto builder = createDiskSetBuilder<Key>(
         spill_settings.tmp_data,
         builder_limits,
-        spill_settings.max_bytes_before_external_set,
+        force ? 0 : spill_settings.max_bytes_before_external_set,
         spill_settings.max_block_size,
         spill_settings.min_free_disk_space,
         spill_settings.process_list_element);
@@ -451,6 +492,8 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 
 bool Set::insertFromColumns(const Columns & columns)
 {
+    /// Include explicit-element updates in the critical section: another owner may request a spill.
+    std::lock_guard lock(rwlock);
     size_t rows = columns.at(0)->size();
 
     SetKeyColumns holder;
@@ -458,7 +501,7 @@ bool Set::insertFromColumns(const Columns & columns)
     if (fill_set_elements)
         holder.filter = ColumnUInt8::create(rows);
 
-    bool inserted = insertFromColumns(columns, holder);
+    bool inserted = insertFromColumnsImpl(columns, holder);
     if (inserted && fill_set_elements)
     {
         if (max_elements_to_fill && max_elements_to_fill < data->getTotalRowCount())
@@ -477,7 +520,11 @@ bool Set::insertFromColumns(const Columns & columns)
 bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 {
     std::lock_guard lock(rwlock);
+    return insertFromColumnsImpl(columns, holder);
+}
 
+bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
+{
     if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
@@ -871,7 +918,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     if (isSpillNeeded())
     {
         lock.unlock();
-        spillAfterBuild();
+        spillAfterBuild("query memory exceeds the spill threshold");
     }
     return res;
 }
