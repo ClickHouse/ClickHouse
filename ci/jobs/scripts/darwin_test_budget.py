@@ -6,8 +6,8 @@ from ci.settings.settings import SECRET_CI_DB_CONNECTION
 
 CHECK_NAME = "Fast test (arm_darwin)"
 RUNNER_LABEL = "macos-m2"
-# A job never shrinks below this share of a full run, so the quickest tests always run.
-MIN_SHARE = 0.25
+# The pool is sized so that every job in the queue finishes within this time.
+QUEUE_DRAIN_SECONDS = 3 * 3600
 
 # GitHub sends no event while a job waits, so the window must cover the longest wait.
 QUEUE_QUERY = f"""
@@ -52,9 +52,10 @@ FORMAT TSV
 def tests_to_skip():
     """Return the slowest tests that do not fit the time budget; empty when no job waits for a macOS runner.
 
-    The budget is the share of the pool each job gets if every queued job starts now, applied to
-    the test-seconds of a full run, the sum of last week's median test durations. The quickest
-    tests fill it. Tests without an `OK` run last week, new or skipped all week, always run.
+    Every queued and running job must finish within `QUEUE_DRAIN_SECONDS`, so each gets that time
+    multiplied by running / (running + queued). The average load (test-seconds per wall second)
+    converts it into test-seconds, filled with the quickest tests by last week's median duration.
+    Tests without an `OK` run last week, new or skipped all week, always run.
     """
     conn = json.loads(Info().get_secret(SECRET_CI_DB_CONNECTION).get_value())
     cidb = CIDB(url=conn["url"], user=conn["user"], passwd=conn["password"])
@@ -63,13 +64,13 @@ def tests_to_skip():
     if not queued:
         return []
     load = float(cidb.query(LOAD_QUERY))
-    durations = [line.split("\t") for line in cidb.query(DURATIONS_QUERY).splitlines()]
     running = max(running, 1)
-    share = max(MIN_SHARE, running / (running + queued))
-    budget = share * sum(float(seconds) for _, seconds in durations)
-    print(f"Budget: {share:.2f} of a full run = {budget:.0f} test-seconds, about {budget / load:.0f} s at load {load:.1f}")
+    wall = QUEUE_DRAIN_SECONDS * running / (running + queued)
+    budget = wall * load
+    print(f"Budget: {wall:.0f} s at load {load:.1f} = {budget:.0f} test-seconds")
     skip = []
-    for name, seconds in durations:
+    for line in cidb.query(DURATIONS_QUERY).splitlines():
+        name, seconds = line.split("\t")
         budget -= float(seconds)
         if budget < 0:
             skip.append(name)
