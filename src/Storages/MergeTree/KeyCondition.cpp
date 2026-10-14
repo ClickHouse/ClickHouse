@@ -2608,6 +2608,25 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 }
 
 
+/// Casts `column` into `target_type` with `accurateOrNull`, which writes NULL for a value that does not fit,
+/// or returns nullptr when the conversion between the two types does not exist. The OrNull contract applies
+/// per value, but the conversion itself must exist. When it is not implemented at all (for example, casting
+/// `IPv6` into `FixedString(16)`, or a number into `FixedString`), building the cast throws before any value
+/// is seen. There is no single error code for such type pairs (`NOT_IMPLEMENTED`, `CANNOT_CONVERT_TYPE`,
+/// `TYPE_MISMATCH`, ... depending on the target type), so any error means that the conversion does not exist.
+static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type)
+{
+    try
+    {
+        return castColumnAccurateOrNull(column, target_type);
+    }
+    catch (const Exception &)
+    {
+        return nullptr;
+    }
+}
+
+
 /// Whether two `Field`s stand for the same value. `Field::operator==` answers only for values carried
 /// the same way, which is what the round trip below needs everywhere except inside a `Dynamic`: a
 /// `Dynamic` keeps the type each value was inserted with, so a value that went to the key column's
@@ -2727,22 +2746,11 @@ static bool castColumnWithoutNulls(
         return false;
     }
 
-    ColumnPtr probe_column;
-    try
-    {
-        probe_column = castColumnAccurateOrNull({column, type, ""}, probe_type);
-    }
-    catch (const Exception &)
-    {
-        /// The OrNull contract applies per value: the cast yields NULL for values that cannot
-        /// be converted, but the conversion between the two types must exist. When it is not
-        /// implemented at all (for example, casting `IPv6` into `FixedString(16)`), building
-        /// the cast throws before any value is seen. There is no single error code for such
-        /// type pairs (`NOT_IMPLEMENTED`, `CANNOT_CONVERT_TYPE`, `TYPE_MISMATCH`, ... depending
-        /// on the target type), so treat any error as "this constant cannot be transformed
-        /// into the key space" and let the caller skip this candidate.
+    /// Without a conversion between the two types, the column cannot be transformed into the key space,
+    /// and the caller skips this candidate.
+    const ColumnPtr probe_column = tryCastColumnAccurateOrNull({column, type, ""}, probe_type);
+    if (!probe_column)
         return false;
-    }
 
     const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
 
