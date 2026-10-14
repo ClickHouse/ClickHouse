@@ -3,6 +3,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <base/types.h>
@@ -76,6 +77,19 @@ inline ColumnStats makeGroupingKeyStats(
     }
     return result;
 }
+
+/// Tighten equi-join key NDVs to their minimum, respecting which side each join kind preserves.
+/// Anti joins and full joins leave both inputs unchanged.
+void updateJoinKeyDistinctCounts(
+    ColumnStats & left_stats,
+    ColumnStats & right_stats,
+    JoinKind kind,
+    JoinStrictness strictness);
+
+/// Converts a row or distinct-value estimate to `UInt64`. Estimates can exceed the `UInt64` range (a cross
+/// product of large inputs), so the result saturates at the maximum; NaN and non-positive values give 0.
+UInt64 toUInt64Saturating(Float64 estimate);
+
 }
 
 }

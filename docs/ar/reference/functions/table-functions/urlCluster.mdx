@@ -10,17 +10,13 @@ doc_type: 'reference'
 
 يسمح بمعالجة الملفات من URL بالتوازي من عدة عقد في عنقود محدد. على العقدة البادئة، يُنشئ اتصالًا بجميع العقد في العنقود، ويُوسّع علامة النجمة في مسار ملف URL، ثم يوزّع كل ملف ديناميكيًا. وعلى العقدة العاملة، يطلب من العقدة البادئة المهمة التالية لمعالجتها ثم يعالجها. ويتكرر ذلك حتى تكتمل جميع المهام.
 
-<div id="syntax">
-  ## الصيغة
-</div>
+## الصيغة {#syntax}
 
 ```sql
 urlCluster(cluster_name, URL, format, structure)
 ```
 
-<div id="arguments">
-  ## الوسيطات
-</div>
+## الوسيطات {#arguments}
 
 | الوسيطة        | الوصف                                                                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -29,15 +25,11 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [تنسيق](/ar/reference/formats/index) البيانات. النوع: [String](/ar/reference/data-types/string).                                           |
 | `structure`    | بنية الجدول بالتنسيق `'UserID UInt64, Name String'`. وهي تحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string). |
 
-<div id="returned-value">
-  ## القيمة المعادة
-</div>
+## القيمة المعادة {#returned-value}
 
 جدول بالتنسيق والبنية المحددَين، ويتضمن بيانات من `URL` المحدد.
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 الحصول على أول 3 أسطر من جدول يحتوي على أعمدة من النوع `String` و[UInt32](/ar/reference/data-types/int-uint) من خادم HTTP يستجيب بتنسيق [CSV](/ar/reference/formats/CSV/CSV).
 
@@ -63,16 +55,14 @@ if __name__ == "__main__":
 SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
 ```
 
-<div id="globs-in-url">
-  ## Globs في URL
-</div>
+## Globs في URL {#globs-in-url}
 
 تُستخدم الأنماط ضمن `{ }` لإنشاء مجموعة من الأجزاء (shards) أو لتحديد عناوين التبديل الاحتياطي. للاطلاع على أنواع الأنماط المدعومة وأمثلتها، راجع وصف الدالة [remote](/ar/reference/functions/table-functions/remote#globs-in-addresses).
 يُستخدم الحرف `|` داخل الأنماط لتحديد عناوين التبديل الاحتياطي. ويجري المرور عليها بالترتيب نفسه الذي ترد به في النمط. ويكون عدد العناوين المُنشأة محدودًا بإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings/other#glob_expansion_max_elements).
 
-<div id="related">
-  ## مواضيع ذات صلة
-</div>
+تُنشأ العناوين واحدًا تلو الآخر كلما سُلِّمت المهام إلى عُقد العنقود، ولذلك يحدّ `glob_expansion_max_elements` من عدد العناوين التي يمكن لاستعلام واحد قراءتها لا من حجم النمط، كما هو موضح في وصف الدالة [url](/ar/reference/functions/table-functions/url#globs-in-url). ويُطبَّق المسند `_path` أو `_file` على كل عنوان فور إنشائه، ومن ثَمّ فإن العناوين التي يستبعدها تُنشأ هي الأخرى وتُحتسب ضمن الحد؛ ولا تُرسَل للمعالجة إلا العناوين المطابقة.
+
+## مواضيع ذات صلة {#related}
 
 * [محرك HDFS](/ar/reference/engines/table-engines/integrations/hdfs)
 * [دالة جدول URL](/ar/reference/engines/table-engines/special/url)

@@ -155,7 +155,8 @@ std::unique_ptr<AggregatingStep> makeAggregationStepWithGroupLimit(
         true,
         false,
         0,
-        0);
+        0,
+        /*use_aggregation_memory_tracker_=*/true);
 
     return std::make_unique<AggregatingStep>(
         header,

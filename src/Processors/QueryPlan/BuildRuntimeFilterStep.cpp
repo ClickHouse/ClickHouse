@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
@@ -106,6 +107,20 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
     });
 }
 
+bool BuildRuntimeFilterStep::canSealPrunePrimaryKey() const
+{
+    /// A NOT-contains filter (ANTI join) can never be used as a positive predicate.
+    if (build_options.polarity != RuntimeFilterPolarity::Contains)
+        return false;
+
+    /// For these key types the [min, max] envelope survives an exact-set overflow, so the
+    /// completed filter always yields at least a range predicate. Other key types can prune
+    /// only through the exact value set, which is lost when EITHER of its limits overflows
+    /// (value count or byte size); a distinct-count statistics hint alone cannot promise the
+    /// byte cap for wide keys such as String, so such filters stay ungated.
+    return runtimeFilterKeySupportsMinMaxRange(filter_column_type);
+}
+
 void BuildRuntimeFilterStep::updateOutputHeader()
 {
     output_header = input_headers.front();
@@ -123,9 +138,19 @@ void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & 
 
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
 {
-    writeStringBinary(filter_column_name, ctx.out);
+    ctx.writeColumnName(filter_column_name);
     encodeDataType(filter_column_type, ctx.out);
-    writeStringBinary(filter_name, ctx.out);
+    /// `filter_name` is `_runtime_filter_<fingerprint>` and `calculateJoinFingerprint` folds the join
+    /// keys' composed names, so the id reads differently in the two plan builds exactly when the keys do
+    /// (`__table1.k` here, `__table2.k` there). It is a per-build rendezvous id between the build and the
+    /// probe side, not something comparable across builds, and the join it belongs to is already
+    /// identified by the subtree around this step. The runtime-filter id carrier inside the probe's
+    /// `ActionsDAG` is dropped for the same reason, see `ActionsDAG::Node::updateHash`.
+    ///
+    /// Today this cannot drift, because the step preserves both the rows and the header and so
+    /// contributes nothing to a cache key at all (`calculateHashFromStep` returns 0 before reaching this
+    /// serializer). The guard is here for the day that stops being true.
+    writeStringBinary(ctx.for_cache_key ? String{} : filter_name, ctx.out);
     writeBinary(build_options.polarity == RuntimeFilterPolarity::Contains, ctx.out);
 }
 

@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 Certaines fonctions d’agrégation acceptent non seulement des colonnes d’arguments (utilisées pour la compression), mais aussi un ensemble de paramètres — des constantes d’initialisation. La syntaxe comporte deux paires de parenthèses au lieu d’une seule. La première est destinée aux paramètres, la seconde aux arguments.
 
-<div id="histogram">
-  ## histogram
-</div>
+## histogram {#histogram}
 
 Calcule un histogramme adaptatif. Les résultats précis ne sont pas garantis.
 
@@ -84,9 +82,7 @@ FROM
 
 Dans ce cas, gardez à l’esprit que vous ne connaissez pas les bornes des intervalles de l’histogramme.
 
-<div id="sequencematch">
-  ## sequenceMatch
-</div>
+## sequenceMatch {#sequencematch}
 
 Vérifie si la séquence contient une chaîne d&#39;événements correspondant au motif.
 
@@ -97,12 +93,12 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
 <Note>
-  Les événements qui se produisent au cours de la même seconde peuvent figurer dans la séquence dans un ordre indéfini, ce qui peut affecter le résultat.
+  Les événements qui partagent le même timestamp peuvent figurer dans la séquence dans un ordre indéfini, ce qui peut affecter le résultat. Un timestamp `DateTime64` tient également compte des fractions de seconde pour déterminer l’ordre : seuls les événements partageant le même tick présentent donc une ambiguïté.
 </Note>
 
 **Arguments**
 
-* `timestamp` — Colonne considérée comme contenant des données temporelles. Les types de données typiques sont `Date` et `DateTime`. Vous pouvez également utiliser n’importe lequel des types de données [UInt](/fr/reference/data-types/int-uint) pris en charge.
+* `timestamp` — Colonne considérée comme contenant des données temporelles. Les types de données typiques sont `Date`, `DateTime` et `DateTime64`. Vous pouvez également utiliser n’importe lequel des types de données [UInt](/fr/reference/data-types/int-uint) pris en charge.
 
 * `cond1`, `cond2` — Conditions qui décrivent la chaîne d’événements. Type de données : `UInt8`. Vous pouvez transmettre jusqu’à 32 arguments de condition. La fonction ne prend en compte que les événements décrits dans ces conditions. Si la séquence contient des données non décrites par une condition, la fonction les ignore.
 
@@ -117,15 +113,13 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 Type : `UInt8`.
 
-<div id="pattern-syntax">
-  #### Syntaxe du motif
-</div>
+#### Syntaxe du motif {#pattern-syntax}
 
 * `(?N)` — Correspond à l&#39;argument de condition à la position `N`. Les conditions sont numérotées dans la plage `[1, 32]`. Par exemple, `(?1)` correspond à l&#39;argument transmis au paramètre `cond1`.
 
 * `.*` — Correspond à un nombre quelconque d&#39;événements. Il n&#39;est pas nécessaire de fournir des arguments de condition pour faire correspondre cet élément du motif.
 
-* `(?t operator value)` — Définit l&#39;intervalle de temps, en secondes, qui doit séparer deux événements. Par exemple, le motif `(?1)(?t>1800)(?2)` correspond à des événements qui se produisent à plus de 1800 secondes d&#39;intervalle. Un nombre quelconque d&#39;événements peut se trouver entre ces événements. Vous pouvez utiliser les opérateurs `>=`, `>`, `<`, `<=`, `==`.
+* `(?t operator value)` — Définit l&#39;intervalle de temps qui doit séparer deux événements. Par exemple, le motif `(?1)(?t>1800)(?2)` correspond à des événements qui se produisent à plus de 1800 secondes d&#39;intervalle. Un nombre quelconque d&#39;événements peut se trouver entre ces événements. Vous pouvez utiliser les opérateurs `>=`, `>`, `<`, `<=`, `==`. Pour un timestamp `DateTime` ou `DateTime64`, la valeur est exprimée en secondes, quelle que soit la précision de `DateTime64` ; le même motif conserve donc son sens lorsque la colonne passe de `DateTime` à `DateTime64`, quelle que soit sa scale. Pour un timestamp `Date`, la valeur est exprimée en jours, et pour un timestamp sous forme d’entier non signé, elle est exprimée dans les unités de cet entier.
 
 **Exemples**
 
@@ -179,14 +173,12 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 * [sequenceCount](#sequencecount)
 
-<div id="sequencecount">
-  ## sequenceCount
-</div>
+## sequenceCount {#sequencecount}
 
 Compte le nombre de chaînes d’événements correspondant au motif. La fonction recherche des chaînes d’événements qui ne se chevauchent pas. Elle commence à rechercher la chaîne suivante après la correspondance de la chaîne en cours.
 
 <Note>
-  Les événements qui se produisent à la même seconde peuvent se trouver dans la séquence dans un ordre indéfini, ce qui affecte le résultat.
+  Les événements qui partagent le même timestamp peuvent se trouver dans la séquence dans un ordre indéfini, ce qui affecte le résultat. Un timestamp `DateTime64` est également ordonné selon sa partie fractionnaire de seconde ; seuls les événements qui partagent le même tick sont donc ambigus.
 </Note>
 
 **Syntaxe**
@@ -197,7 +189,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **Arguments**
 
-* `timestamp` — Colonne considérée comme contenant des données temporelles. Les types de données les plus courants sont `Date` et `DateTime`. Vous pouvez également utiliser n’importe lequel des types de données [UInt](/fr/reference/data-types/int-uint) pris en charge.
+* `timestamp` — Colonne considérée comme contenant des données temporelles. Les types de données les plus courants sont `Date`, `DateTime` et `DateTime64`. Vous pouvez également utiliser n’importe lequel des types de données [UInt](/fr/reference/data-types/int-uint) pris en charge.
 
 * `cond1`, `cond2` — Conditions décrivant la chaîne d’événements. Type de données : `UInt8`. Vous pouvez fournir jusqu’à 32 arguments de condition. La fonction prend uniquement en compte les événements décrits par ces conditions. Si la séquence contient des données qui ne sont décrites par aucune condition, la fonction les ignore.
 
@@ -238,14 +230,12 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="sequencematchevents">
-  ## sequenceMatchEvents
-</div>
+## sequenceMatchEvents {#sequencematchevents}
 
-Renvoie les horodatages des plus longues chaînes d’événements correspondant au motif.
+Renvoie les timestamps des plus longues chaînes d’événements correspondant au motif.
 
 <Note>
-  Les événements qui se produisent à la même seconde peuvent apparaître dans la séquence dans un ordre indéfini, ce qui affecte le résultat.
+  Les événements partageant le même timestamp peuvent apparaître dans la séquence dans un ordre indéfini, ce qui affecte le résultat. Un timestamp `DateTime64` est également ordonné selon sa partie fractionnaire de seconde ; seuls les événements partageant le même tick sont donc ambigus.
 </Note>
 
 **Syntaxe**
@@ -256,9 +246,9 @@ sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
 
 **Arguments**
 
-* `timestamp` — Colonne considérée comme contenant des données temporelles. Les types de données les plus courants sont `Date` et `DateTime`. Vous pouvez également utiliser n’importe lequel des types de données [UInt](/fr/reference/data-types/int-uint) pris en charge.
+* `timestamp` — Colonne considérée comme contenant des données temporelles. Les types de données les plus courants sont `Date`, `DateTime` et `DateTime64`. Vous pouvez également utiliser n’importe lequel des types de données [UInt](/fr/reference/data-types/int-uint) pris en charge.
 
-* `cond1`, `cond2` — Conditions qui décrivent la chaîne d’événements. Type de données : `UInt8`. Vous pouvez fournir jusqu’à 32 arguments de condition. La fonction ne prend en compte que les événements décrits dans ces conditions. Si la séquence contient des données qui ne sont décrites dans aucune condition, la fonction les ignore.
+* `cond1`, `cond2` — Conditions qui décrivent la chaîne d’événements. Type de données : `UInt8`. Vous pouvez fournir jusqu’à 32 arguments de condition. La fonction ne prend en compte que les événements décrits dans ces conditions. Si la séquence contient des données qui ne sont décrites dans aucune condition, la fonction les ignore.
 
 **Paramètres**
 
@@ -266,13 +256,13 @@ sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
 
 **Valeurs renvoyées**
 
-* Array d’horodatages pour les arguments de condition correspondants (?N) de la chaîne d’événements. La position dans le tableau correspond à celle de l’argument de condition dans le motif.
+* Array de timestamps pour les arguments de condition correspondants (?N) de la chaîne d’événements. La position dans le tableau correspond à celle de l’argument de condition dans le motif.
 
-Type : Array.
+Type : Array.
 
 **Exemple**
 
-Prenons les données de la table `t` :
+Prenons les données de la table `t` :
 
 ```text
 ┌─time─┬─number─┐
@@ -285,7 +275,7 @@ Prenons les données de la table `t` :
 └──────┴────────┘
 ```
 
-Renvoie les horodatages des événements de la plus longue chaîne
+Renvoie les timestamps des événements de la plus longue chaîne
 
 ```sql
 SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2, number = 4) FROM t
@@ -301,9 +291,7 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 
 * [sequenceMatch](#sequencematch)
 
-<div id="windowfunnel">
-  ## windowFunnel
-</div>
+## windowFunnel {#windowfunnel}
 
 Recherche des chaînes d’événements dans une fenêtre temporelle glissante et calcule le nombre maximal d’événements survenus dans la chaîne.
 
@@ -427,9 +415,7 @@ GROUP BY level
 ORDER BY level ASC;
 ```
 
-<div id="retention">
-  ## retention
-</div>
+## retention {#retention}
 
 La fonction prend en argument un ensemble de conditions, de 1 à 32 arguments de type `UInt8`, qui indiquent si une condition donnée a été remplie pour l&#39;événement.
 N&#39;importe quelle condition peut être spécifiée comme argument (comme dans [WHERE](/fr/reference/statements/select/where)).
@@ -576,9 +562,7 @@ Où :
 * `r2`- le nombre de visiteurs uniques ayant visité le site durant une période donnée entre 2020-01-01 et 2020-01-02 (les conditions `cond1` et `cond2`).
 * `r3`- le nombre de visiteurs uniques ayant visité le site durant une période donnée les 2020-01-01 et 2020-01-03 (les conditions `cond1` et `cond3`).
 
-<div id="uniquptonx">
-  ## uniqUpTo(N)(x)
-</div>
+## uniqUpTo(N)(x) {#uniquptonx}
 
 Calcule le nombre de valeurs distinctes de l’argument jusqu’à une limite donnée, `N`. Si le nombre de valeurs d’argument distinctes est supérieur à `N`, cette fonction renvoie `N` + 1 ; sinon, elle calcule la valeur exacte.
 
@@ -598,9 +582,7 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` calcule le nombre de valeurs `UserID` distinctes pour chaque `SearchPhrase`, mais n’en compte que 4 au maximum. S’il y a plus de 4 valeurs `UserID` distinctes pour une `SearchPhrase`, la fonction renvoie 5 (4 + 1). La clause `HAVING` filtre ensuite les valeurs `SearchPhrase` pour lesquelles le nombre de valeurs `UserID` distinctes est inférieur à 5. Vous obtiendrez ainsi une liste de mots-clés de recherche utilisés par au moins 5 utilisateurs distincts.
 
-<div id="summapfiltered">
-  ## sumMapFiltered
-</div>
+## sumMapFiltered {#summapfiltered}
 
 Cette fonction se comporte comme [sumMap](/fr/reference/functions/aggregate-functions/sumMap), sauf qu’elle accepte également, en paramètre, un tableau de clés servant de filtre. Cela peut être particulièrement utile lorsque vous travaillez avec des clés à forte cardinalité.
 
@@ -646,9 +628,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="summapfilteredwithoverflow">
-  ## sumMapFilteredWithOverflow
-</div>
+## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
 
 Cette fonction se comporte de la même manière que [sumMap](/fr/reference/functions/aggregate-functions/sumMap), à la différence qu&#39;elle accepte également en paramètre un tableau de clés sur lequel appliquer un filtre. Cela peut être particulièrement utile lorsque l&#39;on travaille avec une forte cardinalité de clés. Elle diffère de la fonction [sumMapFiltered](#summapfiltered) en ce qu&#39;elle effectue la sommation avec overflow, c&#39;est-à-dire qu&#39;elle renvoie le même type de données pour la sommation que le type de données de l&#39;argument.
 
@@ -706,9 +686,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap
    └──────────────────────┴────────────────────────────────────┘
 ```
 
-<div id="sequencenextnode">
-  ## sequenceNextNode
-</div>
+## sequenceNextNode {#sequencenextnode}
 
 Renvoie la valeur de l’événement suivant qui correspond à une chaîne d’événements.
 

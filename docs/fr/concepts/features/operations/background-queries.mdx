@@ -1,0 +1,210 @@
+---
+description: 'Exécutez des requêtes indépendamment de la connexion client et surveillez leur exécution.'
+sidebarTitle: 'Requêtes en arrière-plan'
+slug: /operations/background-queries
+title: 'Requêtes en arrière-plan'
+doc_type: 'guide'
+---
+
+## Vue d&#39;ensemble {#overview}
+
+Les requêtes en arrière-plan permettent aux clients de soumettre des requêtes qui s&#39;exécutent indépendamment de la session client, en définissant `run_query_in_background=1`. Une fois la requête soumise, le ClickHouse server répond immédiatement au client, tandis que la requête poursuit son exécution jusqu&#39;à son terme (succès ou échec) côté serveur
+
+En dissociant l&#39;exécution de la requête de la connexion réseau du client, les tâches en arrière-plan sont pleinement résilientes aux déconnexions côté client et aux défaillances réseau passagères.
+
+Les requêtes en arrière-plan sont principalement destinées aux opérations de longue durée telles que `INSERT ... SELECT`,
+`CREATE TABLE ... AS SELECT`, `CREATE MATERIALIZED VIEW ... POPULATE` ou `OPTIMIZE TABLE ... FINAL`
+qui ne doivent pas s&#39;interrompre en cas de perte de la connexion client.
+
+Toutes les requêtes ne peuvent pas être détachées de leur connexion. Consultez [Formes de requêtes non prises en charge](#unsupported-query-forms)
+pour connaître celles qui sont rejetées.
+
+<Warning>
+  Le résultat d&#39;une requête en arrière-plan est abandonné : il ne peut être ni récupéré ni rattaché ultérieurement.
+  Utilisez le `query_id` de la requête pour la surveiller dans `system.processes` pendant son exécution, puis dans `system.query_log` une fois celle-ci terminée.
+</Warning>
+
+Une requête en arrière-plan ne survit pas au redémarrage d&#39;un serveur. Le comportement à l&#39;arrêt du serveur est régi par
+`shutdown_wait_unfinished_queries` et `shutdown_wait_unfinished`.
+
+## Formes de requête non prises en charge {#unsupported-query-forms}
+
+Une requête en arrière-plan survit à la connexion qui l&#39;a soumise : le serveur doit donc déjà disposer, au moment où il l&#39;accepte, de tout ce dont il a besoin pour l&#39;exécuter. Les requêtes qui ne remplissent pas cette condition sont rejetées de manière synchrone, sur la connexion à l&#39;origine de la soumission, et la requête ne démarre jamais.
+
+### Données transmises via la connexion {#data-that-streams-over-the-connection}
+
+Un `INSERT` est rejeté lorsque le serveur devrait encore lire des données depuis la connexion émettrice après
+avoir distribué la requête.
+
+Cela peut concerner aussi bien les requêtes `INSERT ... FORMAT ...` que celles qui lisent via `input`. Une telle requête est rejetée
+avec le message `A query whose data streams over the connection cannot be run in the background` :
+
+```sql
+-- Rejected over the native protocol: the client sends the data separately
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+`clickhouse-client` envoie les données d&#39;un `INSERT ... FORMAT ...` dans des paquets distincts ; cette forme ne peut donc jamais s&#39;exécuter en arrière-plan via le protocole natif.
+
+En HTTP, l&#39;une ou l&#39;autre forme peut être acceptée lorsque la requête complète et ses données tiennent dans le buffer de parsing initial, dont la taille est limitée par `max_query_size`.
+
+Cela vaut également pour une requête HTTP qui lit un payload intégré via `input`. Un corps plus volumineux continue d&#39;être transmis en flux au-delà du texte de requête mis en buffer et se voit rejeté.
+
+Ne vous fiez pas à cette limite de taille : utilisez `INSERT ... SELECT`, ou une fonction de table telle que `url` ou `s3`, pour les données qui doivent être chargées en arrière-plan.
+
+### Autres requêtes rejetées {#other-rejected-requests}
+
+| Requête                                                                                                                                                                    | Erreur                                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `SET run_query_in_background = 1`                                                                                                                                          | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| Une requête au sein d&#39;une transaction explicite                                                                                                                        | `Background queries inside transactions are not supported`                                   |
+| Une requête avec `implicit_transaction = 1`                                                                                                                                | `Background queries with 'implicit_transaction' are not supported`                           |
+| Une requête secondaire, demandée par exemple avec `clickhouse-client --query_kind secondary_query`                                                                         | `run_query_in_background cannot be used for a secondary query`                               |
+| Une étape de traitement de requête autre que `Complete`, demandée par exemple avec `clickhouse-client --stage with_mergeable_state`                                        | `run_query_in_background cannot be used with the WithMergeableState query processing stage`  |
+| La clause `SETTINGS` d&#39;un `CREATE` ou d&#39;un `ATTACH` comportant une définition de stockage, car le client transmet cette clause au serveur sans l&#39;avoir résolue | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query`  |
+
+Le paramètre n&#39;est jamais propagé aux requêtes secondaires d&#39;une requête distribuée : un `INSERT` distribué exécuté en arrière-plan
+lance ses requêtes par segment au premier plan, au sein de la requête initiale en arrière-plan.
+
+## Soumettre une requête en arrière-plan {#submit-a-background-query}
+
+### Protocole TCP natif {#native-tcp-protocol}
+
+Avec `clickhouse-client`, passez `run_query_in_background` en tant que paramètre de ligne de commande :
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+Vous pouvez également utiliser une clause `SETTINGS` intégrée :
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+Le protocole natif transmet les query settings séparément du texte SQL.
+`clickhouse-client` parse la plupart des query settings intégrés et les envoie dans cette section de settings.
+
+Les drivers utilisant le protocole natif peuvent, à la place, passer `run_query_in_background` dans leur map de settings par requête, sans modifier le texte SQL.
+
+Le protocole natif ne renvoie pas de `query_id` généré par le server. Les native clients doivent générer un ID unique et l&#39;envoyer avec la requête.
+
+`clickhouse-client --echo-query-id` s&#39;en charge et affiche l&#39;ID avant de soumettre la requête :
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### HTTP protocol {#http-protocol}
+
+Pour les requêtes HTTP, passez `run_query_in_background` comme paramètre d&#39;URL :
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+La réponse contient l&#39;ID de requête généré dans le header `X-ClickHouse-Query-Id` :
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+Ce header ne parvient qu&#39;au client qui lit la réponse. Lorsque vous avez besoin d&#39;un handle sur la query qui ne dépende pas de la réception de la réponse, envoyez plutôt votre propre `query_id` sous forme de paramètre d&#39;URL.
+
+Le client connaît ainsi l&#39;ID avant même d&#39;émettre la request, et peut surveiller ou `KILL` la query sur le node qui l&#39;a acceptée, même s&#39;il n&#39;en voit jamais la réponse :
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+Contrairement au protocole natif, HTTP ne permet pas d&#39;activer l&#39;exécution en arrière-plan via une clause SQL `SETTINGS` intégrée :
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+Cette requête renvoie une exception `BAD_ARGUMENTS`. Le gestionnaire HTTP doit déterminer s&#39;il crée un contexte de requête détaché avant l&#39;analyse du corps de la requête.
+
+Transmettez le paramètre dans l&#39;URL, ou configurez-le au niveau de l&#39;utilisateur ou du profil.
+
+## Surveiller l&#39;exécution {#monitor-execution}
+
+Utilisez le `query_id` pour vérifier si une requête est en cours d&#39;exécution :
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+Une fois la requête terminée, consultez `system.query_log` pour connaître son status final :
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+La requête de soumission peut réussir même si l&#39;exécution en arrière-plan échoue ensuite. Dans ce cas, l&#39;exception est consignée
+dans `system.query_log` au lieu d&#39;être renvoyée sur la connexion d&#39;origine.
+
+<Note title="Déploiements en cluster et derrière un load balancer">
+  `system.processes`, `system.query_log` et `KILL QUERY` sont locaux au nœud : chacun ne voit que les requêtes du serveur qui y répond.
+
+  Une requête en arrière-plan appartient au serveur qui l&#39;a acceptée, lequel n&#39;est pas nécessairement celui que votre prochaine requête atteindra via un load balancer. Interrogez plutôt l&#39;ensemble du cluster :
+
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+
+  Il en va de même pour `system.query_log`, et l&#39;annulation nécessite la forme applicable à l&#39;ensemble du cluster :
+
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
+
+## Délai de flush du query log {#query-log-flush-delay}
+
+Les entries sont mises en buffer avant d&#39;apparaître dans `system.query_log`.
+Pour ClickHouse self-managed, l&#39;exemple de server configuration définit `query_log.flush_interval_milliseconds` à `7500`.
+
+Les entries de ClickHouse Cloud peuvent mettre jusqu&#39;à 30 secondes avant d&#39;apparaître. Tenez compte de ce délai lorsque vous surveillez des queries d&#39;arrière-plan de courte durée.
+
+Sur un server self-managed, les utilisateurs disposant de privileges suffisants peuvent forcer le flush du query log. Nommez explicitement le log afin de ne pas toucher aux autres logs système :
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+```
+
+Le flush a lieu sur le serveur qui reçoit le statement.
+
+Une query en arrière-plan est suivie par le serveur qui l&#39;a acceptée, lequel n&#39;est pas nécessairement celui auquel votre session en cours est connectée : sur un cluster, effectuez donc un flush partout avant de rechercher la query :
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
+```
+
+Un flush à l&#39;échelle du cluster se contente de faire écrire à chaque serveur ses propres entries mises en buffer. Cela ne rend pas visible localement le `system.query_log` d&#39;un autre serveur : il faut donc toujours lire le log via `clusterAllReplicas`, comme décrit dans [Surveiller l&#39;exécution](#monitor-execution).
