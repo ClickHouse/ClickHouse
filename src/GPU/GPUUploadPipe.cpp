@@ -331,6 +331,7 @@ void ColumnUploadPipe::sendStagedToDevice()
 const IDeviceColumn & ColumnUploadPipe::flush()
 {
     sendStagedToDevice();
+    waitForUploads();
     return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
 }
 

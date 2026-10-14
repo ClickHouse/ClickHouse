@@ -11,6 +11,7 @@
 #include <exception>
 #include <limits>
 #include <string>
+#include <utility>
 
 namespace DB::GPU
 {
@@ -143,8 +144,7 @@ __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUEle
     return {.element_type = expected_type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
 }
 
-__host__ DeviceVariableColumn deviceViewOfVariable(
-    const cudf::column_view & column, std::unique_ptr<cudf::column> & widened_offsets, const std::string & what, rmm::cuda_stream_view stream)
+__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, const std::string & what, rmm::cuda_stream_view stream)
 {
     checkNoNulls(column, what);
 
@@ -154,12 +154,12 @@ __host__ DeviceVariableColumn deviceViewOfVariable(
     if (column.offset() != 0)
         throwGPUError(("the device returned " + what + " as a slice at offset " + std::to_string(column.offset())).c_str());
 
-    widened_offsets.reset();
     if (column.size() == 0)
         return {};
 
     const cudf::strings_column_view strings(column);
     cudf::column_view offsets = strings.offsets();
+    std::unique_ptr<cudf::column> widened_offsets;
 
     switch (offsets.type().id())
     {
@@ -183,10 +183,13 @@ __host__ DeviceVariableColumn deviceViewOfVariable(
 
     /// The same bytes as the signed offsets of cuDF, see `columnViewOf`.
     return {
-        .offsets = offsets.data<uint64_t>(),
-        .chars = strings.chars_begin(stream),
-        .rows = static_cast<size_t>(column.size()),
-        .chars_bytes = static_cast<size_t>(strings.chars_size(stream)),
+        .view = {
+            .offsets = offsets.data<uint64_t>(),
+            .chars = strings.chars_begin(stream),
+            .rows = static_cast<size_t>(column.size()),
+            .chars_bytes = static_cast<size_t>(strings.chars_size(stream)),
+        },
+        .widened_offsets = std::move(widened_offsets),
     };
 }
 

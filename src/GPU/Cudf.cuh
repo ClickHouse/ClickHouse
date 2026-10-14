@@ -48,7 +48,12 @@ __host__ void checkNoNulls(const cudf::column_view & column, const std::string &
 
 __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUElementType expected_type, const std::string & what);
 
-__host__ DeviceVariableColumn deviceViewOfVariable(
-    const cudf::column_view & column, std::unique_ptr<cudf::column> & widened_offsets, const std::string & what, rmm::cuda_stream_view stream);
+struct DeviceVariableColumnOfCudf
+{
+    DeviceVariableColumn view;
+    std::unique_ptr<cudf::column> widened_offsets;
+};
+
+__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, const std::string & what, rmm::cuda_stream_view stream);
 
 }
