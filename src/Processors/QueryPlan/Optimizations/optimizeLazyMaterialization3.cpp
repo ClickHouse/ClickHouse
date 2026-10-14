@@ -90,20 +90,56 @@ const ActionsDAG::Node & addMasked(
     return dag.addCast(masked, type, name, context);
 }
 
-/// Whether a value is recomputed above the `LIMIT` under a mask: a function or a constant a join can stuff. What
-/// reads it there reads it as the join left it, so the mask applies to the value itself.
-bool isMaskedRecomputation(const MergedPlanDAG & merged, const LazyFrontier & frontier, const ActionsDAG::Node * node)
+/// Whether a value is recomputed above the `LIMIT` where a join can stuff it: a function or a constant of a side of
+/// that join. A lambda is no value of a row: the higher-order function that reads it is masked instead.
+bool isStuffedRecomputation(const MergedPlanDAG & merged, const LazyFrontier & frontier, const ActionsDAG::Node * node)
 {
-    /// A lambda is no value of a row: the higher-order function that reads it is masked instead.
     return (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::COLUMN)
         && !WhichDataType(node->result_type).isFunction() && frontier.at(node).above == Placement::Above::Recomputed
         && merged.getNearestStuffing(node) != nullptr;
 }
 
+/// Whether `reader` reads `value` as a join left it: the two are not under the same stuffing, so `value` was computed
+/// below that join and `reader` above it, or under another one.
+bool readsAsJoinLeftIt(const MergedPlanDAG & merged, const ActionsDAG::Node * reader, const ActionsDAG::Node * value)
+{
+    return merged.getNearestStuffing(reader) != merged.getNearestStuffing(value);
+}
+
+/// The values recomputed above the `LIMIT` that are read as a join left them, see `readsAsJoinLeftIt`, or are outputs
+/// of the subtree: those have a masked copy. An alias is whatever its child is, so the child of such an alias has one as
+/// well. The values computed from a stuffed one under the same join read it unmasked, as they were computed from it
+/// below the join, and a constant stays a constant for them.
+NodeSet findMaskedValues(const MergedPlanDAG & merged, const LazyFrontier & frontier)
+{
+    NodeSet masked;
+    std::vector<const ActionsDAG::Node *> stack(merged.getOutputs().begin(), merged.getOutputs().end());
+    for (const auto & node : merged.getDAG().getNodes())
+    {
+        if (frontier.at(&node).above != Placement::Above::Recomputed)
+            continue;
+        for (const auto * child : node.children)
+            if (readsAsJoinLeftIt(merged, &node, child))
+                stack.push_back(child);
+    }
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (frontier.at(node).above != Placement::Above::Recomputed || !masked.insert(node).second)
+            continue;
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+            stack.push_back(node->children.front());
+    }
+
+    return masked;
+}
+
 /// The expression computed above the `LIMIT`: the outputs of `merged`, computed from the columns of
 /// `header`. `positions` says which column holds a value that crossed or was read lazily, and `masks` which
-/// one holds the mask of a stuffing; every other value is recomputed, masked where `isMaskedRecomputation`
-/// says so. The columns are bound by position, so names that repeat - two lazy reads of columns with the
+/// one holds the mask of a stuffing; every other value is recomputed, and a stuffed one of `masked` has a masked copy
+/// as well, which the values reading it as the join left it read. The columns are bound by position, so names that repeat - two lazy reads of columns with the
 /// same name - do not matter. Every column is consumed, so the result has exactly the header the subtree
 /// had.
 ActionsDAG buildAboveLimitDAG(
@@ -111,12 +147,23 @@ ActionsDAG buildAboveLimitDAG(
     const LazyFrontier & frontier,
     const std::unordered_map<const ActionsDAG::Node *, size_t> & positions,
     const std::unordered_map<const MergedPlanDAG::Stuffing *, size_t> & masks,
+    const NodeSet & masked,
     const Block & header,
     const ContextPtr & context)
 {
     ActionsDAG dag(header.getColumnsWithTypeAndName());
     const auto inputs = dag.getInputs();
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> copies;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> masked_copies;
+
+    /// The copy of `value` that `reader` reads, or that the subtree outputs for a null `reader`.
+    const auto copy_for = [&](const ActionsDAG::Node * reader, const ActionsDAG::Node * value)
+    {
+        if (!reader || readsAsJoinLeftIt(merged, reader, value))
+            if (const auto it = masked_copies.find(value); it != masked_copies.end())
+                return it->second;
+        return copies.at(value);
+    };
 
     struct Frame
     {
@@ -153,7 +200,7 @@ ActionsDAG buildAboveLimitDAG(
 
             ActionsDAG::NodeRawConstPtrs children;
             for (const auto * child : node->children)
-                children.push_back(copies.at(child));
+                children.push_back(copy_for(node, child));
 
             const ActionsDAG::Node * copy = nullptr;
             switch (node->type)
@@ -174,10 +221,19 @@ ActionsDAG buildAboveLimitDAG(
                         "Value {} is neither computed after the LIMIT nor available there", node->result_name);
             }
 
-            if (isMaskedRecomputation(merged, frontier, node))
+            if (masked.contains(node))
             {
-                const auto * mask = inputs.at(masks.at(merged.getNearestStuffing(node)));
-                copy = &addMasked(dag, *mask, *copy, node->result_name, context);
+                if (isStuffedRecomputation(merged, frontier, node))
+                {
+                    const auto * mask = inputs.at(masks.at(merged.getNearestStuffing(node)));
+                    masked_copies.emplace(node, &addMasked(dag, *mask, *copy, node->result_name, context));
+                }
+                else if (node->type == ActionsDAG::ActionType::ALIAS)
+                {
+                    const auto * child = node->children.front();
+                    if (const auto it = masked_copies.find(child); it != masked_copies.end())
+                        masked_copies.emplace(node, &dag.addAlias(*it->second, node->result_name));
+                }
             }
 
             copies.emplace(node, copy);
@@ -189,7 +245,7 @@ ActionsDAG buildAboveLimitDAG(
     dag_outputs.clear();
     for (const auto * output : merged.getOutputs())
     {
-        const auto * copy = copies.at(output);
+        const auto * copy = copy_for(nullptr, output);
         if (copy->result_name != output->result_name)
             copy = &dag.addAlias(*copy, output->result_name);
         dag_outputs.push_back(copy);
@@ -326,14 +382,20 @@ class JoinPlanRebuild
 {
 public:
     /// `mask_sources` are the sources whose row index says whether a stuffing matched, for the stuffings
-    /// the frontier masks values of.
+    /// the `masked_values` are under.
     JoinPlanRebuild(
         const MergedPlanDAG & merged_,
         const LazyFrontier & frontier_,
         const std::vector<bool> & lazy_sources_,
         const std::unordered_map<const MergedPlanDAG::Stuffing *, size_t> & mask_sources_,
+        const NodeSet & masked_values_,
         ContextPtr context_)
-        : merged(merged_), frontier(frontier_), lazy_sources(lazy_sources_), mask_sources(mask_sources_), context(std::move(context_))
+        : merged(merged_)
+        , frontier(frontier_)
+        , lazy_sources(lazy_sources_)
+        , mask_sources(mask_sources_)
+        , masked_values(masked_values_)
+        , context(std::move(context_))
     {
         for (size_t source = 0; source < merged.sources.size(); ++source)
             source_numbers.emplace(merged.sources[source].plan_node, source);
@@ -563,7 +625,7 @@ public:
                 if (slots[position])
                     positions.emplace(slots[position], position);
 
-            auto above = buildAboveLimitDAG(merged, frontier, positions, mask_slots, header, context);
+            auto above = buildAboveLimitDAG(merged, frontier, positions, mask_slots, masked_values, header, context);
 
             auto step = std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(above));
             step->setStepDescription("Computed after the LIMIT");
@@ -1068,6 +1130,7 @@ private:
     const LazyFrontier & frontier;
     const std::vector<bool> & lazy_sources;
     const std::unordered_map<const MergedPlanDAG::Stuffing *, size_t> & mask_sources;
+    const NodeSet & masked_values;
     ContextPtr context;
 
     QueryPlan::Node * chain_top = nullptr;
@@ -1223,13 +1286,14 @@ bool optimizeLazyMaterialization3(
     if (!frontier.defersAnything())
         return false;
 
-    /// Only the masks the frontier uses are computed.
+    /// Only the masks the masked values use are computed.
+    const auto masked_values = findMaskedValues(merged, frontier);
     std::unordered_map<const MergedPlanDAG::Stuffing *, size_t> mask_sources;
-    for (const auto & node : merged.getDAG().getNodes())
-        if (isMaskedRecomputation(merged, frontier, &node))
-            mask_sources.emplace(merged.getNearestStuffing(&node), mask_candidates.at(merged.getNearestStuffing(&node)));
+    for (const auto * node : masked_values)
+        if (isStuffedRecomputation(merged, frontier, node))
+            mask_sources.emplace(merged.getNearestStuffing(node), mask_candidates.at(merged.getNearestStuffing(node)));
 
-    JoinPlanRebuild rebuild(merged, frontier, lazy_sources, mask_sources, context);
+    JoinPlanRebuild rebuild(merged, frontier, lazy_sources, mask_sources, masked_values, context);
     if (!rebuild.prepare(chain_top, sort_key_positions))
         return false;
 
