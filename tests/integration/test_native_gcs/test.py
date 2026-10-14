@@ -197,6 +197,22 @@ def test_mergetree_on_gcs_disk(started_cluster):
 
     node.query("DROP TABLE gcs_mt SYNC")
 
+    # The merge and the drop delete every object of the table, and each delete is recorded in
+    # `system.blob_storage_log` as a success.
+    node.query("SYSTEM FLUSH LOGS")
+    deletes = node.query(
+        "SELECT count(), countIf(error_code = 0 AND error = '') FROM system.blob_storage_log "
+        "WHERE event_type = 'Delete' AND disk_name = 'gcs_disk_test'"
+    ).split()
+    assert int(deletes[0]) > 0 and deletes[0] == deletes[1], deletes
+    assert (
+        node.query(
+            f"SELECT count() FROM gcs('{gcs_url('mergetree/**')}', NOSIGN, 'One') "
+            "SETTINGS use_native_gcs = 1"
+        ).strip()
+        == "0"
+    )
+
 
 def test_dynamic_gcs_disk_allows_indirect_backend_type_with_no_sign_request(
     started_cluster,
