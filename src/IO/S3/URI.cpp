@@ -7,6 +7,7 @@
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
+#include <Common/RemoteHostFilter.h>
 #include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -226,6 +227,15 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
 
     validateBucket(bucket, uri);
     validateKey(key, uri);
+}
+
+void URI::checkRemoteHostFilter(const RemoteHostFilter & filter) const
+{
+    Poco::URI endpoint_uri(endpoint);
+    if (filter.isBucketAllowed(endpoint_uri.getHost(), endpoint_uri.getPort(), bucket))
+        return;
+
+    filter.checkURL(uri);
 }
 
 void URI::addRegionToURI(const std::string &region)
