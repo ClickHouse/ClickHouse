@@ -165,16 +165,7 @@ ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, U
     if (scale_to > scale_from)
     {
         const MaxNativeType multiplier = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
-        bool overflow = false;
-        if constexpr (is_big_int_v<MaxNativeType>)
-        {
-            overflow = !DecimalScaleBounds<MaxNativeType>(multiplier).fits(value.value);
-            converted_value = common::mulIgnoreOverflow(static_cast<MaxNativeType>(value.value), multiplier);
-        }
-        else
-            overflow = common::mulOverflow(static_cast<MaxNativeType>(value.value), multiplier, converted_value);
-
-        if (overflow)
+        if (DecimalScaleBounds<MaxNativeType>(multiplier).mulOverflow(static_cast<MaxNativeType>(value.value), converted_value))
         {
             if constexpr (throw_exception)
                 throwDecimalScaleOverflow(ToDataType::family_name, value.value, multiplier);
@@ -238,14 +229,7 @@ NO_SANITIZE_UNDEFINED void convertDecimalsBatch(
         for (size_t i = 0; i < size; ++i)
         {
             MaxNativeType converted_value;
-            bool mul_overflow = false;
-            if constexpr (is_big_int_v<MaxNativeType>)
-            {
-                mul_overflow = !bounds.fits(from[i].value);
-                converted_value = common::mulIgnoreOverflow(static_cast<MaxNativeType>(from[i].value), multiplier);
-            }
-            else
-                mul_overflow = common::mulOverflow(static_cast<MaxNativeType>(from[i].value), multiplier, converted_value);
+            bool mul_overflow = bounds.mulOverflow(static_cast<MaxNativeType>(from[i].value), converted_value);
 
             bool range_overflow = false;
             if constexpr (check_overflow)
@@ -582,7 +566,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         }
         else
         {
-            const WideType multiplier = DecimalUtils::scaleMultiplier<WideType>(scale);
+            const DecimalScaleBounds<WideType> bounds(DecimalUtils::scaleMultiplier<WideType>(scale));
             /// At x86-64-v3 with `__AVX2__` the loop and SLP vectorizers widen the per-row Int128
             /// stores into YMM/XMM packs (`vmovq`/`vpunpcklqdq`/`vmovdqu`) wrapping the BMI2
             /// `mulxq`, regressing `sum #16`/`decimal_casts #2` ~7-12%. Plain GPR stores keep the
@@ -593,7 +577,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             for (size_t i = 0; i < size; ++i)
             {
                 WideType converted_value;
-                bool overflow = common::mulOverflow(static_cast<WideType>(from[i]), multiplier, converted_value);
+                bool overflow = bounds.mulOverflow(static_cast<WideType>(from[i]), converted_value);
 
                 overflow |= converted_value < std::numeric_limits<ToNativeType>::min()
                          || converted_value > std::numeric_limits<ToNativeType>::max();

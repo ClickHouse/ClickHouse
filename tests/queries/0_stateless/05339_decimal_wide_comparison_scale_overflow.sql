@@ -112,3 +112,14 @@ SELECT accurateCastOrNull(materialize(toDecimal128(170141184, 0)), 'Decimal(38, 
 SELECT CAST(materialize(toDecimal256(5789604, 0)) AS Decimal(76, 70));
 SELECT CAST(materialize(toDecimal256(5789605, 0)) AS Decimal(76, 70)); -- { serverError DECIMAL_OVERFLOW }
 SELECT CAST(toDecimal256(-5789605, 0) AS Decimal(76, 70)); -- { serverError DECIMAL_OVERFLOW }
+
+SELECT '-- an integer brought to a decimal scale';
+SELECT CAST(materialize(toInt64(170141183)) AS Decimal(38, 30)), CAST(toInt64(-170141183) AS Decimal(38, 30)), toDecimal128(materialize(toUInt64(170141183)), 30);
+SELECT CAST(materialize(toInt64(170141184)) AS Decimal(38, 30)); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(toInt64(-170141184) AS Decimal(38, 30)); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal128(materialize(toUInt64(170141184)), 30); -- { serverError DECIMAL_OVERFLOW }
+SELECT accurateCastOrNull(materialize(toInt64(1000000000)), 'Decimal(38, 30)'), accurateCastOrNull(toInt64(1000000000), 'Decimal(38, 30)'), accurateCastOrNull(materialize(toUInt64(170141184)), 'Decimal(38, 30)');
+SELECT CAST(materialize(toInt32(5789604)) AS Decimal(76, 70)), accurateCastOrNull(materialize(toInt64(-5789604)), 'Decimal(76, 70)');
+SELECT CAST(materialize(toInt32(5789605)) AS Decimal(76, 70)); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal256(materialize(toInt64(-5789605)), 70); -- { serverError DECIMAL_OVERFLOW }
+SELECT accurateCastOrNull(materialize(toInt64(5789605)), 'Decimal(76, 70)'), accurateCastOrNull(toInt64(-5789605), 'Decimal(76, 70)'), accurateCastOrNull(materialize(toInt128(5789605)), 'Decimal(76, 70)');
