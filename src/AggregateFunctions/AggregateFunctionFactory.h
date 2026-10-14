@@ -102,6 +102,15 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
+    /// The part of `get` after removing LowCardinality, without applying `AggregateFunctionVariantAdapter`.
+    AggregateFunctionPtr getWithoutVariantAdapter(
+        const String & name,
+        NullsAction action,
+        const DataTypes & types_without_low_cardinality,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant) const;
+
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,
