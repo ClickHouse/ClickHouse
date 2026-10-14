@@ -131,9 +131,12 @@ ObjectAttributes getObjectTags(
         const auto & error = tag_outcome.GetError();
         throw S3Exception(
             error.GetErrorType(),
-            "Failed to get object tags: {}. HTTP response code: {}.{}",
+            "Failed to get object tags of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
+            key,
+            bucket,
             error.GetMessage(),
             error.GetResponseCode(),
+            error.GetErrorType(),
             getAuthenticationErrorHint(error.GetErrorType()));
     }
 
@@ -162,9 +165,12 @@ ObjectInfo getObjectInfoIfExists(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info: {}. HTTP response code: {}.{}",
+        "Failed to get object info for key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
+        key,
+        bucket,
         error.GetMessage(),
         error.GetResponseCode(),
+        error.GetErrorType(),
         getAuthenticationErrorHint(error.GetErrorType()));
 }
 
@@ -185,9 +191,12 @@ ObjectInfo getObjectInfo(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info: {}. HTTP response code: {}.{}",
+        "Failed to get object info for key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
+        key,
+        bucket,
         error.GetMessage(),
         error.GetResponseCode(),
+        error.GetErrorType(),
         getAuthenticationErrorHint(error.GetErrorType()));
 }
 

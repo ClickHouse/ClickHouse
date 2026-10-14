@@ -769,64 +769,73 @@ void S3ObjectStorage::copyObject( // NOLINT
     const bool guarded_copy = !write_settings.object_storage_write_if_none_match.empty();
     const auto [src_bucket, src_key] = splitBucketAndKey(object_from.remote_path);
     const auto [dest_bucket, dest_key] = splitBucketAndKey(object_to.remote_path);
-    /// A caller that has already inspected the source names the version it saw, so this lookup and
-    /// everything it feeds describe that generation rather than whatever the key points at now.
-    const String & pinned_version_id = write_settings.object_storage_copy_source_version_id;
-    auto source_info
-        = S3::getObjectInfo(*current_client, src_bucket, src_key, pinned_version_id, /*with_metadata=*/false, /*with_tags=*/false);
-    /// Everything below must describe the generation this HEAD saw, so a same-key re-upload cannot
-    /// mix another version's bytes into a guarded copy. Empty on unversioned buckets.
-    const String source_version_id
-        = pinned_version_id.empty() ? (guarded_copy ? source_info.version_id : String{}) : pinned_version_id;
-    /// Pin to the caller's provenance `ETag` if given, else the source's own `ETag`; one value, so the
-    /// native copy and the read-and-write fallback use the same generation.
-    const String source_if_match = write_settings.object_storage_copy_source_if_match.empty()
-        ? object_from.etag
-        : write_settings.object_storage_copy_source_if_match;
-    /// A guarded copy re-uploads the object, so the tags are read explicitly rather than through the
-    /// `HeadObject` tag count, which restricted credentials do not get to see.
-    std::optional<ObjectAttributes> source_tags;
-    if (guarded_copy && write_settings.object_storage_copy_preserve_source_tags)
-        source_tags = S3::getObjectTags(*current_client, src_bucket, src_key, source_version_id);
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
-    const auto read_settings_to_use = patchSettings(read_settings);
-    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
-    if (blob_storage_log)
-        blob_storage_log->local_path = object_to.local_path;
 
-    copyS3File(
-        /*src_s3_client=*/current_client,
-        /*src_bucket=*/src_bucket,
-        /*src_key=*/src_key,
-        /*src_size=*/source_info.size,
-        /*dest_s3_client=*/current_client,
-        /*dest_bucket=*/dest_bucket,
-        /*dest_key=*/dest_key,
-        settings_ptr->request_settings,
-        read_settings_to_use,
-        blob_storage_log,
-        scheduler,
-        [&, this]() -> std::unique_ptr<SeekableReadBuffer>
-        {
-            if (source_version_id.empty() && source_if_match.empty())
-                return readObject(object_from, read_settings_to_use);
-            /// The read-write fallback carries no copy-source condition, so pin the read itself:
-            /// `ReadBufferFromS3` checks every response ETag against the expected one.
-            return std::make_unique<ReadBufferFromS3>(
-                current_client, src_bucket, src_key, source_version_id,
-                settings_ptr->request_settings, read_settings_to_use,
-                /*use_external_buffer=*/false, /*offset=*/0, /*read_until_position=*/0, /*restricted_seek=*/false,
-                /*file_size=*/std::nullopt, credentials_refresh_callback,
-                /*blob_storage_log=*/nullptr, /*expected_etag=*/source_if_match);
-        },
-        object_to_attributes,
-        S3CopyFileSettings{
-            .if_none_match = write_settings.object_storage_write_if_none_match,
-            .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
-                                           : std::optional<S3::ObjectHeaders>{},
-            .source_tags = std::move(source_tags),
-            .source_if_match = source_if_match,
-            .source_version_id = source_version_id});
+    try
+    {
+        /// A caller that has already inspected the source names the version it saw, so this lookup and
+        /// everything it feeds describe that generation rather than whatever the key points at now.
+        const String & pinned_version_id = write_settings.object_storage_copy_source_version_id;
+        auto source_info
+            = S3::getObjectInfo(*current_client, src_bucket, src_key, pinned_version_id, /*with_metadata=*/false, /*with_tags=*/false);
+        /// Everything below must describe the generation this HEAD saw, so a same-key re-upload cannot
+        /// mix another version's bytes into a guarded copy. Empty on unversioned buckets.
+        const String source_version_id
+            = pinned_version_id.empty() ? (guarded_copy ? source_info.version_id : String{}) : pinned_version_id;
+        /// Pin to the caller's provenance `ETag` if given, else the source's own `ETag`; one value, so the
+        /// native copy and the read-and-write fallback use the same generation.
+        const String source_if_match = write_settings.object_storage_copy_source_if_match.empty()
+            ? object_from.etag
+            : write_settings.object_storage_copy_source_if_match;
+        /// A guarded copy re-uploads the object, so the tags are read explicitly rather than through the
+        /// `HeadObject` tag count, which restricted credentials do not get to see.
+        std::optional<ObjectAttributes> source_tags;
+        if (guarded_copy && write_settings.object_storage_copy_preserve_source_tags)
+            source_tags = S3::getObjectTags(*current_client, src_bucket, src_key, source_version_id);
+        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
+        const auto read_settings_to_use = patchSettings(read_settings);
+        auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object_to.local_path;
+
+        copyS3File(
+            /*src_s3_client=*/current_client,
+            /*src_bucket=*/src_bucket,
+            /*src_key=*/src_key,
+            /*src_size=*/source_info.size,
+            /*dest_s3_client=*/current_client,
+            /*dest_bucket=*/dest_bucket,
+            /*dest_key=*/dest_key,
+            settings_ptr->request_settings,
+            read_settings_to_use,
+            blob_storage_log,
+            scheduler,
+            [&, this]() -> std::unique_ptr<SeekableReadBuffer>
+            {
+                if (source_version_id.empty() && source_if_match.empty())
+                    return readObject(object_from, read_settings_to_use);
+                /// The read-write fallback carries no copy-source condition, so pin the read itself:
+                /// `ReadBufferFromS3` checks every response ETag against the expected one.
+                return std::make_unique<ReadBufferFromS3>(
+                    current_client, src_bucket, src_key, source_version_id,
+                    settings_ptr->request_settings, read_settings_to_use,
+                    /*use_external_buffer=*/false, /*offset=*/0, /*read_until_position=*/0, /*restricted_seek=*/false,
+                    /*file_size=*/std::nullopt, credentials_refresh_callback,
+                    /*blob_storage_log=*/nullptr, /*expected_etag=*/source_if_match);
+            },
+            object_to_attributes,
+            S3CopyFileSettings{
+                .if_none_match = write_settings.object_storage_write_if_none_match,
+                .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
+                                               : std::optional<S3::ObjectHeaders>{},
+                .source_tags = std::move(source_tags),
+                .source_if_match = source_if_match,
+                .source_version_id = source_version_id});
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("While copying '{}' to '{}' on disk {}", object_from.remote_path, object_to.remote_path, disk_name));
+        throw;
+    }
 }
 
 void S3ObjectStorage::shutdown()
