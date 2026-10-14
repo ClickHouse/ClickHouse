@@ -504,7 +504,9 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_file_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.tracked_files_ttl_sec == value)
+            /// Compare against the Keeper-refreshed state (`new_table_metadata`), not the possibly stale
+            /// local cache: otherwise a real change can be skipped and Keeper keeps the old TTL.
+            if (new_table_metadata.tracked_files_ttl_sec == value)
             {
                 LOG_TRACE(log, "Setting `tracked_file_ttl_sec` already equals {}. "
                         "Will do nothing", value);

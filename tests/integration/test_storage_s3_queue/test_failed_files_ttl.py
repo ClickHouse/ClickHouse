@@ -1741,6 +1741,26 @@ def test_inherited_failed_files_ttl_tracked_alter_survives_alter_on_other_replic
         assert int(metadata["tracked_files_ttl_sec"]) == 10, metadata
         assert int(metadata["failed_files_ttl_sec"]) == 10, metadata
         assert int(metadata["failed_files_ttl_sec_inherited"]) == 1, metadata
+
+        # Replica 1 raises the TTL again. Replica 2's local cache now has 10 (refreshed by its ALTER above),
+        # while Keeper has 20.
+        node.query(f"ALTER TABLE {table_name} MODIFY SETTING tracked_file_ttl_sec=20")
+        metadata = read_metadata()
+        assert int(metadata["tracked_files_ttl_sec"]) == 20, metadata
+        assert int(metadata["failed_files_ttl_sec"]) == 20, metadata
+
+        # Replica 2 explicitly requests 10, which equals its stale local value but differs from Keeper.
+        # It must not be skipped as a no-op, otherwise Keeper keeps 20 and a later reattach fails
+        # with METADATA_MISMATCH.
+        node2.query(f"ALTER TABLE {table_name} MODIFY SETTING tracked_file_ttl_sec=10")
+        metadata = read_metadata()
+        assert int(metadata["tracked_files_ttl_sec"]) == 10, metadata
+        assert int(metadata["failed_files_ttl_sec"]) == 10, metadata
+        assert int(metadata["failed_files_ttl_sec_inherited"]) == 1, metadata
+
+        # The table must reattach cleanly with the settings it now has.
+        node2.query(f"DETACH TABLE {table_name}")
+        node2.query(f"ATTACH TABLE {table_name}")
     finally:
         for n in (node, node2):
             try:
