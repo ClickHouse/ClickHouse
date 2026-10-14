@@ -11,12 +11,16 @@
 
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
@@ -177,6 +181,74 @@ bool canSplitRead(const ReadFromMergeTree & reading, const QueryPlanOptimization
             return false;
 
     return !reading.getParts().empty();
+}
+
+bool canSplitReadDefaults(const ReadFromMergeTree & reading, const RangesInDataParts & parts)
+{
+    const auto & columns = reading.getStorageMetadata()->getColumns();
+    const auto & names = reading.getAllColumnNames();
+    if (std::none_of(names.begin(), names.end(), [&](const auto & name) { return columns.hasDefault(name); }))
+        return true;
+
+    NamesAndTypesList required_columns;
+    for (const auto & name : names)
+        required_columns.push_back(columns.getPhysical(name));
+
+    ContextMutablePtr default_context;
+    for (const auto & part : parts)
+    {
+        /// Frozen type defaults can suppress the current expression even for transitive dependencies.
+        if (!part.data_part->getSerializationInfos().getMissingColumns().empty())
+            return false;
+
+        bool needs_defaults = false;
+        for (const auto & column : required_columns)
+        {
+            auto stored = part.data_part->tryGetColumn(column.name);
+            if (!stored)
+                needs_defaults |= columns.hasDefault(column.name);
+            else if (!stored->type->equals(*column.type) || !part.data_part->hasColumnFiles(*stored))
+                return false;
+        }
+        if (!needs_defaults)
+            continue;
+
+        /// Follow the reader's dependencies, stopping at columns already stored in this part.
+        /// Combining the available columns of different parts could invent defaults that no reader evaluates.
+        LoadedMergeTreeDataPartInfoForReader part_info(part.data_part, nullptr);
+        Names dependency_columns = names;
+        injectRequiredColumns(part_info, reading.getStorageSnapshot(), /*with_subcolumns=*/true, dependency_columns);
+
+        Block available_columns;
+        for (const auto & name : dependency_columns)
+        {
+            /// Keep subcolumn extraction and on-read type conversions on the ordinary read path.
+            auto column = columns.tryGetPhysical(name);
+            if (!column)
+                return false;
+            auto stored = part.data_part->tryGetColumn(name);
+            if (!stored)
+                continue;
+            if (!stored->type->equals(*column->type) || !part.data_part->hasColumnFiles(*stored))
+                return false;
+            available_columns.insert(ColumnWithTypeAndName(column->type, name));
+        }
+
+        if (!default_context)
+        {
+            /// Match the reader's context, including settings required by existing table defaults.
+            default_context = Context::createCopy(reading.getMergeTreeData().getContext());
+            enableAllExperimentalSettings(default_context);
+        }
+
+        /// Missing `DEFAULT` / `MATERIALIZED` columns and their transitive defaults execute outside `query.dag`.
+        /// Reuse their recursive reader DAG so the check also sees functions inside lambda bodies.
+        auto defaults = evaluateMissingDefaults(available_columns, required_columns, columns, default_context);
+        /// Each reader builds defaults independently, so even folded query constants such as `now64` must be deterministic.
+        if (defaults && (defaults->hasNonDeterministic() || isSensitiveToEvaluationCount(*defaults)))
+            return false;
+    }
+    return true;
 }
 
 /// Intersect with selected ranges explicitly: skip indexes can remove marks after primary-key
@@ -386,6 +458,9 @@ bool optimizePrimaryKeyFilterElimination(
     /// This conservative prototype threshold is deliberately expressed in granules, not rows.
     if (exact_analysis->selected_marks < 8
         || exact_analysis->selected_marks < selected_marks - exact_analysis->selected_marks)
+        return false;
+
+    if (!canSplitReadDefaults(*reading, ordinary_analysis->parts_with_ranges))
         return false;
 
     query_info.filter_actions_dag = nullptr;
