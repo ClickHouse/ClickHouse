@@ -26,6 +26,8 @@ import ConfigurableBackupsCLI from "/snippets/fr/cloud/backups/_configurable_bac
 
     Un onglet s’ouvre alors à droite, dans lequel vous pouvez sélectionner les valeurs de rétention, de fréquence et d’heure de début. Vous devrez enregistrer les paramètres choisis pour qu’ils prennent effet.
 
+    La fréquence des sauvegardes détermine, dans le pire des cas, l’ancienneté du point de restauration le plus récent (votre RPO). La rétention détermine la durée de conservation des données de sauvegarde ; elle ne permet pas d’obtenir un point de restauration plus récent. Par exemple, avec une rétention de 1 jour et une sauvegarde toutes les 48 heures, le point de restauration le plus récent peut dater de près de 48 heures.
+
     <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Sélectionner la rétention et la fréquence des sauvegardes" border />
 
     <Note>
