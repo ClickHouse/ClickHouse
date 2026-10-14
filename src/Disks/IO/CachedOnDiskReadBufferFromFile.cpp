@@ -12,7 +12,7 @@
 #include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/Context.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
