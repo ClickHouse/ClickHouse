@@ -3,14 +3,11 @@
 SET any_join_distinct_right_table_keys = 1;
 SET joined_subquery_requires_alias = 0;
 SET join_algorithm = 'hash';
--- LEFT JOIN of `system.numbers` with an empty right table, then LIMIT 10, then ORDER BY.
--- With one thread the left scan yields 0-9. With several threads `hash` may probe in
--- parallel, so LIMIT after the join would pick an arbitrary 10 rows. Bound the left
--- side of the multithreaded queries with `LIMIT 10` (no `ORDER BY`: a sort of unbounded
--- `system.numbers` reads until `max_rows_to_read`). Empty-right LEFT JOIN still has to
--- scan the left (it cannot skip it); the bound is a test-side finite prefix.
---  - first run on a single thread to ensure it still works with SpillingHashJoin
---  - then on multiple threads with automatic spilling disabled
+-- The output is not guaranteed with multithreaded joins, because the order by is applied after limit. To keep the test somewhat similar
+-- to the original one
+--  - first run the query on a single thread to ensure it still works with SpillingHashJoin
+--  - and then on multiple threads automatic spilling disabled
+-- The multithreaded queries bound the left side with `LIMIT 10` instead: an `ORDER BY` over unbounded `system.numbers` never finishes.
 SET max_threads = 1;
 
 SELECT * FROM (

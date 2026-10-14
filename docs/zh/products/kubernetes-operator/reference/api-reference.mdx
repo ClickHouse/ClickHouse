@@ -10,9 +10,7 @@ sidebarTitle: 'API 参考文档'
 
 本文档提供 ClickHouse Operator 自定义资源的详细 API 参考。
 
-<div id="additionalport">
-  ## AdditionalPort
-</div>
+## AdditionalPort {#additionalport}
 
 AdditionalPort 声明了一个额外的 TCP 端口，用于在 ClickHouse pod (容器组) 和公网无头 Service 上暴露。
 
@@ -25,9 +23,7 @@ AdditionalPort 声明了一个额外的 TCP 端口，用于在 ClickHouse pod (�
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="cabundleselector">
-  ## CABundleSelector
-</div>
+## CABundleSelector {#cabundleselector}
 
 CABundleSelector 用于从集群命名空间中的某个 Secret 里选择一个保存 CA bundle 的键。
 
@@ -40,15 +36,11 @@ CABundleSelector 用于从集群命名空间中的某个 Secret 里选择一个�
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-<div id="clickhousecluster">
-  ## ClickHouseCluster
-</div>
+## ClickHouseCluster {#clickhousecluster}
 
 ClickHouseCluster 是 `clickhouseclusters` API 的 schema。
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### API 版本和 Kind
-</div>
+### API 版本和 Kind {#clickhousecluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -64,15 +56,11 @@ kind: ClickHouseCluster
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-<div id="clickhouseclusterlist">
-  ## ClickHouseClusterList
-</div>
+## ClickHouseClusterList {#clickhouseclusterlist}
 
 ClickHouseClusterList 包含 ClickHouseCluster 的列表。
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### API 版本和 Kind
-</div>
+### API 版本和 Kind {#clickhouseclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -83,9 +71,7 @@ kind: ClickHouseClusterList
 | ------- | ------------------------------------------ | -- | ---- | --- |
 | `items` | [ClickHouseCluster](#clickhousecluster) 数组 |    | true |     |
 
-<div id="clickhouseclusterspec">
-  ## ClickHouseClusterSpec
-</div>
+## ClickHouseClusterSpec {#clickhouseclusterspec}
 
 ClickHouseClusterSpec 定义了 ClickHouseCluster 的期望状态。
 
@@ -113,9 +99,7 @@ ClickHouseClusterSpec 定义了 ClickHouseCluster 的期望状态。
 
 * [ClickHouseCluster](#clickhousecluster)
 
-<div id="clickhouseclusterstatus">
-  ## ClickHouseClusterStatus
-</div>
+## ClickHouseClusterStatus {#clickhouseclusterstatus}
 
 ClickHouseClusterStatus 定义了 ClickHouseCluster 的已观测状态。
 
@@ -135,9 +119,7 @@ ClickHouseClusterStatus 定义了 ClickHouseCluster 的已观测状态。
 
 * [ClickHouseCluster](#clickhousecluster)
 
-<div id="clickhousenetworkpolicyspec">
-  ## ClickHouseNetworkPolicySpec
-</div>
+## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
 
 ClickHouseNetworkPolicySpec 用于配置由 ClickHouse 集群管理的 NetworkPolicy。
 受管理的策略涵盖集群内部流量：
@@ -154,9 +136,7 @@ ClickHouseNetworkPolicySpec 用于配置由 ClickHouse 集群管理的 NetworkPo
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="clickhousesettings">
-  ## ClickHouseSettings
-</div>
+## ClickHouseSettings {#clickhousesettings}
 
 ClickHouseSettings 定义 ClickHouse 服务器的设置选项。
 
@@ -174,9 +154,7 @@ ClickHouseSettings 定义 ClickHouse 服务器的设置选项。
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="clustertlsspec">
-  ## ClusterTLSSpec
-</div>
+## ClusterTLSSpec {#clustertlsspec}
 
 ClusterTLSSpec 定义集群的 TLS 配置。
 
@@ -192,9 +170,7 @@ ClusterTLSSpec 定义集群的 TLS 配置。
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-<div id="configmapkeyselector">
-  ## ConfigMapKeySelector
-</div>
+## ConfigMapKeySelector {#configmapkeyselector}
 
 ConfigMapKeySelector 用于选择 ConfigMap 中的某个键。
 
@@ -207,9 +183,7 @@ ConfigMapKeySelector 用于选择 ConfigMap 中的某个键。
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-<div id="containerimage">
-  ## ContainerImage
-</div>
+## ContainerImage {#containerimage}
 
 ContainerImage 定义了一个容器镜像，其中包含 repository、tag 或 hash。
 
@@ -223,9 +197,7 @@ ContainerImage 定义了一个容器镜像，其中包含 repository、tag 或 h
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-<div id="containertemplatespec">
-  ## ContainerTemplateSpec
-</div>
+## ContainerTemplateSpec {#containertemplatespec}
 
 ContainerTemplateSpec 描述了集群中各容器的容器配置覆盖项。
 
@@ -245,9 +217,7 @@ ContainerTemplateSpec 描述了集群中各容器的容器配置覆盖项。
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="defaultpasswordselector">
-  ## DefaultPasswordSelector
-</div>
+## DefaultPasswordSelector {#defaultpasswordselector}
 
 DefaultPasswordSelector 用于选择默认用户密码的来源。
 
@@ -261,9 +231,7 @@ DefaultPasswordSelector 用于选择默认用户密码的来源。
 
 * [ClickHouseSettings](#clickhousesettings)
 
-<div id="encryptionsettings">
-  ## EncryptionSettings
-</div>
+## EncryptionSettings {#encryptionsettings}
 
 EncryptionSettings 用于启用表数据的静态加密。启用后，operator 会生成一个加密的 ClickHouse 存储策略，为每个数据磁盘提供加密封装；表可通过 `SETTINGS storage_policy` 选择使用该策略。
 加密一旦启用，便无法禁用。
@@ -276,9 +244,7 @@ EncryptionSettings 用于启用表数据的静态加密。启用后，operator �
 
 * [ClickHouseSettings](#clickhousesettings)
 
-<div id="externalsecret">
-  ## ExternalSecret
-</div>
+## ExternalSecret {#externalsecret}
 
 ExternalSecret 是对同一命名空间中某个 Secret 的引用。
 
@@ -291,9 +257,7 @@ ExternalSecret 是对同一命名空间中某个 Secret 的引用。
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="externalsecretpolicy">
-  ## ExternalSecretPolicy
-</div>
+## ExternalSecretPolicy {#externalsecretpolicy}
 
 ExternalSecretPolicy 用于控制 operator 如何处理外部 Secret 的内容。
 
@@ -306,15 +270,11 @@ ExternalSecretPolicy 用于控制 operator 如何处理外部 Secret 的内容�
 
 * [ExternalSecret](#externalsecret)
 
-<div id="keepercluster">
-  ## KeeperCluster
-</div>
+## KeeperCluster {#keepercluster}
 
 KeeperCluster 是 `keeperclusters` API 的 schema。
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### API 版本和 Kind
-</div>
+### API 版本和 Kind {#keepercluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -330,15 +290,11 @@ kind: KeeperCluster
 
 * [KeeperClusterList](#keeperclusterlist)
 
-<div id="keeperclusterlist">
-  ## KeeperClusterList
-</div>
+## KeeperClusterList {#keeperclusterlist}
 
 KeeperClusterList 包含一个 KeeperCluster 列表。
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### API 版本和 Kind
-</div>
+### API 版本和 Kind {#keeperclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -349,9 +305,7 @@ kind: KeeperClusterList
 | ------- | ---------------------------------- | -- | ---- | --- |
 | `items` | [KeeperCluster](#keepercluster) 数组 |    | true |     |
 
-<div id="keeperclusterreference">
-  ## KeeperClusterReference
-</div>
+## KeeperClusterReference {#keeperclusterreference}
 
 KeeperClusterReference 用于标识 ClickHouseCluster 所使用的 KeeperCluster。
 
@@ -364,9 +318,7 @@ KeeperClusterReference 用于标识 ClickHouseCluster 所使用的 KeeperCluster
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="keeperclusterspec">
-  ## KeeperClusterSpec
-</div>
+## KeeperClusterSpec {#keeperclusterspec}
 
 KeeperClusterSpec 定义了 KeeperCluster 的期望状态。
 
@@ -389,9 +341,7 @@ KeeperClusterSpec 定义了 KeeperCluster 的期望状态。
 
 * [KeeperCluster](#keepercluster)
 
-<div id="keeperclusterstatus">
-  ## KeeperClusterStatus
-</div>
+## KeeperClusterStatus {#keeperclusterstatus}
 
 KeeperClusterStatus 定义了 KeeperCluster 的已观测状态。
 
@@ -411,9 +361,7 @@ KeeperClusterStatus 定义了 KeeperCluster 的已观测状态。
 
 * [KeeperCluster](#keepercluster)
 
-<div id="keepernetworkpolicyspec">
-  ## KeeperNetworkPolicySpec
-</div>
+## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
 
 KeeperNetworkPolicySpec 配置由 Keeper 集群管理的 NetworkPolicy。
 托管策略涵盖集群内部流量：
@@ -431,9 +379,7 @@ KeeperNetworkPolicySpec 配置由 Keeper 集群管理的 NetworkPolicy。
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="keepersettings">
-  ## KeeperSettings
-</div>
+## KeeperSettings {#keepersettings}
 
 KeeperSettings 定义 ClickHouse Keeper server 的配置。
 
@@ -447,9 +393,7 @@ KeeperSettings 定义 ClickHouse Keeper server 的配置。
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="loggerconfig">
-  ## LoggerConfig
-</div>
+## LoggerConfig {#loggerconfig}
 
 LoggerConfig 定义服务器日志配置。
 
@@ -466,9 +410,7 @@ LoggerConfig 定义服务器日志配置。
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-<div id="namedtemplatemeta">
-  ## NamedTemplateMeta
-</div>
+## NamedTemplateMeta {#namedtemplatemeta}
 
 NamedTemplateMeta 定义了需要名称的模板对象支持的元数据设置。
 
@@ -482,9 +424,7 @@ NamedTemplateMeta 定义了需要名称的模板对象支持的元数据设置�
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-<div id="networkpolicypolicy">
-  ## NetworkPolicyPolicy
-</div>
+## NetworkPolicyPolicy {#networkpolicypolicy}
 
 NetworkPolicyPolicy 控制 operator 是否为 集群 管理 NetworkPolicy。
 
@@ -498,9 +438,7 @@ NetworkPolicyPolicy 控制 operator 是否为 集群 管理 NetworkPolicy。
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-<div id="pdbpolicy">
-  ## PDBPolicy
-</div>
+## PDBPolicy {#pdbpolicy}
 
 PDBPolicy 用于控制是否创建 PodDisruptionBudget。
 
@@ -514,9 +452,7 @@ PDBPolicy 用于控制是否创建 PodDisruptionBudget。
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-<div id="persistentvolumeclaimtemplate">
-  ## PersistentVolumeClaimTemplate
-</div>
+## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
 
 PersistentVolumeClaimTemplate 是一个按副本划分的具名 PersistentVolumeClaim 模板。
 
@@ -529,9 +465,7 @@ PersistentVolumeClaimTemplate 是一个按副本划分的具名 PersistentVolume
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="poddisruptionbudgetspec">
-  ## PodDisruptionBudgetSpec
-</div>
+## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
 
 PodDisruptionBudgetSpec 用于配置为集群创建的 PDB。
 `MinAvailable` 和 `MaxUnavailable` 只能设置其中之一。
@@ -549,16 +483,14 @@ PodDisruptionBudgetSpec 用于配置为集群创建的 PDB。
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="podtemplatespec">
-  ## PodTemplateSpec
-</div>
+## PodTemplateSpec {#podtemplatespec}
 
 PodTemplateSpec 描述了集群中 Pod (容器组) 的配置覆盖项。
 
 | 字段                              | 类型                                                                                                                                   | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | 必需    | 默认值 |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --- |
-| `terminationGracePeriodSeconds` | 整数                                                                                                                                   | pod (容器组) 优雅终止所需的可选耗时，单位为秒。可在删除请求中减小该值。<br />该值必须为非负整数。值为 0 表示通过<br />kill 信号立即停止 (没有关闭机会) 。<br />如果该值为 nil，则将改用默认宽限期。<br />宽限期是指向 pod (容器组) 中运行的进程发送<br />终止信号后，到使用 kill 信号强制终止这些进程之间的耗时。<br />请将此值设置为长于你的进程预期清理时间。<br />默认值为 30 秒。                                                                                                                                                                                                                                                                                                                              | 否     |     |
-| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) 数组 | TopologySpreadConstraints 描述了一组 pod (容器组) 应如何分布在拓扑<br />域中。调度器会按照这些约束来安排 pod (容器组) 的调度。<br />所有 topologySpreadConstraints 都以逻辑与 (AND) 的方式组合。<br />按 `topologyKey` 与 operator 默认值合并。                                                                                                                                                                                                                                                                                                                                                                               | 否     |     |
+| `terminationGracePeriodSeconds` | 整数                                                                                                                                   | pod (容器组) 优雅终止所需的可选耗时，单位为秒。可在删除请求中减小该值。<br />该值必须为非负整数。值为 0 表示通过<br />kill 信号立即停止 (没有关闭机会) 。<br />如果该值为 nil，则将改用默认宽限期。<br />宽限期是指向 pod (容器组) 中运行的进程发送<br />终止信号后，到使用 kill 信号强制终止这些进程之间的耗时。<br />请将此值设置为长于你的进程预期清理时间。<br />默认值为 30 秒。                                                                                                                                                                                                                                                                                                                              | false |     |
+| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) 数组 | TopologySpreadConstraints 描述了一组 pod (容器组) 应如何分布在拓扑<br />域中。调度器会按照这些约束来安排 pod (容器组) 的调度。<br />所有 topologySpreadConstraints 都以逻辑与 (AND) 的方式组合。<br />按 `topologyKey` 与 operator 默认值合并。                                                                                                                                                                                                                                                                                                                                                                               | false |     |
 | `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) 数组         | ImagePullSecrets 是一个可选的引用列表，引用同一命名空间中的 Secret，用于拉取此 PodSpec 所使用的任意镜像。<br />如果指定了这些 Secret，它们会被传递给各个拉取实现使用。<br />更多信息：https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />按名称与 operator 默认值合并。                                                                                                                                                                                                                                                                                                                         | false |     |
 | `nodeSelector`                  | 对象 (键:string，值:string)                                                                                                               | NodeSelector 是一个选择器，只有满足该选择器的节点，pod (容器组) 才能调度到其上。<br />该选择器必须与节点的标签匹配，pod (容器组) 才能被调度到该节点。<br />更多信息：https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                          | false |     |
 | `affinity`                      | [亲和性](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                         | 如果已指定，则表示 pod (容器组) 的调度约束。<br />会附加到 Operator 的默认设置中：调度项列表将被合并。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | false |     |
@@ -570,17 +502,16 @@ PodTemplateSpec 描述了集群中 Pod (容器组) 的配置覆盖项。
 | `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) 数组                                     | Volumes 定义了 pod (容器组) 中的容器可挂载的卷列表。<br />更多信息：https://kubernetes.io/docs/concepts/storage/volumes<br />按名称与 operator 默认配置合并；用户定义的卷会替换任何同名的 operator 卷。                                                                                                                                                                                                                                                                                                                                                                                                             | false |     |
 | `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                | SecurityContext 包含 pod (容器组) 级别的安全属性以及通用容器设置。<br />非 nil 的 SecurityContext 会完全替换 operator 的默认值；整个<br />结构体均由用户负责。为 nil 时，则保留 operator 的默认值。                                                                                                                                                                                                                                                                                                                                                                                                                       | false |     |
 | `topologyZoneKey`               | String                                                                                                                               | TopologyZoneKey 是节点标签的键。<br />带有此键且值相同的节点会被视为处于同一拓扑域中，<br />例如，对于 &quot;topology.kubernetes.io/zone&quot; 表示同一可用区，对于 &quot;kubernetes.io/hostname&quot; 表示同一节点。<br />设置此项可将承载相同数据的 pod (容器组) 在各个域之间均衡分布 (对于 ClickHouse，是同一分片的副本；对于 Keeper，则是全部副本) ：<br />会应用一个必需的 TopologySpreadConstraint (maxSkew 1，DoNotSchedule) 以及一个首选的 PodAntiAffinity 规则。<br />不同分片的 pod (容器组) 可以共享同一域，因此允许每个域中存在多个 pod (容器组)。<br />当域的数量少于副本数时，多个副本会共享同一域，但仍会保持均衡分布。<br />ClickHouse pod (容器组) 还会额外优先选择承载其所使用的 Keeper pod (容器组) 的域。<br />建议将其设置为 &quot;topology.kubernetes.io/zone&quot;。 | false |     |
-| `nodeHostnameKey`               | String                                                                                                                               | NodeHostnameKey 是节点标记的键。<br />带有此键且其值相同的节点会被视为处于同一节点上。<br />设置此项可强制独占节点占用：对集群中的所有 pod (容器组) 应用必需的 PodAntiAffinity 规则，<br />无论分片如何，每个节点最多只能有一个 pod (容器组)。这要求节点数量至少与 pod (容器组) 数量相同；<br />如果节点数量不足，多出的 pod (容器组) 将保持 Pending。<br />若要在每个节点可容纳多个 pod (容器组) 的同时，<br />将同一分片的副本分散到不同节点上，<br />请改为将 TopologyZoneKey 设置为 &quot;kubernetes.io/hostname&quot;。<br />建议将其设置为 &quot;kubernetes.io/hostname&quot;。                                                                                                                                                            | 否     |     |
-| `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) 数组                               | InitContainers 是在主服务器容器启动前运行的初始化容器列表。<br />按名称与 operator 的默认值合并。<br />同名项会被合并。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | 否     |     |
+| `topologyMinDomains`            | 整数                                                                                                                                   | TopologyMinDomains 用于设置由 TopologyZoneKey 生成的 TopologySpreadConstraint 上的 minDomains 字段。<br />Kubernetes 调度器仅将已存在符合条件节点的可用区计为拓扑域。<br />在使用按需驱动的自动扩缩器 (例如 Karpenter、Cluster Autoscaler) 时，这意味着如果调度时<br />节点仅存在于两个可用区中，则 2/1 的分布即可满足 maxSkew:1/DoNotSchedule 约束，<br />自动扩缩器将永远不会在第三个可用区中预配节点。<br />将 TopologyMinDomains 设置为预期的可用区数量 (通常为 3) ，可告知调度器<br />无论这些可用区中是否都存在节点，都将该数量的可用区视为域，从而强制<br />自动扩缩器在缺失的可用区中预配节点。<br />这要求已设置 TopologyZoneKey。省略 (nil) 则保留调度器<br />仅统计已存在符合条件节点的可用区这一默认行为。                                                                          | false |     |
+| `nodeHostnameKey`               | String                                                                                                                               | NodeHostnameKey 是节点标记的键。<br />带有此键且其值相同的节点会被视为处于同一节点上。<br />设置此项可强制独占节点占用：对集群中的所有 pod (容器组) 应用必需的 PodAntiAffinity 规则，<br />无论分片如何，每个节点最多只能有一个 pod (容器组)。这要求节点数量至少与 pod (容器组) 数量相同；<br />如果节点数量不足，多出的 pod (容器组) 将保持 Pending。<br />若要在每个节点可容纳多个 pod (容器组) 的同时，<br />将同一分片的副本分散到不同节点上，<br />请改为将 TopologyZoneKey 设置为 &quot;kubernetes.io/hostname&quot;。<br />建议将其设置为 &quot;kubernetes.io/hostname&quot;。                                                                                                                                                            | false |     |
+| `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) 数组                               | InitContainers 是在主服务器容器启动前运行的初始化容器列表。<br />按名称与 operator 的默认值合并。<br />同名项会被合并。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false |     |
 
 出现位置：
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="secretkeyselector">
-  ## SecretKeySelector
-</div>
+## SecretKeySelector {#secretkeyselector}
 
 SecretKeySelector 用于选择某个 Secret 中的一个键。
 
@@ -593,9 +524,7 @@ SecretKeySelector 用于选择某个 Secret 中的一个键。
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-<div id="templatemeta">
-  ## TemplateMeta
-</div>
+## TemplateMeta {#templatemeta}
 
 TemplateMeta 定义了模板对象支持的元数据设置。
 
@@ -609,9 +538,7 @@ TemplateMeta 定义了模板对象支持的元数据设置。
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-<div id="versionprobecontainer">
-  ## VersionProbeContainer
-</div>
+## VersionProbeContainer {#versionprobecontainer}
 
 VersionProbeContainer 定义版本探测的容器级覆盖配置。
 字段名和 JSON 标签与 corev1.Container 保持一致，以便 SMP 按名称进行合并。
@@ -626,9 +553,7 @@ VersionProbeContainer 定义版本探测的容器级覆盖配置。
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-<div id="versionprobejobspec">
-  ## VersionProbeJobSpec
-</div>
+## VersionProbeJobSpec {#versionprobejobspec}
 
 VersionProbeJobSpec 定义了版本探测的 Job 级别覆盖配置。
 
@@ -641,9 +566,7 @@ VersionProbeJobSpec 定义了版本探测的 Job 级别覆盖配置。
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-<div id="versionprobepodspec">
-  ## VersionProbePodSpec
-</div>
+## VersionProbePodSpec {#versionprobepodspec}
 
 VersionProbePodSpec 定义了版本探测的 Pod 级覆盖项。
 字段名和 JSON 标签与 corev1.PodSpec 保持一致，以兼容策略性合并补丁。
@@ -659,9 +582,7 @@ VersionProbePodSpec 定义了版本探测的 Pod 级覆盖项。
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-<div id="versionprobepodtemplate">
-  ## VersionProbePodTemplate
-</div>
+## VersionProbePodTemplate {#versionprobepodtemplate}
 
 VersionProbePodTemplate 用于描述对版本探测 pod (容器组) 的覆盖配置。
 
@@ -674,9 +595,7 @@ VersionProbePodTemplate 用于描述对版本探测 pod (容器组) 的覆盖配
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-<div id="versionprobetemplate">
-  ## VersionProbeTemplate
-</div>
+## VersionProbeTemplate {#versionprobetemplate}
 
 VersionProbeTemplate 定义了版本检测 Job 的覆盖配置。
 该结构参照 batchv1.JobTemplateSpec，仅公开受支持的字段。

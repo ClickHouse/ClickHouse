@@ -55,7 +55,7 @@ StorageURLCluster::StorageURLCluster(
 {
     auto headers = configuration_.headers;
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    context->getHTTPHeaderFilter().checkHeaders(headers);
 
     StorageInMemoryMetadata storage_metadata;
 
@@ -109,14 +109,18 @@ StorageURLCluster::StorageURLCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+void StorageURLCluster::updateQueryToSendIfNeeded(
+    ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    const String & target_cluster_name)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
-    if (!expression_list)
+    if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
@@ -130,11 +134,20 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
     /// (`urlCluster`) and prepend the cluster name argument. This ensures that on the shard,
     /// `TableFunctionURLCluster` is used, which correctly handles `distributed_processing`.
+    ASTs & args = expression_list->children;
     if (!endsWith(table_function->name, "Cluster"))
     {
-        ASTs & args = expression_list->children;
-        args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+        args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
         table_function->name += "Cluster";
+    }
+    else
+    {
+        /// The function is already `urlCluster`, so it carries a cluster name the user wrote. Replace it with
+        /// the cluster whose nodes will actually run the query - the two differ when the destination drives
+        /// the fan-out, and those nodes reject a name their own `remote_servers` does not define even though
+        /// they take their share of the work from the initiator rather than dispatching by it.
+        if (!target_cluster_name.empty())
+            args.front() = make_intrusive<ASTLiteral>(target_cluster_name);
     }
 }
 

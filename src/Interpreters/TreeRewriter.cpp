@@ -20,7 +20,6 @@
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -647,7 +646,7 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
 
 bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, ContextPtr context)
 {
-    if (!analyzed_join.isHashFamilyEnabled())
+    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
         return false;
 
     if (analyzed_join.strictness() == JoinStrictness::Asof)
@@ -771,9 +770,8 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
             data.asofToJoinKeys();
         }
 
-        if (!analyzed_join.oneDisjunct() && !analyzed_join.isHashFamilyEnabled() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::AUTO))
-            throw DB::Exception(
-                ErrorCodes::NOT_IMPLEMENTED, "Only `hash` and `parallel_hash` joins support multiple ORs for keys in JOIN ON section");
+        if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
     }
 }
 
@@ -1136,11 +1134,14 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto query_context = CurrentThread::tryGetQueryContext();
             auto access = query_context ? query_context->getAccess() : nullptr;
             const auto & storage_id = storage->getStorageID();
+            const NameSet chain_granted = access
+                ? alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, source_columns.getNames())
+                : NameSet{};
             for (const auto & column : source_columns)
             {
                 if (access
                     && access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                    && alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name))
+                    && chain_granted.contains(column.name))
                     accessible_columns.push_back(column);
             }
         }
@@ -1534,10 +1535,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
-    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
-
-     /// Only apply AST optimization for initial queries.
+    /// Only apply AST optimization for initial queries.
     const bool ast_optimizations_allowed =
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;

@@ -14,6 +14,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
@@ -27,6 +28,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/CancellationChecker.h>
@@ -285,6 +287,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "aiEmbed",
     "aiSimilarity",
     "naiveBayesClassifier",
+    "predictXGBoost",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
     "showCertificate",
@@ -563,6 +566,7 @@ ContextMutablePtr makeContext()
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_introspection_functions", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
+    context->setSetting("enable_ipcrypt", 1);
     return context;
 }
 
@@ -1093,9 +1097,8 @@ bool isStringEnumComparisonQuirk(const String & function_name, const ColumnsWith
             has_string |= isStringOrFixedString(type);
             found_enum |= isEnum(type);
         };
-        apply(*arg.type);
         /// The string and enum may be inside a tuple, nullable, low-cardinality, maybe other things.
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
         found_const_string |= has_string && arg.column->isConst();
     }
     return found_const_string && found_enum;
@@ -1110,8 +1113,7 @@ bool isAnyArgumentNullable(const ColumnsWithTypeAndName & args)
         {
             found_nullable |= type.isNullable();
         };
-        apply(*arg.type);
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
     }
     return found_nullable;
 }
@@ -1132,8 +1134,7 @@ bool typeCanHaveNanOrIncomparableFields(const DataTypePtr & type)
         found |= isFloat(t) || isVariant(t) || isDynamic(t) || isObject(t) || isIPv4(t) || isIPv6(t)
             || isDecimal(t) || isDateTime64(t);
     };
-    check(*type);
-    type->forEachChild(check);
+    forEachInTypeTree(*type, check);
     return found;
 }
 
@@ -1146,10 +1147,19 @@ bool isAnyArgumentDynamicallyTyped(const ColumnsWithTypeAndName & args)
         {
             found |= isVariant(type) || isDynamic(type) || isObject(type);
         };
-        apply(*arg.type);
-        arg.type->forEachChild(apply);
+        forEachInTypeTree(*arg.type, apply);
     }
     return found;
+}
+
+/// `IColumnDummy::isDefaultAt` throws. A dummy (`Nothing`) column holds no values, so its rows count as default.
+bool isDefaultOrDummyAt(const IColumn & column, size_t n)
+{
+    if (column.isDummy())
+        return true;
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+        return std::ranges::all_of(tuple->getColumns(), [n](const auto & element) { return isDefaultOrDummyAt(*element, n); });
+    return column.isDefaultAt(n);
 }
 
 }
@@ -1717,7 +1727,7 @@ struct FunctionsStressTestThread
                         /// Note: this is incorrect (?) for nullable enums, where the IColumn's
                         /// "default" value (0) is different from the IDataType's "default" value
                         /// (first enumerand) and may not be a valid enum value.
-                        if (null_map[i] && !nested.isDefaultAt(i))
+                        if (null_map[i] && !isDefaultOrDummyAt(nested, i))
                         {
                             if (stats)
                                 stats->add(S_NONDEFAULT_NULL, 1);
