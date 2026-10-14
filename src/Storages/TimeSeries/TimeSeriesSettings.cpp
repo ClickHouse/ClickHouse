@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 
 #include <unordered_set>
 
@@ -114,6 +115,8 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 {
     return TimeSeriesSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(TimeSeriesSettings)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {

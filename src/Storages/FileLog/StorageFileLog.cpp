@@ -1071,6 +1071,11 @@ void registerStorageFileLog(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<FileLogSettings>,
+            /// A table that does not state these takes the server's `max_insert_block_size`, `max_block_size` and
+            /// `stream_poll_timeout_ms`.
+            .is_inherited_setting_fn = [](std::string_view name)
+            { return name == "max_block_size" || name == "poll_max_batch_size" || name == "poll_timeout_ms"; },
         },
         Documentation{
             .description = R"DOCS_MD(

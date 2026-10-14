@@ -1623,6 +1623,15 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<RabbitMQSettings>,
+            /// A table that leaves the credentials empty takes them from the `rabbitmq` section of the server
+            /// configuration; one that does not state the others takes the server's `max_insert_block_size` and
+            /// `stream_flush_interval_ms`.
+            .is_inherited_setting_fn = [](std::string_view name)
+            {
+                return name == "rabbitmq_username" || name == "rabbitmq_password" || name == "rabbitmq_max_block_size"
+                    || name == "rabbitmq_flush_interval_ms";
+            },
         },
         Documentation{
             .description = R"DOCS_MD(
