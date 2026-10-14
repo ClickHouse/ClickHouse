@@ -113,6 +113,26 @@ def test_federate_label_name_with_colon():
     )
 
 
+# At one timestamp a real value beats a NaN or a stale marker, then the greatest value wins, like in the instant query.
+def test_federate_duplicate_timestamps():
+    stale = "reinterpretAsFloat64(toUInt64(9218868437227405314))"
+    t = f"fromUnixTimestamp64Milli({ms(25)})"
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, samples) VALUES "
+        f"('dup_max', {{'k': 'v'}}, [({t}, 2), ({t}, 1)]), "
+        f"('dup_nan', {{'k': 'v'}}, [({t}, nan), ({t}, -1)]), "
+        f"('dup_stale', {{'k': 'v'}}, [({t}, {stale}), ({t}, 5)])"
+    )
+    assert federate({"match[]": '{__name__=~"dup_.*"}'}).text == (
+        "# TYPE dup_max untyped\n"
+        f'dup_max{{k="v",instance=""}} 2 {ms(25)}\n'
+        "# TYPE dup_nan untyped\n"
+        f'dup_nan{{k="v",instance=""}} -1 {ms(25)}\n'
+        "# TYPE dup_stale untyped\n"
+        f'dup_stale{{k="v",instance=""}} 5 {ms(25)}\n'
+    )
+
+
 def test_federate_without_match_is_empty():
     assert federate({}).text == ""
 
