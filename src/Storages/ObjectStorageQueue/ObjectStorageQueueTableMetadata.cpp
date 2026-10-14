@@ -281,6 +281,12 @@ void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableM
 
 void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const
 {
+    if (failed_files_ttl_sec_changed && from_zk.failed_files_ttl_sec_inherited)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper has `failed_files_ttl_sec` inherited from `tracked_file_ttl_sec`, "
+            "but it is set explicitly in the local table. Set it with ALTER TABLE ... MODIFY SETTING on the existing table instead");
+
     if (after_processing != from_zk.after_processing)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,

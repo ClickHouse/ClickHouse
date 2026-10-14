@@ -1503,6 +1503,140 @@ def test_explicit_failed_files_ttl_ignores_tracked_ttl_alter(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def make_legacy_inherited_table(started_cluster, node, zk, table_name, keeper_path, files_path, cleanup_interval_ms):
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_file_ttl_sec": 3600,
+            "tracked_files_limit": 0,
+            "cleanup_interval_min_ms": cleanup_interval_ms,
+            "cleanup_interval_max_ms": cleanup_interval_ms,
+            "s3queue_loading_retries": 0,
+        },
+    )
+    metadata_path = f"{keeper_path}/metadata"
+    raw, _ = zk.get(metadata_path)
+    metadata = json.loads(raw.decode())
+    assert "failed_files_ttl_sec" in metadata, metadata
+    del metadata["failed_files_ttl_sec"]
+    metadata.pop("failed_files_ttl_sec_inherited", None)
+    zk.set(metadata_path, json.dumps(metadata).encode())
+    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"ATTACH TABLE {table_name}")
+
+
+def test_explicit_failed_files_ttl_rejected_on_inherited_metadata(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    suffix = uuid.uuid4().hex[:8]
+    table_name = f"test_inh_reject_{suffix}"
+    other_table_name = f"{table_name}_other"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    make_legacy_inherited_table(
+        started_cluster, node, zk, table_name, keeper_path, files_path, 2000
+    )
+
+    error = create_table(
+        started_cluster,
+        node,
+        other_table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_file_ttl_sec": 3600,
+            "failed_files_ttl_sec": 3600,
+            "tracked_files_limit": 0,
+            "s3queue_loading_retries": 0,
+        },
+        expect_error=True,
+    )
+    assert error and "METADATA_MISMATCH" in error, error
+
+    raw, _ = zk.get(f"{keeper_path}/metadata")
+    metadata = json.loads(raw.decode())
+    assert metadata.get("failed_files_ttl_sec_inherited") != 0, metadata
+
+    node.query(f"DROP TABLE IF EXISTS {other_table_name}")
+    node.query(f"DROP TABLE {table_name}")
+
+
+def test_inherited_failed_files_ttl_opt_out_by_same_value_alter(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_inh_optout_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_interval_ms = 2000
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    make_legacy_inherited_table(
+        started_cluster, node, zk, table_name, keeper_path, files_path, cleanup_interval_ms
+    )
+
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING failed_files_ttl_sec=3600")
+
+    def read_metadata():
+        raw, _ = zk.get(f"{keeper_path}/metadata")
+        return json.loads(raw.decode())
+
+    metadata = read_metadata()
+    assert metadata.get("failed_files_ttl_sec_inherited") == 0, metadata
+    assert metadata.get("failed_files_ttl_sec") == 3600, metadata
+
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_file.csv", b"invalid,data,here\n"
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def terminal_failed_znodes():
+        result = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        names = result.split("\n") if result else []
+        return {name for name in names if not name.endswith(".retriable")}
+
+    terminal_ready = False
+    for _ in range(60):
+        if terminal_failed_znodes():
+            terminal_ready = True
+            break
+        time.sleep(1)
+    assert terminal_ready, "expected the invalid file to reach terminal failure"
+
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING tracked_file_ttl_sec=3")
+    time.sleep(3 + 4 * cleanup_interval_ms / 1000)
+    assert terminal_failed_znodes(), (
+        "the terminal failed znode expired after a same-value ALTER of failed_files_ttl_sec - "
+        "the opt-out from inheriting tracked_file_ttl_sec did not take effect"
+    )
+
+    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"ATTACH TABLE {table_name}")
+
+    metadata = read_metadata()
+    assert metadata.get("failed_files_ttl_sec_inherited") == 0, metadata
+
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING tracked_file_ttl_sec=2")
+    time.sleep(2 + 4 * cleanup_interval_ms / 1000)
+    assert terminal_failed_znodes(), (
+        "the terminal failed znode expired after reattach - the opt-out was not persisted"
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
 def test_wait_for_path_reads_loading_retries_live(started_cluster):
     """`waitForPathToBeProcessed()` must react to `ALTER TABLE ... MODIFY SETTING s3queue_loading_retries`
     made while a `SYSTEM FLUSH OBJECT STORAGE QUEUE ... PATH` wait is already in progress, not to a
