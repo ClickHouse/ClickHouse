@@ -32,10 +32,12 @@ check_if_detached "SELECT * FROM t_reattach_1 JOIN t_reattach_2 USING a" "t_reat
 
 # `IN table` / `GLOBAL IN table` keep the right-hand-side table as a bare identifier outside the FROM/JOIN
 # table expressions, but it is still a real table the query reads, so both the FROM table and the IN table
-# must be detached. (A subquery right-hand side is covered by the CTE/subquery cases below.)
+# must be detached. (A subquery right-hand side is covered by the CTE/subquery cases below.) An unqualified
+# right-hand side may also be bound to a column or a lambda argument, which cannot be told apart from the
+# AST, so it is never detached; a qualified one can only name a table.
 check_if_detached "SELECT * FROM t_reattach_1 WHERE a IN t_reattach_2" "t_reattach_1"
-check_if_detached "SELECT * FROM t_reattach_1 WHERE a IN t_reattach_2" "t_reattach_2"
-check_if_detached "SELECT * FROM t_reattach_1 WHERE a GLOBAL IN t_reattach_2" "t_reattach_2"
+check_if_detached "SELECT * FROM t_reattach_1 WHERE a IN ${CLICKHOUSE_DATABASE}.t_reattach_2" "t_reattach_2"
+check_if_not_detached "SELECT * FROM t_reattach_1 WHERE a GLOBAL IN t_reattach_2" "t_reattach_2"
 
 check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reattach_1"
 check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reattach_2"
@@ -149,11 +151,11 @@ check_if_not_detached "WITH (1, 2) AS t_reattach_cte SELECT 1 IN t_reattach_cte"
 check_if_not_detached "SELECT (1, 2) AS t_reattach_cte, 1 IN t_reattach_cte" "t_reattach_cte"
 
 # ... but only an alias the `IN` can actually see. Alias visibility is scoped: an alias declared in a CHILD
-# scope is invisible to the enclosing query, so it must NOT hide the real table there. Both a sibling
-# subquery in the same clause and a subquery nested under the `IN` argument itself declare the name out of
-# reach of the outer reference, which therefore still reads the table and must detach it.
-check_if_detached "SELECT 1 WHERE 1 IN t_reattach_cte AND 1 = (SELECT 1 AS t_reattach_cte)" "t_reattach_cte"
-check_if_detached "SELECT 1 WHERE (SELECT 1 AS t_reattach_cte) IN t_reattach_cte" "t_reattach_cte"
+# scope is invisible to the enclosing query, so the outer reference still reads the table. That decides
+# only whether the table takes part in the preflights (see `05100_reattach_tables_create`): an unqualified
+# `IN` right-hand side is never detached.
+check_if_not_detached "SELECT 1 WHERE 1 IN t_reattach_cte AND 1 = (SELECT 1 AS t_reattach_cte)" "t_reattach_cte"
+check_if_not_detached "SELECT 1 WHERE (SELECT 1 AS t_reattach_cte) IN t_reattach_cte" "t_reattach_cte"
 
 # A recursive CTE's NON-RECURSIVE seed term (the first UNION member) is resolved before the recursive temporary
 # table exists, so a same-named real table read by the seed term IS read by the query and must be detached.
@@ -164,10 +166,11 @@ check_if_detached "WITH RECURSIVE t_reattach_cte AS (SELECT a FROM t_reattach_ct
 # query, so a nested select running with it reads the real table even though the enclosing query declares a
 # CTE or an alias of the same name. The setting counts whether it comes from the nested select's own
 # `SETTINGS` or is inherited from an enclosing one; the first case is the control with the default value.
+# For the alias on the right of `IN` that again only concerns the preflights.
 check_if_not_detached "WITH t_reattach_cte AS (SELECT 1) SELECT (SELECT count() FROM t_reattach_cte)" "t_reattach_cte"
 check_if_detached "WITH t_reattach_cte AS (SELECT 1) SELECT (SELECT count() FROM t_reattach_cte SETTINGS enable_global_with_statement = 0)" "t_reattach_cte"
 check_if_detached "WITH t_reattach_cte AS (SELECT 1) SELECT * FROM (SELECT count() FROM t_reattach_cte) SETTINGS enable_global_with_statement = 0" "t_reattach_cte"
-check_if_detached "WITH (1, 2) AS t_reattach_cte SELECT (SELECT 1 IN t_reattach_cte SETTINGS enable_global_with_statement = 0)" "t_reattach_cte"
+check_if_not_detached "WITH (1, 2) AS t_reattach_cte SELECT (SELECT 1 IN t_reattach_cte SETTINGS enable_global_with_statement = 0)" "t_reattach_cte"
 
 # ... except for the `WITH` aliases of a query running with `enable_scopes_for_with_statement = 0`, which
 # the analyzer copies into every nested scope, so the alias still hides the table there.

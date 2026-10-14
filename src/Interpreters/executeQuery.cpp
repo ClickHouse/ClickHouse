@@ -225,6 +225,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_materialized_view_with_bad_select;
+    extern const SettingsUInt64 max_temporary_tables;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool create_index_ignore_unique;
     extern const SettingsDefaultTableEngine default_table_engine;
@@ -1377,6 +1378,10 @@ struct CollectTablesData
         /// The object kind the reference demands (recorded by the collector from the AST shape); the
         /// reattach loop skips the table when its resolved storage is not of this kind.
         ExpectedObjectKind expected_kind = ExpectedObjectKind::Any;
+        /// Whether the reference certainly names this table, so that the reattach loop may detach it.
+        /// When it does not — the name may be bound to something else — the table still takes part in the
+        /// preflights, which is conservative: it can only make them skip randomization.
+        bool reattach = true;
     };
 
     explicit CollectTablesData(ContextPtr context_)
@@ -1409,7 +1414,7 @@ struct CollectTablesData
     /// aliases of the enclosing scopes.
     std::unordered_set<String> global_with_aliases;
 
-    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
+    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any, bool reattach = true)
     {
         if (table.empty())
             return;
@@ -1447,7 +1452,7 @@ struct CollectTablesData
         if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
             return;
 
-        tables.emplace_back(CollectedTable{std::move(resolved), required_access, existence_required, expected_kind});
+        tables.emplace_back(CollectedTable{std::move(resolved), required_access, existence_required, expected_kind, reattach});
     }
 };
 
@@ -1860,6 +1865,40 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     /// `CREATE DATABASE` has no destination table to collide with.
     if (!create.table || create.replace_table || create.replace_view || create.create_or_replace)
         return false;
+
+    /// `InterpreterCreateQuery::doCreateTable` enforces the destination's table limits — `max_temporary_tables`
+    /// for a temporary table (`checkTemporaryTablesLimit`), the database's `max_tables` otherwise
+    /// (`DatabaseOnDisk::checkTablesLimit`) — before `fillTableIfNeeded` reads a populating `SELECT`. With an
+    /// explicit structure the `SELECT` is not analyzed before that either, so a destination over its limit
+    /// stops the statement before its sources. Without one the `SELECT` is analyzed first, but the statement
+    /// fails all the same, so suppressing the hook for it is merely conservative.
+    if (create.isTemporary())
+    {
+        const UInt64 max_temporary_tables = context->getSettingsRef()[Setting::max_temporary_tables];
+        if (max_temporary_tables && context->hasSessionContext())
+        {
+            const Tables tables = context->getSessionContext()->getExternalTables();
+            if (!tables.contains(create.getTable()) && tables.size() >= max_temporary_tables)
+                return true;
+        }
+    }
+    else if (const auto database = DatabaseCatalog::instance().tryGetDatabase(destination_database);
+        database && database->supportsDetachingTables())
+    {
+        if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+        {
+            /// A materialized view with an inner table creates that table too; the `ATTACH` of one does not.
+            const size_t tables_to_add = (!create.attach && create.is_materialized_view_with_inner_table()) ? 2 : 1;
+            try
+            {
+                database_on_disk->checkTablesLimit(tables_to_add);
+            }
+            catch (const Exception &)
+            {
+                return true;
+            }
+        }
+    }
 
     if (create.isTemporary())
         return static_cast<bool>(context->tryResolveStorageID(StorageID("", create.getTable()), Context::ResolveExternal));
@@ -3070,12 +3109,22 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// rule for `active_ctes` above — the alias wins here, so consult `active_aliases` as well. Only the
         /// aliases of this scope and of the scopes enclosing it count: an alias declared in a nested select
         /// is invisible here, so it must not hide a real table (see `collectScopeAliasNames`).
+        ///
+        /// An expression alias is not the only binding that wins over the table, though: the analyzer tries
+        /// to resolve the unqualified right-hand side as an expression first, so a column of a source table
+        /// (`SELECT 1 IN rhs FROM src` with an array column `rhs`) or a lambda argument
+        /// (`arrayMap(rhs -> 1 IN rhs, ...)`) takes it as well. Those bindings cannot be told apart from the
+        /// AST, so an unqualified right-hand side is never reattached: it still takes part in the preflights,
+        /// which only errs toward skipping randomization. A qualified `db.rhs` can only name a table.
         if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
         {
             if (const auto * id = function->arguments->children[1]->as<ASTIdentifier>())
                 if (auto table_id = id->createTable())
                     if (!table_id->getDatabaseName().empty() || !active_aliases.contains(table_id->shortName()))
-                        data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
+                        data.addTableIfNotEmpty(
+                            table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT,
+                            /* existence_required */ true, ExpectedObjectKind::Any,
+                            /* reattach */ !table_id->getDatabaseName().empty());
         }
     }
 
@@ -3083,6 +3132,28 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         collectTablesInQuery(child, data, active_ctes, active_aliases);
 }
 
+}
+
+static bool containsSQLUserDefinedFunctionCall(const IAST & ast)
+{
+    const auto & factory = UserDefinedSQLFunctionFactory::instance();
+    if (factory.empty())
+        return false;
+
+    std::vector<const IAST *> stack{&ast};
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * function = node->as<ASTFunction>(); function && factory.has(function->name))
+            return true;
+
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+
+    return false;
 }
 
 static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
@@ -3093,6 +3164,13 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// interpreter does. With `zookeeper_enforce_component_name` on, an unnamed request is a `LOGICAL_ERROR`,
     /// so name the whole hook here; the nested guards the internal statements set restore this one on exit.
     auto component_guard = Coordination::setCurrentComponent("reattachTablesUsedInQuery");
+
+    /// A SQL UDF call is expanded into the body of the function by the interpreter, and the tables that body
+    /// reads never appear in the AST walked below, so they would escape both the existence and the access
+    /// preflight: a query that fails on a table read only by the body would still detach its other tables.
+    /// Skip the hook for such statements altogether.
+    if (containsSQLUserDefinedFunctionCall(*query))
+        return;
 
     CollectTablesData data(context);
     /// The aliases of the outermost scope — the one a statement that is not a `SELECT` carries its
@@ -3118,6 +3196,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             {
                 deduped[it->second].required_access |= table.required_access;
                 deduped[it->second].existence_required |= table.existence_required;
+                deduped[it->second].reattach |= table.reattach;
                 /// References demanding different kinds can only coexist when at least one of them uses
                 /// the table as a plain table, which legitimizes reattaching it — drop the constraint.
                 if (deduped[it->second].expected_kind != table.expected_kind)
@@ -3183,6 +3262,9 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         if (const auto process_list_element = context->getProcessListElementSafe();
             process_list_element && process_list_element->isKilled())
             return;
+
+        if (!collected.reattach)
+            continue;
 
         const auto & table_id = collected.id;
         if (table_id.getDatabaseName() == "system")
@@ -3537,7 +3619,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                     internal_thread_group->attachInternalTextLogsQueue(logs_queue, outer_shared_data.client_logs_level);
             }
             ThreadGroupSwitcher thread_group_switcher(internal_thread_group, getThreadName(), /*allow_existing_group=*/ true);
-            auto io = executeQuery(internal_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
+            auto io = executeQuery(internal_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true, .ignore_quota = true}).second;
             executeTrivialBlockIO(io, internal_context);
         };
 
@@ -5619,7 +5701,7 @@ static BlockIO executeQueryImpl(
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
                     interpreter_with_analyzer->getQueryPlan();
 
-                if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
+                if (!(interpreter && interpreter->ignoreQuota()) && !flags.ignore_quota && !quota_checked)
                 {
                     quota = context->getQuota();
                     if (quota)
