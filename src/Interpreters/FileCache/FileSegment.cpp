@@ -1406,16 +1406,13 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
 FileSegmentEfficiencyInfo FileSegment::getEfficiencyInfo(const FileSegmentGuard::Lock &) const
 {
     const size_t downloaded = downloaded_size;
-    if (cache)
-    {
-        const auto current_window = cache->getEfficiency().windowNow();
-        std::lock_guard lock(efficiency_mutex);
-        if (efficiency)
-            return efficiency->getInfo(current_window, range().size(), downloaded);
-    }
     FileSegmentEfficiencyInfo info;
     info.idle_bytes = downloaded;
-    return info;
+    if (!cache)
+        return info;
+    const auto current_window = cache->getEfficiency().windowNow();
+    std::lock_guard lock(efficiency_mutex);
+    return efficiency ? efficiency->getInfo(current_window, range().size(), downloaded) : info;
 }
 
 FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
