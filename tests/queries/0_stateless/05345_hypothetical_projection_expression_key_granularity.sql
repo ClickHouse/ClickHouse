@@ -36,6 +36,19 @@ SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM t_real_lc WHERE toLowCardinality(intDiv(b, 10)) < 5)
 WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
 
+-- a LowCardinality column inside an array has a dictionary too
+DROP HYPOTHETICAL PROJECTION p_lc ON t_est;
+CREATE TABLE t_real_arr AS t_est;
+ALTER TABLE t_real_arr ADD PROJECTION p_arr (SELECT a, b, v ORDER BY [toLowCardinality(intDiv(b, 10))]);
+INSERT INTO t_real_arr SELECT number, number % 100, number FROM numbers(3000);
+CREATE HYPOTHETICAL PROJECTION p_arr ON t_est (SELECT a, b, v ORDER BY [toLowCardinality(intDiv(b, 10))]);
+SELECT '-- a key with LowCardinality inside an array';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE [toLowCardinality(intDiv(b, 10))] < [7])
+WHERE match(line, '^(Baseline|With |marks:|verdict:)');
+SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM t_real_arr WHERE [toLowCardinality(intDiv(b, 10))] < [7])
+WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
+
 CREATE TABLE s_est (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
         merge_max_block_size = 8192, use_const_adaptive_granularity = 0;
@@ -90,12 +103,66 @@ SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain)
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM m_real WHERE toLowCardinality(b) < 21600 SETTINGS force_optimize_projection = 1)
 WHERE match(trim(explain), '^Granules:');
 
+-- a merge gives the writer blocks with a new dictionary when it mixes the rows of its sources
+-- the part has 300 values and a two-byte index, a block of the merge has at most 120 values and a one-byte index
+CREATE TABLE g_est (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 1000, index_granularity_bytes = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 1024, use_const_adaptive_granularity = 0, enable_vertical_merge_algorithm = 0,
+        merge_use_batch_sorting_queue = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
+CREATE TABLE g_real AS g_est;
+ALTER TABLE g_real ADD PROJECTION p_g (SELECT a, b, c ORDER BY b);
+INSERT INTO g_est SELECT number, number % 100, repeat(toString(intDiv(number % 100, 20) * 100 + intHash32(number) % 60), 100) FROM numbers(4000);
+INSERT INTO g_est SELECT number, number % 100, repeat(toString(intDiv(number % 100, 20) * 100 + intHash32(number) % 60), 100) FROM numbers(4000, 4000);
+INSERT INTO g_real SELECT number, number % 100, repeat(toString(intDiv(number % 100, 20) * 100 + intHash32(number) % 60), 100) FROM numbers(4000);
+INSERT INTO g_real SELECT number, number % 100, repeat(toString(intDiv(number % 100, 20) * 100 + intHash32(number) % 60), 100) FROM numbers(4000, 4000);
+OPTIMIZE TABLE g_est FINAL;
+OPTIMIZE TABLE g_real FINAL;
+CREATE HYPOTHETICAL PROJECTION p_g ON g_est (SELECT a, b, c ORDER BY b);
+SELECT '-- a merged part, the merge mixes the rows of its sources';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 0 SELECT a, b, c FROM g_est WHERE b < 60)
+WHERE match(line, '^(Baseline|With |marks:|marks_span:|verdict:)');
+SELECT if(explain LIKE '%ReadFromMergeTree (p_g)%', 'real: from the projection', 'real: from the base table')
+FROM (EXPLAIN SELECT a, b, c FROM g_real WHERE b < 60) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM g_real WHERE b < 60 SETTINGS force_optimize_projection = 1)
+WHERE match(trim(explain), '^Granules:');
+
+-- a merge that takes whole blocks from one source keeps the dictionary of the source, and the writer counts only the index
+CREATE TABLE h_est (a UInt64, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY b
+    SETTINGS index_granularity = 1000, index_granularity_bytes = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 1024, use_const_adaptive_granularity = 0, enable_vertical_merge_algorithm = 0,
+        merge_use_batch_sorting_queue = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
+CREATE TABLE h_real AS h_est;
+ALTER TABLE h_real ADD PROJECTION p_h (SELECT a, b, c ORDER BY a);
+INSERT INTO h_est SELECT number, number % 100, repeat(toString(intDiv(number % 100, 20) * 100 + intHash32(number) % 60), 100) FROM numbers(4000);
+INSERT INTO h_est SELECT number, number % 100, repeat(toString(intDiv(number % 100, 20) * 100 + intHash32(number) % 60), 100) FROM numbers(4000, 4000);
+INSERT INTO h_real SELECT number, number % 100, repeat(toString(intDiv(number % 100, 20) * 100 + intHash32(number) % 60), 100) FROM numbers(4000);
+INSERT INTO h_real SELECT number, number % 100, repeat(toString(intDiv(number % 100, 20) * 100 + intHash32(number) % 60), 100) FROM numbers(4000, 4000);
+OPTIMIZE TABLE h_est FINAL;
+OPTIMIZE TABLE h_real FINAL;
+CREATE HYPOTHETICAL PROJECTION p_h ON h_est (SELECT a, b, c ORDER BY a);
+SELECT '-- a merged part, the merge does not mix the rows of its sources';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 0 SELECT a, b, c FROM h_est WHERE a < 4800)
+WHERE match(line, '^(Baseline|With |marks:|marks_span:|verdict:)');
+SELECT if(explain LIKE '%ReadFromMergeTree (p_h)%', 'real: from the projection', 'real: from the base table')
+FROM (EXPLAIN SELECT a, b, c FROM h_real WHERE a < 4800) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, c FROM h_real WHERE a < 4800 SETTINGS force_optimize_projection = 1)
+WHERE match(trim(explain), '^Granules:');
+
 DROP TABLE t_est;
 DROP TABLE t_real;
 DROP TABLE t_real_lc;
+DROP TABLE t_real_arr;
 DROP TABLE s_est;
 DROP TABLE s_real;
 DROP TABLE t_est_many;
 DROP TABLE t_real_many;
 DROP TABLE m_est;
 DROP TABLE m_real;
+DROP TABLE g_est;
+DROP TABLE g_real;
+DROP TABLE h_est;
+DROP TABLE h_real;

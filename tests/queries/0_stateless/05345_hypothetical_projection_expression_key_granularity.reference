@@ -14,6 +14,14 @@ marks: 37
 verdict: chosen
 real: ReadFromMergeTree (p_lc)
 real: Granules: 37/74
+-- a key with LowCardinality inside an array
+Baseline (after PK + partition + existing indexes):
+marks: 72
+With p_arr (normal projection, hypothetical):
+marks: 68
+verdict: chosen
+real: ReadFromMergeTree (p_arr)
+real: Granules: 68/97
 -- a stored LowCardinality(String) column
 Baseline (after PK + partition + existing indexes):
 marks: 50
@@ -40,3 +48,21 @@ verdict: not chosen
 verdict: too close to call
 real: from the base table
 real with force_optimize_projection: Granules: 90/125
+-- a merged part, the merge mixes the rows of its sources
+Baseline (after PK + partition + existing indexes):
+marks: 18
+With p_g (normal projection, hypothetical):
+marks: 23
+marks_span: 11 to 34
+verdict: too close to call
+real: from the base table
+real with force_optimize_projection: Granules: 23/38
+-- a merged part, the merge does not mix the rows of its sources
+Baseline (after PK + partition + existing indexes):
+marks: 38
+With p_h (normal projection, hypothetical):
+marks: 57
+marks_span: 11 to 114
+verdict: too close to call
+real: from the projection
+real with force_optimize_projection: Granules: 11/18

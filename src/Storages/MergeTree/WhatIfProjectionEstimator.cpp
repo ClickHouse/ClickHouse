@@ -8,9 +8,9 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
@@ -87,13 +87,35 @@ struct ProjectionPartData
     size_t format_bytes = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
-    /// the `LowCardinality` dictionaries, one for the part as a fresh part has
-    size_t shared_bytes = 0;
+    /// the columns with a `LowCardinality` dictionary in read order, the writer sizes them for each block
+    ColumnsWithTypeAndName dictionary_columns;
+    /// those the part stores, a merge or an insert can give them to the writer with the dictionary of their source
+    NameSet stored_dictionaries;
     /// some stored column has values of different sizes, or a dictionary that a sample does not show
     bool variable_width = false;
 };
 
-/// per-row version of `getBlockSizeForGranularity`
+/// a dictionary column has no size for each row, its size depends on the rows of the block
+bool hasDictionary(const ColumnWithTypeAndName & column)
+{
+    return !recursiveRemoveLowCardinality(column.type)->equals(*column.type);
+}
+
+/// the bytes of the dictionaries in a column, at any depth
+size_t dictionaryBytes(const IColumn & column)
+{
+    size_t bytes = 0;
+    auto add = [&](const IColumn & subcolumn)
+    {
+        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&subcolumn))
+            bytes += low_cardinality->getDictionary().byteSize();
+    };
+    add(column);
+    column.forEachSubcolumnRecursively(add);
+    return bytes;
+}
+
+/// per-row version of `getBlockSizeForGranularity`, without the dictionary columns
 void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, const Block & block)
 {
     const size_t rows = block.rows();
@@ -105,9 +127,8 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
     {
         if (!elem.column)
             continue;
-        /// the scan sizes the index of a `LowCardinality` row for the whole part at its end
         /// a sample does not show the dictionary of the rows it does not read, as with values of different sizes
-        if (elem.column->lowCardinality())
+        if (hasDictionary(elem))
         {
             variable_width = true;
             continue;
@@ -227,8 +248,8 @@ bool buildProjectionPart(
     PullingPipelineExecutor executor(pipeline);
 
     MutableColumns key_columns;
-    /// the `LowCardinality` columns of the whole part, as the writer of a fresh part gets them
-    std::unordered_map<String, MutableColumnPtr> low_cardinality;
+    /// the dictionary columns of the whole part, in read order
+    std::map<String, std::pair<DataTypePtr, MutableColumnPtr>> dictionary_columns;
     Block block;
     while (executor.pull(block))
     {
@@ -254,6 +275,9 @@ bool buildProjectionPart(
 
         /// the writer chooses the part format before the key expression and sizes the granules after it
         out.format_bytes += block.bytes();
+        for (const auto & elem : block)
+            if (hasDictionary(elem))
+                out.stored_dictionaries.insert(elem.name);
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
             if (!block.has(required))
@@ -265,11 +289,14 @@ bool buildProjectionPart(
             appendRowSizes(out.row_bytes, out.variable_width, block);
             for (const auto & elem : block)
             {
-                if (!elem.column->lowCardinality())
+                if (!hasDictionary(elem))
                     continue;
-                auto & whole = low_cardinality[elem.name];
+                auto & [type, whole] = dictionary_columns[elem.name];
                 if (!whole)
-                    whole = elem.column->cloneEmpty();
+                {
+                    type = elem.type;
+                    whole = elem.type->createColumn();
+                }
                 whole->insertRangeFrom(*elem.column, 0, elem.column->size());
             }
         }
@@ -288,13 +315,8 @@ bool buildProjectionPart(
     if (key_columns.empty() || key_columns[0]->empty())
         return true;
 
-    for (const auto & [_, column] : low_cardinality)
-    {
-        const auto & whole = assert_cast<const ColumnLowCardinality &>(*column);
-        for (auto & row_size : out.row_bytes)
-            row_size += static_cast<UInt32>(whole.getSizeOfIndexType());
-        out.shared_bytes += whole.getDictionary().byteSize();
-    }
+    for (auto & [name, column] : dictionary_columns)
+        out.dictionary_columns.emplace_back(std::move(column.second), column.first, name);
 
     out.rows = key_columns[0]->size();
     /// projection indexes also store the parent offset
@@ -318,6 +340,8 @@ struct PartFromSample
     size_t rows;
     /// bytes of the part rows before the first one each sample row stands for
     std::vector<UInt64> bytes_before_sample_row;
+    /// the dictionary columns of the part as one block, spread over the rows to cut blocks by bytes
+    UInt64 dictionary_bytes = 0;
 
     PartFromSample(const ProjectionPartData & sample_, size_t rows_)
         : sample(sample_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
@@ -327,6 +351,7 @@ struct PartFromSample
             const size_t part_rows_covered = firstPartRow(sample_row + 1) - firstPartRow(sample_row);
             bytes_before_sample_row[sample_row + 1] = bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * part_rows_covered;
         }
+        dictionary_bytes = blockBytes(0, rows, /* shared_dictionaries */ false) - rowBytesBefore(rows);
     }
 
     size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
@@ -345,16 +370,38 @@ struct PartFromSample
 
     UInt64 bytesBefore(size_t part_row) const
     {
-        const size_t sample_row = sampleRow(part_row);
-        if (sample_row == sample.rows)
-            return bytes();
-        return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row)) + sharedBefore(part_row);
+        return rowBytesBefore(part_row) + static_cast<UInt64>(UInt128(dictionary_bytes) * part_row / rows);
     }
 
-    /// the dictionaries belong to the whole part, so each row takes an equal share
-    UInt64 sharedBefore(size_t part_row) const { return static_cast<UInt64>(UInt128(sample.shared_bytes) * part_row / rows); }
+    /// the bytes of a writer block, with the dictionary columns as the block holds them
+    /// a shared dictionary is not in the block bytes, the writer counts only the index of a stored column
+    UInt64 blockBytes(size_t begin, size_t end, bool shared_dictionaries) const
+    {
+        UInt64 result = rowBytesBefore(end) - rowBytesBefore(begin);
+        const size_t first = firstSampleRowFrom(begin);
+        const size_t last = firstSampleRowFrom(end);
+        for (const auto & column : sample.dictionary_columns)
+        {
+            /// a fresh column, its index grows with its dictionary as in the writer
+            auto block_column = column.type->createColumn();
+            for (size_t sample_row = first; sample_row < last; ++sample_row)
+                block_column->insertFrom(*column.column, sample.order[sample_row]);
+            UInt64 column_bytes = block_column->byteSize();
+            if (shared_dictionaries && sample.stored_dictionaries.contains(column.name))
+                column_bytes -= dictionaryBytes(*block_column);
+            /// each sample row stands for several part rows
+            result += last > first ? static_cast<UInt64>(UInt128(column_bytes) * (end - begin) / (last - first)) : 0;
+        }
+        return result;
+    }
 
-    UInt64 bytes() const { return bytes_before_sample_row.back() + sample.shared_bytes; }
+    UInt64 rowBytesBefore(size_t part_row) const
+    {
+        const size_t sample_row = sampleRow(part_row);
+        if (sample_row == sample.rows)
+            return bytes_before_sample_row.back();
+        return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row));
+    }
     UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
 };
 
@@ -377,7 +424,8 @@ std::vector<size_t> simulateWriterMarks(
     const MergeTreeSettings & mt_settings,
     bool adaptive_marks,
     size_t block_rows_limit,
-    size_t block_bytes_limit)
+    size_t block_bytes_limit,
+    bool shared_dictionaries)
 {
     const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
     const size_t fixed_granularity_rows = mt_settings[MergeTreeSetting::index_granularity];
@@ -388,7 +436,7 @@ std::vector<size_t> simulateWriterMarks(
     {
         const size_t end = blockEnd(part, row, block_rows_limit, block_bytes_limit);
         const size_t block_rows = end - row;
-        const size_t block_bytes = part.bytesBefore(end) - part.bytesBefore(row);
+        const size_t block_bytes = part.blockBytes(row, end, shared_dictionaries);
         row = end;
 
         const size_t granule_rows = computeIndexGranularity(
@@ -455,22 +503,27 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
     /// one granule of bytes is the finest block size that matters
     const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
-    std::vector<std::pair<size_t, size_t>> chunkings;
+    /// the rows and bytes of the blocks, and if the blocks share the stored dictionaries with the source
+    std::vector<std::tuple<size_t, size_t, bool>> chunkings;
     size_t primary = 0;
-    chunkings.emplace_back(whole_part.rows, 0);
+    chunkings.emplace_back(whole_part.rows, 0, false);
     if (granularity_per_block)
     {
-        chunkings.emplace_back(merge_rows, merge_bytes);
-        chunkings.emplace_back(merge_rows, granule_bytes);
+        chunkings.emplace_back(merge_rows, merge_bytes, false);
+        chunkings.emplace_back(merge_rows, granule_bytes, false);
         /// the writer writes a level-zero part in one block and a merged part in merge blocks
         /// when the row widths differ, the merge also cuts a block at each source
         if (parent_part->info.level > 0)
-            primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
+            primary = uneven_rows ? 2 : 1;
     }
+    /// a merge can give the writer the blocks of a source as they are, an insert can read a table, both keep the source dictionary
+    if (!data.stored_dictionaries.empty())
+        chunkings.emplace_back(whole_part.rows, 0, true);
 
     std::vector<std::vector<size_t>> layouts;
-    for (const auto & [rows_limit, bytes_limit] : chunkings)
-        layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
+    for (const auto & [rows_limit, bytes_limit, shared_dictionaries] : chunkings)
+        layouts.push_back(
+            simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit, shared_dictionaries));
 
     auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
     {
@@ -598,10 +651,10 @@ struct SampledPart
     MergeTreeDataPartPtr synthetic;
 };
 
-/// scenario 0 has every part in its likeliest layout, scenarios 1 to 3 have every part in one layout each
+/// scenario 0 has every part in its likeliest layout, scenarios 1 to 4 have every part in one layout each
 struct Scenarios
 {
-    std::array<HypotheticalProjectionPtr, 4> scenarios;
+    std::array<HypotheticalProjectionPtr, 5> scenarios;
     bool layouts_differ = false;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
