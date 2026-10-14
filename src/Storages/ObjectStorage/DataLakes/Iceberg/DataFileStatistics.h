@@ -15,6 +15,8 @@
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Access/EnabledQuota.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -40,12 +42,13 @@ public:
 
     const std::vector<Int64> & getFieldIds() const { return field_ids; }
 private:
-    static Range uniteRanges(const Range & left, const Range & right);
+    static std::optional<Range> uniteRanges(const std::optional<Range> & left, const std::optional<Range> & right);
 
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
-    Ranges ranges;
+    /// Per column, the range of its non-NULL, non-NaN values; empty while no block has one.
+    std::vector<std::optional<Range>> ranges;
 };
 
 using DataFileStatisticsPtr = std::shared_ptr<DataFileStatistics>;

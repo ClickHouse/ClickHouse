@@ -33,11 +33,14 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vect
         field_ids = std::move(written_field_ids);
 }
 
-static Range getExtremeRangeFromColumn(const ColumnPtr & column)
+static std::optional<Range> getExtremeRangeFromColumn(const ColumnPtr & column)
 {
     Field min_val;
     Field max_val;
     column->getExtremes(min_val, max_val, 0, column->size());
+    /// A block without a non-NULL, non-NaN value gets infinities or NaN as extremes, which are no bounds.
+    if (min_val.isNull() || min_val.isNaN())
+        return std::nullopt;
     return Range(min_val, true, max_val, true);
 }
 
@@ -49,10 +52,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     if (null_counts.empty())
     {
         null_counts.resize(num_columns, 0);
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            ranges.push_back(getExtremeRangeFromColumn(chunk.getColumns()[i]));
-        }
+        ranges.resize(num_columns);
     }
 
     chassert(ranges.size() == num_columns);
@@ -129,12 +129,16 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
     }
 }
 
-Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
+std::optional<Range> DataFileStatistics::uniteRanges(const std::optional<Range> & left, const std::optional<Range> & right)
 {
+    if (!left)
+        return right;
+    if (!right)
+        return left;
     return Range(
-        Range::less(left.left, right.left) ? left.left : right.left,
+        Range::less(left->left, right->left) ? left->left : right->left,
         true,
-        Range::less(right.right, left.right) ? left.right : right.right,
+        Range::less(right->right, left->right) ? left->right : right->right,
         true);
 }
 
@@ -164,7 +168,8 @@ std::vector<std::pair<size_t, Field>> DataFileStatistics::getLowerBounds() const
     std::vector<std::pair<size_t, Field>> result;
     for (size_t i = 0; i < ranges.size(); ++i)
     {
-        result.push_back({field_ids[i], ranges[i].left});
+        if (ranges[i])
+            result.push_back({field_ids[i], ranges[i]->left});
     }
     return result;
 }
@@ -174,7 +179,8 @@ std::vector<std::pair<size_t, Field>> DataFileStatistics::getUpperBounds() const
     std::vector<std::pair<size_t, Field>> result;
     for (size_t i = 0; i < ranges.size(); ++i)
     {
-        result.push_back({field_ids[i], ranges[i].right});
+        if (ranges[i])
+            result.push_back({field_ids[i], ranges[i]->right});
     }
     return result;
 }

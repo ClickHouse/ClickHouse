@@ -1,0 +1,5 @@
+field, lower bound, upper bound, null count
+1	0	2999	0
+2	1000	2999	1000
+3	0	1999	1000
+4	-	-	3000
