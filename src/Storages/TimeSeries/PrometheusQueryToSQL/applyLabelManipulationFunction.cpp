@@ -8,6 +8,7 @@
 #include <Common/quoteString.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeNoDuplicateSeriesPerStepCheck.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <base/insertAtEnd.h>
 
@@ -211,8 +212,7 @@ SQLQueryPiece applyLabelManipulationFunction(
             SelectQueryBuilder builder;
 
             ASTs group_function_args;
-            group_function_args.push_back(makeASTFunction(
-                "CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"))); /// Group "0" means no tags
+            group_function_args.push_back(timeSeriesNoTagsGroupToAST());
 
             size_t array_argument_index = impl_info->array_argument_index;
             insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
@@ -270,17 +270,11 @@ SQLQueryPiece applyLabelManipulationFunction(
             ///        anyForEach(values) AS new_values
             /// FROM <vector_grid>
             /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(x -> x > 1, countForEach(values)), new_group) = 0
+            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(values)), new_group) = 0
             ///
-            /// Series which get the same tags are merged when their samples do not overlap on the grid.
-            /// Two values at the same grid position are duplicate series.
-            ///
-            /// A write of `__name__` removes the deferred-drop marker.
-            /// `label_replace` does that only when the regex matches. A miss returns the original group,
-            /// and that group keeps the marker so the metric name stays removed.
-            /// `label_join` always writes its destination, so a `__name__` destination always removes the marker.
-            /// A match that stores the same metric name still removes the marker. The tag function returns
-            /// the original group in that case, so a changed group id is not the signal.
+            /// Series which get the same `new_group` are merged step by step. An exception is thrown only if two of them
+            /// have values at the same step.
+            /// A write of `__name__` removes the pending-drop marker. `label_replace` does that only when the regex matches.
             ASTPtr label_replacing_query;
             {
                 SelectQueryBuilder builder;
@@ -347,7 +341,7 @@ SQLQueryPiece applyLabelManipulationFunction(
                 builder.select_list.push_back(std::move(new_group));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-                builder.select_list.push_back(makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
                 builder.select_list.back()->setAlias(ColumnNames::NewValues);
 
                 context.subqueries.emplace_back(
@@ -356,21 +350,9 @@ SQLQueryPiece applyLabelManipulationFunction(
 
                 builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-                auto has_overlapping_values = makeASTFunction(
-                    "arrayExists",
-                    makeASTFunction(
-                        "lambda",
-                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
-                        makeASTFunction("greater", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))),
-                    makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-
-                builder.having = makeASTFunction(
-                    "equals",
-                    makeASTFunction(
-                        "timeSeriesThrowDuplicateSeriesIf",
-                        std::move(has_overlapping_values),
-                        make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
-                    make_intrusive<ASTLiteral>(0u));
+                builder.having = makeNoDuplicateSeriesPerStepCheck(
+                    make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                    make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
                 label_replacing_query = builder.getSelectQuery();
             }

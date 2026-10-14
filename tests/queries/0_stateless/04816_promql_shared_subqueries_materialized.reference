@@ -42,8 +42,8 @@
 1	1
 -- subqueries referenced once stay inlined: plain sum(rate(...)) reads the samples table once, nothing is materialized
 1	0
--- one-to-one match reads each operand grid twice, so each grid is materialized and the samples table is read once per operand
-2	1
+-- one-to-one match reads each operand once, so the grids stay inlined and the samples table is read once per operand
+2	0
 -- topk: the operand grid is read by two steps, so it is materialized; one samples read
 1	1
 -- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again

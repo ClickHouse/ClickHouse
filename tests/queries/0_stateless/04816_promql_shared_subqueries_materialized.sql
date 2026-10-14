@@ -125,7 +125,7 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_tabl
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'sum(rate(m[20]))', 100, 130, 10));
 
-SELECT '-- one-to-one match reads each operand grid twice, so each grid is materialized and the samples table is read once per operand';
+SELECT '-- one-to-one match reads each operand once, so the grids stay inlined and the samples table is read once per operand';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQuery('prometheus', 'sum by (dc) (m) / on (dc) count by (dc) (m)', 130));
