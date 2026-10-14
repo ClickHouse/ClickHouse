@@ -5034,18 +5034,18 @@ void Context::setPageCache(std::chrono::milliseconds history_window,
 }
 
 #if USE_GPU
-void Context::setGPU(const Poco::Util::AbstractConfiguration & config)
+void Context::setGPU(const ServerSettings & server_settings)
 {
     if (shared->gpu)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU has been already set.");
 
-    shared->gpu = std::make_unique<GPU::GPUDevice>(GPU::GPUDeviceSettings::fromConfig(config, "gpu"));
+    shared->gpu = std::make_unique<GPU::GPUDevice>(GPU::GPUDeviceSettings::fromServerSettings(server_settings));
 }
 
 GPU::GPUDevice & Context::getGPU() const
 {
     if (!shared->gpu)
-        throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server config has no `gpu` section");
+        throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
     return *shared->gpu;
 }
 #endif

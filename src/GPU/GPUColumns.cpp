@@ -77,7 +77,6 @@ void fillVariable(IColumn & column, size_t rows, std::string_view offsets, std::
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Strings from the device run from {} to {} over {} bytes", from[0], from[rows], chars.size());
 
-    /// With the ends checked above, this also keeps every offset within the chars, which `ColumnString` relies on.
     for (size_t row = 0; row < rows; ++row)
         if (from[row + 1] < from[row])
             throw Exception(
@@ -107,7 +106,6 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
     if (from.size() != to.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} columns from the device into {} columns", from.size(), to.size());
 
-    /// The values of a column of fixed-width values, or the chars and offsets of one of values of varying width.
     struct Landed
     {
         PinnedBuffer values;

@@ -4,15 +4,21 @@
 
 #include <GPU/CudfMemory.cuh>
 
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
 
 #include <string_view>
 
 namespace DB::ErrorCodes
 {
     extern const int GPU_ERROR;
+}
+
+namespace DB::ServerSetting
+{
+    extern const ServerSettingsUInt64 gpu_max_pooled_pinned_bytes;
+    extern const ServerSettingsUInt64 gpu_max_pooled_pinned_capacity;
+    extern const ServerSettingsUInt64 gpu_memory_pool_release_threshold;
 }
 
 namespace DB::GPU
@@ -29,13 +35,12 @@ bool isClickHouseException(const std::exception & exception)
     return dynamic_cast<const Exception *>(&exception) != nullptr;
 }
 
-GPUDeviceSettings GPUDeviceSettings::fromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+GPUDeviceSettings GPUDeviceSettings::fromServerSettings(const ServerSettings & server_settings)
 {
-    const GPUDeviceSettings defaults;
     return {
-        .max_pooled_pinned_bytes = config.getUInt64(prefix + ".max_pooled_pinned_bytes", defaults.max_pooled_pinned_bytes),
-        .max_pooled_pinned_capacity = config.getUInt64(prefix + ".max_pooled_pinned_capacity", defaults.max_pooled_pinned_capacity),
-        .memory_pool_release_threshold = config.getUInt64(prefix + ".memory_pool_release_threshold", defaults.memory_pool_release_threshold),
+        .max_pooled_pinned_bytes = server_settings[ServerSetting::gpu_max_pooled_pinned_bytes],
+        .max_pooled_pinned_capacity = server_settings[ServerSetting::gpu_max_pooled_pinned_capacity],
+        .memory_pool_release_threshold = server_settings[ServerSetting::gpu_memory_pool_release_threshold],
     };
 }
 

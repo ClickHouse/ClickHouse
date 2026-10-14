@@ -17,13 +17,12 @@
 #include <fmt/format.h>
 
 #include <exception>
-#include <limits>
 #include <string>
 #include <utility>
 
-namespace Poco::Util
+namespace DB
 {
-class AbstractConfiguration;
+struct ServerSettings;
 }
 
 namespace DB::ErrorCodes
@@ -69,30 +68,29 @@ void waitOnFailure(rmm::cuda_stream_view stream, Body && body)
     }
 }
 
-/// The `gpu` section of the server config.
+/// The `gpu_*` server settings; see their descriptions in `ServerSettings`.
 struct GPUDeviceSettings
 {
     /// Pinned host memory that `PinnedMemoryPool` keeps for reuse, in all and of one buffer.
-    size_t max_pooled_pinned_bytes = 1024UL * 1024 * 1024;
-    size_t max_pooled_pinned_capacity = 256UL * 1024 * 1024;
+    size_t max_pooled_pinned_bytes = 0;
+    size_t max_pooled_pinned_capacity = 0;
 
-    /// Freed device memory that the device's default memory pool keeps instead of returning it to the driver. With
-    /// the default, the pool grows to the peak of the queries and stays there until the server shuts down.
-    uint64_t memory_pool_release_threshold = std::numeric_limits<uint64_t>::max();
+    /// Freed device memory that the device's default memory pool keeps instead of returning it to the driver.
+    uint64_t memory_pool_release_threshold = 0;
 
-    static GPUDeviceSettings fromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix);
+    static GPUDeviceSettings fromServerSettings(const ServerSettings & server_settings);
 };
 
 /// The GPU the server runs queries on and what is shared by all of them: the streams, the pinned host memory and the
-/// device's memory pool, which cuDF allocates from as well. It is made at the start of the server from the `gpu`
-/// section of its config, held in the global `Context`, and waits for the device and releases all of it at shutdown.
+/// device's memory pool, which cuDF allocates from as well. It is made at the start of the server when `enable_gpu` is
+/// set, from the `gpu_*` server settings, held in the global `Context`, and waits for the device and releases all of it at shutdown.
 class GPUDevice : private boost::noncopyable
 {
 public:
     explicit GPUDevice(const GPUDeviceSettings & settings);
     ~GPUDevice();
 
-    /// The device of the global `Context`; throws when the config has no `gpu` section.
+    /// The device of the global `Context`; throws when `enable_gpu` is not set.
     static GPUDevice & instance();
 
     const StreamRegistry & streams() const { return stream_registry; }

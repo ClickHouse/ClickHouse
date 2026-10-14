@@ -1646,10 +1646,10 @@ public:
     void clearPageCache() const;
 
 #if USE_GPU
-    /// Takes the GPU described by the `gpu` section of `config`. It is called at the start of the server, before any
-    /// query, and the device is released at shutdown.
-    void setGPU(const Poco::Util::AbstractConfiguration & config);
-    /// Throws when the config has no `gpu` section.
+    /// Takes the GPU with the `gpu_*` server settings. It is called at the start of the server when `enable_gpu` is
+    /// set, before any query, and the device is released at shutdown.
+    void setGPU(const ServerSettings & server_settings);
+    /// Throws when `enable_gpu` is not set.
     GPU::GPUDevice & getGPU() const;
 #endif
 

@@ -131,7 +131,6 @@ void SyncDecompressor::decompress(
         cudaStreamWaitEvent(StreamRegistry::get().decompression, destination_ready.get(), 0),
         "Cannot make the decompression stream wait for the compute stream");
 
-    /// The upload reads `host_compressed`, which the caller gives back to the pool once this throws.
     waitOnFailure(StreamRegistry::get().decompression, [&]
     {
         device_compressed.clear();
@@ -167,9 +166,6 @@ AsyncDecompressor::~AsyncDecompressor()
     {
         if (in_flight)
             batch.wait();
-        /// `values` is freed on the decompression stream, so the compute stream must be done reading it. If the
-        /// owner unwound between `wait` and `release`, the event still marks the last release and not the copies
-        /// queued since, so it is recorded here to cover the current use.
         if (values_in_use)
             checkCuda(cudaEventRecord(values_copied_out, StreamRegistry::get().compute), "Cannot mark a point in the compute stream");
         if (values_copied_out != nullptr)
@@ -290,8 +286,6 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         }
     }
 
-    /// From here the device reads `host_arguments` and the pieces, and nvcomp may write into `destination`. Once this
-    /// throws, the caller frees them, and the pools may give them to another query while the device still uses them.
     waitOnFailure(stream, [&]
     {
         device_arguments.clear();
