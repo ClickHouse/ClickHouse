@@ -19,8 +19,8 @@
 
 namespace fs = std::filesystem;
 
-/// OSX does not have O_DIRECTORY
-#ifndef O_DIRECTORY
+/// OSX does not have O_DIRECTORY. Windows opens directories with `platformOpenDirectory` instead.
+#if !defined(O_DIRECTORY) && !defined(OS_WINDOWS)
 #define O_DIRECTORY O_RDONLY
 #endif
 

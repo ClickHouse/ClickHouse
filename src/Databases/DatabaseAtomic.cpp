@@ -819,7 +819,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         }
         catch (...)
         {
-            default_db_disk->moveFile(new_metadata_file_path, old_metadata_file_path);
+            default_db_disk->moveFile(pathToGenericString(new_metadata_file_path), pathToGenericString(old_metadata_file_path));
             tryCreateMetadataSymlink();
             throw;
         }

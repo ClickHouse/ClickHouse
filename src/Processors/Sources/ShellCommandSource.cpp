@@ -25,7 +25,7 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const VectorWithMemoryTracking<std::string> & arguments,
-    std::vector<Pipe> && input_pipes,
+    Pipes && input_pipes,
     Block sample_block,
     ContextPtr context,
     const ShellCommandSourceConfiguration & source_configuration)
