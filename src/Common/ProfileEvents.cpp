@@ -987,6 +987,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
     M(FileSegmentWaitTimeouts, "Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)", ValueType::Number) \
+    M(FileSegmentWaitWithoutData, "Number of times waiting on a DOWNLOADING file segment ended because the downloader released the segment before it downloaded the awaited offset", ValueType::Number) \
+    M(FileSegmentWaitWithoutDataMicroseconds, "Time spent in the waits counted by `FileSegmentWaitWithoutData`", ValueType::Microseconds) \
     M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache", ValueType::Microseconds) \
     M(FileSegmentLockMicroseconds, "Lock file segment time", ValueType::Microseconds) \
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \

@@ -27,6 +27,8 @@ namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
+    extern const Event FileSegmentWaitWithoutData;
+    extern const Event FileSegmentWaitWithoutDataMicroseconds;
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
@@ -653,6 +655,13 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
             const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
             if (cv.wait_for(cv_lk, slice, downloaded))
                 break;
+        }
+
+        /// The downloader released the segment before it downloaded the awaited offset.
+        if (download_state != State::DOWNLOADING && offset >= getCurrentWriteOffset())
+        {
+            ProfileEvents::increment(ProfileEvents::FileSegmentWaitWithoutData);
+            ProfileEvents::increment(ProfileEvents::FileSegmentWaitWithoutDataMicroseconds, watch.elapsed());
         }
     }
 
