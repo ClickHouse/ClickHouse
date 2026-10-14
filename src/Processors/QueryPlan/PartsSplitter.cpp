@@ -889,9 +889,8 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
 }
 
 
-/// Returns the filter of layer `layer`: it accepts the rows with primary key values within
-/// (borders[layer - 1], borders[layer]] (within [borders[layer], borders[layer - 1]) if `in_reverse_order`).
-/// The result is a DAG over the key columns, its only output is the filter. `borders` must not be empty.
+/// Returns the filter of layer `layer`: rows with the primary key in (borders[layer - 1], borders[layer]]
+/// (in [borders[layer], borders[layer - 1]) if `in_reverse_order`). `borders` must not be empty.
 static ActionsDAG buildLayerFilter(
     const KeyDescription & primary_key, const std::vector<Values> & borders, size_t layer, bool in_reverse_order, const ContextPtr & context)
 {
@@ -920,8 +919,6 @@ static ActionsDAG buildLayerFilter(
         key_columns.push_back(&dag.addInput(primary_key.column_names.at(i), type));
     }
 
-    /// Produces the predicate (pk_col0, pk_col1, ... , pk_colN) > (value[0], value[1], ... , value[N]),
-    /// or `<` if `in_reverse_order`.
     auto lexicographically_greater = [&](size_t border_index) -> const ActionsDAG::Node *
     {
         const auto & values = borders.at(border_index);
@@ -929,8 +926,7 @@ static ActionsDAG buildLayerFilter(
         ActionsDAG::NodeRawConstPtrs constants;
         for (size_t i = 0; i < values.size(); ++i)
         {
-            /// The index returns values of some types (e.g. Date, DateTime) as plain numbers, which is how
-            /// their columns store them.
+            /// The index returns border values as the column stores them (e.g. Date, DateTime as plain numbers).
             auto type = removeLowCardinality(primary_key.data_types.at(i));
             constants.push_back(&dag.addColumn(type->createColumnConst(0, values[i]), type, fmt::format("__border_{}_{}", border_index, i)));
         }
@@ -1234,9 +1230,8 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     return result;
 }
 
-/// Applies a FilterSortedStreamByRange that keeps the rows of layer `layer`, see `buildLayerFilter`.
-/// No-op when there are no borders (a single layer) or when the pipe is empty. `pipe`'s streams must be
-/// sorted by the primary key.
+/// Keeps the rows of layer `layer` (see `buildLayerFilter`); a no-op without borders or for an empty pipe.
+/// `pipe`'s streams must be sorted by the primary key.
 static void applyLayerRangeFilter(
     Pipe & pipe,
     const KeyDescription & primary_key,
