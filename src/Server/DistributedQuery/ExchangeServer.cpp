@@ -5,6 +5,7 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/makeSocketAddress.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -41,7 +42,7 @@ static constexpr size_t HANDSHAKE_POOL_QUEUE_SIZE = 10000;
 ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_)
     : connections(std::move(connections_))
     , authenticate_connection(std::move(authenticate_connection_))
-    , server_socket(Poco::Net::ServerSocket(Poco::Net::SocketAddress(listen_host, port)))
+    , server_socket(Poco::Net::ServerSocket(makeSocketAddress(listen_host, port, getLogger("ExchangeServer"))))
     , accept_thread("ExchangeServer")
     , handshake_pool(
         CurrentMetrics::ExchangeServerThreads,
@@ -159,6 +160,9 @@ namespace
                     socket.peerAddress().toString(), StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, description));
 
             ssize_t received = StreamingExchangeProtocol::tryReceive(socket, dst + position, size - position, description);
+            if (received < 0)
+                throw Poco::Net::NetException(fmt::format(
+                    "Failed to receive {} from {}, peer closed connection", description, socket.peerAddress().toString()));
             if (received == 0)
                 throw Poco::Net::NetException(fmt::format(
                     "Failed to receive {} from {}, socket reported would-block on a blocking handshake after {} of {} bytes",
@@ -263,7 +267,7 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
     /// so an unauthenticated peer is never rendezvoused with a local sink. A failure
     /// throws and the connection is dropped without a SinkHello.
     if (authenticate)
-        authenticate(source_hello.jwt_token);
+        authenticate(source_hello.auth_token);
 
     send_sink_hello();
 

@@ -1,0 +1,38 @@
+-- one quantile level for the whole grid
+[10,15,20]
+[10,20,30]
+[10,15,20]
+-- one quantile level per grid point
+[10,15,30]
+[10,15,30]
+[10,15,20]
+-- the level accepts any numbers: Float32, Float64 and integers
+[10,15,30]
+[10,20,30]
+[10,20,30]
+-- a level outside [0, 1] gives -Inf or +Inf and a NaN level gives NaN, like in Prometheus
+[-inf,-inf,-inf]
+[inf,inf,inf]
+[nan,nan,nan]
+[-inf,15,inf]
+[inf,inf,NULL]
+-- rows excluded by a condition or by a NULL are ignored, whatever their level
+[10,15,15]
+[10,15,15]
+[10,15,15]
+[10,15,20]
+-- partial states carrying the same level merge
+[10,15,30]
+[10,15,20]
+-- the level must be the same in every row and in every merged state
+-- invalid arguments
+-- a NaN sample is kept and sorts before every real value
+[1,1]
+[1,1]
+-- phi = 0 selects the NaN that sorts first, phi = 1 selects the largest real value
+[1,nan]
+[1,2]
+[1,nan]
+-- a window with only NaN samples yields NaN, a window without samples stays NULL
+[nan,nan,NULL]
+[nan,nan,NULL]

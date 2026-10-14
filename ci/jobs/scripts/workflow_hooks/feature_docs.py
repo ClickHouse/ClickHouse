@@ -1,5 +1,4 @@
 import sys
-from pathlib import PurePosixPath
 
 from praktika.info import Info
 
@@ -41,8 +40,6 @@ source_owned_doc_paths = inline_doc_paths + [
     "src/Storages/",
 ]
 
-source_owned_doc_globs = [f"src/**/*{suffix}" for suffix in embedded_doc_suffixes]
-
 source_owned_doc_markers = (
     "FunctionDocumentation",
     "Documentation{",
@@ -70,9 +67,11 @@ def is_source_owned_doc(file_path):
     ) and file_contains_any_marker(file_path, source_owned_doc_markers):
         return True
 
-    return any(
-        PurePosixPath(file_path).match(glob) for glob in source_owned_doc_globs
-    ) and file_contains_any_marker(file_path, settings_doc_markers)
+    return (
+        file_path.startswith("src/")
+        and file_path.endswith(tuple(embedded_doc_suffixes))
+        and file_contains_any_marker(file_path, settings_doc_markers)
+    )
 
 
 def check_docs():

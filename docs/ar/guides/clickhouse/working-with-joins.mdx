@@ -107,7 +107,7 @@ LIMIT 10;
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="الربط الخارجي" />
 
 <Note>
-  يمكن [تهيئة](/ar/reference/settings/session-settings#join_use_nulls) ClickHouse لإرجاع [NULL](/ar/reference/syntax#null)s بدلًا من القيم الافتراضية (لكن ذلك أقل توصيةً [لأسباب تتعلق بالأداء](/ar/reference/data-types/nullable#storage-features)).
+  يمكن [تهيئة](/ar/reference/settings/session-settings/join#join_use_nulls) ClickHouse لإرجاع [NULL](/ar/reference/syntax#null)s بدلًا من القيم الافتراضية (لكن ذلك أقل توصيةً [لأسباب تتعلق بالأداء](/ar/reference/data-types/nullable#storage-features)).
 </Note>
 
 يعثر هذا الاستعلام على جميع الأفلام التي ليس لها نوع، وذلك عبر الاستعلام عن كل الصفوف من جدول `movies` التي لا تحتوي على تطابقات في جدول `genres`، وبالتالي تحصل (وقت الاستعلام) على القيمة الافتراضية 0 للعمود `movie_id`:
@@ -232,7 +232,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-تتضمن عبارة `INNER JOIN` في نسخة الاستعلام `CROSS JOIN` المحسَّنة نحويًا الكلمة المفتاحية `ALL`، وقد أُضيفت صراحةً للحفاظ على دلالات الجداء الديكارتي في `CROSS JOIN` حتى عند إعادة كتابته إلى `INNER JOIN`، حيث يمكن [تعطيل](/ar/reference/settings/session-settings#join_default_strictness) الجداء الديكارتي في هذه الحالة.
+تتضمن عبارة `INNER JOIN` في نسخة الاستعلام `CROSS JOIN` المُحسَّنة نحويًا الكلمة المفتاحية `ALL`، وقد أُضيفت صراحةً للحفاظ على دلالات الجداء الديكارتي في `CROSS JOIN` حتى عند إعادة كتابته إلى `INNER JOIN`، حيث يمكن [تعطيل](/ar/reference/settings/session-settings/join#join_default_strictness) الجداء الديكارتي في هذه الحالة.
 
 ```sql
 ALL

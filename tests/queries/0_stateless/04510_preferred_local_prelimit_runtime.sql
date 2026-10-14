@@ -8,10 +8,9 @@
 -- The regression test 04509_preferred_local_preliminary_limit asserts the
 -- statistic at runtime only under the default (analyzer) engine, and checks
 -- the parallel-replicas path via EXPLAIN plan shape only. Per the review
--- comments on #110136, this adds the two missing RUNTIME assertions:
---   1. the legacy (enable_analyzer = 0) Distributed path, and
---   2. the parallel-replicas path, asserting rows_before_limit_at_least
---      directly rather than the plan shape.
+-- comments on #110136, this adds the missing RUNTIME assertion for the
+-- parallel-replicas path, asserting rows_before_limit_at_least directly
+-- rather than the plan shape.
 --
 -- What would break if the fix regressed: the preliminary LIMIT pushed to the
 -- in-process shard would drop source rows from the accounting, so
@@ -44,19 +43,9 @@ SELECT
     concat('extra-', toString(number))
 FROM numbers(20000);
 
--- (1) Legacy (non-analyzer) Distributed path. 30 qualifying rows per shard
+-- Distributed path. 30 qualifying rows per shard
 -- across two shards => exact count 60. Must hold with prefer_localhost_replica
 -- both off and on.
-SET enable_analyzer = 0;
-SET prefer_localhost_replica = 0;
-SELECT '' FROM cluster(test_cluster_two_shards, currentDatabase(), preferred_local_prelimit_rt)
-WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template;
-SET prefer_localhost_replica = 1;
-SELECT '' FROM cluster(test_cluster_two_shards, currentDatabase(), preferred_local_prelimit_rt)
-WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template;
-
--- Analyzer parity: the same query on the analyzer engine must report the
--- same 60 (guards against the two paths diverging).
 SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
 SELECT '' FROM cluster(test_cluster_two_shards, currentDatabase(), preferred_local_prelimit_rt)

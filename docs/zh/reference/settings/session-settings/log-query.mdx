@@ -28,7 +28,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 设置是否记录查询线程日志。
 
-查询线程会记录到 [system.query&#95;thread&#95;log](/zh/reference/system-tables/query_thread_log) 表中。此设置仅在 [log&#95;queries](/zh/reference/settings/session-settings/log-queries#log_queries) 为 true 时生效。启用此设置后，ClickHouse 运行的查询线程会按照服务器配置参数 [query&#95;thread&#95;log](/zh/reference/settings/server-settings/settings#query_thread_log) 中的规则进行记录。
+查询线程会记录到 [system.query&#95;thread&#95;log](/zh/reference/system-tables/query_thread_log) 表中。此设置仅在 [log&#95;queries](/zh/reference/settings/session-settings/log-queries#log_queries) 为 true 时生效。启用此设置后，ClickHouse 运行的查询线程会按照服务器配置参数 [query&#95;thread&#95;log](/zh/reference/settings/server-settings/settings/query#query_thread_log) 中的规则进行记录。
 
 可能的值：
 
@@ -49,7 +49,7 @@ log_query_threads=1
 
 启用查询视图日志记录。
 
-当 ClickHouse 在启用此设置时执行的查询存在关联视图 (materialized 或 live view) 时，这些视图会记录到 [query&#95;views&#95;log](/zh/reference/settings/server-settings/settings#query_views_log) 服务器配置参数中。
+当 ClickHouse 在启用此设置时执行的查询存在关联视图 (materialized 或 live view) 时，这些视图会记录到 [query&#95;views&#95;log](/zh/reference/settings/server-settings/settings/query#query_views_log) 服务器配置参数中。
 
 示例：
 

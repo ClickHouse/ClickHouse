@@ -23,7 +23,11 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NetUtils.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromVector.h>
+#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Core/UUID.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
@@ -37,6 +41,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int DECIMAL_OVERFLOW;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 }
 
@@ -143,6 +148,26 @@ int arrowTimeUnitForScale(UInt32 scale)
     return flatbuf::TimeUnit_NANOSECOND;
 }
 
+/// Number of raw column units in one day for a `Time`/`Time64(scale)` column (86400 * 10^scale).
+/// Arrow time32/time64 values are a time of day and must lie in [0, units_per_day).
+Int64 timeUnitsPerDay(UInt32 scale)
+{
+    Int64 units_per_day = 86400;
+    for (UInt32 i = 0; i < scale; ++i)
+        units_per_day *= 10;
+    return units_per_day;
+}
+
+[[noreturn]] void throwArrowTimeOutOfRange(Int64 value, Int64 units_per_day)
+{
+    throw Exception(
+        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+        "Cannot convert value {} to an Arrow time type: it is outside the valid time-of-day range [0, {}). "
+        "Arrow time types represent a time of day, so negative or >= 24h ClickHouse Time/Time64 values cannot be represented.",
+        value,
+        units_per_day);
+}
+
 }
 
 void RecordBatchEncoder::encodeValues(
@@ -223,9 +248,24 @@ void RecordBatchEncoder::encodeValues(
             return;
         }
         case TypeIndex::Time:
+        {
             /// ClickHouse `Time` is seconds-of-day stored as Int32 → Arrow `time32[s]` (4-byte values).
+            /// Arrow `time32[s]` represents a time of day in [0, 86400); reject negative or >= 24h values
+            /// instead of writing out-of-spec Arrow data. A null row carries an arbitrary value masked by
+            /// the validity bitmap, so skip it.
+            const auto & data = assert_cast<const ColumnInt32 &>(column).getData();
+            const NullMap * null_map
+                = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
+            for (size_t i = 0; i < num_rows; ++i)
+            {
+                if (null_map && (*null_map)[i])
+                    continue;
+                if (data[i] < 0 || data[i] >= 86400)
+                    throwArrowTimeOutOfRange(data[i], 86400);
+            }
             appendFixedWidth<ColumnInt32>(*this, column, num_rows);
             return;
+        }
         case TypeIndex::Time64:
         {
             /// `Time64(scale)` → Arrow `time32` (scale <= 3) or `time64`, rescaling the value up to the
@@ -236,6 +276,10 @@ void RecordBatchEncoder::encodeValues(
             Int64 factor = 1;
             for (UInt32 i = scale; i < target_scale; ++i)
                 factor *= 10;
+            /// Validate the raw value (in the column's own scale) against the valid time-of-day range
+            /// [0, 86400 * 10^scale) before rescaling, so out-of-range inputs report a consistent
+            /// VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE instead of writing invalid Arrow data.
+            const Int64 source_units_per_day = timeUnitsPerDay(scale);
             const bool to_time32 = (unit == flatbuf::TimeUnit_SECOND || unit == flatbuf::TimeUnit_MILLISECOND);
             const auto & data = assert_cast<const ColumnDecimal<Time64> &>(column).getData();
             const NullMap * null_map
@@ -253,6 +297,8 @@ void RecordBatchEncoder::encodeValues(
                         continue;
                     }
                     Int64 value = data[i].value;
+                    if (value < 0 || value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(value, source_units_per_day);
                     if (common::mulOverflow(value, factor, value)
                         || value > std::numeric_limits<Int32>::max() || value < std::numeric_limits<Int32>::min())
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
@@ -270,6 +316,8 @@ void RecordBatchEncoder::encodeValues(
                         values[i] = 0;
                         continue;
                     }
+                    if (data[i].value < 0 || data[i].value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(data[i].value, source_units_per_day);
                     if (common::mulOverflow(data[i].value, factor, values[i]))
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                 }
@@ -452,43 +500,66 @@ void RecordBatchEncoder::encodeValues(
             return;
         }
         default:
-            /// A type with no first-class Arrow mapping. Mirror the Apache Arrow library writer: when
-            /// `output_format_arrow_unsupported_types_as_binary` is set, write its raw per-row bytes as an
-            /// Arrow `Binary` column (read back as `String`); otherwise reject it.
-            if (settings.arrow.output_unsupported_types_as_binary)
-            {
-                encodeAsBinary(column, num_rows, null_map_column);
-                return;
-            }
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Native Arrow IPC writer does not support encoding type {}. Set "
-                "output_format_arrow_unsupported_types_as_binary = 1 to write it as binary",
-                type->getName());
+            /// A type with no first-class Arrow mapping, written as an opaque variable-width column or
+            /// rejected, per `output_format_arrow_unsupported_types`. `SchemaConverter::buildField` makes
+            /// the same decision for the schema, so the two cannot disagree.
+            if (settings.arrow.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::THROW)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Native Arrow IPC writer does not support encoding type {}. Set "
+                    "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
+                    type->getName());
+            encodeAsOpaque(column, type, num_rows, null_map_column);
+            return;
     }
 }
 
-void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows, const IColumn * null_map_column)
+void RecordBatchEncoder::encodeAsOpaque(
+    const IColumn & column, const DataTypePtr & type, size_t num_rows, const IColumn * null_map_column)
 {
+    /// Serialize one value per row into a variable-width Arrow column. This goes through
+    /// `ISerialization` rather than `IColumn::getDataAt`: `getDataAt` exposes a column's contiguous
+    /// in-memory bytes, which most of the types reaching this path do not have - `ColumnObject`,
+    /// `ColumnVariant` (hence `ColumnDynamic`) and `ColumnQBit` throw `NOT_IMPLEMENTED`, and
+    /// `ColumnAggregateFunction` returns the `AggregateDataPtr` itself, so the export would carry heap
+    /// addresses instead of aggregate states. `serializeText`/`serializeBinary` are pure virtual on
+    /// `ISerialization`, so every type has a real per-value representation here.
     const NullMap * null_map
         = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
+    /// `SchemaConverter::buildField` types this column from the same predicate, so what is written here
+    /// cannot disagree with what the reader has been told the column holds.
+    const bool as_text = arrowOpaqueValueIsText(settings.arrow.output_unsupported_types, type);
+    const auto serialization = type->getDefaultSerialization();
+
     PODArray<Int32> arrow_offsets(num_rows + 1);
     arrow_offsets[0] = 0;
     PODArray<char> data;
-    size_t total = 0;
-    for (size_t i = 0; i < num_rows; ++i)
     {
-        /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
-        /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
-        if (!(null_map && (*null_map)[i]))
+        WriteBufferFromVector<PODArray<char>> buffer(data);
+        WriteBufferFromOwnString value;
+        String valid_utf8_scratch;
+        for (size_t i = 0; i < num_rows; ++i)
         {
-            const std::string_view value = column.getDataAt(i);
-            total += value.size();
+            /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
+            /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
+            if (!(null_map && (*null_map)[i]))
+            {
+                if (as_text)
+                {
+                    value.restart();
+                    serialization->serializeText(column, i, value, settings);
+                    const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
+                    buffer.write(valid.data(), valid.size());
+                }
+                else
+                    serialization->serializeBinary(column, i, buffer, settings);
+            }
+            const size_t total = buffer.count();
             if (total > static_cast<size_t>(std::numeric_limits<Int32>::max()))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC binary offset exceeds 32 bits");
-            data.insert(data.end(), value.data(), value.data() + value.size());
+            arrow_offsets[i + 1] = static_cast<Int32>(total);
         }
-        arrow_offsets[i + 1] = static_cast<Int32>(total);
+        buffer.finalize();
     }
     appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
     appendBuffer(data.data(), data.size());

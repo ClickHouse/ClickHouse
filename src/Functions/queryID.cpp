@@ -32,6 +32,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -60,9 +63,9 @@ INSERT INTO tmp (*) VALUES ('a');
 SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
         )",
         R"(
-┌─count(DISTINCT t)─┐
-│                 3 │
-└───────────────────┘
+┌─countDistinct(t)─┐
+│                3 │
+└──────────────────┘
         )"
     }
     };

@@ -28,14 +28,16 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 启用或禁用 `INSERT` 的块去重 (适用于复制表) 。
 
+仅当 [`deduplicate_insert`](/zh/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) 设置为 `backward_compatible_choice` 时，此设置才会生效。
+
 可能的值：
 
 * 0 — 禁用。
 * 1 — 启用。
 
 默认情况下，通过 `INSERT` 语句插入到复制表中的块会进行去重 (请参见 [Data Replication](/zh/reference/engines/table-engines/mergetree-family/replication)) 。
-对于复制表，默认情况下每个分区仅对最近的 100 个块进行去重 (请参见 [replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)) 。
-对于非复制表，请参见 [non&#95;replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings#non_replicated_deduplication_window)。
+对于复制表，默认情况下每个分区仅对最近的 100 个块进行去重 (请参见 [replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)) 。
+对于非复制表，请参见 [non&#95;replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)。
 
 <div id="insert_deduplication_token">
   ## insert_deduplication_token
@@ -51,8 +53,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 只有当 `insert_deduplication_token` 非空时，才会将其用于去重。
 
-对于复制表，默认每个分区仅会对最近 100 次插入进行去重 (参见 [replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)) 。
-对于非复制表，请参见 [non&#95;replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings#non_replicated_deduplication_window)。
+对于复制表，默认每个分区仅会对最近 100 次插入进行去重 (参见 [replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)) 。
+对于非复制表，请参见 [non&#95;replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)。
 
 <Note>
   `insert_deduplication_token` 是按分区跟踪的，因此一次 insert 写入的多个分区可以携带相同的 token。若未提供 token，系统默认会基于整个插入块计算内容校验和，因此只有当某次 insert 的全部数据都与之前某次 insert (即重试) 完全一致时，才会被去重；如果只是某个分区中的行恰好与另一条不同的 insert 一致，则不会被去重。

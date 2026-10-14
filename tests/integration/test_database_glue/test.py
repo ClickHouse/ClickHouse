@@ -32,6 +32,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 
 import boto3
+import botocore.config
 
 
 def run_s3_mocks(started_cluster, args=[]):
@@ -240,7 +241,7 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
 {settings_suffix}
 """,
         settings={
-            "allow_experimental_database_glue_catalog": 1,
+            "allow_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
@@ -459,7 +460,7 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
         f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
         query_id=qid_table,
         settings={
-            "allow_experimental_database_glue_catalog": 1,
+            "allow_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
@@ -840,6 +841,96 @@ def test_create(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(
+        DatabaseInput={
+            "Name": root_namespace,
+            "LocationUri": f"s3://warehouse-glue/{root_namespace}",
+        }
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    assert node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
+    ) == f"{root_namespace}.{table_name}\n"
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
+
+
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_no_database_location(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_no_location_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(DatabaseInput={"Name": root_namespace})
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    with pytest.raises(Exception) as exc:
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+            settings={"allow_experimental_database_glue_catalog": 1},
+        )
+    assert "cannot tell where table" in str(exc.value), str(exc.value)
+    assert table_name not in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_missing_database(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_missing_database_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    for _ in range(2):
+        with pytest.raises(Exception) as exc:
+            node.query(
+                f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+                settings={"allow_experimental_database_glue_catalog": 1},
+            )
+        assert "cannot tell where table" in str(exc.value), str(exc.value)
+
+    with pytest.raises(glue_client.exceptions.EntityNotFoundException):
+        glue_client.get_database(Name=root_namespace)
 
 
 def test_create_gzip_metadata(started_cluster):
@@ -1370,9 +1461,102 @@ def test_sts_smoke(started_cluster):
     result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
     assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
 
+    # `aws_role_session_name` can act as a shared secret (the trust policy can pin it, which is what the
+    # STS mock does), so every display surface hides it while `aws_role_arn` stays visible. This database
+    # carries no other secret, so `[HIDDEN]` can only come from the session name.
+    show_create = node.query(f"SHOW CREATE DATABASE {db_name_success}")
+    assert "miniorole" not in show_create
+    assert "arn::role" in show_create
+    assert "[HIDDEN]" in show_create
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name_success}'"
+    )
+    assert "miniorole" not in engine_full
+    assert "[HIDDEN]" in engine_full
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    logged_create = node.query(
+        f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log "
+        f"WHERE query_kind = 'Create' AND type = 'QueryFinish' AND query LIKE '%{db_name_success}%'"
+    )
+    assert "[HIDDEN]" in logged_create
+    assert "miniorole" not in logged_create
+
     # Cleanup
     node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
     node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
+
+
+def test_sts_backup_restore_keeps_role_session_name(started_cluster):
+    """A backup archives the database definition with the real `aws_role_session_name`, although every
+    display surface shows `[HIDDEN]`. The STS mock grants the role only for the session name `miniorole`,
+    so the restored catalog can read its table only if the archived value was the real one."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_backup_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": "row1", "value": 10.0},
+                {"id": "row2", "value": 20.0},
+                {"id": "row3", "value": 30.0},
+            ]
+        )
+    )
+
+    db_name = f"db_backup_{test_ref.replace('-', '_')}"
+    restored_db_name = f"{db_name}_restored"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+    result = node.query(f"SELECT sum(value) FROM {db_name}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # A DataLakeCatalog database owns no tables, so the backup holds just the database definition. The
+    # default server config allows File backups under its `backups` directory.
+    backup = f"File('{db_name}')"
+    node.query(f"BACKUP DATABASE {db_name} TO {backup}")
+    node.query(f"DROP DATABASE IF EXISTS {restored_db_name} SYNC")
+    node.query(
+        f"RESTORE DATABASE {db_name} AS {restored_db_name} FROM {backup}",
+        settings={
+            "allow_database_glue_catalog": 1,
+            "s3_allow_server_credentials_in_user_queries": 1,
+        },
+    )
+
+    # Readable only with the real session name: the STS mock rejects any other value.
+    result = node.query(f"SELECT sum(value) FROM {restored_db_name}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # The archived value came back, and the display of the restored definition is masked like any other.
+    show_create = node.query(f"SHOW CREATE DATABASE {restored_db_name}")
+    assert "miniorole" not in show_create
+    assert "arn::role" in show_create
+    assert "[HIDDEN]" in show_create
+
+    node.query(f"DROP DATABASE IF EXISTS {restored_db_name} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
 def test_sts_smoke_no_opt_in(started_cluster):
@@ -1690,3 +1874,242 @@ def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster)
 
     # With the opt-in the database is usable again, so it can be cleaned up.
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC", settings=allow)
+
+
+def test_listing_tolerates_missing_namespace(started_cluster):
+    # A Glue table listing must treat a database that is absent from Glue as contributing no tables, instead
+    # of failing the whole query. `name = 'ns.table'` is pushed down to a single-namespace listing, so naming a
+    # namespace that does not exist reaches the GetTables error branch with no race.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_missing_namespace_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    missing_namespace = f"{test_ref}_absent_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name)
+    table.append(generate_arrow_data(10))
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    # T1: the missing namespace yields an empty listing, not an error.
+    assert (
+        ""
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND name = '{missing_namespace}.no_such_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # T1 is only meaningful if the absent namespace really was listed. Without the pushdown the query
+    # degrades to listing the namespaces Glue reports, which excludes this one, so nothing would reach
+    # the code under test and T1 would pass unpatched.
+    assert node.contains_in_log(f"Getting tables for database '{missing_namespace}'")
+
+    # T2: the same pushdown still resolves a table in a namespace that does exist.
+    assert (
+        f"{namespace}.{table_name}"
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND name = '{namespace}.{table_name}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # T3: the unfiltered listing still reports the table.
+    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_listing_propagates_non_not_found_error(started_cluster):
+    # The tolerance above must stay narrow: only Glue's `EntityNotFoundException` may be read as "this
+    # database contributes no tables". Any other failure -- here an endpoint whose host does not resolve
+    # -- must still fail the listing loudly, so a misconfigured or unreachable catalog is never silently
+    # reported as empty.
+    node = started_cluster.instances["node1"]
+
+    db_name = f"glue_unreachable_{uuid.uuid4().hex}"
+    missing_namespace = f"glue_unreachable_ns_{uuid.uuid4().hex}"
+    # ATTACH is lazy, so the unreachable endpoint is only contacted by the listing below.
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
+                 aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
+        """
+    )
+    try:
+        # `name = 'ns.table'` is pushed down, so the failing call is the single-namespace listing -- the
+        # same code path the previous test exercises -- rather than the enclosing database enumeration.
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{db_name}' "
+            f"AND name = '{missing_namespace}.some_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        assert "Exception calling GetTables" in error, error
+
+        # The error above is only evidence about the changed branch if the single-namespace listing is what
+        # failed. The database enumeration throws with a byte-identical message from an unmodified function,
+        # so without this the arm would also pass on a degraded pushdown -- and then a guard widened to
+        # swallow every error type would still be reported as caught.
+        assert node.contains_in_log(
+            f"Getting tables for database '{missing_namespace}'"
+        )
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_exists_table_answers_only_from_not_found(started_cluster):
+    # `EXISTS TABLE` must answer "absent" only when Glue reports the table as not found. Any other failure
+    # has to propagate, otherwise an outage makes an existing table look dropped, and the DDL paths that
+    # share this probe act on that answer.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_exists_table_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    assert (
+        "1"
+        == node.query(f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
+    )
+    assert (
+        "0"
+        == node.query(
+            f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.no_such_table`"
+        ).strip()
+    )
+
+    # Reusing the name of the table created above is what makes the arm below an assertion about error
+    # handling rather than about absence: the table is known to exist, so answering "0" is the misreport.
+    db_name = f"{test_ref}_unreachable"
+    # ATTACH is lazy, so the unreachable endpoint is only contacted by the probe below.
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
+                 aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            f"EXISTS TABLE {db_name}.`{namespace}.{table_name}`"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        # This per-table message has a single emitter, so it pins the failure to the GetTable probe rather
+        # than to a listing: the error alone would also be satisfied by an unrelated failing call.
+        assert (
+            f"Exception calling GetTable for table {namespace}.{table_name}" in error
+        ), error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
+    """
+    A Glue catalog column whose `Name` is empty must be refused where the table structure is
+    built. Related to https://github.com/ClickHouse/ClickHouse/issues/114350.
+
+    A read alone does not distinguish the behaviours: the empty name also reaches
+    `Block::insert`, which raises the same AMBIGUOUS_COLUMN_NAME. SHOW CREATE TABLE is the
+    arm that does - it answers with an empty-named column unless the schema is validated.
+
+    boto3 refuses a blank `Column.Name` client-side (the Glue service model declares
+    `min: 1`), so the malformed state is written through a client with parameter validation
+    disabled.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_empty_column_name_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_namespace"
+    # Own database: this rewrites Glue metadata, so it must not disturb other tests.
+    db_name = f"db_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(
+        catalog, namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name
+    )
+    table.append(pa.Table.from_pylist([{"id": "row1", "value": 1.5}]))
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    # Same endpoint, validation off, used only for the malformed write below.
+    raw_glue_client = boto3.client(
+        "glue",
+        region_name="us-east-1",
+        endpoint_url=get_glue_local_url(started_cluster),
+        config=botocore.config.Config(parameter_validation=False),
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    qualified = f"{db_name}.`{namespace}.{table_name}`"
+
+    # Control: the table reads before the catalog is corrupted. Without this, a later
+    # failure could equally be a broken fixture rather than the guard firing.
+    assert node.query(f"SELECT id, value FROM {qualified}") == "row1\t1.5\n"
+
+    table_info = glue_client.get_table(DatabaseName=namespace, Name=table_name)["Table"]
+    columns = table_info["StorageDescriptor"]["Columns"]
+    assert [column["Name"] for column in columns] == ["id", "value"], columns
+
+    storage_descriptor = dict(table_info["StorageDescriptor"])
+    blanked = [dict(column) for column in columns]
+    blanked[1]["Name"] = ""
+    storage_descriptor["Columns"] = blanked
+    raw_glue_client.update_table(
+        DatabaseName=namespace,
+        TableInput={
+            "Name": table_name,
+            "StorageDescriptor": storage_descriptor,
+            "Parameters": table_info.get("Parameters", {}),
+            "TableType": table_info.get("TableType", "EXTERNAL_TABLE"),
+        },
+    )
+    # The mock must actually serve the empty name, otherwise the assertions below pass
+    # without the server ever seeing malformed input.
+    served = glue_client.get_table(DatabaseName=namespace, Name=table_name)["Table"]
+    assert [c["Name"] for c in served["StorageDescriptor"]["Columns"]] == ["id", ""], served
+
+    # Re-attach so the corrupted catalog state is fetched rather than served from cache.
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+
+    # The discriminating arm: the structure must not be handed out at all. Without the
+    # check this answers with an empty-named column instead of failing.
+    show_create_error = node.query_and_get_error(f"SHOW CREATE TABLE {qualified}")
+    assert "AMBIGUOUS_COLUMN_NAME" in show_create_error, show_create_error
+    assert (
+        "Column name in data lake catalog table schema cannot be empty" in show_create_error
+    ), show_create_error
+    assert "position 1" in show_create_error, show_create_error
+
+    for statement in (f"SELECT * FROM {qualified}", f"SELECT id FROM {qualified}", f"DESCRIBE TABLE {qualified}"):
+        error = node.query_and_get_error(statement)
+        assert "AMBIGUOUS_COLUMN_NAME" in error, (statement, error)
+        assert (
+            "Column name in data lake catalog table schema cannot be empty" in error
+        ), (statement, error)
+
+    # Repeat: rejecting must be stable, not a one-shot that leaves the schema half built.
+    error_again = node.query_and_get_error(f"SELECT * FROM {qualified}")
+    assert "AMBIGUOUS_COLUMN_NAME" in error_again, error_again
+
+    assert node.query("SELECT 1") == "1\n"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

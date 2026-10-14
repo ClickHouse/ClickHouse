@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Repro of issue #109329: the direct-read rewrite replaces text-search functions with the
 -- __text_index_* virtual column; a fragment shipped to a worker rebuilds a storage snapshot
 -- without it and failed with NOT_FOUND_COLUMN_IN_BLOCK. make_distributed_plan now auto-disables
@@ -19,7 +16,7 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     query_plan_direct_read_from_text_index = 1, use_skip_indexes = 1;
 
 SELECT 'hasAnyTokens over a text index works under make_distributed_plan';
-SELECT count() FROM t_text_dp WHERE hasAnyTokens(s, ['word42']);
+SELECT count() FROM t_text_dp WHERE hasAnyTokens(s, ['word42']) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_text_dp WHERE hasAnyTokens(s, ['word42']) SETTINGS make_distributed_plan = 0;
 
 SELECT 'the query distributes';

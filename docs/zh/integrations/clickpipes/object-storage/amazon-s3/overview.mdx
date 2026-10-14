@@ -59,7 +59,7 @@ S3 ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通
 
 默认情况下，S3 ClickPipe 假定文件会按词典序添加到存储桶中，并依赖这种隐含顺序依次摄取文件。这意味着任何新文件**必须**在词典序上大于上一个已摄取的文件。例如，名为 `file1`、`file2` 和 `file3` 的文件会被依次摄取；但如果有一个新的 `file 0` 添加到存储桶中，它将被**忽略**，因为该文件名在词典序上并不大于上一个已摄取的文件。
 
-在此模式下，S3 ClickPipe 会对指定路径中的**所有文件**执行初始加载，然后按可配置的时间间隔轮询新文件 (默认为 30 秒) 。**无法**从某个特定文件或时间点开始摄取——ClickPipes 始终会加载指定路径中的所有文件。
+在此模式下，S3 ClickPipe 会对指定路径中的**所有文件**执行初始加载，然后按可配置的时间间隔轮询新文件 (默认为 30 秒) 。要在特定文件之后开始持续摄取，请配置**开始于之后**。ClickPipes 会跳过在词典序上小于或等于所配置值的文件，并从该位置继续摄取较新的文件。
 
 <div id="continuous-ingestion-any-order">
   #### 任意顺序
@@ -75,13 +75,13 @@ S3 ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通
   无序模式**仅**支持 Amazon S3，**不**支持公共存储桶或兼容 S3 的服务。它要求设置一个连接到存储桶的 [Amazon SQS](https://aws.amazon.com/sqs/) 队列，并可选使用 [Amazon EventBridge](https://aws.amazon.com/eventbridge/) 作为事件路由器。
 </Note>
 
-在此模式下，S3 ClickPipe 会先对所选路径中的**所有文件**执行初始加载，然后监听队列中与指定路径匹配的 `ObjectCreated:*` 事件。对于之前已处理过的文件、不匹配该路径的文件，或其他类型事件的消息，都会被**忽略**。
+在此模式下，S3 ClickPipe 会先对所选路径中的**所有文件**执行初始加载，然后监听队列中与指定路径匹配的 `ObjectCreated:*` 事件。对于之前已处理过的文件、不匹配该路径的文件，或其他类型事件的消息，都会被**忽略**。若要仅摄取通过队列传送的文件，请启用**跳过初始加载**。启用后，ClickPipes 会跳过对所选路径中现有文件的初始扫描，仅处理通过 SQS 队列传送的文件。
 
 <Note>
   为事件设置前缀/后缀是可选的。如果设置了，请确保它与为 ClickPipe 配置的路径一致。S3 不允许为相同事件类型配置多个相互重叠的通知规则。
 </Note>
 
-当达到 `max insert bytes` 或 `max file count` 中配置的阈值时，或者经过一个可配置的时间间隔后 (默认 30 秒) ，系统就会开始摄取文件。**无法**从某个特定文件或某个时间点开始摄取——ClickPipes 始终会加载所选路径中的所有文件。如果配置了 DLQ，失败的消息会被重新入队并重新处理，最多重试到 DLQ `maxReceiveCount` 参数中配置的次数。
+当达到 `max insert bytes` 或 `max file count` 中配置的阈值时，或者经过一个可配置的时间间隔后 (默认 30 秒) ，系统就会开始摄取文件。如果配置了 DLQ，失败的消息会被重新入队并重新处理，最多重试到 DLQ `maxReceiveCount` 参数中配置的次数。
 
 <Tip>
   我们强烈建议为 SQS 队列配置 **Dead-Letter-Queue (DLQ)**，这样更方便调试和重试失败的消息。
@@ -207,7 +207,7 @@ S3 ClickPipe 支持公有和私有存储桶。**不支持** [Requester Pays](htt
 
 S3 ClickPipes 在元数据发现和数据摄取时分别使用两条不同的网络路径：ClickPipes 服务和 ClickHouse Cloud 服务。如果你想额外增加一层网络安全保护 (例如出于合规原因) ，**则必须同时为这两条路径配置网络访问**。
 
-* 对于**基于 IP 的访问控制**，S3 存储桶策略必须允许 [此处](/zh/integrations/clickpipes/home#list-of-static-ips) 列出的 ClickPipes 服务所在区域的静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
+* 对于**基于 IP 的访问控制**，S3 存储桶策略必须允许 [此处](/zh/integrations/clickpipes/networking/static-ips) 列出的 ClickPipes 服务所在区域的静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
 
   ```bash
   # 将 <your-region> 替换为你的 ClickHouse Cloud 区域
@@ -227,18 +227,20 @@ S3 ClickPipes 在元数据发现和数据摄取时分别使用两条不同的网
 
 ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的需求。如果您的使用场景需要进一步微调，可以调整以下设置：
 
-| 设置                                   | 默认值     | 说明                                                                                                                |
-| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB    | 单个插入批次中处理的字节数。                                                                                                    |
-| `Max file count`                     | 100     | 单个插入批次中处理的最大文件数。                                                                                                  |
-| `Max threads`                        | auto(3) | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings#max_threads)。                                               |
-| `Max insert threads`                 | 1       | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings#max_insert_threads)。                                      |
-| `Min insert block size bytes`        | 1GB     | 可插入表中的[块最小字节数](/zh/reference/settings/session-settings#min_insert_block_size_bytes)。                                 |
-| `Max download threads`               | 4       | [最大并发下载线程数](/zh/reference/settings/session-settings#max_download_threads)。                                           |
-| `Object storage polling interval`    | 30s     | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                    |
-| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)的方式推送到已附加的视图。                         |
-| `Use cluster function`               | true    | 是否在多个节点上并行处理文件。                                                                                                   |
+| 设置                                   | 默认值     | 说明                                                                                                                         |
+| ------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB    | 单个插入批次中处理的字节数。                                                                                                             |
+| `Max file count`                     | 100     | 单个插入批次中处理的最大文件数。                                                                                                           |
+| `Max threads`                        | auto(3) | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings/max-threads#max_threads)。                                            |
+| `Max insert threads`                 | 1       | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings/max-insert#max_insert_threads)。                                    |
+| `Min insert block size bytes`        | 1GB     | 可插入表中的[块最小字节数](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。                               |
+| `Max download threads`               | 4       | [最大并发下载线程数](/zh/reference/settings/session-settings/max-download#max_download_threads)。                                       |
+| `Object storage polling interval`    | 30s     | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                             |
+| `开始于之后`                        | None    | 对于 ordered 持续摄取，跳过字典序小于或等于所配置文件名或路径的文件。                                                                                    |
+| `跳过初始加载`                  | false   | 对于 unordered 模式 持续摄取，跳过对现有文件的初始扫描，仅处理来自所配置 SQS 队列的对象通知。                                                                       |
+| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 设置](/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings/parallel#parallel_view_processing)的方式推送到已附加的视图。                         |
+| `Use cluster function`               | true    | 是否在多个节点上并行处理文件。                                                                                                            |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 高级设置" size="lg" border />
 

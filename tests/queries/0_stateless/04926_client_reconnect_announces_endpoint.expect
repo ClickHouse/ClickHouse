@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+
+# A connection closed by the server must be re-established transparently. The new connection is
+# independent of the initial attempt and has to announce its endpoint exactly once.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT"
+expect ":) "
+
+send -- "SET idle_connection_timeout = 0\r"
+expect ":) "
+
+send -- "SELECT 'first_query'\r"
+expect "first_query"
+expect ":) "
+
+# The server closes the connection immediately after the query. Wait for the socket to become
+# readable so the next query takes the reconnect path.
+sleep 3
+
+send -- "SELECT 'second_query'\r"
+expect -ex "Connecting to"
+expect {
+    -ex "Connecting to" {
+        send_user "The reconnect endpoint was announced twice.\n"
+        exit 1
+    }
+    -ex "Connected to" { }
+}
+expect "second_query"
+expect ":) "
+
+send -- "\4"
+expect eof

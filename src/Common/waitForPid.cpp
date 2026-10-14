@@ -230,6 +230,16 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     Pfree(hdl);
     return result;
 }
+#elif defined(OS_WASM)
+
+namespace DB
+{
+
+/// WebAssembly has no child processes: there is no `fork` and no `exec`, so nothing to wait for.
+static PollPidResult pollPid(pid_t /*pid*/, int /*timeout_in_ms*/)
+{
+    return PollPidResult::FAILED;
+}
 #else
     #error "Unsupported OS type"
 #endif

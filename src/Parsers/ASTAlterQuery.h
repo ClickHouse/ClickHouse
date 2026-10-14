@@ -35,6 +35,7 @@ public:
         MATERIALIZE_COLUMN,
 
         MODIFY_ORDER_BY,
+        MODIFY_PROJECTION,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
         REWRITE_PARTS,
@@ -135,11 +136,11 @@ public:
     */
     IAST * constraint = nullptr;
 
-    /** The ADD PROJECTION query stores the ProjectionDeclaration there.
+    /** The ADD/MODIFY PROJECTION query stores the ProjectionDeclaration there.
      */
     IAST * projection_decl = nullptr;
 
-    /** The ADD PROJECTION query stores the name of the projection following AFTER.
+    /** The ADD/MODIFY PROJECTION query stores the name of the projection following AFTER.
      *  The DROP PROJECTION query stores the name for deletion.
      *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
      *  The CLEAR PROJECTION query stores the name of the projection to clear.
@@ -152,6 +153,11 @@ public:
      *  The value or ID of the partition is stored here.
      */
     IAST * partition = nullptr;
+
+    /** Used in UPDATE, DELETE queries with multiple partitions specified via IN PARTITION p1, p2, ...
+     *  An ASTExpressionList of ASTPartition nodes.
+     */
+    IAST * partitions = nullptr;
 
     /// For DELETE/UPDATE WHERE: the predicate that filters the rows to delete/update.
     IAST * predicate = nullptr;
@@ -244,6 +250,8 @@ public:
     void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
@@ -281,11 +289,9 @@ public:
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
     bool isCommentAlter() const;
-
-    /// Every command modifies settings or comments: any mix of MODIFY SETTING /
-    /// RESET SETTING / COMMENT COLUMN / MODIFY COMMENT / comment-only MODIFY COLUMN.
-    /// The single-type isSettingsAlter / isCommentAlter miss such mixed batches.
     bool isSettingsOrCommentAlter() const;
+
+    bool isReplacePartitionAlter() const;
 
     String getID(char) const override;
 
@@ -301,6 +307,8 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;

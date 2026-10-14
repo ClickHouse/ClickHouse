@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -81,10 +81,9 @@ const Block & PushingPipelineExecutor::getHeader() const
     return pushing_source->getPort().getHeader();
 }
 
-[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
+[[noreturn]] static void throwOnUnexpectedPipelineFinish(const IProcessor & pushing_source)
 {
-    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
+    if (pushing_source.isCancelled())
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -97,11 +96,12 @@ void PushingPipelineExecutor::start()
         return;
 
     started = true;
-    executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+    executor = createExecutor(pipeline.processors, pipeline.process_list_element);
     executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+    executor->setStepProfiler(pipeline.getStepProfiler());
 
-    if (!executor->executeStep(&input_wait_flag))
-        throwOnExecutionStatus(executor->getExecutionStatus());
+    if (!executor->executeUntil(&input_wait_flag))
+        throwOnUnexpectedPipelineFinish(*pushing_source);
 }
 
 void PushingPipelineExecutor::push(Chunk chunk)
@@ -111,8 +111,8 @@ void PushingPipelineExecutor::push(Chunk chunk)
 
     pushing_source->setData(std::move(chunk));
 
-    if (!executor->executeStep(&input_wait_flag))
-        throwOnExecutionStatus(executor->getExecutionStatus());
+    if (!executor->executeUntil(&input_wait_flag))
+        throwOnUnexpectedPipelineFinish(*pushing_source);
 }
 
 void PushingPipelineExecutor::push(Block block)
@@ -128,7 +128,7 @@ void PushingPipelineExecutor::finish()
 
     if (executor)
     {
-        [[maybe_unused]] auto res = executor->executeStep();
+        [[maybe_unused]] auto res = executor->executeUntil(nullptr);
         chassert(!res);
     }
 }
@@ -139,7 +139,7 @@ void PushingPipelineExecutor::cancel()
     if (executor && !finished)
     {
         finished = true;
-        executor->cancel();
+        executor->cancel(IProcessor::CancelReason::CancelledByUser);
     }
 }
 

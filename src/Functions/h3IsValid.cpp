@@ -113,7 +113,7 @@ Verifies whether the number is a valid [H3](https://h3geo.org/docs/core-library/
         },
         {
             "Check invalid H3 index",
-            "SELECT h3IsValid(12345) AS isValid",
+            "SELECT h3IsValid(toUInt64(12345)) AS isValid",
             R"(
 ┌─isValid─┐
 │       0 │

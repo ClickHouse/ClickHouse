@@ -1,4 +1,4 @@
-SET allow_experimental_codecs = 1;
+SET enable_alp_codec = 1;
 
 -- Compression ratio before https://github.com/ClickHouse/ClickHouse/pull/111627: 1
 -- After: 3

@@ -1,10 +1,10 @@
 ---
-description: 'مجموعة البيانات والاستعلامات الخاصة بـ Join Order Benchmark (JOB).'
-sidebarTitle: 'JOB'
-slug: /getting-started/example-datasets/job
-title: 'Join Order Benchmark (JOB)'
-doc_type: 'guide'
-keywords: ['مجموعة بيانات تجريبية', 'JOB', 'join order benchmark', 'اختبار معياري', 'اختبار الأداء', 'محسّن الاستعلامات', 'ترتيب الربط']
+title: "Join Order Benchmark (JOB)"
+description: "مجموعة البيانات والاستعلامات الخاصة بـ Join Order Benchmark (JOB)."
+sidebarTitle: "JOB"
+slug: "/getting-started/example-datasets/job"
+doc_type: "guide"
+keywords: ["مجموعة بيانات تجريبية", "JOB", "join order benchmark", "اختبار معياري", "اختبار الأداء", "محسّن الاستعلامات", "ترتيب الربط"]
 ---
 
 يضع Join Order Benchmark (JOB) محسّن الاستعلامات تحت الضغط عبر 113 استعلامًا تحليليًا على مجموعة بيانات واقعية عالية الارتباط (لقطة من IMDb). ومنذ تقديمه، أصبح اختبار JOB المعيار الفعلي لتقييم أداء محسّنات استعلامات قواعد البيانات العلائقية، بما في ذلك تقدير الكاردينالية وتحسين ترتيب الربط. وعلى عكس الاختبارات المعيارية الاصطناعية التي تفترض بيانات متجانسة ومستقلة، يستخدم JOB بيانات حقيقية تتضمن انحرافًا وارتباطات، مما يجعله اختبارًا صعبًا لترتيب عمليات الربط وتقدير الكاردينالية.
@@ -38,12 +38,9 @@ clickhouse client --database job --queries-file init_cloud.sql
   ## تحميل البيانات
 </div>
 
-تأتي البيانات من لقطة IMDb الأصلية المستخدمة في JOB، والموزعة على شكل ملف CSV واحد لكل جدول (`aka_name.csv`, `title.csv`, ...).
-تستخدم ملفات CSV هذه دلالات `COPY` الخاصة بـ PostgreSQL مع `ESCAPE '\'`: إذ يُستخدم backslash لتجاهل تأثير حرف الاقتباس فقط داخل حقل محاط بعلامتَي اقتباس، بينما يكون backslash خارج علامات الاقتباس حرفًا عاديًا.
-ويتوقع ClickHouse ملفات CSV المتوافقة مع RFC 4180 (علامات اقتباس مزدوجة، من دون استخدام backslash كحرف هروب)، لذا يجب إعادة ترميز الملفات أولًا.
+تأتي البيانات من لقطة IMDb الأصلية المستخدمة في JOB، والموزعة على شكل ملف CSV واحد لكل جدول (`aka_name.csv`, `title.csv`, ...). تستخدم ملفات CSV هذه دلالات `COPY` الخاصة بـ PostgreSQL مع `ESCAPE '\'`: إذ يُستخدم backslash لتجاهل تأثير حرف الاقتباس فقط داخل حقل محاط بعلامتَي اقتباس، بينما يكون backslash خارج علامات الاقتباس حرفًا عاديًا. ويتوقع ClickHouse ملفات CSV المتوافقة مع RFC 4180 (علامات اقتباس مزدوجة، من دون استخدام backslash كحرف هروب)، لذا يجب إعادة ترميز الملفات أولًا.
 
-ينفّذ [`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) عملية إعادة الترميز هذه.
-فهو يقرأ ملف CSV الأصلي من stdin ويكتب ملف CSV قياسيًا إلى stdout، مع مضاعفة علامات الاقتباس المضمّنة والحفاظ على الحقول الفارغة غير المحاطة بعلامات اقتباس (والتي يعيّنها ClickHouse إلى `NULL` في الأعمدة من النوع `Nullable`).
+ينفّذ [`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) عملية إعادة الترميز هذه. فهو يقرأ ملف CSV الأصلي من stdin ويكتب ملف CSV قياسيًا إلى stdout، مع مضاعفة علامات الاقتباس المضمّنة والحفاظ على الحقول الفارغة غير المحاطة بعلامات اقتباس (والتي يعيّنها ClickHouse إلى `NULL` في الأعمدة من النوع `Nullable`).
 
 لبناء الجداول من ملفات CSV الأصلية:
 
@@ -69,7 +66,7 @@ done
 
 الأحجام التفصيلية للجداول:
 
-| Table                  | الحجم (عدد الصفوف) | الحجم (بعد الضغط في ClickHouse) |
+| جدول                  | الحجم (عدد الصفوف) | الحجم (بعد الضغط في ClickHouse) |
 | ---------------------- | ------------------ | ------------------------------- |
 | aka&#95;name           | 901,343            | 31.86 MiB                       |
 | aka&#95;title          | 361,472            | 14.32 MiB                       |
@@ -100,9 +97,7 @@ done
   ## الاستعلامات
 </div>
 
-يمكن العثور على استعلامات JOB البالغ عددها 113 [هنا](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) في مستودع ClickHouse.
-أما الإعدادات المستخدمة لتشغيلها، فهي موجودة في [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
-راجِع ملف [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) للاطلاع على المشكلات المعروفة والملاحظات المتعلقة ببعض الاستعلامات.
+يمكن العثور على استعلامات JOB البالغ عددها 113 [هنا](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) في مستودع ClickHouse. أما الإعدادات المستخدمة لتشغيلها، فهي موجودة في [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json). راجِع ملف [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) للاطلاع على المشكلات المعروفة والملاحظات المتعلقة ببعض الاستعلامات.
 
 تشير الاستعلامات إلى الجداول بأسمائها، لذا شغّلها على قاعدة البيانات `job` (على سبيل المثال، باستخدام `clickhouse client --database job`).
 
@@ -128,3 +123,9 @@ WHERE ct.kind = 'production companies'
   AND mc.movie_id = mi_idx.movie_id
   AND it.id = mi_idx.info_type_id;
 ```
+
+<div id="performance-benchmark">
+  ## اختبار الأداء المعياري
+</div>
+
+يتتبع ClickHouse أداء استعلامات JOB في جميع الإصدارات المنشورة. يمكنك استعراض أزمنة تشغيل استعلامات JOB الـ113 جميعها في صفحة [اختبار إصدارات ClickHouse المعياري](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ob\&metric=hot\&queries=-) لمعرفة كيف تطور الأداء بمرور الوقت.
