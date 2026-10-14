@@ -45,6 +45,7 @@ extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int SET_SIZE_LIMIT_EXCEEDED;
+extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 namespace
