@@ -443,6 +443,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
+            table->prepareForDrop(getContext());
             context_handle->removeExternalTable(table_name);
         }
     }

@@ -1454,7 +1454,7 @@ void DatabaseDataLake::createTable(
             "give an explicit {}-family table engine with the table location",
             family_name, family_name);
 
-    /// The query was authorized for the default table engine, but the catalog table is opened as `family_name`.
+    /// The query names no table engine, but the catalog table is opened as `family_name`.
     context_->checkAccess(AccessType::TABLE_ENGINE, family_name);
 
     const auto & create = query->as<ASTCreateQuery &>();

@@ -1021,7 +1021,8 @@ def test_native_create_gzip_metadata(started_cluster):
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
 
 
-def test_native_create_if_not_exists_over_leftover_metadata(started_cluster):
+@pytest.mark.parametrize("initial_compression_method", ["none", "gzip"])
+def test_native_create_if_not_exists_over_leftover_metadata(started_cluster, initial_compression_method):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_native_create_leftover_{uuid.uuid4()}"
@@ -1036,7 +1037,7 @@ def test_native_create_if_not_exists_over_leftover_metadata(started_cluster):
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     node.query(
         f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
-        settings=settings,
+        settings={**settings, "iceberg_metadata_compression_method": initial_compression_method},
     )
     # The Glue catalog keeps the metadata file at the table location after DROP.
     drop_clickhouse_glue_table(node, root_namespace, table_name)

@@ -1500,6 +1500,7 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
         settings={
             "allow_experimental_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
+            "default_table_engine": "None",
         },
     )
 

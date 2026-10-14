@@ -51,6 +51,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/FailPoint.h>
 #include <Common/scope_guard_safe.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -777,6 +778,33 @@ bool GlueCatalog::createTable(
         TableMetadata dummy_metadata;
         auto [object_storage, bucket_name, table_path] = createObjectStorageForEarlyTableAccess(table_location, dummy_metadata);
 
+        /// Returns false for `IF NOT EXISTS` over a registered table, otherwise throws.
+        auto on_existing_metadata = [&](const String & metadata_location)
+        {
+            if (existsTable(namespace_name, table_name))
+            {
+                if (if_not_exists)
+                    return false;
+                throw DB::Exception(
+                    DB::ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog", namespace_name, table_name);
+            }
+
+            /// Not a table but a dirty location. Not `TABLE_ALREADY_EXISTS`, which `IF NOT EXISTS` turns into a no-op.
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "The Glue catalog has no table {}.{} registered, but the Iceberg metadata s3://{}/{} is already present, "
+                "so creating the table there would clash with it. This is usually left behind by a previous `DROP TABLE`, "
+                "which keeps the data and metadata in place: remove the leftover files, or create the table at a different location",
+                namespace_name,
+                table_name,
+                bucket_name,
+                metadata_location);
+        };
+
+        /// Leftover metadata may have been written with any codec, so look for every metadata file, not only the one written below.
+        if (!DB::listFiles(*object_storage, table_path, "metadata", ".metadata.json").empty())
+            return on_existing_metadata(table_path + "/metadata/");
+
         /// Name the file exactly like `IcebergMetadata::createInitial` does: the Iceberg spec extension
         /// (gzip -> "gz"), not the raw setting token.
         String compression_suffix = DB::toIcebergMetadataCompressionExtension(metadata_compression_method);
@@ -801,24 +829,7 @@ bool GlueCatalog::createTable(
                 throw;
 
             /// Someone else created this table first.
-            if (existsTable(namespace_name, table_name))
-            {
-                if (if_not_exists)
-                    return false;
-                throw DB::Exception(
-                    DB::ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog", namespace_name, table_name);
-            }
-
-            /// Not a table but a dirty location. Not `TABLE_ALREADY_EXISTS`, which `IF NOT EXISTS` turns into a no-op.
-            throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "The Glue catalog has no table {}.{} registered, but the Iceberg metadata file s3://{}/{} is already present, "
-                "so creating the table there would clash with it. This is usually left behind by a previous `DROP TABLE`, "
-                "which keeps the data and metadata in place: remove the leftover files, or create the table at a different location",
-                namespace_name,
-                table_name,
-                bucket_name,
-                metadata_filename);
+            return on_existing_metadata(metadata_filename);
         }
 
         written_metadata_storage = object_storage;

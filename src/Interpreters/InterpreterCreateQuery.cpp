@@ -1222,7 +1222,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         return {};
     }
     else if (!create.storage || !create.storage->engine)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected application state. CREATE query is missing either its storage or engine.");
+    {
+        /// `setEngine` leaves the engine unset only for a `DataLakeCatalog` table, which cannot infer its structure.
+        const auto target_database = DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
+        if (!target_database || !target_database->isDatalakeCatalog())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected application state. CREATE query is missing either its storage or engine.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
+    }
     /// We can have queries like "CREATE TABLE <table> ENGINE=<engine>" if <engine>
     /// supports schema inference (will determine table structure in it's constructor).
     else if (!StorageFactory::instance().getStorageFeatures(create.storage->engine->name).supports_schema_inference)
@@ -1596,6 +1602,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
     }
 
+    /// A `DataLakeCatalog` determines the engine of its tables itself, so a table created there without
+    /// `ENGINE` gets no default one.
+    const auto target_database = DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
+    const bool is_datalake_catalog = target_database && target_database->isDatalakeCatalog();
+
     /// We'll try to extract a storage definition from clause `AS`:
     ///     CREATE TABLE table_name AS other_table_name [storage_clauses]
     /// It is needed both when no storage clause is specified at all and when storage clauses such as
@@ -1660,8 +1671,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             /// A `DataLakeCatalog` that assigns table locations itself shows its tables without `ENGINE`.
             /// Only a `DataLakeCatalog` target can be created from such a table: it builds its own storage
             /// and copies the keys from the source metadata.
-            const auto target_database = DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
-            if (!target_database || !target_database->isDatalakeCatalog())
+            if (!is_datalake_catalog)
                 throw Exception(
                     ErrorCodes::INCORRECT_QUERY,
                     "Cannot CREATE a table AS {}, it has no table engine. Specify ENGINE explicitly",
@@ -1686,7 +1696,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 /// merge its settings under the explicitly specified ones (the latter take precedence).
                 inheritStorageFromSource(*create.storage, *storage_def);
             }
-            else
+            else if (!is_datalake_catalog)
             {
                 /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
                 setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_table_engine].value);
@@ -1702,6 +1712,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (!storage_def)
     {
+        if (is_datalake_catalog)
+            return;
+
         /// Set ENGINE by default.
         storage_def = make_intrusive<ASTStorage>();
         setDefaultTableEngine(*storage_def, getContext()->getSettingsRef()[Setting::default_table_engine].value);
