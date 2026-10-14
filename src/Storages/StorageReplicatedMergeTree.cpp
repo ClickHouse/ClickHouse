@@ -7660,12 +7660,23 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     /// Bump the /metadata ZNode version to match the max parts metadata version.
     /// The table's in-memory metadata_version is derived from the /metadata ZNode stat.version
     /// during startup. Each SET increments the ZNode version by 1.
+    /// Every replica runs this and the first one to restore has already bumped the version, so bump only
+    /// up to the target: restoring the replicas one by one or ON CLUSTER must not add it once per replica.
+    /// Each SET is conditional on the version just read, so concurrent restores cannot overshoot either.
     if (max_parts_metadata_version > 0)
     {
         auto zookeeper = getZooKeeper();
-        String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-        for (int32_t i = 0; i < max_parts_metadata_version; ++i)
-            zookeeper->set(zookeeper_path + "/metadata", metadata_str);
+        const String metadata_path = zookeeper_path + "/metadata";
+        Coordination::Stat metadata_stat;
+        String metadata_str = zookeeper->get(metadata_path, &metadata_stat);
+        while (metadata_stat.version < max_parts_metadata_version)
+        {
+            const auto code = zookeeper->trySet(metadata_path, metadata_str, metadata_stat.version, &metadata_stat);
+            if (code == Coordination::Error::ZBADVERSION)
+                metadata_str = zookeeper->get(metadata_path, &metadata_stat);
+            else if (code != Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(code, metadata_path);
+        }
         zookeeper->set(replica_path + "/metadata_version", std::to_string(max_parts_metadata_version));
 
         LOG_INFO(log, "Bumped metadata version to {} to match parts", max_parts_metadata_version);
