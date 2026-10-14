@@ -1190,7 +1190,7 @@ UInt64 countRowsMissingColumn(const MergeTreeDataPartsVector & parts, const Stri
 
 }
 
-UInt64 estimateNeededMemoryForMerge(
+static UInt64 estimateNeededMemoryForMergeImpl(
     const FutureMergedMutatedPart & future_part,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
@@ -1202,6 +1202,14 @@ UInt64 estimateNeededMemoryForMerge(
     bool deduplicate,
     bool cleanup)
 {
+    /// The merging params the merge runs with: those of patch parts for a merge of patch parts (see
+    /// MergeTreeDataMergerMutator::mergePartsToTemporaryPart), the table's otherwise.
+    MergeTreeData::MergingParams merge_merging_params;
+    if (future_part.isResultPatch())
+        merge_merging_params = MergeTreeData::getMergingParamsForPatchParts();
+    else if (!future_part.parts.empty())
+        merge_merging_params = future_part.parts.front()->storage.merging_params;
+
     /// Per-stream read buffer size, from the effective server settings (merges read through the global
     /// context). A read buffer is later shrunk to the granule size, and it is smaller for the local
     /// filesystem than for remote (object storage).
@@ -1436,7 +1444,7 @@ UInt64 estimateNeededMemoryForMerge(
     /// absent from every source part), never under-reserve.
     if (!expired_columns.empty() && !future_part.parts.empty())
     {
-        const auto & merging_params = future_part.parts.front()->storage.merging_params;
+        const auto & merging_params = merge_merging_params;
 
         /// Summing / Aggregating / Coalescing merges require every column, and a deduplicating merge may
         /// compare any subset chosen by DEDUPLICATE BY (unknown here) - keep every column priced there.
@@ -1659,7 +1667,7 @@ UInt64 estimateNeededMemoryForMerge(
             || need_remove_expired_values
             || has_lightweight_delete
             || !future_part.patch_parts.empty()
-            || future_part.parts.front()->storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary);
+            || merge_merging_params.mode != MergeTreeData::MergingParams::Ordinary);
 
     /// Missing-ness is probed under the source part's own name for the column (a pending rename target is
     /// stored - and read - under its old name, and is default-filled only for the rows of parts that lack
@@ -2114,7 +2122,7 @@ UInt64 estimateNeededMemoryForMerge(
     /// lightweight-delete term is the broader source_and_patch_parts one, which can only reject more
     /// merges from the vertical pricing than the merge itself does - again the over-reserving direction.
     const bool can_vertical_ttl_delete = !future_part.parts.empty()
-        && future_part.parts.front()->storage.merging_params.mode == MergeTreeData::MergingParams::Ordinary
+        && merge_merging_params.mode == MergeTreeData::MergingParams::Ordinary
         && settings[MergeTreeSetting::vertical_merge_optimize_ttl_delete]
         && !metadata_snapshot->hasAnyGroupByTTL()
         && !metadata_snapshot->hasAnyColumnTTL()
@@ -2130,7 +2138,7 @@ UInt64 estimateNeededMemoryForMerge(
         && (!need_remove_expired_values || can_vertical_ttl_delete)
         && future_part.parts.size() <= RowSourcePart::MAX_PARTS)
     {
-        const auto & merging_params = future_part.parts.front()->storage.merging_params;
+        const auto & merging_params = merge_merging_params;
         const bool is_supported_mode = merging_params.mode == MergeTreeData::MergingParams::Ordinary
             || merging_params.mode == MergeTreeData::MergingParams::Collapsing
             || merging_params.mode == MergeTreeData::MergingParams::Replacing
@@ -2353,7 +2361,7 @@ UInt64 estimateNeededMemoryForMerge(
     UInt64 projection_memory = 0;
     const auto projection_mode = settings[MergeTreeSetting::deduplicate_merge_projection_mode];
     const bool merge_processes_projections = !future_part.parts.empty()
-        && (future_part.parts.front()->storage.merging_params.mode == MergeTreeData::MergingParams::Ordinary
+        && (merge_merging_params.mode == MergeTreeData::MergingParams::Ordinary
             || (projection_mode != DeduplicateMergeProjectionMode::THROW && projection_mode != DeduplicateMergeProjectionMode::DROP));
     if (merge_processes_projections)
     {
@@ -2761,6 +2769,48 @@ UInt64 estimateNeededMemoryForMerge(
     }
 
     return input_memory + output_memory + projection_memory;
+}
+
+UInt64 estimateNeededMemoryForMerge(
+    const FutureMergedMutatedPart & future_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
+    const MergeTreeSettings & settings,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    time_t time_of_merge,
+    bool output_on_remote_disk,
+    const std::vector<DiskWriteBufferMemory> & remote_write_buffer_memories,
+    bool deduplicate,
+    bool cleanup)
+{
+    /// A merge of patch parts does not run with the table's metadata: MergeTreeDataMergerMutator::mergePartsToTemporaryPart
+    /// replaces it with the synthetic metadata of the source patch (its `_part`, `_part_offset`, `_data_version`
+    /// columns and implicit indexes, and none of the table's projections or default-only columns) and drops the
+    /// mutations snapshot, which was taken against the table's metadata. Estimate it with the same metadata.
+    if (future_part.isResultPatch())
+        return estimateNeededMemoryForMergeImpl(
+            future_part,
+            future_part.parts.front()->getMetadataSnapshot(),
+            context,
+            settings,
+            /*mutations_snapshot=*/ nullptr,
+            time_of_merge,
+            output_on_remote_disk,
+            remote_write_buffer_memories,
+            deduplicate,
+            cleanup);
+
+    return estimateNeededMemoryForMergeImpl(
+        future_part,
+        metadata_snapshot,
+        context,
+        settings,
+        mutations_snapshot,
+        time_of_merge,
+        output_on_remote_disk,
+        remote_write_buffer_memories,
+        deduplicate,
+        cleanup);
 }
 
 DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk, const WriteSettings & write_settings)
