@@ -57,6 +57,19 @@ Nullable and LowCardinality columns
 1	2
 CUBE
 32	192	48
+GROUPING SETS
+0	8
+0	8
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+\N	8
+\N	8
 ROLLUP, rolled-up key with its column
 7	13
 ROLLUP, group_by_use_nulls

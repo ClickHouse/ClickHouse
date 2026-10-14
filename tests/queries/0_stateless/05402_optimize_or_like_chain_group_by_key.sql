@@ -20,6 +20,9 @@ SELECT * FROM (SELECT (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s L
 SELECT * FROM (SELECT (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%') AS e, count() AS c FROM (SELECT toLowCardinality(toString(number % 6)) AS s FROM numbers(12)) GROUP BY s LIKE '%1%', s LIKE '%2%', s LIKE '%3%', s LIKE '%4%') ORDER BY ALL;
 SELECT 'CUBE';
 SELECT sum(e), sum(c), count() FROM (SELECT (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%') AS e, count() AS c FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY CUBE(s LIKE '%1%', s LIKE '%2%', s LIKE '%3%', s LIKE '%4%'));
+SELECT 'GROUPING SETS';
+SELECT * FROM (SELECT (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%') AS e, count() AS c FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY GROUPING SETS ((s LIKE '%1%', s LIKE '%2%'), (s LIKE '%3%', s LIKE '%4%'))) ORDER BY ALL;
+SELECT * FROM (SELECT (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%') AS e, count() AS c FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY GROUPING SETS ((s LIKE '%1%', s LIKE '%2%'), (s LIKE '%3%', s LIKE '%4%'))) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 SELECT 'ROLLUP, rolled-up key with its column';
 SELECT countIf(e), count() FROM (SELECT s, (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%') AS e FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY ROLLUP(s, s LIKE '%1%'));
 SELECT 'ROLLUP, group_by_use_nulls';
