@@ -3875,6 +3875,13 @@ void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, Sett
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
+void Context::clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source)
+{
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampRejectingInvalidChanges(*settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+}
+
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
@@ -4006,6 +4013,21 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSourc
 
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
+}
+
+void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source)
+{
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraintsRejectingInvalidChanges(segment, source);
+        });
+        return;
+    }
+
+    SharedLockGuard lock(mutex);
+    clampToSettingsConstraintsRejectingInvalidChangesWithLock(changes, source);
 }
 
 void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
