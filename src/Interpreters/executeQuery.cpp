@@ -2903,6 +2903,27 @@ static BlockIO executeQueryImpl(
 
             const bool run_query_in_background_before_settings_from_query = settings[Setting::run_query_in_background].value;
 
+            /// A background run re-parses the original query text (see `executeQueryInBackground`) with a copy of `context`,
+            /// which by then carries the query's own `SETTINGS` clause. Remember the settings that governed the parse of the
+            /// text, so that e.g. `SELECT 1 SETTINGS allow_experimental_polyglot_dialect = 0` under the `polyglot` dialect, or
+            /// `SETTINGS dialect = 'clickhouse'` on a transpiled query, is not accepted here and then rejected or interpreted
+            /// differently by the background run.
+            SettingsChanges parse_settings_for_background;
+            if (run_query_in_background_before_settings_from_query && !flags.background)
+            {
+                static constexpr std::array parse_setting_names{
+                    "dialect",
+                    "allow_experimental_polyglot_dialect",
+                    "polyglot_dialect",
+                    "allow_settings_after_format_in_insert",
+                    "implicit_select",
+                    "max_query_size",
+                    "max_parser_depth",
+                    "max_parser_backtracks"};
+                for (const auto * name : parse_setting_names)
+                    parse_settings_for_background.emplace_back(name, settings.get(name));
+            }
+
             /// Construction settings in a non-last `UNION` arm's own `SETTINGS` clause are per-arm;
             /// wrap each such arm with its own `SELECT`/`WHERE`/`ORDER BY`/`LIMIT`/`OFFSET` and remove
             /// the settings from the AST. This runs before `applySettingsFromQuery` so the per-arm
@@ -2983,7 +3004,7 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
-                executeQueryInBackground(std::string_view(begin, end), out_ast, context);
+                executeQueryInBackground(std::string_view(begin, end), out_ast, context, parse_settings_for_background);
                 BlockIO io;
                 io.dispatched = true;
                 return io;
@@ -4336,7 +4357,7 @@ void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & contex
 
 }
 
-void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context)
+void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context, const SettingsChanges & parse_settings)
 {
     /// Best-effort check that INSERT/OPTIMIZE query's target table exists.
     /// (For other queries, it's not trivial to check this).
@@ -4372,6 +4393,9 @@ void executeQueryInBackground(std::string_view query, const ASTPtr & ast, Contex
     /// The caller keeps using its own context to finish the response, so the background query gets its own copy.
     auto background_context = Context::createCopy(context);
     background_context->makeQueryContext();
+    /// Restore the parse-time settings: the background run parses `query` again and applies its `SETTINGS` clause itself.
+    for (const auto & change : parse_settings)
+        background_context->setSetting(change.name, change.value);
 
     context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context]
     {
