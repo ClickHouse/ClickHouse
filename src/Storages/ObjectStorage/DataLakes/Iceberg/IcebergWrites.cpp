@@ -910,6 +910,17 @@ void generateManifestList(
         snapshot_first_row_id = new_snapshot->getValue<Int64>(Iceberg::f_first_row_id);
         next_first_row_id = snapshot_first_row_id;
     }
+    auto reserve_row_ids = [&](Int64 rows)
+    {
+        const Int64 first_row_id = next_first_row_id;
+        if (common::addOverflow(first_row_id, rows, next_first_row_id))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot assign row ids to {} rows starting at row id {}: the row id overflows",
+                rows,
+                first_row_id);
+        return first_row_id;
+    };
     if (use_previous_snapshots || !carry_forward_manifest_paths.empty())
     {
         auto parent_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
@@ -1029,17 +1040,14 @@ void generateManifestList(
                                 const Int64 existing_rows
                                     = validate_field_type(Iceberg::f_existing_rows_count, avro::AVRO_LONG).value<Int64>();
                                 Int64 manifest_rows = 0;
-                                Int64 manifest_next_row_id = 0;
-                                if (added_rows < 0 || existing_rows < 0 || common::addOverflow(added_rows, existing_rows, manifest_rows)
-                                    || common::addOverflow(next_first_row_id, manifest_rows, manifest_next_row_id))
+                                if (added_rows < 0 || existing_rows < 0 || common::addOverflow(added_rows, existing_rows, manifest_rows))
                                     throw Exception(
                                         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                                         "Manifest list {} entry has invalid row counts ({} added, {} existing), cannot assign row ids to it",
                                         resolved_manifest_list_path,
                                         added_rows,
                                         existing_rows);
-                                setVersionedField(new_entry, next_first_row_id, Iceberg::f_manifest_first_row_id);
-                                next_first_row_id = manifest_next_row_id;
+                                setVersionedField(new_entry, reserve_row_ids(manifest_rows), Iceberg::f_manifest_first_row_id);
                             }
                         }
                         writer.write(new_datum);
@@ -1136,16 +1144,7 @@ void generateManifestList(
 
         /// Only data files get row ids, so a delete manifest leaves the field null.
         if (version > 2 && entry_content == Iceberg::FileContentType::DATA)
-        {
-            const Int64 manifest_first_row_id = next_first_row_id;
-            if (common::addOverflow(manifest_first_row_id, added_rows_count, next_first_row_id))
-                throw Exception(
-                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Cannot assign row ids to {} rows starting at row id {}: the row id overflows",
-                    added_rows_count,
-                    manifest_first_row_id);
-            setVersionedField(entry, manifest_first_row_id, Iceberg::f_manifest_first_row_id);
-        }
+            setVersionedField(entry, reserve_row_ids(added_rows_count), Iceberg::f_manifest_first_row_id);
 
         write_partition_summary(entry, entry_idx);
 
