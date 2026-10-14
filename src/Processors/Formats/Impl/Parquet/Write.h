@@ -72,6 +72,10 @@ struct WriteOptions
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
 
     bool write_geometadata = true;
+
+    /// Write a named `Tuple` whose element names are fields of the `FILE` logical type as a
+    /// `FILE`-annotated group. See getFileLogicalTypeElementTypes.
+    bool write_file_logical_type = false;
 };
 
 /// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
