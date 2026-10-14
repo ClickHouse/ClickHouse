@@ -338,7 +338,8 @@ void dismantleJSON(const Poco::Dynamic::Var & root)
     std::vector<Poco::Dynamic::Var> pending{root};
     while (!pending.empty())
     {
-        Poco::Dynamic::Var value = std::move(pending.back());
+        /// `Poco::Dynamic::Var` has no move constructor; the copy only bumps the refcount of the holder.
+        Poco::Dynamic::Var value = pending.back();
         pending.pop_back();
 
         /// The children stay referenced from `pending`, so clearing a container never releases one
