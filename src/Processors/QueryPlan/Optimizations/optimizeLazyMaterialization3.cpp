@@ -330,9 +330,15 @@ ActionsDAG makeAboveReadDAG(
     return dag;
 }
 
-/// Makes `step_node` of an expression or a filter step the last column of its header, under `name`. The columns the
-/// step passes through without reading become outputs of its DAG first, in their order, so that none of them comes
-/// after it.
+/// Makes `step_node` of an expression or a filter step the last column of its header, under `name`. This is for a value
+/// the step computes without outputting it, such as `rowNumberInAllBlocks()` in `toString(rowNumberInAllBlocks())`
+/// where only the outer function is recomputed above the `LIMIT`: no other step has the value to copy it from.
+///
+/// `ActionsDAG::updateHeader` puts the outputs of a DAG first and the columns the DAG does not read after them, so an
+/// output appended as it is would come before those columns: their positions would move, which the steps above still
+/// prune by, and a column of this rebuild would not be the last, which `prunedInputOf` requires. So the columns the
+/// step passes through become outputs of its DAG first, in their order, which keeps the header as it was, and the new
+/// output comes after them.
 void appendOutputToStep(IQueryPlanStep & step, const ActionsDAG::Node & step_node, const String & name)
 {
     ActionsDAG * dag = nullptr;
