@@ -2004,7 +2004,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::sha
 
 namespace DB
 {
-    void ObjectStorageQueueMetadata::dropFailedFiles(const String & like_pattern)
+    void ObjectStorageQueueMetadata::dropFailedFiles(const std::optional<String> & like_pattern)
     {
         const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
         const auto zk_client = getZooKeeper();
@@ -2017,7 +2017,7 @@ namespace DB
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cleanup is already being executed by another node");
 
         std::unique_ptr<re2::RE2> matcher;
-        if (!like_pattern.empty())
+        if (like_pattern)
         {
             /// In hive partitioning NodeMetadata::file_path is not set, so it cannot be matched.
             if (partitioning_mode == ObjectStorageQueuePartitioningMode::HIVE)
@@ -2025,9 +2025,9 @@ namespace DB
 
             re2::RE2::Options options;
             options.set_dot_nl(true);
-            matcher = std::make_unique<re2::RE2>(likePatternToRegexp(like_pattern), options);
+            matcher = std::make_unique<re2::RE2>(likePatternToRegexp(*like_pattern), options);
             if (!matcher->ok())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid LIKE pattern '{}': {}", like_pattern, matcher->error());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid LIKE pattern '{}': {}", *like_pattern, matcher->error());
         }
 
         const std::string failed_path = zookeeper_path / "failed";
@@ -2055,7 +2055,7 @@ namespace DB
                     continue; /// Already removed.
 
                 const auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[i].data);
-                if (matcher && !re2::RE2::FullMatch(metadata.file_path, *matcher))
+                if (matcher && !re2::RE2::PartialMatch(metadata.file_path, *matcher))
                     continue;
                 to_remove.emplace_back(paths[i], metadata.file_path);
             }
@@ -2100,7 +2100,7 @@ namespace DB
                 }));
         }
 
-        LOG_TRACE(log, "Dropped {} failed file nodes (LIKE filter: '{}')", removed, like_pattern);
+        LOG_TRACE(log, "Dropped {} failed file nodes (LIKE filter: '{}')", removed, like_pattern.value_or(String()));
         reconcileFailedFilesCache();
     }
 }

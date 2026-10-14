@@ -1555,11 +1555,26 @@ def test_system_drop_failed_files_like_filter(started_cluster):
             time.sleep(0.2)
         assert len(paths) == 2, f"Expected 2 terminal /failed nodes, got {paths}"
 
+        # Explicit empty pattern matches no non-empty path: nothing must be dropped.
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table} LIKE ''")
+        assert len(terminal_file_paths()) == 2, terminal_file_paths()
+
+        # Anchored prefix does not match the full key (it starts with the files path).
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table} LIKE 'alpha%'")
+        assert len(terminal_file_paths()) == 2, terminal_file_paths()
+
+        # Substring match on both sides.
         node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table} LIKE '%alpha%'")
 
         remaining = terminal_file_paths()
         assert len(remaining) == 1, f"expected only beta to remain, got {remaining}"
         assert "beta_bad.csv" in remaining[0], remaining
+
+        # Suffix match drops the rest.
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table} LIKE '%bad.csv'")
+        assert terminal_file_paths() == []
+
+        # Plain drop-all still works on an empty set.
 
         node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table}")
         assert terminal_file_paths() == []

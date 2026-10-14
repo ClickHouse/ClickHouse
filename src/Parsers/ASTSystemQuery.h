@@ -8,6 +8,8 @@ namespace Poco::JSON { class Object; }
 #include <Server/ServerType.h>
 #include <base/EnumReflection.h>
 
+#include <optional>
+
 #include "config.h"
 
 #if USE_XRAY
@@ -225,7 +227,7 @@ public:
     String queue_path;
 
     /// Optional `LIKE 'pattern'` filter for SYSTEM DROP S3QUEUE FAILED FILES.
-    String like_pattern;
+    std::optional<String> like_pattern;
 
     String fail_point_name;
 

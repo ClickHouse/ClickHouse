@@ -2094,7 +2094,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 
-void StorageObjectStorageQueue::dropFailedFiles(const String & like_pattern)
+void StorageObjectStorageQueue::dropFailedFiles(const std::optional<String> & like_pattern)
 {
     auto metadata = tryGetFilesMetadata();
     if (!metadata)
