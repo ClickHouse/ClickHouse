@@ -749,6 +749,31 @@ void LocalServer::tryInitPath()
 
     fs::create_directories(path);
 
+    /// Lock a durable directory before anything touches its contents: the initialization of the temporary
+    /// storage below removes the leftover `tmp*` files, and the persistent storage for access entities
+    /// (`setupUsers`) may rebuild its lists and remove its temporary files. A second instance started
+    /// in the same directory must fail here without damaging the files of the running one.
+    if (!use_temporary_path)
+    {
+        try
+        {
+            status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+        }
+        catch (Exception & e)
+        {
+            /// Typically the directory is locked by a concurrent instance ("Another server instance
+            /// in same directory is already running"), so suggest the ways out: the options that
+            /// give this instance its own directory, or turning the instance that holds the
+            /// directory into a server and connecting to it.
+            e.addMessage("Use the --tmp option to work with a unique temporary directory that is removed on exit,"
+                " or the --path option to specify a different location for the data."
+                " Alternatively, the already running instance can serve concurrent clients:"
+                " execute SYSTEM START LISTEN TCP in it and connect with clickhouse-client,"
+                " or execute SYSTEM START LISTEN HTTP and open http://localhost:8123/play in a web browser");
+            throw;
+        }
+    }
+
     global_context->setPath(fs::path(path) / "");
 
     /// clickhouse-local keeps a generous default limit on temporary data to guard against
@@ -1967,25 +1992,7 @@ void LocalServer::processConfig()
 
         String path = global_context->getPath();
 
-        /// Lock path directory before read
-        fs::create_directories(fs::path(path));
-        try
-        {
-            status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
-        }
-        catch (Exception & e)
-        {
-            /// Typically the directory is locked by a concurrent instance ("Another server instance
-            /// in same directory is already running"), so suggest the ways out: the options that
-            /// give this instance its own directory, or turning the instance that holds the
-            /// directory into a server and connecting to it.
-            e.addMessage("Use the --tmp option to work with a unique temporary directory that is removed on exit,"
-                " or the --path option to specify a different location for the data."
-                " Alternatively, the already running instance can serve concurrent clients:"
-                " execute SYSTEM START LISTEN TCP in it and connect with clickhouse-client,"
-                " or execute SYSTEM START LISTEN HTTP and open http://localhost:8123/play in a web browser");
-            throw;
-        }
+        /// The directory is already locked by `tryInitPath`.
 
         bool started_background_tasks = false;
 
