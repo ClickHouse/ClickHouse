@@ -636,7 +636,19 @@
             return url;
         }
 
-        const fetchOptions = { method: 'POST', headers: { 'Authorization': 'never' } };
+        /// Every request to the configured server carries the signal of the current connection. A
+        /// connection handed over by a host page aborts it (see `applyConnectionFromHost`), so a
+        /// multi-step action started on the previous server - a query profile, a fragmentation
+        /// report - fails at the request in flight instead of sending its next steps to the new
+        /// server and rendering the previous server's results under the new connection. The signal
+        /// is a getter, so that both `fetch(url, fetchOptions)` and `{...fetchOptions}` read the
+        /// current one.
+        let connectionAbortController = new AbortController();
+        const fetchOptions = {
+            method: 'POST',
+            headers: { 'Authorization': 'never' },
+            get signal() { return connectionAbortController.signal; },
+        };
 
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
@@ -2357,10 +2369,15 @@
                 button.textContent = 'Get Profile';
             }
         }
+        /// `checkProfilingEnabled` swallows its errors, an aborted request included, so a status check
+        /// started on a previous connection is told apart by its generation instead.
+        let profileStatsGeneration = 0;
         async function renderProfileStats() {
+            const generation = ++profileStatsGeneration;
             const container = document.getElementById('profile-stats');
             container.innerHTML = '<p>Checking profiling status...</p>';
             const isEnabled = await checkProfilingEnabled();
+            if (generation != profileStatsGeneration) return;
             if (isEnabled === null) {
                 const unknownHint = isKeeper
                     ? 'Unable to determine profiling status. Make sure the Keeper HTTP server is reachable.'
@@ -3725,11 +3742,22 @@ function isTrustedHostOrigin(origin) {
 ///
 /// `url` is optional and defaults to the one already configured; the credentials are always replaced
 /// wholesale, so that none of them can outlive the connection they belong to.
+///
+/// Everything that belongs to the previous connection goes first: its requests in flight are aborted,
+/// a profile being fetched included, and the panels derived from it - the profiler status and any
+/// profile, query profile or fragmentation report captured from it - are cleared. The reload then
+/// rebuilds them for the new server, like a manual refresh does.
 function applyConnectionFromHost(data) {
+    connectionAbortController.abort();
+    connectionAbortController = new AbortController();
+    if (profileAbortController) profileAbortController.abort();
+    ++profileStatsGeneration;
+    for (const id of ['profile-stats', 'query-profile-stats', 'fragmentation-stats'])
+        document.getElementById(id).innerHTML = '';
     if (data.url !== undefined) document.getElementById('url').value = data.url;
     document.getElementById('user').value = data.user || '';
     document.getElementById('password').value = data.password || '';
-    loadStats();
+    loadStats(true);
 }
 
 {
