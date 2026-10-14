@@ -156,6 +156,37 @@ std::unordered_set<QueryTreeNodePtr> collectGroupByKeyPatternNodes(const QueryNo
     return result;
 }
 
+/// `copy` is `original->clone()`, so their children have the same layout. Adds to `nodes` the copy of each node of
+/// `original`, outside of its subqueries, that is in `nodes`.
+void addCopiesOfNodes(const IQueryTreeNode & original, const IQueryTreeNode & copy, std::unordered_set<QueryTreeNodePtr> & nodes)
+{
+    if (nodes.empty())
+        return;
+
+    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> pairs{{&original, &copy}};
+    while (!pairs.empty())
+    {
+        const auto [original_node, copy_node] = pairs.back();
+        pairs.pop_back();
+
+        const auto & original_children = original_node->getChildren();
+        const auto & copy_children = copy_node->getChildren();
+        chassert(original_children.size() == copy_children.size());
+        for (size_t i = 0; i < original_children.size(); ++i)
+        {
+            const auto & original_child = original_children[i];
+            if (!original_child || original_child->getNodeType() == QueryTreeNodeType::QUERY
+                || original_child->getNodeType() == QueryTreeNodeType::UNION)
+                continue;
+
+            if (nodes.contains(original_child))
+                nodes.insert(copy_children[i]);
+
+            pairs.emplace_back(original_child.get(), copy_children[i].get());
+        }
+    }
+}
+
 /// Stores information about a single LIKE/ILIKE/match pattern
 struct PatternData
 {
@@ -688,6 +719,8 @@ public:
 
         /// Clone the optimized OR node
         auto optimized_or_clone = node->clone();
+        /// The visitor continues into the clone, so the `GROUP BY` key nodes it copies must stay recognizable.
+        addCopiesOfNodes(*node, *optimized_or_clone, group_by_key_pattern_nodes_stack.back());
 
         /// Create AND of the optimized OR with indexHint:
         /// optimized_or AND indexHint(original_like_chain)
@@ -716,7 +749,7 @@ private:
     const FunctionOverloadResolverPtr or_function_resolver;
     const FunctionOverloadResolverPtr and_function_resolver;
     std::unordered_set<const FunctionNode *> processed_nodes;
-    /// For each enclosing query, its nodes from `collectGroupByKeyPatternNodes`.
+    /// For each enclosing query, its nodes from `collectGroupByKeyPatternNodes`, and their copies from `addCopiesOfNodes`.
     std::vector<std::unordered_set<QueryTreeNodePtr>> group_by_key_pattern_nodes_stack;
 };
 

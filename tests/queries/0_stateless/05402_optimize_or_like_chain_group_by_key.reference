@@ -80,8 +80,16 @@ key whose argument has its own chain
 1	1	2
 1	1	2
 2
+key inside the argument of a rewritten chain
+0	4
+1	2
+1	2
+1	2
+1	2
+7	13
 still rewritten
 9	13
+1
 1
 1
 1

@@ -31,6 +31,10 @@ SELECT * FROM (WITH toString((s LIKE '%a%') OR (s LIKE '%b%') OR (s LIKE '%c%') 
 SELECT * FROM (WITH toString((s LIKE '%a%') OR (s LIKE '%b%') OR (s LIKE '%c%') OR (s LIKE '%d%')) AS x SELECT x, x LIKE '%1%' AS k, count() AS c FROM (SELECT arrayJoin(['a', 'b', 'x']) AS s) GROUP BY ROLLUP(x, x LIKE '%1%') HAVING (x LIKE '%1%') OR (x LIKE '%11%') OR (x LIKE '%12%') OR (x LIKE '%13%')) ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 1;
 SELECT * FROM (WITH toString((s LIKE '%a%') OR (s LIKE '%b%') OR (s LIKE '%c%') OR (s LIKE '%d%')) AS x SELECT count() AS c FROM (SELECT arrayJoin(['a', 'b', 'x']) AS s) GROUP BY x LIKE '%1%', x LIKE '%11%', x LIKE '%12%', x LIKE '%13%' HAVING (x LIKE '%1%') OR (x LIKE '%11%') OR (x LIKE '%12%') OR (x LIKE '%13%')) ORDER BY ALL;
 
+SELECT 'key inside the argument of a rewritten chain';
+WITH toString((s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%')) AS x SELECT * FROM (SELECT (x LIKE '%1%') OR (x LIKE '%a%') OR (x LIKE '%b%') OR (x LIKE '%c%') AS e, count() AS c FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY s LIKE '%1%', s LIKE '%2%', s LIKE '%3%', s LIKE '%4%') ORDER BY ALL;
+WITH toString((s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%')) AS x SELECT countIf(e), count() FROM (SELECT s, (x LIKE '%1%') OR (x LIKE '%7%') OR (x LIKE '%8%') OR (x LIKE '%9%') AS e FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY ROLLUP(s, s LIKE '%1%'));
+
 SELECT 'still rewritten';
 -- The branches that are not keys are still merged.
 SELECT countIf(e), count() FROM (SELECT s, (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%') OR (s LIKE '%5%') AS e FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY ROLLUP(s, s LIKE '%1%'));
@@ -38,3 +42,4 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT (s LIKE '%1%') OR (s LIKE '%2%') 
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%') FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY s) WHERE explain ILIKE '%function_name: multiSearchAny,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%') FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY ROLLUP(s, s LIKE '%9%')) WHERE explain ILIKE '%function_name: multiSearchAny,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT toString(number % 6) AS s FROM numbers(12)) WHERE (s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%')) WHERE explain ILIKE '%function_name: multiSearchAny,%';
+SELECT count() FROM (EXPLAIN QUERY TREE WITH toString((s LIKE '%1%') OR (s LIKE '%2%') OR (s LIKE '%3%') OR (s LIKE '%4%')) AS x SELECT (x LIKE '%1%') OR (x LIKE '%a%') OR (x LIKE '%b%') OR (x LIKE '%c%') FROM (SELECT toString(number % 6) AS s FROM numbers(12)) GROUP BY s LIKE '%1%', s LIKE '%2%', s LIKE '%3%', s LIKE '%4%') WHERE explain ILIKE '%function_name: multiSearchAny,%';
