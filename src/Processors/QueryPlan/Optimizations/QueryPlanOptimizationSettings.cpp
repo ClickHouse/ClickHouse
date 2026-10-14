@@ -92,6 +92,7 @@ namespace Setting
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
+    extern const SettingsBool optimize_min_max_from_files;
     extern const SettingsBool query_plan_read_in_order_through_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -104,6 +105,8 @@ namespace Setting
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes;
@@ -127,6 +130,7 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
+    extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -158,7 +162,6 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
-    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
 }
 
@@ -229,6 +232,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     top_k_optimization_shared_boundary = from[Setting::group_by_top_k_optimization_shared_boundary];
     enable_group_by_top_k_dynamic_filtering = from[Setting::enable_group_by_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
+    min_max_from_files = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_min_max_from_files];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];
     if (query_plan_optimize_join_order_limit > 64)
@@ -276,6 +280,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
+    use_query_condition_cache_for_time_conditions = from[Setting::use_query_condition_cache_for_time_conditions];
+    query_condition_cache_time_condition_grid_factor = static_cast<double>(from[Setting::query_condition_cache_time_condition_grid_factor]);
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     /// The count optimization recovers the search query from the index read tasks that only the direct-read rewrite builds.
     /// TODO(ahmadov): extract the predicate-to-search-query analysis into a shared helper, so the count optimization works without direct read.
@@ -401,13 +407,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     max_threads = from[Setting::max_threads];
 
-    automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
+    automatic_parallel_replicas_mode = Context::getAutomaticParallelReplicasMode(from);
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
+    automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
-
-    parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

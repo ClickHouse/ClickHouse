@@ -79,6 +79,14 @@ public:
     bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
+    /// Paths whose lake type is a local (wall clock) timestamp, not an instant: Delta `timestamp_ntz`,
+    /// Iceberg `timestamp`. ClickHouse has no wall-clock type, so both arrive as DateTime64.
+    void setLocalTimestampPaths(std::unordered_set<String> && local_timestamp_paths_)
+    {
+        local_timestamp_paths = std::move(local_timestamp_paths_);
+    }
+    bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
+
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
@@ -92,6 +100,7 @@ private:
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
+    std::unordered_set<String> local_timestamp_paths;
     std::optional<Int64> last_assigned_field_id;
 };
 
@@ -138,6 +147,7 @@ struct FormatFilterInfo
     /// to a `field_id` requires this mapper, not the per-file one.
     ColumnMapperPtr current_schema_column_mapper;
 
+    /// The query condition cache key of `filter_actions_dag` (see `computeConditionHash`).
     std::optional<size_t> condition_hash;
 
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
@@ -151,6 +161,9 @@ struct FormatFilterInfo
     /// it just ignore it - the filter only ever removes rows the sort + limit above would discard,
     /// so applying it partially or not at all is always correct.
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+
+    /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
+    bool min_max_from_statistics = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
@@ -163,6 +176,13 @@ public:
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
+
+    /// The query condition cache key of the rows `filter_actions_dag` and `prewhere_info` keep, if
+    /// the condition is deterministic and covers `prewhere_info`.
+    static std::optional<size_t> computeConditionHash(
+        const ActionsDAG & filter_actions_dag,
+        const PrewhereInfoPtr & prewhere_info,
+        const ContextPtr & context);
 
     /// Returns `base` extended with columns required by PREWHERE / row-level filter.
     /// Hint: pass `base` with `std::move` to avoid copying
