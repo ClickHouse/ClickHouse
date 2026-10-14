@@ -73,20 +73,25 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
+static bool isNotReadySetColumn(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+        return false;
+
+    const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+    if (!column_set)
+        return false;
+
+    auto future_set = column_set->getData();
+    return !future_set || !future_set->get();
+}
+
 bool dagContainsNonReadySet(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
     {
-        if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
-        {
-            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-            if (column_set)
-            {
-                auto future_set = column_set->getData();
-                if (!future_set || !future_set->get())
-                    return true;
-            }
-        }
+        if (isNotReadySetColumn(node))
+            return true;
     }
     return false;
 }
@@ -125,6 +130,25 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     return false;
 }
 
+bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
+{
+    auto is_insensitive = [](const IFunctionBase & function)
+    {
+        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
+    };
+
+    /// A lambda without captures is constant-folded into a `COLUMN` node holding a `ColumnFunction`, which
+    /// hides the functions of its body from a plain scan over the function nodes; `allNodeFunctions`
+    /// descends into it.
+    for (const auto & node : dag.getNodes())
+    {
+        if (!allNodeFunctions(node, is_insensitive))
+            return true;
+    }
+
+    return false;
+}
+
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
@@ -132,10 +156,6 @@ FilterResult filterResultForNotMatchedRows(
     bool allow_unknown_function_arguments
 )
 {
-    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
-    if (dagContainsNonReadySet(filter_dag))
-        return FilterResult::UNKNOWN;
-
     /// `ActionsDAG::evaluatePartialResult` (called below) routes every function node through
     /// `IFunction::executeImplDryRun` with `input_rows_count=1`. For functions that are not
     /// deterministic within a single query (`rand`, `nowInBlock`, `rowNumberInAllBlocks`,
@@ -156,6 +176,13 @@ FilterResult filterResultForNotMatchedRows(
         return FilterResult::UNKNOWN;
 
     ActionsDAG::IntermediateExecutionResult filter_input;
+
+    /// A set that is not built yet is an unknown argument: `in` must never be dry-run on it (that yields a fake 0).
+    for (const auto & node : filter_dag.getNodes())
+    {
+        if (isNotReadySetColumn(node))
+            filter_input.emplace(&node, ColumnWithTypeAndName{nullptr, node.result_type, node.result_name});
+    }
 
     /// Create constant columns with default values for inputs of the filter DAG
     for (const auto * input : filter_dag.getInputs())

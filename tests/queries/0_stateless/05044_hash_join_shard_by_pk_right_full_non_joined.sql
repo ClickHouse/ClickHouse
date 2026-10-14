@@ -1,7 +1,7 @@
--- `query_plan_join_shard_by_pk_ranges` clones `HashJoin` with `cloneNoParallel`. The clone must use
--- the serial layout: with the parallel one `JoiningTransform` would skip unmatched right rows,
--- expecting a `NonJoinedBlocksTransform` that the sharded pipeline never adds. RIGHT/FULL must
--- emit those rows.
+-- With `query_plan_join_shard_by_pk_ranges`, a RIGHT or FULL `hash` join of two tables ordered by the
+-- join key runs as one join per range of the primary key. The sharded join must return the same rows
+-- as the unsharded one, including the unmatched right rows. This holds also when the unsharded join
+-- would use the parallel layout.
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0;
@@ -13,7 +13,7 @@ SET optimize_read_in_order = 1;
 SET join_algorithm = 'hash';
 SET query_plan_join_shard_by_pk_ranges = 1;
 SET parallel_non_joined_rows_processing = 1;
--- Force the parallel layout on the original join so the missing override would drop unmatched rows.
+-- Without sharding, threshold 0 gives the join the parallel layout.
 SET parallel_hash_join_threshold = 0;
 SET max_threads = 4;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;

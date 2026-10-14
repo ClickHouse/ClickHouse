@@ -20,7 +20,7 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 #include <unordered_set>
 
@@ -194,6 +194,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 max_streams,
                 this,
                 keep_left_read_in_order,
+                seal_gate,
                 &processors);
         }
     }
@@ -241,25 +242,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// asks it again on its first chunk.
     if (join->supportParallelJoin() && !join->emitsSizedOutputBlocks() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
-        /// Do not squash past `max_joined_block_size_rows` / `max_joined_block_size_bytes`.
-        /// Those bounds are why `joined_block_split_single_row` split the result in the first place.
-        size_t squash_rows = min_block_size_rows;
-        size_t squash_bytes = min_block_size_bytes;
         const auto & table_join = join->getTableJoin();
-        if (const size_t max_joined_rows = table_join.maxJoinedBlockRows())
-        {
-            if (squash_rows == 0 || squash_rows > max_joined_rows)
-                squash_rows = max_joined_rows;
-        }
-        if (const size_t max_joined_bytes = table_join.maxJoinedBlockBytes())
-        {
-            if (squash_bytes == 0 || squash_bytes > max_joined_bytes)
-                squash_bytes = max_joined_bytes;
-        }
-
+        const size_t max_rows = table_join.maxJoinedBlockRows();
+        const size_t max_bytes = table_join.maxJoinedBlockBytes();
         joined_pipeline->addSimpleTransform(
-            [&, squash_rows, squash_bytes](const SharedHeader & header)
-            { return tag_tail(std::make_shared<JoinOutputSquashingTransform>(header, squash_rows, squash_bytes, join)); });
+            [&](const SharedHeader & header)
+            {
+                return tag_tail(std::make_shared<JoinOutputSquashingTransform>(
+                    header, min_block_size_rows, min_block_size_bytes, max_rows, max_bytes, join));
+            });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();

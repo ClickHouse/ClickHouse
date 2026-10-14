@@ -18,12 +18,13 @@ namespace DB
 
 void CountingTransform::onConsume(Chunk chunk)
 {
+    auto written_rows = chunk.getNumRows();
     auto written_bytes = chunk.bytes();
 
     if (quota)
-        quota->usedForQuery(normalized_query_hash, QuotaType::WRITTEN_BYTES, written_bytes);
+        quota->usedForQuery(normalized_query_hash, {{QuotaType::WRITTEN_ROWS, written_rows}, {QuotaType::WRITTEN_BYTES, written_bytes}});
 
-    Progress local_progress{WriteProgress(chunk.getNumRows(), written_bytes)};
+    Progress local_progress{WriteProgress(written_rows, written_bytes)};
 
     ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
     ProfileEvents::increment(ProfileEvents::InsertedBytes, written_bytes);

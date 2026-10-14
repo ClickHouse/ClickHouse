@@ -15,9 +15,7 @@ Les résultats des requêtes peuvent être affichés dans le terminal ou export�
 Le client fournit un retour en temps réel sur l’exécution des requêtes grâce à une barre de progression, au nombre de lignes lues, au nombre d’octets traités et au temps d’exécution des requêtes.
 Il prend en charge à la fois les [options de ligne de commande](#command-line-options) et les [fichiers de configuration](#configuration_files).
 
-<div id="install">
-  ## Installation
-</div>
+## Installation {#install}
 
 Pour télécharger ClickHouse, exécutez :
 
@@ -35,9 +33,7 @@ Voir [Installer ClickHouse](/fr/get-started/setup/install) pour découvrir d&#39
 
 Les différentes versions du client et du serveur sont compatibles entre elles, mais certaines fonctionnalités peuvent ne pas être disponibles dans les anciennes versions du client. Nous vous recommandons d&#39;utiliser la même version pour le client et le serveur.
 
-<div id="run">
-  ## Exécuter
-</div>
+## Exécuter {#run}
 
 <Note>
   Si vous avez seulement téléchargé ClickHouse sans l’installer, utilisez `./clickhouse client` au lieu de `clickhouse-client`.
@@ -68,9 +64,7 @@ Précisez des détails de connexion supplémentaires si nécessaire :
 
 Pour obtenir la liste complète des options de ligne de commande, voir [Options de ligne de commande](#command-line-options).
 
-<div id="connecting-cloud">
-  ### Se connecter à ClickHouse Cloud
-</div>
+### Se connecter à ClickHouse Cloud {#connecting-cloud}
 
 Les informations de votre service ClickHouse Cloud sont disponibles dans la console ClickHouse Cloud. Sélectionnez le service auquel vous souhaitez vous connecter, puis cliquez sur **Connect** :
 
@@ -84,9 +78,7 @@ Choisissez **Native** : les informations de connexion s’affichent avec un exe
 
 <Image img="/images/_snippets/connection-details-native.webp" size="md" alt="Détails de connexion Native TCP du service ClickHouse Cloud" />
 
-<div id="connection-credentials">
-  ### Stocker des connexions dans un fichier de configuration
-</div>
+### Stocker des connexions dans un fichier de configuration {#connection-credentials}
 
 Vous pouvez enregistrer les détails de connexion d&#39;un ou de plusieurs serveurs ClickHouse dans un [fichier de configuration](#configuration_files).
 
@@ -117,13 +109,9 @@ Voir la [section sur les fichiers de configuration](#configuration_files) pour p
   Afin de se concentrer sur la syntaxe des requêtes, les exemples suivants omettent les informations de connexion (`--host`, `--port`, etc.). N’oubliez pas de les ajouter lorsque vous utilisez ces commandes.
 </Note>
 
-<div id="interactive-mode">
-  ## Mode interactif
-</div>
+## Mode interactif {#interactive-mode}
 
-<div id="using-interactive-mode">
-  ### Utilisation du mode interactif
-</div>
+### Utilisation du mode interactif {#using-interactive-mode}
 
 Pour exécuter ClickHouse en mode interactif, il suffit d’exécuter :
 
@@ -165,9 +153,7 @@ Pour quitter le client, appuyez sur `Ctrl+D` ou saisissez l’une des commandes 
 * `q`, `Q` ou `:q`
 * `logout` ou `logout;`
 
-<div id="getting-help">
-  ### Obtenir de l’aide
-</div>
+### Obtenir de l’aide {#getting-help}
 
 Vous pouvez consulter la documentation de n’importe quelle fonction, moteur de table, type de données, format, paramètre ou autre composant du système sans quitter le client. Saisissez `help` suivi d’un nom (les formes équivalentes `/help`, `man` et `/man` fonctionnent également) :
 
@@ -185,9 +171,7 @@ help maxx_threads
 
 Saisir simplement `help` affiche un bref résumé d’utilisation.
 
-<div id="slash-commands">
-  ### Commandes
-</div>
+### Commandes {#slash-commands}
 
 Le client exécute lui-même certaines commandes commençant par `/`, au lieu de les envoyer au serveur :
 
@@ -205,9 +189,7 @@ Exception on client:
 Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Type `/` at the beginning of the line to see all the commands. (BAD_ARGUMENTS)
 ```
 
-<div id="processing-info">
-  ### Informations sur le traitement des requêtes
-</div>
+### Informations sur le traitement des requêtes {#processing-info}
 
 Lors du traitement d’une requête, le client affiche :
 
@@ -226,20 +208,19 @@ Si vous n’attendez pas et appuyez une deuxième fois sur `Ctrl+C`, le client s
 ClickHouse Client permet de transmettre des données externes (tables temporaires externes) pour exécuter des requêtes.
 Pour plus d’informations, consultez la section [Données externes pour le traitement des requêtes](/fr/reference/engines/table-engines/special/external-data).
 
-<div id="cli_aliases">
-  ### Aliases
-</div>
+### Aliases {#cli_aliases}
 
-Vous pouvez utiliser les alias suivants depuis le REPL :
+Vous pouvez utiliser les alias suivants depuis le REPL :
 
-* `\l` - SHOW DATABASES
-* `\d` - SHOW TABLES
-* `\c <DATABASE>` - USE DATABASE
+* `\l` - `SHOW DATABASES`
+* `\d` - `SHOW TABLES`
+* `\d <TABLE>` - `DESCRIBE TABLE <TABLE>`
+* `\c <DATABASE>` - `USE <DATABASE>`
 * `.` - répéter la dernière requête
 
-<div id="keyboard_shortcuts">
-  ### Raccourcis clavier
-</div>
+Un argument de `\d` qui prolonge la requête `SHOW TABLES` au lieu de désigner une table — comme dans `\d FROM system` ou `\d LIKE 'hits%'` — conserve le listing. Une table dont le nom correspond à l&#39;une de ces clauses doit être placée entre accents graves : `` \d `format` ``.
+
+### Raccourcis clavier {#keyboard_shortcuts}
 
 * `Alt (Option) + Shift + e` - ouvre l’éditeur avec la requête en cours. Il est possible de définir l’éditeur à utiliser via la variable d’environnement `EDITOR`. Par défaut, `vim` est utilisé.
 * `Alt (Option) + #` - commenter la ligne.
@@ -253,13 +234,9 @@ La liste complète des raccourcis clavier disponibles est consultable sur [replx
   iTerm2 : accédez à Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key, puis cliquez sur Esc+
 </Tip>
 
-<div id="batch-mode">
-  ## Mode batch
-</div>
+## Mode batch {#batch-mode}
 
-<div id="using-batch-mode">
-  ### Utiliser le mode batch
-</div>
+### Utiliser le mode batch {#using-batch-mode}
 
 Au lieu d’utiliser le client ClickHouse en mode interactif, vous pouvez l’exécuter en mode batch.
 En mode batch, ClickHouse exécute une seule requête puis se ferme immédiatement - il n’y a ni invite interactive ni boucle.
@@ -293,9 +270,7 @@ $ echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT
 
 Lorsque `--query` est spécifié, toute entrée est ajoutée à la requête après un retour à la ligne.
 
-<div id="cloud-example">
-  ### Insertion d’un fichier CSV dans un service ClickHouse distant
-</div>
+### Insertion d’un fichier CSV dans un service ClickHouse distant {#cloud-example}
 
 Cet exemple insère un jeu de données CSV d’exemple, `cell_towers.csv`, dans la table existante `cell_towers` de la base de données `default` :
 
@@ -308,9 +283,7 @@ clickhouse-client --host HOSTNAME.clickhouse.cloud \
   < cell_towers.csv
 ```
 
-<div id="more-examples">
-  ### Exemples d’insertion de données en ligne de commande
-</div>
+### Exemples d’insertion de données en ligne de commande {#more-examples}
 
 Il existe plusieurs façons d’insérer des données en ligne de commande.
 L’exemple ci-dessous insère deux lignes de données CSV dans une table ClickHouse en mode batch :
@@ -338,9 +311,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 En mode batch, le [format](/fr/reference/formats/index) de données par défaut est `TabSeparated`.
 Vous pouvez définir le format dans la clause `FORMAT` de la requête, comme indiqué dans l’exemple ci-dessus.
 
-<div id="cli-queries-with-parameters">
-  ## Requêtes paramétrées
-</div>
+## Requêtes paramétrées {#cli-queries-with-parameters}
 
 Vous pouvez définir des paramètres dans une requête et leur transmettre des valeurs à l’aide d’options en ligne de commande.
 Cela évite d’avoir à formater la requête avec des valeurs dynamiques spécifiques côté client.
@@ -380,9 +351,7 @@ Query id: 0358a729-7bbe-4191-bb48-29b063c548a7
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="cli-queries-with-parameters-syntax">
-  ### Syntaxe de la requête
-</div>
+### Syntaxe de la requête {#cli-queries-with-parameters-syntax}
 
 Dans la requête, placez entre accolades les valeurs que vous souhaitez renseigner à l’aide des paramètres de ligne de commande, au format suivant :
 
@@ -395,9 +364,7 @@ Dans la requête, placez entre accolades les valeurs que vous souhaitez renseign
 | `name`      | Identifiant de substitution. L’option de ligne de commande correspondante est `--param_<name> = value`.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `data type` | [type de données](/fr/reference/data-types/index) du paramètre. <br /><br />Par exemple, une structure de données comme `(integer, ('string', integer))` peut avoir pour type de données `Tuple(UInt8, Tuple(String, UInt8))` (vous pouvez également utiliser d’autres types [entier](/fr/reference/data-types/int-uint)). <br /><br />Il est également possible de transmettre en paramètres le nom de la table, le nom de la base de données et les noms des colonnes ; dans ce cas, vous devrez utiliser `Identifier` comme type de données. |
 
-<div id="cli-queries-with-parameters-examples">
-  ### Exemples
-</div>
+### Exemples {#cli-queries-with-parameters-examples}
 
 ```bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
@@ -407,17 +374,13 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
     --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
-<div id="ai-sql-generation">
-  ## Génération SQL assistée par IA
-</div>
+## Génération SQL assistée par IA {#ai-sql-generation}
 
 ClickHouse Client inclut une assistance IA intégrée pour générer des requêtes SQL à partir de descriptions en langage naturel. Cette fonctionnalité permet aux utilisateurs de rédiger des requêtes complexes sans avoir besoin de connaissances approfondies en SQL.
 
 L&#39;assistance IA fonctionne immédiatement si la variable d&#39;environnement `OPENAI_API_KEY` ou `ANTHROPIC_API_KEY` est définie. Pour une configuration plus avancée, consultez la section [Configuration](#ai-sql-generation-configuration).
 
-<div id="ai-sql-generation-usage">
-  ### Utilisation
-</div>
+### Utilisation {#ai-sql-generation-usage}
 
 Pour utiliser la génération SQL par IA, faites précéder votre requête en langage naturel de `??` :
 
@@ -431,9 +394,7 @@ L’IA va :
 2. Générer une requête SQL adaptée en fonction des tables et des colonnes détectées
 3. Exécuter immédiatement la requête générée
 
-<div id="ai-sql-generation-example">
-  ### Exemple
-</div>
+### Exemple {#ai-sql-generation-example}
 
 ```bash
 :) ?? count orders by product category
@@ -466,15 +427,11 @@ GROUP BY c.name
 ORDER BY order_count DESC
 ```
 
-<div id="ai-sql-generation-configuration">
-  ### Configuration
-</div>
+### Configuration {#ai-sql-generation-configuration}
 
 La génération SQL par IA nécessite de configurer un fournisseur d’IA dans le fichier de configuration de votre client ClickHouse. Vous pouvez utiliser OpenAI, Anthropic ou tout service d’API compatible avec OpenAI.
 
-<div id="ai-sql-generation-fallback">
-  #### Bascule de secours via l’environnement
-</div>
+#### Bascule de secours via l’environnement {#ai-sql-generation-fallback}
 
 Si aucune configuration d’IA n’est spécifiée dans le fichier de configuration, ClickHouse Client essaiera automatiquement d’utiliser les variables d’environnement :
 
@@ -494,9 +451,7 @@ export ANTHROPIC_API_KEY=your-anthropic-key
 clickhouse-client
 ```
 
-<div id="ai-sql-generation-configuration-file">
-  #### Fichier de configuration
-</div>
+#### Fichier de configuration {#ai-sql-generation-configuration-file}
 
 Pour mieux maîtriser les paramètres de l’IA, configurez-les dans le fichier de configuration de votre ClickHouse Client, situé à l’un des emplacements suivants :
 
@@ -604,9 +559,7 @@ ai:
   model: gpt-3.5-turbo
 ```
 
-<div id="ai-sql-generation-parameters">
-  ### Paramètres
-</div>
+### Paramètres {#ai-sql-generation-parameters}
 
 <Accordion title="Paramètres requis">
   * `api_key` - Votre clé API pour le service d’IA. Peut être omise si elle est définie via une variable d’environnement :
@@ -640,9 +593,7 @@ ai:
   * `system_prompt` - Instructions personnalisées pour l’IA (facultatif)
 </Accordion>
 
-<div id="ai-sql-generation-how-it-works">
-  ### Fonctionnement
-</div>
+### Fonctionnement {#ai-sql-generation-how-it-works}
 
 Le générateur SQL par IA suit un processus en plusieurs étapes :
 
@@ -666,30 +617,22 @@ L’IA utilise des outils intégrés pour explorer votre base de données
 
 Le SQL généré est exécuté automatiquement et les résultats sont affichés
 
-<div id="ai-sql-generation-limitations">
-  ### Limitations
-</div>
+### Limitations {#ai-sql-generation-limitations}
 
 * Nécessite une connexion Internet active
 * L&#39;utilisation de l&#39;API est soumise aux limites de requêtes et aux coûts du fournisseur d&#39;IA
 * Les requêtes complexes peuvent nécessiter plusieurs ajustements
 * L&#39;IA a un accès en lecture seule aux informations de schéma, et non aux données elles-mêmes
 
-<div id="ai-sql-generation-security">
-  ### Sécurité
-</div>
+### Sécurité {#ai-sql-generation-security}
 
 * Les clés API ne sont jamais envoyées aux serveurs ClickHouse
 * L’IA n’a accès qu’aux informations de schéma (noms des tables/colonnes et types), pas aux données elles-mêmes
 * Toutes les requêtes générées respectent les permissions existantes de votre base de données
 
-<div id="connection_string">
-  ## Chaîne de connexion
-</div>
+## Chaîne de connexion {#connection_string}
 
-<div id="ai-sql-generation-usage">
-  ### Utilisation
-</div>
+### Utilisation {#connection-string-usage}
 
 ClickHouse Client prend également en charge la connexion à un serveur ClickHouse au moyen d’une chaîne de connexion semblable à celles de [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/), [PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING) et [MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). La syntaxe est la suivante :
 
@@ -705,9 +648,7 @@ clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
 | `database`                   | Nom de la base de données.                                                                                                                                                                 | `default`        |
 | `query_parameters`           | Liste de paires clé-valeur `param1=value1[,&param2=value2], ...`. Pour certains paramètres, aucune valeur n’est requise. Les noms et les valeurs des paramètres sont sensibles à la casse. | -                |
 
-<div id="connection-string-notes">
-  ### Remarques
-</div>
+### Remarques {#connection-string-notes}
 
 Si le nom d&#39;utilisateur, le mot de passe ou la base de données sont spécifiés dans la chaîne de connexion, ils ne peuvent pas l&#39;être avec `--user`, `--password` ou `--database` (et inversement).
 
@@ -741,9 +682,7 @@ Les caractères non ASCII, les espaces et les caractères spéciaux dans les par
 * `database`
 * `query parameters`
 
-<div id="cli-queries-with-parameters-examples">
-  ### Exemples
-</div>
+### Exemples {#connection_string_examples}
 
 Connectez-vous à `localhost` sur le port 9000 et exécutez la requête `SELECT 1`.
 
@@ -823,9 +762,7 @@ Connectez-vous à l’une de ces deux adresses IP : `192.168.1.15`, `192.168.1.
 clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
-<div id="query-id-format">
-  ## Format de l’identifiant de requête
-</div>
+## Format de l’identifiant de requête {#query-id-format}
 
 En mode interactif, ClickHouse Client affiche l’identifiant de requête pour chaque requête. Par défaut, l’identifiant se présente ainsi :
 
@@ -852,9 +789,7 @@ Avec la configuration ci-dessus, l’identifiant d’une requête s’affiche au
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
 
-<div id="configuration_files">
-  ## Fichiers de configuration
-</div>
+## Fichiers de configuration {#configuration_files}
 
 ClickHouse Client utilise le premier fichier existant dans la liste suivante :
 
@@ -894,22 +829,16 @@ Consultez l’exemple de fichier de configuration dans le dépôt ClickHouse : 
   </Tab>
 </Tabs>
 
-<div id="environment-variable-options">
-  ## Options des variables d’environnement
-</div>
+## Options des variables d’environnement {#environment-variable-options}
 
 Le nom d’utilisateur, le mot de passe et l’hôte peuvent être définis à l’aide des variables d’environnement `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` et `CLICKHOUSE_HOST`.
 Les arguments de ligne de commande `--user`, `--password` ou `--host`, ou une [chaîne de connexion](#connection_string) (si elle est spécifiée), sont prioritaires sur les variables d’environnement.
 
-<div id="command-line-options">
-  ## Options en ligne de commande
-</div>
+## Options en ligne de commande {#command-line-options}
 
 Toutes les options en ligne de commande peuvent être spécifiées directement sur la ligne de commande ou définies par défaut dans le [fichier de configuration](#configuration_files).
 
-<div id="command-line-options-general">
-  ### Options générales
-</div>
+### Options générales {#command-line-options-general}
 
 | Option                                              | Description                                                                                                                                                             | Par défaut                   |
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
@@ -921,24 +850,22 @@ Toutes les options en ligne de commande peuvent être spécifiées directement s
 | `--verbose`                                         | Augmente le niveau de verbosité de la sortie.                                                                                                                           | -                            |
 | `-V [ --version ]`                                  | Affiche la version puis quitte.                                                                                                                                         | -                            |
 
-<div id="command-line-options-connection">
-  ### Options de connexion
-</div>
+### Options de connexion {#command-line-options-connection}
 
 | Option                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Par défaut                                                                                                                                                                                                                                                                                |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--connection <name>`                | Le nom des informations de connexion préconfigurées issues du fichier de configuration. Voir [Identifiants de connexion](#connection-credentials).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | -                                                                                                                                                                                                                                                                                         |
+| `--connection <name>`                | Le nom des informations de connexion préconfigurées issues du fichier de configuration. Voir [Identifiants de connexion](#connection-credentials).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | *                                                                                                                                                                                                                                                                                         |
 | `-d [ --database ] <database>`       | Sélectionne la base de données utilisée par défaut pour cette connexion.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | La base de données actuelle issue des paramètres du serveur (`default` par défaut)                                                                                                                                                                                                        |
 | `-h [ --host ] <host>`               | Le nom d’hôte du serveur ClickHouse auquel se connecter. Il peut s’agir d’un nom d’hôte, d’une adresse IPv4 ou d’une adresse IPv6. Plusieurs hôtes peuvent être fournis à l’aide de plusieurs arguments.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `localhost`                                                                                                                                                                                                                                                                               |
 | `--jwt <value>`                      | Utilise un JSON Web Token (JWT) pour l’authentification. <br /><br />L’autorisation JWT côté serveur est disponible uniquement dans ClickHouse Cloud.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | -                                                                                                                                                                                                                                                                                         |
-| `--login`                            | Lance le flux OAuth de type device grant afin de s’authentifier via un IdP. <br /><br />Pour les hôtes ClickHouse Cloud, les variables OAuth sont inférées ; sinon, elles doivent être fournies avec `--oauth-url`, `--oauth-client-id` et `--oauth-audience`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | -                                                                                                                                                                                                                                                                                         |
+| `--login`                            | Lance le flux OAuth de type device grant afin de s’authentifier via un IdP. <br /><br />Pour les hôtes ClickHouse Cloud, les variables OAuth sont inférées ; sinon, elles doivent être fournies avec `--oauth-url`, `--oauth-client-id` et `--oauth-audience`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | *                                                                                                                                                                                                                                                                                         |
 | `--no-warnings`                      | Désactive l’affichage des avertissements de `system.warnings` lorsque le client se connecte au serveur.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | -                                                                                                                                                                                                                                                                                         |
-| `--no-server-client-version-message` | Supprime le message d’incompatibilité de version entre le serveur et le client lorsque le client se connecte au serveur.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | -                                                                                                                                                                                                                                                                                         |
+| `--no-server-client-version-message` | Supprime le message d’incompatibilité de version entre le serveur et le client lorsque le client se connecte au serveur.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | *                                                                                                                                                                                                                                                                                         |
 | `--password <password>`              | Le mot de passe de l’utilisateur de la base de données. Vous pouvez également définir le mot de passe d’une connexion dans le fichier de configuration. Si vous ne spécifiez pas le mot de passe, le client vous le demandera.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | -                                                                                                                                                                                                                                                                                         |
-| `--port <port>`                      | Le port sur lequel le serveur accepte les connexions. Les ports par défaut sont 9440 (TLS) et 9000 (sans TLS). <br /><br />Remarque : le client utilise le protocole natif, et non HTTP(S).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `9440` si `--secure` est spécifié, `9000` sinon. Utilise toujours `9440` par défaut si le nom d’hôte se termine par `.clickhouse.cloud`. Si ni `--port` ni `--secure` ne sont spécifiés, les ports `9000` et `9440` sont sondés simultanément et celui qui répond le premier est utilisé. |
-| `-s [ --secure ]`                    | Indique s’il faut utiliser TLS. <br /><br />Activé automatiquement lors d’une connexion au port 9440 (le port sécurisé par défaut) ou à ClickHouse Cloud, ainsi que lorsqu’aucun `--port` ni `--secure` n’est spécifié et que le port sécurisé répond le premier à la sonde — ce qui est toujours le cas pour un serveur répondant uniquement sur le port sécurisé (par exemple `play.clickhouse.com`, où le port non chiffré est protégé par un pare-feu), et peut être le cas pour un serveur écoutant sur les deux ports. Comme TLS n’a pas été demandé dans ce cas, un port sécurisé qui s’avère inutilisable (par exemple en raison d’un certificat non approuvé) ne génère pas d’erreur : le client se rabat sur le port non chiffré, auquel il se serait connecté sans le choix automatique. Spécifiez `--secure` pour exiger TLS. <br /><br />Vous devrez peut-être configurer vos certificats CA dans le [fichier de configuration](#configuration_files). Les paramètres de configuration disponibles sont les mêmes que pour la [configuration TLS côté serveur](/fr/reference/settings/server-settings/settings/other#openssl). | Activé automatiquement lors d’une connexion au port 9440 ou à ClickHouse Cloud                                                                                                                                                                                                            |
-| `--ssh-key-file <path-to-file>`      | Fichier contenant la clé privée SSH permettant de s’authentifier auprès du serveur.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | -                                                                                                                                                                                                                                                                                         |
-| `--ssh-key-passphrase <value>`       | Phrase secrète de la clé privée SSH spécifiée dans `--ssh-key-file`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | -                                                                                                                                                                                                                                                                                         |
+| `--port <port>`                      | Le port sur lequel le serveur accepte les connexions. Les ports par défaut sont 9440 (TLS) et 9000 (sans TLS). <br /><br />Remarque : le client utilise le protocole natif, et non HTTP(S).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `9440` si `--secure` est spécifié, `9000` sinon. Utilise toujours `9440` par défaut si le nom d’hôte se termine par `.clickhouse.cloud`. Si ni `--port` ni `--secure` ne sont spécifiés, les ports `9000` et `9440` sont sondés simultanément et celui qui répond le premier est utilisé. |
+| `-s [ --secure ]`                    | Indique s’il faut utiliser TLS. <br /><br />Activé automatiquement lors d’une connexion au port 9440 (le port sécurisé par défaut) ou à ClickHouse Cloud, ainsi que lorsqu’aucun `--port` ni `--secure` n’est spécifié et que le port sécurisé répond le premier à la sonde — ce qui est toujours le cas pour un serveur répondant uniquement sur le port sécurisé (par exemple `play.clickhouse.com`, où le port non chiffré est protégé par un pare-feu), et peut être le cas pour un serveur écoutant sur les deux ports. Comme TLS n’a pas été demandé dans ce cas, un port sécurisé qui s’avère inutilisable (par exemple en raison d’un certificat non approuvé) ne génère pas d’erreur : le client se rabat sur le port non chiffré, auquel il se serait connecté sans le choix automatique. Spécifiez `--secure` pour exiger TLS. <br /><br />Vous devrez peut-être configurer vos certificats CA dans le [fichier de configuration](#configuration_files). Les paramètres de configuration disponibles sont les mêmes que pour la [configuration TLS côté serveur](/fr/reference/settings/server-settings/settings/other#openssl). | Activé automatiquement lors d’une connexion au port 9440 ou à ClickHouse Cloud                                                                                                                                                                                                            |
+| `--ssh-key-file [path-to-file]`      | Fichier contenant la clé privée SSH permettant de s’authentifier auprès du serveur. <br /><br />Le nom de fichier peut être omis : le client sélectionne le premier fichier d’identité disponible configuré pour cet hôte dans `~/.ssh/config`, puis les fichiers d’identité par défaut, tels que `~/.ssh/id_ed25519`. Pour chaque identité, la copie détenue par l’`ssh-agent` est privilégiée car elle ne nécessite pas de phrase secrète ; l’agent est sélectionné à l’aide du paramètre `IdentityAgent` correspondant, ou de `SSH_AUTH_SOCK` lorsque celui-ci n’est pas configuré.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | *                                                                                                                                                                                                                                                                                         |
+| `--ssh-key-passphrase <value>`       | Phrase secrète de la clé privée SSH spécifiée dans `--ssh-key-file`. <br /><br />Si elle n’est pas spécifiée et que le fichier de clé est chiffré, la phrase secrète est demandée de manière interactive.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | -                                                                                                                                                                                                                                                                                         |
 | `--tls-sni-override <server name>`   | Si TLS est utilisé, le nom de serveur (SNI) à transmettre lors de la négociation initiale.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | L’hôte fourni via `-h` ou `--host`.                                                                                                                                                                                                                                                       |
 | `-u [ --user ] <username>`           | L’utilisateur de la base de données avec lequel se connecter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `default`                                                                                                                                                                                                                                                                                 |
 
@@ -946,9 +873,7 @@ Toutes les options en ligne de commande peuvent être spécifiées directement s
   Au lieu des options `--host`, `--port`, `--user` et `--password`, le client prend également en charge les [chaînes de connexion](#connection_string).
 </Note>
 
-<div id="command-line-options-query">
-  ### Options de requête
-</div>
+### Options de requête {#command-line-options-query}
 
 | Option                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -958,9 +883,7 @@ Toutes les options en ligne de commande peuvent être spécifiées directement s
 | `-m [ --multiline ]`            | Si cette option est spécifiée, autorise les requêtes sur plusieurs lignes (la requête n’est pas envoyée lorsque vous appuyez sur Entrée). Les requêtes ne sont envoyées qu’une fois terminées par un point-virgule.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `--inline-insert-data`          | Envoie `INSERT ... VALUES` (et les autres formats intégrés) tels quels dans le texte de la requête au lieu de convertir les données en blocs au format natif. Le serveur analyse lui-même les données intégrées, ce qui évite l’aller-retour nécessaire pour renvoyer au client la structure de la table et les valeurs par défaut des colonnes. Cela peut améliorer les performances lors de nombreuses petites insertions via le protocole natif. Définit automatiquement [`send_table_structure_on_insert_with_inline_data`](/fr/reference/settings/session-settings/send#send_table_structure_on_insert_with_inline_data) sur `0`. Ne peut pas être combiné avec des données intégrées et des données externes (depuis stdin ou `INFILE`). |
 
-<div id="command-line-options-query-settings">
-  ### Paramètres de requête
-</div>
+### Paramètres de requête {#command-line-options-query-settings}
 
 Les paramètres de requête peuvent être définis à l’aide d’options de ligne de commande dans le client, par exemple :
 
@@ -970,9 +893,7 @@ $ clickhouse-client --max_threads 1
 
 Voir [Paramètres](/fr/reference/settings/session-settings) pour la liste des paramètres.
 
-<div id="command-line-options-formatting">
-  ### Options de formatage
-</div>
+### Options de formatage {#command-line-options-formatting}
 
 | Option                            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Valeur par défaut                                                 |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -986,9 +907,7 @@ Voir [Paramètres](/fr/reference/settings/session-settings) pour la liste des pa
 | `--highlight [ --hilite ] <bool>` | Active ou désactive la coloration syntaxique de l’invite de commande et des requêtes affichées.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `true`                                                            |
 | `--hints <bool>`                  | Affiche pendant la saisie des indications d’autocomplétion (texte « fantôme » intégré) correspondant à la meilleure suggestion lorsque le curseur se trouve à la fin de l’entrée. Parcourez les indications avec Haut/Bas (ou Ctrl-Haut/Ctrl-Bas) ; acceptez l’indication intégrée avec Tab ou Droite ; `Enter` n’accepte une indication qu’après sa sélection explicite et, sinon, exécute la requête ; `Tab` ouvre également la liste classique de complétion. Nécessite `--highlight` (les indications ont besoin de couleur). Les indications de suggestion nécessitent également le mécanisme de suggestion, ainsi `--disable_suggestion` les désactive ; les commandes [`/`](#slash-commands) du client constituent une liste statique et restent indiquées tant que `--hints` et `--highlight` sont activés. `Tab` complète les commandes `/` même lorsque les indications sont désactivées. | `true`                                                            |
 
-<div id="command-line-options-execution-details">
-  ### Détails d’exécution
-</div>
+### Détails d’exécution {#command-line-options-execution-details}
 
 | Option                           | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Par défaut                                                       |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |

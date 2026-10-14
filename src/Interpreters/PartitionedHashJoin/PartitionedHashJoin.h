@@ -85,11 +85,11 @@ public:
     static bool isSupported(const TableJoin & table_join);
 
     std::string getName() const override { return "PartitionedHashJoin"; }
-    std::string getAlgorithm() const override { return toString(JoinAlgorithm::PARALLEL_HASH); }
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::PARTITIONED_HASH); }
     const TableJoin & getTableJoin() const override;
 
-    /// `worker_id` indexes the fill lanes; an id past the lane table takes the thread-keyed lane.
-    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
+    /// The build stream of `context` indexes the fill lanes; a stream past the lane table takes the thread-keyed lane.
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
     JoinResultPtr joinBlock(Block block, size_t lane) override;
@@ -201,10 +201,10 @@ public:
     void beginStoredBlockDrain();
     /// Pops one row-store block. An empty Block means the row store is gone.
     Block releaseNextStoredBlock();
-    /// Feeds every remaining row-store block to `target` from up to `num_threads` workers. Call after
-    /// `beginStoredBlockDrain`; `target.addBlockToJoin` must accept concurrent callers, as
-    /// `GraceHashJoin` does.
-    void drainStoredBlocksInto(IJoin & target);
+    /// Feeds every remaining row-store block to `target` from up to `num_threads` workers, as streams
+    /// of `context` that do not check the limits. Call after `beginStoredBlockDrain`;
+    /// `target.addBlockToJoin` must accept concurrent callers, as `GraceHashJoin` does.
+    void drainStoredBlocksInto(IJoin & target, JoinBuildContext context);
     double getFillSketchEstimateForTests();
 
 private:

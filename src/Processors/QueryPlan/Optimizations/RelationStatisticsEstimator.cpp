@@ -29,10 +29,6 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsUInt64 max_rows_to_read;
-extern const SettingsUInt64 max_rows_to_read_leaf;
-extern const SettingsOverflowMode read_overflow_mode;
-extern const SettingsOverflowMode read_overflow_mode_leaf;
 extern const SettingsBool use_statistics;
 }
 
@@ -95,7 +91,8 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     else
         total_number_of_distinct_values = input_stats.estimated_rows;
 
-    aggregation_stats.estimated_rows = total_number_of_distinct_values;
+    if (total_number_of_distinct_values)
+        aggregation_stats.estimated_rows = toUInt64Saturating(*total_number_of_distinct_values);
 
     return aggregation_stats;
 }
@@ -116,7 +113,7 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
 
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool keep_index_analysis)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -129,19 +126,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
-            const auto & settings = reading->getContext()->getSettingsRef();
-            const bool has_throwing_row_limit
-                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
-
-            /// Range analysis normally enforces throwing read limits and memoizes its result. Later
-            /// planning may make the executed read exempt from those limits. The caller may also estimate
-            /// before the plan is optimized. In both cases use an estimation-only analysis. Execution
-            /// will analyze again after its final read mode is known.
-            if (has_throwing_row_limit || !keep_index_analysis)
-                analyzed_result = reading->selectRangesToReadForEstimation(keep_index_analysis);
-            else
-                analyzed_result = reading->selectRangesToRead();
+            /// Range analysis normally enforces throwing read limits and memoizes its result.
+            /// At this stage, however, later planning may make the executed read exempt from those
+            /// limits. In that case use an estimation-only analysis; execution will analyze again
+            /// after its final read mode is known.
+            analyzed_result = reading->hasThrowingReadRowLimit()
+                ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+                : reading->selectRangesToRead();
         }
 
         /// An exact empty range selection proves that the relation is empty. Other empty
@@ -250,7 +241,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, keep_index_analysis);
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
     }
 
     if (node.children.size() != 1)
@@ -258,7 +249,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -269,7 +260,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
         expression_step && !expression_step->getExpression().hasArrayJoin())
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -278,14 +269,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate, keep_index_analysis);
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
@@ -303,7 +294,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -317,11 +308,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// already-distributed subtree would otherwise report unknown cardinality, degrading
     /// broadcast-vs-shuffle and join order decisions.
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
+        return estimateReadRowsCount(*node.children.front(), filter);
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter, keep_index_analysis);
+        return estimateReadRowsCount(*node.children.front(), filter);
 
     return {};
 }
