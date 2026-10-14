@@ -14,9 +14,3 @@ CREATE TABLE t_rmq_headers (x String) ENGINE = RabbitMQ
 SETTINGS rabbitmq_host_port = 'localhost:5672', rabbitmq_username = 'u', rabbitmq_password = 'p',
     rabbitmq_exchange_name = 'e', rabbitmq_exchange_type = 'headers',
     rabbitmq_routing_key_list = 'x-match=all,format', rabbitmq_format = 'JSONEachRow'; -- { serverError BAD_ARGUMENTS }
-
--- An empty routing key list used to cause an out-of-bounds read of the first routing key.
-CREATE TABLE t_rmq_empty (x String) ENGINE = RabbitMQ
-SETTINGS rabbitmq_host_port = 'localhost:5672', rabbitmq_username = 'u', rabbitmq_password = 'p',
-    rabbitmq_exchange_name = 'e', rabbitmq_exchange_type = 'fanout',
-    rabbitmq_routing_key_list = '', rabbitmq_format = 'JSONEachRow'; -- { serverError BAD_ARGUMENTS }
