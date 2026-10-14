@@ -136,7 +136,9 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::DEFAULT:
             case JoinAlgorithm::AUTO:
             case JoinAlgorithm::HASH:
-                /// The hash-based algorithms implement every kind and strictness.
+            case JoinAlgorithm::PARTITIONED_HASH:
+                /// The hash-based algorithms implement every kind and strictness. `partitioned_hash` plans
+                /// the shapes it does not support onto `hash`.
                 return true;
             case JoinAlgorithm::GRACE_HASH:
                 /// So does `grace_hash`, but without a spill threshold `tryCreateJoin` passes it over for

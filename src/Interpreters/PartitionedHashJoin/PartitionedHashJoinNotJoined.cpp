@@ -1,11 +1,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/HashJoin/fillRowStoreOutputColumns.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
-#include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/assert_cast.h>
 
@@ -39,10 +37,10 @@ public:
         , max_block_size(max_block_size_)
         , stream_idx(stream_idx_)
         , num_streams(num_streams_)
-        , block_row_stores(parent.storedData().stored_columns_index->rowStoresData())
     {
         /// The output columns are `getEmptyBlock`'s, so they are positional with the saved sample.
         const Block & saved = parent.hash_join->savedBlockSample();
+        NamesAndTypes type_name;
         type_name.reserve(saved.columns());
         for (const auto & column : saved)
             type_name.emplace_back(column.name, column.type);
@@ -50,41 +48,32 @@ public:
         std::vector<size_t> positions(saved.columns());
         std::iota(positions.begin(), positions.end(), 0);
         EmitPlan plan = planJoinEmit(parent.storedData(), positions, type_name, /*with_gather=*/true);
-        output_access_indexes = std::move(plan.access_indexes);
         emit_gather = std::move(plan.gather);
-        has_row_store = plan.has_row_store;
-        has_columns = plan.has_columns;
+        emit_row_store_row_length = plan.row_store_row_length;
     }
 
     Block getEmptyBlock() override { return parent.hash_join->savedBlockSample().cloneEmpty(); }
 
     size_t fillColumns(MutableColumns & columns_right) override
     {
-        size_t rows_added = 0;
-        dispatchStorage(
-            [&]<bool with_row_store, bool with_columns>()
+        const HashJoin::Type type = parent.storedData().type;
+        size_t rows_added = std::visit(
+            [&](const auto & shape)
             {
-                const HashJoin::Type type = parent.storedData().type;
-                rows_added = std::visit(
-                    [&](const auto & shape)
-                    {
-                        switch (type)
-                        {
+                switch (type)
+                {
 #define M(TYPE) \
-    case HashJoin::Type::TYPE: return fillFromTable<with_row_store, with_columns>(columns_right, *shape.TYPE);
-                            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+    case HashJoin::Type::TYPE: return fillFromTable(columns_right, *shape.TYPE);
+                    APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
-                            default:
-                                throw Exception(
-                                    ErrorCodes::UNSUPPORTED_JOIN_KEYS,
-                                    "Unsupported JOIN keys for the partitioned join (type: {})",
-                                    type);
-                        }
-                    },
-                    parent.clause.tableMaps().maps);
+                    default:
+                        throw Exception(
+                            ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", type);
+                }
+            },
+            parent.clause.tableMaps().maps);
 
-                fillNullsFromBlocks<with_row_store, with_columns>(columns_right, rows_added);
-            });
+        fillNullsFromBlocks(columns_right, rows_added);
         return rows_added;
     }
 
@@ -94,15 +83,10 @@ private:
     const size_t stream_idx;
     const size_t num_streams;
 
-    /// Per-block bases of the row stores; stable once the build is finished.
-    const RowDataStore * const * block_row_stores;
-    /// Where each saved-block column lives (row store field or columnar position), its type, and
-    /// the gather source of the columnar ones.
-    ColumnAccessIndexes output_access_indexes;
-    NamesAndTypes type_name;
+    /// The gather source of every saved-block column, and the row length of the row store the
+    /// row-store columns come from.
     std::vector<GatherColumn> emit_gather;
-    bool has_row_store = false;
-    bool has_columns = false;
+    std::optional<size_t> emit_row_store_row_length;
 
     /// The shared-table cursor: the next cell position of this stream's stripe, and whether the zero cell
     /// has been considered (stream 0 only).
@@ -113,72 +97,31 @@ private:
     std::any fixed_position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
 
-    /// The rows one call collected: encoded ref words for the columnar part, row pointers for the
-    /// row store part.
+    /// The rows one call collected, as encoded ref words.
     struct Collected
     {
         PaddedPODArray<UInt64> words;
-        RowStorePointers row_store_ptrs;
-        std::optional<size_t> row_store_batch_size;
         size_t rows = 0;
-
-        template <bool with_row_store, bool with_columns>
-        void reserve(size_t n)
-        {
-            if constexpr (with_columns)
-                words.reserve(n);
-            if constexpr (with_row_store)
-                row_store_ptrs.ptrs.reserve(n);
-        }
     };
 
-    template <typename F>
-    void dispatchStorage(F && f) const
+    static void collectRow(UInt32 block_no, UInt32 row_no, Collected & out)
     {
-        if (has_row_store && has_columns)
-            f.template operator()<true, true>();
-        else if (has_row_store)
-            f.template operator()<true, false>();
-        else
-            f.template operator()<false, true>();
-    }
-
-    template <bool with_row_store, bool with_columns>
-    void collectRow(UInt32 block_no, UInt32 row_no, Collected & out) const
-    {
-        if constexpr (with_columns)
-            out.words.push_back(RowRef(block_no, row_no).encode());
-        if constexpr (with_row_store)
-        {
-            const RowDataStore * row_store = block_row_stores[block_no];
-            out.row_store_ptrs.ptrs.emplace_back(row_store->getRowAt(row_no));
-            if (!out.row_store_batch_size)
-                out.row_store_batch_size = row_store->getBatchSize();
-        }
+        out.words.push_back(RowRef(block_no, row_no).encode());
         ++out.rows;
     }
 
     /// Flat: a not-joined row is always one inline ref, never a list and never a default.
     void fillOutput(MutableColumns & columns_right, const Collected & collected) const
     {
-        if (has_columns)
-        {
-            const RefWordSelection selection{
-                .begin = collected.words.data(),
-                .end = collected.words.data() + collected.words.size(),
-                .rows = collected.words.size(),
-                .shape = RefWordShape::Flat};
-            EmitScratch scratch;
-            for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
-                if (output_access_indexes[dst_idx].type == ColumnAccessIndex::Type::Columns)
-                    gatherColumn(*columns_right[dst_idx], emit_gather[dst_idx], selection, scratch);
-        }
-        if (has_row_store)
-            fillRowStoreOutputColumns(
-                columns_right, output_access_indexes, collected.row_store_ptrs, collected.row_store_batch_size, type_name);
+        const RefWordSelection selection{
+            .begin = collected.words.data(),
+            .end = collected.words.data() + collected.words.size(),
+            .rows = collected.words.size(),
+            .shape = RefWordShape::Flat};
+        gatherJoinOutputColumns(columns_right, emit_gather, selection, emit_row_store_row_length);
     }
 
-    template <bool with_row_store, bool with_columns, typename Mapped>
+    template <typename Mapped>
     void collectMapped(const Mapped & mapped, Collected & out) const
     {
         /// The same walk as `CollectorNonJoined`, which is file-local to `HashJoin.cpp`. ASOF never
@@ -188,12 +131,12 @@ private:
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
                 const UInt64 ref_word = *it;
-                collectRow<with_row_store, with_columns>(refWordBlockNo(ref_word), refWordRowNo(ref_word), out);
+                collectRow(refWordBlockNo(ref_word), refWordRowNo(ref_word), out);
             }
         }
         else if constexpr (std::is_same_v<Mapped, RowRef>)
         {
-            collectRow<with_row_store, with_columns>(mapped.blockNo(), mapped.rowNo(), out);
+            collectRow(mapped.blockNo(), mapped.rowNo(), out);
         }
         else
         {
@@ -201,11 +144,11 @@ private:
         }
     }
 
-    template <bool with_row_store, bool with_columns, typename Table>
+    template <typename Table>
     size_t fillFromTable(MutableColumns & columns_right, const Table & table)
     {
         Collected collected;
-        collected.reserve<with_row_store, with_columns>(max_block_size);
+        collected.words.reserve(max_block_size);
 
         if constexpr (is_hash_join_table<Table>)
         {
@@ -220,7 +163,7 @@ private:
             {
                 zero_done = true;
                 if (table.hasZero() && !parent.hash_join->isUsed(0))
-                    collectMapped<with_row_store, with_columns>(table.zeroValue()->getMapped(), collected);
+                    collectMapped(table.zeroValue()->getMapped(), collected);
             }
             for (; position < end && collected.rows < max_block_size; ++position)
             {
@@ -229,7 +172,7 @@ private:
                     continue;
                 if (parent.hash_join->isUsed(position + 1))
                     continue;
-                collectMapped<with_row_store, with_columns>(cell->getMapped(), collected);
+                collectMapped(cell->getMapped(), collected);
             }
         }
         else if (stream_idx == 0)
@@ -244,7 +187,7 @@ private:
             {
                 if (parent.hash_join->isUsed(table.offsetInternal(it.getPtr())))
                     continue;
-                collectMapped<with_row_store, with_columns>(it->getMapped(), collected);
+                collectMapped(it->getMapped(), collected);
             }
         }
 
@@ -254,7 +197,6 @@ private:
 
     /// The rows that never entered the table, from the null maps saved when the build ended; as
     /// `NotJoinedHash::fillNullsFromBlocks` does. Not partitioned, so exactly one stream emits them.
-    template <bool with_row_store, bool with_columns>
     void fillNullsFromBlocks(MutableColumns & columns_right, size_t & rows_added)
     {
         if (stream_idx != 0)
@@ -267,7 +209,7 @@ private:
         auto end = nullmaps.end();
 
         Collected collected;
-        collected.reserve<with_row_store, with_columns>(max_block_size);
+        collected.words.reserve(max_block_size);
 
         for (auto & it = *nulls_position; it != end && rows_added + collected.rows < max_block_size; ++it)
         {
@@ -278,7 +220,7 @@ private:
 
             for (size_t row : stored->selector)
                 if (nullmap && (*nullmap)[row])
-                    collectRow<with_row_store, with_columns>(stored->block_no, static_cast<UInt32>(row), collected);
+                    collectRow(stored->block_no, static_cast<UInt32>(row), collected);
         }
 
         fillOutput(columns_right, collected);

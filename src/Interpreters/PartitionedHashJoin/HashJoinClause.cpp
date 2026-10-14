@@ -989,7 +989,7 @@ void HashJoinClause::insertPartitionSection(
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using Table = typename decltype(shape_maps.TYPE)::element_type; \
-        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table, /*use_offset=*/false>::Type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table>::Type; \
         Table & table = *shape_maps.TYPE; \
         if constexpr (is_hash_join_table<Table>) \
         { \
