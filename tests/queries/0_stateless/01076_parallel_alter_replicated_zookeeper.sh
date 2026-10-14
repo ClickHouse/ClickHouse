@@ -123,7 +123,7 @@ counter=0
 have_undone_mutations_query="select * from system.mutations where table like 'concurrent_mutate_mt_%' and is_done=0 and database='${CLICKHOUSE_DATABASE}'"
 have_all_tables_query="select count() FROM system.tables WHERE name LIKE 'concurrent_mutate_mt_%' and database='${CLICKHOUSE_DATABASE}'"
 
-while true ; do
+while clickhouse_test_time_left ; do
     if [ "$counter" -gt 120 ]
     then
         break

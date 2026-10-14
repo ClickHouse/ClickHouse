@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT --query-id="$same_query_not_finish" -q "SELECT sleep(120) SET
 $CLICKHOUSE_CLIENT --query-id="$same_query_finish" -q "SELECT sleep(120) SETTINGS function_sleep_max_microseconds_per_block=1000000000, query_metric_log_interval=0, replace_running_query=0 FORMAT Null; -- { serverError QUERY_WAS_CANCELLED}" &
 
 # Ensure both queries have started
-while true; do
+while clickhouse_test_time_left; do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS system.query_log;"
     count=$($CLICKHOUSE_CLIENT -q """
         SELECT

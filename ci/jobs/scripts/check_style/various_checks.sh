@@ -262,6 +262,10 @@ for test_case in "${curl_flush_logs_tests[@]}"; do
     fi
 done
 
+# Unbounded loops spin forever on the host when the runner dies before `clickhouse-test` kills the test.
+git grep -nP '^[^#]*\bwhile\s+(true|:)\s*(;|$)' -- "$ROOT_PATH/tests/queries/0_stateless/*.sh" "$ROOT_PATH/tests/queries/0_stateless/*.lib" &&
+    echo "Use 'while clickhouse_test_time_left' instead of an unbounded loop in tests, see shell_config.sh"
+
 # CLICKHOUSE_URL already includes "?"
 git grep -P 'CLICKHOUSE_URL(|_HTTPS)(}|}/|/|)\?' $ROOT_PATH/tests/queries/0_stateless/*.sh && echo "CLICKHOUSE_URL already includes '?', use '&' to append query parameters"
 

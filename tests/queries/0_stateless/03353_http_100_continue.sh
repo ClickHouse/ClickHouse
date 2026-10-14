@@ -92,7 +92,7 @@ checkFor200OkResponse
 
 echo "=== Test: Deferred 100 Continue with TOO_MANY_SIMULTANEOUS_QUERIES ==="
 $CLICKHOUSE_CLIENT --query_id "sleep_${CLICKHOUSE_TEST_UNIQUE_NAME}" --query 'SELECT sleep(300) SETTINGS function_sleep_max_microseconds_per_block=300000000' >/dev/null 2>&1 &
-while true
+while clickhouse_test_time_left
 do
     ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = 'sleep_${CLICKHOUSE_TEST_UNIQUE_NAME}'" | grep -F '1' >/dev/null && break || sleep 1
 done

@@ -15,7 +15,7 @@ CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --allow_materialized_view_with_bad_
 # column: it retries until no row reports 'Scheduling'.
 query_no_scheduling() {
     local out
-    while :
+    while clickhouse_test_time_left
     do
         out=$($CLICKHOUSE_CLIENT -q "$1")
         if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then

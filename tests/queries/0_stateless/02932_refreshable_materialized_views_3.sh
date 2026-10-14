@@ -22,7 +22,7 @@ CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 # column: it retries until no row reports 'Scheduling'.
 query_no_scheduling() {
     local out
-    while :
+    while clickhouse_test_time_left
     do
         out=$($CLICKHOUSE_CLIENT -q "$1")
         if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then
@@ -194,7 +194,7 @@ wave_wait_failed() {
 }
 wave_deadline=$((${CLICKHOUSE_TEST_TIMEOUT:-600} - 20))
 n='(no poll returned)'
-while :
+while clickhouse_test_time_left
 do
     left=$((wave_deadline - SECONDS))
     if ((left <= 0))

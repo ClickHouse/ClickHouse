@@ -15,10 +15,10 @@ function thread1()
         for _ in {1..10}
         do
                 seq 1 500000 | $CLICKHOUSE_CLIENT --query_id=11 --query="INSERT INTO data_a_01019 FORMAT TSV" &
-                while true; do
+                while clickhouse_test_time_left; do
                         $CLICKHOUSE_CLIENT --query="KILL QUERY WHERE query_id='11' SYNC" | grep -q "cant_cancel" && sleep .1 || break ||:
                 done
-                while true; do
+                while clickhouse_test_time_left; do
                         $CLICKHOUSE_CLIENT --query="SELECT count(*)>0 FROM system.processes WHERE query_id='11'" | grep -q "1" && sleep .1 || break ||:
                 done
         done
@@ -29,10 +29,10 @@ function thread2()
         for _ in {1..10}
         do
                 seq 1 500000 | $CLICKHOUSE_CLIENT --query_id=22 --query="INSERT INTO data_b_01019 FORMAT TSV" &
-                while true; do
+                while clickhouse_test_time_left; do
                         $CLICKHOUSE_CLIENT --query="KILL QUERY WHERE query_id='22' SYNC" | grep -q "cant_cancel" && sleep .1 || break ||:
                 done
-                while true; do
+                while clickhouse_test_time_left; do
                         $CLICKHOUSE_CLIENT --query="SELECT count(*)>0 FROM system.processes WHERE query_id='22'" | grep -q "1" && sleep .1 || break ||:
                 done
         done
