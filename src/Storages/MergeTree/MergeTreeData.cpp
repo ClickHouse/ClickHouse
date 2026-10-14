@@ -265,6 +265,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsBool allow_experimental_partial_skip_indexes;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -6179,6 +6180,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     "Cannot add statistics to column '{}': it is not physically stored",
                     column.name);
             }
+        }
+    }
+
+    if (!settings[Setting::allow_experimental_partial_skip_indexes])
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::ADD_INDEX)
+                continue;
+            const auto & added = new_metadata.secondary_indices.getByName(command.index_name);
+            if (added.where_expression)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Skip index '{}' with WHERE is experimental. Enable the setting 'allow_experimental_partial_skip_indexes' to use it",
+                    added.name);
         }
     }
 

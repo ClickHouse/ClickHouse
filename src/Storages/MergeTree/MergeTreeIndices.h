@@ -267,7 +267,13 @@ struct IMergeTreeIndex
     /// `getPhysicalFormat` and `getPotentialSubstreams` should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
-    virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
+    ///
+    /// A partial index (with `WHERE`) prefixes every granule with a has_rows flag, so it is written to its own
+    /// `.idxp` file: a file of the other layout under the same name is then never decoded by mistake.
+    virtual MergeTreeIndexSubstreams getSubstreams() const
+    {
+        return {{MergeTreeIndexSubstream::Type::Regular, "", index.where_expression ? ".idxp" : ".idx"}};
+    }
 
     /// Two distinct questions are asked about a part's copy of an index, and they must not be conflated:
     ///

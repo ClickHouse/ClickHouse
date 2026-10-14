@@ -130,6 +130,7 @@ namespace Setting
 {
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
+    extern const SettingsBool allow_experimental_partial_skip_indexes;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -980,6 +981,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+
+                if (index_desc.where_expression && !create.attach && !settings[Setting::allow_experimental_partial_skip_indexes])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index '{}' with WHERE is experimental. Enable the setting 'allow_experimental_partial_skip_indexes' to use it",
+                        index_desc.name);
 
                 properties.indices.push_back(index_desc);
             }

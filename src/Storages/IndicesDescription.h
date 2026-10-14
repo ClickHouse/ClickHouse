@@ -55,6 +55,9 @@ struct IndexDescription
     ASTPtr where_ast;
     ExpressionActionsPtr where_expression;
     String where_column_name;
+    /// `queryConditionCacheSettingsSalt` of the settings the condition's functions were built with: they decide
+    /// what the condition evaluated to when the index was written, and the name and types of a function do not.
+    UInt64 where_settings_salt = 0;
 
     /// True if index is created implicitly using settings:
     /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns

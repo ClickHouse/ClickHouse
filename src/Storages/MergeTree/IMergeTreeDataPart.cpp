@@ -3608,8 +3608,16 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasSecondaryIndex");
 
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    return getStreamNameOrHashResolved(file_name, ".idx").has_value()
+    const bool has_ordinary = getStreamNameOrHashResolved(file_name, ".idx").has_value()
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
+    const bool has_partial = getStreamNameOrHashResolved(file_name, ".idxp").has_value();
+
+    /// The two layouts are not interchangeable: only the one the index is declared with counts.
+    for (const auto & declared : metadata->getSecondaryIndices())
+        if (declared.name == index_name)
+            return declared.where_expression ? has_partial : has_ordinary;
+
+    return has_ordinary || has_partial;
 }
 
 bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const

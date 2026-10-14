@@ -1,3 +1,4 @@
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
@@ -325,6 +326,13 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
     /// The part's OWN list, for the same reason tryGetPartOwnType uses it rather than the cache.
     const auto & part_columns = part.getColumns();
 
+    /// The predicate's value is stored in the granule (has_rows), so a column it reads is an
+    /// expression dependency even when the indexed expression is a bare column.
+    NameSet where_columns;
+    if (skip_index.index.where_expression)
+        for (const auto & name : skip_index.index.where_expression->getRequiredColumns())
+            where_columns.insert(name);
+
     for (const auto & [column, metadata_type] : skip_index.getColumnsWithTypesRequiredForIndexCalc())
     {
         auto part_column = part.tryGetColumn(column);
@@ -382,7 +390,7 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
         /// Date column but UInt32 once that column becomes UInt16. Recovering the expression's
         /// part-side result type would mean running the analyzer per part on the query path, so a
         /// non-trivial expression is refused on any type difference.
-        if (!skip_index.index.isSimpleSingleColumnIndex())
+        if (!skip_index.index.isSimpleSingleColumnIndex() || where_columns.contains(column))
             return false;
 
         if (!isRepresentationPreservingConversion(part_type.get(), metadata_type.get()))
@@ -442,8 +450,9 @@ MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeData
 MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(
     const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+    const char * extension = index.where_expression ? ".idxp" : ".idx";
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, extension, &storage))
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", extension}}};
 
     return {0 /*unknown*/, {}};
 }
@@ -574,6 +583,12 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
         {
             if (index.where_expression->hasArrayJoin())
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "WHERE of secondary index '{}' cannot contain array joins", index.name);
+
+            for (const auto & node : index.where_expression->getActionsDAG().getNodes())
+                if (typeid_cast<const FunctionCapture *>(node.function_base.get()))
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "WHERE of secondary index '{}' cannot contain lambda functions, they cannot be matched against a query filter",
+                        index.name);
 
             try
             {

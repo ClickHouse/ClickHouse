@@ -1,3 +1,5 @@
+#include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -67,6 +69,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , granularity(other.granularity)
     , where_ast(other.where_ast ? other.where_ast->clone() : nullptr)
     , where_column_name(other.where_column_name)
+    , where_settings_salt(other.where_settings_salt)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
 {
@@ -121,6 +124,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
         where_expression.reset();
 
     where_column_name = other.where_column_name;
+    where_settings_salt = other.where_settings_salt;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
     return *this;
@@ -205,6 +209,7 @@ IndexDescription IndexDescription::getIndexFromAST(
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
                 "WHERE condition of skip index '{}' must be of type UInt8 or Bool, got {}", result.name, where_column.type->getName());
         result.where_column_name = where_column.name;
+        result.where_settings_salt = queryConditionCacheSettingsSalt(context->getSettingsRef());
     }
 
     if (index_type && index_type->arguments)

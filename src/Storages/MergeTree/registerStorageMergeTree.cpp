@@ -1664,6 +1664,8 @@ SELECT count() FROM table WHERE u64 * length(s) == 1234
 A partial index with a `WHERE` clause indexes only the rows that satisfy the condition, which saves space and insert time when queries only target a fraction of the data.
 It is used only by queries whose filter contains the same condition as an `AND` operand, and granules without such rows are skipped.
 Index types `minmax`, `set`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1` and `sparse_grams` support `WHERE`.
+This feature is experimental and requires the setting `allow_experimental_partial_skip_indexes`.
+The condition cannot contain lambda functions. A function that captures settings, such as `JSON_VALUE`, matches only a query filter that runs with the same settings the index was defined with.
 
 ```sql
 INDEX error_message_index message TYPE tokenbf_v1(32768, 3, 0) WHERE level = 'Error'

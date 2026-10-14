@@ -1,6 +1,8 @@
+-- Tags: no-random-settings
 -- Partial skip indexes: `INDEX ... WHERE cond` indexes only the rows satisfying `cond`
 -- and is used only when the query filter has `cond` as a conjunct.
 
+SET allow_experimental_partial_skip_indexes = 1;
 SET use_skip_indexes = 1;
 -- `max_rows_to_read` must see the ranges left after skip index analysis.
 SET use_skip_indexes_on_data_read = 0;
