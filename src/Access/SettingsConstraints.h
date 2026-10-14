@@ -107,7 +107,16 @@ public:
     /// writability constraints are not enforced against the change (it may create looser configurations).
     /// Structural rules still apply to everyone: the readonly mode, source restrictions (e.g.
     /// `max_sessions_for_user` is profile-only) and the server-wide `allow_feature_tier` policy.
-    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source, bool skip_config_defined_profiles = false, bool actor_is_config_defined = false) const;
+    ///
+    /// `resolved_constraints` are the constraints the elements resolve to, known at login. A constraint that
+    /// leaves out a bound keeps it if an earlier profile in the chain declares it, so it is checked there.
+    void check(
+        const Settings & current_settings,
+        const SettingsProfileElements & profile_elements,
+        SettingSource source,
+        bool skip_config_defined_profiles = false,
+        bool actor_is_config_defined = false,
+        const SettingsConstraints * resolved_constraints = nullptr) const;
 
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source, bool actor_is_config_defined = false) const;
 
@@ -219,12 +228,14 @@ private:
                               SettingSource source,
                               boost::container::flat_set<UUID> & visited_profiles,
                               bool skip_config_defined_profiles,
-                              bool actor_is_config_defined) const;
+                              bool actor_is_config_defined,
+                              const SettingsConstraints * resolved_constraints) const;
 
     void checkProfileElementValues(const Settings & current_settings,
                                    const SettingsProfileElement & element,
                                    SettingSource source,
-                                   bool actor_is_config_defined) const;
+                                   bool actor_is_config_defined,
+                                   const SettingsConstraints * resolved_constraints) const;
 
     void checkProfileElementWritability(const SettingsProfileElement & element,
                                         const std::unordered_map<String, SettingConstraintWritability> & writability_map) const;
