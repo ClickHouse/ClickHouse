@@ -35,7 +35,6 @@
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <algorithm>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -958,10 +957,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
 }
 
-/// The entries of the tree, each after its inputs. The subtree of an entry `is_built` accepts is left out, that entry
-/// takes the place of a leaf.
-static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(
-    const DPJoinEntryPtr & root, const std::function<bool(const DPJoinEntry *)> & is_built = {})
+static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(const DPJoinEntryPtr & root)
 {
     std::vector<DPJoinEntry *> result;
     result.reserve(root->relations.count() * 2);
@@ -974,7 +970,7 @@ static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(
         auto * node = stack.back();
         stack.pop_back();
 
-        if (!node->isLeaf() && !(is_built && is_built(node)))
+        if (!node->isLeaf())
         {
             if (!node->left || !node->right)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Join node should have both left and right children");
@@ -1088,7 +1084,75 @@ private:
         RelationEstimateInfo relation_info;
     };
     std::unordered_map<const DPJoinEntry *, BuiltJoin> built_joins;
+
+    /// The joins of the tree whose plans an order built before can be used, and the entries below them, which are
+    /// not built. A plan can be used when it keeps every column the tree uses above it: the joins above differ
+    /// between orders, and with transitive predicates they can join on another column of the same relation.
+    struct ReusableJoins
+    {
+        std::unordered_map<const DPJoinEntry *, const BuiltJoin *> reused;
+        std::unordered_set<const DPJoinEntry *> skipped;
+    };
+    ReusableJoins findReusableJoins(
+        const DPJoinEntryPtr & root,
+        const std::vector<DPJoinEntry *> & sequence,
+        const std::unordered_map<const ActionsDAG::Node *, size_t> & usage_level_map) const;
 };
+
+JoinOrderPlanBuilder::ReusableJoins JoinOrderPlanBuilder::findReusableJoins(
+    const DPJoinEntryPtr & root,
+    const std::vector<DPJoinEntry *> & sequence,
+    const std::unordered_map<const ActionsDAG::Node *, size_t> & usage_level_map) const
+{
+    std::unordered_map<const DPJoinEntry *, size_t> position;
+    for (size_t i = 0; i < sequence.size(); ++i)
+        position[sequence[i]] = i;
+
+    auto keeps_used_columns = [&](const DPJoinEntry & entry, const BuiltJoin & built)
+    {
+        for (size_t input_pos = 0; input_pos < initial_input_nodes.size(); ++input_pos)
+        {
+            const auto & [relation, input_node] = initial_input_nodes[input_pos];
+            if (!entry.relations.test(relation) || built.input_nodes[input_pos].second)
+                continue;
+            const auto level = usage_level_map.find(input_node);
+            if (level != usage_level_map.end() && level->second > position.at(&entry))
+                return false;
+        }
+        return true;
+    };
+
+    ReusableJoins result;
+    std::vector<const DPJoinEntry *> stack{root.get()};
+    while (!stack.empty())
+    {
+        const auto * entry = stack.back();
+        stack.pop_back();
+        if (entry->isLeaf())
+            continue;
+        const auto built = built_joins.find(entry);
+        if (entry != root.get() && built != built_joins.end() && keeps_used_columns(*entry, built->second))
+        {
+            result.reused.emplace(entry, &built->second);
+            std::vector<const DPJoinEntry *> below{entry->left.get(), entry->right.get()};
+            while (!below.empty())
+            {
+                const auto * skipped = below.back();
+                below.pop_back();
+                result.skipped.insert(skipped);
+                if (!skipped->isLeaf())
+                {
+                    below.push_back(skipped->left.get());
+                    below.push_back(skipped->right.get());
+                }
+            }
+            continue;
+        }
+        stack.push_back(entry->left.get());
+        stack.push_back(entry->right.get());
+    }
+    return result;
+}
 
 QueryPlan::Node * JoinOrderPlanBuilder::build(
     const DPJoinEntryPtr & optimized, const std::vector<QueryPlan::Node *> & input_nodes, QueryPlan::Nodes & nodes)
@@ -1096,13 +1160,10 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     auto current_input_nodes = initial_input_nodes;
     auto relation_infos = leaf_relation_infos;
-    auto is_built = [&](const DPJoinEntry * entry) { return built_joins.contains(entry); };
-    auto sequence = getJoinTreePostOrderSequence(optimized, is_built);
+    auto sequence = getJoinTreePostOrderSequence(optimized);
 
     if (sequence.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join tree is empty");
-    if (const auto it = built_joins.find(sequence.back()); it != built_joins.end())
-        return it->second.node;
 
     /// Mapping from node to maximal step position where it is used
     /// It's used to drop unused expressions
@@ -1114,8 +1175,6 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
         for (size_t i = 0; i < sequence.size(); ++i)
         {
             const auto & entry = sequence[i];
-            if (is_built(entry))
-                continue;
             for (const auto & action : entry->join_operator.expression)
                 stack.emplace_back(action.getNode(), i);
             for (const auto & action : entry->join_operator.residual_filter)
@@ -1141,6 +1200,8 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
         }
     }
 
+    const auto [reused_joins, skipped_entries] = findReusableJoins(optimized, sequence, usage_level_map);
+
     std::stack<QueryPlan::Node *> node_stack;
     /// Decide once whether this graph's per-entry strictnesses are authoritative. `buildPhysicalPlan`
     /// leaves every DP entry `All` except a semi/anti join that a conflict detector (CD-A/CD-C)
@@ -1151,13 +1212,15 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
     /// onto the reconstructed joins (e.g. an ANY/SEMI/ANTI join that was only swapped, or the whole
     /// graph under the default greedy algorithm, which never populates per-entry strictness).
     bool graph_has_mixed_strictness = false;
-    for (const auto * seq_entry : getJoinTreePostOrderSequence(optimized))
+    for (const auto * seq_entry : sequence)
         if (!seq_entry->isLeaf() && seq_entry->join_operator.strictness != JoinStrictness::All)
             graph_has_mixed_strictness = true;
 
     for (size_t entry_idx = 0; entry_idx < sequence.size(); ++entry_idx)
     {
         auto * entry = sequence[entry_idx];
+        if (skipped_entries.contains(entry))
+            continue;
         if (entry->isLeaf())
         {
             /// Base relation, use this step as input node
@@ -1173,13 +1236,13 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
                 .max_rows = leaf_info.max_rows ? std::optional<Float64>(Float64(*leaf_info.max_rows)) : std::nullopt};
             node_stack.push(input_nodes[relation_id]);
         }
-        else if (const auto built = built_joins.find(entry); built != built_joins.end())
+        else if (const auto built = reused_joins.find(entry); built != reused_joins.end())
         {
             for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
                 if (entry->relations.test(current_input_nodes[input_pos].first))
-                    current_input_nodes[input_pos].second = built->second.input_nodes[input_pos].second;
-            relation_infos[entry->relations] = built->second.relation_info;
-            node_stack.push(built->second.node);
+                    current_input_nodes[input_pos].second = built->second->input_nodes[input_pos].second;
+            relation_infos[entry->relations] = built->second->relation_info;
+            node_stack.push(built->second->node);
         }
         else
         {
