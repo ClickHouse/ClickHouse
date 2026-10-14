@@ -14,6 +14,8 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -347,7 +349,46 @@ NumberedFileNames WildcardPartitionStrategy::getNumberedPathsForWrite(
         {
             return PartitionedSink::replaceWildcards(addSequenceNumberToFileName(prefix, sequence_number), partition_key);
         },
+        .may_be_names_of_other_partitions = numberedNamesMayBeNamesOfOtherPartitions(prefix),
     };
+}
+
+bool WildcardPartitionStrategy::numberedNamesMayBeNamesOfOtherPartitions(const std::string & prefix) const
+{
+    /// A partition id is the partition key converted to a string. The types listed here never have a dot in it,
+    /// so the number, which always comes after a dot, cannot be a part of the id of another partition.
+    const auto & key_types = partition_key_description.data_types;
+    const bool ids_have_no_dots = !key_types.empty()
+        && std::ranges::all_of(
+            key_types,
+            [](const DataTypePtr & type)
+            {
+                const WhichDataType which(removeLowCardinalityAndNullable(type));
+                return which.isInteger() || which.isDate() || which.isDate32() || which.isDateTime() || which.isUUID();
+            });
+    if (ids_have_no_dots)
+        return false;
+
+    /// The numbered name of a partition is the pattern with `.N` inserted, and the first name of another partition is
+    /// the pattern without it, so they can be the same only if the partition ids absorb the difference. Comparing the
+    /// two names from the end: the part of the pattern after the number is the same in both, unless it has the partition
+    /// id in it. Next, the numbered name has the digits of the number, while the other name has the part of the pattern
+    /// before the number. If that part ends with a character of the pattern that is not a digit, the names differ.
+    /// If it ends with the partition id (possibly followed by digits), the id of the other partition can be the id of
+    /// this partition followed by `.N`: `p_{_partition_id}.tsv` gives `p_a.1.tsv` for both the partition `a` and the
+    /// partition `a.1`.
+    const std::string_view wildcard = PartitionedSink::PARTITION_ID_WILDCARD;
+    const size_t number_pos = getSequenceNumberPositionInFileName(prefix);
+    const std::string_view before_number = std::string_view(prefix).substr(0, number_pos);
+    const std::string_view after_number = std::string_view(prefix).substr(number_pos);
+
+    if (after_number.contains(wildcard))
+        return true;
+
+    size_t end = before_number.size();
+    while (end > 0 && isNumericASCII(before_number[end - 1]))
+        --end;
+    return before_number.substr(0, end).ends_with(wildcard);
 }
 
 HiveStylePartitionStrategy::HiveStylePartitionStrategy(

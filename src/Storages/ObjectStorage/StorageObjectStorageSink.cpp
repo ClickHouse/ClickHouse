@@ -250,6 +250,20 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     const NumberedFileNames numbered_keys = configuration->getNumberedPathsForWrite(partition_id, file_path);
     size_t sequence_number = 1;
 
+    /// A truncating insert split by size deletes the numbered objects of the partition (see below), but with this path pattern
+    /// a numbered key of the partition may be the first object of another partition written by the same pattern. Nothing
+    /// tells them apart, so the insert is refused before anything is written or deleted.
+    if (query_settings.split_on_write_by_size_bytes && query_settings.truncate_on_insert && !query_settings.create_new_file_on_insert
+        && numbered_keys.may_be_names_of_other_partitions)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot overwrite the partition {} with {}_truncate_on_insert and {}_split_on_write_by_size_bytes: "
+            "the numbered objects of the partition, such as {}, may be the objects of other partitions written by the path pattern {}. "
+            "Place a character that is not a digit between {} and the extension of the file, or {} into a directory of the path, "
+            "or use a partition key of an integer, date or UUID type",
+            partition_id, configuration->getTypeName(), configuration->getTypeName(), numbered_keys.getName(1),
+            configuration->getRawPath().path, PartitionedSink::PARTITION_ID_WILDCARD, PartitionedSink::PARTITION_ID_WILDCARD);
+
     /// See the same reservation in `StorageObjectStorage::write`: a generated key is invisible both for the
     /// readers and in the object storage until the object is committed, so it is held against the concurrent
     /// inserts into this table for as long as this insert lasts. The reservations of every partition belong to

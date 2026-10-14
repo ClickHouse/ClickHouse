@@ -3611,6 +3611,19 @@ public:
         const NumberedFileNames numbered_paths = partition_strategy->getNumberedPathsForWrite(path, partition_id, filepath);
         size_t sequence_number = 1;
 
+        /// A truncating insert split by size deletes the numbered files of the partition (see below), but with this path pattern
+        /// a numbered name of the partition may be the first file of another partition written by the same pattern. Nothing
+        /// tells them apart, so the insert is refused before anything is written or deleted.
+        if (split_on_write_by_size_bytes && truncate_on_insert && !allow_create_multiple_files && numbered_paths.may_be_names_of_other_partitions)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot overwrite the partition {} with engine_file_truncate_on_insert and engine_file_split_on_write_by_size_bytes: "
+                "the numbered files of the partition, such as {}, may be the files of other partitions written by the path pattern {}. "
+                "Place a character that is not a digit between {} and the extension of the file, or {} into a directory of the path, "
+                "or use a partition key of an integer, date or UUID type",
+                partition_id, numbered_paths.getName(1), path,
+                PartitionedSink::PARTITION_ID_WILDCARD, PartitionedSink::PARTITION_ID_WILDCARD);
+
         /// The same handoff to a new file as in `StorageFile::write`: the data of a format that does not support
         /// appending cannot be added to a non-empty file, and with `engine_file_allow_create_multiple_files`
         /// the insert steps aside into the first free numbered name instead of failing. An insert split by size

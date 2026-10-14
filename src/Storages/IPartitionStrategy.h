@@ -106,6 +106,10 @@ struct WildcardPartitionStrategy : IPartitionStrategy
     std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
     NumberedFileNames getNumberedPathsForWrite(
         const std::string & prefix, const std::string & partition_key, const std::string & path_for_write) override;
+
+private:
+    /// See `NumberedFileNames::may_be_names_of_other_partitions`.
+    bool numberedNamesMayBeNamesOfOtherPartitions(const std::string & prefix) const;
 };
 
 /*

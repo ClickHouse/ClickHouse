@@ -37,11 +37,11 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${DIR}/function/data.ts
 ls "${DIR}/function" | sort
 
 echo '--- A partitioned insert claims the numbered sequence of the partition'
-${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${DIR}/partitioned/data_{_partition_id}.tsv', TSV, 'x UInt64') PARTITION BY 'p' SELECT number FROM numbers(1000) SETTINGS ${SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${DIR}/partitioned/data_{_partition_id}.tsv', TSV, 'x UInt64') PARTITION BY 1 SELECT number FROM numbers(1000) SETTINGS ${SETTINGS}"
 ls "${DIR}/partitioned" | sort
-rm "${DIR}/partitioned/data_p.tsv"
-ln -s "${DIR}/missing_directory/target.tsv" "${DIR}/partitioned/data_p.tsv"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${DIR}/partitioned/data_{_partition_id}.tsv', TSV, 'x UInt64') PARTITION BY 'p' SELECT number FROM numbers(100) SETTINGS ${SETTINGS}, engine_file_truncate_on_insert = 1" 2>&1 | grep -o -m1 'FILE_DOESNT_EXIST'
+rm "${DIR}/partitioned/data_1.tsv"
+ln -s "${DIR}/missing_directory/target.tsv" "${DIR}/partitioned/data_1.tsv"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${DIR}/partitioned/data_{_partition_id}.tsv', TSV, 'x UInt64') PARTITION BY 1 SELECT number FROM numbers(100) SETTINGS ${SETTINGS}, engine_file_truncate_on_insert = 1" 2>&1 | grep -o -m1 'FILE_DOESNT_EXIST'
 ls "${DIR}/partitioned" | sort
 
 echo '--- The path of the table function expands into no files'

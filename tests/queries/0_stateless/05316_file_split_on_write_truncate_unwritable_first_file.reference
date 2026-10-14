@@ -20,14 +20,14 @@ data.2.tsv
 data.3.tsv
 data.tsv
 --- A partitioned insert claims the numbered sequence of the partition
-data_p.1.tsv
-data_p.2.tsv
-data_p.3.tsv
-data_p.tsv
+data_1.1.tsv
+data_1.2.tsv
+data_1.3.tsv
+data_1.tsv
 FILE_DOESNT_EXIST
-data_p.1.tsv
-data_p.2.tsv
-data_p.3.tsv
-data_p.tsv
+data_1.1.tsv
+data_1.2.tsv
+data_1.3.tsv
+data_1.tsv
 --- The path of the table function expands into no files
 INCORRECT_FILE_NAME

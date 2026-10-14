@@ -8,8 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The same as 05218_file_split_on_write_partitioned_dotted_ids for object storage: the number of an object of an
 # insert split by size is placed into the path pattern before the partition id is substituted into it, so a
-# partition id with a dot in it cannot shift it, and a truncating rewrite of the partition `a.5` never takes
-# `p_a.6.tsv` - the first object of the partition `a.6` - for a stale object of its own.
+# partition id with a dot in it cannot shift it. Still, `p_a.5.1.tsv` is also the first object of the partition
+# `a.5.1`, so a truncating rewrite of `a.5` split by size is refused before anything is deleted.
 
 PREFIX="05220_split_on_write_partitioned/${CLICKHOUSE_DATABASE}"
 
@@ -26,10 +26,12 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT p, count(), sum(x), uniqExact(_file) FROM ${OBJECTS} GROUP BY p ORDER BY p;
 "
 
-echo '--- A smaller truncating rewrite of one partition deletes only the numbered objects of that partition'
+echo '--- A truncating rewrite is refused: a numbered name of a partition may be the first name of another partition'
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION s3(s3_conn, filename='${PREFIX}/p_{_partition_id}.tsv', format=TSV, structure='p String, x UInt64') PARTITION BY p
         SELECT 'a.5' AS p, number AS x FROM numbers(100) SETTINGS ${SETTINGS}, s3_truncate_on_insert = 1;
+" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+${CLICKHOUSE_CLIENT} --query "
     SELECT DISTINCT _file FROM ${OBJECTS} ORDER BY _file;
     SELECT p, count(), sum(x), uniqExact(_file) FROM ${OBJECTS} GROUP BY p ORDER BY p;
 "
