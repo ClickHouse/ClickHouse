@@ -44,9 +44,12 @@ echo 'Few groups of heap states'
 run_shape "SELECT count(), sum(u) FROM (
     SELECT toUInt64(number % 50) AS g, uniqExact(number) AS u FROM numbers_mt(1000000) GROUP BY g SETTINGS __SETTINGS__)"
 
-echo 'Few groups of arena states'
-run_shape "SELECT count(), sum(length(a)), sum(arraySum(a)) FROM (
-    SELECT toUInt64(number % 50) AS g, groupArray(number) AS a FROM numbers_mt(1000000) GROUP BY g SETTINGS __SETTINGS__)"
+# Few rows of wide arena states: 20000 rows in all are fewer than a table of heap states must absorb after its
+# freeze, but each absorbed row grows the arena by four kilobytes, which qualifies the table for the write.
+echo 'Few rows of wide arena states'
+run_shape "SELECT count(), sum(length(a)), sum(arraySum(x -> length(x), a)) FROM (
+    SELECT toUInt64(number % 1000) AS g, groupArray(repeat('x', 4096 + number % 2)) AS a FROM numbers_mt(20000)
+    GROUP BY g SETTINGS max_block_size = 128, __SETTINGS__)"
 
 # Half of the rows repeat a few hundred hot keys, which the frozen tables hold and whose arrays grow; the
 # other half are distinct cold keys, which are staged, so the tables and the staged records both spill.
