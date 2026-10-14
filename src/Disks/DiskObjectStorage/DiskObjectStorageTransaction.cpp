@@ -14,6 +14,7 @@
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 
+#include <Common/ThreadStatus.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Logger.h>
 #include <Common/checkStackSize.h>
@@ -727,6 +728,7 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
+    ThreadStatus::QueryCancellationBlocker cleanup;
     for (const auto & [location, blobs] : written_blobs)
     {
         try

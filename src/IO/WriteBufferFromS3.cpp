@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 
 #if USE_AWS_S3
@@ -463,6 +464,7 @@ void WriteBufferFromS3::createMultipartUpload()
 
 void WriteBufferFromS3::abortMultipartUpload()
 {
+    ThreadStatus::QueryCancellationBlocker cleanup;
     if (multipart_upload_id.empty())
     {
         if (!isEmpty())

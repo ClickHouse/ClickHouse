@@ -8,6 +8,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 
+#include <Common/ThreadStatus.h>
 #include <Common/DelayWithJitter.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -141,6 +142,7 @@ bool removeBlobsBatch(
 {
     try
     {
+        ThreadStatus::QueryCancellationBlocker cleanup;
         LOG_TRACE(log, "Removing {} blobs from '{}' location", remove_batch.size(), location);
 
         object_storages->takePointingTo(location)->removeObjectsIfExist(remove_batch);

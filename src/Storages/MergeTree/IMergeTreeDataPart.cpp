@@ -51,6 +51,7 @@
 
 #include <unordered_set>
 
+#include <Common/ThreadStatus.h>
 #include <Common/StackTrace.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -1126,6 +1127,7 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
+    ThreadStatus::QueryCancellationBlocker cleanup;
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIfNeeded");
 
     if (is_removed)
