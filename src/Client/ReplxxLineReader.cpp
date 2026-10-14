@@ -74,6 +74,37 @@ std::vector<std::string> extractIdentifiers(const char * text)
     return result;
 }
 
+/// Whether `LINE_PREVIOUS` / `LINE_NEXT` moves the cursor to another line of the multiline text being
+/// edited rather than recalling a history entry: the same condition as in `line_previous` and
+/// `line_next` of replxx - a newline before the cursor for Up, at or after it for Down. The cursor
+/// position of replxx is in code points; a newline is a single byte, which is never a part of a
+/// multi-byte UTF-8 sequence, so only the leading bytes need counting.
+bool lineMoveStaysInText(const replxx::Replxx::State & state, replxx::Replxx::ACTION action)
+{
+    if (action != replxx::Replxx::ACTION::LINE_PREVIOUS && action != replxx::Replxx::ACTION::LINE_NEXT)
+        return false;
+
+    const std::string_view text = state.text() ? state.text() : "";
+    const int cursor = state.cursor_position();
+    int code_point = 0;
+    for (const char c : text)
+    {
+        if ((static_cast<unsigned char>(c) & 0xC0) == 0x80)
+            continue;
+        if (c == '\n' && (action == replxx::Replxx::ACTION::LINE_PREVIOUS ? code_point < cursor : code_point >= cursor))
+            return true;
+        ++code_point;
+    }
+    return false;
+}
+
+/// The cursor position for a text that gained (`delta > 0`) or lost (`delta < 0`) a prefix of
+/// `|delta|` code points, so that it stays at the same place of the text after the prefix.
+int shiftedCursor(int cursor, int delta)
+{
+    return std::max(cursor + delta, 0);
+}
+
 /// Trim ending whitespace inplace
 void rightTrim(String & s)
 {
@@ -969,16 +1000,18 @@ void ReplxxLineReader::restoreHistoryPrefix()
     /// move). No-op in SQL mode or when the prefix is already present.
     if (!ai_mode)
         return;
-    const std::string text = rx.get_state().text();
+    const replxx::Replxx::State state = rx.get_state();
+    const std::string text = state.text();
     if (text.starts_with("? "))
         return;
     const std::string prefixed = "? " + text;
-    rx.set_state(replxx::Replxx::State(prefixed.c_str(), static_cast<int>(prefixed.size())));
+    rx.set_state(replxx::Replxx::State(prefixed.c_str(), shiftedCursor(state.cursor_position(), 2)));
 }
 
 void ReplxxLineReader::syncModeFromHistory()
 {
-    const std::string text = rx.get_state().text();
+    const replxx::Replxx::State state = rx.get_state();
+    const std::string text = state.text();
     /// AI questions are stored in history with a `? ` prefix (see addToHistory).
     const bool is_ai_entry = text.starts_with("? ");
 
@@ -991,7 +1024,7 @@ void ReplxxLineReader::syncModeFromHistory()
         }
         /// Show the question itself (without the storage prefix) as the editable line.
         const std::string stripped = text.substr(2);
-        rx.set_state(replxx::Replxx::State(stripped.c_str(), static_cast<int>(stripped.size())));
+        rx.set_state(replxx::Replxx::State(stripped.c_str(), shiftedCursor(state.cursor_position(), -2)));
     }
     else if (ai_mode)
     {
@@ -1002,6 +1035,12 @@ void ReplxxLineReader::syncModeFromHistory()
 
 replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::ACTION action, char32_t code)
 {
+    /// Up and Down inside a multiline text only move the cursor: no entry is recalled, so the stored
+    /// `? ` prefix has nothing to do. Adding it around the move would also shift the first line by
+    /// two columns, which replxx takes into account when it maps the column between the lines.
+    if (lineMoveStaysInText(rx.get_state(), action))
+        return rx.invoke(action, code);
+
     restoreHistoryPrefix();
     /// The recalled entry is displayed (and its hints regenerated) inside the action, so the
     /// suppression must be armed before it; the pin below keeps later regenerations of the
