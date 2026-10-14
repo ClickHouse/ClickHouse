@@ -2642,7 +2642,7 @@ void InterpreterSystemQuery::dropS3QueueFailedFiles(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
 
-    queue->dropFailedFiles(query.like_pattern);
+    queue->dropFailedFiles(query.has_like_pattern ? std::optional<String>(query.queue_path) : std::nullopt);
 }
 
 void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)

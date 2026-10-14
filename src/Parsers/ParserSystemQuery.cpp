@@ -403,7 +403,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 ASTPtr pattern_ast;
                 if (!ParserStringLiteral{}.parse(pos, pattern_ast, expected))
                     return false;
-                res->like_pattern = pattern_ast->as<ASTLiteral &>().value.safeGet<String>();
+                res->has_like_pattern = true;
+                res->queue_path = pattern_ast->as<ASTLiteral &>().value.safeGet<String>();
             }
             break;
         }

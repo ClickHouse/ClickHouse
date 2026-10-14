@@ -1555,6 +1555,11 @@ def test_system_drop_failed_files_like_filter(started_cluster):
             time.sleep(0.2)
         assert len(paths) == 2, f"Expected 2 terminal /failed nodes, got {paths}"
 
+        # Stop the consumer: SYSTEM DROP deletes the failed node, so a live table would
+        # re-read the file on the next poll, fail again and recreate a terminal node,
+        # racing with the assertions below (seen on slow sanitizer builds).
+        node.query(f"DROP TABLE IF EXISTS {table}_mv")
+
         # Explicit empty pattern matches no non-empty path: nothing must be dropped.
         node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table} LIKE ''")
         assert len(terminal_file_paths()) == 2, terminal_file_paths()

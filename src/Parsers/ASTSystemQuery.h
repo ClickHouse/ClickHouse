@@ -196,6 +196,9 @@ public:
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
+    /// SYSTEM DROP S3QUEUE FAILED FILES ... LIKE 'pattern': the pattern is stored in `queue_path`.
+    /// A separate flag keeps `LIKE ''` distinguishable from an omitted filter without growing the struct.
+    bool has_like_pattern{false};
 
     /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
     bool filelog_to_end = false;
@@ -225,9 +228,6 @@ public:
     String schema_cache_format;
 
     String queue_path;
-
-    /// Optional `LIKE 'pattern'` filter for SYSTEM DROP S3QUEUE FAILED FILES.
-    std::optional<String> like_pattern;
 
     String fail_point_name;
 
