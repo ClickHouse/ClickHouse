@@ -10043,6 +10043,7 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
 If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
 At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
+The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 `ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
 A right table known to be empty, such as a `MergeTree` table without data parts, counts as 0 rows for `INNER`, `RIGHT` and `LEFT SEMI` joins, which return no rows with it.
