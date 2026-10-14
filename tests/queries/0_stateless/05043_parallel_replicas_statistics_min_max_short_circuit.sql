@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- - no-parallel - due to usage of fail points
 
 -- Regression test for the statistics-based min/max/count short-circuit under parallel replicas

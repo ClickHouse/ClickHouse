@@ -266,9 +266,13 @@ struct AggregateFunctionSumData
         Impl::add(sum, rhs.sum);
     }
 
-    void write(WriteBuffer & buf) const
+    static constexpr size_t serialized_size_bound = sizeof(AccumulateResult);
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out) const
     {
-        writeBinaryLittleEndian(sum, buf);
+        writeBinaryLittleEndian(sum, out);
     }
 
     void read(ReadBuffer & buf)
@@ -410,10 +414,14 @@ struct AggregateFunctionSumKahanData
         mergeImpl(sum, compensation, rhs.sum, rhs.compensation);
     }
 
-    void write(WriteBuffer & buf) const
+    static constexpr size_t serialized_size_bound = sizeof(T) * 2;
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out) const
     {
-        writeBinary(sum, buf);
-        writeBinary(compensation, buf);
+        writeBinary(sum, out);
+        writeBinary(compensation, out);
     }
 
     void read(ReadBuffer & buf)
@@ -443,6 +451,7 @@ public:
     static constexpr bool DateTime64Supported = false;
 
     using ColVecType = ColumnVectorOrDecimal<T>;
+    using ResultType = TResult;
 
     String getName() const override
     {
@@ -460,6 +469,12 @@ public:
 
     AggregateFunctionSum(const IDataType & data_type, const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, createResultType(getDecimalScale(data_type)))
+    {}
+
+    /// For result types that are backed by `TResult` but are not `TResult` itself, such as the
+    /// `Interval` data types, which are backed by `Int64`.
+    AggregateFunctionSum(const DataTypes & argument_types_, const DataTypePtr & result_type_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, result_type_)
     {}
 
     static DataTypePtr createResultType(UInt32 scale_)
@@ -565,6 +580,17 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return Data::serialized_size_bound;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const override
+    {
+        this->data(place).write(dst);
+        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override

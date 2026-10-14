@@ -138,3 +138,7 @@ INSERT INTO t_deserialize_allocation_bomb_bitmap SELECT groupBitmapState(number:
 SELECT groupBitmapMerge(b), arraySum(bitmapToArray(groupBitmapStateMerge(b))) FROM t_deserialize_allocation_bomb_bitmap;
 
 DROP TABLE t_deserialize_allocation_bomb_bitmap;
+
+-- `readBinary(std::vector)`, reached through the weights of a machine learning state. The cap was
+-- always there; until #121303 it raised a bare `Poco::Exception` (code 1000) rather than this code.
+SELECT CAST(unhex('0000000000000000FFFFFFFF0F'), 'AggregateFunction(stochasticLinearRegression(0.1, 0, 1, \'Momentum\'), Float64, Float64)'); -- { serverError TOO_LARGE_ARRAY_SIZE }
