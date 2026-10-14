@@ -122,6 +122,66 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 ) WHERE explain LIKE '%Conditions:%';
 
+-- A limit with a non-throwing overflow mode ends a sort or a read early instead of failing the query.
+-- No plan step shows it, so even an input that the plan does not truncate can lose rows. The table holds
+-- the same rows as `t_sel_edge_r` in granules of 128 rows, so a read returns several chunks and the
+-- limits below do drop rows.
+DROP TABLE IF EXISTS t_sel_edge_chunks;
+CREATE TABLE t_sel_edge_chunks (c UInt32, b1 UInt32, b2 UInt32, b3 UInt32)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq_v2', index_granularity = 128, index_granularity_bytes = 10485760;
+
+INSERT INTO t_sel_edge_chunks SELECT 0, number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
+
+SELECT '-- a non-throwing sort limit drops value ranges of an ORDER BY with a limit above the table size';
+SELECT count() < 1000 FROM (SELECT * FROM t_sel_edge_chunks ORDER BY b3 LIMIT 1000000)
+SETTINGS max_rows_to_sort = 100, sort_overflow_mode = 'break', max_block_size = 128, max_threads = 1;
+
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_chunks ORDER BY b3 LIMIT 1000000) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS max_rows_to_sort = 100, sort_overflow_mode = 'break'
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- the same sort limit with overflow mode throw preserves value ranges';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_chunks ORDER BY b3 LIMIT 1000000) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS max_rows_to_sort = 100, sort_overflow_mode = 'throw'
+) WHERE explain LIKE '%Conditions:%';
+
+-- Read limits are checked against the progress of the whole query, here including the left side.
+SELECT '-- a non-throwing read limit drops value ranges';
+SELECT count() < 1000 FROM t_sel_edge_chunks WHERE b2 >= 1000
+SETTINGS max_rows_to_read = 100, read_overflow_mode = 'break', max_block_size = 128, max_threads = 1;
+
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN t_sel_edge_chunks AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS max_rows_to_read = 100, read_overflow_mode = 'break'
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- a non-throwing leaf read limit drops value ranges';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN t_sel_edge_chunks AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS max_rows_to_read_leaf = 100, read_overflow_mode_leaf = 'break'
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- a non-throwing timeout drops value ranges';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN t_sel_edge_chunks AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS max_execution_time = 3600, timeout_overflow_mode = 'break'
+) WHERE explain LIKE '%Conditions:%';
+
+DROP TABLE t_sel_edge_chunks;
+
 -- The top-K optimization reads an `ORDER BY ... LIMIT n` input through a running boundary and, with a
 -- `minmax` index on the sort column, narrows the read to the granules that can hold the first `n` rows.
 -- Neither drops rows from an input of at most `n` rows, so value ranges survive as they do without it.

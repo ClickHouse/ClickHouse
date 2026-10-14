@@ -31,6 +31,8 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <fmt/format.h>
+
 using namespace DB;
 using namespace DB::QueryPlanOptimizations;
 
@@ -590,6 +592,43 @@ TEST(ColumnStatsProvenance, SortingLimitRecordsNonUniformSubsetAndPreservesExact
     EXPECT_EQ(unknown->estimated_rows, 10);
     EXPECT_FALSE(unknown->rows_exact);
     EXPECT_TRUE(unknown->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
+}
+
+TEST(ColumnStatsProvenance, NonThrowingSortLimitsRecordNonUniformSubset)
+{
+    const auto header = makeHeader();
+    auto settings_with_limits = [](SizeLimits size_limits)
+    {
+        SortingStep::Settings settings(8192);
+        settings.size_limits = size_limits;
+        return settings;
+    };
+
+    /// Without the size limits, neither sort drops a row of the exact 100-row input.
+    for (const UInt64 limit : {UInt64{0}, UInt64{100}})
+    {
+        for (const auto & size_limits : {SizeLimits(10, 0, OverflowMode::BREAK), SizeLimits(0, 64, OverflowMode::BREAK)})
+        {
+            SCOPED_TRACE(fmt::format("limit {}, max_rows {}, max_bytes {}", limit, size_limits.max_rows, size_limits.max_bytes));
+            SortingStep sort(header, sortByKey(), limit, settings_with_limits(size_limits));
+            auto stats = estimateUnaryStepStats(sort, inputRelationStats());
+            ASSERT_TRUE(stats.has_value());
+            EXPECT_EQ(stats->estimated_rows, 100);
+            EXPECT_FALSE(stats->rows_exact);
+            EXPECT_TRUE(stats->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
+            EXPECT_TRUE(stats->column_stats.at("k").range_provenance.has(NonUniformRowSubset));
+            EXPECT_FALSE(isRepresentativeValueRange(stats->column_stats.at("k").range_provenance));
+            EXPECT_TRUE(isValueRangeSuperset(stats->column_stats.at("k").range_provenance));
+        }
+
+        SCOPED_TRACE(fmt::format("limit {}, throwing", limit));
+        SortingStep throwing_sort(header, sortByKey(), limit, settings_with_limits(SizeLimits(10, 64, OverflowMode::THROW)));
+        auto throwing = estimateUnaryStepStats(throwing_sort, inputRelationStats());
+        ASSERT_TRUE(throwing.has_value());
+        EXPECT_TRUE(throwing->rows_exact);
+        EXPECT_FALSE(throwing->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
+        EXPECT_TRUE(isRepresentativeValueRange(throwing->column_stats.at("k").range_provenance));
+    }
 }
 
 TEST(ColumnStatsProvenance, AggregationPreservesPlainKeysAndRejectsGroupingSetsAndOverflow)

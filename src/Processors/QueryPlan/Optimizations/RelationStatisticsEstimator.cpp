@@ -25,6 +25,7 @@
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -206,18 +207,25 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::Sorting:
         {
             const auto & sorting_step = static_cast<const SortingStep &>(step);
-            if (sorting_step.getLimit())
+            const auto limit = sorting_step.getLimit();
+            /// With a non-throwing overflow mode, `max_rows_to_sort` and `max_bytes_to_sort` stop a sorting stream
+            /// once it exceeds them, so even a sort without a limit can return an order-dependent part of its input.
+            const auto & size_limits = sorting_step.getSettings().size_limits;
+            const bool may_stop_early = size_limits.overflow_mode != OverflowMode::THROW && size_limits.hasLimits();
+            const bool may_truncate_rows = may_stop_early
+                || (limit && (!input_stats.rows_exact || !input_stats.estimated_rows || *input_stats.estimated_rows > limit));
+            if (limit)
             {
-                const bool may_truncate_rows = !input_stats.rows_exact || !input_stats.estimated_rows
-                    || *input_stats.estimated_rows > sorting_step.getLimit();
                 /// A synthesized limit is not an exact row count when the input count is unknown.
                 if (!input_stats.estimated_rows)
                     input_stats.rows_exact = false;
-                if (!input_stats.estimated_rows || input_stats.estimated_rows > sorting_step.getLimit())
-                    input_stats.estimated_rows = sorting_step.getLimit();
-                if (may_truncate_rows)
-                    addTransformation(input_stats.column_stats, NonUniformRowSubset);
+                if (!input_stats.estimated_rows || input_stats.estimated_rows > limit)
+                    input_stats.estimated_rows = limit;
             }
+            if (may_stop_early)
+                input_stats.rows_exact = false;
+            if (may_truncate_rows)
+                addTransformation(input_stats.column_stats, NonUniformRowSubset);
             return input_stats;
         }
         case UnaryStepStatsKind::LogicalExchange:
@@ -241,6 +249,26 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
 
 namespace
 {
+
+/// Whether a read limit with a non-throwing overflow mode can end the read early instead of failing the
+/// query. Row and byte limits, including the leaf ones, are checked against the progress of the whole query
+/// and `max_execution_time` against the elapsed time, so the read can stop however few rows it selects.
+/// These are the limits that the sources of the read enforce.
+bool mayStopReadingEarly(const SelectQueryInfo & query_info)
+{
+    if (!query_info.storage_limits)
+        return false;
+    return std::ranges::any_of(
+        *query_info.storage_limits,
+        [](const StorageLimits & limits)
+        {
+            const auto & local_limits = limits.local_limits;
+            return (local_limits.size_limits.overflow_mode != OverflowMode::THROW && local_limits.size_limits.hasLimits())
+                || (limits.leaf_limits.overflow_mode != OverflowMode::THROW && limits.leaf_limits.hasLimits())
+                || (local_limits.timeout_overflow_mode != OverflowMode::THROW
+                    && local_limits.speed_limits.max_execution_time.totalMicroseconds() != 0);
+        });
+}
 
 /// Statistics of a node that is estimated without first estimating a child: a read step or an
 /// already optimized logical join. Returns `std::nullopt` for every other step.
@@ -312,7 +340,9 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || has_final || query_info.isStream()
             || query_info.trivial_limit || has_lightweight_deleted_rows || reading->getVectorSearchParameters().has_value()
             || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio());
-        const bool has_inexact_row_count = has_row_subset || has_on_fly_data_changes;
+        /// Non-throwing read limits end the read early without a step in the plan; it returns rows in read order.
+        const bool may_stop_reading_early = mayStopReadingEarly(query_info);
+        const bool has_inexact_row_count = has_row_subset || has_on_fly_data_changes || may_stop_reading_early;
         /// A top-K read keeps every row of the final top `limit_n`: range analysis drops only granules and parts
         /// that cannot hold one, and a running boundary drops rows once `limit_n` have been seen. What is left holds
         /// at least `limit_n` rows, or all rows if there are fewer, so neither drops a row from selected parts that
@@ -340,7 +370,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                     .source = RowEstimateSource::Statistics};
                 if (has_row_subset)
                     addTransformation(stats.column_stats, RowSubset);
-                if (is_top_k_subset)
+                if (is_top_k_subset || may_stop_reading_early)
                     addTransformation(stats.column_stats, NonUniformRowSubset);
                 if (has_unsupported_value_changes)
                     addTransformation(stats.column_stats, Unsupported);
