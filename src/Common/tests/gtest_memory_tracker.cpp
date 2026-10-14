@@ -19,6 +19,8 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SpeculativeMemoryReservation.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
 #include <Interpreters/ProcessList.h>
@@ -354,6 +356,57 @@ TEST(MemoryTracker, FailedSpeculativeReservationLeavesCorrectionUntouched)
 
     MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
     EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+}
+
+TEST(MemoryTracker, SpeculativeReservationOutlivesNonNestedGuards)
+{
+    /// A nested executor can be suspended in a fiber with its guard alive while the outer
+    /// guard on the same thread is destroyed, and that fiber can be finished on another
+    /// thread. The thread's charge must stay live for as long as any guard sharing it does,
+    /// and a guard created in between must share it instead of running uncovered.
+    constexpr Int64 reservation = 4 * MB;
+    const Int64 setting_before = additional_memory_tracking_per_thread.load();
+    additional_memory_tracking_per_thread.store(reservation);
+    SCOPE_EXIT({ additional_memory_tracking_per_thread.store(setting_before); });
+
+    ASSERT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    auto outer = std::make_unique<DB::SpeculativeMemoryReservation>();
+    auto suspended_nested = std::make_unique<DB::SpeculativeMemoryReservation>();
+    EXPECT_EQ(outer->getSize(), reservation);
+    EXPECT_EQ(suspended_nested->getSize(), reservation);
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+    /// The outer guard returns first: the suspended nested guard keeps the charge.
+    outer.reset();
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+    /// The next activation on this thread shares the live charge.
+    auto next_activation = std::make_unique<DB::SpeculativeMemoryReservation>();
+    EXPECT_EQ(next_activation->getSize(), reservation);
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+    /// The suspended fiber is finished on another thread.
+    std::thread([&] { suspended_nested.reset(); }).join();
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+    /// A guard on another thread takes its own charge.
+    std::thread([&]
+    {
+        DB::SpeculativeMemoryReservation other_thread;
+        EXPECT_EQ(other_thread.getSize(), reservation);
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+    }).join();
+
+    next_activation.reset();
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    /// After the last guard is gone, a new guard takes a fresh charge.
+    {
+        DB::SpeculativeMemoryReservation fresh;
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+    }
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
 }
 
 TEST(MemoryTracker, GlobalLimitFailureRollsBackAmountAndRSS)
