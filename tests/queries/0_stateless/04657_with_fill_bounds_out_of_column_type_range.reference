@@ -125,3 +125,17 @@ an INTERVAL step finer than the scale of DateTime64 is converted to whole ticks 
 2000-01-01 00:00:00
 2000-01-01 00:00:01
 2000-01-01 00:00:02
+a step whose ticks overflow Int64 but whose result fits is not saturated
+1700-01-01 00:00:00.000000000
+2080-04-06 21:20:00.000000000
+2200-01-01 00:00:00.000000000
+1819-09-27 02:40:00.000000000
+1700-01-01 00:00:00.000000000
+1890-02-18 10:40:00.000000000
+2200-01-01 00:00:00.000000000
+a calendar step does not wrap around before it is compared
+1700-01-01 00:00:00.000000000
+1
+1
+a numeric step truncated to zero ticks does not advance
+9999-12-31 23:59:58.00

@@ -299,3 +299,24 @@ SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t) ORDER 
 -- A step that is not a whole number of ticks of the column is rejected.
 SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 2, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2000-01-01 00:00:01', 2, 'UTC') STEP INTERVAL 15 MILLISECOND; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2000-01-01 00:00:01', 0, 'UTC') STEP INTERVAL 1 NANOSECOND; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
+SELECT 'a step whose ticks overflow Int64 but whose result fits is not saturated';
+
+-- 200000000 minutes are 1.2 * 10^19 ticks of `DateTime64(9)`, which do not fit Int64, but added to the negative
+-- anchor they land in 2080, which the column holds.
+SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2200-01-01 00:00:00', 9, 'UTC') STEP INTERVAL 200000000 MINUTE;
+SELECT t FROM (SELECT toDateTime64('2200-01-01 00:00:00', 9, 'UTC') AS t) ORDER BY t DESC WITH FILL TO toDateTime64('1700-01-01 00:00:00', 9, 'UTC') STEP INTERVAL -200000000 MINUTE;
+-- The same interval as `STALENESS` bounds the window at the same value.
+SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t UNION ALL SELECT toDateTime64('2200-01-01 00:00:00', 9, 'UTC')) ORDER BY t WITH FILL STEP INTERVAL 100000000 MINUTE STALENESS INTERVAL 200000000 MINUTE;
+
+SELECT 'a calendar step does not wrap around before it is compared';
+
+-- 650 years after 1700 is 2350, past `TO` and past the range of `DateTime64(9)`: the filling stops at the anchor.
+SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2200-01-01 00:00:00', 9, 'UTC') STEP INTERVAL 650 YEAR;
+-- A day step that does not fit `Int32` used to wrap to a single day.
+SELECT count() FROM (SELECT toDate32('1970-01-01') AS d ORDER BY d WITH FILL TO 3 STEP INTERVAL 4294967297 DAY);
+SELECT count() FROM (SELECT toDate('1970-01-01') AS d ORDER BY d WITH FILL TO 3 STEP INTERVAL 4294967297 DAY);
+
+SELECT 'a numeric step truncated to zero ticks does not advance';
+
+SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 2, 'UTC') AS t) ORDER BY t WITH FILL FROM toDateTime64('9999-12-31 23:59:58', 2, 'UTC') TO toDateTime64('9999-12-31 23:59:58', 2, 'UTC') + INTERVAL 10 SECOND STEP 0.001;

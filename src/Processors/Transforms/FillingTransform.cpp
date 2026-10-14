@@ -63,11 +63,42 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
     return header;
 }
 
-/// Multiply through UInt64 so the result wraps by construction (FillingRow::doLongJump relies on
-/// well-defined wraparound to detect the overflowed jump). A signed Int64 multiply is UB on overflow.
-static Int64 mulStepWrapping(Int64 step, Int64 jumps_count)
+/** Returns `value + step * jumps_count * unit_length`, computed exactly in Int128 and saturated to the range of
+  * Int64 only at the end, so that an intermediate product that does not fit Int64 is not mistaken for a result that
+  * does not fit it: an opposite-signed `value` can bring the sum back into range. A saturated result lies past the
+  * range of any column in the direction of the step. `unit_length` is positive and below 2^42 (an hour in
+  * nanoseconds is 3.6 * 10^12).
+  */
+static Int64 addStepSaturating(Int64 value, Int64 step, Int64 jumps_count, Int64 unit_length)
 {
-    return static_cast<Int64>(static_cast<UInt64>(step) * static_cast<UInt64>(jumps_count));
+    const Int128 units = static_cast<Int128>(step) * jumps_count;
+
+    /// Past 2^65 units the result is out of the range of Int64 whatever `value` is, and the product with
+    /// `unit_length` below would no longer fit Int128.
+    static constexpr Int128 max_units = static_cast<Int128>(1) << 65;
+    if (units > max_units)
+        return std::numeric_limits<Int64>::max();
+    if (units < -max_units)
+        return std::numeric_limits<Int64>::min();
+
+    const Int128 res = value + units * unit_length;
+    if (res > std::numeric_limits<Int64>::max())
+        return std::numeric_limits<Int64>::max();
+    if (res < std::numeric_limits<Int64>::min())
+        return std::numeric_limits<Int64>::min();
+    return static_cast<Int64>(res);
+}
+
+/// Saturate a whole-seconds calendar result of a step over DateTime64 into the ticks of the column: the
+/// functions adding interval kinds to DateTime64 compute `whole * multiplier + rem` with wraparound.
+static Int64 wholeSecondsToTicksSaturating(Int64 whole, Int64 multiplier, Int64 rem)
+{
+    const Int128 res = static_cast<Int128>(whole) * multiplier + rem;
+    if (res > std::numeric_limits<Int64>::max())
+        return std::numeric_limits<Int64>::max();
+    if (res < std::numeric_limits<Int64>::min())
+        return std::numeric_limits<Int64>::min();
+    return static_cast<Int64>(res);
 }
 
 /** The calendar arithmetic of `Date` and `DateTime` returns the column's own storage type (`UInt16` / `UInt32`), so a
@@ -133,18 +164,55 @@ static std::optional<std::pair<Int64, Int64>> fixedLengthStep(IntervalKind::Kind
     }
 }
 
+/** Computes the number of units a calendar step of `jumps_count` steps adds, and returns true when it (or, for a
+  * week step, the number of days in it) does not fit Int64: the functions adding interval kinds would wrap it around,
+  * possibly to a step that is still ahead of the current value but shorter than the real one.
+  */
+static bool stepDeltaOverflows(IntervalKind::Kind kind, Int64 step, Int64 jumps_count, Int64 & delta)
+{
+    if (common::mulOverflow(step, jumps_count, delta))
+        return true;
+    Int64 days = 0;
+    return kind == IntervalKind::Kind::Week && common::mulOverflow(delta, Int64{7}, days);
+}
+
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
     IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
 {
     static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+
+    /// A day or week step over Date and Date32 is a plain addition of days, which the generic functions do in the
+    /// storage type with wraparound (`INTERVAL 4294967297 DAY` over Date32 adds one day). Add the days exactly
+    /// with saturation instead: a result out of the range of the storage type is returned as is, so that
+    /// `FillingRow` stops the filling at its border or rejects a value the column cannot hold.
+    if constexpr (std::is_same_v<T, UInt16> || std::is_same_v<T, Int32>)
+    {
+        if (kind == IntervalKind::Kind::Day || kind == IntervalKind::Kind::Week)
+        {
+            return [step, days_per_unit = Int64{kind == IntervalKind::Kind::Week ? 7 : 1}](Field & field, Int64 jumps_count)
+            {
+                const Int64 res = addStepSaturating(static_cast<T>(field.safeGet<T>()), step, jumps_count, days_per_unit);
+                if (res < std::numeric_limits<T>::min() || res > std::numeric_limits<T>::max())
+                    field = res;
+                else
+                    field = static_cast<T>(res);
+            };
+        }
+    }
+
     switch (kind) // NOLINT(bugprone-switch-missing-default-case)
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
             return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
                 const auto value = static_cast<T>(field.safeGet<T>()); \
-                const Int64 delta = mulStepWrapping(step, jumps_count); \
+                Int64 delta = 0; \
+                if (stepDeltaOverflows(IntervalKind::Kind::NAME, step, jumps_count, delta)) \
+                { \
+                    field = addStepSaturating(value, step, jumps_count, 1); \
+                    return; \
+                } \
                 if (const auto out_of_storage_type = calendarStepOutOfStorageType<Add##NAME##sImpl>(value, delta, date_lut, utc_time_zone)) \
                     field = *out_of_storage_type; \
                 else \
@@ -199,17 +267,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             {
                 return [step_value, seconds_per_unit](Field & field, Int64 jumps_count)
                 {
-                    const Int64 value = static_cast<UInt32>(field.safeGet<UInt32>());
-                    Int64 units = 0;
-                    Int64 delta = 0;
-                    Int64 res = 0;
-                    if (common::mulOverflow(step_value, jumps_count, units)
-                        || common::mulOverflow(units, seconds_per_unit, delta)
-                        || common::addOverflow(value, delta, res))
-                    {
-                        const bool forward = (step_value < 0) == (jumps_count < 0);
-                        res = forward ? std::numeric_limits<Int64>::max() : std::numeric_limits<Int64>::min();
-                    }
+                    const Int64 res = addStepSaturating(static_cast<UInt32>(field.safeGet<UInt32>()), step_value, jumps_count, seconds_per_unit);
 
                     if (res < 0 || res > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
                         field = res;
@@ -237,20 +295,16 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
                 return [step_units = fixed_length_step->first, step_ticks = fixed_length_step->second](Field & field, Int64 jumps_count)
                 {
                     auto field_decimal = field.safeGet<DecimalField<DateTime64>>();
-                    Int64 units = 0;
-                    Int64 delta = 0;
-                    Int64 res = 0;
-                    if (common::mulOverflow(step_units, jumps_count, units)
-                        || common::mulOverflow(units, step_ticks, delta)
-                        || common::addOverflow(field_decimal.getValue().value, delta, res))
-                    {
-                        const bool forward = (step_units < 0) == (jumps_count < 0);
-                        res = forward ? std::numeric_limits<Int64>::max() : std::numeric_limits<Int64>::min();
-                    }
+                    const Int64 res = addStepSaturating(field_decimal.getValue().value, step_units, jumps_count, step_ticks);
                     field = DecimalField<DateTime64>(DateTime64(res), field_decimal.getScale());
                 };
             }
 
+            /// The remaining kinds are calendar ones (days and longer). The functions adding them to DateTime64 compute
+            /// the result in whole seconds and multiply it back by the scale with wraparound, so a result that is in
+            /// the calendar but out of the range of the column (year 2350 at scale 9) wraps to an unrelated value,
+            /// possibly still ahead of the current one. Compute the whole seconds in the `DateTime64(0)` calendar
+            /// and convert them to ticks with saturation instead, as for the fixed-length kinds above.
             switch (step_kind.value()) // NOLINT(bugprone-switch-missing-default-case)
             {
 #define DECLARE_CASE(NAME) \
@@ -258,8 +312,19 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
                     return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int64 jumps_count) \
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), mulStepWrapping(converted_step, jumps_count), time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
-                        field = DecimalField<decltype(res)>(res, field_decimal.getScale()); \
+                        const Int64 value = field_decimal.getValue().value; \
+                        Int64 res = 0; \
+                        Int64 delta = 0; \
+                        if (stepDeltaOverflows(IntervalKind::Kind::NAME, converted_step, jumps_count, delta)) \
+                            res = addStepSaturating(value, converted_step, jumps_count, 1); \
+                        else \
+                        { \
+                            const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(field_decimal.getScale()); \
+                            const auto whole = std::div(value, multiplier); \
+                            const Int64 whole_res = Add##NAME##sImpl::execute(DateTime64(whole.quot), delta, time_zone, utc_time_zone, 0).value; \
+                            res = wholeSecondsToTicksSaturating(whole_res, multiplier, whole.rem); \
+                        } \
+                        field = DecimalField<DateTime64>(DateTime64(res), field_decimal.getScale()); \
                     }; \
                     break;
 
@@ -443,8 +508,13 @@ static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDes
 
     const Int64 step = *step_raw;
 
-    /// The step is non-zero and directed towards TO, and TO is not on the wrong side of FROM: all of this is
-    /// already checked when the fill description is built.
+    /// A numeric step can be truncated to zero when converted to the ticks of the column (`STEP 0.001` over
+    /// `DateTime64(2)`). Such a step does not advance, so filling generates nothing after FROM.
+    if (step == 0)
+        return as_bound_field(from);
+
+    /// The step is directed towards TO, and TO is not on the wrong side of FROM: both are already checked when
+    /// the fill description is built.
     const Int128 span = direction > 0 ? static_cast<Int128>(to) - from : static_cast<Int128>(from) - to;
     if (span <= 0)
         return as_bound_field(from); /// TO admits no filled value at all
