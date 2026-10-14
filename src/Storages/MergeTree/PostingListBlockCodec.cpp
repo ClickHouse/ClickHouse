@@ -151,13 +151,14 @@ namespace
         {
             chassert(!weights.empty() && weights.size() <= BLOCK_SIZE);
 
+            uint32_t values[BLOCK_SIZE];
             for (size_t i = 0; i < weights.size(); ++i)
             {
                 chassert(weights[i] != 0);
                 values[i] = weights[i] - 1;
             }
 
-            return block_codec.encodeBlock(std::span<const uint32_t>(values.data(), weights.size()), out);
+            return block_codec.encodeBlock(std::span<const uint32_t>(values, weights.size()), out);
         }
 
         size_t encodeOnes(size_t count, PODArray<char> & out) override
@@ -187,8 +188,6 @@ namespace
         static constexpr size_t BLOCK_SIZE = IPostingListBlockCodec::BLOCK_SIZE;
 
         BlockCodec block_codec;
-        /// Scratch buffer for the `(weight - 1)` of the encoded block.
-        std::array<uint32_t, BLOCK_SIZE> values{};
     };
 
     template <>

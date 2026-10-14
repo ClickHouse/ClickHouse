@@ -526,7 +526,6 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
-    /// One token per pair on a `Map` column has no BM25 semantics, and scoring queries filter with `hasToken`-family functions on a text column.
     bool supportsScoring() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
