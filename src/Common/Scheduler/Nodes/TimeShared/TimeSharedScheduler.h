@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <memory>
 #include <atomic>
+#include <future>
 
 
 namespace DB
@@ -64,7 +65,13 @@ public:
     void start(ThreadName name)
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
+        {
+            // Only the thread owns the promise: if it finishes without running `schedulerThread`, the promise is broken
+            auto started = std::make_shared<std::promise<void>>();
+            auto started_future = started->get_future();
+            scheduler = ThreadFromGlobalPool([this, name, my_started = std::move(started)] { schedulerThread(name, *my_started); });
+            EventQueue::waitSchedulerThreadStarted(started_future);
+        }
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -228,9 +235,9 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(ThreadName name)
+    void schedulerThread(ThreadName name, std::promise<void> & started)
     {
-        events.runSchedulerThread(name, [this]
+        events.runSchedulerThread(name, started, [this]
         {
             while (!stop_flag.load())
             {

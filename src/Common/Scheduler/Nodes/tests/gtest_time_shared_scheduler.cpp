@@ -6,7 +6,9 @@
 #include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/randomSeed.h>
 
 #include <barrier>
@@ -273,6 +275,28 @@ TEST(SchedulerTimeShared, ExceptionInSchedulerThreadTerminates)
         scheduler.event_queue.enqueue([] { throw std::runtime_error("Test exception in the scheduler thread"); });
         std::this_thread::sleep_for(std::chrono::seconds(60));
     }, "Test exception in the scheduler thread");
+}
+
+TEST(SchedulerTimeShared, SchedulerThreadStartupFailureTerminates)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+    {
+        // Every allocation hits the server memory limit, except in this thread. The pool thread fails
+        // while it initializes `ThreadStatus` (before the scheduler loop starts), and nobody would ever process events.
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
+        // Initialize the thread-local storage of a pool thread first: the scheduler reuses this idle thread,
+        // so its first allocation is in `ThreadStatus`
+        ThreadFromGlobalPool([] {}).join();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+        total_memory_tracker.setHardLimit(1);
+        TimeSharedScheduler scheduler;
+        scheduler.start(ThreadName::TEST_SCHEDULER);
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+    }, "Scheduler thread failed to start");
 }
 
 TEST(SchedulerTimeShared, MemoryTrackerDoesNotThrowInSchedulerThread)
