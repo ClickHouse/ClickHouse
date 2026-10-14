@@ -255,12 +255,19 @@ VortexExpressionPtr VortexExpressionConverter::makeLiteral(
     if (value.isNull())
         return nullptr;
 
+    /// ClickHouse compares a temporal column with a floating-point value, and looks it up in a set
+    /// of floating-point keys, as `Float64`, which rounds the column's ticks. The scan would
+    /// compare the exact ticks instead and drop rows that only match after the rounding.
+    if (isDateOrDate32OrDateTimeOrDateTime64(cmp_type)
+        && (value.getType() == Field::Types::Float64 || (value_type && isFloat(removeLowCardinalityAndNullable(value_type)))))
+        return nullptr;
+
     Field converted = value;
     if (!value_type || !value_type->equals(*cmp_type))
     {
-        /// Strict: the value converts exactly or not at all. A rounded bound would change which
-        /// rows the comparison matches.
-        converted = tryConvertFieldToType(value, *cmp_type, value_type.get(), {}, /* strict */ true);
+        /// Exact: the value converts without loss or not at all. A rounded bound, or a timestamp
+        /// cut down to its date, would change which rows the comparison matches.
+        converted = tryConvertFieldToTypeExact(value, *cmp_type, value_type.get());
         if (converted.isNull())
             return nullptr;
     }
