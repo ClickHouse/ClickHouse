@@ -686,8 +686,7 @@ def test_secure(started_cluster):
 
     # Secure is set to 0 in named collection and in 1 in DDL
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
-    node1.query(
-        """
+    create_with_override = """
         CREATE DICTIONARY test.clickhouse_secure(
             id UInt64,
             value String
@@ -701,7 +700,9 @@ def test_secure(started_cluster):
             ))
         LIFETIME(MIN 1 MAX 10)
             """
-    )
+    # Overriding a stored key requires `SHOW NAMED COLLECTIONS SECRETS`, which `default` does not have
+    assert "ACCESS_DENIED" in node1.query_and_get_error(create_with_override)
+    node1.query(create_with_override, user="admin")
     value = node1.query(
         "SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))"
     )

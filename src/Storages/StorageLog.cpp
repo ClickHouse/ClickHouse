@@ -48,6 +48,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
+#include <algorithm>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>
@@ -405,8 +406,11 @@ bool LogSource::isFinished()
 
     if (limited_by_file_sizes)
     {
-        /// Check for EOF.
-        if (!streams.empty() && streams.begin()->second.compressed->eof())
+        /// One data file can be exhausted while the others still hold rows: an array of only empty
+        /// arrays writes no elements at all, and a LowCardinality dictionary file holds only a header,
+        /// read before the first row.
+        auto at_eof = [](auto & name_and_stream) { return name_and_stream.second.compressed->eof(); };
+        if (!streams.empty() && std::ranges::all_of(streams, at_eof))
         {
             is_finished = true;
             return true;
@@ -1471,7 +1475,7 @@ void registerStorageLog(StorageFactory & factory)
             args.getContext());
     };
 
-    factory.registerStorage("Log", create_fn, features, Documentation{
+    factory.registerStorage("Log", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
@@ -1573,7 +1577,7 @@ SELECT * FROM log_table ORDER BY timestamp
         .syntax = "ENGINE = Log",
         .related = {"TinyLog", "StripeLog"}});
 
-    factory.registerStorage("TinyLog", create_fn, features, Documentation{
+    factory.registerStorage("TinyLog", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
