@@ -97,6 +97,8 @@ public:
 
     PinnedMemoryPool & pinnedPool() { return PinnedMemoryPool::instance(); }
 
+    cudaMemPool_t memoryPool() const { return memory_pool; }
+
 private:
     cudaMemPool_t memory_pool = nullptr;
 

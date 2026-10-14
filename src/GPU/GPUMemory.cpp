@@ -214,7 +214,10 @@ void DeviceBuffer::reserve(size_t bytes)
     grown.capacity = std::max(bytes, capacity * 2);
 
     void * fresh = nullptr;
-    checkCuda(cudaMallocAsync(&fresh, grown.capacity, stream), "Cannot allocate {} bytes on the device", grown.capacity);
+    checkCuda(
+        cudaMallocFromPoolAsync(&fresh, grown.capacity, GPUDevice::instance().memoryPool(), stream),
+        "Cannot allocate {} bytes on the device",
+        grown.capacity);
     grown.memory = static_cast<char *>(fresh);
 
     if (used != 0)

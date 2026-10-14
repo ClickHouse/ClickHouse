@@ -47,18 +47,18 @@ __host__ __device__ constexpr GPUColumnKind columnKindOf(GPUElementType type)
 
 struct DeviceFixedColumn
 {
-    GPUElementType element_type = GPUElementType::UInt8;
-    const char * data = nullptr;
-    size_t rows = 0;
+    const GPUElementType element_type = GPUElementType::UInt8;
+    const char * const data = nullptr;
+    const size_t rows = 0;
 };
 
 /// `offsets` holds `rows + 1` values, and may be null when `rows` is 0.
 struct DeviceVariableColumn
 {
-    const uint64_t * offsets = nullptr;
-    const char * chars = nullptr;
-    size_t rows = 0;
-    size_t chars_bytes = 0;
+    const uint64_t * const offsets = nullptr;
+    const char * const chars = nullptr;
+    const size_t rows = 0;
+    const size_t chars_bytes = 0;
 };
 
 struct DeviceColumnView
