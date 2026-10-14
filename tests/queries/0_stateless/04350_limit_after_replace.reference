@@ -10,16 +10,8 @@ SELECT * REPLACE(a * 10 AS a) FROM (SELECT number AS a FROM numbers(10)) ORDER B
 60
 70
 80
-SELECT * REPLACE(a * 10 AS a) FROM (SELECT number AS a FROM numbers(10)) ORDER BY a LIMIT 3 AFTER a > 50 SETTINGS enable_analyzer = 0;
-60
-70
-80
 -- UNTIL with REPLACE: a*10 until a*10 >= 30 => stop before 30, open from start.
 SELECT * REPLACE(a * 10 AS a) FROM (SELECT number AS a FROM numbers(10)) ORDER BY a LIMIT UNTIL a >= 30;
-0
-10
-20
-SELECT * REPLACE(a * 10 AS a) FROM (SELECT number AS a FROM numbers(10)) ORDER BY a LIMIT UNTIL a >= 30 SETTINGS enable_analyzer = 0;
 0
 10
 20

@@ -82,10 +82,10 @@ void updateStatistics(
     const DB::StatsCollectingParams & build_params,
     const DB::StatsCollectingParams & match_params,
     bool probe_phase_finished,
-    size_t hash_table_matches)
+    std::optional<size_t> hash_table_matches)
 {
-    if (match_params.isCollectionAndUseEnabled() && probe_phase_finished)
-        DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, match_params);
+    if (match_params.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())
+        DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = *hash_table_matches}, match_params);
 
     if (!build_params.isCollectionAndUseEnabled() || !hash_joins[0]->data->twoLevelMapIsUsed())
         return;
@@ -309,7 +309,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
     }
 }
 
-bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
+bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, size_t /* num_rows */, JoinBuildContext context)
 {
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
@@ -368,7 +368,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 }
 
                 auto [block, selector] = std::move(dispatched_block).detachData();
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits, block_row_store);
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), context.joinChecksLimits(), block_row_store);
 
                 std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
 
@@ -386,7 +386,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             std::this_thread::yield();
     }
 
-    if (check_limits && table_join->sizeLimits().hasLimits())
+    if (context.joinChecksLimits() && table_join->sizeLimits().hasLimits())
         return table_join->sizeLimits().check(post_join_total_rows, post_join_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
@@ -430,7 +430,7 @@ class ConcurrentHashJoinResult : public IJoinResult
     ScatteredBlocks dispatched_blocks;
     size_t next_block = 0;
     JoinResultPtr current_result;
-    size_t matched_right_rows = 0;
+    std::optional<size_t> matched_right_rows = 0;
 public:
     explicit ConcurrentHashJoinResult(
         const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins_,
@@ -457,7 +457,7 @@ public:
         auto data = current_result->next();
         if (data.is_last)
         {
-            matched_right_rows += current_result->getMatchedRightRows();
+            addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
             if (data.next_block)
                 dispatched_blocks[next_block] = std::move(*data.next_block);
             else
@@ -469,7 +469,7 @@ public:
         return {std::move(data.block), nullptr, is_last};
     }
 
-    size_t getMatchedRightRows() const override { return matched_right_rows; }
+    std::optional<size_t> getMatchedRightRows() const override { return matched_right_rows; }
 };
 
 JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
@@ -647,11 +647,8 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     {
         const auto & hash_join = hash_joins[i];
         std::lock_guard lock(hash_join->mutex);
-        if (hash_join->data->hasNonJoinedRows())
-        {
-            if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-                streams.push_back(std::move(s));
-        }
+        if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+            streams.push_back(std::move(s));
     }
     if (streams.empty())
         return {};

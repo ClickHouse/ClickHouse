@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
@@ -15,8 +14,26 @@ ClickHouse Managed Postgres is an enterprise-grade managed Postgres service buil
 
 Built in partnership with [Ubicloud](https://www.ubicloud.com/), whose founding team has a track record of delivering world-class Postgres at Citus Data, Heroku, and Microsoft, ClickHouse Managed Postgres solves the performance challenges that fast-growing applications commonly face: slower ingestion and updates, slow vacuums, increased tail latency, and WAL spikes caused by limited disk IOPS.
 
-{/* TODO: Architecture diagram showing Postgres + ClickHouse integration
-    Path: /images/cloud/managed-postgres/architecture-overview.png */}
+## Postgres for transactions, ClickHouse for analytics {#transactions-and-analytics}
+
+Use Postgres for transactional application workloads (OLTP), such as creating orders, updating inventory, and managing user accounts. Postgres is your system of record: related changes can commit or roll back together in a transaction.
+
+When your application also needs analytics over large datasets, add a ClickHouse service and connect the two with ClickPipes:
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. Your application reads and writes operational data in Postgres, using transactions to group related changes.
+2. [Configure ClickPipes](/products/managed-postgres/clickhouse-integration) to copy selected tables to ClickHouse and continuously replicate committed inserts, updates, and deletes using change data capture (CDC).
+3. Run analytical queries in ClickHouse. You can connect to ClickHouse directly or query its tables from Postgres through the [`pg_clickhouse`](/products/managed-postgres/extensions/pg_clickhouse/introduction) extension.
+
+Replication is asynchronous, so analytical results can lag behind committed Postgres changes. The two databases have separate transaction boundaries: CDC and `pg_clickhouse` do not provide a shared transaction across Postgres and ClickHouse. Reads that require the latest committed application state should use Postgres.
+
+You can start with Postgres alone and add ClickHouse when you need it. Follow the [ClickHouse Managed Postgres quickstart](/products/managed-postgres/quickstart) to try both services, or go directly to [adding analytics](/products/managed-postgres/quickstart#part-2) if you already have a Postgres service.
 
 ## NVMe-powered performance {#nvme-performance}
 

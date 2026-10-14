@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/PathLocks.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
@@ -11,6 +12,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -25,6 +28,9 @@ namespace DB
   *   each containing a single file, `prefix.path`, with the content as the logical path of the corresponding directory.
   * - when a logical directory is renamed or moved, we don't touch its randomly assigned name,
   *   and simply rewrite the contents of `prefix.path`.
+  * - a removal is committed by moving the directory (or a backup copy of the file) under a logical name
+  *   starting with `__removed.`, and the objects are deleted afterwards; if the process dies in between,
+  *   such objects are deleted on the next initial load, see `PlainRewritableLayout::REMOVED_NAME_PREFIX`.
   *
   * Example. Let's suppose, the logical filesystem structure is:
   * /hello/world/test1.txt
@@ -73,6 +79,7 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
+    bool isRemote() const override { return object_storage->isRemote(); }
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return false; }
@@ -107,15 +114,27 @@ private:
     const std::string storage_path_full;
     /// Real hard links require the explicit form of `prefix.path`, which older servers cannot read,
     /// so they are enabled by the `enable_hard_links` setting of the disk. See the comment above.
+    /// The setting is startup-only (`applyNewSettings` is not overridden): `DiskObjectStorage::applyNewSettings` passes the
+    /// config prefix of the outer disk, which is not the prefix of this one when the disk is wrapped with a cache, so a reload
+    /// would read the setting from the wrong place. Changing it requires a restart, as a downgrade does anyway.
     const bool hard_links_enabled;
 
-    std::mutex metadata_mutex;
+    /// Transactions hold the locks for the paths they modify while they talk to the object storage and publish the result;
+    /// full reloads of the metadata hold the lock for the root. Transactions on unrelated paths run concurrently.
+    PathLocks path_locks;
     FsMetadata fs;
     std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
+    /// Paths from the last completed load. Validate them against the current snapshot before reuse.
+    std::unordered_map<std::string, std::string> local_paths_by_remote_directory;
+    /// The remote paths of the directories of the targets of the pending replacements seen by the last completed load.
+    /// Protected by `load_mutex`, like `local_paths_by_remote_directory`.
+    std::unordered_set<std::string> remote_directories_of_pending_replaces;
     AtomicStopwatch previous_refresh;
 };
+
+class MetadataStorageFromPlainObjectStorageCopyFileOperation;
 
 class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetadataTransaction
 {
@@ -128,8 +147,25 @@ protected:
     StoredObjects removed_objects;
     /// Blob keys chosen by `generateObjectKeyForPath`, by normalized file path, for the files this transaction is going to create.
     std::unordered_map<std::string, std::string> generated_blob_keys;
+    /// The copies that stand in for hard links while hard links are disabled, by the normalized path of the target.
+    /// A rewrite of the target in the same transaction supersedes its copy. Once the target is moved or replaced, both the
+    /// old and the new path are marked as `moved`, and a rewrite of them is refused.
+    struct FallbackCopy
+    {
+        MetadataStorageFromPlainObjectStorageCopyFileOperation * copy = nullptr;
+        bool moved = false;
+    };
+    std::unordered_map<std::string, FallbackCopy> fallback_copies;
 
     void planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to);
+    void markFallbackCopyMoved(const std::string & path_from, const std::string & path_to);
+
+    /// Normalized paths of the files and directories the operations modify; locked for the duration of the commit.
+    std::vector<std::string> affected_paths;
+
+    void addAffectedPath(const std::string & path);
+    /// The same for a file, and also for its directory if the operation may rewrite the `prefix.path` of the directory.
+    void addAffectedFilePath(const std::string & path);
 
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);

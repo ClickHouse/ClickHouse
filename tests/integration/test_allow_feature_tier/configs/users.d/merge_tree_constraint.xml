@@ -16,6 +16,10 @@
                     <min>536870912</min>
                     <max>2147483648</max>
                 </merge_tree_max_avg_part_size_for_too_many_parts>
+                <!-- `compatibility` 24.10 would lower it to 1000, which this minimum refuses. -->
+                <merge_tree_replicated_deduplication_window>
+                    <min>5000</min>
+                </merge_tree_replicated_deduplication_window>
             </constraints>
         </default>
     </profiles>

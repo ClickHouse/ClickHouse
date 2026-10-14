@@ -16,8 +16,6 @@ SELECT DISTINCT a FROM t_uniq ORDER BY a LIMIT 3;
 0
 1
 2
-SELECT count() FROM (SELECT DISTINCT a FROM t_uniq) SETTINGS enable_analyzer = 0;
-40000
 -- the behavior can be switched off
 SELECT count() FROM (SELECT DISTINCT a FROM t_uniq) SETTINGS allow_preliminary_distinct_abandoning = 0, log_comment = '05045_off';
 40000

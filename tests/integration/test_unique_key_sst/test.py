@@ -14,13 +14,16 @@ node = cluster.add_instance(
     main_configs=["configs/config.d/storage_policy.xml"],
     stay_alive=True,
     with_minio=True,
+    # UNIQUE KEY reads and writes both open a transaction, and `TransactionLog` loads from
+    # Keeper, so every query here needs one.
+    with_zookeeper=True,
     # The tests operate on local part/metadata files directly; with the remote
     # database disk ("db disk" CI flavor) the table metadata .sql lives in S3
     # and the metadata edit below would have nothing to sed.
     with_remote_database_disk=False,
 )
 
-UK_SETTINGS = {"allow_experimental_unique_key": "1"}
+UK_SETTINGS = {"enable_unique_key": "1"}
 
 EXPECTED_ROWS = "10\ta\n20\tb\n30\tc\n"
 
@@ -345,3 +348,85 @@ def test_unique_key_sst_checksums(started_cluster):
 
     node.query("ALTER TABLE uk_sst_ro MODIFY SETTING table_readonly = 0")
     node.query("DROP TABLE uk_sst_ro SYNC")
+
+
+def test_unique_key_on_a_non_plain_engine_still_loads(started_cluster):
+    # Servers before the plain-MergeTree restriction accepted UNIQUE KEY family-wide, so such
+    # metadata exists and must stay attachable -- an unattachable table cannot be dropped either.
+    # Simulated as in the missing-SST case above: DETACH, edit the stored .sql, short-syntax
+    # ATTACH, which is the replay level the fresh-definition gate has to let through.
+    node.query("DROP TABLE IF EXISTS uk_old_engine SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_old_engine (id UInt64, v String, ver UInt64)
+        ENGINE = ReplacingMergeTree(ver)
+        ORDER BY (id)
+        """
+    )
+    node.query("INSERT INTO uk_old_engine VALUES (10, 'a', 1), (20, 'b', 1), (30, 'c', 1)")
+
+    metadata_sql = "/var/lib/clickhouse/" + node.query(
+        "SELECT metadata_path FROM system.tables WHERE database = 'default' AND name = 'uk_old_engine'"
+    ).strip()
+    node.query("DETACH TABLE uk_old_engine")
+    bash(node, f"sed -i 's/^ORDER BY/UNIQUE KEY (id)\\nORDER BY/' {shlex.quote(metadata_sql)}")
+
+    # attach_of_stored_non_plain_definition
+    node.query("ATTACH TABLE uk_old_engine", settings={"send_logs_level": "error"})
+    assert node.query("SELECT id, v FROM uk_old_engine ORDER BY id") == EXPECTED_ROWS
+
+    # ... and through the startup path, which is where an upgrade actually meets it.
+    node.restart_clickhouse()
+    assert node.query("SELECT id, v FROM uk_old_engine ORDER BY id") == EXPECTED_ROWS
+
+    # A definition supplied now is still rejected, at both levels that count as fresh.
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        "CREATE TABLE uk_new_engine (id UInt64, v String, ver UInt64) "
+        "ENGINE = ReplacingMergeTree(ver) ORDER BY id UNIQUE KEY (id)",
+        settings=UK_SETTINGS,
+    )
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        "ATTACH TABLE uk_new_engine UUID '00000000-0000-0000-0000-00000a104046' "
+        "(id UInt64, v String, ver UInt64) "
+        "ENGINE = ReplacingMergeTree(ver) ORDER BY id UNIQUE KEY (id)",
+        settings=UK_SETTINGS,
+    )
+
+    node.query("DROP TABLE uk_old_engine SYNC")
+def test_unique_key_sst_roundtrip_on_encrypted_disk(started_cluster):
+    # UNIQUE KEY on an encrypted local disk: the load-time SST validation reads
+    # `unique_key_index.sst` through `ReadBufferFromEncryptedFile`, whose
+    # readBigAt decrypts ciphertext fetched via positional reads.
+    node.query("DROP TABLE IF EXISTS uk_encrypted SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_encrypted (id UInt64, v String)
+        ENGINE = MergeTree
+        UNIQUE KEY (id)
+        ORDER BY (id)
+        SETTINGS disk = 'encrypted_disk', min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1
+        """,
+        settings=UK_SETTINGS,
+    )
+    node.query(
+        "INSERT INTO uk_encrypted VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        settings=UK_SETTINGS,
+    )
+    assert node.query("SELECT id, v FROM uk_encrypted ORDER BY id") == EXPECTED_ROWS
+
+    # DETACH + ATTACH: load-time validation opens and checksum-verifies the
+    # encrypted SST through positional reads.
+    node.query("DETACH TABLE uk_encrypted SYNC")
+    node.query("ATTACH TABLE uk_encrypted", settings=UK_SETTINGS)
+    assert (
+        node.query(
+            """
+            SELECT count() FROM system.parts
+            WHERE database = currentDatabase() AND table = 'uk_encrypted' AND active
+            """
+        )
+        == "1\n"
+    )
+    assert node.query("SELECT id, v FROM uk_encrypted ORDER BY id") == EXPECTED_ROWS
+
+    node.query("DROP TABLE uk_encrypted SYNC")

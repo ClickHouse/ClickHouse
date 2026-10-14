@@ -19,6 +19,9 @@ SETTINGS
     max_bytes_to_merge_at_max_space_in_pool = 1,
     max_bytes_to_merge_at_min_space_in_pool = 1;
 
+-- Prevent background merge selection from crossing the heap-dump checkpoint.
+SYSTEM STOP MERGES test_many_parts;
+
 -- Insert 1000 rows - each goes to its own partition = 1000 parts
 INSERT INTO test_many_parts
 SELECT

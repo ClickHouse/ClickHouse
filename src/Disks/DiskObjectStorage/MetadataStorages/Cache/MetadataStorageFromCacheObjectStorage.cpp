@@ -184,6 +184,11 @@ bool MetadataStorageFromCacheObjectStorage::isReadOnly() const
     return underlying->isReadOnly();
 }
 
+bool MetadataStorageFromCacheObjectStorage::isRemote() const
+{
+    return underlying->isRemote();
+}
+
 bool MetadataStorageFromCacheObjectStorage::isTransactional() const
 {
     return underlying->isTransactional();

@@ -323,8 +323,16 @@ is not compatible with the output format CustomSeparated
 is not compatible with the output format Pretty
 --- JSONEachPacketString is rejected for PrettyCompact with a non-UTF-8 named Tuple element nested in an Array
 is not compatible with the output format PrettyCompact
---- JSONEachPacketString accepts Pretty with a non-UTF-8 named Tuple element when pretty named tuples as JSON are off
+--- JSONEachPacketString accepts Pretty with a non-UTF-8 named Tuple element when both pretty named-tuple renderings are off
 Pretty (named tuples in the plain text form) accepted: OK
+--- JSONEachPacketString still rejects Pretty with a non-UTF-8 named Tuple element written as subcolumn names
+is not compatible with the output format Pretty
+--- JSONEachPacketString accepts PrettyCompact with a non-UTF-8 named Tuple element inside an Array when the JSON rendering is off
+PrettyCompact (Array of named tuples, no element names written) accepted: OK
+--- JSONEachPacketString accepts Pretty with a non-UTF-8 named Tuple element inside a Map when the JSON rendering is off
+Pretty (named tuple inside a Map, no element names written) accepted: OK
+--- JSONEachPacketString still rejects Pretty with a non-UTF-8 element of a nested named Tuple written as subcolumn names
+is not compatible with the output format Pretty
 --- JSONEachPacketString still rejects Pretty with a non-UTF-8 named Tuple element when named tuples are not written as objects
 is not compatible with the output format Pretty
 --- JSONEachPacketString accepts Pretty with a valid UTF-8 (multi-byte) named Tuple element

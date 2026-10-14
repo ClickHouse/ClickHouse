@@ -1127,7 +1127,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & container : key_attribute.containers)
-        bytes_allocated += container.size();
+        bytes_allocated += container.getBufferSizeInBytes();
 
     for (auto & attribute : attributes)
     {
@@ -1169,7 +1169,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
 
         if (attribute.is_index_null.has_value())
             for (const auto & container : attribute.is_index_null.value())
-                bytes_allocated += container.size();
+                /// `RowsMask` is `std::vector<bool>`, which packs elements into bits, so `capacity()`
+                /// is a number of flags rather than a number of bytes.
+                bytes_allocated += (container.capacity() + 7) / 8;
     }
 
     /// `bucket_count` should be a sum over all shards,
@@ -1208,13 +1210,11 @@ Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(const Names & col
         auto keys_column = getColumnFromPODArray(std::move(keys));
         key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
     }
-    else
-    {
-        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
-    }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
     auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+        coordinator->setSerializedKeys(std::move(keys));
     auto result = coordinator->read(num_streams);
 
     return result;
