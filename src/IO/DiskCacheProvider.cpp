@@ -350,8 +350,7 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     /// unthrottled, unanchored).
     readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         /*local_throttler=*/nullptr, /*anchors=*/nullptr);
-    if (!modified && !result.empty())
-        read_data_from_concurrent_writers = true;
+    read_data_from_concurrent_writers |= !modified && !result.empty();
     return result;
 }
 
@@ -359,7 +358,6 @@ std::function<void()> DiskCacheWriter::takeDropAfterPass()
 {
     if (!cache_settings.cache_temporarily || !filled_from_start || !segment_holder)
         return {};
-    filled_from_start = false;
     return [weak_segment = std::weak_ptr<FileSegment>(segment_holder->getSingleFileSegment()), logger = log]() noexcept
     {
         try
