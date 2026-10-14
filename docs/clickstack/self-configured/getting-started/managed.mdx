@@ -39,8 +39,8 @@ This page is showing the **OpenTelemetry** path. Use the guide selector near the
 
 ### Prepare your ingestion environment {#prepare-your-ingestion-environment}
 
-- To start a new [OpenTelemetry Collector](/clickstack/self-configured/ingesting-data/collector), install [Docker](https://docs.docker.com/get-docker/). For Kubernetes, deploy the collector with [Helm](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector).
-- To use an existing collector, run it in the [gateway role](/clickstack/self-configured/ingesting-data/collector#collector-roles) and ensure that its distribution includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). You will add the required configuration in this guide.
+- To start a new [OpenTelemetry Collector](/clickstack/observability/ingesting-data/collector), install [Docker](https://docs.docker.com/get-docker/). For Kubernetes, deploy the collector with [Helm](/clickstack/observability/ingesting-data/collector#configuring-the-collector).
+- To use an existing collector, run it in the [gateway role](/clickstack/observability/ingesting-data/collector#collector-roles) and ensure that its distribution includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). You will add the required configuration in this guide.
 
 ## Set up ClickHouse Observability - Self Configured {#set-up-managed-clickstack}
 
@@ -95,7 +95,7 @@ Replace `<host>` and `<your_password_here>` with the values for your ClickHouse 
 The collector runs in the foreground. Leave this terminal open and use a second terminal for the remaining commands in this guide.
 
 <Note>
-This command exposes the OTLP ports without authentication and is intended for local evaluation. Before sending production traffic, [secure the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector).
+This command exposes the OTLP ports without authentication and is intended for local evaluation. Before sending production traffic, [secure the collector](/clickstack/observability/ingesting-data/collector#securing-the-collector).
 </Note>
 
 </Tab>
@@ -124,7 +124,7 @@ Reuse your existing OTLP receiver and preserve its authentication and TLS settin
 
 After merging the configuration, reload or restart the collector using your existing deployment process.
 
-For further details on configuring OpenTelemetry collectors, see [Ingesting with OpenTelemetry](/clickstack/self-configured/ingesting-data/opentelemetry).
+For further details on configuring OpenTelemetry collectors, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry).
 
 </Tab>
 
@@ -184,7 +184,7 @@ The result should include the test event with the `clickstack-docs-test` service
 
 ### Prepare your ingestion environment {#prepare-your-ingestion-environment-vector}
 
-Start with an [existing Vector pipeline](/clickstack/self-configured/ingesting-data/vector) that can send data to ClickHouse.
+Start with an [existing Vector pipeline](/clickstack/observability/ingesting-data/vector) that can send data to ClickHouse.
 
 ## Set up ClickHouse Observability - Self Configured {#set-up-managed-clickstack-vector}
 
@@ -286,7 +286,7 @@ Replace `default` with `clickstack-ingest` in the Vector sink and set `password`
 
 Save the updated configuration, then reload or restart Vector using your existing deployment process.
 
-For more examples of ingesting data with Vector, see [Ingesting with Vector](/clickstack/self-configured/ingesting-data/vector) or the [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) for advanced options.
+For more examples of ingesting data with Vector, see [Ingesting with Vector](/clickstack/observability/ingesting-data/vector) or the [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) for advanced options.
 
 #### Create a data source {#create-a-vector-data-source}
 
@@ -338,7 +338,7 @@ For other source settings, see the [configuration reference](/clickstack/self-co
 <Step title="Send test data" id="send-test-data-vector">
 Send a representative event through the input of your existing Vector pipeline.
 
-For more Vector source and transformation examples, see [Ingesting with Vector](/clickstack/self-configured/ingesting-data/vector).
+For more Vector source and transformation examples, see [Ingesting with Vector](/clickstack/observability/ingesting-data/vector).
 
 </Step>
 
@@ -363,16 +363,16 @@ If another guide requires your ClickHouse Cloud endpoint or password, [gather or
 Choose a guide for the data that you want to send to your service:
 
 <CardGroup cols={2}>
-  <Card title="Instrument an application" icon="code" href="/clickstack/self-configured/ingesting-data/sdks/index">
+  <Card title="Instrument an application" icon="code" href="/clickstack/observability/ingesting-data/sdks/index">
     Send application traces and logs with a supported OpenTelemetry SDK.
   </Card>
-  <Card title="Collect host logs" icon="server" href="/clickstack/self-configured/integration-examples/host-logs">
+  <Card title="Collect host logs" icon="server" href="/clickstack/observability/integration-examples/host-logs">
     Forward host logs from an OpenTelemetry Collector running in the agent role.
   </Card>
-  <Card title="Monitor Kubernetes" icon="cubes" href="/clickstack/self-configured/integration-examples/kubernetes">
+  <Card title="Monitor Kubernetes" icon="cubes" href="/clickstack/observability/integration-examples/kubernetes">
     Collect logs, metrics, and traces from a Kubernetes cluster.
   </Card>
-  <Card title="Explore other integrations" icon="plug" href="/clickstack/self-configured/integration-examples/index">
+  <Card title="Explore other integrations" icon="plug" href="/clickstack/observability/integration-examples/index">
     Find guides for additional applications and telemetry sources.
   </Card>
 </CardGroup>
@@ -382,11 +382,11 @@ Choose a guide for the data that you want to send to your service:
 Use a sample dataset to explore the UI with richer telemetry:
 
 <CardGroup cols={2}>
-  <Card title="Sample logs, traces, and metrics" href="/clickstack/self-configured/example-datasets/sample-data">
+  <Card title="Sample logs, traces, and metrics" href="/clickstack/observability/example-datasets/sample-data">
     <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
     Load data from the public demo and diagnose an issue. This guide assumes that you started a new local OpenTelemetry Collector. If you configured an existing collector, adapt the endpoint and authentication settings to your deployment.
   </Card>
-  <Card title="Local logs and metrics" href="/clickstack/self-configured/example-datasets/local-data">
+  <Card title="Local logs and metrics" href="/clickstack/observability/example-datasets/local-data">
     <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
     Collect local files and system metrics on macOS or Linux.
   </Card>
@@ -397,15 +397,15 @@ Use a sample dataset to explore the UI with richer telemetry:
 Use a generator to test ingestion without an existing application or dataset:
 
 <CardGroup cols={2}>
-  <Card title="Generate data with otelgen" icon="terminal" href="/clickstack/self-configured/example-datasets/otelgen">
+  <Card title="Generate data with otelgen" icon="terminal" href="/clickstack/observability/example-datasets/otelgen">
     Send a short burst of synthetic OTLP logs, traces, and metrics.
   </Card>
-  <Card title="Generate data with telemetrygen" icon="terminal" href="/clickstack/self-configured/example-datasets/telemetrygen">
+  <Card title="Generate data with telemetrygen" icon="terminal" href="/clickstack/observability/example-datasets/telemetrygen">
     Generate configurable OpenTelemetry signals across several services.
   </Card>
 </CardGroup>
 
-See [all sample data and demos](/clickstack/self-configured/example-datasets/index).
+See [all sample data and demos](/clickstack/observability/example-datasets/index).
 
 ### Prepare for production {#prepare-for-production}
 

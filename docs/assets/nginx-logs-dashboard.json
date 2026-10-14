@@ -1,0 +1,129 @@
+{
+  "version": "0.1.0",
+  "name": "nginx logs dashboard",
+  "tiles": [
+    {
+      "id": "tp56x",
+      "x": 0,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Requests over time",
+        "source": "Logs",
+        "displayType": "line",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "",
+            "alias": "Request count"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": ""
+      }
+    },
+    {
+      "id": "yrkd9",
+      "x": 8,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Errors over time",
+        "source": "Logs",
+        "displayType": "stacked_bar",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "toInt32OrNull(LogAttributes['status']) >= 400",
+            "aggConditionLanguage": "sql",
+            "valueExpression": ""
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "LogAttributes['status']"
+      }
+    },
+    {
+      "id": "bwkhq",
+      "x": 8,
+      "y": 10,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Status code counts",
+        "source": "Logs",
+        "displayType": "table",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "",
+            "alias": "Count"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "LogAttributes['status'] as \"Status code\""
+      }
+    },
+    {
+      "id": "17fl0x",
+      "x": 16,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Status codes over time",
+        "source": "Logs",
+        "displayType": "line",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": ""
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "LogAttributes['status']"
+      }
+    },
+    {
+      "id": "9eb6o",
+      "x": 0,
+      "y": 10,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Average upstream response time",
+        "source": "Logs",
+        "displayType": "line",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "LogAttributes['upstream_response_time']",
+            "alias": "Average upstream response time"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene"
+      }
+    }
+  ],
+  "filters": []
+}

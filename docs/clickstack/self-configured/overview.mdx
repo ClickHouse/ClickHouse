@@ -34,7 +34,7 @@ The stack includes several key features designed for debugging and root cause an
 - Monitor health and performance from HTTP requests to DB queries (APM)
 - Event deltas for identifying anomalies and performance regressions
 - Log pattern recognition
-- Open pages directly with [deep links](/clickstack/self-configured/url-parameters) using URL query parameters
+- Open pages directly with [deep links](/clickstack/observability/url-parameters) using URL query parameters
 
 ## Components {#components}
 
@@ -46,7 +46,7 @@ The platform consists of three core components:
 
 In **Self Configured**, ClickHouse and the HyperDX UI are hosted and operated in [ClickHouse Cloud](/products/cloud/getting-started/cloud-get-started), while you configure and run the OpenTelemetry collector.
 
-To get started, visit the [Getting started guide](/clickstack/self-configured/getting-started/managed) before loading a [sample dataset](/clickstack/self-configured/example-datasets/index). You can also explore the [Self Configured deployment guide](/clickstack/self-configured/deployment/managed) and [production best practices](/clickstack/self-configured/managing/production).
+To get started, visit the [Getting started guide](/clickstack/self-configured/getting-started/managed) before loading a [sample dataset](/clickstack/observability/example-datasets/index). You can also explore the [Self Configured deployment guide](/clickstack/self-configured/deployment/managed) and [production best practices](/clickstack/self-configured/managing/production).
 
 ## Principles {#clickstack-principles}
 
@@ -84,13 +84,13 @@ In this model, **ClickHouse and the UI (HyperDX)** are hosted, operated, and sec
 
 Self Configured consists of the following components:
 
-1. **UI (HyperDX)**  
+1. **UI (HyperDX)**
    The HyperDX UI is fully integrated into ClickHouse Cloud and managed as part of the service. It provides log search, trace exploration, dashboards, alerting, and correlation across telemetry types, with integrated authentication and access control.
 
-2. **OpenTelemetry collector (self-managed)**  
+2. **OpenTelemetry collector (self-managed)**
    Users run an OpenTelemetry Collector that receives telemetry data from their applications and infrastructure. This collector forwards data via OTLP to ClickHouse Cloud. While any standards-compliant OpenTelemetry Collector can be used, we strongly recommend the **ClickStack distribution**, which is preconfigured and optimized for ClickHouse ingestion and works out of the box with ClickStack schemas.
 
-3. **ClickHouse Cloud**  
+3. **ClickHouse Cloud**
    ClickHouse is fully managed in ClickHouse Cloud, serving as the storage and query engine for all observability data. Users don't need to manage clusters, upgrades, or operational concerns.
 
 Self Configured provides several key benefits:

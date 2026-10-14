@@ -2,8 +2,6 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -143,15 +141,11 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
-
-}
-
-namespace DB
+std::map<String, Documentation> ParserTablePropertiesQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementExists(StatementFactory & factory)
-{
-    factory.registerStatement("EXISTS",
+    documentation["EXISTS"] =
     {
         .description = R"DOCS_MD(
 ```sql
@@ -220,7 +214,9 @@ WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11)
 EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
 )",
         .related = {"SHOW", "DESCRIBE TABLE", "CREATE"},
-    });
+    };
+
+    return documentation;
 }
 
 }

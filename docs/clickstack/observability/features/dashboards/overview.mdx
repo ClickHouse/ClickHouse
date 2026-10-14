@@ -42,10 +42,10 @@ In the example below, we chart the average request duration over time per servic
 
 Select the `Time Series` visualization type from the top menu, followed by the `Traces` (or `Demo Traces` if using [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)) dataset. Complete the following values:
 
-- Metric: `Average`  
-- Column: `Duration/1000`  
-- Where: `<empty>`  
-- Group By: `ServiceName`  
+- Metric: `Average`
+- Column: `Duration/1000`
+- Where: `<empty>`
+- Group By: `ServiceName`
 - Alias: `Average Time`
 
 <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="Simple visualization" size="lg"/>
@@ -89,11 +89,11 @@ Select `Add` to open the visualization creation panel.
 
 Select the `Time Series` visualization type from the top menu, followed by the `Traces` (or `Demo Traces` if using [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)) dataset. Complete the following values to create a chart showing the average request duration over time per service name:
 
-- Chart Name: `Average duration by service`  
-- Metric: `Average`  
-- Column: `Duration/1000`  
-- Where: `<empty>`  
-- Group By: `ServiceName`  
+- Chart Name: `Average duration by service`
+- Metric: `Average`
+- Column: `Duration/1000`
+- Where: `<empty>`
+- Group By: `ServiceName`
 - Alias: `Average Time`
 
 Click `Run` to preview the chart, then click `Save`.
@@ -110,10 +110,10 @@ Select `Add` to open the visualization creation panel.
 
 Select the `Time Series` visualization type from the top menu, followed by the `Logs` (or `Demo Logs` if using [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)) dataset. Complete the following values to create a chart showing the count of events over time per service name:
 
-- Chart Name: `Event count by service`  
-- Metric: `Count of Events`  
-- Where: `<empty>`  
-- Group By: `ServiceName`  
+- Chart Name: `Event count by service`
+- Metric: `Count of Events`
+- Where: `<empty>`
+- Group By: `ServiceName`
 - Alias: `Count of events`
 
 Click `Run` to preview the chart, then click `Save`.
@@ -175,7 +175,7 @@ Lucene or SQL filters, along with the time range, can be applied at the dashboar
 
 To demonstrate, apply the Lucene filter `ServiceName:"frontend"` to the dashboard and select a time window containing data. Note how the visualizations now reflect data only from the `frontend` service.
 
-The dashboard will be auto-saved. To set the dashboard name, select the title and modify it before clicking `Save Name`. 
+The dashboard will be auto-saved. To set the dashboard name, select the title and modify it before clicking `Save Name`.
 
 <Image img="/images/clickstack/observability-dashboard-save-name.png" alt="Dashboard with the My Dashboard name selected for editing" size="lg"/>
 </Step>
@@ -455,6 +455,31 @@ This dashboard provides visualizations for monitoring ClickHouse. To navigate to
 <Image img="/images/clickstack/observability-dashboard-clickhouse.png" alt="ClickHouse dashboard Infrastructure tab showing CPU usage, memory usage, disk activity, and S3 requests" size="lg"/>
 
 This dashboard uses the **Select**, **Inserts**, and **Infrastructure** tabs to organize monitoring views.
+
+<Tabs>
+<Tab title="ClickHouse Observability">
+
+For available source and query settings, see [Configuration options](/clickstack/observability/managing/config).
+
+</Tab>
+<Tab title="Self configured">
+
+<Info>
+**Required system table access**
+
+This dashboard queries the ClickHouse [system tables](/reference/system-tables/overview) to expose key metrics. The following grants are required:
+
+`GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
+
+`GRANT SHOW COLUMNS, SELECT(active, database, partition, rows, table) ON system.parts`
+
+`GRANT SHOW COLUMNS, SELECT(event_date, event_time, memory_usage, normalized_query_hash, query, query_duration_ms, query_kind, read_rows, tables, type, written_bytes, written_rows) ON system.query_log`
+
+`GRANT SHOW COLUMNS, SELECT(event_date, event_time, hostname, metric, value) ON system.transposed_metric_log`
+</Info>
+
+</Tab>
+</Tabs>
 
 ### Services dashboard {#services-dashboard}
 

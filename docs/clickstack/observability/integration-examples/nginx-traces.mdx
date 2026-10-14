@@ -2,11 +2,275 @@
 slug: /clickstack/observability/integration-examples/nginx-traces
 title: 'Monitoring Nginx traces with ClickHouse Observability'
 sidebarTitle: 'Nginx traces'
-description: 'Placeholder for the Nginx traces integration guide for fully managed ClickHouse Observability.'
+description: 'Collect, search, and visualize Nginx traces in ClickHouse Observability with managed or self-configured ingestion.'
 doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'Nginx', 'traces', 'otel']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Capture distributed traces from Nginx with the OpenTelemetry Nginx module and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without installing Nginx.
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service
+- For your own traces, an Nginx installation with the OpenTelemetry module and permission to update its configuration; the Docker example below uses `nginx:1.27-otel`
+- For the demo dataset, `curl` and Docker
+
+### Connection details {#connection-details}
+
+For a managed service, open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your endpoint and API key using **Copy connection details**, or select **Reveal key** to view the masked key.
+
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+
+The Nginx module exports over **OTLP/gRPC**, normally on port **4317**. The JSON demo uses **OTLP/HTTP**, normally on port **4318**. Use the endpoint for the matching protocol, including `https://` when TLS is required:
+
+```bash
+export OTEL_EXPORTER_OTLP_GRPC_ENDPOINT='https://YOUR_OTEL_HOST:4317'
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_HOST:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
+
+Replace the placeholders with your service's connection details. Use the base HTTP endpoint without `/v1/traces`; the collector exporter adds that path.
+
+For self-configured deployments, use your collector's OTLP endpoints and authentication settings. If your collector does not require authentication, omit the Nginx `header authorization` directive and the demo collector's `headers` block. See the [self-configured getting-started guide](/clickstack/self-configured/getting-started/managed).
+
+The gRPC endpoint must be reachable from Nginx. With Docker Desktop, use `host.docker.internal` to reach a collector on the host. For containers on a shared Docker network, use the collector's container name. Use `http://` for a local endpoint without TLS.
+
+## Integration with existing Nginx {#existing-nginx}
+
+<Steps>
+<Step title="Install the OpenTelemetry Nginx module" id="install-module">
+
+The `nginx:1.27-otel` image includes `ngx_otel_module.so`. For an installation outside Docker, follow the installation instructions linked from the [Nginx OpenTelemetry module documentation](https://nginx.org/en/docs/ngx_otel_module.html).
+
+</Step>
+<Step title="Configure Nginx tracing" id="configure-nginx">
+
+The following Docker example uses a template so the container's startup script substitutes the connection environment variables. Save it as `nginx.conf.template`. The `return 200` location provides a simple smoke test; for your application, retain your existing server and routing configuration and add the tracing directives shown here.
+
+```nginx
+load_module modules/ngx_otel_module.so;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    otel_exporter {
+        endpoint ${OTEL_EXPORTER_OTLP_GRPC_ENDPOINT};
+        header authorization "${OTEL_EXPORTER_OTLP_AUTHORIZATION}";
+    }
+
+    otel_service_name "nginx-proxy";
+    otel_trace on;
+
+    server {
+        listen 80;
+
+        location / {
+            otel_trace_context propagate;
+            otel_span_name "$request_method $uri";
+            otel_span_attr http.status_code $status;
+            otel_span_attr http.request.method $request_method;
+            otel_span_attr http.route $uri;
+            return 200 "Nginx tracing is enabled\n";
+        }
+    }
+}
+```
+
+Save this as `compose.yaml` in the same directory:
+
+```yaml
+services:
+  nginx:
+    image: nginx:1.27-otel
+    ports:
+      - "8081:80"
+    environment:
+      OTEL_EXPORTER_OTLP_GRPC_ENDPOINT: ${OTEL_EXPORTER_OTLP_GRPC_ENDPOINT}
+      OTEL_EXPORTER_OTLP_AUTHORIZATION: ${OTEL_EXPORTER_OTLP_AUTHORIZATION}
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+      NGINX_ENVSUBST_FILTER: ^OTEL_EXPORTER_OTLP_
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+```
+
+The substitution filter preserves Nginx variables such as `$request_method` and `$uri`. Nginx does not automatically substitute shell environment variables in a directly mounted `nginx.conf`. Outside Docker, replace the connection placeholders with their actual values before validating the configuration, and restrict access to the file containing the key.
+
+</Step>
+<Step title="Validate and start Nginx" id="run-nginx">
+
+Set the [connection variables](#connection-details) in the same terminal, then run:
+
+```bash
+docker compose run --rm nginx nginx -t
+docker compose up -d nginx
+curl http://localhost:8081/
+```
+
+Each request creates a span with the method, path, status code, and duration. For an existing deployment, generate requests to your application's URL. After changing the template or environment variables, run `docker compose up -d --force-recreate nginx` to apply them.
+
+</Step>
+<Step title="Verify traces in the UI" id="verifying-traces">
+
+Open **Search**, select **Traces**, and filter for `ServiceName:nginx-proxy`. Select a time range covering your requests and allow a few seconds for export. Open a trace to inspect its spans and HTTP attributes.
+
+<Image img="/images/clickstack/observability-nginx-demo-traces.png" alt="Nginx traces in the search view"/>
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+The sample contains 1,000 Nginx spans across nine endpoints, with successful requests, HTTP errors, and varied latencies. Set the [connection variables](#connection-details) before sending it.
+
+<Steps>
+<Step title="Download the sample dataset" id="download-sample">
+
+```bash
+curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nginx-traces-sample.json
+```
+
+</Step>
+<Step title="Configure the demo collector" id="configure-demo-collector">
+
+Save the following as `nginx-traces-demo.yaml` in the download directory:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  transform/demo_timestamps:
+    error_mode: propagate
+    trace_statements:
+      - context: span
+        statements:
+          - set(cache["duration_ns"], end_time_unix_nano - start_time_unix_nano)
+          - >-
+            set(start_time,
+              Now() - Duration("2m") -
+              (Time("2025-10-27T19:36:05Z", "%Y-%m-%dT%H:%M:%SZ") - start_time)
+            )
+          - set(end_time_unix_nano, start_time_unix_nano + cache["duration_ns"])
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+service:
+  pipelines:
+    traces/nginx-demo:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/demo_timestamps, batch]
+      exporters: [otlp_http/observability]
+```
+
 <Note>
-This Nginx traces integration guide is a placeholder for fully managed ClickHouse Observability. The guide requires a rewrite for the managed ingestion workflow. Setup instructions, authentication, and configuration examples are pending verification.
+The demo-only `transform/demo_timestamps` processor shifts this sample into roughly the past 24 hours, ending two minutes before ingestion, while preserving span durations and the traffic pattern. Omit this processor for your own Nginx traces so their original timestamps are preserved. Sending the sample again can produce duplicate spans.
 </Note>
+
+</Step>
+<Step title="Run the demo collector" id="run-demo-collector">
+
+<Note>
+For a destination collector running on this computer, set `OTEL_EXPORTER_OTLP_ENDPOINT` to `http://host.docker.internal:4318`. The command below includes the Docker host mapping.
+</Note>
+
+Run OpenTelemetry Collector Contrib `0.161.0` from the directory containing the configuration, in the terminal where you set the connection variables. Keep this terminal open:
+
+```bash
+docker run --rm --name nginx-traces-demo-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -p 127.0.0.1:14318:4318 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/nginx-traces-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+The local receiver uses port `14318` to avoid conflicting with an existing collector on port `4318`. The collector forwards the traces to your configured endpoint using the authentication settings above.
+
+</Step>
+<Step title="Send the traces" id="send-traces">
+
+In another terminal, from the download directory, send the original sample to the local collector:
+
+```bash
+curl --fail-with-body -sS http://localhost:14318/v1/traces \
+  -H "Content-Type: application/json" \
+  --data-binary @nginx-traces-sample.json
+```
+
+An empty success response such as `{}` or `{"partialSuccess":{}}` indicates the local collector accepted the request. Check the collector's output for export errors and allow a few seconds for the batch to reach your service. Stop the demo collector with **Ctrl+C** when finished.
+
+</Step>
+<Step title="Verify the demo traces" id="verify-demo-traces">
+
+Open **Search**, select **Traces**, filter for `ServiceName:nginx-proxy`, and select **Last 2 days** to include the full shifted dataset. Open a trace to inspect the HTTP attributes.
+
+<Image img="/images/clickstack/observability-nginx-demo-traces.png" alt="Example Nginx traces in the search view"/>
+</Step>
+</Steps>
+
+## Dashboards and visualization {#dashboards}
+
+<Steps>
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
+
+</Step>
+<Step title="Import the dashboard" id="import-dashboard">
+
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `nginx-traces-dashboard.json`.
+3. Map the charts to your **Traces** source and click **Finish Import**.
+
+<Image img="/images/clickstack/observability-import-dashboard.png" alt="Dashboards page with the Import button highlighted"/>
+
+</Step>
+<Step title="View the dashboard" id="created-dashboard">
+
+Filter for `ServiceName:nginx-proxy` and select a time range covering your traces. For the demo, select **Last 2 days**.
+
+<Image img="/images/clickstack/observability-nginx-traces-dashboard.png" alt="Example Nginx traces dashboard"/>
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### Nginx fails to start {#nginx-fails-to-start}
+
+Run `docker compose run --rm nginx nginx -t` to validate the generated configuration. An unknown `otel_*` directive or missing module file means the module is not installed or loaded. Check that you are using the `-otel` image and that the template is mounted at the documented path.
+
+### No traces appearing {#no-traces}
+
+- Verify the gRPC endpoint and any authentication required by your destination collector. Managed services use the `Bearer` prefix. Do not use the HTTP endpoint for the Nginx module.
+- Confirm the endpoint is reachable from the Nginx container and that its scheme matches the destination's TLS configuration.
+- Generate requests; an idle Nginx instance produces no request spans.
+- Check **Traces**, the service-name filter, and the selected time range. For the demo, confirm `transform/demo_timestamps` is included in the collector pipeline and select **Last 2 days**.
+- For the demo, check the collector terminal for authentication or export errors. Verify its HTTP endpoint and authorization value against your connection details.
+- Inspect Nginx errors with `docker compose logs nginx`. Outside Docker, inspect your Nginx error log.
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/observability/features/alerts) for errors or latency thresholds.
+- Create additional [dashboards](/clickstack/observability/features/dashboards/overview).
+- For a collector between Nginx and your destination, see [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry).

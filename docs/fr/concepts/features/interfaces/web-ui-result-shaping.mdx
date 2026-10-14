@@ -11,9 +11,7 @@ L’interface SQL Web intégrée (`play.html`, accessible au chemin [`/play`](/f
 
 Aucune de ces opérations n’est effectuée dans le navigateur. Chaque modification réexécute la requête avec le paramètre de construction de requête correspondant, que le serveur matérialise en enveloppant la requête dans une table dérivée et en lui appliquant des clauses externes `ORDER BY`, `WHERE` et `LIMIT`. Le résultat affiché est donc celui de l’intégralité de la requête, trié, filtré et paginé, et non un réagencement des lignes déjà présentes sur la page.
 
-<div id="sorting">
-  ## Tri
-</div>
+## Tri {#sorting}
 
 Deux flèches apparaissent à droite de chaque en-tête de colonne : ▲ trie le résultat par ordre croissant selon cette colonne, ▼ par ordre décroissant. Cliquer sur une flèche active ce tri et réexécute la requête ; cliquer sur la flèche correspondant à la direction déjà active le désactive, tandis que cliquer sur la flèche de l’autre direction inverse le sens du tri. Les flèches sont de véritables boutons : les utilisateurs du clavier peuvent donc y accéder avec la touche Tab et les activer au clavier, et chacune expose son état aux technologies d’assistance (l’en-tête lui-même porte `aria-sort`).
 
@@ -21,29 +19,21 @@ Sur les appareils dotés d’un pointeur permettant le survol (une souris), les 
 
 Chaque icône d’un en-tête de colonne se lit de la même manière, quelle que soit la fonctionnalité qu’elle contrôle : elle est atténuée lorsque cette fonctionnalité n’est pas active pour la colonne, et affichée dans la couleur réservée aux contrôles actifs — magenta dans le thème clair, jaune dans le thème sombre — lorsqu’elle l’est ; c’est aussi dans ce cas qu’elle reste affichée sans survol. L’atténuation correspond à une perte de couleur, jamais de transparence, afin qu’une icône ne paraisse jamais estompée sur un nom de colonne ou sur le codage couleur des cellules.
 
-<div id="sorting-by-several-columns">
-  ### Tri selon plusieurs colonnes
-</div>
+### Tri selon plusieurs colonnes {#sorting-by-several-columns}
 
 L’activation d’un tri remplace le tri en cours : les colonnes précédemment triées sont désactivées et la colonne sélectionnée devient l’unique clé de tri. Maintenez <kbd>Maj</kbd> enfoncée tout en cliquant pour conserver les clés de tri déjà actives et ajouter cette colonne après elles, dans l’ordre utilisé par `ORDER BY` : la première clé prévaut, et chaque clé suivante départage les égalités des précédentes. Avec plusieurs clés de tri, chaque flèche active indique également, en exposant, la position de sa colonne dans cet ordre (▼¹, ▲², …).
 
 Sur une colonne déjà utilisée comme clé de tri, <kbd>Maj</kbd> ne modifie que son sens de tri et conserve sa position dans l’ordre. Désactiver une colonne ne supprime que cette colonne et laisse les autres clés en place.
 
-<div id="filtering">
-  ## Filtrage
-</div>
+## Filtrage {#filtering}
 
-<div id="filtering-from-a-column-header">
-  ### Depuis un en-tête de colonne
-</div>
+### Depuis un en-tête de colonne {#filtering-from-a-column-header}
 
 Une icône de funnel apparaît dans chaque en-tête de colonne, à côté des flèches de tri, et se révèle de la même manière. Cliquez dessus pour ouvrir un champ de saisie permettant de définir un prédicat sur cette colonne, avec un bouton Appliquer (▶) accolé à sa droite ; l&#39;espace réservé indique la forme que prend un prédicat pour le type de la colonne — `> 10` pour un nombre, `LIKE '%test%'` pour une chaîne. Le champ s&#39;ouvre dans la cellule d&#39;en-tête, qui s&#39;agrandit d&#39;une seconde ligne pour lui faire de la place — c&#39;est sur cette même ligne que le filtre s&#39;affiche une fois défini, afin qu&#39;il soit modifié là où il est lu. Le texte saisi correspond à la partie qui suit le nom de la colonne : ainsi, `> 10` devient `WHERE column > 10`, et toute expression acceptée par le serveur à cet emplacement fonctionne — `BETWEEN 1 AND 5`, `IN (1, 2, 3)`, `IS NOT NULL`, `% 2 = 0`.
 
 Cliquez sur le bouton Appliquer (ou appuyez sur <kbd>Enter</kbd>) pour appliquer le filtre et réexécuter la requête ; appuyer sur <kbd>Esc</kbd>, cliquer ailleurs ou naviguer ailleurs avec la touche de tabulation annule la modification et masque le champ. Le bouton Appliquer est inactif lorsqu&#39;il n&#39;y a rien à appliquer — un champ vide sur une colonne sans filtre — mais reste actif si le champ est vide sur une colonne qui comporte un filtre, car vider le champ puis appliquer permet de supprimer ce filtre. Les filtres sur plusieurs colonnes sont combinés avec `AND`.
 
-<div id="filtering-from-a-cell">
-  ### À partir d’une cellule
-</div>
+### À partir d’une cellule {#filtering-from-a-cell}
 
 Sélectionner une cellule affiche également une icône funnel à côté de son icône de copie, si la colonne prend en charge le filtrage sur cette valeur. Cliquer dessus propose les comparaisons adaptées :
 
@@ -58,9 +48,7 @@ Sélectionner une cellule affiche également une icône funnel à côté de son 
 
 Le choix de l’une d’elles l’applique immédiatement. Une date, une heure ou un enum est comparé au texte exact tel qu’il a été affiché par le serveur, que ClickHouse analyse de nouveau comme le type de la colonne (pour un enum, le nom de la valeur). `contains` devient un motif `LIKE` dans lequel les caractères `%` et `_` de la valeur sont échappés, afin d’obtenir une correspondance littérale. Une cellule dont la valeur ne relève d’aucun des cas ci-dessus — un tableau, un tuple, une map ou un texte long — ne propose aucun menu ; sa colonne peut toujours être filtrée depuis le champ de saisie de l’en-tête.
 
-<div id="the-filter-in-effect">
-  ### Le filtre appliqué
-</div>
+### Le filtre appliqué {#the-filter-in-effect}
 
 Une colonne filtrée affiche son prédicat sous son nom tant qu’il est défini, de sorte qu’il est toujours clair que les lignes affichées constituent un sous-ensemble du résultat ; son funnel se déplace à côté, dans le coin inférieur gauche de l’en-tête. Cliquer sur le prédicat rouvre le champ de saisie correspondant à sa place ; le ✕ situé à côté le supprime, tout comme l’application d’un champ vide. Dans les deux cas, la requête est relancée.
 
@@ -68,9 +56,7 @@ Il y a un filtre par colonne, quelle que soit son origine : définir un filtre 
 
 Un résultat filtré vide conserve ses en-têtes de colonnes (au lieu de la disposition verticale habituellement affichée pour un résultat vide), afin que le filtre qui n’a produit aucune correspondance reste visible et puisse être supprimé.
 
-<div id="pagination">
-  ## Pagination
-</div>
+## Pagination {#pagination}
 
 Un résultat est affiché dans la limite de 1 000 lignes, ou moins s’il est très large. Lorsqu’un résultat est tronqué à cette limite alors que d’autres données sont disponibles, un outil de pagination apparaît sous le tableau :
 
@@ -88,17 +74,13 @@ La page suivante n’est proposée que tant que la page actuelle est pleine. Une
 
 Modifier le tri ou un filtre ramène à la première page : tous deux modifient les lignes du résultat ou leur ordre, de sorte que la page où se trouvait l’utilisateur ne correspond plus à la même portion du résultat.
 
-<div id="how-it-is-applied">
-  ## Fonctionnement
-</div>
+## Fonctionnement {#how-it-is-applied}
 
 La forme est transmise via les paramètres de construction de requête [`order`](/fr/reference/settings/session-settings/other#order), [`filter`](/fr/reference/settings/session-settings/other#filter), [`limit`](/fr/reference/settings/session-settings/other#limit) et [`page`](/fr/reference/settings/session-settings/other#page). Comme le serveur les applique à la requête analysée plutôt qu&#39;à son texte, ils s&#39;ajoutent à la requête existante : un `UNION`, une clause `FORMAT` finale ou ses propres `ORDER BY` et `LIMIT` continuent tous de fonctionner, et la requête dans l&#39;éditeur n&#39;est jamais réécrite.
 
 Les noms de colonnes sont transmis comme identifiants entre guillemets ; ainsi, une colonne de résultat dont le nom est une expression (`count()`) ou contient un espace peut servir de clé de tri ou de filtre.
 
-<div id="when-it-is-available">
-  ## Lorsqu&#39;elle est disponible
-</div>
+## Lorsqu&#39;elle est disponible {#when-it-is-available}
 
 La forme est proposée uniquement pour les instructions auxquelles ces paramètres s&#39;appliquent, c&#39;est-à-dire les requêtes `SELECT` et `UNION` (y compris les requêtes commençant par une clause `WITH` ou par `FROM`). Elle n&#39;est pas proposée pour `SHOW`, `DESCRIBE`, `EXISTS` ou `EXPLAIN` : ces instructions produisent bien une table, mais les paramètres ne s&#39;y appliquent pas. Un contrôle laisserait donc attendre un résultat que les lignes ne peuvent pas fournir.
 
@@ -115,25 +97,19 @@ Une forme est associée à l&#39;instruction sur laquelle elle a été définie.
 
 Elle est également associée au contexte dans lequel cette instruction a été exécutée : la base de données sélectionnée, le serveur et l&#39;utilisateur auxquels elle a été envoyée, ainsi que les valeurs de ses paramètres de requête. Le même texte peut désigner des colonnes différentes après modification de l&#39;un de ces éléments — `SELECT * FROM events` après avoir changé de base de données, ou `SELECT * FROM {tbl:Identifier}` après avoir modifié le paramètre — ; la forme est donc également supprimée dans ce cas, et l&#39;exécution suivante renvoie le résultat sans forme.
 
-<div id="downloading-and-copying">
-  ## Téléchargement et copie
-</div>
+## Téléchargement et copie {#downloading-and-copying}
 
 Le téléchargement réexécute la requête d’origine avec la même forme. Le fichier exporté contient donc les mêmes lignes, dans le même ordre que le résultat affiché à l’écran. La copie utilise le résultat affiché et produit donc le même résultat.
 
-<div id="persistence">
-  ## Persistance
-</div>
+## Persistance {#persistence}
 
-La forme est mémorisée dans l’URL de la page (`sort_columns`, `filters`, `page` et `page_size`), dans l’historique du navigateur et dans le snapshot des résultats de chaque onglet ; ainsi, elle est conservée lors du rechargement de la page, du partage du lien ou de la navigation en arrière et en avant. Comme la forme détermine les lignes, et pas seulement leur présentation, un lien partagé qui exécute automatiquement sa requête (`run=1`) la réexécute avec la même forme et reproduit donc le résultat lui-même. Seule une forme active est enregistrée — un résultat sans forme n’ajoute rien à l’URL ni à l’état de l’historique — afin de les garder compacts.
+La forme est mémorisée dans l’URL de la page (`sort_columns`, `filters`, `page` et `page_size`), dans l’historique du navigateur et dans le snapshot des résultats de la cellule à laquelle elle appartient ; ainsi, elle est conservée lors du rechargement de la page, du partage du lien ou de la navigation en arrière et en avant. Comme la forme détermine les lignes, et pas seulement leur présentation, un lien partagé qui exécute automatiquement sa requête (`run=1`) la réexécute avec la même forme et reproduit donc le résultat lui-même. Seule une forme active est enregistrée — un résultat sans forme n’ajoute rien à l’URL ni à l’état de l’historique — afin de les garder compacts.
 
-Un résultat restauré conserve sa forme associée au contexte qui l’a produit, comme décrit ci-dessus : le snapshot enregistre la base de données, la connexion et les valeurs des paramètres ayant servi à produire ses lignes. Réexécuter l’instruction après avoir modifié l’un de ces éléments supprime donc la forme au lieu de l’appliquer à un résultat différent.
+Un résultat restauré conserve sa forme associée au contexte qui l’a produit, comme décrit ci-dessus : le snapshot enregistre la base de données, la connexion et les valeurs des paramètres ayant servi à produire ses lignes. Réexécuter l’instruction après avoir modifié l’un de ces éléments supprime donc la forme au lieu de l’appliquer à un résultat différent.
 
-Comme les [modes de codage couleur](/fr/concepts/features/interfaces/web-ui-color-coding) et les [colonnes épinglées](/fr/concepts/features/interfaces/web-ui-pinned-columns), la forme est conservée pour chaque onglet de requête ; trier ou filtrer un résultat dans un onglet ne réexécute donc pas le résultat d’un autre onglet.
+Comme les [modes de codage couleur](/fr/concepts/features/interfaces/web-ui-color-coding) et les [colonnes épinglées](/fr/concepts/features/interfaces/web-ui-pinned-columns), la forme appartient au résultat qu’elle façonne : à l’onglet de requête et, dans un onglet de type [notebook](/fr/concepts/features/interfaces/web-ui-notebook), à la cellule concernée. Trier ou filtrer un résultat ne modifie ni ne réexécute donc le résultat d’un autre onglet ou d’une autre cellule — façonner le résultat d’une cellule réexécute uniquement cette cellule.
 
-<div id="limitations">
-  ## Limites
-</div>
+## Limites {#limitations}
 
 * Une forme que le serveur ne peut pas appliquer fait échouer la requête, et l’erreur s’affiche comme pour toute autre requête ayant échoué. La forme est alors supprimée, car une exécution ayant échoué n’affiche ni les en-têtes ni le pager permettant de l’effacer.
 * Le tri et le filtrage identifient une colonne par son nom dans le résultat. Un résultat peut contenir deux fois le même nom (`SELECT 1 AS x, 2 AS x`, une jointure de tables ayant des noms de colonnes communs), et ces colonnes ne peuvent pas être distinguées par leur nom : elles ne disposent donc d’aucun contrôle de tri ou de filtre ; les colonnes aux noms uniques du même résultat conservent les leurs.

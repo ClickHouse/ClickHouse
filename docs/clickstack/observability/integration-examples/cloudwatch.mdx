@@ -2,11 +2,363 @@
 slug: /clickstack/observability/integration-examples/cloudwatch
 title: 'Monitoring AWS CloudWatch logs with ClickHouse Observability'
 sidebarTitle: 'AWS CloudWatch logs'
-description: 'Placeholder for the AWS CloudWatch logs integration guide for fully managed ClickHouse Observability.'
+description: 'Collect and visualize AWS CloudWatch logs in ClickHouse Observability using an OpenTelemetry collector.'
 doc_type: 'guide'
 keywords: ['AWS', 'CloudWatch', 'OTEL', 'ClickHouse Observability', 'logs']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Collect AWS CloudWatch logs with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without configuring AWS access.
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service
+- Docker with Docker Compose to run the collector examples, or an existing OpenTelemetry Collector Contrib deployment
+- For your own logs, an AWS account with CloudWatch log groups, AWS CLI v2, and credentials with the permissions below
+- For the demo, `curl` to download the sample
+
+### Connection details {#connection-details}
+
+For a managed service, open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
+
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+
+For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
+
+Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/logs` suffix; the exporter appends the signal path.
+
+For self-configured deployments, use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-configured getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+
+The endpoint must be reachable from the collector container. For a destination collector running on this computer, use `http://host.docker.internal:4318`. The Docker commands below include the host mapping.
+
+## Integration with existing CloudWatch log groups {#existing-cloudwatch}
+
+<Steps>
+<Step title="Configure AWS credentials" id="configure-aws">
+
+For AWS SSO, sign in and export temporary credentials in the terminal where you will start the collector:
+
+```bash
+aws sso login --profile YOUR_PROFILE_NAME
+eval "$(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)"
+export AWS_REGION='us-east-1'
+aws sts get-caller-identity
+```
+
+Replace the profile name and region with your own. If you already use environment credentials, set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` for temporary credentials, along with `AWS_REGION`. These credentials authorize reading AWS logs; they are separate from your destination's OTLP credentials.
+
+The IAM identity needs these permissions. Replace `YOUR_REGION` and `YOUR_ACCOUNT_ID`; narrow the log-group resource to the groups you intend to collect where appropriate:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "logs:FilterLogEvents",
+      "Resource": "arn:aws:logs:YOUR_REGION:YOUR_ACCOUNT_ID:log-group:*"
+    }
+  ]
+}
+```
+
+List the available log groups to choose the names for the configuration:
+
+```bash
+aws logs describe-log-groups --region "$AWS_REGION" \
+  --query 'logGroups[].logGroupName' --output table
+```
+
+</Step>
+<Step title="Configure the CloudWatch receiver" id="configure-receiver">
+
+Save this as `cloudwatch-logs.yaml`. Replace `/aws/lambda/my-function` with a log group from your account; add other groups under `named` as needed.
+
+```yaml
+receivers:
+  awscloudwatch:
+    region: ${env:AWS_REGION}
+    logs:
+      initial_lookback: 1h
+      poll_interval: 1m
+      max_events_per_request: 100
+      groups:
+        named:
+          /aws/lambda/my-function:
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  resource/cloudwatch:
+    attributes:
+      - key: service.name
+        value: cloudwatch
+        action: upsert
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+service:
+  pipelines:
+    logs/cloudwatch:
+      receivers: [awscloudwatch]
+      processors: [memory_limiter, resource/cloudwatch, batch]
+      exporters: [otlp_http/observability]
+```
+
+This configuration starts with the last hour of logs and then polls every minute. Change `initial_lookback` to adjust the initial window. Without persistent checkpoint storage, restarting the collector can reread that window and produce duplicates.
+
+To discover groups by prefix instead, replace the `groups` block with:
+
+```yaml
+groups:
+  autodiscover:
+    limit: 100
+    prefix: /aws/lambda/
+```
+
+Use either `named` or `autodiscover`. For additional options, including persistent checkpoints, see the [CloudWatch receiver documentation](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.161.0/receiver/awscloudwatchreceiver).
+
+</Step>
+<Step title="Start the collector" id="start-collector">
+
+Save this as `docker-compose.yaml` alongside `cloudwatch-logs.yaml`:
+
+```yaml
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    command: ["--config=/etc/otel-config.yaml"]
+    volumes:
+      - ./cloudwatch-logs.yaml:/etc/otel-config.yaml:ro
+    environment:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_REGION
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+      - OTEL_EXPORTER_OTLP_AUTHORIZATION
+    mem_limit: 512m
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+In the terminal where you set the AWS credentials and [connection variables](#connection-details), start the collector and view its output:
+
+```bash
+docker compose up -d
+docker compose logs -f otel-collector
+```
+
+</Step>
+<Step title="Verify logs" id="verify-logs">
+
+Open **Search** in ClickHouse Observability, select your **Logs** source, and filter for `ServiceName:cloudwatch`. Select **Last 2 hours** and allow one or two polling intervals for logs to appear.
+
+Look for these resource attributes:
+
+- `aws.region`: the AWS region
+- `cloudwatch.log.group.name`: the log group
+- `cloudwatch.log.stream`: the log stream
+
+The log message appears in `Body`. The receiver preserves the message but does not infer severity from its text. Severity-based dashboard panels require your logs pipeline to populate `SeverityText`.
+
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+The sample contains 12,785 logs covering 24 hours of Lambda, ECS, and background-job activity. It includes log groups, streams, and severity values. This path does not require AWS credentials or direct database access.
+
+<Steps>
+<Step title="Download the sample" id="download-sample">
+
+```bash
+mkdir -p cloudwatch-demo
+cd cloudwatch-demo
+curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
+```
+
+</Step>
+<Step title="Configure the demo collector" id="configure-demo-collector">
+
+Save this as `cloudwatch-demo.yaml` in the download directory:
+
+```yaml
+receivers:
+  filelog/cloudwatch:
+    include: [/var/log/cloudwatch/cloudwatch-logs.jsonl]
+    start_at: beginning
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.Timestamp
+          layout_type: gotime
+          layout: '2006-01-02 15:04:05.000000000'
+          location: UTC
+      - type: move
+        from: attributes.ResourceAttributes["aws.region"]
+        to: resource["aws.region"]
+      - type: move
+        from: attributes.ResourceAttributes["cloudwatch.log.group.name"]
+        to: resource["cloudwatch.log.group.name"]
+      - type: move
+        from: attributes.ResourceAttributes["cloudwatch.log.stream"]
+        to: resource["cloudwatch.log.stream"]
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  transform/cloudwatch_demo:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(body, attributes["Body"])
+          - set(severity_text, attributes["SeverityText"])
+          - set(severity_number, Int(attributes["SeverityNumber"]))
+          - set(attributes, attributes["LogAttributes"])
+  resource/demo:
+    attributes:
+      - key: service.name
+        value: cloudwatch-demo
+        action: upsert
+  transform/demo_timestamps:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(time, Now() - Duration("2m") - (Time("2025-12-07T23:59:48Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+service:
+  pipelines:
+    logs/cloudwatch-demo:
+      receivers: [filelog/cloudwatch]
+      processors: [memory_limiter, transform/cloudwatch_demo, resource/demo, transform/demo_timestamps, batch]
+      exporters: [otlp_http/observability]
+```
+
 <Note>
-This AWS CloudWatch logs integration guide is a placeholder for fully managed ClickHouse Observability. The guide requires a rewrite for the managed ingestion workflow. Setup instructions, authentication, and configuration examples are pending verification.
+The demo configuration reads the sample's ClickHouse row format and restores its log body, severity, and attributes. The timestamp transform shifts the sample into roughly the past 24 hours, ending two minutes before ingestion. Use the CloudWatch receiver configuration above for your own logs so their original timestamps are preserved.
 </Note>
+
+</Step>
+<Step title="Run the demo collector" id="run-demo-collector">
+
+Set the [connection variables](#connection-details), then run this command from the download directory:
+
+```bash
+docker run --rm --name cloudwatch-demo-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/cloudwatch-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  -v "$(pwd):/var/log/cloudwatch:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+Keep the terminal open while the collector reads and exports the file. Check its output for errors. Running a fresh container again can duplicate the sample logs.
+
+</Step>
+<Step title="Verify the demo logs" id="verify-demo-logs">
+
+Open **Search**, select your **Logs** source, filter for `ServiceName:cloudwatch-demo`, and select **Last 2 days**. Expand a log to inspect its body, severity, log group, and stream. Stop the demo collector with **Ctrl+C** after verifying the data.
+
+<Image img="/images/clickstack/observability-cloudwatch-demo-logs.png" alt="CloudWatch demo logs in ClickHouse Observability"/>
+
+</Step>
+</Steps>
+
+## Using an existing collector (optional) {#existing-collector}
+
+If you already have a collector that includes the `awscloudwatch` receiver, add the receiver and a separate `logs/cloudwatch` pipeline using your existing exporter. Include `resource/cloudwatch` in that pipeline so it sets the service name only for CloudWatch logs. Preserve the collector's other pipelines and exporter settings, and make AWS credentials available through your deployment's authentication mechanism.
+
+## Dashboards and visualization {#dashboards}
+
+<Steps>
+<Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json" download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Download the dashboard configuration</TrackedLink>} id="download-dashboard" />
+<Step title="Import the dashboard" id="import-dashboard">
+
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `cloudwatch-logs-dashboard.json`.
+3. Map the charts to your **Logs** source and click **Finish Import**.
+
+<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+
+</Step>
+<Step title="View the dashboard" id="view-dashboard">
+
+Filter for `ServiceName:cloudwatch-demo` and select **Last 2 days** for the sample, or filter for `ServiceName:cloudwatch` and select a time range covering your own logs. The dashboard shows log volume, severity, and errors by log group. The demo includes severity values for all panels.
+
+<Image img="/images/clickstack/observability-cloudwatch-dashboard.png" alt="CloudWatch logs dashboard in ClickHouse Observability"/>
+
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### No logs appearing {#no-logs}
+
+- Check `docker compose logs otel-collector` for AWS authentication, access-denied, or OTLP export errors.
+- Confirm `AWS_REGION` and log-group names match your account, and that the groups contain events within `initial_lookback` or new events after startup.
+- Check IAM permissions for `logs:DescribeLogGroups` and `logs:FilterLogEvents`.
+- Verify the destination endpoint and authentication settings from [Connection details](#connection-details).
+- Check the **Logs** source, service-name filter, and time range. For the demo, select **Last 2 days**.
+
+### AWS credentials expired {#expired-credentials}
+
+For SSO, sign in and export fresh credentials again, then recreate the collector so it receives the new environment variables:
+
+```bash
+aws sso login --profile YOUR_PROFILE_NAME
+eval "$(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)"
+docker compose up -d --force-recreate otel-collector
+```
+
+Restarting the existing container alone does not update its credentials. For other temporary credentials, refresh the access key, secret key, and session token before recreating it.
+
+### Missing older logs {#older-logs}
+
+The example starts with a one-hour lookback. Increase `logs.initial_lookback`, or replace it with `logs.start_from` using an RFC3339 timestamp for a specific start time. Do not set both. Restart the collector after changing its configuration; rereading a time window can produce duplicates.
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/observability/features/alerts) for error spikes.
+- Create additional [dashboards](/clickstack/observability/features/dashboards/overview).
+- For production, use an IAM role on your collector's AWS infrastructure instead of manually exporting temporary credentials. See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for deployment guidance.

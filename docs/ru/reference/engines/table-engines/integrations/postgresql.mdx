@@ -19,7 +19,7 @@ doc_type: 'guide'
   Ознакомьтесь с нашим сервисом [ClickHouse Managed Postgres](/ru/products/managed-postgres/overview). Благодаря NVMe-хранилищу, физически размещённому рядом с вычислительными ресурсами, он обеспечивает до 10 раз более высокую производительность для рабочих нагрузок, ограниченных скоростью диска, по сравнению с альтернативами, использующими сетевые хранилища, такие как EBS, а также позволяет реплицировать данные из Postgres в ClickHouse с помощью коннектора Postgres CDC в ClickPipes.
 </Tip>
 
-## Создание таблицы
+## Создание таблицы {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -75,7 +75,7 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-### TLS/SSL
+### TLS/SSL {#tls-ssl}
 
 Параметры TLS/SSL передаются в `libpq` и могут быть заданы как ключи именованной коллекции или как завершающие аргументы ключ-значение: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`), а также сертификаты и ключ — в одном из двух вариантов. Если параметры не заданы, используются значения `libpq` по умолчанию (`sslmode=prefer`).
 
@@ -107,35 +107,35 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 -----END CERTIFICATE-----');
 ```
 
-## Настройки
+## Настройки {#settings}
 
 Пул соединений, используемый движком таблицы `PostgreSQL` (и [табличной функцией `postgresql`](/ru/reference/functions/table-functions/postgresql)), можно настроить для каждой таблицы с помощью предложения `SETTINGS`. Если настройка не указана, по умолчанию используется значение соответствующей настройки `postgresql_*` на уровне запроса.
 
-### `postgresql_connection_pool_size`
+### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
 Размер пула соединений (если все соединения заняты, запрос ожидает, пока одно из них не освободится). Значение должно быть ненулевым.
 
 Значение по умолчанию: `16`.
 
-### `postgresql_connection_pool_wait_timeout`
+### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
 
 Тайм-аут операций push/pop в пуле соединений в миллисекундах, если пул пуст. `0` означает блокировку при пустом пуле.
 
 Значение по умолчанию: `5000`.
 
-### `postgresql_connection_pool_retries`
+### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
 
 Число повторных попыток операций push/pop в пуле соединений.
 
 Значение по умолчанию: `2`.
 
-### `postgresql_connection_pool_auto_close_connection`
+### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
 
 Закрывать соединение перед возвратом в пул.
 
 Значение по умолчанию: `false`.
 
-### `postgresql_connection_attempt_timeout`
+### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
 
 Тайм-аут подключения в секундах для одной попытки соединения с конечной точкой PostgreSQL. Значение передаётся как параметр `connect_timeout` в URL подключения.
 
@@ -154,7 +154,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
-## Подробности реализации
+## Подробности реализации {#implementation-details}
 
 `SELECT`-запросы на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри PostgreSQL-транзакции в режиме только для чтения, с коммитом после каждого `SELECT`-запроса.
 
@@ -162,13 +162,21 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 
 Все JOIN, агрегации, сортировка, условия `IN [ array ]` и ограничение сэмплирования `LIMIT` выполняются в ClickHouse только после завершения запроса к PostgreSQL.
 
-## Передача запроса вместо имени таблицы
+## Передача запроса вместо имени таблицы {#passing-a-query}
 
 Вместо имени таблицы аргумент `table` может содержать `SELECT`-запрос, который передаётся в PostgreSQL как есть. Структура таблицы определяется по результату запроса. Запрос можно записать либо как подзапрос, либо обернуть в функцию `query`:
 
 ```sql
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Передача запроса поддерживается начиная с версии 26.7. Перед отправкой в PostgreSQL ClickHouse оборачивает запрос в `SELECT ... FROM (<query>)`, поэтому запрос не должен заканчиваться точкой с запятой. Параметр `schema` к переданному запросу не применяется: вместо этого указывайте в самом запросе полные имена таблиц.
+
+При использовании именованной коллекции передавайте запрос в ключе `query` вместо `table` — либо в самой коллекции, либо как аргумент в формате ключ-значение. `query` и `table` нельзя указывать одновременно:
+
+```sql
+CREATE TABLE pg_table ENGINE = PostgreSQL(postgres_creds, database = 'test', query = 'SELECT a, b FROM schema1.t1 JOIN schema1.t2 USING (id) WHERE a > 0');
 ```
 
 Это полезно, чтобы проталкивать JOIN, агрегации или любую другую обработку в PostgreSQL. Такая таблица доступна только для чтения: `INSERT` в неё не допускается. Тот же синтаксис поддерживается табличной функцией [`postgresql`](/ru/reference/functions/table-functions/postgresql).
@@ -217,9 +225,9 @@ CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgre
 </postgresql>
 ```
 
-## Пример использования
+## Пример использования {#usage-example}
 
-### Таблица в PostgreSQL
+### Таблица в PostgreSQL {#table-in-postgresql}
 
 ```text
 postgres=# CREATE TABLE "public"."test" (
@@ -242,7 +250,7 @@ int_id | int_nullable | float | str  | float_nullable
 (1 row)
 ```
 
-### Создание таблицы в ClickHouse и подключение к таблице PostgreSQL, созданной выше
+### Создание таблицы в ClickHouse и подключение к таблице PostgreSQL, созданной выше {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
 
 В этом примере используется [движок таблицы PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql), чтобы подключить таблицу ClickHouse к таблице PostgreSQL и выполнять в базе данных PostgreSQL операторы SELECT и INSERT:
 
@@ -256,7 +264,7 @@ CREATE TABLE default.postgresql_table
 ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-### Вставка исходных данных из таблицы PostgreSQL в таблицу ClickHouse с помощью запроса SELECT
+### Вставка исходных данных из таблицы PostgreSQL в таблицу ClickHouse с помощью запроса SELECT {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
 
 [Табличная функция postgresql](/ru/reference/functions/table-functions/postgresql) копирует данные из PostgreSQL в ClickHouse. Это часто используют, чтобы повысить производительность запросов, выполняя запросы и аналитику в ClickHouse, а не в PostgreSQL; также её можно использовать для миграции данных из PostgreSQL в ClickHouse. Поскольку мы будем копировать данные из PostgreSQL в ClickHouse, используем в ClickHouse движок таблицы MergeTree и назовём её postgresql&#95;copy:
 
@@ -276,7 +284,7 @@ INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-### Вставка инкрементальных данных из таблицы PostgreSQL в таблицу ClickHouse
+### Вставка инкрементальных данных из таблицы PostgreSQL в таблицу ClickHouse {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
 
 Если после первоначальной вставки нужно выполнять постоянную синхронизацию между таблицей PostgreSQL и таблицей ClickHouse, в ClickHouse можно использовать предложение WHERE, чтобы вставлять только те данные, которые были добавлены в PostgreSQL на основе временной метки или уникального ID.
 
@@ -294,7 +302,7 @@ SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'p
 WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
-### Выборка данных из итоговой таблицы ClickHouse
+### Выборка данных из итоговой таблицы ClickHouse {#selecting-data-from-the-resulting-clickhouse-table}
 
 ```sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
@@ -306,7 +314,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-### Использование нестандартной схемы
+### Использование нестандартной схемы {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -326,7 +334,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 * [Табличная функция `postgresql`](/ru/reference/functions/table-functions/postgresql)
 * [Использование PostgreSQL в качестве источника для словаря](/ru/reference/statements/create/dictionary/sources/postgresql)
 
-## Связанные материалы
+## Связанные материалы {#related-content}
 
 * Блог: [ClickHouse и PostgreSQL — идеальная пара для работы с данными — часть 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * Блог: [ClickHouse и PostgreSQL — идеальная пара для работы с данными — часть 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

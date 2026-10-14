@@ -49,3 +49,7 @@ Notes:
 
 - Each template is configured with a [custom filter](/clickstack/observability/features/dashboards/overview#custom-filters) for services whose [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) resource attribute matches the dashboard's runtime.
 - Metric names can vary between OpenTelemetry SDK versions. If your SDK emits different metric names, [edit the visualizations](/clickstack/observability/features/dashboards/overview#dashboards-editing-visualizations) to match your data.
+
+## Self-configured schemas {#self-configured-schemas}
+
+For self-configured deployments with custom metric table schemas, adjust the template's service filter to query the appropriate service-name and resource-attribute columns. For high-volume workloads, consider [materializing frequently queried attributes](/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes), such as `ResourceAttributes['telemetry.sdk.language']`, to reduce filter load times.

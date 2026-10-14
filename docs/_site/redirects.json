@@ -55674,5 +55674,1221 @@
   {
     "destination": "/zh/resources/develop-contribute/native-protocol/format#data-types",
     "source": "/zh/resources/develop-contribute/native-protocol/columns"
+  },
+  {
+    "source": "/clickstack/self-configured/api-reference",
+    "destination": "/clickstack/observability/api-reference"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-04-03",
+    "destination": "/clickstack/observability/demo-days/2026/2026-04-03"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-04-10",
+    "destination": "/clickstack/observability/demo-days/2026/2026-04-10"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-04-17",
+    "destination": "/clickstack/observability/demo-days/2026/2026-04-17"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-05-08",
+    "destination": "/clickstack/observability/demo-days/2026/2026-05-08"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-05-15",
+    "destination": "/clickstack/observability/demo-days/2026/2026-05-15"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-05-22",
+    "destination": "/clickstack/observability/demo-days/2026/2026-05-22"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-05-29",
+    "destination": "/clickstack/observability/demo-days/2026/2026-05-29"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-06-05",
+    "destination": "/clickstack/observability/demo-days/2026/2026-06-05"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-06-12",
+    "destination": "/clickstack/observability/demo-days/2026/2026-06-12"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-06-18",
+    "destination": "/clickstack/observability/demo-days/2026/2026-06-18"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-06-26",
+    "destination": "/clickstack/observability/demo-days/2026/2026-06-26"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-02",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-02"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-10",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-10"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-17",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-17"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-24",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-24"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-07-31",
+    "destination": "/clickstack/observability/demo-days/2026/2026-07-31"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-08-07",
+    "destination": "/clickstack/observability/demo-days/2026/2026-08-07"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-08-15",
+    "destination": "/clickstack/observability/demo-days/2026/2026-08-15"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-08-21",
+    "destination": "/clickstack/observability/demo-days/2026/2026-08-21"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-08-28",
+    "destination": "/clickstack/observability/demo-days/2026/2026-08-28"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-09-04",
+    "destination": "/clickstack/observability/demo-days/2026/2026-09-04"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-09-10",
+    "destination": "/clickstack/observability/demo-days/2026/2026-09-10"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days/2026/2026-09-17",
+    "destination": "/clickstack/observability/demo-days/2026/2026-09-17"
+  },
+  {
+    "source": "/clickstack/self-configured/demo-days",
+    "destination": "/clickstack/observability/demo-days"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/chrome-extension",
+    "destination": "/clickstack/observability/example-datasets/chrome-extension"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets",
+    "destination": "/clickstack/observability/example-datasets"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/instrument-application",
+    "destination": "/clickstack/observability/example-datasets/instrument-application"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/kubernetes",
+    "destination": "/clickstack/observability/example-datasets/kubernetes"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/local-data",
+    "destination": "/clickstack/observability/example-datasets/local-data"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/otelgen",
+    "destination": "/clickstack/observability/example-datasets/otelgen"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/sample-data",
+    "destination": "/clickstack/observability/example-datasets/sample-data"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/session-replay",
+    "destination": "/clickstack/observability/example-datasets/session-replay"
+  },
+  {
+    "source": "/clickstack/self-configured/example-datasets/telemetrygen",
+    "destination": "/clickstack/observability/example-datasets/telemetrygen"
+  },
+  {
+    "source": "/clickstack/self-configured/faq",
+    "destination": "/clickstack/observability/faq"
+  },
+  {
+    "source": "/clickstack/self-configured/features/alerts",
+    "destination": "/clickstack/observability/features/alerts"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/dashboard-templates",
+    "destination": "/clickstack/observability/features/dashboards/dashboard-templates"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/overview",
+    "destination": "/clickstack/observability/features/dashboards/overview"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/release-markers",
+    "destination": "/clickstack/observability/features/dashboards/release-markers"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/row-click-drilldowns",
+    "destination": "/clickstack/observability/features/dashboards/row-click-drilldowns"
+  },
+  {
+    "source": "/clickstack/self-configured/features/dashboards/sql-visualizations",
+    "destination": "/clickstack/observability/features/dashboards/sql-visualizations"
+  },
+  {
+    "source": "/clickstack/self-configured/features/event-deltas",
+    "destination": "/clickstack/observability/features/event-deltas"
+  },
+  {
+    "source": "/clickstack/self-configured/features/event-patterns",
+    "destination": "/clickstack/observability/features/event-patterns"
+  },
+  {
+    "source": "/clickstack/self-configured/features/search",
+    "destination": "/clickstack/observability/features/search"
+  },
+  {
+    "source": "/clickstack/self-configured/features/session-replay",
+    "destination": "/clickstack/observability/features/session-replay"
+  },
+  {
+    "source": "/clickstack/self-configured/getting-started",
+    "destination": "/clickstack/observability/getting-started"
+  },
+  {
+    "source": "/clickstack/self-configured",
+    "destination": "/clickstack/self-configured/overview"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/collector",
+    "destination": "/clickstack/observability/ingesting-data/collector"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/opentelemetry",
+    "destination": "/clickstack/observability/ingesting-data/opentelemetry"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/overview",
+    "destination": "/clickstack/observability/ingesting-data/overview"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/aws-lambda",
+    "destination": "/clickstack/observability/ingesting-data/sdks/aws-lambda"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/browser",
+    "destination": "/clickstack/observability/ingesting-data/sdks/browser"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/deno",
+    "destination": "/clickstack/observability/ingesting-data/sdks/deno"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/elixir",
+    "destination": "/clickstack/observability/ingesting-data/sdks/elixir"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/golang",
+    "destination": "/clickstack/observability/ingesting-data/sdks/golang"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks",
+    "destination": "/clickstack/observability/ingesting-data/sdks"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/java",
+    "destination": "/clickstack/observability/ingesting-data/sdks/java"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/nestjs",
+    "destination": "/clickstack/observability/ingesting-data/sdks/nestjs"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/nextjs",
+    "destination": "/clickstack/observability/ingesting-data/sdks/nextjs"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/nodejs",
+    "destination": "/clickstack/observability/ingesting-data/sdks/nodejs"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/python",
+    "destination": "/clickstack/observability/ingesting-data/sdks/python"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/react-native",
+    "destination": "/clickstack/observability/ingesting-data/sdks/react-native"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/sdks/ruby",
+    "destination": "/clickstack/observability/ingesting-data/sdks/ruby"
+  },
+  {
+    "source": "/clickstack/self-configured/ingesting-data/vector",
+    "destination": "/clickstack/observability/ingesting-data/vector"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/aws-lambda",
+    "destination": "/clickstack/observability/integration-examples/aws-lambda"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/cloudflare",
+    "destination": "/clickstack/observability/integration-examples/cloudflare"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/cloudwatch",
+    "destination": "/clickstack/observability/integration-examples/cloudwatch"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/host-logs",
+    "destination": "/clickstack/observability/integration-examples/host-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/host-logs/ec2",
+    "destination": "/clickstack/observability/integration-examples/host-logs/ec2"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples",
+    "destination": "/clickstack/observability/integration-examples"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/jvm-metrics",
+    "destination": "/clickstack/observability/integration-examples/jvm-metrics"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/kafka-logs",
+    "destination": "/clickstack/observability/integration-examples/kafka-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/kafka-metrics",
+    "destination": "/clickstack/observability/integration-examples/kafka-metrics"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/kubernetes",
+    "destination": "/clickstack/observability/integration-examples/kubernetes"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/mongodb-logs",
+    "destination": "/clickstack/observability/integration-examples/mongodb-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/mysql",
+    "destination": "/clickstack/observability/integration-examples/mysql"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/nginx-logs",
+    "destination": "/clickstack/observability/integration-examples/nginx-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/nginx-traces",
+    "destination": "/clickstack/observability/integration-examples/nginx-traces"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/nodejs-traces",
+    "destination": "/clickstack/observability/integration-examples/nodejs-traces"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/postgres-logs",
+    "destination": "/clickstack/observability/integration-examples/postgres-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/postgres-metrics",
+    "destination": "/clickstack/observability/integration-examples/postgres-metrics"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/redis-logs",
+    "destination": "/clickstack/observability/integration-examples/redis-logs"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/redis-metrics",
+    "destination": "/clickstack/observability/integration-examples/redis-metrics"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/systemd",
+    "destination": "/clickstack/observability/integration-examples/systemd"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-examples/temporal",
+    "destination": "/clickstack/observability/integration-examples/temporal"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners/bindplane",
+    "destination": "/clickstack/observability/integration-partners/bindplane"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners/bitdrift",
+    "destination": "/clickstack/observability/integration-partners/bitdrift"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners",
+    "destination": "/clickstack/observability/integration-partners"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners/odigos",
+    "destination": "/clickstack/observability/integration-partners/odigos"
+  },
+  {
+    "source": "/clickstack/self-configured/integration-partners/telflo",
+    "destination": "/clickstack/observability/integration-partners/telflo"
+  },
+  {
+    "source": "/clickstack/self-configured/managing/rbac",
+    "destination": "/clickstack/observability/managing/rbac"
+  },
+  {
+    "source": "/clickstack/self-configured/mcp",
+    "destination": "/clickstack/observability/mcp"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/datadog",
+    "destination": "/clickstack/observability/migration/datadog"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic",
+    "destination": "/clickstack/observability/migration/elastic"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/intro",
+    "destination": "/clickstack/observability/migration/elastic/intro"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/migrating-agents",
+    "destination": "/clickstack/observability/migration/elastic/migrating-agents"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/migrating-data",
+    "destination": "/clickstack/observability/migration/elastic/migrating-data"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/migrating-sdks",
+    "destination": "/clickstack/observability/migration/elastic/migrating-sdks"
+  },
+  {
+    "source": "/clickstack/self-configured/migration/elastic/search",
+    "destination": "/clickstack/observability/migration/elastic/search"
+  },
+  {
+    "source": "/clickstack/self-configured/migration",
+    "destination": "/clickstack/observability/migration"
+  },
+  {
+    "source": "/clickstack/self-configured/notebooks",
+    "destination": "/clickstack/observability/notebooks"
+  },
+  {
+    "source": "/clickstack/self-configured/service-maps",
+    "destination": "/clickstack/observability/service-maps"
+  },
+  {
+    "source": "/clickstack/self-configured/text-to-chart",
+    "destination": "/clickstack/observability/text-to-chart"
+  },
+  {
+    "source": "/clickstack/self-configured/url-parameters",
+    "destination": "/clickstack/observability/url-parameters"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/pt-br/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/fr/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/ar/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/pt-br/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-create",
+    "destination": "/zh/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/zh/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "destination": "/es/products/cloud/getting-started/intro",
+    "source": "/es/cloud"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/zh/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "destination": "/ja/products/cloud/getting-started/intro",
+    "source": "/ja/cloud"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/ar/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/ar/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/ru/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/es/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-create",
+    "destination": "/ar/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/es/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/fr/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/es/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/es/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/ko/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "destination": "/ja/clickstack/migration/datadog",
+    "source": "/jp/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/ja/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/ko/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "destination": "/es/clickstack/migration/datadog",
+    "source": "/es/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/ko/clickstack/migration/datadog",
+    "source": "/ko/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/ja/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/ru/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/ja/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/fr/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/fr/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/es/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/pt-br/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/es/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-create",
+    "destination": "/pt-br/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/zh/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/ja/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/ja/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "destination": "/clickstack/migration/datadog",
+    "source": "/en/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-list",
+    "destination": "/ar/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/ar/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/zh/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/pt-br/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/ru/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/zh/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/ar/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/fr/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/fr/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/ko/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/pt-br/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/es/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/ru/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "destination": "/ru/products/cloud/getting-started/intro",
+    "source": "/ru/cloud"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/es/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-list",
+    "destination": "/pt-br/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/es/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/ja/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/ru/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/ru/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-list",
+    "destination": "/zh/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/ru/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/zh/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "source": "/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/ar/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/es/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-get",
+    "destination": "/ko/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/pt-br/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-list",
+    "destination": "/fr/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/ja/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/es/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/es/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/ru/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/fr/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/pt-br/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/ko/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/pt-br/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-get",
+    "destination": "/ar/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "destination": "/fr/products/cloud/getting-started/intro",
+    "source": "/fr/cloud"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/ar/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/ru/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/ru/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/zh/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/ko/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/pt-br/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/es/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/zh/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/ko/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "destination": "/zh/products/cloud/getting-started/intro",
+    "source": "/zh/cloud"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-list",
+    "destination": "/ja/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/pt-br/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/fr/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-get",
+    "destination": "/ja/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/ja/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-list",
+    "destination": "/ru/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/ja/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "destination": "/fr/clickstack/migration/datadog",
+    "source": "/fr/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/fr/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/ru/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "source": "/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/pt-br/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/es/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/zh/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/ja/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "destination": "/zh/clickstack/migration/datadog",
+    "source": "/zh/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/fr/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-create",
+    "destination": "/ru/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/pt-br/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/ko/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/ar/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-list",
+    "destination": "/es/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/zh/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/fr/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/ko/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/ja/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-list",
+    "destination": "/pt-br/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-create",
+    "destination": "/fr/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/fr/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-upload-session-create",
+    "destination": "/ko/products/cloud/api-reference/udf/create-udf-upload-url"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/ko/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/ar/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-create",
+    "destination": "/ko/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-list",
+    "destination": "/ko/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/ja/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/es/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/getting-started/intro",
+    "source": "/pt-BR/cloud"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-get",
+    "destination": "/zh/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-get",
+    "destination": "/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "destination": "/ar/products/cloud/getting-started/intro",
+    "source": "/ar/cloud"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-create",
+    "destination": "/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-get",
+    "destination": "/ru/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/ko/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/ko/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/ar/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/zh/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/zh/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-create",
+    "destination": "/es/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/pt-br/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "destination": "/pt-BR/clickstack/migration/datadog",
+    "source": "/pt-BR/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "destination": "/clickstack/migration/datadog",
+    "source": "/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/ko/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "destination": "/products/cloud/getting-started/intro",
+    "source": "/cloud"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-get",
+    "destination": "/pt-br/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/ja/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/pt-br/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+    "destination": "/ko/products/cloud/api-reference/query-api-endpoints/list-query-api-endpoints"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/ar/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/pt-br/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/zh/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/ru/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-attachment-list",
+    "destination": "/pt-br/products/cloud/api-reference/udf/list-udf-attachments"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-create",
+    "destination": "/ja/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/products/cloud/api-reference/udf/udf-list",
+    "destination": "/products/cloud/api-reference/udf/list-udfs"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/ar/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/fr/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/pt-br/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/pt-br/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/pt-br/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "destination": "/ko/products/cloud/getting-started/intro",
+    "source": "/ko/cloud"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-get",
+    "destination": "/fr/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-version-list",
+    "destination": "/ar/products/cloud/api-reference/udf/list-udf-versions"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-attach",
+    "destination": "/ru/products/cloud/api-reference/udf/attach-udf-to-service"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/ja/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/udf/udf-attachment-get",
+    "destination": "/zh/products/cloud/api-reference/udf/get-udf-attachment"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/udf/udf-create",
+    "destination": "/pt-br/products/cloud/api-reference/udf/create-udf"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-detach",
+    "destination": "/fr/products/cloud/api-reference/udf/detach-udf-from-service"
+  },
+  {
+    "source": "/fr/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/fr/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/es/products/cloud/api-reference/udf/udf-get",
+    "destination": "/es/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/ru/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "source": "/zh/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update",
+    "destination": "/zh/products/cloud/api-reference/query-api-endpoints/update-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/create-a-query-api-endpoint"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/ar/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-version-create",
+    "destination": "/pt-br/products/cloud/api-reference/udf/create-udf-version"
+  },
+  {
+    "destination": "/ru/clickstack/migration/datadog",
+    "source": "/ru/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/pt-BR/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/pt-br/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+    "destination": "/products/cloud/api-reference/query-api-endpoints/get-a-query-api-endpoint"
+  },
+  {
+    "source": "/pt-br/products/cloud/api-reference/udf/udf-get",
+    "destination": "/pt-br/products/cloud/api-reference/udf/get-udf"
+  },
+  {
+    "destination": "/ja/clickstack/migration/datadog",
+    "source": "/ja/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/ar/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+    "destination": "/ar/products/cloud/api-reference/prometheus/list-prometheus-scrape-targets"
+  },
+  {
+    "source": "/ru/products/cloud/api-reference/udf/udf-version-delete",
+    "destination": "/ru/products/cloud/api-reference/udf/delete-udf-version"
+  },
+  {
+    "source": "/products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+    "destination": "/products/cloud/api-reference/query-api-endpoints/delete-a-query-api-endpoint"
+  },
+  {
+    "source": "/ko/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/ko/products/cloud/api-reference/udf/delete-udf"
+  },
+  {
+    "destination": "/ar/clickstack/migration/datadog",
+    "source": "/ar/use-cases/observability/clickstack/migration/datadog"
+  },
+  {
+    "source": "/ja/products/cloud/api-reference/udf/udf-delete",
+    "destination": "/ja/products/cloud/api-reference/udf/delete-udf"
   }
 ]
