@@ -42,8 +42,11 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     /// upstream from over-producing. The current input is included so its upstream keeps
     /// producing into the buffer rather than stalling between consecutive `pull` calls.
     ///
-    /// The budget is granted in input order: an input has room while the inputs from the
-    /// current one up to and including it buffer less than `max_buffered_bytes`. The current
+    /// The inputs share the budget of `max_buffered_bytes`: an input has room while all buffers
+    /// together hold less than it. The buffers of later inputs stay resident until the current
+    /// input is drained, so all of them must be counted, otherwise the total would grow with
+    /// the number of inputs. The inputs are visited in order starting from the current one,
+    /// so the nearest inputs, which are needed first, get the freed budget first. The current
     /// input (or every input if `max_buffered_bytes` is 0) also has room while it buffers fewer
     /// than `min_buffered_chunks` chunks. The inputs before `current_input_idx` are finished
     /// and drained.
@@ -53,10 +56,15 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     /// `setNotNeeded` (e.g. set when the output became not-needed, or when the
     /// buffer hit capacity), arriving after the flag was cleared.
     {
-        size_t bytes_in_previous_buffers = 0;
-        size_t idx = 0;
-        for (auto & input : inputs)
+        size_t total_buffered_bytes = 0;
+        for (const auto & buffer : buffers)
+            total_buffered_bytes += buffer.bytes;
+
+        auto it = inputs.begin();
+        std::advance(it, current_input_idx);
+        for (size_t idx = current_input_idx; idx < buffers.size(); ++idx, ++it)
         {
+            auto & input = *it;
             auto & buffer = buffers[idx];
             /// The head start of `min_buffered_chunks` is not counted in the budget only for the
             /// current input, which must make progress, or for every input when there is no budget.
@@ -65,13 +73,15 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
             auto has_room = [&]
             {
                 return (head_start && buffer.chunks.size() < min_buffered_chunks)
-                    || bytes_in_previous_buffers + buffer.bytes < max_buffered_bytes;
+                    || total_buffered_bytes < max_buffered_bytes;
             };
 
             if (has_room() && input.hasData())
             {
                 auto chunk = input.pull(true);
-                buffer.bytes += chunk.allocatedBytes();
+                const size_t chunk_bytes = chunk.allocatedBytes();
+                buffer.bytes += chunk_bytes;
+                total_buffered_bytes += chunk_bytes;
                 buffer.chunks.push_back(std::move(chunk));
             }
 
@@ -82,10 +92,6 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
                 else
                     input.setNotNeeded();
             }
-
-            if (idx >= current_input_idx)
-                bytes_in_previous_buffers += buffer.bytes;
-            ++idx;
         }
     }
 

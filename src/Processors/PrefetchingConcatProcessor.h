@@ -22,10 +22,10 @@ namespace DB
   * Since the output consumes the inputs one after another, sustained parallelism requires
   * the later inputs to run far ahead of the current one, so a small per-input cap
   * (a couple of chunks) degenerates into reading one input at a time. Instead, the buffers
-  * share a budget of `max_buffered_bytes`, granted to the inputs in order starting from the
-  * current one: an input keeps reading ahead while the inputs before it (including itself)
-  * buffer less than the budget. The nearest inputs, which are needed first, get the budget
-  * first, and the budget bounds the total buffered bytes (exceeded by at most one chunk per
+  * share a budget of `max_buffered_bytes`: an input keeps reading ahead while all buffers
+  * together hold less than the budget. The inputs are visited starting from the current one,
+  * so the nearest inputs, which are needed first, get the freed budget first. The budget bounds
+  * the total buffered bytes (exceeded by at most one chunk, plus the head start of the current
   * input). Only the current input may buffer up to `min_buffered_chunks` chunks regardless of
   * the budget, so that it always makes progress. If `max_buffered_bytes` is 0, every input
   * buffers up to `min_buffered_chunks` chunks.
