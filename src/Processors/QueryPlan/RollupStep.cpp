@@ -182,4 +182,9 @@ void registerRollupStep(QueryPlanStepRegistry & registry)
     registry.registerStep("Rollup", RollupStep::deserialize);
 }
 
+InputConsumption RollupStep::getInputConsumption(size_t /*input_index*/) const
+{
+    return {InputConsumption::Kind::WholeInput, "rollup"};
+}
+
 }

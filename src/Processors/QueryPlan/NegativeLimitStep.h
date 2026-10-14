@@ -16,6 +16,7 @@ public:
         SortDescription description_ = {});
 
     String getName() const override { return "NegativeLimit"; }
+    InputConsumption getInputConsumption(size_t input_index) const override;
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

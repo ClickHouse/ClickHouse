@@ -59,6 +59,7 @@ public:
     static Block appendGroupingColumn(const Block & block, const Names & keys, bool has_grouping, bool use_nulls);
 
     String getName() const override { return "Aggregating"; }
+    InputConsumption getInputConsumption(size_t input_index) const override;
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

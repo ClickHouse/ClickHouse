@@ -908,4 +908,11 @@ void registerSortingStep(QueryPlanStepRegistry & registry)
     registry.registerStep("Sorting", SortingStep::deserialize);
 }
 
+InputConsumption SortingStep::getInputConsumption(size_t /*input_index*/) const
+{
+    if (type != Type::Full)
+        return {};
+    return {InputConsumption::Kind::WholeInput, "full sort"};
+}
+
 }

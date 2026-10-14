@@ -187,4 +187,12 @@ void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry)
     registry.registerStep("IntersectOrExcept", &IntersectOrExceptStep::deserialize);
 }
 
+InputConsumption IntersectOrExceptStep::getInputConsumption(size_t input_index) const
+{
+    /// `IntersectOrExceptTransform` reads the whole right input before it reads the left one.
+    if (input_index != 1)
+        return {};
+    return {InputConsumption::Kind::WholeInput, "right input of " + getName()};
+}
+
 }

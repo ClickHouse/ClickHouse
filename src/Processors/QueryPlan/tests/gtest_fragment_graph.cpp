@@ -6,6 +6,11 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -228,94 +233,36 @@ TEST(FragmentGraph, InconsistentExchangesThrow)
 
 TEST(FragmentGraph, ClassifyDependency)
 {
-    using Kind = ConsumerStepInfo::Kind;
     using Mode = FragmentExchange::Mode;
+    const InputConsumption streaming;
+    const InputConsumption whole_input{InputConsumption::Kind::WholeInput, "full sort"};
 
     struct Case
     {
-        Kind kind;
-        String step_name;
-        bool build_side;
-        SortingStep::Type sorting_type;
+        const InputConsumption & consumption;
+        FragmentExchange::Kind kind;
         Mode mode;
         FragmentExchange::Type expected;
         String expected_reason;
     };
 
     const std::vector<Case> cases = {
-        {Kind::Other, "Union", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Streaming, ""},
-        {Kind::Other, "Union", false, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
-        {Kind::Aggregating, "Aggregating", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Blocking, "hash aggregation"},
-        {Kind::Aggregating, "Aggregating", false, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
-        {Kind::Join, "JoinLogical", true, SortingStep::Type::Full, Mode::Pipelined, Blocking::Blocking, "build side of JoinLogical"},
-        {Kind::Join, "Join", true, SortingStep::Type::Full, Mode::Pipelined, Blocking::Blocking, "build side of Join"},
-        {Kind::Join, "JoinLogical", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Streaming, ""},
-        {Kind::Join, "JoinLogical", true, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
-        {Kind::Join, "JoinLogical", false, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
-        {Kind::MergingAggregated, "MergingAggregated", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Blocking, "merge of aggregation states"},
-        {Kind::MergingAggregated, "MergingAggregated", false, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
-        {Kind::Sorting, "Sorting", false, SortingStep::Type::Full, Mode::Pipelined, Blocking::Blocking, "full sort"},
-        {Kind::Sorting, "Sorting", false, SortingStep::Type::FinishSorting, Mode::Pipelined, Blocking::Streaming, ""},
-        {Kind::Sorting, "Sorting", false, SortingStep::Type::PartitionedFinishSorting, Mode::Pipelined, Blocking::Streaming, ""},
-        {Kind::Sorting, "Sorting", false, SortingStep::Type::MergingSorted, Mode::Pipelined, Blocking::Streaming, ""},
-        {Kind::Sorting, "Sorting", false, SortingStep::Type::Full, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
-        {Kind::Sorting, "Sorting", false, SortingStep::Type::MergingSorted, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
+        {streaming, FragmentExchange::Kind::Gather, Mode::Pipelined, Blocking::Streaming, ""},
+        {whole_input, FragmentExchange::Kind::Gather, Mode::Pipelined, Blocking::Blocking, "full sort"},
+        /// A materialised exchange is blocking whatever the consumer does.
+        {streaming, FragmentExchange::Kind::Hash, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
+        {whole_input, FragmentExchange::Kind::Hash, Mode::Materialised, Blocking::Blocking, "materialised exchange"},
+        /// A set must be complete before any task that reads it starts.
+        {streaming, FragmentExchange::Kind::SetValues, Mode::Pipelined, Blocking::Blocking, "set must be complete"},
+        {whole_input, FragmentExchange::Kind::SetValues, Mode::Materialised, Blocking::Blocking, "set must be complete"},
     };
 
     for (size_t i = 0; i < cases.size(); ++i)
     {
         const auto & c = cases[i];
-        ConsumerStepInfo consumer;
-        consumer.kind = c.kind;
-        consumer.step_name = c.step_name;
-        consumer.receive_feeds_build_side = c.build_side;
-        consumer.sorting_type = c.sorting_type;
-
         String reason = "stale";
-        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::Gather, c.mode, reason), c.expected) << "case " << i;
+        EXPECT_EQ(classifyDependency(c.consumption, c.kind, c.mode, reason), c.expected) << "case " << i;
         EXPECT_EQ(reason, c.expected_reason) << "case " << i;
-    }
-
-    /// A `MergingAggregated` that merges bucket by bucket streams, unless the exchange is materialised.
-    for (Mode mode : {Mode::Pipelined, Mode::Materialised})
-    {
-        ConsumerStepInfo consumer;
-        consumer.kind = Kind::MergingAggregated;
-        consumer.step_name = "MergingAggregated";
-        consumer.merges_bucket_by_bucket = true;
-
-        String reason = "stale";
-        const bool materialised = mode == Mode::Materialised;
-        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::Gather, mode, reason),
-            materialised ? Blocking::Blocking : Blocking::Streaming);
-        EXPECT_EQ(reason, materialised ? "materialised exchange" : "");
-    }
-
-    /// An aggregation in order streams, unless the exchange is materialised.
-    for (Mode mode : {Mode::Pipelined, Mode::Materialised})
-    {
-        ConsumerStepInfo consumer;
-        consumer.kind = Kind::Aggregating;
-        consumer.step_name = "Aggregating";
-        consumer.aggregation_in_order = true;
-
-        String reason = "stale";
-        const bool materialised = mode == Mode::Materialised;
-        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::Gather, mode, reason),
-            materialised ? Blocking::Blocking : Blocking::Streaming);
-        EXPECT_EQ(reason, materialised ? "materialised exchange" : "");
-    }
-
-    /// A `SetValues` exchange is blocking regardless of the mode and of a streaming consumer.
-    for (Mode mode : {Mode::Pipelined, Mode::Materialised})
-    {
-        ConsumerStepInfo consumer;
-        consumer.kind = Kind::Other;
-        consumer.step_name = "Filter";
-
-        String reason = "stale";
-        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::SetValues, mode, reason), Blocking::Blocking);
-        EXPECT_EQ(reason, "set must be complete");
     }
 }
 
@@ -524,9 +471,9 @@ DistributedQueryPlan makeTwoStagePlan(const SharedHeader & header, const std::fu
     return distributed_plan;
 }
 
-std::unique_ptr<AggregatingStep> makeAggregatingStep(const SharedHeader & header, SortDescription sort_description_for_merging)
+Aggregator::Params makeAggregatorParams()
 {
-    Aggregator::Params params(
+    return Aggregator::Params(
         Names{"k"},
         AggregateDescriptions{},
         /*overflow_row=*/false,
@@ -535,9 +482,13 @@ std::unique_ptr<AggregatingStep> makeAggregatingStep(const SharedHeader & header
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
         /*enable_packed_string_keys=*/true);
+}
+
+std::unique_ptr<AggregatingStep> makeAggregatingStep(const SharedHeader & header, SortDescription sort_description_for_merging)
+{
     return std::make_unique<AggregatingStep>(
         header,
-        std::move(params),
+        makeAggregatorParams(),
         GroupingSetsParamsList{},
         /*final=*/true,
         /*max_block_size=*/65536,
@@ -604,6 +555,62 @@ TEST(FragmentGraph, BuildFindsBlockingConsumer)
             plan.addStep(std::make_unique<ExpressionStep>(header, ActionsDAG(header->getColumnsWithTypeAndName())));
         }),
         std::make_pair(Blocking::Streaming, String()));
+
+    /// `INTERSECT` and `EXCEPT` read their right input completely before the left one: the position of the
+    /// receive step among the inputs decides.
+    auto intersect_with_another_input = [&](QueryPlan & plan, size_t receive_position)
+    {
+        std::vector<std::unique_ptr<QueryPlan>> inputs;
+        inputs.push_back(std::make_unique<QueryPlan>());
+        inputs.back()->addStep(std::make_unique<ReadNothingStep>(header));
+        inputs.insert(inputs.begin() + receive_position, std::make_unique<QueryPlan>(std::move(plan)));
+        plan = QueryPlan();
+        plan.unitePlans(
+            std::make_unique<IntersectOrExceptStep>(SharedHeaders{header, header}, IntersectOrExceptStep::Operator::INTERSECT_ALL),
+            std::move(inputs));
+    };
+    EXPECT_EQ(dependency_of([&](QueryPlan & plan) { intersect_with_another_input(plan, 0); }),
+        std::make_pair(Blocking::Streaming, String()));
+    EXPECT_EQ(dependency_of([&](QueryPlan & plan) { intersect_with_another_input(plan, 1); }),
+        std::make_pair(Blocking::Blocking, String("right input of IntersectOrExcept")));
+}
+
+/// The rules of the steps that consume an input as a whole, checked on the steps themselves.
+TEST(FragmentGraph, StepInputConsumption)
+{
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "k")});
+
+    auto describe = [](const IQueryPlanStep & step, size_t input_index)
+    {
+        auto consumption = step.getInputConsumption(input_index);
+        return consumption.kind == InputConsumption::Kind::WholeInput ? consumption.reason : String("streaming");
+    };
+
+    const SortingStep::Settings sort_settings(65536);
+    EXPECT_EQ(describe(SortingStep(header, makeSortDescription("k"), 0, sort_settings), 0), "full sort");
+    EXPECT_EQ(describe(SortingStep(header, makeSortDescription("k"), makeSortDescription("k"), sort_settings, 0), 0), "streaming");
+    EXPECT_EQ(describe(SortingStep(header, makeSortDescription("k"), sort_settings), 0), "streaming");
+
+    EXPECT_EQ(describe(*makeAggregatingStep(header, {}), 0), "hash aggregation");
+    EXPECT_EQ(describe(*makeAggregatingStep(header, makeSortDescription("k")), 0), "streaming");
+
+    auto merging_aggregated = [&](bool memory_efficient)
+    {
+        return MergingAggregatedStep(header, makeAggregatorParams(), GroupingSetsParamsList{}, /*final=*/true,
+            memory_efficient, /*memory_efficient_merge_threads=*/1, /*should_produce_results_in_order_of_bucket_number=*/false,
+            /*max_block_size=*/65536, /*memory_bound_merging_max_block_bytes=*/0, /*memory_bound_merging_of_aggregation_results_enabled=*/false);
+    };
+    EXPECT_EQ(describe(merging_aggregated(false), 0), "merge of aggregation states");
+    EXPECT_EQ(describe(merging_aggregated(true), 0), "streaming");
+
+    EXPECT_EQ(describe(NegativeLimitStep(header, 1, 0), 0), "negative limit");
+    EXPECT_EQ(describe(RollupStep(header, makeAggregatorParams(), /*final=*/true, /*use_nulls=*/false), 0), "rollup");
+    EXPECT_EQ(describe(CubeStep(header, makeAggregatorParams(), /*final=*/true, /*use_nulls=*/false), 0), "cube");
+
+    IntersectOrExceptStep except(SharedHeaders{header, header}, IntersectOrExceptStep::Operator::EXCEPT_DISTINCT);
+    EXPECT_EQ(describe(except, 0), "streaming");
+    EXPECT_EQ(describe(except, 1), "right input of IntersectOrExcept");
 }
 
 TEST(FragmentGraph, BuildSingleFragment)

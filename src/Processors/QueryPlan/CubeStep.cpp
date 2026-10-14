@@ -222,4 +222,9 @@ void registerCubeStep(QueryPlanStepRegistry & registry)
     registry.registerStep("Cube", CubeStep::deserialize);
 }
 
+InputConsumption CubeStep::getInputConsumption(size_t /*input_index*/) const
+{
+    return {InputConsumption::Kind::WholeInput, "cube"};
+}
+
 }

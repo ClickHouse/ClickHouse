@@ -1,15 +1,11 @@
 #include <Processors/QueryPlan/Fragments/FragmentGraph.h>
 
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BroadcastReceiveStep.h>
 #include <Processors/QueryPlan/BroadcastSendStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherReceiveStep.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Common/Exception.h>
@@ -99,74 +95,10 @@ const String * tryGetReceiveExchangeId(const IQueryPlanStep & step)
     return nullptr;
 }
 
-/// Describes `step` as a consumer of its input number `child_index`.
-ConsumerStepInfo describeConsumerStep(const IQueryPlanStep & step, size_t child_index)
-{
-    ConsumerStepInfo info;
-    info.step_name = step.getName();
-    if (typeid_cast<const JoinStepLogical *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::Join;
-        info.receive_feeds_build_side = child_index == 1;
-    }
-    else if (const auto * join = typeid_cast<const JoinStep *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::Join;
-        const size_t build_side_index = join->swap_streams ? 0 : 1;
-        info.receive_feeds_build_side = child_index == build_side_index;
-    }
-    else if (const auto * merging = typeid_cast<const MergingAggregatedStep *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::MergingAggregated;
-        info.merges_bucket_by_bucket = merging->isMemoryEfficientAggregation() || merging->memoryBoundMergingWillBeUsed();
-    }
-    else if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::Sorting;
-        info.sorting_type = sorting->getType();
-    }
-    else if (const auto * aggregating = typeid_cast<const AggregatingStep *>(&step))
-    {
-        info.kind = ConsumerStepInfo::Kind::Aggregating;
-        info.aggregation_in_order = aggregating->inOrder();
-    }
-    return info;
-}
-
-/// Whether the consumer step needs all of its input before producing output; sets `reason` if so.
-bool consumerNeedsWholeInput(const ConsumerStepInfo & consumer, String & reason)
-{
-    switch (consumer.kind)
-    {
-        case ConsumerStepInfo::Kind::Join:
-            if (!consumer.receive_feeds_build_side)
-                return false;
-            reason = "build side of " + consumer.step_name;
-            return true;
-        case ConsumerStepInfo::Kind::MergingAggregated:
-            if (consumer.merges_bucket_by_bucket)
-                return false;
-            reason = "merge of aggregation states";
-            return true;
-        case ConsumerStepInfo::Kind::Sorting:
-            if (consumer.sorting_type != SortingStep::Type::Full)
-                return false;
-            reason = "full sort";
-            return true;
-        case ConsumerStepInfo::Kind::Aggregating:
-            if (consumer.aggregation_in_order)
-                return false;
-            reason = "hash aggregation";
-            return true;
-        case ConsumerStepInfo::Kind::Other:
-            return false;
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of consumer step {}", consumer.step_name);
-}
-
 /// Finds the receive step of `exchange_name` in `plan` and walks from it towards the output of the fragment
-/// to the first step which needs all of its input on that way, keeping the input position at every parent.
-ConsumerStepInfo findConsumerStep(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
+/// to the first step which needs the whole input it is reached through (`IQueryPlanStep::getInputConsumption`),
+/// keeping the input position at every parent. Streaming when there is no such step.
+InputConsumption findConsumption(const QueryPlan & plan, const String & stage_name, const String & exchange_name)
 {
     const auto * root = plan.getRootNode();
     if (!root)
@@ -209,10 +141,9 @@ ConsumerStepInfo findConsumerStep(const QueryPlan & plan, const String & stage_n
             return {}; /// No step up to the output of the fragment needs the whole input: the rows stream through.
 
         const auto [parent, child_index] = it->second;
-        ConsumerStepInfo info = describeConsumerStep(*parent->step, child_index);
-        String reason;
-        if (consumerNeedsWholeInput(info, reason))
-            return info;
+        auto consumption = parent->step->getInputConsumption(child_index);
+        if (consumption.kind == InputConsumption::Kind::WholeInput)
+            return consumption;
         current = parent;
     }
 }
@@ -294,7 +225,7 @@ const FragmentExchange & FragmentGraph::getExchange(UInt32 id) const
 }
 
 FragmentExchange::Type classifyDependency(
-    const ConsumerStepInfo & consumer, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason)
+    const InputConsumption & consumption, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason)
 {
     reason.clear();
 
@@ -310,9 +241,10 @@ FragmentExchange::Type classifyDependency(
         return FragmentExchange::Type::Blocking;
     }
 
-    if (consumerNeedsWholeInput(consumer, reason))
-        return FragmentExchange::Type::Blocking;
-    return FragmentExchange::Type::Streaming;
+    if (consumption.kind == InputConsumption::Kind::Streaming)
+        return FragmentExchange::Type::Streaming;
+    reason = consumption.reason;
+    return FragmentExchange::Type::Blocking;
 }
 
 namespace
@@ -500,8 +432,8 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             exchange.statistics.estimated_rows = getEstimatedRows(*find_fragment(producer_id).plan);
 
             auto & consumer = find_fragment(consumer_id);
-            ConsumerStepInfo consumer_step = findConsumerStep(*consumer.plan, consumer_stage, exchange_name);
-            exchange.type = classifyDependency(consumer_step, exchange.kind, exchange.mode, exchange.reason);
+            auto consumption = findConsumption(*consumer.plan, consumer_stage, exchange_name);
+            exchange.type = classifyDependency(consumption, exchange.kind, exchange.mode, exchange.reason);
             consumer.children.push_back(exchange.id);
 
             graph.exchanges.push_back(std::move(exchange));

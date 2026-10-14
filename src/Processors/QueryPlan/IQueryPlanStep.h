@@ -41,6 +41,22 @@ struct ExplainFormatSettings;
 
 using StepProcessors = std::span<IProcessor * const>;
 
+/// How a step consumes one of its inputs.
+struct InputConsumption
+{
+    enum class Kind : uint8_t
+    {
+        /// The step can produce output while the input is still arriving.
+        Streaming,
+        /// The step produces no output until the input has finished.
+        WholeInput,
+    };
+
+    Kind kind = Kind::Streaming;
+    /// `WholeInput` only: why, e.g. "full sort"; printed by `EXPLAIN`.
+    String reason;
+};
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -140,6 +156,11 @@ public:
     /// otherwise, should it end up at the replica-output boundary, the cached `output_bytes` stays 0 and
     /// the transfer to the initiator is priced at zero.
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
+
+    /// How the step consumes its input number `input_index`. A step that buffers an input before it produces
+    /// output overrides this for that input. `EXPLAIN` uses it to tell whether a query fragment can produce
+    /// output before the fragments it reads from have finished.
+    virtual InputConsumption getInputConsumption(size_t /*input_index*/) const { return {}; }
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 

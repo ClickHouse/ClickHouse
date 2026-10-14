@@ -16,6 +16,7 @@ public:
     CubeStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_);
 
     String getName() const override { return "Cube"; }
+    InputConsumption getInputConsumption(size_t input_index) const override;
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

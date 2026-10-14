@@ -79,6 +79,7 @@ public:
     ~JoinStepLogical() override;
 
     String getName() const override { return "JoinLogical"; }
+    InputConsumption getInputConsumption(size_t input_index) const override;
     String getSerializationName() const override { return "Join"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;

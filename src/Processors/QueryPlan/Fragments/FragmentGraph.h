@@ -4,7 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Core/Types.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 
 #include <optional>
 #include <vector>
@@ -146,40 +146,13 @@ void validateFragmentGraph(const FragmentGraph & graph);
 /// A fragment is one level above its deepest producer. Computed on demand for the renderers; validates the graph.
 std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph);
 
-/// The step of the consumer fragment which decides whether a dependency is blocking: the first step on the
-/// way from a receive step to the output of the fragment which needs all of its input on that way before it
-/// produces output. `Other` when there is no such step, so the rows of the receive step stream through.
-struct ConsumerStepInfo
-{
-    enum class Kind : uint8_t
-    {
-        Other,
-        Join,
-        MergingAggregated,
-        Sorting,
-        Aggregating,
-    };
-
-    Kind kind = Kind::Other;
-    /// E.g. "JoinLogical", used in the reason text.
-    String step_name;
-    /// `Join` only: the way from the receive step enters the build side of the join.
-    bool receive_feeds_build_side = false;
-    /// `Sorting` only.
-    SortingStep::Type sorting_type = SortingStep::Type::Full;
-    /// `MergingAggregated` only: the step merges bucket by bucket (memory-efficient or memory-bound merging)
-    /// and emits a bucket once every input has sent it, instead of merging all the input into one table first.
-    bool merges_bucket_by_bucket = false;
-    /// `Aggregating` only: the aggregation runs in the order of the keys and emits a key once it is complete,
-    /// instead of emitting the hash table after all the input.
-    bool aggregation_in_order = false;
-};
-
 /// Pure classification of one exchange; `reason` is set for a blocking exchange and cleared otherwise.
 /// A `SetValues` exchange is always blocking (the set must be complete), then a `Materialised` exchange,
-/// otherwise the consumer step decides. Exposed for tests.
+/// otherwise `consumption`: how the consumer fragment uses the rows of the exchange, i.e. the first step on the way
+/// from the receive step to the output of the fragment that needs the whole input it is reached through.
+/// Exposed for tests.
 FragmentExchange::Type classifyDependency(
-    const ConsumerStepInfo & consumer, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason);
+    const InputConsumption & consumption, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason);
 
 /// Multi-line debug text of the model (for `LOG_TEST` and tests).
 String dumpFragmentGraph(const FragmentGraph & graph);
