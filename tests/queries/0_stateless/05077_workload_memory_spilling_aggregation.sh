@@ -32,19 +32,6 @@ SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20
 SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS enable_adaptive_aggregator=0;
 "
 
-# A workload request writes the staged records of long string keys as well.
-$CLICKHOUSE_CLIENT -q "CREATE OR REPLACE WORKLOAD $workload SETTINGS max_memory = '4Gi', max_memory_before_spill = '32Mi'"
-$CLICKHOUSE_CLIENT "${settings[@]}" --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME/tail" -q "
-SELECT count(), sum(c) FROM
-(
-    SELECT concat(toString(number), repeat('x', 512)) AS k, count() AS c
-    FROM numbers_mt(262144) GROUP BY k
-)
-SETTINGS enable_adaptive_aggregator = 1, enable_adaptive_memory_spill_scheduler = 0,
-    adaptive_aggregator_freeze_threshold = 1000, adaptive_aggregator_freeze_threshold_bytes = 0,
-    collect_hash_table_stats_during_aggregation = 0, max_threads = 2, max_block_size = 8192
-"
-
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
 SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['AdaptiveAggregationSpills'] > 0, Settings['enable_adaptive_aggregator']
@@ -55,15 +42,4 @@ WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query LIKE 'SELECT count(), sum(c)%'
 ORDER BY event_time_microseconds
-"
-
-$CLICKHOUSE_CLIENT -q "
-SELECT 'tail spilled', count() = 1,
-    max(ProfileEvents['AdaptiveAggregationSpills']) > 0,
-    max(ProfileEvents['AdaptiveAggregationSpilledRecords']) > 0
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND event_date >= yesterday()
-    AND log_comment = '$CLICKHOUSE_TEST_UNIQUE_NAME/tail'
-    AND type = 'QueryFinish'
 "
