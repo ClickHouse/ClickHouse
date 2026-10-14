@@ -368,9 +368,11 @@ bool isMetadataQuery(const IAST * ast)
         }
         case IAST::QueryKind::Create: /// Also ATTACH
         {
+            /// Other kinds of objects (workloads, resources, access entities, functions, named
+            /// collections, ...) have no data.
             const auto * create = ast->as<ASTCreateQuery>();
             if (!create)
-                return false;
+                return true;
             /// The `SELECT` of a view or a dictionary is its definition, not data to insert, but the
             /// structure is inferred by analyzing it, which reads the sources of its table functions.
             bool inserts_select = create->select && !create->isView() && !create->is_dictionary && !create->is_create_empty;
@@ -381,7 +383,9 @@ bool isMetadataQuery(const IAST * ast)
         case IAST::QueryKind::Alter:
         {
             const auto * alter = ast->as<ASTAlterQuery>();
-            if (!alter || !alter->command_list)
+            if (!alter)
+                return true; /// Another kind of object (e.g. a named collection), which has no data
+            if (!alter->command_list)
                 return false;
             for (const auto & child : alter->command_list->children)
             {

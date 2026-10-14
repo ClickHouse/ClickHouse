@@ -52,6 +52,8 @@ def clean():
             drop table if exists t3 sync;
             drop view if exists v sync;
             drop view if exists v2 sync;
+            drop function if exists f;
+            drop workload if exists w2;
             drop workload if exists regular;
             drop workload if exists mdwl;
             drop workload if exists all;
@@ -135,6 +137,10 @@ def test_metadata_statements_exempt_when_disabled() -> None:
         run(node_off, "alter table t drop partition tuple()", workload="regular")
         run(node_off, "system reload config", workload="regular")
         run(node_off, "system flush logs", workload="regular")
+        run(node_off, "create workload w2 in all", workload="regular")
+        run(node_off, "create function f as (x) -> x + 1", workload="regular")
+        run(node_off, "drop function f", workload="regular")
+        run(node_off, "drop workload w2", workload="regular")
 
         # Statements that may move a lot of data stay under `workload`.
         run_times_out(node_off, "create table t2 engine=MergeTree order by x as select 1 as x", workload="regular")
@@ -151,6 +157,7 @@ def test_metadata_statements_use_metadata_workload_when_enabled() -> None:
     with SlotHolder(node_on, "mdwl"):
         # Metadata statements are scheduled under `metadata_workload`, whose slot is taken.
         run_times_out(node_on, "create table t (x UInt64) engine=MergeTree order by x", workload="regular", metadata_workload="mdwl")
+        run_times_out(node_on, "create workload w2 in all", workload="regular", metadata_workload="mdwl")
 
         # Other statements stay under `workload`, whose slot is free.
         run(node_on, "select 1", workload="regular", metadata_workload="mdwl")
@@ -160,4 +167,6 @@ def test_metadata_statements_use_metadata_workload_when_enabled() -> None:
         # Metadata statements do not need the slot of `workload`.
         run(node_on, "create table t (x UInt64) engine=MergeTree order by x", workload="regular", metadata_workload="mdwl")
         run(node_on, "alter table t add column y UInt64", workload="regular", metadata_workload="mdwl")
+        run(node_on, "create workload w2 in all", workload="regular", metadata_workload="mdwl")
+        run(node_on, "create function f as (x) -> x + 1", workload="regular", metadata_workload="mdwl")
         run_times_out(node_on, "optimize table t final", workload="regular", metadata_workload="mdwl")
