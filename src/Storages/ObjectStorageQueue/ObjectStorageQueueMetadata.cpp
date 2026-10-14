@@ -2006,6 +2006,11 @@ namespace DB
 {
     void ObjectStorageQueueMetadata::dropFailedFiles(const std::optional<String> & like_pattern)
     {
+        /// Exclusive mode keeps failed-file state only in the local cache and has no `/failed` subtree in Keeper,
+        /// so there is nothing this command could clear. Reject instead of silently succeeding.
+        if (isExclusive(mode))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM DROP S3QUEUE FAILED FILES is not supported in exclusive mode");
+
         const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
         const auto zk_client = getZooKeeper();
 

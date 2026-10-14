@@ -1626,6 +1626,28 @@ def test_system_drop_failed_files_requires_access(started_cluster):
             pass
 
 
+def test_system_drop_failed_files_rejected_in_exclusive_mode(started_cluster):
+    node = started_cluster.instances["instance"]
+    table = f"test_drop_excl_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table}"
+    files_path = f"{table}_data"
+
+    create_table(
+        started_cluster, node, table, "exclusive", files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    try:
+        # Exclusive mode keeps failed state only in the local cache, there is nothing to drop in Keeper.
+        error = node.query_and_get_error(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table}")
+        assert "BAD_ARGUMENTS" in error, error
+        assert "exclusive mode" in error, error
+    finally:
+        try:
+            node.query(f"DROP TABLE IF EXISTS {table}")
+        except Exception:
+            pass
+
+
 def test_system_drop_failed_files_recovers_after_retries_disabled_in_flight(started_cluster):
     node = started_cluster.instances["instance"]
     table = f"test_drop_recover_{uuid.uuid4().hex[:8]}"
