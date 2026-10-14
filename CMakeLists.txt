@@ -633,7 +633,7 @@ if (ARCH_AMD64 OR ARCH_AARCH64)
 
     # -fPIC only makes the code relocatable; whether the executable itself is position independent is
     # the compiler driver's default unless the linker is asked explicitly, so ask it.
-    # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
+    # musl links with -static-pie instead (see cmake/linux/default_libs.cmake).
     # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
     if (OS_LINUX AND NOT USE_MUSL)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
