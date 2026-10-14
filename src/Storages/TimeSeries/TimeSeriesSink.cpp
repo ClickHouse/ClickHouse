@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -393,13 +394,18 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->context = Context::createCopy(getContext());
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
 
-    /// The samples and recent samples pipelines skip squashing. The TimeSeries insert already
-    /// squashed these blocks, and a second squash would hold each block until `finish`.
+    if (parallel)
+    {
+        /// The outer insert already applied the minimum block size, so the inner squash only enforces the strict maximum.
+        pipeline->context->setSetting("min_insert_block_size_rows", Field(UInt64(0)));
+        pipeline->context->setSetting("min_insert_block_size_bytes", Field(UInt64(0)));
+    }
+
     InterpreterInsertQuery interpreter(
         insert_query,
         pipeline->context,
         /* allow_materialized= */ true,
-        /* no_squash= */ parallel,
+        /* no_squash= */ false,
         /* no_destination= */ false,
         async_insert);
 

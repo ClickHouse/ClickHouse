@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
 # The tags table commits first. The samples and recent samples tables are written in parallel after it.
-# The CHECK constraints sleep: 1 s on tags, 2 s on samples and 2 s on recent samples.
-# A serial insert takes about 5 s. A parallel insert takes about 3 s.
+# The CHECK constraints sleep: 1 s on tags, 3 s on samples and 3 s on recent samples.
+# A serial insert takes about 7 s. A parallel insert takes about 4 s, so it saves at least 1.5 s.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,7 +29,7 @@ CREATE TABLE slow_samples
     id Tuple(UInt64, UUID),
     timestamp DateTime64(3),
     value Float64,
-    CONSTRAINT slow CHECK sleepEachRow(2) = 0
+    CONSTRAINT slow CHECK sleepEachRow(3) = 0
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
 
 CREATE TABLE slow_recent
@@ -37,7 +37,7 @@ CREATE TABLE slow_recent
     id Tuple(UInt64, UUID),
     timestamp DateTime64(3),
     value Float64,
-    CONSTRAINT slow CHECK sleepEachRow(2) = 0
+    CONSTRAINT slow CHECK sleepEachRow(3) = 0
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
 
 CREATE TABLE ts_speed ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
@@ -73,12 +73,12 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM slow_recent"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ts_speed, slow_tags, slow_samples, slow_recent"
 
-if [[ -z "${serial}" || "${serial}" -lt 4000 ]]; then
+if [[ -z "${serial}" || "${serial}" -lt 6000 ]]; then
     echo "Serial insert took ${serial:-missing} ms" >&2
     exit 1
 fi
 
-if [[ -z "${parallel}" || $((parallel * 4)) -ge $((serial * 3)) ]]; then
+if [[ -z "${parallel}" || $((serial - parallel)) -lt 1500 ]]; then
     echo "Parallel insert took ${parallel:-missing} ms and serial insert took ${serial} ms" >&2
     exit 1
 fi

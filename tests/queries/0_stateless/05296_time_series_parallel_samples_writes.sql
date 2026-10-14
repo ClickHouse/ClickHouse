@@ -111,6 +111,29 @@ INSERT INTO ts_outer (metric_name, tags, samples) VALUES ('mv', map('env', 'prod
 
 SELECT metric_name FROM ts_outer_dest;
 
+SELECT '--- Memory engine target tables get the same rows ---';
+
+CREATE TABLE mem_tags
+(
+    id Tuple(UInt64, UUID),
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time Nullable(DateTime64(3)),
+    max_time Nullable(DateTime64(3))
+) ENGINE = Memory;
+
+CREATE TABLE mem_samples (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = Memory;
+CREATE TABLE mem_recent (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = Memory;
+
+CREATE TABLE ts_mem ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+    DATA mem_samples TAGS mem_tags RECENT SAMPLES mem_recent;
+
+INSERT INTO ts_mem (metric_name, tags, samples) VALUES ('m', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 1.)]);
+
+SELECT count() FROM mem_tags;
+SELECT count() FROM mem_samples;
+SELECT count() FROM mem_recent;
+
 DROP VIEW ext_samples_mv;
 DROP VIEW ts_outer_mv;
-DROP TABLE ts_ext, ts_after, ext_tags, ext_samples, ext_recent, ext_samples_dest, ts_outer, ts_outer_dest;
+DROP TABLE ts_ext, ts_after, ext_tags, ext_samples, ext_recent, ext_samples_dest, ts_outer, ts_outer_dest, ts_mem, mem_tags, mem_samples, mem_recent;

@@ -31,3 +31,7 @@ m	dev	1
 0
 --- a materialized view on the time series table receives the inserted rows ---
 mv
+--- Memory engine target tables get the same rows ---
+1
+1
+1
