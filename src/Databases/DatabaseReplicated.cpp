@@ -2795,6 +2795,43 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     assertDigest(query_context);
 }
 
+void DatabaseReplicated::commitAlterTableDefinition(const StorageID & table_id,
+                                                    const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                                    const String & statement, ContextPtr query_context)
+{
+    /// Not a part of a DDL log entry, so there is no metadata transaction to add the requests to.
+    std::lock_guard lock{metadata_mutex};
+    String local_statement = readMetadataFile(table_id.table_name);
+    UInt64 new_digest = tables_metadata_digest;
+    new_digest -= DB::getMetadataHash(table_id.table_name, local_statement);
+    new_digest += DB::getMetadataHash(table_id.table_name, statement);
+
+    String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
+    auto zookeeper = getZooKeeper();
+    for (int attempts = 10; attempts > 0; --attempts)
+    {
+        String zk_statement;
+        Coordination::Stat stat;
+        Coordination::Requests ops;
+        /// Keeper is rewritten only from the definition this replica has applied, so a newer one written by another replica is kept.
+        bool set_metadata = zookeeper->tryGet(metadata_zk_path, zk_statement, &stat) && zk_statement == local_statement;
+        if (set_metadata)
+            ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, statement, stat.version));
+        ops.emplace_back(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+        Coordination::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses);
+        /// Another replica changed the definition after it was read.
+        if (code == Coordination::Error::ZBADVERSION && set_metadata && attempts > 1)
+            continue;
+        zkutil::KeeperMultiException::check(code, ops, responses);
+        break;
+    }
+
+    DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
+    tables_metadata_digest = new_digest;
+    assertDigest(query_context);
+}
+
 
 bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
 {

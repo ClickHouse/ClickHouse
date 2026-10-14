@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# Tags: no-replicated-database, no-ordinary-database
+# Tag no-replicated-database: the test creates its own databases, the Replicated ones are in 05343.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# RENAME DATABASE rewrites the references to the renamed database stored in the views, materialized views
+# of every database. The renames it refuses are in 05344, the TimeSeries tables in 05345.
+
+SRC="${CLICKHOUSE_DATABASE}_src"
+DST="${CLICKHOUSE_DATABASE}_dst"
+EXT="${CLICKHOUSE_DATABASE}_ext"
+MEM="${CLICKHOUSE_DATABASE}_mem"
+FSDB="${CLICKHOUSE_DATABASE}_fs"
+
+function rows()
+{
+    local query=""
+    for table in "$@"; do
+        query+="SELECT '${table}: ' || toString(count()) FROM ${table};"
+    done
+    ${CLICKHOUSE_CLIENT} -q "$query" | sed "s/${CLICKHOUSE_DATABASE}//"
+}
+
+function occurrences()
+{
+    local name=$1
+    shift
+    local query=""
+    for table in "$@"; do
+        query+="SHOW CREATE TABLE ${table};"
+    done
+    ${CLICKHOUSE_CLIENT} -q "$query" | grep -o -F "$name" | wc -l
+}
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE DATABASE ${SRC} ENGINE = Atomic;
+    CREATE DATABASE ${EXT} ENGINE = Atomic;
+    CREATE DATABASE ${MEM} ENGINE = Memory;
+    -- A database engine without detached tables must not make the rename fail.
+    CREATE DATABASE ${FSDB} ENGINE = Filesystem;
+
+    CREATE TABLE ${SRC}.sample (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE ${SRC}.other (a UInt64, b String) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE ${SRC}.excluded (a UInt64) ENGINE = MergeTree ORDER BY a;
+    INSERT INTO ${SRC}.other SELECT number, toString(number) FROM numbers(3);
+    INSERT INTO ${SRC}.excluded VALUES (100);
+
+    CREATE MATERIALIZED VIEW ${SRC}.inline_mv ENGINE = MergeTree ORDER BY a AS SELECT a FROM ${SRC}.sample;
+    CREATE TABLE ${SRC}.tgt (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${SRC}.to_mv TO ${SRC}.tgt AS SELECT a FROM ${SRC}.sample;
+    CREATE VIEW ${SRC}.pv AS SELECT a FROM ${SRC}.sample;
+    CREATE VIEW ${SRC}.not_in_v AS SELECT a FROM ${SRC}.sample WHERE a NOT IN ${SRC}.excluded;
+
+    CREATE TABLE ${SRC}.tgt2 (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${SRC}.qualified_mv TO ${SRC}.tgt2 AS SELECT ${SRC}.sample.a AS a FROM ${SRC}.sample;
+    CREATE VIEW ${SRC}.qualified_v AS SELECT ${SRC}.sample.* FROM ${SRC}.sample;
+    CREATE VIEW ${SRC}.regexp_v AS SELECT ${SRC}.sample.COLUMNS('^a$') FROM ${SRC}.sample;
+    CREATE VIEW ${SRC}.list_v AS SELECT ${SRC}.sample.COLUMNS(a) FROM ${SRC}.sample;
+    CREATE VIEW ${SRC}.join_v AS SELECT ${SRC}.sample.a AS a, b FROM ${SRC}.sample JOIN ${SRC}.other ON ${SRC}.sample.a = ${SRC}.other.a;
+
+    CREATE TABLE ${EXT}.s (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE ${EXT}.tgt (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${EXT}.mv TO ${EXT}.tgt AS SELECT a FROM ${SRC}.sample;
+    CREATE TABLE ${SRC}.tgt3 (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${EXT}.mv2 TO ${SRC}.tgt3 AS SELECT a FROM ${EXT}.s;
+    CREATE VIEW ${EXT}.v AS SELECT a FROM ${SRC}.sample;
+    CREATE VIEW ${MEM}.v AS SELECT a FROM ${SRC}.sample;
+
+    CREATE MATERIALIZED VIEW ${SRC}.dep REFRESH EVERY 1 YEAR ENGINE = Memory EMPTY AS SELECT 1 AS x;
+    CREATE TABLE ${SRC}.rt (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${SRC}.rmv REFRESH EVERY 1 YEAR DEPENDS ON ${SRC}.dep TO ${SRC}.rt EMPTY AS SELECT a FROM ${SRC}.sample;
+    CREATE TABLE ${EXT}.rt (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${EXT}.rmv REFRESH EVERY 1 YEAR DEPENDS ON ${SRC}.dep TO ${EXT}.rt EMPTY AS SELECT a FROM ${EXT}.s;
+
+    CREATE VIEW ${SRC}.unrelated_v AS SELECT a FROM ${EXT}.s;
+    CREATE VIEW ${EXT}.unrelated_v AS SELECT a FROM ${EXT}.s WHERE '${SRC}.sample' IN '${SRC}.sample';
+"
+
+unrelated_src_before=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${SRC}.unrelated_v" | sed "s/${SRC}/db/g")
+unrelated_ext_before=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${EXT}.unrelated_v")
+
+${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${SRC} TO ${DST}"
+
+function check()
+{
+    ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DST}.sample SELECT number FROM numbers(5); INSERT INTO ${EXT}.s SELECT number FROM numbers(2)"
+    rows ${DST}.inline_mv ${DST}.tgt ${DST}.pv ${DST}.not_in_v ${DST}.tgt2 ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v \
+        ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v
+}
+
+echo "-- after the rename"
+check
+echo "occurrences of the old name: $(occurrences "${SRC}" ${DST}.inline_mv ${DST}.to_mv ${DST}.pv ${DST}.not_in_v ${DST}.qualified_mv \
+    ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${EXT}.mv ${EXT}.mv2 ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv)"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM REFRESH VIEW ${DST}.rmv; SYSTEM WAIT VIEW ${DST}.rmv; SYSTEM REFRESH VIEW ${EXT}.rmv; SYSTEM WAIT VIEW ${EXT}.rmv"
+rows ${DST}.rt ${EXT}.rt
+
+[ "$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${DST}.unrelated_v" | sed "s/${DST}/db/g")" = "${unrelated_src_before}" ] && echo "unchanged: ${DST}.unrelated_v" | sed "s/${CLICKHOUSE_DATABASE}//"
+[ "$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${EXT}.unrelated_v")" = "${unrelated_ext_before}" ] && echo "unchanged: ${EXT}.unrelated_v" | sed "s/${CLICKHOUSE_DATABASE}//"
+
+echo "-- after a reload"
+${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${DST} SYNC; ATTACH DATABASE ${DST}; DETACH DATABASE ${EXT} SYNC; ATTACH DATABASE ${EXT}"
+check
+${CLICKHOUSE_CLIENT} -q "
+    SELECT arraySort(arrayMap((d, t) -> concat(replaceOne(d, '${CLICKHOUSE_DATABASE}', ''), '.', t), dependencies_database, dependencies_table))
+    FROM system.tables WHERE database = '${DST}' AND name = 'sample'"
+
+${CLICKHOUSE_CLIENT} -q "
+    DROP DATABASE IF EXISTS ${DST} SYNC;
+    DROP DATABASE IF EXISTS ${EXT} SYNC;
+    DROP DATABASE IF EXISTS ${MEM} SYNC;
+    DROP DATABASE IF EXISTS ${FSDB} SYNC;
+"

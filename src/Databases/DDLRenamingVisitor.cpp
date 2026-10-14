@@ -8,20 +8,33 @@
 #include <Interpreters/misc.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Poco/Net/NetException.h>
+#include <base/find_symbols.h>
+#include <fmt/ranges.h>
+
+#include <algorithm>
+#include <set>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int WRONG_DDL_RENAMING_SETTINGS;
 }
 
@@ -237,7 +250,7 @@ namespace
 
     /// Replaces a qualified table name in a specified function's argument.
     /// It can be either a string or an identifier with a dot in the middle.
-    void replaceTableNameInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
+    void replaceTableNameInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx, bool accept_string = true)
     {
         /// Just ignore incorrect arguments, proper exception will be thrown later
         if (!function.arguments || function.arguments->children.size() <= arg_idx)
@@ -246,7 +259,7 @@ namespace
         auto & arg = function.arguments->as<ASTExpressionList>()->children[arg_idx];
         if (auto * literal = arg->as<ASTLiteral>())
         {
-            if (literal->value.getType() != Field::Types::String)
+            if (!accept_string || literal->value.getType() != Field::Types::String)
                 return;
 
             auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
@@ -316,15 +329,22 @@ namespace
         }
     }
 
+    /// The argument of `function` that names a table, as in `dictGet('db.dict', ...)` or `x IN db.table`.
+    std::optional<size_t> getTableNameArgumentIndex(const ASTFunction & function)
+    {
+        if (functionIsJoinGet(function.name) || functionIsDictGet(function.name) || function.name == "dictionary")
+            return 0;
+        if (functionIsInOrGlobalInOperator(function.name))
+            return 1;
+        return {};
+    }
+
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
     {
-        if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
+        if (auto table_name_argument = getTableNameArgumentIndex(function))
         {
-            replaceTableNameInArgument(function, data, 0);
-        }
-        else if (Poco::toLower(function.name) == "in")
-        {
-            replaceTableNameInArgument(function, data, 1);
+            /// A string on the right side of `IN` is a value, not a table name.
+            replaceTableNameInArgument(function, data, *table_name_argument, /*accept_string=*/ !functionIsInOrGlobalInOperator(function.name));
         }
         else if (function.name == "merge")
         {
@@ -415,6 +435,289 @@ void renameDatabaseAndTableNameInCreateQuery(ASTPtr ast, const DDLRenamingMap & 
 {
     DDLRenamingVisitor::Data data{ast, renaming_map, global_context};
     DDLRenamingVisitor::Visitor{data}.visit(ast);
+}
+
+
+namespace
+{
+    const ASTPtr * tryGetMatcherQualifier(const IAST & ast)
+    {
+        if (const auto * asterisk = ast.as<ASTQualifiedAsterisk>())
+            return &asterisk->qualifier;
+        if (const auto * regexp_matcher = ast.as<ASTQualifiedColumnsRegexpMatcher>())
+            return &regexp_matcher->qualifier;
+        if (const auto * list_matcher = ast.as<ASTQualifiedColumnsListMatcher>())
+            return &list_matcher->qualifier;
+        return nullptr;
+    }
+
+    Strings splitIntoComponents(const String & name)
+    {
+        Strings components;
+        splitInto<'.'>(components, name);
+        return components;
+    }
+
+    /// The table expressions of a SELECT, ARRAY JOIN elements excluded.
+    std::vector<const ASTTableExpression *> getTableExpressions(const ASTSelectQuery & select)
+    {
+        std::vector<const ASTTableExpression *> res;
+        if (auto tables = select.tables())
+        {
+            for (const auto & element : tables->children)
+            {
+                const auto * tables_element = element->as<ASTTablesInSelectQueryElement>();
+                if (tables_element && tables_element->table_expression)
+                    res.push_back(tables_element->table_expression->as<ASTTableExpression>());
+            }
+        }
+        return res;
+    }
+
+    const ASTIdentifier * tryGetTableName(const ASTTableExpression & table_expression)
+    {
+        const auto * identifier = dynamic_cast<const ASTIdentifier *>(table_expression.database_and_table_name.get());
+        if (!identifier || identifier->isParam() || identifier->name_parts.size() > 2)
+            return nullptr;
+        return identifier;
+    }
+}
+
+DatabaseRenamingInViewDefinition::DatabaseRenamingInViewDefinition(
+    ASTPtr create_query_, String old_database_name_, String new_database_name_, QualifiedTableName view_name_)
+    : create_query(std::move(create_query_))
+    , old_database_name(std::move(old_database_name_))
+    , new_database_name(std::move(new_database_name_))
+    , view_name(std::move(view_name_))
+{
+    collect(create_query, NamePosition::Expression);
+}
+
+void DatabaseRenamingInViewDefinition::addName(const Strings & parts, bool multi_component)
+{
+    WrittenName name;
+    name.multi_component = multi_component || parts.size() > 1;
+    for (const auto & part : parts)
+    {
+        auto components = splitIntoComponents(part);
+        name.multi_component |= components.size() > 1;
+        name.components.insert(name.components.end(), components.begin(), components.end());
+    }
+    names.push_back(std::move(name));
+}
+
+void DatabaseRenamingInViewDefinition::collect(const ASTPtr & ast, NamePosition position)
+{
+    if (!ast)
+        return;
+
+    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()); with_alias && !with_alias->alias.empty())
+        addName({with_alias->alias});
+
+    if (auto * identifier = dynamic_cast<ASTIdentifier *>(ast.get()))
+    {
+        collectIdentifier(*identifier, position);
+    }
+    else if (const auto * create = ast->as<ASTCreateQuery>())
+    {
+        /// The name of the definition itself is not a reference.
+        for (const auto & child : ast->children)
+            if (child != create->database && child != create->table)
+                collect(child, NamePosition::Expression);
+    }
+    else if (const auto * select = ast->as<ASTSelectQuery>())
+    {
+        current_scopes.push_back(select);
+        for (const auto & child : ast->children)
+            collect(child, NamePosition::Expression);
+        current_scopes.pop_back();
+    }
+    else if (const auto * table_expression = ast->as<ASTTableExpression>())
+    {
+        for (const auto & child : ast->children)
+            collect(child, child == table_expression->database_and_table_name ? NamePosition::Table : NamePosition::Expression);
+    }
+    else if (const auto * function = ast->as<ASTFunction>())
+    {
+        auto table_name_argument = getTableNameArgumentIndex(*function);
+        for (const auto & child : ast->children)
+        {
+            if (child != function->arguments || !table_name_argument)
+            {
+                collect(child, NamePosition::Expression);
+                continue;
+            }
+            for (size_t i = 0; i < child->children.size(); ++i)
+                collect(child->children[i], i == *table_name_argument ? NamePosition::Table : NamePosition::Expression);
+        }
+    }
+    else if (const auto * refresh = ast->as<ASTRefreshStrategy>())
+    {
+        for (const auto & child : ast->children)
+        {
+            if (child != refresh->dependencies)
+            {
+                collect(child, NamePosition::Expression);
+                continue;
+            }
+            for (const auto & dependency : child->children)
+                collect(dependency, NamePosition::Table);
+        }
+    }
+    else if (const auto * with_element = ast->as<ASTWithElement>())
+    {
+        cte_names.insert(with_element->name);
+        addName({with_element->name});
+        for (const auto & child : ast->children)
+            collect(child, NamePosition::Expression);
+    }
+    else if (const auto * qualifier = tryGetMatcherQualifier(*ast))
+    {
+        for (const auto & child : ast->children)
+            collect(child, child == *qualifier ? NamePosition::Qualifier : NamePosition::Expression);
+    }
+    else
+    {
+        for (const auto & child : ast->children)
+            collect(child, NamePosition::Expression);
+    }
+}
+
+void DatabaseRenamingInViewDefinition::collectIdentifier(ASTIdentifier & identifier, NamePosition position)
+{
+    /// The name of a query parameter is only known when the view is called.
+    if (identifier.isParam())
+        return;
+
+    const auto & parts = identifier.name_parts;
+
+    if ((position == NamePosition::Table || identifier.as<ASTTableIdentifier>()) && parts.size() <= 2)
+    {
+        /// The database part is renamed with the table reference.
+        addName({parts.back()});
+        return;
+    }
+
+    bool can_be_qualified_with_database = position == NamePosition::Qualifier ? parts.size() == 2 : parts.size() >= 3;
+    if (can_be_qualified_with_database && parts[0] == old_database_name)
+    {
+        if (auto scope = findTableExpressionScope(parts[1]))
+        {
+            candidates.push_back(&identifier);
+            for (size_t i = *scope; i < current_scopes.size(); ++i)
+            {
+                for (const auto * table_expression : getTableExpressions(*current_scopes[i]))
+                {
+                    const auto * table_name = tryGetTableName(*table_expression);
+                    scope_table_expressions.push_back({identifier.name(), table_name ? table_name->name_parts : Strings{}});
+                }
+            }
+            addName(Strings(parts.begin() + 1, parts.end()), /*multi_component=*/ true);
+            return;
+        }
+    }
+
+    addName(parts);
+}
+
+std::optional<size_t> DatabaseRenamingInViewDefinition::findTableExpressionScope(const String & table_name) const
+{
+    for (size_t i = current_scopes.size(); i > 0; --i)
+    {
+        for (const auto * table_expression : getTableExpressions(*current_scopes[i - 1]))
+        {
+            const auto * identifier = tryGetTableName(*table_expression);
+            if (identifier && identifier->name_parts.size() == 2 && identifier->name_parts[0] == old_database_name
+                && identifier->name_parts[1] == table_name)
+                return i - 1;
+        }
+    }
+    return {};
+}
+
+std::vector<QualifiedTableName> DatabaseRenamingInViewDefinition::getScopeTables(bool throw_if_not_table) const
+{
+    std::set<QualifiedTableName> tables;
+    for (const auto & table_expression : scope_table_expressions)
+    {
+        const auto & parts = table_expression.table_name_parts;
+        if (parts.empty() || (parts.size() == 1 && cte_names.contains(parts[0])))
+        {
+            if (throw_if_not_table)
+                throwAmbiguous(fmt::format("{} is used next to a subquery, a table function or a CTE", table_expression.renamed_name));
+            continue;
+        }
+        tables.insert({parts.size() == 2 ? parts[0] : view_name.database, parts.back()});
+    }
+    return {tables.begin(), tables.end()};
+}
+
+std::vector<QualifiedTableName> DatabaseRenamingInViewDefinition::getTablesToCheck() const
+{
+    return getScopeTables(/*throw_if_not_table=*/ false);
+}
+
+void DatabaseRenamingInViewDefinition::check(const ColumnsDescription & view_columns, const ContextPtr & context) const
+{
+    auto is_renamed_database = [&](const String & name) { return name == old_database_name || name == new_database_name; };
+
+    if (!candidates.empty() && (old_database_name.contains('.') || new_database_name.contains('.')))
+        throwAmbiguous("a database name contains a dot");
+
+    for (const auto & name : names)
+    {
+        if ((name.multi_component || !candidates.empty()) && std::ranges::any_of(name.components, is_renamed_database))
+            throwAmbiguous(fmt::format("it uses the name {}", fmt::join(name.components, ".")));
+    }
+
+    /// A column named `db.table.column` is how the analyzer names a column qualified with the database.
+    for (const auto & column : view_columns)
+    {
+        auto components = splitIntoComponents(column.name);
+        for (size_t i = 0; i + 2 < components.size(); ++i)
+            if (components[i] == old_database_name)
+                throwAmbiguous(fmt::format("it has the column {}", column.name));
+    }
+
+    if (candidates.empty())
+        return;
+
+    for (const auto & table_name : getScopeTables(/*throw_if_not_table=*/ true))
+    {
+        auto table = DatabaseCatalog::instance().tryGetTable(StorageID{table_name.database, table_name.table}, context);
+        if (!table)
+            throwAmbiguous(fmt::format("table {} does not exist", table_name.getFullName()));
+
+        auto metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
+        auto check_column = [&](const String & column_name)
+        {
+            auto components = splitIntoComponents(column_name);
+            if (!components.empty() && is_renamed_database(components.front()))
+                throwAmbiguous(fmt::format("table {} has the column {}", table_name.getFullName(), column_name));
+        };
+        for (const auto & column : metadata->getColumns())
+            check_column(column.name);
+        for (const auto & column : metadata->virtuals)
+            check_column(column.name);
+    }
+}
+
+void DatabaseRenamingInViewDefinition::apply(const ContextPtr & global_context)
+{
+    for (auto * candidate : candidates)
+        candidate->setNamePart(0, new_database_name);
+
+    DDLRenamingMap renaming_map;
+    renaming_map.setNewDatabaseName(old_database_name, new_database_name);
+    renameDatabaseAndTableNameInCreateQuery(create_query, renaming_map, global_context);
+}
+
+void DatabaseRenamingInViewDefinition::throwAmbiguous(const String & reason) const
+{
+    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+        "Cannot rename database {} to {}, because the rename could change what the names in {} refer to: {}. "
+        "Qualify the columns with the table name or an alias instead of the database name",
+        backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), view_name.getFullName(), reason);
 }
 
 }

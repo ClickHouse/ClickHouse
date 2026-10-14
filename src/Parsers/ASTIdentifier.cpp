@@ -194,6 +194,17 @@ void ASTIdentifier::setShortName(const String & new_name)
     semantic->table = table;
 }
 
+void ASTIdentifier::setNamePart(size_t index, const String & new_part)
+{
+    if (index >= name_parts.size() || new_part.empty() || isParam())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot set part {} of identifier {} to '{}'", index, full_name, new_part);
+
+    name_parts[index] = new_part;
+    if (!semantic->special && name_parts.size() >= 2 && index == name_parts.size() - 2)
+        semantic->table = new_part;
+    resetFullName();
+}
+
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
