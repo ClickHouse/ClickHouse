@@ -18,6 +18,7 @@
 #include <Disks/IDisk.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/waitCancellable.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
@@ -170,7 +171,8 @@ void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & 
     if (pending_files.isFinished())
         return;
 
-    std::lock_guard lock{mutex};
+    /// run() holds the mutex while it drains the whole backlog.
+    CancellableLockGuard lock(mutex);
     if (!hasPendingFiles())
         return;
     processFiles(/*force=*/true, settings_changes);
@@ -592,8 +594,13 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
 
     try
     {
-        while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(file_path))
+        while (force || !monitor_blocker.isCancelled())
         {
+            CurrentThread::checkIfNotCancelled();
+
+            if (pending_files.isFinished() || !pending_files.tryPop(file_path))
+                break;
+
             if (!fs::exists(file_path))
             {
                 LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);

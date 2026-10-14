@@ -7,10 +7,17 @@
 #include <IO/ReadBufferFromFile.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char distributed_async_insert_pause_before_send[];
+}
 
 namespace ErrorCodes
 {
@@ -75,6 +82,13 @@ void writeRemoteConvert(
     ReadBufferFromFile & in,
     LoggerPtr log)
 {
+    /// Stops a killed flush (SYSTEM FLUSH DISTRIBUTED, DROP, DETACH) before it sends the next file.
+    CurrentThread::checkIfNotCancelled();
+
+    /// Background sends do not pause, so that another table's sender cannot answer SYSTEM WAIT FAILPOINT.
+    if (CurrentThread::tryGetQueryContext())
+        FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_pause_before_send);
+
     if (remote.getHeader().empty())
     {
         CheckingCompressedReadBuffer checking_in(in);
