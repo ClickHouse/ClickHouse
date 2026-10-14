@@ -924,9 +924,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
 
+        /// A source part without rows contributes no values to the merged part, so the columns it
+        /// stores must not change the materialize-vs-expire decision for the parts that do (for
+        /// example, a part whose rows were all deleted by a mutation after `MATERIALIZE COLUMN`).
+        /// When every source part is empty, all of them are taken into account as before.
+        auto contributes_rows = [&](const auto & part)
+        {
+            return non_empty_parts == 0 || part->rows_count != 0;
+        };
+        const size_t contributing_parts = non_empty_parts == 0 ? global_ctx->future_part->parts.size() : non_empty_parts;
+
         /// Collect all column names that actually exist in the source parts
         for (const auto & part : global_ctx->future_part->parts)
         {
+            if (!contributes_rows(part))
+                continue;
+
             for (const auto & col : part->getColumns())
                 columns_present_in_parts.emplace(col.name);
         }
@@ -951,6 +964,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         std::unordered_map<String, size_t> recomputed_from_default_part_counts;
         for (size_t part_index = 0; part_index < global_ctx->future_part->parts.size(); ++part_index)
         {
+            if (!contributes_rows(global_ctx->future_part->parts[part_index]))
+                continue;
+
             NameSet part_column_names;
             for (const auto & col : global_ctx->future_part->parts[part_index]->getColumns())
                 part_column_names.emplace(col.name);
@@ -977,7 +993,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NameSet columns_recomputed_from_default_in_all_parts;
         for (const auto & [column_name, part_count] : recomputed_from_default_part_counts)
         {
-            if (part_count == global_ctx->future_part->parts.size())
+            if (part_count == contributing_parts)
                 columns_recomputed_from_default_in_all_parts.emplace(column_name);
         }
 
