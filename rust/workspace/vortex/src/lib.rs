@@ -126,11 +126,20 @@ impl HostRuntime {
         future: BoxFuture<'static, ()>,
     ) -> AbortHandleRef {
         let weak = self.weak_self.clone();
+        // Scheduling happens synchronously inside whatever woke the task, and that can hold a
+        // lock: `kanal` wakes the other side of a channel with the channel locked. So nothing is
+        // dropped here, neither the task nor the runtime if this turns out to be its last
+        // reference: their futures may take the very same lock when dropped, which would
+        // deadlock the thread on itself.
         let schedule = move |runnable: Runnable| match weak.upgrade() {
-            // Dropping a `Runnable` drops its future, which is what should happen to work
-            // scheduled after its runtime is gone.
-            None => drop(runnable),
-            Some(runtime) => runtime.enqueue(queue, runnable),
+            // Work scheduled after its runtime is gone is dropped, which drops its future.
+            None => defer_drop(Box::new(runnable)),
+            Some(runtime) => {
+                runtime.enqueue(queue, runnable);
+                if let Some(runtime) = Arc::into_inner(runtime) {
+                    defer_drop(Box::new(runtime));
+                }
+            }
         };
         // A panic of the future is not caught here. Everything Vortex spawns through its `Handle`
         // already catches it and re-raises it at the join site, and anything else unwinds out of
@@ -206,6 +215,39 @@ impl HostRuntime {
             parker.park();
         };
         output
+    }
+}
+
+/// What `defer_drop` was given and `drop_deferred` did not drop yet.
+static DEFERRED_DROPS: Mutex<Vec<Box<dyn Send>>> = Mutex::new(Vec::new());
+static NUM_DEFERRED_DROPS: AtomicUsize = AtomicUsize::new(0);
+
+/// Keeps `value` for `drop_deferred`, for a caller that cannot tell which locks are held around it.
+fn defer_drop(value: Box<dyn Send>) {
+    let mut deferred = DEFERRED_DROPS.lock().unwrap_or_else(|e| e.into_inner());
+    deferred.push(value);
+    NUM_DEFERRED_DROPS.store(deferred.len(), Ordering::Release);
+}
+
+/// Drops everything given to `defer_drop`, including what is deferred while dropping. Called on the
+/// way out of every FFI call, where no lock of the library is held.
+fn drop_deferred() {
+    while NUM_DEFERRED_DROPS.load(Ordering::Acquire) > 0 {
+        let values = {
+            let mut deferred = DEFERRED_DROPS.lock().unwrap_or_else(|e| e.into_inner());
+            NUM_DEFERRED_DROPS.store(0, Ordering::Release);
+            std::mem::take(&mut *deferred)
+        };
+        drop(values);
+    }
+}
+
+/// Runs `drop_deferred` when dropped, so also when a panic unwinds.
+struct DropDeferredOnExit;
+
+impl Drop for DropDeferredOnExit {
+    fn drop(&mut self) {
+        drop_deferred();
     }
 }
 
@@ -316,6 +358,7 @@ pub unsafe extern "C" fn vortex_ffi_runtime_pending(
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_runtime_free(runtime: *mut FFI_VortexRuntime) {
     if !runtime.is_null() {
+        let _drop_deferred = DropDeferredOnExit;
         unsafe { drop(Box::from_raw(runtime)) };
     }
 }
@@ -418,6 +461,7 @@ unsafe fn ffi_wrap<T, F>(error: *mut *mut c_char, on_error: T, f: F) -> T
 where
     F: FnOnce() -> Result<T, String>,
 {
+    let _drop_deferred = DropDeferredOnExit;
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(Ok(value)) => value,
         Ok(Err(message)) => {
@@ -601,6 +645,7 @@ pub unsafe extern "C" fn vortex_ffi_reader_schema(
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_reader_free(reader: *mut FFI_VortexReader) {
     if !reader.is_null() {
+        let _drop_deferred = DropDeferredOnExit;
         unsafe { drop(Box::from_raw(reader)) };
     }
 }
@@ -1115,6 +1160,7 @@ pub unsafe extern "C" fn vortex_ffi_scan_cancel(scan: *const FFI_VortexScan) {
     if scan.is_null() {
         return;
     }
+    let _drop_deferred = DropDeferredOnExit;
     let scan = unsafe { &*scan };
     // Stops the driver from spawning any more split tasks.
     let _ = scan.permits.close();
@@ -1127,6 +1173,7 @@ pub unsafe extern "C" fn vortex_ffi_scan_cancel(scan: *const FFI_VortexScan) {
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_scan_free(scan: *mut FFI_VortexScan) {
     if !scan.is_null() {
+        let _drop_deferred = DropDeferredOnExit;
         unsafe { drop(Box::from_raw(scan)) };
     }
 }
@@ -1548,6 +1595,7 @@ pub unsafe extern "C" fn vortex_ffi_writer_finish(
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_writer_free(writer: *mut FFI_VortexWriter) {
     if !writer.is_null() {
+        let _drop_deferred = DropDeferredOnExit;
         unsafe { drop(Box::from_raw(writer)) };
     }
 }
@@ -2596,6 +2644,53 @@ mod tests {
                 .any(|name| name.starts_with("async-io") || name.starts_with("blocking")),
             "unexpected library threads: {names:?}"
         );
+    }
+
+    /// A task woken after its runtime is gone is not dropped inside the wake: whoever wakes it can
+    /// hold a lock that the task's future takes when dropped, as `kanal` does with its channels.
+    #[test]
+    fn task_woken_after_runtime_is_gone_is_not_dropped_inside_wake() {
+        /// Takes the lock when dropped, and records whether it got it.
+        struct LockOnDrop {
+            lock: Arc<Mutex<Option<Waker>>>,
+            took_lock: Arc<AtomicBool>,
+        }
+
+        impl Drop for LockOnDrop {
+            fn drop(&mut self) {
+                let took_lock = self.lock.try_lock().is_ok();
+                self.took_lock.store(took_lock, Ordering::SeqCst);
+            }
+        }
+
+        let lock: Arc<Mutex<Option<Waker>>> = Arc::new(Mutex::new(None));
+        let took_lock = Arc::new(AtomicBool::new(false));
+        let runtime = HostRuntime::new(0, None);
+        let on_drop = LockOnDrop {
+            lock: lock.clone(),
+            took_lock: took_lock.clone(),
+        };
+        let handle = runtime.spawn_on(
+            FFI_VortexTaskQueue::CPU,
+            futures::future::poll_fn(move |context| {
+                *on_drop.lock.lock().expect("not poisoned") = Some(context.waker().clone());
+                Poll::<()>::Pending
+            })
+            .boxed(),
+        );
+        drop(handle);
+        assert_eq!(runtime.run(FFI_VortexTaskQueue::CPU, usize::MAX), 1);
+        // The task is idle now, and only its waker keeps it alive.
+        drop(runtime);
+
+        {
+            let mut waker = lock.lock().expect("not poisoned");
+            waker.take().expect("the task was polled").wake();
+            // A drop inside `wake` would have found the lock taken.
+            assert!(!took_lock.load(Ordering::SeqCst));
+        }
+        drop_deferred();
+        assert!(took_lock.load(Ordering::SeqCst));
     }
 
     /// A panic of a task that nothing joins is reported by `vortex_ffi_runtime_run`, not swallowed.
