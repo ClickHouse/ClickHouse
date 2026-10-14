@@ -13,11 +13,15 @@ import Recommendations from '/snippets/fr/recommendations.mdx';
 > Il est recommandé d’utiliser les paquets `deb` officiels précompilés pour **Debian** ou **Ubuntu**.
 
 <Steps>
-  <Step title="Consulter les recommandations" id="review-recommendations">
+  <Step>
+    ## Consulter les recommandations
+
     <Recommendations />
   </Step>
 
-  <Step title="Configurer le dépôt Debian" id="setup-the-debian-repository">
+  <Step>
+    ## Configurer le dépôt Debian
+
     Pour installer ClickHouse, exécutez les commandes suivantes :
 
     ```bash
@@ -69,13 +73,17 @@ import Recommendations from '/snippets/fr/recommendations.mdx';
     </Accordion>
   </Step>
 
-  <Step title="Installer ClickHouse server et le client" id="install-clickhouse-server-and-client">
+  <Step>
+    ## Installer ClickHouse server et le client
+
     ```bash
     sudo apt-get install -y clickhouse-server clickhouse-client
     ```
   </Step>
 
-  <Step title="Démarrer ClickHouse" id="start-clickhouse-server">
+  <Step>
+    ## Démarrer ClickHouse
+
     Pour démarrer ClickHouse server, exécutez :
 
     ```bash
@@ -95,7 +103,9 @@ import Recommendations from '/snippets/fr/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Installer ClickHouse Keeper autonome" id="install-standalone-clickhouse-keeper">
+  <Step>
+    ## Installer ClickHouse Keeper autonome
+
     <Tip>
       Dans les environnements de production, nous vous recommandons vivement d’exécuter ClickHouse Keeper sur des nœuds dédiés.
       Dans les environnements de test, si vous décidez d’exécuter ClickHouse Server et ClickHouse Keeper sur le même serveur,
@@ -109,7 +119,9 @@ import Recommendations from '/snippets/fr/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Activer et démarrer ClickHouse Keeper" id="enable-and-start-clickhouse-keeper">
+  <Step>
+    ## Activer et démarrer ClickHouse Keeper
+
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

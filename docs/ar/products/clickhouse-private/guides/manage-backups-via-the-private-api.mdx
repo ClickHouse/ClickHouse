@@ -1,0 +1,200 @@
+---
+noindex: true
+title: "إدارة النسخ الاحتياطية عبر واجهة برمجة التطبيقات الخاصة"
+sidebarTitle: "إدارة النسخ الاحتياطية عبر API"
+description: "أنشئ نسخًا احتياطية لـ ClickHouse وراقبها وجدولها واستعِدها باستخدام واجهة برمجة التطبيقات الخاصة."
+---
+
+أنشئ نسخًا احتياطية لـ ClickHouse وراقبها وجدولها واستعِدها باستخدام واجهة برمجة التطبيقات الخاصة.
+
+لإجراء عمليات النسخ الاحتياطي اليدوية من دون استخدام API، راجع [النسخ الاحتياطي والاستعادة](/ar/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* أن يكون ClickHouse Private API مثبّتًا ومتاحًا للوصول (على سبيل المثال، عبر إعادة توجيه المنفذ إلى `http://localhost:8080/`)
+* نشر عنقود ClickHouse واحد على الأقل (يستخدم هذا الدليل `default-xx-01`)
+
+<div id="create-a-full-backup">
+  ## أنشئ نسخة احتياطية كاملة
+</div>
+
+```json
+{
+    "incremental": false
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+تتضمن الاستجابة معرّف UUID يحدّد النسخة الاحتياطية.
+
+<div id="check-backup-status">
+  ## التحقق من حالة النسخة الاحتياطية
+</div>
+
+استعلم عن نسخة احتياطية محددة باستخدام UUID:
+
+```bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+عند اكتمال عملية النسخ الاحتياطي بنجاح، يُرجع الحقل `status.state` القيمة `Ready`.
+
+<div id="list-all-backups">
+  ## عرض جميع النسخ الاحتياطية
+</div>
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+تدعم نقطة النهاية معلمات الاستعلام للتصفية والفرز. على سبيل المثال، للعثور على أحدث نسخة احتياطية ناجحة:
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+<div id="create-incremental-backups">
+  ## إنشاء النسخ الاحتياطية التزايدية
+</div>
+
+تنسخ النسخ الاحتياطية التزايدية فقط البيانات التي تغيّرت منذ نسخة احتياطية سابقة، مكوِّنةً سلسلة تبدأ بنسخة احتياطية كاملة.
+
+```json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="back-up-specific-tables-or-databases">
+  ## انسخ الجداول أو قواعد البيانات المحددة احتياطيًا
+</div>
+
+تحكّم في ما يتم نسخه احتياطيًا باستخدام الحقلين `databases` و`tables`. يجب أن تكون أسماء الجداول محددة بالكامل (أي `db.table`).
+
+```json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="schedule-backups-with-a-cronjob">
+  ## جدولة النسخ الاحتياطية باستخدام CronJob
+</div>
+
+استخدم CronJob في Kubernetes لأتمتة إنشاء النسخ الاحتياطية:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+يؤدي ذلك إلى جدولة نسخة احتياطية كاملة يوميًا عند الساعة 2 صباحًا. ويفترض أن واجهة برمجة التطبيقات الخاصة متاحة عبر `http://clickhouse-private-api-airgap-management:8080`.
+
+<div id="restore-from-a-backup">
+  ## الاستعادة من نسخة احتياطية
+</div>
+
+<div id="via-the-api">
+  ### عبر واجهة برمجة التطبيقات
+</div>
+
+توفّر واجهة برمجة التطبيقات نقطة نهاية للاستعادة تُعيد نسخة احتياطية إلى مثيل هدف مختلف:
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+لدواعٍ تتعلق بالسلامة، لا تسمح واجهة برمجة التطبيقات بالاستعادة على المثيل نفسه. ويُنصح بإنشاء عنقود جديد لعملية الاستعادة لتجنّب إرهاق العنقود الأصلي.
+
+<div id="manual-sql-alternative">
+  ### البديل اليدوي باستخدام SQL
+</div>
+
+لتحكم أكثر دقة، يمكنك الاستعادة مباشرةً باستخدام SQL. على سبيل المثال، لاستعادة قاعدة بيانات واحدة باسم جديد:
+
+```sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+<div id="manage-backup-lifecycle">
+  ## إدارة دورة حياة النسخ الاحتياطي
+</div>
+
+<div id="s3-lifecycle-policy">
+  ### سياسة دورة حياة S3
+</div>
+
+استخدم سياسات دورة حياة S3 لترحيل النسخ الاحتياطية القديمة وإنهاء صلاحيتها تلقائيًا:
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+ينقل هذا المثال النسخ الاحتياطية إلى Standard-IA بعد 7 أيام، ثم إلى Glacier بعد 30 يومًا، ويحذفها بعد 90 يومًا.
+
+<div id="backup-chain-integrity-warning">
+  ### تحذير بشأن سلامة سلسلة النسخ الاحتياطية
+</div>
+
+لا تُراعي سياسات دورة حياة S3 سلاسل النسخ الاحتياطي التزايدي. إذا حُذفت نسخة احتياطية كاملة تشكّل أساس سلسلة ما بينما لا تزال النسخ الاحتياطية التزايدية تشير إليها، فستصبح تلك النسخ الاحتياطية التزايدية غير قابلة للاستعادة.
+
+تأكد من أن مدة الاحتفاظ بالنسخ الاحتياطية الكاملة أطول من الفترة بين دورات النسخ الاحتياطي الكامل. واختبر بانتظام إمكانية استعادة نسخك الاحتياطية.

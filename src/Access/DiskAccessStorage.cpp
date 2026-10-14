@@ -1,4 +1,3 @@
-#include <Common/StringUtils.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/AccessEntityIO.h>
 #include <Access/AccessChangesNotifier.h>
@@ -14,9 +13,11 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <base/range.h>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 
 
@@ -141,7 +142,7 @@ namespace
     String getListFilePath(const String & directory_path, AccessEntityType type)
     {
         String file_name = AccessEntityTypeInfo::get(type).plural_raw_name;
-        toLowerASCII(file_name);
+        boost::to_lower(file_name);
         return directory_path + file_name + ".list";
     }
 
@@ -151,13 +152,6 @@ namespace
     String getNeedRebuildListsMarkFilePath(const String & directory_path)
     {
         return directory_path + "need_rebuild_lists.mark";
-    }
-
-
-    void createNeedRebuildListsMark(const String & directory_path)
-    {
-        WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
-        out.close();
     }
 
 
@@ -323,12 +317,6 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 {
     LOG_TRACE(getLogger(), "Scheduling writing .list file for type {}, failed_to_write_lists={}, lists_writing_thread_is_waiting={}",
         AccessEntityTypeInfo::get(type).plural_raw_name, failed_to_write_lists, lists_writing_thread_is_waiting);
-
-    /// Create the 'need_rebuild_lists.mark' file.
-    /// This file will be used later to find out if writing lists is successful or not.
-    /// Created on every call, because `reloadAllAndRebuildLists` can remove it while the lists-writing thread is waiting.
-    createNeedRebuildListsMark(directory_path);
-
     if (failed_to_write_lists)
         return; /// We don't try to write list files after the first fail.
                 /// The next restart of the server will invoke rebuilding of the list files.
@@ -341,6 +329,11 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 
     if (lists_writing_thread && lists_writing_thread->joinable())
         lists_writing_thread->join();
+
+    /// Create the 'need_rebuild_lists.mark' file.
+    /// This file will be used later to find out if writing lists is successful or not.
+    std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
+    out.close();
 
     LOG_TRACE(getLogger(), "Created need_rebuild_lists.mark, starting background lists-writing thread");
 
@@ -503,18 +496,6 @@ void DiskAccessStorage::reload(ReloadMode reload_mode)
         return;
 
     std::lock_guard lock{mutex};
-
-    /// Stays on disk if `reloadAllAndRebuildLists` fails to write the lists.
-    /// Best effort, so that a directory which refuses new files is still reloadable.
-    try
-    {
-        createNeedRebuildListsMark(directory_path);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger(), "Could not create need_rebuild_lists.mark");
-    }
-
     reloadAllAndRebuildLists();
 }
 

@@ -299,7 +299,6 @@ public:
                     });
                 }
                 pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
-                pipeline->disableProfileEventUpdate();
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
@@ -1147,7 +1146,6 @@ void registerStorageHive(StorageFactory & factory)
                 std::move(hive_settings),
                 args.getContext());
         },
-        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1181,7 +1179,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Hive('thrift://host:port', 'database', 'table')
 PARTITION BY expr
 ```
-See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 The table structure can differ from the original Hive table structure:
 - Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
