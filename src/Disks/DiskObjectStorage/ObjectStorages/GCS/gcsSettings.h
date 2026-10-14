@@ -132,6 +132,11 @@ struct GCSObjectStorageSettings
     /// scheme of `google_adc_token_uri`, which may differ from the scheme of the storage endpoint. The
     /// same object as `proxy_resolver` when the schemes match.
     std::shared_ptr<ProxyConfigurationResolver> token_proxy_resolver;
+    /// Proxy of the token requests to an endpoint of the other scheme (`http` or `https`) than
+    /// `google_adc_token_uri`, resolved from the disk in the same way. A service-account key names its
+    /// own `token_uri`, whose scheme can be either, and its token exchange must still honour the
+    /// disk-local `<proxy>`.
+    std::shared_ptr<ProxyConfigurationResolver> other_scheme_token_proxy_resolver;
 
     /// Disk-only knobs.
     /// Whether this object storage backs a server-configured disk rather than the SQL surface.

@@ -616,6 +616,7 @@ void GCSObjectStorage::applyNewSettings(
         /// The kept client still resolves proxies through the resolvers it was built with.
         new_settings.proxy_resolver = current->settings.proxy_resolver;
         new_settings.token_proxy_resolver = current->settings.token_proxy_resolver;
+        new_settings.other_scheme_token_proxy_resolver = current->settings.other_scheme_token_proxy_resolver;
     }
 
     client_with_settings.set(std::make_unique<const ClientWithSettings>(

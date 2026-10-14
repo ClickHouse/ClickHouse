@@ -218,6 +218,11 @@ static ProxyConfiguration::Protocol gcsProxyProtocol(const String & endpoint_ove
     return ProxyConfiguration::protocolFromString(Poco::toLower(Poco::URI(endpoint_override).getScheme()));
 }
 
+static ProxyConfiguration::Protocol otherGCSProxyProtocol(ProxyConfiguration::Protocol protocol)
+{
+    return protocol == ProxyConfiguration::Protocol::HTTPS ? ProxyConfiguration::Protocol::HTTP : ProxyConfiguration::Protocol::HTTPS;
+}
+
 /// The REST endpoint the SDK actually sends the storage requests to. `CLOUD_STORAGE_EMULATOR_ENDPOINT`
 /// (or its legacy name `CLOUD_STORAGE_TESTBENCH_ENDPOINT`) in the server's environment takes precedence
 /// over any `RestEndpointOption`, an explicit endpoint override included (see `GetEmulator` and
@@ -404,6 +409,12 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.token_proxy_resolver = token_proxy_protocol == proxy_protocol
         ? result.proxy_resolver
         : ProxyConfigurationResolverProvider::getFromOldSettingsFormat(token_proxy_protocol, config_prefix, config);
+    /// A service-account key may name a `token_uri` of either scheme, so the disk-local proxy of the
+    /// other scheme is resolved too.
+    const auto other_token_proxy_protocol = otherGCSProxyProtocol(token_proxy_protocol);
+    result.other_scheme_token_proxy_resolver = other_token_proxy_protocol == proxy_protocol
+        ? result.proxy_resolver
+        : ProxyConfigurationResolverProvider::getFromOldSettingsFormat(other_token_proxy_protocol, config_prefix, config);
 
     result.for_disk = true;
     result.read_only = config.getBool(config_prefix + ".readonly", false);
@@ -486,7 +497,8 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         /// same resolver object is known to describe the same transport. The cost of the
         /// conservative answer is a copy that falls back to read + write.
         && proxy_resolver == other.proxy_resolver
-        && token_proxy_resolver == other.token_proxy_resolver;
+        && token_proxy_resolver == other.token_proxy_resolver
+        && other_scheme_token_proxy_resolver == other.other_scheme_token_proxy_resolver;
 }
 
 bool GCSObjectStorageSettings::hasChangesAffectingClient(const GCSObjectStorageSettings & other) const
@@ -643,9 +655,11 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
                 context->getRemoteHostFilter().checkURL(Poco::URI(key_info->token_uri));
 
             const auto token_proxy_protocol = gcsProxyProtocol(key_info->token_uri);
+            /// The disk resolved its proxies for both schemes, so the disk-local `<proxy>` is honoured
+            /// whichever scheme the key's `token_uri` has.
             auto token_proxy_resolver = token_proxy_protocol == gcsProxyProtocol(settings.google_adc_token_uri)
                 ? settings.token_proxy_resolver
-                : nullptr;
+                : settings.other_scheme_token_proxy_resolver;
             if (!token_proxy_resolver)
                 token_proxy_resolver = ProxyConfigurationResolverProvider::get(token_proxy_protocol, context->getConfigRef());
             token_request_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(makeGCSProxyConfigProvider(token_proxy_resolver));
