@@ -183,6 +183,9 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
                 cte_planner.buildQueryPlanIfNeeded();
 
                 auto cte_plan = std::move(cte_planner).extractQueryPlan();
+                /// The CTE plan is kept aside until `optimize`, after the distributed-plan decision, so its
+                /// contexts have to follow this plan's decision from here.
+                query_plan.takeContextsFrom(cte_plan);
 
                 auto step = std::make_unique<MaterializingCTEStep>(
                     cte_plan.getCurrentHeader(),

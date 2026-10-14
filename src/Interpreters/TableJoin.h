@@ -173,7 +173,6 @@ private:
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
-    const UInt64 parallel_hash_join_threshold = 100'000;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -308,17 +307,6 @@ public:
 
     static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val);
 
-    static bool isHashFamilyEnabled(const std::vector<JoinAlgorithm> & join_algorithms)
-    {
-        return isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
-            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH);
-    }
-
-    bool isHashFamilyEnabled() const
-    {
-        return isHashFamilyEnabled(join_algorithms);
-    }
-
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
         return isEnabledAlgorithm(join_algorithms, val);
@@ -349,7 +337,7 @@ public:
     size_t defaultMaxBytes() const { return default_max_bytes; }
     bool joinedBlockAllowSplitSingleRow() const { return joined_block_split_single_row; }
     bool allowParallelNonJoinedRowsProcessing() const { return parallel_non_joined_rows_processing; }
-    UInt64 parallelHashJoinThreshold() const { return parallel_hash_join_threshold; }
+    bool preferParallelHashLayout(std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const;
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -513,14 +501,9 @@ public:
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
-/// Both `hash` and `parallel_hash` name the same join, so either one enables the cache keys.
 bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
     bool is_special_storage,
     bool one_disjunct);
-
-/// Unlike `allowHashJoinCacheKeys`, this ignores the algorithm list and special storages.
-/// Whether the layout is usable is a correctness question, not a user choice.
-bool preferParallelHashLayout(JoinKind kind, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold);
 }

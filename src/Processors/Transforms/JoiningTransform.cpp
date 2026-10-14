@@ -76,10 +76,7 @@ IProcessor::Status JoiningTransform::prepare()
     if (inputs.size() > 1)
     {
         auto & last_in = inputs.back();
-        /// Two ways this can hold `JoinSwitcher`'s exclusive probe lock: our own live
-        /// result, and a sibling transform's. `prepare` must not block on either.
-        /// Skip the short-circuit whenever the answer is not free.
-        if (last_in.isFinished() && !join_result && !on_totals && join->tryAlwaysReturnsEmptySet().value_or(false))
+        if (last_in.isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
             stop_reading = true;
     }
 
@@ -284,11 +281,11 @@ Block JoiningTransform::readExecute(Chunk & chunk)
 }
 
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(
-    SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, size_t build_worker_id_)
+    SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, JoinBuildContext build_context_)
     : IProcessor({input_header}, {Block()})
     , join(std::move(join_))
     , finish_counter(std::move(finish_counter_))
-    , build_worker_id(build_worker_id_)
+    , build_context(build_context_)
 {
     spillable = join->canSpillToDisk();
 }
@@ -301,12 +298,45 @@ InputPort * FillingRightJoinSideTransform::addTotalsPort()
     return &inputs.emplace_back(inputs.front().getHeader(), this);
 }
 
+OutputPort * FillingRightJoinSideTransform::addSealPort(SealPayloadGetter seal_payload_getter_)
+{
+    if (seal_port)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Seal port was already added to FillingRightJoinSideTransform");
+
+    seal_payload_getter = std::move(seal_payload_getter_);
+    seal_port = &outputs.emplace_back(Block(), this);
+    return seal_port;
+}
+
+void FillingRightJoinSideTransform::finishSealPort(bool emit)
+{
+    if (!seal_port || seal_done)
+        return;
+    seal_done = true;
+
+    if (emit && completed_the_build)
+    {
+        /// One row with no columns: the seal port header is empty, and a chunk with no rows
+        /// at all would be indistinguishable from no data.
+        Chunk seal(Columns{}, 1);
+        auto info = std::make_shared<RuntimeFilterSealInfo>();
+        if (seal_payload_getter)
+            info->filter = seal_payload_getter();
+        seal.getChunkInfos().add(std::move(info));
+        seal_port->push(std::move(seal));
+    }
+
+    seal_port->finish();
+}
+
 IProcessor::Status FillingRightJoinSideTransform::prepare()
 {
     auto & output = outputs.front();
 
     if (post_build_phase)
     {
+        /// The post-build phase has been executed in work(): the join is ready to be probed.
+        finishSealPort(/*emit=*/ true);
         output.finish();
         return Status::Finished;
     }
@@ -314,6 +344,8 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
     /// Check can output.
     if (output.isFinished())
     {
+        /// Early termination: no seal is emitted, the gated consumers just see it finish.
+        finishSealPort(/*emit=*/ false);
         for (auto & input : inputs)
             input.close();
         return Status::Finished;
@@ -367,6 +399,7 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
     if (finish_counter->isLast())
     {
+        completed_the_build = true;
         join->onBuildPhaseFinish();
         if (join->hasPostBuildPhase())
         {
@@ -375,6 +408,9 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
         }
     }
 
+    /// Either this transform completed the whole build (and the join is ready to be probed,
+    /// there is no post-build phase), or another one will: its seal port just finishes.
+    finishSealPort(/*emit=*/ true);
     output.finish();
     return Status::Finished;
 }
@@ -397,7 +433,7 @@ void FillingRightJoinSideTransform::work()
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
-        stop_reading = !join->addBlockToJoin(block, num_rows, build_worker_id, true);
+        stop_reading = !join->addBlockToJoin(block, num_rows, build_context);
     }
 
     set_totals = for_totals;
@@ -420,7 +456,7 @@ bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
 {
     if (spillable && join->getSpillableBytes() >= bytes)
     {
-        join->requestSpill();
+        join->requestSpill(build_context);
         return true;
     }
     return false;

@@ -1030,10 +1030,42 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     time.sleep(4)
     nats_helpers.revive_nats(nats_cluster)
 
-    result = instance.query_with_retry("SELECT count(DISTINCT key) FROM test.view", check_callback = lambda num_rows: int(num_rows) == messages_num)
+    # Core NATS is at-most-once: the broker keeps no message it has not already handed to a
+    # subscriber, so whatever was still in flight when it was stopped is gone for good and the
+    # count of the first batch cannot be asserted. The no-loss guarantee belongs to JetStream and
+    # is asserted by the test of the same name in `test_nats_jet_stream.py`. What this test is
+    # named after is the connection, so what is asserted here is that publishing works again.
+    #
+    # A core subscription comes back only when the client reconnects and re-sends `SUB` -
+    # `NATSCoreConsumer` does not override `needsResubscribe`, so nothing on the ClickHouse side
+    # resubscribes it and nothing is logged when it happens - and a message published before that
+    # lands on a subject with no subscriber and is dropped. Waiting longer after publishing cannot
+    # recover it, so the same batch is published until it arrives: its keys are fixed, so
+    # `DISTINCT` collapses the duplicates.
+    probe_num = 1000
+    probe_values = ",".join(
+        "({i}, {i})".format(i=i) for i in range(messages_num, messages_num + probe_num)
+    )
+    probe_count = "SELECT count(DISTINCT key) FROM test.view WHERE key >= {}".format(messages_num)
 
-    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
-        result
+    received = 0
+    deadline = time.monotonic() + 120
+    while received != probe_num and time.monotonic() < deadline:
+        instance.query_with_retry(
+            "INSERT INTO test.producer_reconnect VALUES {}".format(probe_values)
+        )
+        received = int(
+            instance.query_with_retry(
+                probe_count,
+                retry_count=10,
+                sleep_time=0.5,
+                check_callback=lambda num_rows: int(num_rows) == probe_num,
+            )
+        )
+
+    assert received == probe_num, (
+        "ClickHouse did not restore the connection: {} of the {} messages republished after the "
+        "broker came back arrived within 120s".format(received, probe_num)
     )
 
 
