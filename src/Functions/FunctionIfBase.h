@@ -17,10 +17,8 @@ namespace DB
 
 class FunctionIfBase : public IFunction
 {
-public:
-    bool isNoExcept() const override { return true; }
-
 #if USE_EMBEDDED_COMPILER
+public:
     bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
     {
         if (!canBeNativeType(result_type))
