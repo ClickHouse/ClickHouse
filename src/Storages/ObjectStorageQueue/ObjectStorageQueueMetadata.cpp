@@ -2006,6 +2006,8 @@ namespace DB
 {
     void ObjectStorageQueueMetadata::dropFailedFiles(const std::optional<String> & like_pattern)
     {
+        auto component_guard = Coordination::setCurrentComponent("ObjectStorageQueueMetadata::dropFailedFiles");
+
         /// Exclusive mode keeps failed-file state only in the local cache and has no `/failed` subtree in Keeper,
         /// so there is nothing this command could clear. Reject instead of silently succeeding.
         if (isExclusive(mode))

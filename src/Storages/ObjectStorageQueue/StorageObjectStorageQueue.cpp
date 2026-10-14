@@ -2096,6 +2096,8 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
 
 void StorageObjectStorageQueue::dropFailedFiles(const std::optional<String> & like_pattern)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::dropFailedFiles");
+
     auto metadata = tryGetFilesMetadata();
     if (!metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table does not have metadata initialized");
