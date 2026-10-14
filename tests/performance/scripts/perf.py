@@ -1296,7 +1296,7 @@ for query_index in queries_to_run:
             all_server_times[conn_index].append(elapsed)
 
             server_seconds += elapsed
-            emit_row(f"query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}")
+            emit_row(f"query\t{query_index}\t{run_id}\t{server_index}\t{elapsed}")
 
             if elapsed > args.max_query_seconds:
                 # Do not stop processing pathologically slow queries,

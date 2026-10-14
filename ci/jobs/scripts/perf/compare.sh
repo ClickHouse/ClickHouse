@@ -724,7 +724,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
     right join query_runs
         on query_logs.query_id = query_runs.query_id
             and query_logs.version = query_runs.version
-    where (test, query_index) not in partial_queries
+    where (test, query_index) not in partial_queries or ${CHPC_NIGHTLY:-0}
     ;
 
 -- This is just for convenience -- human-readable + easy to make plots.
@@ -758,7 +758,7 @@ create table query_run_metrics_for_stats engine File(
         -- not filtered.
         metric_values
     from query_run_metric_arrays
-    where (test, query_index) not in broken_queries
+    where (test, query_index) not in broken_queries and (test, query_index) not in partial_queries
     order by test, query_index, run, version
     ;
 
