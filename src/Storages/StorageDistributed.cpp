@@ -1983,29 +1983,51 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 /// only those are ever sent (see `DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk`).
 /// The `tmp` and `broken` subdirectories are not looked into: a file in `tmp` was never promoted
 /// to the queue, and a file in `broken` was already quarantined by it, so neither is pending.
-/// Everything here is best-effort: a path a version without the queue never wrote to is expected
-/// not to resolve to a directory at all.
+/// A path that does not exist (or has a non-directory component) is expected: a version without
+/// the queue never wrote there, so it holds no block. Any other error (for example, `EACCES` on a
+/// replica directory) is thrown: an inspection that did not complete cannot establish that the
+/// directory holds no acknowledged INSERT.
 static std::string findPendingQueueBlock(const std::string & path)
 {
+    auto is_absent = [](const std::error_code & ec)
+    {
+        return ec == std::errc::no_such_file_or_directory || ec == std::errc::not_a_directory;
+    };
+    auto check = [&](const std::error_code & ec, const fs::path & checked_path)
+    {
+        if (ec && !is_absent(ec))
+            throw fs::filesystem_error("Cannot inspect a legacy async INSERT queue directory", checked_path, ec);
+    };
+
     std::error_code ec;
-    if (!fs::is_directory(path, ec))
+    const bool is_directory = fs::is_directory(path, ec);
+    check(ec, path);
+    if (!is_directory)
         return {};
 
-    for (fs::directory_iterator replica(path, ec), replicas_end; !ec && replica != replicas_end; replica.increment(ec))
+    fs::directory_iterator replica(path, ec);
+    for (fs::directory_iterator replicas_end; !ec && replica != replicas_end; replica.increment(ec))
     {
-        if (!replica->is_directory(ec))
+        std::error_code replica_ec;
+        const bool is_replica_directory = replica->is_directory(replica_ec);
+        check(replica_ec, replica->path());
+        if (!is_replica_directory)
             continue;
 
-        std::error_code block_ec;
-        for (fs::directory_iterator block(replica->path(), block_ec), blocks_end; !block_ec && block != blocks_end;
-             block.increment(block_ec))
+        fs::directory_iterator block(replica->path(), replica_ec);
+        for (fs::directory_iterator blocks_end; !replica_ec && block != blocks_end; block.increment(replica_ec))
         {
+            std::error_code block_ec;
+            const bool is_regular_file = block->is_regular_file(block_ec);
+            check(block_ec, block->path());
+
             UInt64 block_number = 0;
-            if (block->is_regular_file(block_ec) && block->path().extension() == ".bin"
-                && tryParse(block_number, block->path().stem().string()))
+            if (is_regular_file && block->path().extension() == ".bin" && tryParse(block_number, block->path().stem().string()))
                 return block->path().string();
         }
+        check(replica_ec, replica->path());
     }
+    check(ec, path);
 
     return {};
 }
