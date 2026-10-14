@@ -201,6 +201,7 @@ public:
         /// Superset of what addPrewhereUnmatchedMarks recorded with the old coarse approach,
         /// because it captures individual filtered-out granules even in partially-passing batches.
         MarkRanges unmatched_mark_ranges;
+        MarkRanges query_condition_cache_attributable_marks;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;
@@ -233,6 +234,9 @@ public:
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
+
+    void addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_);
+    const MarkRanges & getQueryConditionCacheAttributableMarks() const { return query_condition_cache_attributable_marks; }
 
     /// Returns true if a reader earlier in the chain than PREWHERE can skip whole marks based on
     /// secondary indexes (skip-index or projection-index). When true, marks that appear in
@@ -295,6 +299,7 @@ private:
 
     /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;
+    MarkRanges query_condition_cache_attributable_marks;
 
     BlockSizeParams block_size_params;
 
