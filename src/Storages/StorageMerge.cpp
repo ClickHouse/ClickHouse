@@ -18,7 +18,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
 #include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
@@ -1055,28 +1054,6 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         selected_tables.resize(child_plans->size());
 }
 
-/// Every materialized CTE reachable from `node`. Pointer identity is what matters:
-/// all references to one CTE - including the ones a child plan resolves by name to
-/// the CTE's temporary `StorageMemory` - share the same `MaterializedCTE` object.
-static MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node)
-{
-    MaterializedCTESet result;
-    if (!node)
-        return result;
-
-    traverseQueryTree(node, Everything{},
-        [&](const QueryTreeNodePtr & current_node)
-        {
-            if (const auto * table_node = current_node->as<TableNode>())
-            {
-                if (auto cte = table_node->getMaterializedCTE())
-                    result.insert(std::move(cte));
-            }
-        });
-
-    return result;
-}
-
 std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_) const
 {
     if (selected_tables.empty())
@@ -1215,9 +1192,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             if (storage->getMaxReadStreams(current_streams, context) < current_streams)
                 modified_context->setSetting("parallelize_output_from_storages", Field(0));
 
-            bool sampling_requested = query_info.query->as<ASTSelectQuery>()->sampleSize() != nullptr;
-            if (query_info.table_expression_modifiers)
-                sampling_requested = query_info.table_expression_modifiers->hasSampleSizeRatio();
+            bool sampling_requested = query_info.getSampleSizeRatio().has_value();
 
             /// If sampling requested, then check that table supports it.
             if (sampling_requested && !storage->supportsSampling())
