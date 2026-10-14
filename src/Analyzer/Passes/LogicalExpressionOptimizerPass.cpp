@@ -1735,7 +1735,7 @@ public:
 
     enum class Mode : uint8_t
     {
-        AND_COMPARE_CHAIN,
+        JOIN_ON_AND_COMPARE_CHAIN,
         OTHER_REWRITES,
     };
 
@@ -1845,22 +1845,22 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (mode == Mode::AND_COMPARE_CHAIN)
-        {
-            auto * function_node = node->as<FunctionNode>();
-            if (function_node && function_node->getFunctionName() == "and" && getSettings()[Setting::optimize_and_compare_chain])
-                tryOptimizeAndCompareChain(node);
-            return;
-        }
-
         if (auto * join_node = node->as<JoinNode>())
         {
             /// Operator <=> is not supported outside of JOIN ON section
-            if (join_node->hasJoinExpression())
+            if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN && join_node->hasJoinExpression())
             {
                 JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(*join_node, getContext());
                 join_on_visitor.visit(join_node->getJoinExpression());
             }
+            return;
+        }
+
+        if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
+        {
+            auto * function_node = node->as<FunctionNode>();
+            if (function_node && function_node->getFunctionName() == "and" && getSettings()[Setting::optimize_and_compare_chain])
+                tryOptimizeAndCompareChain(node);
             return;
         }
 
@@ -1890,7 +1890,7 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (mode == Mode::AND_COMPARE_CHAIN)
+        if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
             return;
 
         if (!getSettings()[Setting::optimize_extract_common_expressions])
@@ -2838,9 +2838,9 @@ private:
 
 void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    /// Derive transitive comparisons first, so that the conflict detector of the other rewrites sees them
-    /// (`x = 3 AND x = y AND y = 5` -> `x = 5` -> FALSE).
-    LogicalExpressionOptimizerVisitor and_compare_chain_visitor(context, LogicalExpressionOptimizerVisitor::Mode::AND_COMPARE_CHAIN);
+    /// The JOIN ON rewrites and the derivation of transitive comparisons run first: the derivation sees the rewritten JOIN ON,
+    /// and the conflict detector of the other rewrites sees the derived conjuncts (`x = 3 AND x = y AND y = 5` -> FALSE).
+    LogicalExpressionOptimizerVisitor and_compare_chain_visitor(context, LogicalExpressionOptimizerVisitor::Mode::JOIN_ON_AND_COMPARE_CHAIN);
     and_compare_chain_visitor.visit(query_tree_node);
     and_compare_chain_visitor.revertAndCompareChainIfBudgetExceeded();
 
