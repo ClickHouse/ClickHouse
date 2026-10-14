@@ -1076,8 +1076,9 @@ SymbolIndex::SymbolIterator::SymbolIterator(const SymbolIndex & index_)
 #if defined(__ELF__)
     if (index.maximum_name_granule_size != 0)
     {
-        /// Account iterator-owned symbolization workspace globally instead of charging the current query.
-        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        /// The iterator is owned by the query (e.g. the `system.symbols` source) and is destroyed while
+        /// the query is still attached, so its buffers are accounted to the current tracker as usual:
+        /// allocating them under a global blocker would make their deallocation underreport the query.
         decompression_context = createDecompressionContext();
         granule_buffer.resize(index.maximum_name_granule_size);
         name_buffer.reserve(index.maximum_name_granule_size);
