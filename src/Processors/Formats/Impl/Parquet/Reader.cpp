@@ -283,7 +283,9 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
     /// copied (e.g. by `ParquetMetadataCache`) and the schema traversal looks ahead at the repetition types of descendants.
     for (const auto & element : file_metadata.schema)
     {
-        std::underlying_type_t<parq::FieldRepetitionType::type> repetition_type = 0;
+        /// Thrift reads the value as `int32_t`.
+        Int32 repetition_type = 0;
+        static_assert(sizeof(repetition_type) == sizeof(element.repetition_type));
         memcpy(&repetition_type, &element.repetition_type, sizeof(repetition_type));
         if (repetition_type < parq::FieldRepetitionType::REQUIRED || repetition_type > parq::FieldRepetitionType::REPEATED)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition type {} of parquet column {}", repetition_type, element.name);
