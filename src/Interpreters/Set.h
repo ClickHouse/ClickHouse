@@ -10,6 +10,7 @@
 #include <Common/callOnce.h>
 #include <Common/SharedMutex.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -39,8 +40,7 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 /// The defaults keep the set in memory.
 struct SetSpillSettings
 {
-    /// This is the threshold of tracked query memory for spilling. With 0, the set stays in memory
-    /// and needs no other setting.
+    /// The threshold of tracked query memory for automatic spilling. With 0, only explicit requests spill.
     size_t max_bytes_before_external_set = 0;
 
     /// Holds the runs of the external sort and the finished set.
@@ -82,7 +82,13 @@ public:
     /// and the keys large enough to spill, the keys are written to a `DiskSet` while other lookups keep
     /// reading the table, and the disk set then replaces the table. The keys are final by then, so no size
     /// limit applies, and explicit elements stay, because their consumers read them without locking the set.
+    /// With temporary storage configured, `spill` also accepts explicit scheduler requests in either phase,
+    /// independently of the automatic threshold.
     void setSpillSettings(SetSpillSettings spill_settings_);
+
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+    const TemporaryDataOnDiskScope * getSpillScope() const { return spill_settings.tmp_data.get(); }
 
     bool transformNullIn() const { return transform_null_in; }
 
@@ -222,12 +228,16 @@ private:
 
     /// Protects the keys of the set. `insertFromBlock` takes it exclusively and `execute` shares it; they
     /// run at the same time only for `StorageSet`, whose inserts can run while queries use the set.
+    /// Scheduler spills also take it exclusively while building, including explicit-element updates.
     /// `spillAfterBuild` takes it exclusively to replace the table with the disk set.
     mutable SharedMutex rwlock;
 
     /// A cache for cast functions (if any) to avoid rebuilding cast functions
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
+
+    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
+    ProcessorMemoryStats getMemoryStatsUnlocked() const;
 
     template <typename Method>
     void insertFromBlockImpl(
@@ -284,12 +294,12 @@ private:
     bool isSpillNeeded() const;
 
     /// Moves the keys of the table to a `DiskSetBuilder`, which takes later insertions, and frees the table.
-    void spill(std::string_view reason);
+    void spill(std::string_view reason, bool force = false);
 
     /// Writes the keys of the table to a `DiskSet` while lookups keep reading the table, then replaces the
     /// table with the disk set under the exclusive lock. Only the first caller spills, and the others return.
     /// Call it without holding `rwlock`.
-    void spillAfterBuild() const;
+    size_t spillAfterBuild(std::string_view reason, bool force = false) const;
 
     /// Logs that the set switches to disk, at which `stage` ("while it is built" or "while it is used") and why.
     void logSpill(std::string_view stage, std::string_view reason) const;
@@ -298,7 +308,8 @@ private:
 
     /// Creates a `DiskSetBuilder` with the spill settings of the set and adds the keys of the table to it.
     template <typename Method>
-    std::unique_ptr<DiskSetBuilder> createDiskSetBuilderWithKeys(const Method & method, const SizeLimits & builder_limits) const;
+    std::unique_ptr<DiskSetBuilder> createDiskSetBuilderWithKeys(
+        const Method & method, const SizeLimits & builder_limits, bool force = false) const;
 
     void executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const;
 };

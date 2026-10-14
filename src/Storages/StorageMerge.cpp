@@ -16,7 +16,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
 #include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
@@ -139,6 +138,7 @@ extern const int UNKNOWN_TABLE;
 extern const int PARAMETER_OUT_OF_BOUND;
 extern const int UNSUPPORTED_METHOD;
 extern const int INCOMPATIBLE_COLUMNS;
+extern const int ILLEGAL_PREWHERE;
 }
 
 namespace
@@ -1035,28 +1035,6 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
     /// `selected_tables` aligned 1:1 with `child_plans` for every reader.
     if (child_plans->size() < selected_tables.size())
         selected_tables.resize(child_plans->size());
-}
-
-/// Every materialized CTE reachable from `node`. Pointer identity is what matters:
-/// all references to one CTE - including the ones a child plan resolves by name to
-/// the CTE's temporary `StorageMemory` - share the same `MaterializedCTE` object.
-static MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node)
-{
-    MaterializedCTESet result;
-    if (!node)
-        return result;
-
-    traverseQueryTree(node, Everything{},
-        [&](const QueryTreeNodePtr & current_node)
-        {
-            if (const auto * table_node = current_node->as<TableNode>())
-            {
-                if (auto cte = table_node->getMaterializedCTE())
-                    result.insert(std::move(cte));
-            }
-        });
-
-    return result;
 }
 
 std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_) const
@@ -1957,7 +1935,18 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         storage_snapshot_,
         modified_query_info);
 
+    /// A child's row policy is applied above its read, too late for a child that processes the query itself.
+    if (row_policy_data_opt && storage_stage > QueryProcessingStage::FetchColumns)
+        throw Exception(
+            ErrorCodes::ILLEGAL_PREWHERE,
+            "Row policy filter for {} cannot be applied by {}, because the table processes the query remotely. "
+            "Define the policy on the underlying tables instead; note that such a policy is not applied to reads "
+            "shipped with `serialize_query_plan = 1`",
+            storage->getStorageID().getNameForLogs(),
+            storage_merge->getStorageID().getNameForLogs());
+
     QueryPlan plan;
+    bool applies_row_policy = false;
 
     bool must_return_interpreter_select_query_plan
         = processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
@@ -2010,9 +1999,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         auto & planner = interpreter.getPlanner();
         planner.buildQueryPlanIfNeeded();
         plan = std::move(planner).extractQueryPlan();
+        applies_row_policy = true;
     }
 
-    return ChildPlan{std::move(plan), storage_stage};
+    return ChildPlan{.plan = std::move(plan), .stage = storage_stage, .applies_row_policy = applies_row_policy};
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
@@ -2348,7 +2338,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     }
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
-    if (row_policy_data_opt)
+    if (row_policy_data_opt && !child.applies_row_policy)
         row_policy_data_opt->addFilterTransform(child.plan, local_context);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
