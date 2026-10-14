@@ -361,6 +361,7 @@ static struct InitFiu
     REGULAR(check_database_datalake_negative) \
     REGULAR(rest_catalog_create_namespace_http_error) \
     REGULAR(rest_catalog_skip_namespace_existence_check) \
+    ONCE(rest_catalog_lose_request_response) \
     REGULAR(rest_catalog_update_schema_http_error) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \

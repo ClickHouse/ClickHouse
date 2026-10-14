@@ -45,6 +45,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
@@ -75,6 +76,7 @@ namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
     extern const char rest_catalog_create_namespace_http_error[];
+    extern const char rest_catalog_lose_request_response[];
     extern const char rest_catalog_skip_namespace_existence_check[];
     extern const char rest_catalog_update_schema_http_error[];
 }
@@ -1812,6 +1814,14 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
+DB::ReadSettings RestCatalog::getReadSettingsForRequest(const DB::ContextPtr & request_context, const String & method)
+{
+    auto read_settings = request_context->getReadSettings();
+    if (method != Poco::Net::HTTPRequest::HTTP_GET && method != Poco::Net::HTTPRequest::HTTP_HEAD)
+        read_settings.http_settings.max_tries = 1;
+    return read_settings;
+}
+
 String RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -1833,6 +1843,13 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
         out_stream_callback = [body_str](std::ostream & os)
         {
             os << body_str;
+
+            /// The connection breaks after the catalog has received the request, but before the response arrives.
+            fiu_do_on(DB::FailPoints::rest_catalog_lose_request_response,
+            {
+                os.flush();
+                throw Poco::Net::NetException("Injected connection failure after sending the REST catalog request");
+            });
         };
     }
 
@@ -1842,7 +1859,7 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
-        .withSettings(context->getReadSettings())
+        .withSettings(getReadSettingsForRequest(context, method))
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)

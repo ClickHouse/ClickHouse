@@ -2534,6 +2534,39 @@ def test_writes_schema_evolution_catalog_error(started_cluster):
     assert "Too many unsuccessed retries" not in error, error
 
 
+def test_writes_schema_evolution_lost_commit_response(started_cluster):
+    """The schema update commit is not replayed when its response is lost.
+
+    The failpoint breaks the connection after the whole request has reached the catalog, which is
+    a retriable network error at the HTTP layer. A replayed commit could hit `409 Conflict` from the
+    first one and make `ALTER` retry against the already updated schema, failing with "already exists".
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_schema_evolution_lost_commit_response_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    # A one-shot failpoint: a retry at the HTTP layer would send the request again and succeed
+    # or fail with an unrelated error, so the injected error only reaches the user when the commit
+    # is sent once.
+    node.query("SYSTEM ENABLE FAILPOINT rest_catalog_lose_request_response")
+    try:
+        error = node.query_and_get_error(
+            f"ALTER TABLE {table_ref} ADD COLUMN y Nullable(String);", settings=write_settings
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rest_catalog_lose_request_response")
+
+    assert "Injected connection failure after sending the REST catalog request" in error, error
+    assert "already exists" not in error, error
+
+
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
