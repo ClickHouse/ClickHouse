@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <functional>
 #include <limits>
 #include <unordered_map>
 #include <vector>
@@ -45,8 +46,39 @@ public:
     DPJoinEntryPtr solve();
 
 private:
+    /// A plan over all relations other than the best one, kept as another join order when
+    /// `QueryGraph::max_join_order_alternatives` asks for them: its top join and the masks of its two inputs.
+    struct FullSetAlternative
+    {
+        UInt32 left = 0;
+        UInt32 right = 0;
+        double cost = 0;
+        double sel = 0;
+        std::optional<UInt64> estimated_rows;
+        bool assumes_independent_keys = false;
+        JoinKind kind = JoinKind::Inner;
+        JoinStrictness strictness = JoinStrictness::All;
+        std::vector<JoinActionRef *> edges;
+    };
+    /// The kept plans by cost, at most one per way to split the relations at the top join (a swap of the two inputs
+    /// is the same split), at most one more than `max_join_order_alternatives`: the best plan is among them.
+    std::vector<FullSetAlternative> full_set_alternatives;
+    void keepFullSetAlternative(UInt32 left, double cost, const std::function<FullSetAlternative()> & make_alternative);
+
+    /// Builds the plan of subset `S`; `built` keeps the plans built so far, so that the orders share the plans of
+    /// their common subsets.
     template <typename DPTable, std::unsigned_integral TUInt>
-    DPJoinEntryPtr buildPhysicalPlan(const DPTable & dptable, const TUInt & S) const;
+    DPJoinEntryPtr buildPhysicalPlan(const DPTable & dptable, const TUInt & S, std::unordered_map<TUInt, DPJoinEntryPtr> & built) const;
+    DPJoinEntryPtr makeJoinEntry(
+        JoinKind kind,
+        JoinStrictness strictness,
+        const std::vector<JoinActionRef *> & edges,
+        double cost,
+        double sel,
+        std::optional<UInt64> estimated_rows,
+        bool assumes_independent_keys,
+        DPJoinEntryPtr left,
+        DPJoinEntryPtr right) const;
 
     template <class TDPTable, class TOptimizer>
     friend class DB::EnumeratorCheckerWithCosts;
@@ -539,23 +571,72 @@ JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
     return keys;
 }
 
-template <typename DPTable, std::unsigned_integral TUInt>
-std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUInt & S) const
+void DPSubJoinOrderOptimizer::keepFullSetAlternative(
+    UInt32 left, double cost, const std::function<FullSetAlternative()> & make_alternative)
 {
-    auto& entry = dptable[S];
-    if (!entry.left && !entry.right)
-        return std::make_shared<DPJoinEntry>(std::countr_zero(S), query_graph.relation_stats[std::countr_zero(S)]);
+    auto & kept = full_set_alternatives;
+    auto same_split = std::ranges::find_if(kept, [&](const auto & alternative) { return left == alternative.left || left == alternative.right; });
+    if (same_split != kept.end())
+    {
+        if (cost >= same_split->cost)
+            return;
+        kept.erase(same_split);
+    }
+    else if (kept.size() > query_graph.max_join_order_alternatives && cost >= kept.back().cost)
+        return;
 
-    /// `entry.strictness` is All for every DP entry except semi/anti joins admitted by the
+    auto position = std::ranges::upper_bound(kept, cost, {}, [](const auto & alternative) { return alternative.cost; });
+    kept.insert(position, make_alternative());
+    if (kept.size() > query_graph.max_join_order_alternatives + 1)
+        kept.pop_back();
+}
+
+template <typename DPTable, std::unsigned_integral TUInt>
+std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(
+    const DPTable & dptable, const TUInt & S, std::unordered_map<TUInt, DPJoinEntryPtr> & built) const
+{
+    if (auto it = built.find(S); it != built.end())
+        return it->second;
+
+    const auto & entry = dptable[S];
+    DPJoinEntryPtr result;
+    if (!entry.left && !entry.right)
+    {
+        result = std::make_shared<DPJoinEntry>(std::countr_zero(S), query_graph.relation_stats[std::countr_zero(S)]);
+    }
+    else
+    {
+        auto left = buildPhysicalPlan(dptable, entry.left, built);
+        auto right = buildPhysicalPlan(dptable, entry.right, built);
+        result = makeJoinEntry(
+            entry.kind, entry.strictness, entry.edges, entry.cost, entry.sel, entry.estimated_rows, entry.assumes_independent_keys,
+            std::move(left), std::move(right));
+    }
+    built.emplace(S, result);
+    return result;
+}
+
+DPJoinEntryPtr DPSubJoinOrderOptimizer::makeJoinEntry(
+    JoinKind kind,
+    JoinStrictness strictness,
+    const std::vector<JoinActionRef *> & edges,
+    double cost,
+    double sel,
+    std::optional<UInt64> estimated_rows,
+    bool assumes_independent_keys,
+    DPJoinEntryPtr left,
+    DPJoinEntryPtr right) const
+{
+    /// `strictness` is All for every DP entry except semi/anti joins admitted by the
     /// conflict detector (CD-A/CD-C), which must keep their strictness in the reordered tree.
-    JoinOperator join_operator(entry.kind, entry.strictness, JoinLocality::Unspecified);
+    JoinOperator join_operator(kind, strictness, JoinLocality::Unspecified);
     /// A filter predicate applied at an outer join step must not go to the ON clause, where it
     /// would affect matching instead of filtering and let non-matching rows of the preserved side
     /// survive NULL-extended. Apply it after the join instead (see `solveGreedy`).
     /// Semi/anti joins keep their ON predicates in the ON clause (they are in
     /// `outer_join_conditions`), so this only diverts genuine post-join filters.
-    bool is_inner_step = isInner(entry.kind) || isCrossOrComma(entry.kind);
-    for (const auto * e : entry.edges)
+    bool is_inner_step = isInner(kind) || isCrossOrComma(kind);
+    for (const auto * e : edges)
     {
         if (is_inner_step || query_graph.outer_join_conditions.contains(*e))
             join_operator.expression.push_back(*e);
@@ -563,10 +644,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
             join_operator.residual_filter.push_back(*e);
     }
 
-    auto left = buildPhysicalPlan(dptable, entry.left);
-    auto right = buildPhysicalPlan(dptable, entry.right);
-    auto join_entry = std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
-    join_entry->estimate_from_defaults |= entry.assumes_independent_keys;
+    auto join_entry = std::make_shared<DPJoinEntry>(std::move(left), std::move(right), cost, sel, estimated_rows, std::move(join_operator));
+    join_entry->estimate_from_defaults |= assumes_independent_keys;
     return join_entry;
 }
 
@@ -665,7 +744,17 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         return nullptr;
     }
 
-    return buildPhysicalPlan(dptable, full_set);
+    std::unordered_map<Bitvector, DPJoinEntryPtr> built;
+    auto best = buildPhysicalPlan(dptable, full_set, built);
+    for (const auto & alternative : full_set_alternatives)
+    {
+        auto left = buildPhysicalPlan(dptable, alternative.left, built);
+        auto right = buildPhysicalPlan(dptable, alternative.right, built);
+        query_graph.full_set_alternatives.push_back(makeJoinEntry(
+            alternative.kind, alternative.strictness, alternative.edges, alternative.cost, alternative.sel, alternative.estimated_rows,
+            alternative.assumes_independent_keys, std::move(left), std::move(right)));
+    }
+    return best;
 }
 
 }

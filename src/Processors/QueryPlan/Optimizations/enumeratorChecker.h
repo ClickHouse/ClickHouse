@@ -139,6 +139,27 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
 
+    /// The full set is enumerated last, so the plans of its parts are final: every costed split of it can be kept as
+    /// another join order.
+    const UInt full_set = (static_cast<UInt>(1) << num_relations) - 1;
+    if (result_subset == full_set && optimizer.query_graph.max_join_order_alternatives > 0)
+    {
+        optimizer.keepFullSetAlternative(left_mask, plan_cost, [&]
+        {
+            return typename Optimizer::FullSetAlternative{
+                .left = left_mask,
+                .right = right_mask,
+                .cost = plan_cost,
+                .sel = keys.selectivity,
+                .estimated_rows = optimizer.estimateCardinality(
+                    dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, keys, kind, strictness),
+                .assumes_independent_keys = assumesIndependentKeys(keys, dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows),
+                .kind = kind,
+                .strictness = strictness,
+                .edges = {edge.begin(), edge.end()}};
+        });
+    }
+
     if (!dp_table.isConnected(result_subset) || plan_cost < dp_table[result_subset].cost)
     {
         auto & entry = dp_table[result_subset];
