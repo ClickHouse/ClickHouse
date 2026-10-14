@@ -220,11 +220,15 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
-    hash_state.update(argument_names.size());
-    for (const auto & argument_name : argument_names)
+    /// Skipped for positional arguments to keep their hash: some passes order arguments by it.
+    if (!argument_names.empty())
     {
-        hash_state.update(argument_name.size());
-        hash_state.update(argument_name);
+        hash_state.update(argument_names.size());
+        for (const auto & argument_name : argument_names)
+        {
+            hash_state.update(argument_name.size());
+            hash_state.update(argument_name);
+        }
     }
 
     /// is_operator is ignored here because it affects only AST formatting, except for the function
