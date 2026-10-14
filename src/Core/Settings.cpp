@@ -4637,6 +4637,12 @@ A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL, \
         {"26.7", 0, 0, "New setting to reserve memory for specific workload before starting a query."}) \
+    DECLARE(UInt64, min_bytes_to_spill, 64_MiB, R"(
+Used in workload scheduling.
+The minimum amount of bytes to spill.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL, \
+        {"26.10", 0, 64_MiB, "New setting for dynamic spilling via workloads."}) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
@@ -6803,7 +6809,7 @@ If true, mutations (UPDATEs and DELETEs) which are not materialized in data part
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
 Allow to use lightweight updates.
-)", BETA, allow_experimental_lightweight_update, \
+)", 0, allow_experimental_lightweight_update, \
         {"25.8", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."}, \
         {"25.5", false, false, "A new setting. At the time the setting was named `allow_experimental_lightweight_update`, which is now an alias of it."}) \
     DECLARE(Bool, apply_patch_parts, true, R"(
@@ -9525,6 +9531,14 @@ Enable automatic switching to execution with parallel replicas based on collecte
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL, \
         {"25.12", 0, 0, "New setting"}) \
+    DECLARE(Bool, automatic_parallel_replicas_remember_boundary, true, R"(
+Lets automatic parallel replicas remember, per query plan, where the replicas' share of the work ends, so that a
+repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
+replicas.
+
+Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
+)", 0, \
+        {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
@@ -9681,9 +9695,12 @@ Replace table function engines with their -Cluster alternatives
 Allow usage of materialized views with parallel replicas
 )", 0, \
         {"25.12", false, true, "Allow usage of materialized views with parallel replicas"}) \
-    DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
-Allow pushing down filters to part of query which parallel replicas choose to execute
-)", BETA, \
+    DECLARE(Bool, parallel_replicas_filter_pushdown, true, R"(
+Push a condition standing above the part of the query parallel replicas execute into that part, and into the query the replicas are sent, so that they filter by it as well.
+
+Turn it off to keep the condition above the read on the initiator, as versions before 26.10 did. It is the way out if the push-down misbehaves: the answer does not change either way, only how much work the replicas do and how early they do it.
+)", 0, \
+        {"26.10", false, true, "Enabled by default"}, \
         {"26.2", false, false, "New setting"}) \
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.
@@ -10763,8 +10780,8 @@ An explicit `SETTINGS` clause in the query still takes precedence.
         {"26.10", false, false, "The `trino` dialect was moved to Beta."}, \
         {"26.9", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
-Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
-`grace_hash` and the adaptive `hash` / `parallel_hash` path.
+Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
+Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL, \
         {"25.2", false, false, "New setting. Enable spill memory data into external storage adaptively."}) \
     DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(

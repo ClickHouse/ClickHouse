@@ -1,0 +1,1622 @@
+---
+sidebarTitle: '原生 TCP'
+keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'native', 'tcp']
+slug: /integrations/csharp/tcp
+description: '通过原生 TCP 协议连接 ClickHouse 的官方 C# 客户端。'
+title: 'ClickHouse C# 原生 TCP 客户端'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-cs'
+---
+
+## Experimental 状态 {#experimental-status}
+
+<Warning>
+  原生 TCP 客户端 API 仍处于实验阶段，其对外接口可能会在后续版本中发生变化。
+</Warning>
+
+主客户端、数据源、会话和操作接口，以及依赖注入扩展
+都会触发编译器警告 `CHTCP0001`。评估该 API 时，若已知悉此警告，可将其
+添加到项目文件的 `NoWarn` 中：
+
+```xml
+<PropertyGroup>
+  <NoWarn>$(NoWarn);CHTCP0001</NoWarn>
+</PropertyGroup>
+```
+
+只有在确认并接受使用该 API 的代码可能需要在后续版本中修改后，才应屏蔽此警告。
+
+## 支持的 .NET 版本 {#supported-net-versions}
+
+原生 TCP 客户端支持以下 .NET 版本：
+
+* .NET 8.0
+* .NET 9.0
+* .NET 10.0
+
+## 支持的 ClickHouse 版本 {#supported-clickhouse-versions}
+
+TCP 客户端官方支持 ClickHouse 服务器最近的 2 个长期支持版和最近的 3 个发行版。
+
+## 安装 {#installation}
+
+原生 TCP 客户端包含在 `ClickHouse.Driver` 包中。请通过 NuGet 安装：
+
+```bash
+dotnet add package ClickHouse.Driver
+```
+
+也可以使用 NuGet 包管理器：
+
+```bash
+Install-Package ClickHouse.Driver
+```
+
+## 快速入门 {#quick-start}
+
+```csharp
+using ClickHouse.Driver.Tcp;
+
+// Create and reuse a client. It is thread-safe and owns a connection pool.
+await using var client = new ClickHouseTcpClient(
+    "Host=my.clickhouse;Port=9000;Username=user");
+
+// Execute a query
+object version = await client.ExecuteScalarAsync("SELECT version()");
+Console.WriteLine(version);
+```
+
+## 从 HTTP 客户端迁移 {#migrating-from-http}
+
+TCP API 与 `IClickHouseClient` 相互独立，并非
+`ClickHouseClient` 或 `ClickHouseConnection` 的传输选项。大部分 SQL 可直接复用，但需要创建
+`ClickHouseTcpClient`，并将每项操作改为使用对应的 TCP 实现。
+
+### 方法对照 {#migrating-methods}
+
+| HTTP 客户端                                                                          | TCP 客户端                                                       | 主要区别                                                                                              |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `new ClickHouseClient(...)`                                                       | `new ClickHouseTcpClient(...)`                                | 使用 `ClickHouseTcpClientOptions` 或 TCP 连接字符串，并指定原生协议端口；不使用 TLS 时通常为 9000。两种客户端均可跨操作复用。             |
+| `ExecuteNonQueryAsync(...)`                                                       | `ExecuteAsync(...)`                                           | ClickHouse 确认语句后，TCP 方法即完成，但不会返回受影响的行数。                                                           |
+| `ExecuteScalarAsync(...)`                                                         | `ExecuteScalarAsync(...)`                                     | 两者都返回第一个值；结果为空时返回 `null`。TCP 方法会在返回前读取完全部响应，以便复用连接。                                               |
+| `ExecuteReaderAsync(...)`                                                         | `QueryAsync(...)`, `QueryAsync<T>(...)`, 或 `StreamAsync(...)` | TCP 不提供 `DbDataReader`。可根据需要选择独立分配的 `object[]` 行、映射后的 POCO，或借用的列式块。                               |
+| `QueryAsync<T>(...)`                                                              | `QueryAsync<T>(...)`                                          | TCP 会自动构建并缓存 POCO 映射，无需调用注册方法。应使用 `ClickHouseTcpColumn` 和 `ClickHouseTcpNotMapped`，而不是 HTTP 映射属性。 |
+| `InsertBinaryAsync(table, columns, rows)`                                         | `InsertRowsAsync(sql, rows)`                                  | 传入预先构建好的 `IReadOnlyList<object[]>`；SQL 必须以 `VALUES` 结尾。TCP 方法不返回插入的行数。                            |
+| `InsertBinaryAsync<T>(table, rows)`                                               | `InsertRowsAsync<T>(sql, rows)`                               | TCP 无需注册 POCO，但语句中指定的每一列都必须映射到类型兼容的公共属性。                                                          |
+| —                                                                                 | `InsertAsync(sql, columns)`                                   | 使用带类型的 `IColumn` 值，避免按行插入时进行行列转换和值类型装箱。                                                           |
+| `PingAsync(...)`                                                                  | `PingAsync(...)`                                              | HTTP 在 Ping 失败时返回 `false`；TCP 收到 `Pong` 后正常完成，否则抛出异常。                                             |
+| `ExecuteRawResultAsync(...)`, `InsertRawStreamAsync(...)`, `PostStreamAsync(...)` | 无对应方法                                                         | 处理原始流以及 CSV、JSONEachRow 和 Parquet 等格式时，继续使用 HTTP 客户端。                                             |
+| `CreateConnection()` 或 ADO.NET 类型                                                 | 无对应方法                                                         | 使用 ADO.NET 和 ORM 时，继续使用 HTTP 客户端。                                                                 |
+
+例如，HTTP 客户端中的读取器循环：
+
+```csharp
+using var reader = await http.ExecuteReaderAsync(
+    "SELECT id, name FROM events ORDER BY id");
+
+while (reader.Read())
+{
+    Console.WriteLine($"{reader.GetFieldValue<ulong>(0)}: {reader.GetString(1)}");
+}
+```
+
+变为异步 TCP 行数据流：
+
+```csharp
+await foreach (object[] row in tcp.QueryAsync(
+    "SELECT id, name FROM events ORDER BY id"))
+{
+    Console.WriteLine($"{row[0]}: {row[1]}");
+}
+```
+
+### 选项和参数 {#migrating-options-parameters}
+
+HTTP 的 `QueryOptions` 和 `ClickHouseParameterCollection` 不能与对应的 TCP 类型互换。
+请将相关值移至 `ClickHouseTcpQueryOptions`：设置以字符串形式表示，
+参数则包含在选项对象中：
+
+```csharp
+var options = new ClickHouseTcpQueryOptions
+{
+    QueryId = "events-by-score",
+    Settings = new Dictionary<string, string>
+    {
+        ["max_execution_time"] = "30",
+    },
+    Parameters = new ClickHouseTcpParameterCollection
+    {
+        { "minimum", 18.0 },
+    },
+};
+
+await foreach (object[] row in client.QueryAsync(
+    "SELECT id, score FROM events WHERE score >= {minimum:Float64}",
+    options))
+{
+    Console.WriteLine($"{row[0]}: {row[1]}");
+}
+```
+
+TCP 客户端支持 ClickHouse 原生的 `{name:Type}` 占位符，但不会改写
+ADO.NET 风格的 `@name` 占位符。它也不支持按查询指定数据库、角色、Bearer 令牌、自定义
+请求头、参数解析器或格式说明符，也不支持读取转换器。有关仍仅受 HTTP 支持的
+功能，请参阅[限制](#limitations)。
+
+### 连接与结果的生命周期 {#migrating-lifetime}
+
+这两种高级客户端都是线程安全的，应重复使用。TCP 客户端持有持久的原生
+连接，而非 HTTP 连接；它实现了 `IAsyncDisposable`，通常应在应用程序关闭时
+异步释放。
+
+`QueryAsync` 返回的行由调用方管理。`StreamAsync` 返回的块及其列是借用数据，仅在
+当前迭代期间有效；如果需要在迭代结束后继续使用其中的值，必须将其复制。务必完成枚举或释放
+枚举器，以便将连接归还连接池。如果多个操作必须在同一连接上执行并保留会话状态，
+请使用 `OpenSessionAsync`。
+
+如需查看在同一张表上使用这两种客户端的完整示例，请参阅
+[从 HTTP 迁移到 TCP 的示例](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/Tcp/Core/Tcp_004_MigratingFromHttp.cs)。
+
+## 配置 {#configuration}
+
+原生 TCP 客户端有两种配置方式：
+
+* **连接字符串：**由分号分隔的键值对组成，用于指定服务器端点、
+  身份验证凭证及其他连接选项。
+* **`ClickHouseTcpClientOptions` 对象：**在代码中设置的强类型、不可变配置对象。
+
+将任一形式传入 `ClickHouseTcpClient` 构造函数。使用
+`ClickHouseTcpConnectionStringBuilder` 解析或构建连接字符串，并将其转换为
+`ClickHouseTcpClientOptions`。
+
+```csharp
+var builder = new ClickHouseTcpConnectionStringBuilder
+{
+    Host = "my.clickhouse",
+    Username = "user",
+    UseTls = true,
+    Compression = "zstd",
+};
+
+await using var client = new ClickHouseTcpClient(builder.ToOptions());
+```
+
+以下各节列出了可用的配置项、对应的默认值及其作用。
+
+### 连接设置 {#connection-settings}
+
+连接字符串中，`TimeSpan` 属性的值以秒为单位。
+
+| 属性          | 类型         | 默认值           | 连接字符串键        | 说明                                           |
+| ----------- | ---------- | ------------- | ------------- | -------------------------------------------- |
+| 主机          | `string`   | `"localhost"` | `Host`        | ClickHouse 服务器的主机名或 IP 地址                    |
+| 端口          | `int?`     | `null`        | `Port`        | 原生协议端口；未指定时，不使用 TLS 则使用 9000，启用 TLS 则使用 9440 |
+| 用户名         | `string`   | `"default"`   | `Username`    | 身份验证所用的用户名                                   |
+| 密码          | `string`   | `""`          | `Password`    | 身份验证所用的密码                                    |
+| 数据库         | `string`   | `"default"`   | `Database`    | 执行操作时使用的默认数据库                                |
+| QuotaKey    | `string`   | `""`          | `QuotaKey`    | 用于 ClickHouse 按键配额的键                         |
+| DialTimeout | `TimeSpan` | 30 秒          | `DialTimeout` | 套接字连接、TLS 协商和原生协议握手的超时时间                     |
+| ReadTimeout | `TimeSpan` | 5 分钟          | `ReadTimeout` | 执行操作期间，每次传输读取的最长等待时间；设为零则不设超时                |
+
+### 数据格式与序列化 {#data-format-serialization}
+
+| 属性                                      | 类型                      | 默认值                     | 连接字符串键                                    | 描述                                                                                   |
+| --------------------------------------- | ----------------------- | ----------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| SendJsonAndDynamicSerializationSettings | `bool`                  | `true`                  | `SendJsonAndDynamicSerializationSettings` | 请求使用客户端支持的 `JSON` 和 `Dynamic` 传输格式。对于无法修改设置的只读用户，请将此项设为 `false`；这样一来，读取这些类型的数据可能会失败。 |
+| MaxSendBufferBytes                      | `int`                   | 1 MiB                   | `MaxSendBufferBytes`                      | 为缓冲区中的待插入数据设置软上限。客户端会在处理完每一列后检查，因此单列数据就可能使缓冲区超出上限。                                   |
+| Compressor                              | `IClickHouseCompressor` | `Lz4Compressor.Default` | `Compression`                             | 压缩客户端写入的块，并请求返回压缩后的结果。连接字符串支持 `lz4`、`zstd` 或 `none`；自定义压缩器只能通过选项设置。                  |
+
+### 连接池 {#connection-pooling}
+
+每个连接同一时间只能执行一项操作。连接池通过复用连接，让多项操作
+并发执行。
+
+| 属性                    | 类型                             | 默认值            | 连接字符串键                  | 描述                                                       |
+| --------------------- | ------------------------------ | -------------- | ----------------------- | -------------------------------------------------------- |
+| MinPoolSize           | `int`                          | `0`            | `MinPoolSize`           | 条件允许时连接池维持的连接数，包括正在使用的连接                                 |
+| MaxPoolSize           | `int`                          | `20`           | `MaxPoolSize`           | 打开连接数和并发操作数的硬性上限；超出上限的操作需等待可用连接                          |
+| PoolTimeout           | `TimeSpan`                     | 30 秒           | `PoolTimeout`           | 连接池已满时等待可用连接的最长时间；建立新连接的时间另受 `DialTimeout` 限制            |
+| MaxConnectionLifetime | `TimeSpan`                     | 30 分钟          | `MaxConnectionLifetime` | 连接可供复用的最长存续时间；设为零则禁用此限制；正在执行的操作不会被中断                     |
+| IdleTimeout           | `TimeSpan`                     | 5 分钟           | `IdleTimeout`           | 未使用的连接可供复用的最长时间；设为零则禁用此限制                                |
+| SweepInterval         | `TimeSpan?`                    | `null` (推导得出)  | `SweepInterval`         | 清理过期连接并将连接数恢复至 `MinPoolSize` 的频率；默认值根据连接存续时间和空闲时间的限制推导得出 |
+| PoolReusePolicy       | `ClickHouseTcpPoolReusePolicy` | `Lifo`         | `PoolReusePolicy`       | 选择最近归还 (`Lifo`) 或最早归还 (`Fifo`) 的空闲连接                     |
+
+### 安全 {#security}
+
+| 属性                          | 类型                                       | 默认值     | 连接字符串键                        | 描述                                                                        |
+| --------------------------- | ---------------------------------------- | ------- | ----------------------------- | ------------------------------------------------------------------------- |
+| UseTls                      | `bool`                                   | `false` | `UseTls`                      | 在原生协议握手前启用 TLS。若省略 `Port`，启用 TLS 后默认端口将从 9000 变为 9440。                    |
+| TlsServerName               | `string`                                 | `null`  | `TlsServerName`               | 作为 SNI 发送、并用于匹配服务器证书的主机名；`null` 表示使用 `Host`                               |
+| TlsAllowInvalidCertificates | `bool`                                   | `false` | `TlsAllowInvalidCertificates` | 接受未通过验证的证书；仅限本地开发时使用                                                      |
+| TlsCaCertificatePath        | `string`                                 | `null`  | `TlsCaCertificatePath`        | 包含至少一个受信任根证书的 PEM 文件路径；会取代主机的信任存储，且不能与 `TlsAllowInvalidCertificates` 同时使用 |
+| ConfigureTls                | `Action<SslClientAuthenticationOptions>` | `null`  | —                             | 在应用其他 TLS 属性后、每次握手前调整 TLS 选项；仅可通过 `ClickHouseTcpClientOptions` 使用         |
+
+<Warning>
+  不使用 TLS 时，密码和所有查询数据都会以明文形式通过网络传输。在本地开发环境之外，请始终将
+  `TlsAllowInvalidCertificates` 设为 `false`。
+</Warning>
+
+安全的原生协议使用独立的服务器端点，而不是在现有连接中升级为 TLS。TLS
+客户端必须连接到安全的原生协议端口，无法回退到明文连接。`ConfigureTls` 会在
+最后应用，并且可以覆盖证书和主机名验证设置，因此请仔细检查自定义回调。
+
+### 日志与调试 {#logging-debugging}
+
+| 属性                       | 类型               | 默认值     | 连接字符串键 | 描述                                                                         |
+| ------------------------ | ---------------- | ------- | ------ | -------------------------------------------------------------------------- |
+| LoggerFactory            | `ILoggerFactory` | `null`  | —      | 为 `ClickHouse.Driver.Tcp.*` 类别下的连接、连接池及操作生命周期事件提供日志记录器                     |
+| IncludeSqlInActivityTags | `bool`           | `false` | —      | 将语句文本添加到 OpenTelemetry 的 `db.query.text` 属性中，长度上限由 `StatementMaxLength` 控制 |
+| StatementMaxLength       | `int`            | `5`     | —      | 调试日志和活动标签中包含的语句文本的最大字符数；设为零或负数时不包含文本                                       |
+
+客户端日志记录器记录客户端的生命周期和操作事件。服务器日志数据包则发送
+到 `ClickHouseTcpQueryCallbacks.OnLog`。语句文本可能包含敏感数据，因此默认情况下
+不会纳入活动标签，在调试日志中也会被大幅截断。
+
+### 自定义设置 {#custom-settings}
+
+`ClickHouseTcpClientOptions.CustomSettings` 会将 ClickHouse 服务器设置应用于每次查询和
+插入操作。如果设置同名，针对单次操作指定的 `ClickHouseTcpQueryOptions.Settings` 配置值会覆盖客户端级别的配置值。
+
+```csharp
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    CustomSettings = new Dictionary<string, string>
+    {
+        ["max_threads"] = "4",
+    },
+};
+```
+
+在连接字符串中，为每项服务器设置加上 `set_` 前缀：
+
+```text
+Host=my.clickhouse;set_max_threads=4;set_max_memory_usage=10000000000
+```
+
+向 `CustomSettings` 或每项操作的
+`Settings` 添加设置时，不要带上 `set_` 前缀。
+
+### ClickHouseTcpQueryOptions {#query-options}
+
+`ClickHouseTcpQueryOptions` 用于配置单次操作的设置。所有属性均为可选项。
+
+| 属性         | 类型                                    | 默认值    | 描述                                                                             |
+| ---------- | ------------------------------------- | ------ | ------------------------------------------------------------------------------ |
+| QueryId    | `string`                              | `null` | 用于标识 `system.query_log`、日志和 trace span 中的操作；设为 `null` 或空字符串时，每次操作都会生成一个新的 GUID |
+| Settings   | `IReadOnlyDictionary<string, string>` | `null` | 本次操作的服务器设置；设置值会覆盖客户端级别 `CustomSettings` 中的对应值                                  |
+| Parameters | `ClickHouseTcpParameterCollection`    | `null` | 绑定到 SQL 语句中 `{name:Type}` 占位符的值                                                |
+| Callbacks  | `ClickHouseTcpQueryCallbacks`         | `null` | 用于处理进度、性能分析信息、服务器日志、profile events、汇总数据和极值的同步回调                                |
+
+```csharp
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    QueryId = $"report-{Guid.NewGuid():N}",
+    Settings = new Dictionary<string, string>
+    {
+        ["max_threads"] = "4",
+    },
+};
+
+object count = await client.ExecuteScalarAsync(
+    "SELECT count() FROM numbers(1000)",
+    queryOptions);
+```
+
+### ClickHouseTcpInsertOptions {#insert-options}
+
+`ClickHouseTcpInsertOptions` 在 `ClickHouseTcpQueryOptions` 的基础上增加了原生块
+插入的相关设置。所有查询选项属性也均可使用。
+
+| 属性                 | 类型       | 默认值      | 说明                                                                    |
+| ------------------ | -------- | -------- | --------------------------------------------------------------------- |
+| MaxRowsPerBlock    | `int?`   | `50,000` | 每个传输块的最大行数；设为 `null` 时，整个插入操作将作为一个块写入。减小该值还可以降低按行插入和 POCO 插入时的临时内存用量。 |
+| DeduplicationToken | `string` | `null`   | 用于标识一个批次，以便在服务器端对插入操作去重。同一批次每次重试时都应使用相同的令牌；每个新批次则应使用不同的令牌。            |
+
+```csharp
+var insertOptions = new ClickHouseTcpInsertOptions
+{
+    MaxRowsPerBlock = 10_000,
+    DeduplicationToken = batchContentHash,
+};
+
+await client.InsertRowsAsync(
+    "INSERT INTO events (id, name) VALUES",
+    rows,
+    insertOptions);
+```
+
+## ClickHouseTcpClient {#clickhouse-tcp-client}
+
+`ClickHouseTcpClient` 是原生 TCP 协议的高级 API。它可执行语句和
+标量查询，以列式块、行或 POCO 的形式流式返回结果，插入列式数据或行数据，
+并创建绑定到特定连接的会话。
+
+该客户端支持多线程安全使用，并管理一个连接池。请为每个端点创建一个客户端，在整个
+应用程序中共享，并在应用程序关闭时释放。操作可并发执行，并发数上限为
+`MaxPoolSize`；超出上限的操作最多等待 `PoolTimeout` 以获取连接。
+
+### 创建客户端 {#creating-a-client}
+
+可以通过连接字符串或 `ClickHouseTcpClientOptions` 创建客户端。可用设置请参阅
+[配置](#configuration)。
+
+使用连接字符串：
+
+```csharp
+using ClickHouse.Driver.Tcp;
+
+await using var client = new ClickHouseTcpClient(
+    "Host=localhost;Port=9000;Username=default");
+```
+
+使用强类型选项：
+
+```csharp
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    Username = "user",
+    UseTls = true,
+    MaxPoolSize = 20,
+};
+
+await using var client = new ClickHouseTcpClient(options);
+```
+
+建议优先采用异步方式释放客户端。释放客户端时会关闭空闲连接，并等待正在执行的操作完成，最长等待时间为
+`PoolTimeout`；超时后仍未完成的操作将被中止。
+
+### 依赖注入 {#dependency-injection}
+
+`AddClickHouseTcpDataSource` 注册一个单例数据源，并以
+`IClickHouseTcpClient` 和 `IClickHouseTcpOperations` 的形式提供其共享客户端：
+
+```csharp
+using ClickHouse.Driver.Tcp;
+using Microsoft.Extensions.DependencyInjection;
+
+services.AddClickHouseTcpDataSource(
+    "Host=my.clickhouse;UseTls=true;Username=user");
+
+public sealed class ReportService(IClickHouseTcpClient client)
+{
+    public async Task<object> CountAsync(CancellationToken cancellationToken) =>
+        await client.ExecuteScalarAsync(
+            "SELECT count() FROM events",
+            cancellationToken: cancellationToken);
+}
+```
+
+服务提供程序持有数据源和连接池。不要释放通过依赖注入获得的客户端；
+应在应用程序关闭时释放服务提供程序。如果选项中未指定 `LoggerFactory`，
+注册时将使用容器中的 `ILoggerFactory`。使用 `serviceKey` 可以注册多个
+相互独立的数据源。
+
+### 执行查询 {#executing-queries}
+
+执行不返回行的语句 (如 DDL 语句和变更) 时，请使用 `ExecuteAsync`：
+
+```csharp
+await client.ExecuteAsync("TRUNCATE TABLE events");
+```
+
+服务器确认该语句后，此方法便会完成。如果语句返回数据行，
+`ExecuteAsync` 会读取并丢弃这些行。对于
+`INSERT INTO ... VALUES`，请使用 `InsertAsync` 或 `InsertRowsAsync`，并使 SQL 语句以
+`VALUES` 结尾，不要在语句中直接写入值。
+
+### 读取数据 {#reading-data}
+
+根据应用程序所需的结果形式选择读取 API：
+
+| API                  | 结果                   | 权衡                          |
+| -------------------- | -------------------- | --------------------------- |
+| `ExecuteScalarAsync` | 第一行的第一列              | 单值查询最简便的选择；但仍会排空全部结果        |
+| `QueryAsync`         | 每行返回一个独立的 `object[]` | 无需定义模型；每行都会分配一个数组，并对值类型进行装箱 |
+| `QueryAsync<T>`      | 每行返回一个独立的 POCO       | 强类型映射；每行都会分配并填充一个对象         |
+| `StreamAsync`        | 借用的列式 `Block` 值      | 速度最快；无需分配内存、复制数据或逐行物化       |
+
+#### 标量读取 {#scalar-reads}
+
+`ExecuteScalarAsync` 返回第一行第一列的值，类型为 `object`：
+
+```csharp
+object value = await client.ExecuteScalarAsync("SELECT count() FROM events");
+ulong count = (ulong)value;
+```
+
+该方法会读取完整响应，并丢弃第一个值之后的所有值。请编写只返回一行的查询，
+不要试图用该方法提前停止读取大量结果。无论第一个值为 `NULL`，还是查询
+没有返回任何行，结果都是 `null`。
+
+#### 逐行读取 {#row-reads}
+
+`QueryAsync` 以流式方式返回每一行，每行都是独立的 `object[]`，其元素按结果列的顺序排列：
+
+```csharp
+await foreach (object[] row in client.QueryAsync(
+    "SELECT id, name, score FROM events ORDER BY id"))
+{
+    Console.WriteLine($"{row[0]}: {row[1]} ({row[2]})");
+}
+```
+
+枚举器移至下一项后，行数组仍然有效。如果没有结果
+模型，使用这一层级很方便，但它会为每一行分配一个数组，并对值类型进行装箱。
+
+#### 读取 POCO 对象 {#poco-reads}
+
+`QueryAsync<T>` 将列映射到具有公共 setter 的属性。名称匹配不区分大小写，并忽略
+下划线；可使用 `ClickHouseTcpColumn` 显式指定名称，使用 `ClickHouseTcpNotMapped`
+排除属性。
+
+```csharp
+public sealed class Event
+{
+    public ulong Id { get; set; }
+
+    [ClickHouseTcpColumn(Name = "event_name")]
+    public string Name { get; set; } = string.Empty;
+
+    public DateTime RecordedAt { get; set; }
+}
+
+await foreach (Event row in client.QueryAsync<Event>(
+    "SELECT id, event_name, recorded_at FROM events ORDER BY id"))
+{
+    Console.WriteLine($"{row.Id}: {row.Name} at {row.RecordedAt:O}");
+}
+```
+
+POCO 映射会进行类型转换，并为每行分配一个对象。
+
+#### 按列式块读取 {#columnar-block-reads}
+
+`StreamAsync` 以一系列 `Block` 值的形式提供原生列式查询结果。这是读取数据最快的方式。
+
+```csharp
+await foreach (Block block in client.StreamAsync(
+    "SELECT id, score FROM events ORDER BY id"))
+{
+    ReadOnlySpan<ulong> ids = block.Column<ulong>("id").Values;
+    ReadOnlySpan<double> scores = block.Column<double>("score").Values;
+
+    for (int row = 0; row < block.RowCount; row++)
+    {
+        Console.WriteLine($"{ids[row]}: {scores[row]}");
+    }
+}
+```
+
+块采用借用方式提供。块、其中的列及其值跨度仅在当前
+迭代中有效。不要释放或留存它们；任何需要在循环体执行结束后继续使用的数据，都必须显式复制到由你管理的内存中。
+
+<Note>
+  务必完成枚举，或释放枚举器，以便将其连接归还连接池。
+</Note>
+
+`Block.Column<T>` 访问解码器生成的 CLR 类型。需要进行类型转换时，请使用 `Block.ReadAs<T>` 或
+`IDateTimeColumn` 等专用接口。
+
+### 插入数据 {#inserting-data}
+
+原生插入以列式传输块的形式发送数据。SQL 必须是 `INSERT INTO ... VALUES`
+语句，且不能包含内联值列表。使用类型化列可最大限度减少客户端的处理工作；如果应用程序中的数据已经按行组织，则使用行或
+POCO 重载。
+
+#### 列式插入 {#columnar-inserts}
+
+`InsertAsync` 接受已按类型化列组织的数据。这是插入数据最快的方式。
+
+```csharp
+var columns = new IColumn[]
+{
+    ClickHouseTcpColumn.Create("id", new ulong[] { 1, 2, 3 }),
+    ClickHouseTcpColumn.Create("name", new[] { "Ada", "Grace", "Alan" }),
+    ClickHouseTcpColumn.Create("score", new[] { 99.5, 97.25, 91.0 }),
+};
+
+await client.InsertAsync(
+    "INSERT INTO events (id, name, score) VALUES",
+    columns);
+```
+
+各列按名称而非参数顺序与 SQL 列列表对应，且行数必须相同。对于语句中未指定的表列，服务器会填入默认值。插入完成前，请勿修改
+调用方持有的数组。
+
+此 API 无需进行按行插入所需的行列转换和值类型装箱。从借用的结果块中读取的列也可以直接传递给 `InsertAsync`，但必须确保
+插入在该块释放前完成。
+
+#### 按行插入 {#row-inserts}
+
+`InsertRowsAsync` 接受 `object[]` 格式的行数据。各值按顺序与 SQL 列列表中的列对应：
+
+```csharp
+var rows = new[]
+{
+    new object[] { 1UL, "Ada", 99.5 },
+    new object[] { 2UL, "Grace", 97.25 },
+};
+
+await client.InsertRowsAsync(
+    "INSERT INTO events (id, name, score) VALUES",
+    rows);
+```
+
+行按块逐一转换为列。每行都必须包含语句中指定的每一列对应的一个值，
+且同一列中的值必须采用一致的 CLR 类型，除非目标列的类型为 `Variant` 或 `Dynamic`。
+操作完成前，请勿修改这些行。
+
+#### POCO 插入 {#poco-inserts}
+
+泛型 `InsertRowsAsync<T>` 重载遵循与 POCO 读取相同的命名和特性规则，将目标列映射到公有可读属性：
+
+```csharp
+public sealed class EventToInsert
+{
+    public ulong Id { get; set; }
+
+    [ClickHouseTcpColumn(Name = "event_name")]
+    public string Name { get; set; } = string.Empty;
+
+    public DateTime RecordedAt { get; set; }
+
+    [ClickHouseTcpNotMapped]
+    public string? ImportBatch { get; set; }
+}
+
+var rows = new[]
+{
+    new EventToInsert
+    {
+        Id = 1,
+        Name = "Ada",
+        RecordedAt = DateTime.UtcNow,
+        ImportBatch = "batch-42",
+    },
+    new EventToInsert
+    {
+        Id = 2,
+        Name = "Grace",
+        RecordedAt = DateTime.UtcNow,
+        ImportBatch = "batch-42",
+    },
+};
+
+await client.InsertRowsAsync(
+    "INSERT INTO events (id, event_name, recorded_at) VALUES",
+    rows);
+```
+
+语句中指定的每一列都必须映射到类型兼容的公开 getter。POCO 行按传输块逐块转换，因此，即使先前的块
+已经发送，后续块中的无效值仍可能尚未被发现。`ClickHouseTcpNotMapped` 可将 `ImportBatch` 等仅供应用程序使用的属性
+排除在映射之外。
+
+### SQL 参数 {#sql-parameters}
+
+原生客户端会将值绑定到 ClickHouse 原生的 `{name:Type}` 占位符，但不会重写
+ADO.NET 风格的 `@name` 占位符。
+
+```csharp
+var parameters = new ClickHouseTcpParameterCollection
+{
+    { "minimum", 18.0 },
+    { "ids", new ulong[] { 1, 2 } },
+};
+
+var options = new ClickHouseTcpQueryOptions { Parameters = parameters };
+
+await foreach (object[] row in client.QueryAsync(
+    "SELECT id, score FROM events " +
+    "WHERE score >= {minimum:Float64} AND id IN {ids:Array(UInt64)}",
+    options))
+{
+    Console.WriteLine($"{row[0]}: {row[1]}");
+}
+```
+
+每个参数都需要通过 SQL 占位符或
+`ClickHouseTcpParameter.ClickHouseType` 属性指定类型。表名和列名应使用 `Identifier` 类型。
+当 `DateTime` 或 `DateTimeOffset` 表示某个确切时刻时，应指定时区，例如
+`{timestamp:DateTime('UTC')}`；否则，服务器的会话时区可能会影响其含义。
+
+### 查询 ID {#query-id}
+
+每项操作都有一个查询 ID，ClickHouse 系统表、客户端日志和 trace span 都会用到它。当
+`QueryId` 为 null 或空字符串时，客户端会生成一个新的 GUID。如果需要将操作与应用程序标识符
+关联，请设置该 ID：
+
+```csharp
+var options = new ClickHouseTcpQueryOptions
+{
+    QueryId = $"report-{Guid.NewGuid():N}",
+};
+
+await client.ExecuteAsync("OPTIMIZE TABLE events FINAL", options);
+```
+
+### 查询进度和元数据 {#query-progress-metadata}
+
+设置 `ClickHouseTcpQueryOptions.Callbacks`，以接收在返回响应的过程中穿插传输的元数据：
+
+```csharp
+ClickHouseTcpProgress total = default;
+
+var options = new ClickHouseTcpQueryOptions
+{
+    Callbacks = new ClickHouseTcpQueryCallbacks
+    {
+        OnProgress = progress => total += progress,
+        OnProfileInfo = profile =>
+            Console.WriteLine($"{profile.Rows} rows in {profile.Blocks} blocks"),
+    },
+};
+
+await foreach (object[] _ in client.QueryAsync(
+    "SELECT number FROM numbers(1000000)",
+    options))
+{
+}
+```
+
+进度值表示增量，而非累计值。回调按数据包顺序，在读取响应的
+线程上同步执行；请确保回调执行迅速，且不要抛出异常。传给
+`OnLog`、`OnProfileEvents`、`OnTotals` 和 `OnExtremes` 的块仅供借用，不得在
+回调结束后继续使用。
+
+对于通过插入操作上传的行，ClickHouse 不会发送查询进度数据包。可使用
+`OnBlockWritten` 监测客户端发送的块；它反映的是传输进度，并不表示
+服务器已提交插入操作。
+
+### 取消操作 {#cancellation}
+
+每项操作都支持传入 `CancellationToken`：
+
+```csharp
+using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+try
+{
+    await foreach (object[] row in client.QueryAsync(
+        "SELECT number, sleepEachRow(0.1) FROM numbers(100)",
+        cancellationToken: cancellation.Token))
+    {
+        Console.WriteLine(row[0]);
+    }
+}
+catch (OperationCanceledException)
+{
+    Console.WriteLine("Query cancelled.");
+}
+```
+
+取消或放弃流式结果后，相关连接便不宜继续复用，因此客户端
+会关闭该连接，而不是将其放回连接池。客户端仍可正常使用，后续操作会打开或
+复用其他连接。如果会话固定使用该连接，取消操作就可能
+终止会话，导致会话中的临时表和配置丢失。
+
+### 服务器信息和健康检查 {#server-information-health-checks}
+
+`GetServerInfoAsync` 返回原生握手过程中获取的服务器身份、版本、时区及协商后的协议信息：
+
+```csharp
+ClickHouseTcpServerInfo server = await client.GetServerInfoAsync();
+
+Console.WriteLine($"ClickHouse {server.Version}");
+Console.WriteLine($"Protocol revision: {server.ProtocolRevision}");
+Console.WriteLine($"Server timezone: {server.Timezone}");
+```
+
+根据 `ProtocolRevision` (客户端与服务器协商确定的修订版本) 判断传输层功能是否可用；
+根据 `Version` 判断数据类型和函数等 SQL 功能是否可用。该方法在有可用连接时会复用现有
+连接，连接池为空时则会新建连接。
+
+使用 `PingAsync` 通过原生协议执行就绪检查：
+
+```csharp
+await client.PingAsync(cancellationToken);
+```
+
+Ping 成功说明原生协议连接和身份验证均正常，但无法确认是否有权访问
+应用程序表。
+
+### 更多示例 {#more-examples}
+
+如需查看涵盖数据读取、插入、类型、会话、TLS、可观测性和错误处理的完整可运行示例，请参阅 GitHub 仓库中的
+[原生 TCP 示例](https://github.com/ClickHouse/clickhouse-cs/tree/main/examples/Tcp)。
+
+## 会话 {#sessions}
+
+普通客户端操作会从连接池中获取任意可用连接，因此连接上的本地状态
+既无法相互隔离，也不能保证在不同调用之间保留。连接池中的不同连接可能连接到不同的服务器。
+如果临时表、`SET` 语句或其他一系列操作必须使用同一连接，请开启会话。
+
+```csharp
+await using IClickHouseTcpSession session = await client.OpenSessionAsync();
+
+await session.ExecuteAsync("SET max_threads = 2");
+await session.ExecuteAsync("""
+    CREATE TEMPORARY TABLE session_events
+    (
+        id UInt64,
+        name String
+    )
+    ENGINE = Memory
+    """);
+
+await session.InsertRowsAsync(
+    "INSERT INTO session_events (id, name) VALUES",
+    new[]
+    {
+        new object[] { 1UL, "Ada" },
+        new object[] { 2UL, "Grace" },
+    });
+
+object count = await session.ExecuteScalarAsync(
+    "SELECT count() FROM session_events");
+```
+
+`IClickHouseTcpSession` 提供与客户端相同的查询、执行、插入、ping 和服务器信息 API。
+会话不是线程安全的。会话操作必须依次进行：当前操作
+尚未完成时发起另一项操作会被拒绝。流式结果会一直占用会话，直到结果被完整枚举或其
+枚举器被释放。
+
+每个会话在整个生命周期内都会占用一个 `MaxPoolSize` 槽位。客户端仍可使用连接池中的其他
+连接，但如果连接池中只有一个连接，其他客户端操作就必须等待，
+直到会话被释放或 `PoolTimeout` 超时。
+
+请先释放会话，再释放其所属的客户端。释放会话时，会关闭该会话专用的
+连接，而不是将其归还连接池，以免后续调用方继承该会话的
+临时表或设置。连接或协议故障、操作被取消，或结果流未被完整读取，
+都可能导致会话无法继续使用；当 `IsOpen` 变为 `false` 时，请创建新会话。
+
+## 最佳实践 {#best-practices}
+
+### 客户端生命周期与连接池 {#best-practices-client-lifetime}
+
+针对每组不同的端点和配置，创建一个 `ClickHouseTcpClient` 或 `ClickHouseTcpDataSource`，并在应用程序的整个生命周期内复用。客户端是线程安全的，且拥有自己的连接池；如果每次操作都新建客户端，就会反复创建连接池，无法复用连接。
+
+在使用依赖注入的应用程序中，只需注册一次 `AddClickHouseTcpDataSource`，然后注入 `IClickHouseTcpClient`。客户端由服务提供者管理，因此使用注入客户端的代码不应自行释放该实例。未使用依赖注入时，应通过 `await using` 在应用程序关闭时释放客户端。
+
+每个原生连接同一时间只能执行一项操作。因此，`MaxPoolSize` 既限制打开的连接数，也限制并发操作数；超出上限的调用方最多等待 `PoolTimeout`，直到有可用名额。设置该值时，既要满足应用程序的实际并发需求，也不能超过服务器端的连接限制和查询限制。调高该值不会加快单个查询。
+
+还需留意以下占用连接池的情况：
+
+* 流式结果会持续占用连接，直到其枚举器被释放。
+* 会话在整个生命周期内占用一个连接，且同一时间只接受一项操作。
+* 如果放弃处理结果、取消正在执行的操作，或发生协议或连接故障，连接会被关闭，而不会被复用。
+
+及时释放会话；对于异步结果，务必枚举完毕或释放其枚举器。可使用 `ClickHouse.Driver.Tcp.Pool` 日志类别排查连接池耗尽、连接意外关闭或频繁重新建立连接等问题。
+
+### 超时与取消 {#best-practices-timeouts}
+
+TCP 客户端为不同的等待环节分别设置了超时限制：
+
+| 机制                   | 限制范围                       |
+| -------------------- | -------------------------- |
+| `DialTimeout`        | 建立新连接时的套接字连接、TLS 协商和原生协议握手 |
+| `PoolTimeout`        | 所有连接都在使用时，等待连接池中的可用槽位      |
+| `ReadTimeout`        | 读取响应期间服务器单次无响应的时长，而非查询的总耗时 |
+| `CancellationToken`  | 由调用方控制的整个操作，包括等待连接池和遍历结果   |
+| `max_execution_time` | 服务器端的查询执行时间                |
+
+如果从连接池获取连接时需要先等待可用槽位，再建立新连接，整个过程最多可能耗时
+`PoolTimeout + DialTimeout`。每次从传输层读取数据时，`ReadTimeout` 都会重新计时，因此如果
+长时间运行的查询持续返回进度信息或数据，其运行时间就可能超过该值。应将其设置得足够长，以容许服务器在正常情况下
+暂时无响应；只有当其他超时设置能够可靠地限制整个操作的时长时，才将其设为 `TimeSpan.Zero`。
+
+如果需要为整个操作设置超时，请使用取消令牌：
+
+```csharp
+using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Settings = new Dictionary<string, string>
+    {
+        ["max_execution_time"] = "25",
+    },
+};
+
+await foreach (Block block in client.StreamAsync(
+    "SELECT * FROM large_report",
+    queryOptions,
+    timeout.Token))
+{
+    // Process each block before advancing.
+}
+```
+
+客户端会在确保安全的前提下尝试发送原生 Cancel 数据包，然后关闭响应尚未完全读取的
+连接。连接池中的客户端后续仍可正常执行操作，
+但取消操作可能导致绑定的会话无法继续使用。已取消或超时的插入操作
+结果可能无法确定；请遵循[插入重试指南](#error-handling-retries)，不要
+盲目地重新执行。
+
+### 日期和时间处理 {#best-practices-datetime}
+
+时间戳优先使用 `DateTime('UTC')` 或 `DateTime64(S, 'UTC')`，应用程序代码中则使用 `DateTimeOffset` 或
+`Kind` 为 `Utc` 的 `DateTime`。这样可以明确表示实际时间点，
+避免依赖服务器时区或会话时区。
+
+TCP 客户端写入 `DateTime` 值时遵循以下规则：
+
+| `DateTime.Kind` | 解释                            |
+| --------------- | ----------------------------- |
+| `Utc`           | 保留 UTC 时间点。                   |
+| `Local`         | 将该值转换为对应的 UTC 时间点。            |
+| `Unspecified`   | 按列时区解释挂钟时间；如果列未声明时区，则按会话时区解释。 |
+
+如果未指定时区的时间落在夏令时切换时跳过的时段内，该时间会被拒绝，因为它不对应任何
+实际时间点。对于秋季时钟回拨造成的歧义时间，选择较早的那个时间点。如需明确指定，
+请使用 `DateTimeOffset`。
+
+对于表示某个时间点的 SQL 参数，请在占位符中包含时区：
+
+```csharp
+var parameters = new ClickHouseTcpParameterCollection
+{
+    new ClickHouseTcpParameter(
+        "captured_at",
+        DateTimeOffset.UtcNow,
+        "DateTime64(3, 'UTC')"),
+};
+
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Parameters = parameters,
+};
+
+await client.ExecuteAsync(
+    "INSERT INTO events (captured_at) VALUES ({captured_at:DateTime64(3, 'UTC')})",
+    queryOptions);
+```
+
+进行列式读取时，`DateTime` 和 `DateTime64` 默认返回原始的 `uint` 或 `long` 计数值。
+如果需要更方便处理的日期时间值，请使用 `Block.ReadAs<DateTimeOffset>`、`IDateTimeColumn.GetDateTimeOffset` 或对应的 POCO 属性。
+如果必须保留每一位数字，则应使用原始计数值：
+`DateTimeOffset` 的分辨率为 100 纳秒，因此通过它读取标度为 8 或 9 的 `DateTime64`
+会丢失不足一个 tick 的精度。
+
+对于 `Date` 和 `Date32`，请使用 `DateOnly`。对于可能为负值或超过 24 小时的 `Time` 和 `Time64` 值，
+请使用 `TimeSpan`；只有当列的取值限定为一天中的某个时刻时，才适合使用 `TimeOnly`。
+
+### 流式处理与结果生命周期 {#best-practices-streaming}
+
+使用 `StreamAsync` 和类型化列处理高吞吐量工作负载。这种方式符合 ClickHouse 的
+列式布局，避免为每一行创建数组、进行装箱和分配 POCO 对象。如果拥有独立的应用程序模型比尽量减少内存分配更重要，请使用 `QueryAsync<T>`；只有在编译时无法确定 schema 时，才使用非类型化的
+`QueryAsync`。
+
+`StreamAsync` 返回的块是借用的。块、其中的列、复合子列以及
+所有 span 都只在当前循环迭代期间有效。请就地处理，或复制需要
+在本次迭代结束后继续使用的值：
+
+```csharp
+ulong[] retained;
+
+await foreach (Block block in client.StreamAsync("SELECT id FROM events"))
+{
+    ReadOnlySpan<ulong> ids = block.Column<ulong>("id").Values;
+    retained = ids.ToArray();
+}
+```
+
+不要自行释放迭代过程中返回的块，应由 `await foreach` 释放枚举器。如果只需要部分
+查询结果，请在 SQL 中使用 `LIMIT` 限制返回量，并只选择所需的列。提前退出循环
+会取消剩余响应，导致该连接无法复用。
+
+### 插入形态与批处理 {#best-practices-inserts}
+
+如果数据本身已按列组织，优先使用带类型化列的 `InsertAsync`，这样所需的
+客户端转换最少。对于 POCO 数据，`InsertRowsAsync<T>` 更合适；无类型的
+`object[]` 行最灵活，但需要分配数组，并对值类型进行装箱。
+
+每次插入调用应发送适量的行，避免频繁发起小规模插入。在单次
+调用中，`MaxRowsPerBlock` 会将数据拆分为原生传输格式的块。其默认值为 50,000 行，也
+限制了转换行和 POCO 输入时使用的临时列缓冲区大小。增大该值可能
+提高窄行的吞吐量，但也会增加峰值内存占用；将其设为 `null` 则会将整个
+插入写为一个块，并一次性转换该块中所有按行组织的输入。
+
+`MaxSendBufferBytes` 则独立限制刷写到
+套接字之前所缓冲的已编码数据量。它是一个在处理列的间隙检查的软上限，因此单个宽列的数据量可能超过该值。
+
+行和 POCO 输入会逐块转换。因此，后续块中的无效值可能要等到
+前面的块已发送后才会被发现。如果数据质量无法保证，请在
+插入前验证可空性和 CLR 类型；如果逻辑批次可能重试，还应设置根据数据生成的 `DeduplicationToken`。
+
+## 支持的数据类型 {#supported-data-types}
+
+下表区分了解码后的 `IColumn<T>` 直接返回的类型，以及通过 `Block.ReadAs<T>` 转换、`QueryAsync<T>` POCO 映射或插入操作支持的其他类型。你可以使用这些操作所用的同一个
+解析器，查询是否支持特定的类型映射：
+
+```csharp
+bool canRead = ClickHouseTcpTypes.CanRead("Array(Nullable(DateTime))", typeof(DateTime?[]));
+bool canWrite = ClickHouseTcpTypes.CanWrite("FixedString(8)", typeof(byte[]));
+```
+
+`Nullable`、`Array`、`Tuple`、`Map` 和 `LowCardinality` 的映射规则也会递归应用于其内部类型。
+
+### 类型映射：从 ClickHouse 读取 {#type-map-reading}
+
+`Default .NET type` 指 `Block.Column<T>` 和 `IColumn<T>` 对外提供的 `T`。`Also readable as`
+列中列出的类型可通过 `Block.ReadAs<T>` 和 POCO 属性读取。
+
+#### 整数类型 {#type-map-reading-integer}
+
+| ClickHouse 类型 | 默认 .NET 类型 |
+| ------------- | ---------- |
+| `Int8`        | `sbyte`    |
+| `UInt8`       | `byte`     |
+| `Int16`       | `short`    |
+| `UInt16`      | `ushort`   |
+| `Int32`       | `int`      |
+| `UInt32`      | `uint`     |
+| `Int64`       | `long`     |
+| `UInt64`      | `ulong`    |
+| `Int128`      | `Int128`   |
+| `UInt128`     | `UInt128`  |
+| `Int256`      | `Int256`   |
+| `UInt256`     | `UInt256`  |
+
+#### 浮点类型 {#type-map-reading-floating-point}
+
+| ClickHouse 类型 | 默认 .NET 类型 |
+| ------------- | ---------- |
+| `Float32`     | `float`    |
+| `Float64`     | `double`   |
+| `BFloat16`    | `float`    |
+
+#### Decimal 类型 {#type-map-reading-decimal}
+
+| ClickHouse 类型                | 默认 .NET 类型             |
+| ---------------------------- | ---------------------- |
+| `Decimal(P, S)`，其中 `P <= 18` | `decimal`              |
+| `Decimal(P, S)`，其中 `P > 18`  | `ClickHouseTcpDecimal` |
+| `Decimal32(S)`               | `decimal`              |
+| `Decimal64(S)`               | `decimal`              |
+| `Decimal128(S)`              | `ClickHouseTcpDecimal` |
+| `Decimal256(S)`              | `ClickHouseTcpDecimal` |
+
+`ClickHouseTcpDecimal` 使用任意大小的整数存储尾数，并存储标度，因此能够保留精度
+超出 `decimal` 表示范围的值。
+
+#### 布尔类型 {#type-map-reading-boolean}
+
+| ClickHouse 类型 | 默认 .NET 类型 |
+| ------------- | ---------- |
+| `Bool`        | `bool`     |
+
+#### String 类型 {#type-map-reading-strings}
+
+| ClickHouse 类型    | 默认 .NET 类型 | 也可读取为    |
+| ---------------- | ---------- | -------- |
+| `String`         | `string`   | `byte[]` |
+| `FixedString(N)` | `byte[]`   | `string` |
+
+如果数据可能不是有效的 UTF-8，请使用 `IStringColumn.GetBytes(row)`，或将其读取为 `byte[]`。
+`FixedString(N)` 会保留全部 `N` 个字节，包括末尾的零字节。
+
+#### 日期和时间类型 {#type-map-reading-datetime}
+
+| ClickHouse 类型                                | 默认 .NET 类型            | 也可读取为                        |
+| -------------------------------------------- | --------------------- | ---------------------------- |
+| `Date`                                       | `DateOnly`            | —                            |
+| `Date32`                                     | `DateOnly`            | —                            |
+| `DateTime`, `DateTime('timezone')`           | `uint` Unix 时间戳 (秒)   | `DateTimeOffset`, `DateTime` |
+| `DateTime64(S)`, `DateTime64(S, 'timezone')` | `long` 按标度 `S` 表示的计数值 | `DateTimeOffset`, `DateTime` |
+| `Time`                                       | `int` 秒数              | `TimeSpan`, `TimeOnly`       |
+| `Time64(S)`                                  | `long` 按标度 `S` 表示的计数值 | `TimeSpan`, `TimeOnly`       |
+| `IntervalNanosecond` 至 `IntervalYear`        | `long`                | —                            |
+
+默认使用原始整数表示，以便按列读取时保留传输数据中的精确值。
+转换为日期时间值时，使用类型声明的时区；如果类型未声明时区，则使用会话时区。
+如果值为负数或不小于 24 小时，将 `Time` 或 `Time64` 读取为 `TimeOnly` 会抛出异常；
+如需支持 ClickHouse 的完整取值范围，请使用 `TimeSpan`。
+
+#### 枚举类型 {#type-map-reading-enum}
+
+| ClickHouse 类型 | 默认 .NET 类型 | 也可读取为       |
+| ------------- | ---------- | ----------- |
+| `Enum8(...)`  | `sbyte`    | `string` 标签 |
+| `Enum16(...)` | `short`    | `string` 标签 |
+
+`IEnumColumn` 还提供已声明的标签与对应序数值之间的映射。
+
+#### 其他标量类型 {#type-map-reading-other-scalar}
+
+| ClickHouse 类型 | 默认 .NET 类型              |
+| ------------- | ----------------------- |
+| `UUID`        | `Guid`                  |
+| `IPv4`        | `IPAddress`             |
+| `IPv6`        | `IPAddress`             |
+| `Nothing`     | `object` (每行均为 `null`)  |
+
+#### 复合类型 {#type-map-reading-composite}
+
+| ClickHouse 类型        | 默认 .NET 类型             | 列式视图                       |
+| -------------------- | ---------------------- | -------------------------- |
+| `Nullable(T)`        | `T?`                   | `INullableColumn<T>`       |
+| `Array(T)`           | `T[]`                  | `IArrayColumn<T>`          |
+| `Tuple(T1, ..., Tn)` | `(T1, ..., Tn)`        | `ITupleColumn`             |
+| `Map(K, V)`          | `KeyValuePair<K, V>[]` | `IMapColumn<K, V>`         |
+| `LowCardinality(T)`  | 与 `T` 相同               | `ILowCardinalityColumn<T>` |
+| `Nested(...)`        | `object[][]`           | `INestedColumn`            |
+
+元组最多可包含七个元素。`Nested` 列的读取方式与字段数量无关，建议通过
+`INestedColumn` 读取。该接口可访问带名称的扁平化字段列和共享的行偏移量，而无需
+分配装箱记录。使用 ClickHouse 的默认设置 `flatten_nested = 1` 时，嵌套字段则会作为
+名称中带点号的独立 `Array(T)` 列返回。
+
+#### Variant、Dynamic 和 JSON 类型 {#type-map-reading-variant-dynamic-json}
+
+| ClickHouse 类型          | 默认 .NET 类型 | 列式视图              |
+| ---------------------- | ---------- | ----------------- |
+| `Variant(T1, ..., Tn)` | `object`   | `IVariantColumn`  |
+| `Dynamic`              | `object`   | `IDynamicColumn`  |
+| `JSON`                 | `string`   | `IColumn<string>` |
+
+`Variant` 和 `Dynamic` 返回每行所选类型对应的 CLR 值，或返回 `null`。它们的
+列式视图提供判别值流，并为每种运行时类型提供一个指定类型的子列，从而避免
+逐列处理数据时的装箱操作。
+
+TCP 客户端通过 ClickHouse 的 String 序列化读取 `JSON`。客户端默认启用
+`output_format_native_write_json_as_string = 1`；禁用此设置后，将无法读取 JSON。
+ClickHouse 会解析并规范化 JSON，因此返回的文本在键的顺序、
+空白字符和数字格式方面可能与插入的文本不同。
+
+#### 几何类型 {#type-map-reading-geometry}
+
+| ClickHouse 类型     | 默认 .NET 类型               |
+| ----------------- | ------------------------ |
+| `Point`           | `(double, double)`       |
+| `Ring`            | `(double, double)[]`     |
+| `LineString`      | `(double, double)[]`     |
+| `Polygon`         | `(double, double)[][]`   |
+| `MultiLineString` | `(double, double)[][]`   |
+| `MultiPolygon`    | `(double, double)[][][]` |
+| `Geometry`        | `object`                 |
+
+`Geometry` 以包含上述六种几何类型的 `IVariantColumn` 形式呈现。
+
+#### QBit 类型 {#type-map-reading-qbit}
+
+| ClickHouse 类型       | 默认 .NET 类型 |
+| ------------------- | ---------- |
+| `QBit(Int8, N)`     | `sbyte[]`  |
+| `QBit(BFloat16, N)` | `float[]`  |
+| `QBit(Float32, N)`  | `float[]`  |
+| `QBit(Float64, N)`  | `double[]` |
+
+TCP 客户端支持无步长的双参数形式 `QBit(T, N)`，不支持带步长参数的
+三参数形式。
+
+#### AggregateFunction 类型 {#type-map-reading-aggregate-function}
+
+| ClickHouse 类型                          | .NET 类型  |
+| -------------------------------------- | -------- |
+| `SimpleAggregateFunction(function, T)` | 与 `T` 相同 |
+| `AggregateFunction(function, ...)`     | 不支持      |
+
+`AggregateFunction` 列存储函数专用的中间状态。请在服务器端将其计算为最终结果，例如使用 `sumMerge(column)`，然后读取结果值。
+
+### 类型映射：写入 ClickHouse {#type-map-writing}
+
+每个条目对应传入 `InsertAsync` 的 `IColumn` 中一行数据的 CLR 类型。类型映射
+严格对应：TCP 客户端不会进行类似 `Convert` 的强制类型转换。
+
+#### 整数类型 {#type-map-writing-integer}
+
+| ClickHouse 类型 | 支持的 .NET 类型 |
+| ------------- | ----------- |
+| `Int8`        | `sbyte`     |
+| `UInt8`       | `byte`      |
+| `Int16`       | `short`     |
+| `UInt16`      | `ushort`    |
+| `Int32`       | `int`       |
+| `UInt32`      | `uint`      |
+| `Int64`       | `long`      |
+| `UInt64`      | `ulong`     |
+| `Int128`      | `Int128`    |
+| `UInt128`     | `UInt128`   |
+| `Int256`      | `Int256`    |
+| `UInt256`     | `UInt256`   |
+
+#### 浮点类型 {#type-map-writing-floating-point}
+
+| ClickHouse 类型 | 支持的 .NET 类型 |
+| ------------- | ----------- |
+| `Float32`     | `float`     |
+| `Float64`     | `double`    |
+| `BFloat16`    | `float`     |
+
+写入 `BFloat16` 时，每个 `float` 值都会被截断为 16 位脑浮点数。
+
+#### Decimal 类型 {#type-map-writing-decimal}
+
+| ClickHouse 类型                | 支持的 .NET 类型            |
+| ---------------------------- | ---------------------- |
+| `Decimal(P, S)`，其中 `P <= 18` | `decimal`              |
+| `Decimal(P, S)`，其中 `P > 18`  | `ClickHouseTcpDecimal` |
+| `Decimal32(S)`               | `decimal`              |
+| `Decimal64(S)`               | `decimal`              |
+| `Decimal128(S)`              | `ClickHouseTcpDecimal` |
+| `Decimal256(S)`              | `ClickHouseTcpDecimal` |
+
+如果按标度调整后的尾数超过声明的精度，写入时会抛出 `OverflowException`。
+
+#### 布尔类型 {#type-map-writing-boolean}
+
+| ClickHouse 类型 | 支持的 .NET 类型 |
+| ------------- | ----------- |
+| `Bool`        | `bool`      |
+
+#### String 类型 {#type-map-writing-strings}
+
+| ClickHouse 类型    | 可接受的 .NET 类型       | 备注                       |
+| ---------------- | ------------------ | ------------------------ |
+| `String`         | `string`, `byte[]` | 字符串使用 UTF-8 编码；字节数组原样写入。 |
+| `FixedString(N)` | `byte[]`           | 每个值必须恰好包含 `N` 个字节。       |
+
+`FixedString(N)` 不接受 `string`，这是有意设计的；请显式编码并填充该值，以确保其
+二进制表示准确无歧义。
+
+#### 日期和时间类型 {#type-map-writing-datetime}
+
+| ClickHouse 类型                                | 可接受的 .NET 类型                         |
+| -------------------------------------------- | ------------------------------------ |
+| `Date`, `Date32`                             | `DateOnly`                           |
+| `DateTime`, `DateTime('timezone')`           | `uint`, `DateTimeOffset`, `DateTime` |
+| `DateTime64(S)`, `DateTime64(S, 'timezone')` | `long`, `DateTimeOffset`, `DateTime` |
+| `Time`                                       | `int`, `TimeSpan`, `TimeOnly`        |
+| `Time64(S)`                                  | `long`, `TimeSpan`, `TimeOnly`       |
+| `IntervalNanosecond` 至 `IntervalYear`        | `long`                               |
+
+直接以整数形式写入的值使用读取表中所列的单位。`DateTimeOffset` 保留原始时间点。
+`DateTime` 的处理方式取决于其 `Kind`；当值为 `Unspecified` 时，会将其视为
+列时区的挂钟时间；如果列未指定时区，则视为会话时区的挂钟时间。
+
+#### 枚举类型 {#type-map-writing-enum}
+
+| ClickHouse 类型 | 可接受的 .NET 类型           |
+| ------------- | ---------------------- |
+| `Enum8(...)`  | `sbyte`、表示标签的 `string` |
+| `Enum16(...)` | `short`、表示标签的 `string` |
+
+未知标签会在发送数据前被拒绝。
+
+#### 其他标量类型 {#type-map-writing-other-scalar}
+
+| ClickHouse 类型 | 支持的 .NET 类型 |
+| ------------- | ------------ |
+| `UUID`        | `Guid`       |
+| `IPv4`        | `IPAddress`  |
+| `IPv6`        | `IPAddress`  |
+| `Nothing`     | 不支持          |
+
+#### 复合类型 {#type-map-writing-composite}
+
+可接受的数据形态按递归规则确定：`Array(Nullable(DateTime))` 每行接受一个 `DateTime?[]`，
+`Map(String, UInt32)` 每行接受一个 `KeyValuePair<string, uint>[]`。
+
+| ClickHouse 类型        | 单行可接受的 .NET 类型         |
+| -------------------- | ---------------------- |
+| `Nullable(T)`        | `T` 所接受类型的可空形式         |
+| `Array(T)`           | `T[]`                  |
+| `Tuple(T1, ..., Tn)` | `(T1, ..., Tn)`        |
+| `Map(K, V)`          | `KeyValuePair<K, V>[]` |
+| `LowCardinality(T)`  | 与 `T` 相同               |
+| `Nested(...)`        | 无对应的面向行的 CLR 数据形态      |
+
+直接写入 `Nested` 时，需使用先前读取操作返回的密集列数据形态。对于由应用程序构造的
+插入操作，请使用默认的 `flatten_nested = 1` 表示形式，并将每个名称中带点号的 `Array(T)` 字段
+分别写入独立的列。
+
+#### Variant、Dynamic 和 JSON 类型 {#type-map-writing-variant-dynamic-json}
+
+| ClickHouse 类型          | 支持的 .NET 类型 | 备注                          |
+| ---------------------- | ----------- | --------------------------- |
+| `Variant(T1, ..., Tn)` | `object`    | 每个非 null 值的运行时类型决定其对应的备选类型。 |
+| `Dynamic`              | `object`    | 逐个推断非 null 值的运行时类型。         |
+| `JSON`                 | `string`    | 值必须是有效的 JSON 文本。            |
+
+对于 `Variant`，运行时类型必须只与一个备选类型的默认 CLR 类型匹配。在变体类型中，不会使用将 `DateTime` 写入 `DateTime` 备选类型之类的便捷映射；应改用该备选类型的默认原始类型。`Dynamic` 支持标量值，以及受递归支持的数组、映射和元组值。
+
+#### 几何类型 {#type-map-writing-geometry}
+
+| ClickHouse 类型     | 支持的 .NET 类型              |
+| ----------------- | ------------------------ |
+| `Point`           | `(double, double)`       |
+| `Ring`            | `(double, double)[]`     |
+| `LineString`      | `(double, double)[]`     |
+| `Polygon`         | `(double, double)[][]`   |
+| `MultiLineString` | `(double, double)[][]`   |
+| `MultiPolygon`    | `(double, double)[][][]` |
+| `Geometry`        | `object`                 |
+
+对于应用程序构建的 `Geometry` 列，只有 `Point` 和 `MultiPolygon` 具有独特的 CLR 形态。
+`Ring` 与 `LineString` 的形态相同，`Polygon` 与 `MultiLineString` 也是如此，因此客户端无法
+推断 `object` 值对应哪一种类型。解码后的 `Geometry` 列会保留判别值，
+因此再次插入时不会产生这种歧义。
+
+#### QBit 类型 {#type-map-writing-qbit}
+
+| ClickHouse 类型       | 支持的 .NET 类型          |
+| ------------------- | -------------------- |
+| `QBit(Int8, N)`     | 长度为 `N` 的 `sbyte[]`  |
+| `QBit(BFloat16, N)` | 长度为 `N` 的 `float[]`  |
+| `QBit(Float32, N)`  | 长度为 `N` 的 `float[]`  |
+| `QBit(Float64, N)`  | 长度为 `N` 的 `double[]` |
+
+#### AggregateFunction 类型 {#type-map-writing-aggregate-function}
+
+| ClickHouse 类型                          | 支持的 .NET 类型 |
+| -------------------------------------- | ----------- |
+| `SimpleAggregateFunction(function, T)` | 与 `T` 相同    |
+| `AggregateFunction(function, ...)`     | 不支持         |
+
+## 压缩 {#compression}
+
+客户端默认启用压缩，对写入的块使用 LZ4；ClickHouse 默认也对响应块
+使用 LZ4。压缩适用于结果块和插入操作上传的块，
+而查询文本、进度信息、异常及其他协议数据包仍采用常规传输编码。
+
+使用连接字符串中的 `Compression` 键指定客户端使用的编解码器：
+
+```csharp
+await using var lz4 = new ClickHouseTcpClient(
+    "Host=my.clickhouse;Compression=lz4"); // Default
+
+await using var zstd = new ClickHouseTcpClient(
+    "Host=my.clickhouse;Compression=zstd");
+
+await using var uncompressed = new ClickHouseTcpClient(
+    "Host=my.clickhouse;Compression=none");
+```
+
+与之等效的强类型配置使用 `IClickHouseCompressor`：
+
+```csharp
+using ClickHouse.Driver.Compression;
+using ClickHouse.Driver.Tcp;
+
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    Compressor = ZstdCompressor.Default,
+};
+
+await using var client = new ClickHouseTcpClient(options);
+```
+
+将 `Compressor = null` 设为禁用压缩。自定义压缩器必须支持原生块的
+帧信息；仅支持 HTTP 消息体的压缩器会在创建客户端时被拒绝。
+
+### 选择响应编解码器 {#compression-response-codec}
+
+`Compressor` 决定客户端写入的块如何压缩。原生 Query 数据包会请求
+服务器启用压缩，但不会指定编解码器，因此 ClickHouse 会根据
+`network_compression_method` 设置选择响应编解码器。服务器默认使用 LZ4。
+
+如有需要，可为每次操作单独设置响应编解码器：
+
+```csharp
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Settings = new Dictionary<string, string>
+    {
+        ["network_compression_method"] = "ZSTD",
+    },
+};
+
+await foreach (Block block in client.StreamAsync(
+    "SELECT * FROM events",
+    queryOptions))
+{
+    // Process the block.
+}
+```
+
+LZ4 通常占用的 CPU 资源更少，是高速网络环境下的最佳默认选择。ZSTD 通常生成
+更小的数据帧，但 CPU 开销略高。如果服务器位于同一主机上，或通过其他极高速链路连接，禁用压缩可能更合适。
+更改默认设置前，请使用有代表性的数据进行测试。
+
+## 错误处理 {#error-handling}
+
+ClickHouse 或原生连接报告的故障所对应的异常均继承自 `ClickHouseTcpException`，
+后者又继承自 `DbException`：
+
+| 异常                                 | 含义                                                                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `ClickHouseTcpServerException`     | ClickHouse 拒绝握手或操作，或在执行操作时发生故障。                                                                                |
+| `ClickHouseTcpConnectionException` | 套接字、TLS 协商或已建立的连接发生故障，或 `DialTimeout`、`ReadTimeout` 超时。可通过 `InnerException` 查看原因；如果是超时，原因是 `TimeoutException`。 |
+| `ClickHouseTcpProtocolException`   | 响应不符合原生协议，或包含客户端无法处理的类型或传输编码形式。                                                                                |
+
+`ClickHouseTcpServerException` 提供 `RawCode` (服务器发送的原始数值错误码) ，
+以及 `Code` (驱动程序为该错误码定义了名称时，对应的 `ClickHouseErrorCode`) 。
+它还包含服务器异常的 `Name`、`ServerStackTrace`，以及通过 `InnerException`
+提供的所有嵌套服务器异常。
+
+```csharp
+try
+{
+    await client.ExecuteAsync("SELECT * FROM missing_table");
+}
+catch (ClickHouseTcpServerException ex)
+    when (ex.Code == ClickHouseErrorCode.UnknownTable)
+{
+    Console.WriteLine($"ClickHouse error {ex.RawCode}: {ex.Message}");
+}
+catch (ClickHouseTcpConnectionException ex)
+{
+    Console.WriteLine($"Connection failed: {ex.InnerException?.Message}");
+}
+catch (ClickHouseTcpException ex)
+{
+    Console.WriteLine($"Native client failure: {ex.Message}");
+}
+```
+
+未被 `ClickHouseErrorCode` 涵盖的错误代码，其 `Code == ClickHouseErrorCode.Unknown`；请检查
+`RawCode`，不要认为该枚举包含所有 ClickHouse 错误。
+
+参数验证和对象生命周期相关的错误仍使用常规的 .NET 异常类型。
+取消操作会引发 `OperationCanceledException`。`DialTimeout` 和 `ReadTimeout` 会引发
+`ClickHouseTcpConnectionException`，其内部异常为 `TimeoutException`，并且连接会被弃用。
+`PoolTimeout` 会引发普通的 `TimeoutException`，而非 `ClickHouseTcpException`：这并不表示连接
+发生故障；可通过减少并发操作、扩大连接池或完成结果枚举来解决。
+
+### 重试操作 {#error-handling-retries}
+
+插入过程中如果发生连接故障或超时，操作结果便无法确定：
+客户端未收到响应时，服务器可能已经提交了这些行。重试前，请为该逻辑批次设置固定的
+`DeduplicationToken`：
+
+```csharp
+var insertOptions = new ClickHouseTcpInsertOptions
+{
+    DeduplicationToken = batchContentHash,
+};
+
+await client.InsertAsync(
+    "INSERT INTO events (id, payload) VALUES",
+    columns,
+    insertOptions);
+```
+
+重试同一批次时，使用相同的令牌；处理新数据时，则使用不同的令牌。对于其他
+操作，只有在语句可以安全地重复执行，且相应故障属于暂时性故障时，才应重试；
+大多数服务器错误需要修改查询或配置，而不是重试。
+
+## 日志与诊断 {#logging-and-diagnostics}
+
+TCP 客户端与 `Microsoft.Extensions.Logging` 集成。日志功能是可选的；未提供
+`LoggerFactory` 时，客户端不会创建日志记录器，也不会格式化日志消息。
+
+```csharp
+using ClickHouse.Driver.Tcp;
+using Microsoft.Extensions.Logging;
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConsole()
+        .SetMinimumLevel(LogLevel.Debug);
+});
+
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    LoggerFactory = loggerFactory,
+    StatementMaxLength = 100,
+};
+
+await using var client = new ClickHouseTcpClient(options);
+```
+
+通过依赖注入扩展注册客户端时，如果传入的选项未指定日志记录器工厂，客户端就会使用容器提供的
+`ILoggerFactory`。
+
+### 日志类别 {#logging-categories}
+
+| 类别                                 | 事件和级别                                                                               |
+| ---------------------------------- | ----------------------------------------------------------------------------------- |
+| `ClickHouse.Driver.Tcp.Client`     | 操作开始、完成、取消、放弃及行数和字节数统计记录为 `Debug` 级别；失败记录为 `Error` 级别。                              |
+| `ClickHouse.Driver.Tcp.Connection` | 建立连接、TLS、握手、服务器版本、协议修订版本和时区信息记录为 `Debug` 级别；连接失败记录为 `Warning` 级别。                   |
+| `ClickHouse.Driver.Tcp.Pool`       | 连接复用记录为 `Trace` 级别；新建连接、连接退役、丢弃连接和排空连接池记录为 `Debug` 级别；连接池耗尽和后台操作失败记录为 `Warning` 级别。 |
+
+通过标准的 .NET 日志配置设置这些类别：
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Warning",
+      "ClickHouse.Driver.Tcp.Client": "Debug",
+      "ClickHouse.Driver.Tcp.Connection": "Debug",
+      "ClickHouse.Driver.Tcp.Pool": "Debug"
+    }
+  }
+}
+```
+
+操作开始消息以 `Debug` 级别记录，最多包含 `StatementMaxLength` 个字符的
+SQL 语句。默认长度为五个字符。将该值设为零或负数，可避免在日志中记录 SQL 语句；
+仅在考虑参数和字面量可能包含敏感数据后，才应增大该值。
+
+### 服务器日志消息 {#logging-server-messages}
+
+日志集成用于报告客户端行为。ClickHouse 自身的查询日志数据包则另行传递给
+`ClickHouseTcpQueryCallbacks.OnLog`。可通过 `send_logs_level` 服务器设置启用这些数据包：
+
+```csharp
+var serverLogger = loggerFactory.CreateLogger("ClickHouse.Server");
+
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Settings = new Dictionary<string, string>
+    {
+        ["send_logs_level"] = "warning",
+    },
+    Callbacks = new ClickHouseTcpQueryCallbacks
+    {
+        OnLog = block =>
+        {
+            IColumn<string> messages = block.Column<string>("text");
+            for (int row = 0; row < block.RowCount; row++)
+            {
+                serverLogger.LogWarning("{ClickHouseMessage}", messages[row]);
+            }
+        },
+    },
+};
+```
+
+日志块仅供临时借用，回调返回时便会释放。请同步处理该日志块，或
+复制需要保留的值。回调应尽快执行，且不要抛出异常；回调抛出的异常会
+终止当前操作并断开连接。
+
+## OpenTelemetry {#opentelemetry}
+
+TCP 客户端通过 .NET 的 `System.Diagnostics.Activity` API 发出分布式追踪 span。
+使用 OpenTelemetry 追踪器提供者订阅 TCP 活动源：
+
+```csharp
+using ClickHouse.Driver.Tcp;
+using OpenTelemetry.Trace;
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddSource(ClickHouseTcpDiagnostics.ActivitySourceName)
+        .AddAspNetCoreInstrumentation()
+        .AddOtlpExporter());
+```
+
+如果使用控制台应用程序或手动配置：
+
+```csharp
+using OpenTelemetry;
+using OpenTelemetry.Trace;
+
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .AddSource(ClickHouseTcpDiagnostics.ActivitySourceName)
+    .AddConsoleExporter()
+    .Build();
+```
+
+活动源名称为 `ClickHouse.Driver.Tcp`，与 HTTP 客户端的活动源分开，因此
+可以独立采集任一传输方式的活动。如果没有监听器订阅，操作就不会
+产生活动。
+
+### Span 和属性 {#opentelemetry-spans-attributes}
+
+客户端会为 SQL 操作、ping 和新建连接生成 span。SQL span 以语句开头的关键字命名，
+例如 `SELECT` 或 `INSERT`；如果无法识别语句开头的关键字，则使用 `query`。
+`connect` span 涵盖套接字连接、TLS 协商和原生协议握手。语句 span 还包含等待
+连接池中可用连接的时间。
+
+| 属性                            | 说明                         |
+| ----------------------------- | -------------------------- |
+| `db.system.name`              | `clickhouse`               |
+| `db.namespace`                | 配置的数据库                     |
+| `db.operation.name`           | 可识别时，取 SQL 语句开头的关键字        |
+| `db.user`                     | 配置的 ClickHouse 用户名         |
+| `server.address`              | 服务器主机名或地址                  |
+| `server.port`                 | 解析得到的原生协议端口                |
+| `db.clickhouse.query_id`      | 自动生成或由调用方提供的查询 ID          |
+| `db.query.text`               | 可选的 SQL 语句，可能经过截断          |
+| `db.clickhouse.read_rows`     | 服务器进度包报告的行数                |
+| `db.clickhouse.read_bytes`    | 服务器进度包报告的字节数               |
+| `db.clickhouse.written_rows`  | 服务器报告的行数，或客户端插入时发送的行数      |
+| `db.clickhouse.written_bytes` | 服务器报告的写入字节数                |
+| `db.clickhouse.elapsed_ns`    | 进度包报告的服务器执行时间              |
+| `db.clickhouse.result_rows`   | 服务器 profile 摘要中的结果行数       |
+| `db.clickhouse.result_bytes`  | 服务器 profile 摘要中的结果字节数      |
+| `error.type`                  | 操作失败时的异常类型                 |
+| `db.response.status_code`     | 服务器异常对应的 ClickHouse 数字错误代码 |
+
+仅当服务器或客户端有实际值可报告时，才会提供相应的计数器。例如，
+通过上传数据块执行的插入操作会报告客户端发送的行数，但不会收到服务器的
+读取计数器。失败的 span 还包含一个 `exception` 事件，记录异常类型、消息和堆栈跟踪。
+
+### SQL 文本和敏感数据 {#opentelemetry-sql-text}
+
+默认情况下，span 中不包含 SQL 文本。如需包含，请显式启用并设置合适的长度限制：
+
+```csharp
+var options = new ClickHouseTcpClientOptions
+{
+    Host = "my.clickhouse",
+    IncludeSqlInActivityTags = true,
+    StatementMaxLength = 1_000,
+};
+```
+
+`StatementMaxLength` 同时限制 `db.query.text` 属性和调试日志中 SQL 文本的最大长度。设为零
+或负数时，两者均不包含 SQL 文本。还应检查导出的异常消息和堆栈跟踪，因为
+服务器错误可能包含查询详情。
+
+### trace 上下文传播 {#opentelemetry-trace-context}
+
+当 `Activity.Current` 使用 W3C ID 格式时，客户端会将 trace ID、span ID、trace 标志
+和 trace 状态写入原生 Query 数据包。ClickHouse 随后便可在同一条
+分布式 trace 中创建服务器 span。服务器端的 span 收集与采样仍由 ClickHouse 的配置决定；例
+如，可为每次查询单独设置采样概率：
+
+```csharp
+var queryOptions = new ClickHouseTcpQueryOptions
+{
+    Settings = new Dictionary<string, string>
+    {
+        ["opentelemetry_start_trace_probability"] = "1",
+    },
+};
+
+await client.ExecuteAsync("SELECT count() FROM events", queryOptions);
+```
+
+传递过来的查询 ID 可与 trace ID 配合使用，将客户端 span 与
+`system.query_log` 关联起来；如果已配置，还可与 ClickHouse 的 `system.opentelemetry_span_log` 关联。
+
+## 限制 {#limitations}
+
+TCP 客户端仍处于实验阶段，尚不支持 HTTP 客户端的全部功能。
+
+### 仅限 HTTP 的功能 {#limitations-http-only}
+
+TCP API 不是 ADO.NET 提供程序，无法与 ORM 配合使用。它也不支持
+CSV、JSONEachRow、Parquet 或原始流的输入和输出；Bearer 身份验证或自定义 HTTP
+请求头；自定义参数类型解析、格式化或读取转换；也不支持为单次查询指定数据库
+或角色。如果应用程序需要上述任何功能，请使用 [HTTP 客户端](./http)。
+
+### SQL 参数 {#limitations-sql-parameters}
+
+仅支持 ClickHouse 原生的 `{name:Type}` 占位符；TCP 客户端不会将
+ADO.NET 风格的 `@name` 占位符改写为原生格式。在 ClickHouse 25.8 至 26.6 版本中，与
+服务器配置项同名的参数 (如 `limit` 或 `offset`) 可能被当作配置项而被拒绝。若需兼容这些版本，
+请更改参数名，例如改为 `row_limit`。
+
+### 数据类型覆盖范围 {#limitations-data-types}
+
+[支持的数据类型](#supported-data-types)一节列出了完整的映射关系。
+当前原生编解码器主要有以下限制：
+
+* Tuple 最多可包含七个元素。
+* 不支持 `AggregateFunction(function, ...)` 的中间状态。请先在
+  服务器端完成最终计算 (例如使用 `sumMerge(column)`) ，再读取结果。
+* 仅支持双参数、无步长的 `QBit(T, N)` 布局。
+* `JSON` 使用 ClickHouse 的 String 序列化方式，要求设置
+  `output_format_native_write_json_as_string = 1`；客户端默认会请求启用此设置。
+* 当 `flatten_nested = 0` 时，应用程序构造的插入数据不支持 `Nested(...)` 的按行组织形式。
+  请改用默认展平、以点号分隔的 `Array(T)` 列。
+* 如果不同几何类型具有相同的 CLR 结构 (例如 `Ring` 和 `LineString`) ，应用程序构造的 `Geometry` 列就无法推断具体类型。
+  请插入具体的几何类型，或重新插入保留了判别值的已解码
+  `Geometry` 列。
+
+### 自动重试 {#limitations-retries}
+
+客户端不会自动重试失败的操作。只重试可安全地重复执行的操作；如果插入操作的结果尚不明确，应在重试前设置一个保持不变的 `DeduplicationToken`。
+详情请参阅[重试操作](#error-handling-retries)。
