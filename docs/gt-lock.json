@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "ja": {
-          "updatedAt": "2026-10-14T18:50:31.987Z",
+          "updatedAt": "2026-10-14T19:10:38.148Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-14T18:50:32.362Z",
+          "updatedAt": "2026-10-14T19:10:38.513Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ar": {
-          "updatedAt": "2026-10-14T18:50:32.922Z",
+          "updatedAt": "2026-10-14T19:10:39.089Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ko": {
-          "updatedAt": "2026-10-14T18:50:32.177Z",
+          "updatedAt": "2026-10-14T19:10:38.329Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "ru": {
-          "updatedAt": "2026-10-14T18:50:32.552Z",
+          "updatedAt": "2026-10-14T19:10:38.709Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "es": {
-          "updatedAt": "2026-10-14T18:50:31.771Z",
+          "updatedAt": "2026-10-14T19:10:37.954Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "zh": {
-          "updatedAt": "2026-10-14T18:50:32.737Z",
+          "updatedAt": "2026-10-14T19:10:38.896Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         },
         "fr": {
-          "updatedAt": "2026-10-14T18:50:33.122Z",
+          "updatedAt": "2026-10-14T19:10:39.296Z",
           "fileName": "docs.json",
           "postProcessHash": "8cb52a0b4023236611c055d492d94af589c9a645520f0ef62b2a988254372541"
         }
@@ -47500,51 +47500,50 @@
     },
     {
       "fileId": "4c0ccf1cfff6cc7286212117a4368e6f33fabef33041081f4cf9b43391ab0766",
-      "versionId": "ecd457db6e3a29517ec8db1b81561f95d0f639409eeedc4f8c6a953b6a9ac05a",
+      "versionId": "4f131d66e152225c49a3da1ad38c40bdfb43d1c26dc98fabe37b2fb5f6fd3289",
       "translations": {
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.692Z",
+          "updatedAt": "2026-10-14T19:10:42.827Z",
           "fileName": "pt-BR/products/cloud/guides/production-readiness.mdx",
-          "postProcessHash": "394c2d0ffbeacac82b59ba9082e8e5abe9b39025a3454d56e153596d94df7a90"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.693Z",
-          "fileName": "fr/products/cloud/guides/production-readiness.mdx",
-          "postProcessHash": "ebb1780084528a24ac8a38981a2ffe656cc709ef0818192cd6d797cb4f063711"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.692Z",
-          "fileName": "zh/products/cloud/guides/production-readiness.mdx",
-          "postProcessHash": "9b69e5bd14af5d70faaad44e614b272bb9a5bcb117031ba842b61f06cd51c1b8"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.693Z",
-          "fileName": "ar/products/cloud/guides/production-readiness.mdx",
-          "postProcessHash": "2acc0c8b3f05361b16b07ff6fa191a1af65b5a2b1f8b7b1588493bcb23dc21f5"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.692Z",
-          "fileName": "ru/products/cloud/guides/production-readiness.mdx",
-          "postProcessHash": "1f1cacdd887a4df15b4fb3915c8c125d25ff306a894e2d10037e9b17452eb041"
-        },
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.692Z",
-          "fileName": "es/products/cloud/guides/production-readiness.mdx",
-          "postProcessHash": "a6390eb59333d831a21c4bd3c7d509a8a1f6e1f2a89abe8598bf5982643dec82"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.692Z",
-          "fileName": "ko/products/cloud/guides/production-readiness.mdx",
-          "postProcessHash": "e8d20bacf61d352afb9d31371326f0879ee07afaead7e3ae901ee58f2325a403"
+          "postProcessHash": "37218f171693110c0562732a8ccacd809d470db775972d8266428e664cf4838f"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:06.692Z",
+          "updatedAt": "2026-10-14T19:10:42.828Z",
           "fileName": "ja/products/cloud/guides/production-readiness.mdx",
-          "postProcessHash": "631e57ecc4687aa5b5a49af6d9dd942b8dcb39469f25cb7695f17a738df1b02d"
+          "postProcessHash": "df2eca0762200c0c480aa4dc3397310bd50d2d0cd10922d85a25264d349b7e5b"
+        },
+        "ru": {
+          "updatedAt": "2026-10-14T19:10:42.828Z",
+          "fileName": "ru/products/cloud/guides/production-readiness.mdx",
+          "postProcessHash": "bf46099ebd0e4e87cec1c108b8ab0bd138d9af67c3be756f9cbda0db9093ffb9"
+        },
+        "zh": {
+          "updatedAt": "2026-10-14T19:10:42.829Z",
+          "fileName": "zh/products/cloud/guides/production-readiness.mdx",
+          "postProcessHash": "4908cf8ad7435a40cc67f5f13a4f020f993c48e6f4754088995ce8cf78ad184a"
+        },
+        "es": {
+          "updatedAt": "2026-10-14T19:10:42.830Z",
+          "fileName": "es/products/cloud/guides/production-readiness.mdx",
+          "postProcessHash": "466a8fd6631bdb0c759af3525f0cf6e121df39351ddaf810bded193470eec4c1"
+        },
+        "ko": {
+          "updatedAt": "2026-10-14T19:10:42.831Z",
+          "fileName": "ko/products/cloud/guides/production-readiness.mdx",
+          "postProcessHash": "c9e5fb1b2261d9cf07a15cee95119213c40028cc17f7c37fea2e791146424438"
+        },
+        "fr": {
+          "updatedAt": "2026-10-14T19:10:42.831Z",
+          "fileName": "fr/products/cloud/guides/production-readiness.mdx",
+          "postProcessHash": "2ef778fed5cfaebc83b04d9840a696bcce7ab30472663e804ccd00d8cfec6fbb"
+        },
+        "ar": {
+          "updatedAt": "2026-10-14T19:10:42.832Z",
+          "fileName": "ar/products/cloud/guides/production-readiness.mdx",
+          "postProcessHash": "b0b9cb1cbef70d6c529f34f0f86bc12a58e94717685eae6e2c5f1e2333e5e4d5"
         }
       },
-      "fileName": "products/cloud/guides/production-readiness.mdx",
-      "staged": false
+      "fileName": "products/cloud/guides/production-readiness.mdx"
     },
     {
       "fileId": "92091921f522c2f5a45ff9c54983c0cc42807e5fccfcd9b8bcd4974e945748be",
@@ -82985,47 +82984,47 @@
     },
     {
       "fileId": "3e916d9db955a25135e57b5ed7de9e91e593f53979cb6fd0c389cf66555a0429",
-      "versionId": "9bdd5efec94fe340ce10ab9287f528034b2f2292f268cd4bd80635e2a2590c74",
+      "versionId": "5c53dff980f934cc02de077086d537171cad65a7782c6cda01831bad3e4b9822",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:31.096Z",
-          "fileName": "es/products/cloud/features/monitoring/prometheus.mdx",
-          "postProcessHash": "81724747568105abad272ae86524f82a6ccc6e39f318e98c2e0d3c95d1b53243"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:31.097Z",
-          "fileName": "ja/products/cloud/features/monitoring/prometheus.mdx",
-          "postProcessHash": "46367ba9ab651f07b07f62daf4289cbf97f10d87c684d8703083a40cebabec78"
+        "ru": {
+          "updatedAt": "2026-10-14T19:10:42.830Z",
+          "fileName": "ru/products/cloud/features/monitoring/prometheus.mdx",
+          "postProcessHash": "52b590e0a03c4f71cc3ff050dda9d54c7b566051f82b2d6a3c072f812f006a88"
         },
         "ko": {
-          "updatedAt": "2026-08-26T08:10:31.097Z",
+          "updatedAt": "2026-10-14T19:10:42.832Z",
           "fileName": "ko/products/cloud/features/monitoring/prometheus.mdx",
-          "postProcessHash": "9d285dfeb5593fa2ec96039f6b9e7f30b70ea42911a87a4904c3ec1ffae4855e"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:31.098Z",
-          "fileName": "pt-BR/products/cloud/features/monitoring/prometheus.mdx",
-          "postProcessHash": "d1016ae231817f5498560a5af664b5498ac3c58a97cbac35d83b103d6b9998f9"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:31.098Z",
-          "fileName": "ru/products/cloud/features/monitoring/prometheus.mdx",
-          "postProcessHash": "bfd8f623df0b5c1ef69d5f17428f796575d28f1445ceba699bd6ec2630dece4e"
+          "postProcessHash": "670878fa36d893db23789ecde49666b7103edbb995e0eb2b65c304b71c6bcc61"
         },
         "zh": {
-          "updatedAt": "2026-08-26T08:10:31.099Z",
+          "updatedAt": "2026-10-14T19:10:42.833Z",
           "fileName": "zh/products/cloud/features/monitoring/prometheus.mdx",
-          "postProcessHash": "c37bcd7f957f3ca18e15cfee223a44544a9786472168d9227d65034fc8c1529c"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:31.099Z",
-          "fileName": "ar/products/cloud/features/monitoring/prometheus.mdx",
-          "postProcessHash": "de97a2e2e7841aa23f802c852aaec3913bb6879dd25f30344fd2d878abef7b53"
+          "postProcessHash": "e3cbf14e79486321ef92187d635414c49e16a690a0af045eb2ea37c9e563f754"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:31.100Z",
+          "updatedAt": "2026-10-14T19:10:42.833Z",
           "fileName": "fr/products/cloud/features/monitoring/prometheus.mdx",
-          "postProcessHash": "059c10c31bc9859df9e2b3f7d9a568b9f65189692e0170fa69ae7c6d8b49b117"
+          "postProcessHash": "337acc0ae2608fd28cf48eea444edc393eea89e42e92532ce64d52fc4971b80d"
+        },
+        "ja": {
+          "updatedAt": "2026-10-14T19:10:42.834Z",
+          "fileName": "ja/products/cloud/features/monitoring/prometheus.mdx",
+          "postProcessHash": "b98b75d2e68d9699e2554379a65f4e017fa8751dca9f728cc2978c2ca1b5142c"
+        },
+        "ar": {
+          "updatedAt": "2026-10-14T19:10:42.834Z",
+          "fileName": "ar/products/cloud/features/monitoring/prometheus.mdx",
+          "postProcessHash": "b1cd0b0407b8a3003fdfc064c0453bd31ad78decaf33ea0992078283e6105033"
+        },
+        "es": {
+          "updatedAt": "2026-10-14T19:10:42.835Z",
+          "fileName": "es/products/cloud/features/monitoring/prometheus.mdx",
+          "postProcessHash": "394de3d526877f9be9ca50a475ec465696b760d8ae227168244b2a5a3ddd2413"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-14T19:10:42.836Z",
+          "fileName": "pt-BR/products/cloud/features/monitoring/prometheus.mdx",
+          "postProcessHash": "d33457a4bb58063905a8f30227dc23c65a0106638daeb28313100dba240959c0"
         }
       },
       "fileName": "products/cloud/features/monitoring/prometheus.mdx"
