@@ -29,6 +29,20 @@ void burnCPU(ResourceCost cpu_ns)
     }
 }
 
+/// Waits until `predicate` holds, or gives up after a while, so a broken invariant fails the test instead of hanging it
+template <typename Predicate>
+bool waitUntil(Predicate predicate)
+{
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (!predicate())
+    {
+        if (std::chrono::steady_clock::now() > deadline)
+            return false;
+        std::this_thread::yield();
+    }
+    return true;
+}
+
 }
 
 /// Only worker threads compete for slots (like `CREATE RESOURCE cpu (WORKER THREAD)`), so the master request
@@ -150,6 +164,48 @@ TEST(SchedulerCPULeaseAllocation, GrantResumesPreemptedThreadWhileOtherIsParked)
     worker->unpark();
     master_slot.reset();
     worker_slot.reset();
+    allocation->free();
+    scheduler.stop();
+}
+
+/// Master and worker threads share one resource, which is the mode with parking. A parked thread uses no CPU, so
+/// parking gives its slot back to the scheduler at once. No thread consumes CPU here, so nothing else frees the slot.
+TEST(SchedulerCPULeaseAllocation, ParkGivesSlotBackToScheduler)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 2);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    CPULeaseSettings settings;
+    settings.parking_enabled = true;
+    ResourceLink link;
+    link.queue = queue.get();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+
+    // Both requests of the query are granted
+    while (semaphore->getInflights().first != 2)
+        std::this_thread::yield();
+    auto master_slot = allocation->acquire();
+    auto worker_slot = allocation->acquire();
+    auto * worker = dynamic_cast<ISlotLease *>(worker_slot.get());
+
+    // Another query waits for a slot
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    while (queue->getQueueLengthAndCost().first != 1)
+        std::this_thread::yield();
+
+    ASSERT_TRUE(worker->park());
+    EXPECT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 0 && semaphore->getInflights().first == 2; }))
+        << "the slot of the parked thread is not given back to the scheduler";
+
+    worker->unpark();
+    master_slot.reset();
+    worker_slot.reset();
+    other->free();
     allocation->free();
     scheduler.stop();
 }

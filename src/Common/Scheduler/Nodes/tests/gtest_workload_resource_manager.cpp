@@ -1463,42 +1463,6 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
     t.wait();
 }
 
-// Parking a lease during a non-CPU wait (I/O or idle) must release the CPU slot so another
-// query can use it — the core of the I/O-aware CPU lease feature. Deterministic: Q1's worker
-// cannot start until Q0 frees a worker slot, and here the only way that happens is Q0 parking.
-TEST(SchedulerWorkloadResourceManager, CPULeaseParkFreesSlotForOtherQuery)
-{
-    ResourceTest t;
-
-    // Parking is supported only in the target mode: master and worker on the same resource.
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 2");
-
-    auto q0 = std::make_shared<TestQuery>(t);
-    auto q1 = std::make_shared<TestQuery>(t);
-
-    // Q0 occupies both slots (master + 1 worker).
-    q0->start(TestQuery::AllocateLease, "all", 2);
-    q0->waitStartedThreads(2);
-
-    // Q1 wants slots too, but both are held by Q0, so its request is enqueued and blocked.
-    q1->start(TestQuery::AllocateLease, "all", 2);
-    q1->waitEnqueued();
-
-    // Q0's worker enters a non-CPU wait (park), releasing its scheduler slot. Q1 must now be
-    // granted one. If park did not free the semaphore unit, this call would hang.
-    q0->requestPark();
-    q0->waitParkedThreads(1);
-    q1->waitStartedThreads(1); // a parked slot was handed to Q1
-
-    // Resume Q0 and let both queries finish normally.
-    q0->releasePark();
-    q0.reset();
-    q1.reset();
-
-    t.wait();
-}
-
 TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
 {
     // Regression: a single query occupies all its slots and parks its workers all at once (a long
