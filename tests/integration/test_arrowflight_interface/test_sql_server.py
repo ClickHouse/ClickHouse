@@ -33,6 +33,7 @@ node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/flight_port.xml",
+        "configs/display_secrets.xml",
     ],
 )
 
@@ -1181,6 +1182,7 @@ def test_query_text_is_not_logged():
     secret = "".join(random.choices(string.ascii_letters + string.digits, k=32))
     select = f"SELECT hex(encrypt('aes-256-ofb', 'plaintext', '{secret}'))"
     ddl = f"CREATE USER OR REPLACE u_arrowflight_log IDENTIFIED BY '{secret}'"
+    shown = f"{select} SETTINGS format_display_secrets_in_show_and_select = 1"
     select_size = len(select.encode())
     ddl_size = len(ddl.encode())
     ticket_lookalike = "~TICKET-" + "".join(random.choices(string.ascii_letters + string.digits, k=36))
@@ -1205,6 +1207,7 @@ def test_query_text_is_not_logged():
         f"GetFlightInfo is called for descriptor <FlightDescriptor cmd=({len(poll_lookalike)} bytes)>",
         f"GetFlightInfo is called for descriptor <FlightDescriptor cmd=({len(unknown_command)} bytes)>",
         f"CancelFlightInfo request <FlightInfo descriptor=<FlightDescriptor path='t_arrowflight_log'> tickets=\\[({select_size} bytes)]",
+        "GetSchema returns a schema with 1 fields",
     ]
     before = {line: int(node.count_in_log(line)) for line in lines}
 
@@ -1229,6 +1232,7 @@ def test_query_text_is_not_logged():
         writer.close()
         client.execute(select)
         client.get_schema(select)
+        assert secret in client.get_schema(shown).schema.names[0]
         client.execute_update(ddl)
         with pytest.raises(pa.lib.ArrowKeyError, match="not found"):
             client.do_get(flight.Ticket(ticket_lookalike.encode())).read_all()

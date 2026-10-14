@@ -886,7 +886,8 @@ arrow::Status ArrowFlightServer::GetSchema(
         ARROW_RETURN_NOT_OK(schema_res);
         *schema_result = std::make_unique<arrow::flight::SchemaResult>(*std::move(schema_res).ValueUnsafe());
 
-        LOG_INFO(log, "GetSchema returns schema {}", schema->ToString());
+        /// Not the field names: with secrets display enabled they contain the secret arguments.
+        LOG_INFO(log, "GetSchema returns a schema with {} fields", schema->num_fields());
         return arrow::Status::OK();
     };
     return tryRunAndLogIfError("GetSchema", impl);
