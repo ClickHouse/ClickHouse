@@ -9543,6 +9543,7 @@ bool Context::isParallelReplicasEnabled() const
     const auto & settings_ref = getSettingsRef();
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && !(settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+             && !getClientInfo().collaborate_with_initiator
              && getAutomaticParallelReplicasMode(settings_ref) != 0);
 }
 
@@ -9559,7 +9560,9 @@ bool Context::canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel
 
 bool Context::canUseTaskBasedParallelReplicas() const
 {
-    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/false);
+    /// The automatic mode is decided on the initiator. A follower's own value may differ, e.g. a replica drops a shipped
+    /// change of an `EXPERIMENTAL` setting under `allow_feature_tier`, so it reads the way the initiator decided.
+    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/getClientInfo().collaborate_with_initiator);
 }
 
 bool Context::canReplaceClusterEngineWithClusterVariant() const
