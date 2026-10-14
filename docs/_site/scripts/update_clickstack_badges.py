@@ -35,7 +35,7 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
     groups.setdefault(key, {})[product] = slug
 
 mapping = {}
-order = ['Open Source', 'Self configured', 'ClickHouse Observability']
+order = ['Open Source', 'ClickHouse Observability']
 for variants in groups.values():
     badges = [[label, variants[label]] for label in order if label in variants]
     for slug in variants.values():

@@ -9,10 +9,6 @@
       "/clickstack/architecture"
     ],
     [
-      "Self configured",
-      "/clickstack/self-configured/architecture"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/architecture"
     ]
@@ -621,20 +617,12 @@
     [
       "Open Source",
       "/clickstack/ingesting-data/schema/map-vs-json"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/ingesting-data/schema/map-vs-json"
     ]
   ],
   "/clickstack/ingesting-data/schemas": [
     [
       "Open Source",
       "/clickstack/ingesting-data/schemas"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/ingesting-data/schemas"
     ]
   ],
   "/clickstack/ingesting-data/sdks": [
@@ -771,10 +759,6 @@
     [
       "Open Source",
       "/clickstack/ingesting-data/trace-sampling"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/ingesting-data/trace-sampling"
     ]
   ],
   "/clickstack/ingesting-data/vector": [
@@ -1053,10 +1037,6 @@
       "/clickstack/managing/config"
     ],
     [
-      "Self configured",
-      "/clickstack/self-configured/managing/config"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/managing/config"
     ]
@@ -1065,30 +1045,18 @@
     [
       "Open Source",
       "/clickstack/managing/estimating-resources"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/estimating-resources"
     ]
   ],
   "/clickstack/managing/materialized-views": [
     [
       "Open Source",
       "/clickstack/managing/materialized-views"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/materialized-views"
     ]
   ],
   "/clickstack/managing/overview": [
     [
       "Open Source",
       "/clickstack/managing/overview"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/overview"
     ],
     [
       "ClickHouse Observability",
@@ -1099,30 +1067,18 @@
     [
       "Open Source",
       "/clickstack/managing/performance-tuning"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/performance-tuning"
     ]
   ],
   "/clickstack/managing/production": [
     [
       "Open Source",
       "/clickstack/managing/production"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/production"
     ]
   ],
   "/clickstack/managing/ttl": [
     [
       "Open Source",
       "/clickstack/managing/ttl"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/ttl"
     ]
   ],
   "/clickstack/mcp": [
@@ -1169,10 +1125,6 @@
     [
       "Open Source",
       "/clickstack/migration/elastic/concepts"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/migration/elastic/concepts"
     ]
   ],
   "/clickstack/migration/elastic/intro": [
@@ -1229,10 +1181,6 @@
     [
       "Open Source",
       "/clickstack/migration/elastic/types"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/migration/elastic/types"
     ]
   ],
   "/clickstack/observability": [
@@ -1251,10 +1199,6 @@
     [
       "Open Source",
       "/clickstack/architecture"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/architecture"
     ],
     [
       "ClickHouse Observability",
@@ -2147,10 +2091,6 @@
       "/clickstack/managing/config"
     ],
     [
-      "Self configured",
-      "/clickstack/self-configured/managing/config"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/managing/config"
     ]
@@ -2159,10 +2099,6 @@
     [
       "Open Source",
       "/clickstack/managing/overview"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/overview"
     ],
     [
       "ClickHouse Observability",
@@ -2277,10 +2213,6 @@
       "/clickstack/overview"
     ],
     [
-      "Self configured",
-      "/clickstack/self-configured/overview"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/overview"
     ]
@@ -2321,10 +2253,6 @@
       "/clickstack/overview"
     ],
     [
-      "Self configured",
-      "/clickstack/self-configured/overview"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/overview"
     ]
@@ -2335,64 +2263,34 @@
       "/clickstack/architecture"
     ],
     [
-      "Self configured",
-      "/clickstack/self-configured/architecture"
-    ],
-    [
       "ClickHouse Observability",
       "/clickstack/observability/architecture"
     ]
   ],
-  "/clickstack/self-configured/deployment/managed": [
-    [
-      "Self configured",
-      "/clickstack/self-configured/deployment/managed"
-    ]
-  ],
-  "/clickstack/self-configured/getting-started/managed": [
-    [
-      "Self configured",
-      "/clickstack/self-configured/getting-started/managed"
-    ]
-  ],
+  "/clickstack/self-configured/deployment/managed": [],
+  "/clickstack/self-configured/getting-started/managed": [],
   "/clickstack/self-configured/ingesting-data/schema/map-vs-json": [
     [
       "Open Source",
       "/clickstack/ingesting-data/schema/map-vs-json"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/ingesting-data/schema/map-vs-json"
     ]
   ],
   "/clickstack/self-configured/ingesting-data/schemas": [
     [
       "Open Source",
       "/clickstack/ingesting-data/schemas"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/ingesting-data/schemas"
     ]
   ],
   "/clickstack/self-configured/ingesting-data/trace-sampling": [
     [
       "Open Source",
       "/clickstack/ingesting-data/trace-sampling"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/ingesting-data/trace-sampling"
     ]
   ],
   "/clickstack/self-configured/managing/config": [
     [
       "Open Source",
       "/clickstack/managing/config"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/config"
     ],
     [
       "ClickHouse Observability",
@@ -2403,36 +2301,19 @@
     [
       "Open Source",
       "/clickstack/managing/estimating-resources"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/estimating-resources"
     ]
   ],
-  "/clickstack/self-configured/managing/isolating-read-write": [
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/isolating-read-write"
-    ]
-  ],
+  "/clickstack/self-configured/managing/isolating-read-write": [],
   "/clickstack/self-configured/managing/materialized-views": [
     [
       "Open Source",
       "/clickstack/managing/materialized-views"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/materialized-views"
     ]
   ],
   "/clickstack/self-configured/managing/overview": [
     [
       "Open Source",
       "/clickstack/managing/overview"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/overview"
     ],
     [
       "ClickHouse Observability",
@@ -2443,60 +2324,36 @@
     [
       "Open Source",
       "/clickstack/managing/performance-tuning"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/performance-tuning"
     ]
   ],
   "/clickstack/self-configured/managing/production": [
     [
       "Open Source",
       "/clickstack/managing/production"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/production"
     ]
   ],
   "/clickstack/self-configured/managing/ttl": [
     [
       "Open Source",
       "/clickstack/managing/ttl"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/managing/ttl"
     ]
   ],
   "/clickstack/self-configured/migration/elastic/concepts": [
     [
       "Open Source",
       "/clickstack/migration/elastic/concepts"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/migration/elastic/concepts"
     ]
   ],
   "/clickstack/self-configured/migration/elastic/types": [
     [
       "Open Source",
       "/clickstack/migration/elastic/types"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/migration/elastic/types"
     ]
   ],
   "/clickstack/self-configured/overview": [
     [
       "Open Source",
       "/clickstack/overview"
-    ],
-    [
-      "Self configured",
-      "/clickstack/self-configured/overview"
     ],
     [
       "ClickHouse Observability",
@@ -2542,7 +2399,7 @@
     var variants = pages[path];
     var existing = document.getElementById('ch-product-availability');
     var title = document.getElementById('page-title');
-    if (!variants || !title) {
+    if (!variants || !variants.length || !title) {
       if (existing) existing.remove();
       return;
     }
