@@ -4991,6 +4991,40 @@ def test_aggregation_operator_count_values():
         ],
     )
 
+    # `round` drops the metric name, but the name is still readable until the end of the evaluation,
+    # and `count_values` never drops the name of its result, so `by (__name__)` keeps it.
+    # Prometheus drops the name in `round`, so this result is ClickHouse only.
+    do_clickhouse_only_query_test(
+        '(count_values("value", round(last_over_time(bar[10]), 100)) by (__name__))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "value": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"__name__": "bar", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"__name__": "bar", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"__name__": "bar", "value": "700"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('__name__','bar'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            ["[('__name__','bar'),('value','100')]", "[('1970-01-01 00:02:10.000',2)]"],
+            ["[('__name__','bar'),('value','1000')]", "[('1970-01-01 00:02:30.000',1)]"],
+            ["[('__name__','bar'),('value','700')]", "[('1970-01-01 00:02:20.000',1)]"],
+        ],
+    )
+
+    # A `label_replace` which writes `__name__` after the drop gives the series a name again.
+    do_query_test(
+        '(count_values("value", label_replace(round(last_over_time(bar[10]), 100), "__name__", "rounded", "", "")) by (__name__))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "rounded", "value": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"__name__": "rounded", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"__name__": "rounded", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"__name__": "rounded", "value": "700"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('__name__','rounded'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            ["[('__name__','rounded'),('value','100')]", "[('1970-01-01 00:02:10.000',2)]"],
+            ["[('__name__','rounded'),('value','1000')]", "[('1970-01-01 00:02:30.000',1)]"],
+            ["[('__name__','rounded'),('value','700')]", "[('1970-01-01 00:02:20.000',1)]"],
+        ],
+    )
+
     # `without` can remove the newly added value label. Buckets that retain the
     # same labels then collapse into a single count at each grid point.
     do_query_test(

@@ -73,22 +73,16 @@ void checkArgumentTypes(
 
 ASTPtr setValueLabel(ASTPtr group, const String & label_name)
 {
-    /// timeSeriesTagsToGroup rejects an empty tag name, so the marker of a dropped metric name
-    /// is removed before the round trip and copied back from the original group afterwards.
+    /// The result of count_values never has a pending drop of the metric name, so the marker is removed with the value label.
     auto tags_without_value_label = makeASTFunction(
         "timeSeriesGroupToTags",
-        makeASTFunction("timeSeriesRemoveTags", group->clone(), make_intrusive<ASTLiteral>(Array{label_name, kDroppedMetricNameMarker})));
+        makeASTFunction("timeSeriesRemoveTags", std::move(group), make_intrusive<ASTLiteral>(Array{label_name, kDroppedMetricNameMarker})));
 
-    auto new_group = makeASTFunction(
+    return makeASTFunction(
         "timeSeriesTagsToGroup",
         std::move(tags_without_value_label),
         make_intrusive<ASTLiteral>(label_name),
         make_intrusive<ASTIdentifier>(LABEL_VALUE));
-
-    if (label_name == kMetricName)
-        return new_group;
-
-    return makeASTFunction("timeSeriesCopyTag", std::move(new_group), std::move(group), make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
 }
 
 ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_node, ASTPtr group, const String & label_name, bool & metric_name_dropped)
@@ -115,8 +109,6 @@ ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_
 
     if (!std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName))
         metric_name_dropped = true;
-    else if (label_name != kMetricName)
-        tags_to_keep.push_back(kDroppedMetricNameMarker);
 
     return makeASTFunction(
         "timeSeriesRemoveAllTagsExcept", std::move(group), make_intrusive<ASTLiteral>(Array{tags_to_keep.begin(), tags_to_keep.end()}));

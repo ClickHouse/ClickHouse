@@ -131,10 +131,11 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_arg.select_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
 
-        ASTPtr new_group = transformGroupASTForAggregationOperator(
+        ASTPtr bucket_group = transformGroupASTForAggregationOperator(
             operator_node, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, res.metric_name_dropped);
 
-        builder.select_list.push_back(std::move(new_group));
+        /// A kept metric name is still dropped from the result if any series in the bucket had a pending drop.
+        builder.select_list.push_back(res.metric_name_dropped ? bucket_group->clone() : copyDroppedMetricNameMarkerToBucket(bucket_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
         ASTPtr quantile_expr;
@@ -218,7 +219,7 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)
-            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+            builder.group_by.push_back(std::move(bucket_group));
 
         aggregation_query = builder.getSelectQuery();
     }

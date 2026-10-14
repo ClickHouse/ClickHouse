@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <algorithm>
@@ -31,11 +32,9 @@ ASTPtr transformGroupASTForAggregationOperator(
         tags_to_keep.erase(std::unique(tags_to_keep.begin(), tags_to_keep.end()), tags_to_keep.end());
 
         /// The metric name is preserved only if it is explicitly listed in by() and wasn't already dropped.
-        /// A preserved metric name keeps its dropped-name marker too, so finalizeSQL still removes it from the result.
+        /// The marker of a dropped metric name is not a grouping key.
         if (!metric_name_dropped && !std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName))
             metric_name_dropped = true;
-        else if (!metric_name_dropped)
-            tags_to_keep.push_back(kDroppedMetricNameMarker);
 
         return makeASTFunction(
             "timeSeriesRemoveAllTagsExcept",
@@ -68,6 +67,26 @@ ASTPtr transformGroupASTForAggregationOperator(
         "timeSeriesRemoveTags",
         std::move(group),
         make_intrusive<ASTLiteral>(Array{tags_to_remove.begin(), tags_to_remove.end()}));
+}
+
+
+ASTPtr copyDroppedMetricNameMarkerToBucket(const ASTPtr & bucket_group)
+{
+    /// timeSeriesCopyTag(<bucket_group>, anyIf(group, isNotNull(timeSeriesExtractTag(group, ''))), '')
+    /// `anyIf` returns the group without tags when no series in the bucket has the marker, so nothing is copied.
+    return makeASTFunction(
+        "timeSeriesCopyTag",
+        bucket_group->clone(),
+        makeASTFunction(
+            "anyIf",
+            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            makeASTFunction(
+                "isNotNull",
+                makeASTFunction(
+                    "timeSeriesExtractTag",
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    make_intrusive<ASTLiteral>(kDroppedMetricNameMarker)))),
+        make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
 }
 
 }
