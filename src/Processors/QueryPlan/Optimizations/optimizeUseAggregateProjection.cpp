@@ -29,6 +29,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
@@ -433,8 +434,28 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 const auto * proj_node = kt->second;
 
                 auto mt = matches.find(query_node);
-                if (mt == matches.end())
+                if (mt == matches.end() || mt->second.node == nullptr)
+                {
+                    /// A function with non-constant arguments may still have a constant result
+                    /// (e.g. `isNull(non_nullable_col)` == 0). Both the query DAG and the projection
+                    /// DAG fold such functions into plain COLUMN constants (losing the expression),
+                    /// so the argument names differ and no match exists. If the projection argument
+                    /// node is a folded COLUMN constant, compare its value with the query constant.
+                    /// See https://github.com/ClickHouse/ClickHouse/issues/68949
+                    if (query_node->type == ActionsDAG::ActionType::COLUMN && query_node->column
+                        && isColumnConst(*query_node->column)
+                        && proj_node->type == ActionsDAG::ActionType::COLUMN && proj_node->column
+                        && isColumnConst(*proj_node->column)
+                        && proj_node->result_type->equals(*query_node->result_type)
+                        && assert_cast<const ColumnConst &>(*proj_node->column).getField()
+                            == assert_cast<const ColumnConst &>(*query_node->column).getField())
+                    {
+                        argument_types.push_back(query_node->result_type);
+                        ++next_arg;
+                        continue;
+                    }
                     break;
+                }
 
                 const auto & node_match = mt->second;
                 if (node_match.node != proj_node || node_match.monotonicity)
