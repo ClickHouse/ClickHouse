@@ -86,14 +86,28 @@ UInt64 parseBackupNumber(const std::string & file_name)
     return parse<UInt64>(file_name.substr(0, file_name.size() - file_suffix_size));
 }
 
-/// Puts the backups that a mutation moved into `aside_path` back into the table directory `path`.
-/// The smallest number goes back last: `StorageJoin::recoverInterruptedMutation` treats the presence
-/// of that backup in the table directory as the commit of the mutation, so it must not reappear
-/// there while other backups of the pre-mutation generation are still aside.
-void putMovedBackupsBack(IDisk & disk, const String & aside_path, const String & path, std::vector<std::string> file_names)
+/// Returns the backups that a mutation moved into `aside_path`, in descending order of their numbers.
+/// Both ways of emptying that directory (`putMovedBackupsBack` and `removeSupersededBackups`) go in this
+/// order, so the smallest one leaves it last: `StorageJoin::recoverInterruptedMutation` decides whether
+/// the mutation has committed by the presence of the smallest parked backup in the table directory, so
+/// an interrupted emptying must never leave other parked backups behind without the smallest one.
+std::vector<std::string> listMovedBackups(IDisk & disk, const String & aside_path)
 {
+    std::vector<std::string> file_names;
+    disk.listFiles(aside_path, file_names);
+    std::erase_if(file_names, [](const std::string & file_name) { return !file_name.ends_with(".bin"); });
     std::ranges::sort(file_names, std::greater{}, parseBackupNumber);
-    for (const auto & file_name : file_names)
+    return file_names;
+}
+
+/// Rolls back a mutation that has not committed: puts every backup it moved into `aside_path` back
+/// into the table directory `path`, then removes `aside_path`. The smallest backup goes back last, so
+/// it does not reappear in the table directory (which would mean the commit) while other backups of the
+/// pre-mutation generation are still aside. The backups are taken from `aside_path` itself rather than
+/// from a list kept by the mutation, so a backup that was moved but not recorded cannot be lost.
+void putMovedBackupsBack(IDisk & disk, const String & aside_path, const String & path)
+{
+    for (const auto & file_name : listMovedBackups(disk, aside_path))
     {
         disk.replaceFile(fs::path(aside_path) / file_name, fs::path(path) / file_name);
 
@@ -102,6 +116,25 @@ void putMovedBackupsBack(IDisk & disk, const String & aside_path, const String &
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while putting a backup of a Join mutation back");
         });
     }
+    disk.removeRecursive(aside_path);
+}
+
+/// Finishes a committed mutation: removes the superseded backups from `aside_path`, then `aside_path`
+/// itself. The smallest backup is removed last: while any other one is still aside, the smallest one is
+/// too, so an interrupted cleanup is still recognized as committed and is never rolled back to the old
+/// generation. Once it is gone, nothing is left aside and there is nothing to restore.
+void removeSupersededBackups(IDisk & disk, const String & aside_path)
+{
+    for (const auto & file_name : listMovedBackups(disk, aside_path))
+    {
+        disk.removeFile(fs::path(aside_path) / file_name);
+
+        fiu_do_on(FailPoints::storage_join_mutate_fail_removing_superseded_backups,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while removing the superseded backups of a Join mutation");
+        });
+    }
+    disk.removeRecursive(aside_path);
 }
 
 }
@@ -151,28 +184,14 @@ void StorageJoin::recoverInterruptedMutation()
     /// numbers. So the mutation has committed exactly when the table directory holds a backup
     /// with the smallest number found here: before the commit every moved backup is absent from
     /// the table directory, and backup numbers are never reused by inserts. This also holds while
-    /// a failed mutation is putting the moved backups back, because `putMovedBackupsBack` puts the
-    /// smallest one back last, when nothing else is left aside.
-    std::optional<UInt64> smallest_num;
-    std::vector<std::string> moved_backups;
-    std::vector<std::string> files;
-    disk->listFiles(aside_path, files);
-    for (const auto & file_name : files)
-    {
-        if (file_name.ends_with(".bin"))
-        {
-            UInt64 file_num = parseBackupNumber(file_name);
-            if (!smallest_num || file_num < *smallest_num)
-                smallest_num = file_num;
-            moved_backups.push_back(file_name);
-        }
-    }
-
-    const bool committed = smallest_num && disk->existsFile(fs::path(path) / (toString(*smallest_num) + ".bin"));
-    if (!committed)
-        putMovedBackupsBack(*disk, aside_path, path, std::move(moved_backups));
-
-    disk->removeRecursive(aside_path);
+    /// a failed mutation is putting the moved backups back, or while a committed one is removing the
+    /// superseded backups, because both remove the smallest one from here last.
+    const auto moved_backups = listMovedBackups(*disk, aside_path);
+    const bool committed = !moved_backups.empty() && disk->existsFile(fs::path(path) / moved_backups.back());
+    if (committed)
+        removeSupersededBackups(*disk, aside_path);
+    else
+        putMovedBackupsBack(*disk, aside_path, path);
 
     LOG_INFO(getLogger("StorageJoin"), "Found an interrupted mutation of table {}, {} it", getStorageID().getNameForLogs(),
         committed ? "finished" : "rolled back");
@@ -414,14 +433,12 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         }
         else
         {
-            std::vector<std::string> moved_backups;
             try
             {
                 disk->createDirectories(aside_path);
                 for (const auto & file_name : committed_backups)
                 {
                     disk->replaceFile(path + file_name, fs::path(aside_path) / file_name);
-                    moved_backups.push_back(file_name);
 
                     fiu_do_on(FailPoints::storage_join_mutate_fail_after_moving_backup_aside,
                     {
@@ -445,8 +462,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
                 /// still matches what the repair will restore.
                 try
                 {
-                    putMovedBackupsBack(*disk, aside_path, path, moved_backups);
-                    disk->removeRecursive(aside_path);
+                    if (disk->existsDirectory(aside_path))
+                        putMovedBackupsBack(*disk, aside_path, path);
                 }
                 catch (...)
                 {
@@ -471,11 +488,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
             /// them behind until `recoverInterruptedMutation` removes them.
             try
             {
-                fiu_do_on(FailPoints::storage_join_mutate_fail_removing_superseded_backups,
-                {
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while removing the superseded backups of a Join mutation");
-                });
-                disk->removeRecursive(aside_path);
+                removeSupersededBackups(*disk, aside_path);
             }
             catch (...)
             {

@@ -41,7 +41,10 @@ $CLICKHOUSE_CLIENT --query "
 echo "rows after reattach:"
 $CLICKHOUSE_CLIENT --query "SELECT k, v FROM join_mutation_error ORDER BY k"
 
-# Fails while removing the superseded backups, after the mutation committed.
+# Fails while removing the superseded backups, after the mutation committed: the failpoint fires
+# after the first of the three is removed. They are removed in descending order of their numbers,
+# so the smallest one is still aside, and the reattach below must finish the mutation rather than
+# restore the two remaining backups of the old generation next to the consolidated one.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_join_mutate_fail_removing_superseded_backups"
 $CLICKHOUSE_CLIENT --query "ALTER TABLE join_mutation_error DELETE WHERE k = 3 SETTINGS mutations_sync = 2"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_join_mutate_fail_removing_superseded_backups"
