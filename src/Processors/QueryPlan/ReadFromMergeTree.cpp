@@ -3114,6 +3114,11 @@ bool filterImpliesIndexCondition(const ActionsDAG & filter_dag, const IndexDescr
     if (queryConditionCacheSettingsSalt(settings) != index.where_settings_salt)
         return false;
 
+    /// The constants of the stored condition were folded in the time zone it was analysed in: it can be matched
+    /// only by a filter analysed in the same one.
+    if (DateLUT::instance().getTimeZone() != index.where_timezone)
+        return false;
+
     std::unordered_set<const ActionsDAG::Node *> index_conjuncts;
     collectConjuncts(&index.where_expression->getActionsDAG().findInOutputs(index.where_column_name), index_conjuncts);
 

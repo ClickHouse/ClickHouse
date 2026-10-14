@@ -578,11 +578,13 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         HashingWriteBuffer marker_hashing(*marker_file);
         marker_hashing.write(signature.data(), signature.size());
         marker_hashing.finalize();
-        marker_file->finalize();
+        marker_file->preFinalize();
 
         auto & checksum = checksums.files[marker_name];
         checksum.file_size = marker_hashing.count();
         checksum.file_hash = marker_hashing.getHash();
+
+        partial_index_marker_files.push_back(std::move(marker_file));
     }
 
     if (skip_indices_packed_writer && skip_indices_packed_writer->hasModifiedFiles())
@@ -643,6 +645,14 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
         if (sync)
             skip_indices_packed_file->sync();
     }
+
+    for (auto & marker_file : partial_index_marker_files)
+    {
+        marker_file->finalize();
+        if (sync)
+            marker_file->sync();
+    }
+    partial_index_marker_files.clear();
 
     if (sync)
     {

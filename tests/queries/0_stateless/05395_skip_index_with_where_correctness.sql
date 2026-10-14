@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS t_type;
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_layout;
 DROP TABLE IF EXISTS t_gate;
+DROP TABLE IF EXISTS t_ddl_tz;
+DROP TABLE IF EXISTS t_enc;
 DROP TABLE IF EXISTS t_set;
 DROP TABLE IF EXISTS t_ren;
 DROP TABLE IF EXISTS t_tz;
@@ -115,6 +117,36 @@ ALTER TABLE t_ren MATERIALIZE INDEX i SETTINGS mutations_sync = 2;
 SELECT count() FROM t_ren WHERE pp = 1 AND v = 11 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
 SELECT count() FROM t_ren WHERE pp = 1 AND v = 11 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, force_data_skipping_indices = 'i';
 
+SELECT 'condition analysed under another time zone than the one a query runs in';
+SET session_timezone = 'Asia/Tokyo';
+CREATE TABLE t_ddl_tz (id UInt64, INDEX idx id TYPE minmax WHERE id = toUnixTimestamp(toDateTime('2024-05-06 00:00:00'))) ENGINE = MergeTree ORDER BY tuple();
+SET session_timezone = '';
+-- 1714921200 is what the condition folds to in Tokyo; in the time zone of the server the part is written for a
+-- different value, so the stored condition must not be matched by a query in that time zone.
+INSERT INTO t_ddl_tz VALUES (1714921200);
+SELECT count() FROM t_ddl_tz WHERE id = 1714921200 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_ddl_tz WHERE id = 1714921200 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_ddl_tz WHERE id = 1714921200 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'partial minmax index redefined as a set index under the same name';
+CREATE TABLE t_enc (id UInt64, flag UInt8, INDEX idx id TYPE minmax WHERE flag = 1) ENGINE = MergeTree ORDER BY tuple() PARTITION BY intDiv(id, 1000);
+INSERT INTO t_enc VALUES (1, 1), (2, 1);
+ALTER TABLE t_enc DETACH PARTITION ID '0';
+ALTER TABLE t_enc DROP INDEX idx;
+ALTER TABLE t_enc ADD INDEX idx id TYPE set(10) WHERE flag = 1;
+ALTER TABLE t_enc ATTACH PARTITION ID '0';
+SELECT count() FROM t_enc WHERE id = 1 AND flag = 1 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_enc WHERE id = 1 AND flag = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_enc WHERE id = 1 AND flag = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+-- The same type with other parameters is another definition too.
+ALTER TABLE t_enc MATERIALIZE INDEX idx SETTINGS mutations_sync = 2;
+ALTER TABLE t_enc DETACH PARTITION ID '0';
+ALTER TABLE t_enc DROP INDEX idx;
+ALTER TABLE t_enc ADD INDEX idx id TYPE set(1) WHERE flag = 1;
+ALTER TABLE t_enc ATTACH PARTITION ID '0';
+SELECT count() FROM t_enc WHERE id = 1 AND flag = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_enc WHERE id = 2 AND flag = 1 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
 SELECT 'experimental gate';
 SET allow_experimental_partial_skip_indexes = 0;
 CREATE TABLE t_gate_create (x UInt64, f UInt8, INDEX i x TYPE minmax WHERE f = 1) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
@@ -148,6 +180,8 @@ DROP TABLE t_type;
 DROP TABLE t_json;
 DROP TABLE t_layout;
 DROP TABLE t_gate;
+DROP TABLE t_ddl_tz;
+DROP TABLE t_enc;
 DROP TABLE t_set;
 DROP TABLE t_ren;
 DROP TABLE t_tz;

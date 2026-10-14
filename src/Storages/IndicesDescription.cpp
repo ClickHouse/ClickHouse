@@ -1,3 +1,4 @@
+#include <Common/DateLUT.h>
 #include <Common/SipHash.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -72,6 +73,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , where_column_name(other.where_column_name)
     , where_settings_salt(other.where_settings_salt)
     , where_identity(other.where_identity)
+    , where_timezone(other.where_timezone)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
 {
@@ -128,6 +130,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     where_column_name = other.where_column_name;
     where_settings_salt = other.where_settings_salt;
     where_identity = other.where_identity;
+    where_timezone = other.where_timezone;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
     return *this;
@@ -202,10 +205,16 @@ IndexDescription IndexDescription::getIndexFromAST(
         ReplaceAliasToExprVisitor::Data data{columns, {}};
         ReplaceAliasToExprVisitor{data}.visit(result.where_ast);
 
+        /// INSERT, merge and mutation analyse the condition again in the server (global) context. Analyse it
+        /// the same way here, so that the settings its functions capture and the constants folded into it are
+        /// the ones the writers use; the time zone folding depends on is recorded.
+        const ContextPtr analysis_context = context->getGlobalContext();
+        result.where_timezone = DateLUT::instance().getTimeZone();
+
         ASTPtr where_ast = result.where_ast->clone();
-        auto syntax = TreeRewriter(context).analyze(
+        auto syntax = TreeRewriter(analysis_context).analyze(
             where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-        result.where_expression = ExpressionAnalyzer(where_ast, syntax, context).getActions(true);
+        result.where_expression = ExpressionAnalyzer(where_ast, syntax, analysis_context).getActions(true);
 
         const auto & where_column = result.where_expression->getSampleBlock().getByPosition(0);
         if (!isUInt8(removeNullable(removeLowCardinality(where_column.type))))
@@ -216,13 +225,6 @@ IndexDescription IndexDescription::getIndexFromAST(
         /// the AST in the server (global) context, not in the session that defines the index, so the global
         /// settings are the ones its functions capture.
         result.where_settings_salt = queryConditionCacheSettingsSalt(context->getGlobalContext()->getSettingsRef());
-
-        SipHash identity;
-        const auto where_hash = result.where_ast->getTreeHash(/*ignore_aliases=*/ true);
-        identity.update(where_hash.low64);
-        identity.update(where_hash.high64);
-        identity.update(result.where_settings_salt);
-        result.where_identity = identity.get128();
     }
 
     if (index_type && index_type->arguments)
@@ -231,6 +233,30 @@ IndexDescription IndexDescription::getIndexFromAST(
 
         if (result.type == TEXT_INDEX_NAME)
             expandTextIndexTransformAliases(result.arguments, columns);
+    }
+
+    if (result.where_expression)
+    {
+        /// What the granules of a partial index mean: the condition, the settings it was built with, and how they
+        /// are encoded. A partial index of every type is written to the same kind of file, so a part written for
+        /// another type, parameters, indexed expression or granularity must not pass for this index.
+        SipHash identity;
+        const auto where_hash = result.where_ast->getTreeHash(/*ignore_aliases=*/ true);
+        identity.update(where_hash.low64);
+        identity.update(where_hash.high64);
+        identity.update(result.where_settings_salt);
+        identity.update(result.type);
+        if (result.arguments)
+        {
+            const auto arguments_hash = result.arguments->getTreeHash(/*ignore_aliases=*/ true);
+            identity.update(arguments_hash.low64);
+            identity.update(arguments_hash.high64);
+        }
+        const auto expression_hash = result.expression_list_ast->getTreeHash(/*ignore_aliases=*/ true);
+        identity.update(expression_hash.low64);
+        identity.update(expression_hash.high64);
+        identity.update(result.granularity);
+        result.where_identity = identity.get128();
     }
 
     return result;

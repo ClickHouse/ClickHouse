@@ -45,6 +45,16 @@ MATERIALIZE INDEX rebuilds an index left stale by a rename of the condition colu
 1
 1
 1
+condition analysed under another time zone than the one a query runs in
+1
+1
+1
+partial minmax index redefined as a set index under the same name
+1
+1
+1
+1
+1
 experimental gate
 i
 j

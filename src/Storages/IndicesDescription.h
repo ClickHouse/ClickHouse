@@ -61,6 +61,10 @@ struct IndexDescription
     /// Identity of the condition: its AST and the settings above. Parts of a partial index are written with a
     /// marker that holds it, so granules built for another condition are never read as this one's.
     UInt128 where_identity = 0;
+    /// The time zone the condition was analysed in. Constants of the condition are folded during the analysis, and
+    /// a function such as `toDateTime` folds differently under another zone, so the condition can be matched
+    /// only by a query that is analysed in the same zone.
+    String where_timezone;
 
     /// True if index is created implicitly using settings:
     /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns

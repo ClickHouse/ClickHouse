@@ -164,6 +164,9 @@ protected:
     /// Output buffer for the skp_idx.packed file itself. Constructed lazily during
     /// fillSkipIndicesChecksums when the writer has content to flush.
     std::unique_ptr<WriteBufferFromFileBase> skip_indices_packed_file;
+    /// The marker files of partial indexes, kept open until the part is finished so that they are synchronized
+    /// together with the rest of its files.
+    std::vector<std::unique_ptr<WriteBufferFromFileBase>> partial_index_marker_files;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;
