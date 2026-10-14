@@ -596,8 +596,10 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     auto context = Context::createCopy(getContext().context);
     context->setSetting("distributed_plan_execute_locally", true);
 
+    /// In-memory exchanges are kept per query id for the whole process, so a fixed id would make a
+    /// repeated run read the exchange the previous run already used.
     auto exchange_lookup = createExchangeLookup(
-        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
+        toString(UUIDHelpers::generateV4()), ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
         /*execute_locally=*/true, /*cancellation=*/ nullptr);
 
     auto header = std::make_shared<const Block>();
