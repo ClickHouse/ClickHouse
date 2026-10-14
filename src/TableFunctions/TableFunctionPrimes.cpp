@@ -249,7 +249,7 @@ WHERE prime BETWEEN 1e6 AND 1e6 + 100
 ```
 - This value-range optimization does not apply to bounded table functions (`primes(N)`, `primes(offset, count[, step])`) with `WHERE`, because those variants define a finite table by prime index and the filter must be evaluated after generating that table to preserve semantics.
 - Using a non-zero offset and/or step greater than 1 (`primes(offset, count)` / `primes(offset, count, step)`) may be slower because additional primes may need to be generated and skipped internally. If you don't need an offset or step, omit them.
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
     );
 }

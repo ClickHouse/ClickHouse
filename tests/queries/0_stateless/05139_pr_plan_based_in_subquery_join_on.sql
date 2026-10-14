@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- An `IN (subquery)` in a join's `ON` lives in `JoinStepLogical`'s own `ActionsDAG`, which
 -- `JoinStepLogical::serialize` ships with the fragment. A conjunct reading the preserved side of an outer
 -- join stays there instead of being pushed down to that side (`canPushDownFromOn`), so it is not covered by

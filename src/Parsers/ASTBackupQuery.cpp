@@ -78,6 +78,19 @@ namespace
             ostr << backQuoteIfNeed(table_name.second);
         }
     }
+
+    /// The parser ends an `EXCEPT DATA FROM TABLES` list at a comma followed by an unquoted element keyword,
+    /// so a name spelled like one has to be quoted.
+    String backQuoteExceptDataTableName(const String & name)
+    {
+        for (const auto * keyword : {"TABLE", "DICTIONARY", "VIEW", "DATABASE", "ALL"})
+        {
+            if (equalsCaseInsensitive(name, keyword))
+                return backQuote(name);
+        }
+        return backQuoteIfNeed(name);
+    }
+
     void formatExceptDataTables(const std::set<DatabaseAndTableName> & except_data_tables, WriteBuffer & ostr, const IAST::FormatSettings &, bool only_table_names=false)
     {
         if (except_data_tables.empty())
@@ -92,8 +105,8 @@ namespace
                 ostr << ", ";
 
             if (!table_name.first.empty() && !only_table_names)
-                ostr << backQuoteIfNeed(table_name.first) << ".";
-            ostr << backQuoteIfNeed(table_name.second);
+                ostr << backQuoteExceptDataTableName(table_name.first) << ".";
+            ostr << backQuoteExceptDataTableName(table_name.second);
         }
     }
 
@@ -788,7 +801,7 @@ namespace
 void ASTBackupQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "BackupQuery");
-    w.writeString("kind", std::string(magic_enum::enum_name(kind)));
+    w.writeString("kind", magic_enum::enum_name(kind));
     w.writeChild("backup_name", backup_name);
     w.writeChild("base_backup_name", base_backup_name);
     w.writeChild("base_snapshot_name", base_snapshot_name);
