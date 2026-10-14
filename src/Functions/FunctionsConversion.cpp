@@ -3484,8 +3484,8 @@ bool detail::FunctionCast::isEquivalentForBloomFilterExpressionMatching(const de
         || !argument_types[0]->equals(*other.argument_types[0])
         || !argument_types[1]->equals(*other.argument_types[1])
         || !return_type->equals(*other.return_type)
-        || typeid(*argument_types[1]) != typeid(DataTypeString)
-        || typeid(*other.argument_types[1]) != typeid(DataTypeString)
+        || !isConcreteDataType<DataTypeString>(*argument_types[1])
+        || !isConcreteDataType<DataTypeString>(*other.argument_types[1])
         || !hasNoCustomConversionSerialization(*argument_types[1])
         || !hasNoCustomConversionSerialization(*other.argument_types[1])
         || String(cast_name) != String(other.cast_name)
@@ -3495,7 +3495,7 @@ bool detail::FunctionCast::isEquivalentForBloomFilterExpressionMatching(const de
         || !isAuditedCastTypePair(*other.argument_types[0], *other.return_type))
         return false;
 
-    if (typeid(*return_type) == typeid(DataTypeDateTime))
+    if (isConcreteDataType<DataTypeDateTime>(*return_type))
     {
         const auto & left_datetime = assert_cast<const DataTypeDateTime &>(*return_type);
         const auto & right_datetime = assert_cast<const DataTypeDateTime &>(*other.return_type);
@@ -3503,7 +3503,7 @@ bool detail::FunctionCast::isEquivalentForBloomFilterExpressionMatching(const de
             && left_datetime.getTimeZone().getTimeZone() == right_datetime.getTimeZone().getTimeZone();
     }
 
-    if (typeid(*return_type) == typeid(DataTypeDateTime64))
+    if (isConcreteDataType<DataTypeDateTime64>(*return_type))
     {
         const auto & left_datetime = assert_cast<const DataTypeDateTime64 &>(*return_type);
         const auto & right_datetime = assert_cast<const DataTypeDateTime64 &>(*other.return_type);
