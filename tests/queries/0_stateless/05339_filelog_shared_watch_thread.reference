@@ -1,0 +1,5 @@
+threads grew by less than the number of tables: 1
+table 1: 2
+table 50: 2
+table 100: 2
+server is alive

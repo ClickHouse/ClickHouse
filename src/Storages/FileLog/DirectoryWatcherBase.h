@@ -1,16 +1,25 @@
 #pragma once
 
-#include <Common/PipeFDs.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
-#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
+#if defined(OS_LINUX)
+#include <deque>
+#include <unordered_set>
+#elif defined(OS_DARWIN)
+#include <Storages/FileLog/DarwinDirectoryWatchState.h>
+
+#include <chrono>
+#include <map>
+#include <optional>
+#endif
 
 namespace DB
 {
 class FileLogDirectoryWatcher;
+class DirectoryWatchReactor;
 
 class DirectoryWatcherBase : WithContext
 {
@@ -21,9 +30,10 @@ class DirectoryWatcherBase : WithContext
     /// directory. Changes to a directory are reported via
     /// events.
     ///
-    /// A thread will be created that watches the specified
-    /// directory for changes. Events are reported in the context
-    /// of this thread.
+    /// The directory is watched by the `DirectoryWatchReactor`, one thread for all watchers, and events are
+    /// reported in the context of that thread. On Linux the reactor watches the inotify descriptor of the watcher.
+    /// macOS has no inotify, so the watcher diffs snapshots of the directory, and the reactor wakes it up with the
+    /// events of the `kqueue` and by a timer.
     ///
     /// Note that changes to files in subdirectories of the watched
     /// directory are not reported. Separate DirectoryWatcher objects
@@ -88,29 +98,57 @@ public:
     /// Returns the directory being watched.
     const std::string & directory() const;
 
-    void watchFunc();
-
 private:
+    friend class DirectoryWatchReactor;
+
     FileLogDirectoryWatcher & owner;
-
-    /// Dedicated thread, not a BackgroundSchedulePool slot: `watchFunc` blocks for the watcher's
-    /// whole lifetime, and that pool caps concurrent tasks of one type.
-    std::unique_ptr<ThreadFromGlobalPool> watch_thread;
-
-    std::atomic<bool> stopped{false};
-
 
     const std::string path;
     int event_mask;
-    uint64_t milliseconds_to_wait;
+
+    /// Kept alive by the watcher, so that `~DirectoryWatcherBase` can always unregister from it.
+    std::shared_ptr<DirectoryWatchReactor> reactor;
+    /// Whether the reactor watches the directory. Not if it failed to add the watcher, then the watcher stays inert.
+    bool registered = false;
 
 #if defined(OS_LINUX)
-    int inotify_fd;
-#endif
-    PipeFDs event_pipe;
+    /// Cookies of the `IN_MOVED_FROM` events that are waiting for their `IN_MOVED_TO`, the oldest evicted first.
+    std::deque<uint32_t> unpaired_move_cookies;
+    /// Cookies of the `IN_MOVED_FROM` events of the current batch that have not got their `IN_MOVED_TO` yet.
+    std::unordered_set<uint32_t> unpaired_moves;
 
-    void start();
-    void stop();
+    /// The inotify mask for the events the watcher is interested in.
+    uint32_t watchMask() const;
+
+    /// Called by the `DirectoryWatchReactor` thread only.
+    /// Decodes the `size` bytes of events that the reactor has read and hands them to `owner` as soon as every
+    /// rename in them is complete. Returns true if it does not, then the reactor calls `onPairingTimeout` unless
+    /// the rest of the events come in time.
+    bool onEvents(const char * data, size_t size);
+    void onPairingTimeout();
+    void commitEvents();
+#elif defined(OS_DARWIN)
+    /// The callbacks below are called by the `DirectoryWatchReactor` thread only.
+    std::unique_ptr<DarwinDirectoryWatchState> watch_state;
+
+    /// The descriptor of the directory, opened by the constructor, and the vnode events (`NOTE_*`) to watch it for.
+    int directoryFd() const;
+    uint32_t directoryWatchFlags() const;
+    /// Closes all the descriptors of the watcher.
+    void stopWatching();
+    /// An event of one of the descriptors registered with `DirectoryWatchReactor::watchVnode`. Reports a change of the
+    /// contents of a file at once, and schedules a scan for a change of the listing.
+    void onVnodeEvent(int fd, uint32_t fflags);
+    /// Scans the directory and emits the events of what has changed since the last scan, once `nextScan` is due.
+    void onTimer();
+    /// When `onTimer` is due, `nullopt` if the watcher does not watch.
+    std::optional<std::chrono::steady_clock::time_point> nextScan() const;
+
+    void scan(std::map<std::string, UInt64> & current_files_inodes);
+    void syncFileWatches(std::map<std::string, UInt64> & files);
+    /// Returns whether the directory changed during the scan, then the caller discards it.
+    bool scanFilesAndUpdateWatches(std::map<std::string, UInt64> & current_files_inodes);
+#endif
 };
 
 }
