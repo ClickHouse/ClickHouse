@@ -164,6 +164,44 @@ FROM prometheusQuery(
     'label_replace(vector(1), "k", "v1", "", "") or label_replace(vector(2), "k", "v2", "", "") or label_replace(vector(3), "k", "v3", "", "") or label_replace(vector(4), "k", "v4", "", "") or label_replace(vector(5), "k", "v5", "", "") or label_replace(vector(6), "k", "v6", "", "") or label_replace(vector(7), "k", "v7", "", "") or label_replace(vector(8), "k", "v8", "", "") or label_replace(vector(9), "k", "v9", "", "") or label_replace(vector(10), "k", "v10", "", "") or label_replace(vector(11), "k", "v11", "", "") or label_replace(vector(12), "k", "v12", "", "") or label_replace(vector(13), "k", "v13", "", "")',
     100);
 
+SELECT '-- empty on() keeps the earliest sample at each step';
+SELECT tags, samples
+FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(or_chain_a[10]) or on() last_over_time(or_chain_b[10]) or on() last_over_time(or_chain_c[10])',
+    100, 120, 10)
+ORDER BY tags;
+
+SELECT '-- identical series or matches the left operand';
+SELECT count() = 0
+FROM
+(
+    SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(m[10])', 100, 130, 10)
+    EXCEPT
+    SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10])', 100, 130, 10)
+);
+
+SELECT '-- or range records peak memory';
+SET log_queries = 1;
+SELECT count() FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(or_chain_a[10]) or on() last_over_time(or_chain_b[10])',
+    100, 120, 10)
+SETTINGS log_comment = 'promql_or_empty_on';
+SELECT count() FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(m[10]) or last_over_time(m[10])',
+    100, 130, 10)
+SETTINGS log_comment = 'promql_or_identical';
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    countIf(log_comment = 'promql_or_empty_on' AND type = 'QueryFinish' AND memory_usage > 0) > 0,
+    countIf(log_comment = 'promql_or_identical' AND type = 'QueryFinish' AND memory_usage > 0) > 0
+FROM system.query_log
+WHERE event_date >= yesterday()
+  AND current_database = currentDatabase()
+  AND log_comment IN ('promql_or_empty_on', 'promql_or_identical');
+
 SELECT '-- thirteen-term or names each operand once';
 SELECT sum(countMatches(explain, '"v1"')) AS v1_mentions,
        sum(countMatches(explain, '"v13"')) AS v13_mentions
