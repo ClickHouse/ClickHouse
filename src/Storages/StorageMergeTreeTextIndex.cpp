@@ -151,7 +151,11 @@ private:
         static constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
 
         if (first_rank == 0)
-            positions_directory = readPositionsDirectory(token_info, *positions_buf, positions_file_size);
+        {
+            validateTokenPositions(token_info, positions_file_size);
+            positions_buf->seek(static_cast<off_t>(token_info.position_offset), SEEK_SET);
+            positions_directory = TextIndexBlockedPositionsCodec::readDirectory(*positions_buf, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
+        }
 
         const size_t end_rank = first_rank + num_ranks;
         if (end_rank > positions_directory.num_docs)
@@ -377,7 +381,6 @@ private:
                 auto & data = assert_cast<ColumnUInt64 &>(*columns[pos]).getData();
                 for (size_t i = 0; i < block_size; ++i)
                 {
-                    /// If postings are embedded, offsets are not filled.
                     if (dict_block.token_infos[i].header & EmbeddedPostings)
                         data.push_back(static_cast<UInt64>(1));
                     else

@@ -224,6 +224,8 @@ The posting lists of the tokens are returned in the following virtual columns. T
 
 If any of these columns is selected, the result has a row for each row in the posting list of each token, like `ARRAY JOIN` of the posting list: the other columns of the token are repeated in each of them.
 
+The posting lists are returned as they are stored in the index of the data part, so they include the rows deleted by lightweight `DELETE` (see `_row_exists`) until the part is merged.
+
 ## Usage Example {#usage-example}
 
 ```sql title="Query"
