@@ -1935,8 +1935,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         storage_snapshot_,
         modified_query_info);
 
-    /// The row policy of a child is applied above its read, which is too late for a table that processes the query
-    /// itself; a direct read of such a table is rejected the same way.
+    /// A child's row policy is applied above its read, too late for a child that processes the query itself.
     if (row_policy_data_opt && storage_stage > QueryProcessingStage::FetchColumns)
         throw Exception(
             ErrorCodes::ILLEGAL_PREWHERE,
