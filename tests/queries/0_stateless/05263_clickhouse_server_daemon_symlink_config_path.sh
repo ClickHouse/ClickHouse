@@ -6,10 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Resolving relative command line paths against the start directory in daemon mode must only prepend
-# that directory and never collapse `..` lexically: with a symlinked component, `conf/../config.xml`
-# names a file in the symlink target and not one next to the symlink. Collapsing it would load a
-# different configuration, with a different data directory, without reporting anything.
+# The configuration path must never have its `..` collapsed lexically, neither while a relative command line
+# path is resolved against the start directory in daemon mode, nor while the file is read: with a symlinked
+# component, `conf/../config.xml` names a file in the symlink target and not one next to the symlink.
+# Collapsing it loads a different configuration, with a different data directory, without reporting anything.
 # https://github.com/ClickHouse/ClickHouse/issues/43170
 
 work="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_05263"
