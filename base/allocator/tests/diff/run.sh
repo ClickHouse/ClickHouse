@@ -82,7 +82,10 @@ do
         (
             cd "$WORK_DIR"
             rm -f driver_prof.heap
-            MALLOC_CONF="$variant" setarch -R taskset -c "${CPUS:-0}" "./driver_$kind" "${SECTIONS[@]}" 2>&1 | normalize > "out_${index}_$kind.txt" || true
+            # A failure of the launcher or of a driver must not be accepted as a match of two identical diagnostics.
+            status=0
+            MALLOC_CONF="$variant" setarch -R taskset -c "${CPUS:-0}" "./driver_$kind" "${SECTIONS[@]}" 2>&1 | normalize > "out_${index}_$kind.txt" || status=$?
+            echo "$status" > "status_${index}_$kind.txt"
             if [ -f driver_prof.heap ]
             then
                 normalize_heap < driver_prof.heap > "heap_${index}_$kind.txt"
@@ -91,7 +94,14 @@ do
             fi
         )
     done
-    if cmp -s "$WORK_DIR/out_${index}_ref.txt" "$WORK_DIR/out_${index}_new.txt" && cmp -s "$WORK_DIR/heap_${index}_ref.txt" "$WORK_DIR/heap_${index}_new.txt"
+    status_ref=$(cat "$WORK_DIR/status_${index}_ref.txt")
+    status_new=$(cat "$WORK_DIR/status_${index}_new.txt")
+    if [ "$status_ref" != 0 ] || [ "$status_new" != 0 ]
+    then
+        echo "FAIL [$index] $variant (exit status: reference $status_ref, new $status_new)"
+        tail -5 "$WORK_DIR/out_${index}_ref.txt" "$WORK_DIR/out_${index}_new.txt" || true
+        failed=1
+    elif cmp -s "$WORK_DIR/out_${index}_ref.txt" "$WORK_DIR/out_${index}_new.txt" && cmp -s "$WORK_DIR/heap_${index}_ref.txt" "$WORK_DIR/heap_${index}_new.txt"
     then
         echo "OK   [$index] $variant"
     else
