@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -28,6 +29,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+}
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
 }
 
 namespace
@@ -470,6 +476,12 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
 }
 
 
+void ReadFromSystemNumbersStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+{
+    settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
+}
+
+
 void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
 {
     const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
@@ -492,8 +504,6 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
         writeBinaryLittleEndian(*numbers_storage.limit, ctx.out);
     writeBinaryLittleEndian(numbers_storage.offset, ctx.out);
     writeBinaryLittleEndian(numbers_storage.step, ctx.out);
-
-    writeBinaryLittleEndian(static_cast<UInt64>(max_block_size), ctx.out);
 }
 
 
@@ -525,8 +535,7 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
     UInt64 step = 0;
     readBinaryLittleEndian(step, ctx.in);
 
-    UInt64 max_block_size = 0;
-    readBinaryLittleEndian(max_block_size, ctx.in);
+    const UInt64 max_block_size = ctx.settings[QueryPlanSerializationSetting::max_block_size];
 
     auto storage = std::make_shared<StorageSystemNumbers>(
         StorageID{"system", "numbers"}, multithreaded, column_name, storage_limit, offset, step, descending);
