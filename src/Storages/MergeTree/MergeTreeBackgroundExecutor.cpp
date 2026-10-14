@@ -128,13 +128,24 @@ void MergeTreeBackgroundExecutor<Queue>::drainPendingTasks()
     {
         LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
         while (!pending.empty())
+        {
             tasks_to_cancel.push_back(pending.pop());
+            /// Like a task in `routine`, it stays in `active` until destroyed, so `removeTasksCorrespondingToStorage` waits for it.
+            chassert(active.size() < active.capacity());
+            active.push_back(tasks_to_cancel.back());
+        }
     }
 
     /// Cancelling and destroying a task can be slow, so do it outside the lock.
     for (auto & item : tasks_to_cancel)
     {
         item->cancel();
+        item->resetTask();
+        {
+            LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+            active.erase(std::remove(active.begin(), active.end(), item), active.end());
+            item->is_done.set();
+        }
         item.reset();
     }
 }
