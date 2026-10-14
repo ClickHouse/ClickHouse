@@ -115,8 +115,8 @@ void RabbitMQConsumer::subscribe(UInt64 generation)
             });
 
             /// A late delivery of a replaced channel can no longer be acked, the broker redelivers it.
-            /// The same holds for a delivery that does not fit into the queue of a stopped consumer.
-            if (!isCurrentChannel(generation) || received.size() >= received.maxFill())
+            /// The same holds for a delivery to a stopped consumer: it is not going to be read.
+            if (stopped || !isCurrentChannel(generation) || received.size() >= received.maxFill())
                 return;
 
             MessageData result{
