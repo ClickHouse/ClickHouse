@@ -20,3 +20,18 @@ Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 -- trivial LIMIT equal to the table size still drops value ranges
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- top-K read with a limit equal to the table size preserves value ranges
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+5654	9086000
+5654	9086000
+-- top-K read with a limit below the table size drops value ranges
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- top-K granule selection keeping every granule preserves value ranges
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- top-K granule selection dropping granules drops value ranges
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+1539	1188750
+1539	1188750

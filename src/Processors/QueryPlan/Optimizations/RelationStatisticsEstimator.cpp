@@ -305,15 +305,24 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         /// GraphiteMergeTree. Treat every FINAL read conservatively so new merge modes fail closed.
         const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy || has_final;
         /// Predicates cover explicit, deferred and row-policy filters; query modifiers cover `FINAL`,
-        /// `SAMPLE`, stream reads and trivial limits; deleted rows, vector-index selection and the
-        /// top-k skip-index threshold can prune rows without a filter step in the plan. A transaction
-        /// snapshot is deliberately absent: the visible parts are the exact input for that read.
+        /// `SAMPLE`, stream reads and trivial limits; deleted rows and vector-index selection can prune
+        /// rows without a filter step in the plan. A transaction snapshot is deliberately absent: the
+        /// visible parts are the exact input for that read.
         const bool has_row_subset = filter || prewhere_info || reading->getRowLevelFilter() || reading->getFilterActionsDAG()
             || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || has_final || query_info.isStream()
             || query_info.trivial_limit || has_lightweight_deleted_rows || reading->getVectorSearchParameters().has_value()
-            || reading->isSelectedForTopKFilterOptimization()
             || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio());
         const bool has_inexact_row_count = has_row_subset || has_on_fly_data_changes;
+        /// A top-K read keeps every row of the final top `limit_n`: range analysis drops only granules and parts
+        /// that cannot hold one, and a running boundary drops rows once `limit_n` have been seen. What is left holds
+        /// at least `limit_n` rows, or all rows if there are fewer, so neither drops a row from selected parts that
+        /// hold `input_rows <= limit_n` rows. Which rows are dropped depends on their values, so a top-K read that
+        /// may drop rows is a non-uniform subset.
+        const auto top_k_may_drop_rows = [&](UInt64 input_rows)
+        {
+            return reading->isSelectedForTopKFilterOptimization()
+                && (has_inexact_row_count || input_rows > reading->getTopKFilterInfo()->limit_n);
+        };
 
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
@@ -321,14 +330,18 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+                /// The rows of the selected parts, which the statistics describe.
+                const bool is_top_k_subset = top_k_may_drop_rows(relation_profile.rows);
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
-                    .rows_exact = !has_inexact_row_count,
+                    .rows_exact = !has_inexact_row_count && !is_top_k_subset,
                     .source = RowEstimateSource::Statistics};
                 if (has_row_subset)
                     addTransformation(stats.column_stats, RowSubset);
+                if (is_top_k_subset)
+                    addTransformation(stats.column_stats, NonUniformRowSubset);
                 if (has_unsupported_value_changes)
                     addTransformation(stats.column_stats, Unsupported);
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
@@ -380,7 +393,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             .estimated_rows = analyzed_result->selected_rows,
             .table_name = table_display_name,
             .imprecise_estimate = true,
-            .rows_exact = !has_inexact_row_count,
+            .rows_exact = !has_inexact_row_count && !top_k_may_drop_rows(analyzed_result->selected_rows),
             .source = RowEstimateSource::PrimaryIndex};
     }
 

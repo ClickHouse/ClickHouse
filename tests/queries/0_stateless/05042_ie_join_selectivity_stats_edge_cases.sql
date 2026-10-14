@@ -9,8 +9,8 @@ SET materialize_statistics_on_insert = 1;
 -- The printed conditions are mirrored when the join order optimizer swaps the sides
 -- (e.g. under randomized `query_plan_optimize_join_order_randomize`); disable it to keep them stable.
 SET query_plan_optimize_join_order_limit = 0;
--- Keep the ORDER BY/LIMIT subqueries as explicit plan steps. An injected `__topKFilter`
--- is itself a row-subset transformation, so its provenance intentionally invalidates value ranges.
+-- Keep the ORDER BY/LIMIT subqueries as explicit plan steps; the top-K read optimization has its
+-- own cases at the end.
 SET use_top_k_dynamic_filtering = 0;
 SET use_skip_indexes_for_top_k = 0;
 
@@ -122,5 +122,82 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 ) WHERE explain LIKE '%Conditions:%';
 
+-- The top-K optimization reads an `ORDER BY ... LIMIT n` input through a running boundary and, with a
+-- `minmax` index on the sort column, narrows the read to the granules that can hold the first `n` rows.
+-- Neither drops rows from an input of at most `n` rows, so value ranges survive as they do without it.
+SET use_top_k_dynamic_filtering = 1;
+SET use_skip_indexes_for_top_k = 1;
+SET query_plan_max_limit_for_top_k_optimization = 1000;
+
+SELECT '-- top-K read with a limit equal to the table size preserves value ranges';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT * FROM t_sel_edge_r ORDER BY b3 LIMIT 1000
+) WHERE explain LIKE '%__topKFilter%';
+
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_r ORDER BY b3 LIMIT 1000) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT count(), sum(a1 + a3 + b1 + b3) FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_r ORDER BY b3 LIMIT 1000) AS r
+ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3;
+
+SELECT count(), sum(a1 + a3 + b1 + b3) FROM t_sel_edge_l AS l, (SELECT * FROM t_sel_edge_r ORDER BY b3 LIMIT 1000) AS r
+WHERE l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+SETTINGS join_algorithm = 'hash';
+
+SELECT '-- top-K read with a limit below the table size drops value ranges';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_r ORDER BY b3 LIMIT 999) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+-- The same rows as `t_sel_edge_r` in granules of one row ordered by `b3`, with a `minmax` index on it.
+-- The granule selection keeps the `n` granules with the best values, so with fewer granules than `n`
+-- it keeps them all; one-row granules let `LIMIT 500` drop some.
+DROP TABLE IF EXISTS t_sel_edge_topk;
+CREATE TABLE t_sel_edge_topk (c UInt32, b1 UInt32, b2 UInt32, b3 UInt32, INDEX idx_b3 b3 TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq_v2', index_granularity = 1, index_granularity_bytes = 10485760;
+
+INSERT INTO t_sel_edge_topk SELECT 0, number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
+
+SELECT '-- top-K granule selection keeping every granule preserves value ranges';
+SELECT count() > 0 FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM t_sel_edge_topk ORDER BY b3 LIMIT 1000
+) WHERE explain LIKE '%Filter TopK Granules%';
+
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_topk ORDER BY b3 LIMIT 1000) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+-- For `LIMIT 500` the granule selection keeps 500 of the 1000 granules, so the table's value ranges no
+-- longer describe the rows read.
+SELECT '-- top-K granule selection dropping granules drops value ranges';
+SELECT count() > 0 FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM t_sel_edge_topk ORDER BY b3 LIMIT 500
+) WHERE explain LIKE '%Granules: 500/1000%';
+
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_topk ORDER BY b3 LIMIT 500) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT count(), sum(a1 + a3 + b1 + b3) FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_topk ORDER BY b3 LIMIT 500) AS r
+ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3;
+
+SELECT count(), sum(a1 + a3 + b1 + b3) FROM t_sel_edge_l AS l, (SELECT * FROM t_sel_edge_topk ORDER BY b3 LIMIT 500) AS r
+WHERE l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+SETTINGS join_algorithm = 'hash';
+
 DROP TABLE t_sel_edge_l;
 DROP TABLE t_sel_edge_r;
+DROP TABLE t_sel_edge_topk;
