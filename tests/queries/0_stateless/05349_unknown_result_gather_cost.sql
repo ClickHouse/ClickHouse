@@ -15,6 +15,9 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
 SET use_statistics = 0;
 SET param__internal_cascades_cluster_node_count = 3;
+-- A small exchange cost, so that these small tables are distributed at all: the test checks
+-- how the gather of an unknown result is priced.
+SET param__internal_cascades_cost_config = '{"exchange_fixed_overhead":3000}';
 SET param__internal_join_table_stat_hints = '{"t_ug_big": {"cardinality": 100000, "distinct_keys": {"k": 100000, "m": 100}}, "t_ug_small": {"cardinality": 10, "distinct_keys": {"m": 10}}}';
 SET max_rows_to_group_by = 0;
 

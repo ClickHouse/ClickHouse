@@ -45,10 +45,11 @@ struct CostConfig
     /// phase holds one thread, so one serial row costs about `threads` work rows (Brent's law:
     /// wall-clock ~ work / threads + serial path).
     Float64 sequential_weight = 32.0;
-    /// Fixed per-exchange latency (connection setup, metadata), in sequential rows. The
-    /// weighted value (~1e5 work units) keeps a plan over a small input local: distribution
-    /// cannot pay for its setup there.
-    Float64 exchange_fixed_overhead = 3000.0;
+    /// Fixed cost of an exchange, in sequential rows: it starts a stage of tasks on the nodes and connects
+    /// them, about 10 ms on a cluster of 8 nodes. The weighted value (~3e6 work units) keeps a plan over a
+    /// small input local, and reads a small table on every node rather than reading it in parts, gathering
+    /// and broadcasting it: distribution cannot pay for its stages there.
+    Float64 exchange_fixed_overhead = 100000.0;
 
     /// Per-operator constants of the model. The defaults are the model; overrides are for experiments.
     Float64 expression_cost_per_row = 0.1;   /// Expressions and filters do little work per row.

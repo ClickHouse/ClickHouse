@@ -17,6 +17,9 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 0;
 SET param__internal_cascades_cluster_node_count = 3;
+-- A small exchange cost, so that these small tables are distributed at all: the test checks
+-- which replications fit the byte budget.
+SET param__internal_cascades_cost_config = '{"exchange_fixed_overhead":3000}';
 
 DROP TABLE IF EXISTS t_cb_fact;
 DROP TABLE IF EXISTS t_cb_dim;

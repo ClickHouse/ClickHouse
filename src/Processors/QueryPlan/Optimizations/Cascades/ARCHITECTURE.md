@@ -343,7 +343,8 @@ while work spreads over all of them, so one serial row costs about `threads` wor
 rows (Brent's law).
 
 In addition, every exchange adds a fixed `exchange_fixed_overhead` to `sequential`
-(connection setup and metadata), which keeps a plan over a small input local. A
+(the stage of tasks it starts and their connections), which keeps a plan over a small
+input local and reads a small table on every node instead of gathering and broadcasting it. A
 partial top-N is charged for scanning its whole input while its sorted gather carries
 up to `limit * node_count` rows.
 
