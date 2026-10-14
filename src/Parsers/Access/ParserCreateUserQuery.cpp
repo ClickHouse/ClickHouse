@@ -1228,7 +1228,22 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
-To use `ALTER USER` you must have the [ALTER USER](/reference/statements/grant#access-management) privilege.
+To use `ALTER USER` you must have the [ALTER USER](/reference/statements/grant#access-management) privilege on every target. Authentication-only changes to your own account can instead use [ALTER USER SELF AUTHENTICATION](/reference/statements/grant#self-service-authentication):
+
+```sql
+GRANT ALTER USER SELF AUTHENTICATION TO alice;
+-- Alice can execute these statements through an authenticated connection.
+ALTER USER alice IDENTIFIED WITH sha256_password BY 'replacement_password';
+ALTER USER alice ADD IDENTIFIED WITH sha256_password BY 'additional_password';
+ALTER USER alice RESET AUTHENTICATION METHODS TO NEW;
+```
+
+An authentication change authorized by ALTER USER SELF AUTHENTICATION must target only the current user, execute locally, and omit the IN
+<storage> clause. Changing other account properties requires ALTER USER, including statements that also change authentication. Any
+explicit VALID UNTIL clause also requires ALTER USER.
+All authentication methods supported by ALTER USER are available, including no_password. Replacing a method without VALID UNTIL removes
+its existing expiration date. The usual authentication validation and read-only restrictions still apply. Changing credentials does not
+require the old password and does not disconnect existing sessions.
 
 `SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest. Prefer it (or `MODIFY SETTING`) over the bare `SETTINGS` clause, which replaces the whole settings list and also removes all inherited (parent) profiles.
 
