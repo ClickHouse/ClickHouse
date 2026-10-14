@@ -130,6 +130,17 @@ SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
 SELECT sum(length(s)), sum(s.size), countIf(notEmpty(s)) FROM file(currentDatabase() || '_05331_ci.parquet', Parquet, 's String')
 SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
 
+SELECT '-- a String column read from a tuple field';
+INSERT INTO FUNCTION file(currentDatabase() || '_05331_flat.parquet', Parquet)
+SELECT toUInt32(number) AS n, if(number % 5 = 0, NULL, tuple(if(number % 3 = 0, '', toString(number * 7919))))::Nullable(Tuple(s String)) AS t
+FROM numbers(20);
+SELECT sum(length(`t.s`)), countIf(notEmpty(`t.s`)) FROM file(currentDatabase() || '_05331_flat.parquet', Parquet, 'n UInt32, `t.s` String');
+SELECT sum(length(`t.s`)), countIf(notEmpty(`t.s`)) FROM file(currentDatabase() || '_05331_flat.parquet', Parquet, 'n UInt32, `t.s` String')
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count(), sum(n) FROM file(currentDatabase() || '_05331_flat.parquet', Parquet, 'n UInt32, `t.s` String') WHERE `t.s` != '';
+SELECT count(), sum(n) FROM file(currentDatabase() || '_05331_flat.parquet', Parquet, 'n UInt32, `t.s` String') WHERE `t.s` != ''
+SETTINGS optimize_functions_to_subcolumns = 0;
+
 SELECT '-- a DEFAULT column missing from the file';
 SELECT sum(s.size), sum(length(s)), countIf(s != '') FROM file(currentDatabase() || '_05331_plain.parquet', Parquet, 'n UInt32, x String DEFAULT \'abc\', s String');
 SELECT sum(x.size), sum(length(x)), countIf(x != '') FROM file(currentDatabase() || '_05331_plain.parquet', Parquet, 'n UInt32, x String DEFAULT \'abc\'');

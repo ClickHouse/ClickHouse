@@ -70,6 +70,11 @@ abc	7
 0
 9	21	9
 9	9	3
+-- a String column read from a tuple field
+59	11
+59	11
+11	112
+11	112
 -- a DEFAULT column missing from the file
 424477	424477	15000
 60000	60000	20000

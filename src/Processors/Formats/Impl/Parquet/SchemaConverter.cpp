@@ -238,7 +238,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        const bool is_top_level = node.name.empty();
         bool not_in_schema = false;
         node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
 
@@ -257,7 +256,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             if (pos && options.string_sizes_columns.contains(sample_block->getByPosition(*pos).name))
                 pos.reset();
             std::optional<size_t> sizes_pos;
-            if (is_top_level)
+            if (!options.string_sizes_columns.empty())
             {
                 sizes_pos = sample_block->findPositionByName(node.name + ".size", case_insensitive);
                 if (sizes_pos && !options.string_sizes_columns.contains(sample_block->getByPosition(*sizes_pos).name))
@@ -274,7 +273,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 node.requested = true;
                 node.name = sample_block->getByPosition(pos.value()).name; // match case
                 chassert(!node.type_hint);
-                node.type_hint = sample_block->getByPosition(pos.value()).type;
+                node.type_hint = string_sizes ? std::make_shared<DataTypeString>() : sample_block->getByPosition(pos.value()).type;
                 outer_type_hint = node.type_hint; // before unwrapping arrays
 
                 for (size_t i = 1; i < levels.size(); ++i)
@@ -293,7 +292,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 if (string_sizes)
                 {
                     node.string_sizes = true;
-                    node.type_hint = std::make_shared<DataTypeString>();
                     outer_type_hint = nullptr;
                 }
                 else
