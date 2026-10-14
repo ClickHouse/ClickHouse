@@ -968,6 +968,23 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+        /// A retry that was already in flight may have left a `.retriable` marker (e.g. `loading_retries`
+        /// was set to 0 while the attempt was running). Remove it together with creating the terminal
+        /// node, otherwise it outlives SYSTEM DROP S3QUEUE FAILED FILES and the next claim sees an
+        /// exhausted marker and re-creates the terminal failure even for a repaired object.
+        const auto stale_retriable_path = failed_node_path + ".retriable";
+        Coordination::Stat stale_retriable_stat;
+        std::string stale_retriable_data;
+        bool stale_retriable_exists = false;
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+            stale_retriable_exists = zk_client->tryGet(stale_retriable_path, stale_retriable_data, &stale_retriable_stat);
+        });
+        if (stale_retriable_exists)
+            requests.push_back(zkutil::makeRemoveRequest(stale_retriable_path, stale_retriable_stat.version));
+
         /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;

@@ -1624,3 +1624,68 @@ def test_system_drop_failed_files_requires_access(started_cluster):
             node.query(f"DROP TABLE IF EXISTS {table}")
         except Exception:
             pass
+
+
+def test_system_drop_failed_files_recovers_after_retries_disabled_in_flight(started_cluster):
+    node = started_cluster.instances["instance"]
+    table = f"test_drop_recover_{uuid.uuid4().hex[:8]}"
+    dst = f"{table}_dst"
+    keeper_path = f"/clickhouse/test_{table}"
+    files_path = f"{table}_data"
+    zk = started_cluster.get_kazoo_client("zoo1")
+    failed_path = f"{keeper_path}/failed"
+
+    def failed_children():
+        return zk.get_children(failed_path) if zk.exists(failed_path) else []
+
+    create_table(
+        started_cluster, node, table, "unordered", files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 3,
+            "polling_min_timeout_ms": 500,
+            "polling_max_timeout_ms": 500,
+        },
+    )
+    try:
+        put_s3_file_content(started_cluster, f"{files_path}/bad.csv", b"not,valid,data\n")
+        create_mv(node, table, dst)
+
+        # The file fails and a retriable marker appears (retries are still allowed).
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if any(c.endswith(".retriable") for c in failed_children()):
+                break
+            time.sleep(0.2)
+        assert any(c.endswith(".retriable") for c in failed_children()), "no .retriable marker appeared"
+
+        # Disable retries: the file must become terminally failed.
+        node.query(f"ALTER TABLE {table} MODIFY SETTING s3queue_loading_retries=0")
+        deadline = time.monotonic() + 60
+        terminal = []
+        while time.monotonic() < deadline:
+            terminal = [c for c in failed_children() if not c.endswith(".retriable")]
+            if terminal:
+                break
+            time.sleep(0.2)
+        assert terminal, "file did not become terminally failed"
+
+        # Repair the object, clear the failure, and require the data to be ingested.
+        put_s3_file_content(started_cluster, f"{files_path}/bad.csv", b"1,2,3\n")
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table}")
+
+        deadline = time.monotonic() + 60
+        rows = 0
+        while time.monotonic() < deadline:
+            rows = int(node.query(f"SELECT count() FROM {dst}").strip())
+            if rows >= 1:
+                break
+            time.sleep(0.5)
+        assert rows >= 1, "repaired file was not ingested after SYSTEM DROP S3QUEUE FAILED FILES"
+        assert not [c for c in failed_children() if not c.endswith(".retriable")]
+    finally:
+        for obj in (f"{table}_mv", dst, table):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {obj}")
+            except Exception:
+                pass
