@@ -17,7 +17,7 @@ struct PeersBounds
 class Peers
 {
 public:
-    void enterPartition(const PartitionBounds & partition);
+    void enterPartition(RowNumber partition_start);
     void advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition);
     void advanceCurrentRow(const SlidingBlocks & blocks);
 

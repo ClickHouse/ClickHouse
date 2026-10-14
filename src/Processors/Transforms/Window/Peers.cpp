@@ -39,10 +39,12 @@ void advancePeerGroupEnd(const SlidingBlocks & blocks, const PartitionBounds & p
 
 }
 
-void Peers::enterPartition(const PartitionBounds & partition)
+void Peers::enterPartition(RowNumber partition_start)
 {
-    current_row = partition.start;
-    peers_bounds = PeersBounds{.start = current_row, .end = current_row, .fully_visible = false};
+    current_row = RowPoint{.location = partition_start};
+    peers_bounds.start = RowPoint{.location = partition_start};
+    peers_bounds.end = RowPoint{.location = partition_start};
+    peers_bounds.fully_visible = false;
 }
 
 void Peers::advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition)
