@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
+#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
@@ -114,12 +115,16 @@ struct MemorySourceFilter
     /// The identity of the blocks of the snapshot, see `StorageMemory::BlocksWithCounts`.
     UInt64 generation = 0;
     UInt64 first_block_number = 0;
+    /// The hash of the columns of the metadata snapshot. An `ALTER` of the columns keeps the stored
+    /// blocks, but can change the values read from them (e.g. the array sizes of a `Nested` subcolumn
+    /// missing in the blocks, which come from its stored siblings, or a cast to a changed type).
+    UInt64 columns_hash = 0;
 
     static constexpr size_t query_condition_cache_granule_rows = 8192;
 
     String getQueryConditionCachePartName(size_t block_index) const
     {
-        return fmt::format("{}_{}", generation, first_block_number + block_index);
+        return fmt::format("{}_{:016x}_{}", generation, columns_hash, first_block_number + block_index);
     }
 };
 
@@ -1183,6 +1188,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
             result->table_uuid = table_uuid;
             result->generation = snapshot_data.generation;
             result->first_block_number = snapshot_data.first_block_number;
+            result->columns_hash = sipHash64(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
         }
     }
 
