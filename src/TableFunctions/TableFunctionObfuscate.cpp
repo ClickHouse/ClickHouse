@@ -119,6 +119,7 @@ See also the `clickhouse obfuscator` tool, which implements the same algorithm o
             .examples{{"obfuscate", "SELECT * FROM obfuscate(SELECT number, toString(number) FROM numbers(10000)) LIMIT 10", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
+        SecretArgumentsSpec{},
         {.allow_readonly = true});
 }
 

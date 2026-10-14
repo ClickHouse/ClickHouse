@@ -76,6 +76,7 @@ void registerStorageObfuscate(StorageFactory & factory)
 
         return std::make_shared<StorageObfuscate>(args.table_id, args.query, args.columns, args.comment);
     },
+    SecretArgumentsSpec{},
     {},
     Documentation{
         .description = R"DOCS_MD(
