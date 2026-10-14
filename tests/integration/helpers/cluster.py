@@ -62,6 +62,7 @@ from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import ci_logs_export, pytest_xdist_logging_to_separate_files
+from .redact import is_secret_env_name, redact_docker_inspect, redact_env
 from .client import Client, QueryRuntimeException, set_transport_error_describer
 from .hdfs_api import HDFSApi
 from .config_cluster import (
@@ -265,7 +266,7 @@ except Exception:
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
-    logging.debug("Env %s stored in %s", variables, path)
+    logging.debug("Env %s stored in %s", redact_env(variables), path)
     with open(path, "w") as f:
         for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
@@ -333,7 +334,8 @@ def run_and_check(
     if res.returncode != 0:
         logging.debug("Exitcode:%s", res.returncode)
         if env:
-            logging.debug("Env:%s", env)
+            # The logs are collected as CI artifacts, do not expose secrets
+            logging.debug("Env:%s", redact_env(env))
         if not nothrow:
             raise Exception(
                 f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
@@ -734,7 +736,7 @@ class ClickHouseCluster:
     ):
         for param in list(os.environ.keys()):
             # The logs are collected as CI artifacts, do not expose secrets
-            if re.search(r"PASSWORD|SECRET|TOKEN|ACCESS_KEY", param, re.IGNORECASE):
+            if is_secret_env_name(param):
                 logging.debug("ENV %40s [MASKED]" % param)
             else:
                 logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -2926,10 +2928,13 @@ class ClickHouseCluster:
                 image_id = container_info.get("Image")
                 image_info = self.docker_client.api.inspect_image(image_id)
                 logging.debug("Command failed in container %s: ", container_id)
-                pprint.pprint(container_info)
+                # The output is collected as a CI artifact, and `Config.Env`
+                # holds the secrets passed to the container, e.g. the
+                # credentials of the CI Logs cluster
+                pprint.pprint(redact_docker_inspect(container_info))
                 logging.debug("")
                 logging.debug("Container %s uses image %s: ", container_id, image_id)
-                pprint.pprint(image_info)
+                pprint.pprint(redact_docker_inspect(image_info))
                 logging.debug("")
                 message = (
                     f'Cmd "{" ".join(cmd)}" failed in container {container_id}. '

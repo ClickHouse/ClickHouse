@@ -963,3 +963,48 @@ def test_teardown_keeps_the_state_until_the_drops_succeed(monkeypatch):
     HELPER.teardown_for_instance(instance)
     assert instance.ci_logs_export_tables == []
     assert instance.ci_logs_export_hashes == {}
+
+
+def _load_redact():
+    path = REPO_ROOT / "tests" / "integration" / "helpers" / "redact.py"
+    spec = importlib.util.spec_from_file_location("_redact", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_failure_diagnostics_do_not_expose_the_credentials():
+    """The CI Logs password is in the environment of the test runner and of the
+    instance containers. The environment `run_and_check` logs for a failed
+    command and the `inspect_container` result `exec_in_container` prints for a
+    failed exec end up in the collected pytest logs, so the password must be
+    masked in both."""
+    redact = _load_redact()
+    sentinel = "sentinel-password-0123456789"
+
+    env = {"PATH": "/usr/bin", "CLICKHOUSE_CI_LOGS_PASSWORD": sentinel}
+    redacted = redact.redact_env(env)
+    assert sentinel not in repr(redacted)
+    assert redacted["PATH"] == "/usr/bin"
+    assert env["CLICKHOUSE_CI_LOGS_PASSWORD"] == sentinel
+
+    info = {
+        "Image": "sha256:0",
+        "Config": {
+            "Env": [
+                "CLICKHOUSE_CI_LOGS_HOST=ci-logs.example.com",
+                f"CLICKHOUSE_CI_LOGS_PASSWORD={sentinel}",
+                "PATH=/usr/bin",
+            ]
+        },
+    }
+    redacted = redact.redact_docker_inspect(info)
+    assert sentinel not in repr(redacted)
+    assert "CLICKHOUSE_CI_LOGS_HOST=ci-logs.example.com" in redacted["Config"]["Env"]
+    assert sentinel in repr(info)
+
+    source = CLUSTER_HELPER.read_text()
+    assert 'logging.debug("Env:%s", redact_env(env))' in source
+    assert "pprint.pprint(redact_docker_inspect(container_info))" in source
+    assert "pprint.pprint(redact_docker_inspect(image_info))" in source
+    assert "pprint.pprint(container_info)" not in source
