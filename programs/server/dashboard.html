@@ -1967,16 +1967,25 @@ function isTrustedHostOrigin(origin) {
 
 /// Adopt a connection handed over by the host page and reload the dashboard against it. The
 /// connection inputs are what `doFetch` reads, so filling them is what switches the connection.
-/// The reload searches for the dashboard queries again when no charts are displayed, which is the
-/// case when the initial load could not authenticate.
+///
+/// The queries in flight are aborted before the fields change. `doFetch` reads the fields afresh
+/// on every call, so a load still running on the previous connection would otherwise go on with
+/// the response it gets from there - the dashboard definitions found by its search - and run them
+/// on the new server. An aborted load stops at its pending query instead, without drawing.
+///
+/// The reload searches for the dashboard queries again unless the user customized them: the
+/// definitions a search found come from `system.dashboards` of the previous server and are
+/// rebuilt from the new one. This also covers the case when no charts are displayed because the
+/// initial load could not authenticate.
 ///
 /// `url` is optional and defaults to the one already configured; the credentials are always
 /// replaced wholesale, so that none of them can outlive the connection they belong to.
 function applyConnectionFromHost(data) {
+    cancelQueries();
     if (data.url !== undefined) document.getElementById('url').value = data.url;
     document.getElementById('user').value = data.user || '';
     document.getElementById('password').value = data.password || '';
-    pending_load = pending_load.then(() => reloadAll(queries.length == 0));
+    pending_load = pending_load.then(() => reloadAll(queries.length == 0 || !customized));
 }
 
 {
