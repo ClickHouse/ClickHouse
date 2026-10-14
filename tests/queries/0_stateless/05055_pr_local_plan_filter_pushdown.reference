@@ -19,6 +19,7 @@ Prewhere filter column:  tenant = 5
 5	405
 also when it arrives as a condition of its own, after the other
 Read type: InOrder
+Prewhere filter column:  tenant = 5
 5	5
 5	205
 5	405

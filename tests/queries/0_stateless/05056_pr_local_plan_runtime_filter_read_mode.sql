@@ -54,15 +54,15 @@ SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 -- The runtime filter has to be inside the local fragment, below the aggregation that reads in order:
 -- that is the plan the initiator announces a coordination mode for.
-SELECT replaceAll(replaceRegexpOne(explain, '^[^A-Za-z]*', ''), currentDatabase(), 'default') AS step
+-- The steps are printed as a tree, with the lines that say which filter sits where.
+SELECT replaceAll(explain, currentDatabase(), 'default') AS step
 FROM (
-    EXPLAIN actions = 1
+    EXPLAIN description = 0, actions = 1
     SELECT sum(x.c)
     FROM (SELECT a, count() AS c FROM t_rf_read_mode GROUP BY a) AS x
     JOIN b_rf_read_mode AS bb ON x.a = bb.a
 )
-WHERE explain LIKE '%Aggregating%'
-   OR explain LIKE '%ReadFromMergeTree%'
+WHERE match(explain, '^[ │├└─]*[A-Za-z]+$')
    OR explain LIKE '%Read type%'
    OR explain LIKE '%Runtime filters:%'
    OR explain LIKE '%Filter column:%';
@@ -89,13 +89,14 @@ SET optimize_read_in_order = 1, optimize_aggregation_in_order = 0;
 -- apart, the runtime filter reaches the read as its own step instead of the read's own annotation.
 SET query_plan_merge_filters = 1;
 
-SELECT replaceAll(replaceRegexpOne(explain, '^[^A-Za-z]*', ''), currentDatabase(), 'default') AS step
+SELECT replaceAll(explain, currentDatabase(), 'default') AS step
 FROM (
     EXPLAIN description = 0, actions = 1
     SELECT v.ts FROM v_rf_read_mode AS v JOIN b_rf_read_mode AS bb ON v.tenant = bb.a
     WHERE v.tenant = 5 LIMIT 5
 )
-WHERE explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%'
+WHERE match(explain, '^[ │├└─]*[A-Za-z]+$')
+   OR explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%'
    OR explain LIKE '%Filter column%' OR explain LIKE '%Prewhere filter column%';
 
 SELECT v.ts FROM v_rf_read_mode AS v JOIN b_rf_read_mode AS bb ON v.tenant = bb.a
