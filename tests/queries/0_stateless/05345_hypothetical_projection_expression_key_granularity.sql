@@ -67,6 +67,29 @@ SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain)
 FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM t_real_many WHERE toLowCardinality(b) < 900 SETTINGS force_optimize_projection = 1)
 WHERE match(trim(explain), '^Granules:');
 
+-- a sample does not show the dictionary of unread rows, so a sampled LowCardinality column gets no firm verdict
+CREATE TABLE m_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 1000, index_granularity_bytes = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 8192, use_const_adaptive_granularity = 0;
+CREATE TABLE m_real AS m_est;
+ALTER TABLE m_real ADD PROJECTION p_unique (SELECT a, b, v ORDER BY toLowCardinality(b));
+INSERT INTO m_est SELECT number, number, number FROM numbers(30000);
+INSERT INTO m_real SELECT number, number, number FROM numbers(30000);
+CREATE HYPOTHETICAL PROJECTION p_unique ON m_est (SELECT a, b, v ORDER BY toLowCardinality(b));
+SELECT '-- a key with a distinct value in each row, with a full scan';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 0 SELECT a, b, v FROM m_est WHERE toLowCardinality(b) < 21600)
+WHERE match(line, '^(Baseline|With |marks:|verdict:)');
+SELECT '-- the same with a sample';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 10000 SELECT a, b, v FROM m_est WHERE toLowCardinality(b) < 21600)
+WHERE match(line, '^verdict:');
+SELECT if(explain LIKE '%ReadFromMergeTree (p_unique)%', 'real: from the projection', 'real: from the base table')
+FROM (EXPLAIN SELECT a, b, v FROM m_real WHERE toLowCardinality(b) < 21600) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT 'real with force_optimize_projection: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM m_real WHERE toLowCardinality(b) < 21600 SETTINGS force_optimize_projection = 1)
+WHERE match(trim(explain), '^Granules:');
+
 DROP TABLE t_est;
 DROP TABLE t_real;
 DROP TABLE t_real_lc;
@@ -74,3 +97,5 @@ DROP TABLE s_est;
 DROP TABLE s_real;
 DROP TABLE t_est_many;
 DROP TABLE t_real_many;
+DROP TABLE m_est;
+DROP TABLE m_real;

@@ -89,7 +89,7 @@ struct ProjectionPartData
     PaddedPODArray<UInt32> row_bytes;
     /// the `LowCardinality` dictionaries, one for the part as a fresh part has
     size_t shared_bytes = 0;
-    /// some stored column has values of different sizes
+    /// some stored column has values of different sizes, or a dictionary that a sample does not show
     bool variable_width = false;
 };
 
@@ -106,8 +106,12 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
         if (!elem.column)
             continue;
         /// the scan sizes the index of a `LowCardinality` row for the whole part at its end
+        /// a sample does not show the dictionary of the rows it does not read, as with values of different sizes
         if (elem.column->lowCardinality())
+        {
+            variable_width = true;
             continue;
+        }
         if (elem.column->valuesHaveFixedSize())
             fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
         else

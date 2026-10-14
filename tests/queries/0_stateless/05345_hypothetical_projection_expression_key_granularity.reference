@@ -30,3 +30,13 @@ marks: 75
 verdict: not chosen
 real: from the base table
 real with force_optimize_projection: Granules: 75/84
+-- a key with a distinct value in each row, with a full scan
+Baseline (after PK + partition + existing indexes):
+marks: 88
+With p_unique (normal projection, hypothetical):
+marks: 90
+verdict: not chosen
+-- the same with a sample
+verdict: too close to call
+real: from the base table
+real with force_optimize_projection: Granules: 90/125
