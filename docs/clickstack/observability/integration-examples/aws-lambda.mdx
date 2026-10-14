@@ -2,7 +2,7 @@
 slug: /clickstack/observability/integration-examples/aws-lambda
 title: 'Monitoring AWS Lambda logs with ClickHouse Observability using Rotel'
 sidebarTitle: 'AWS Lambda logs'
-description: 'Monitoring AWS Lambda logs with ClickHouse Observability using Rotel setup and configuration for ClickHouse Observability and self-configured deployments.'
+description: 'Collect AWS Lambda logs with the community-maintained Rotel Lambda Extension and send them to ClickHouse Observability.'
 doc_type: 'guide'
 keywords: ['AWS', 'Lambda', 'OTEL', 'ClickHouse Observability', 'logs', 'CloudWatch']
 ---
@@ -10,67 +10,40 @@ keywords: ['AWS', 'Lambda', 'OTEL', 'ClickHouse Observability', 'logs', 'CloudWa
 import { Image } from "/snippets/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
-<Tabs>
-<Tab title="ClickHouse Observability">
-
-<Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
-</Note>
-
-</Tab>
-<Tab title="Self configured">
-
 <CommunityMaintainedBadge/>
 
-<Info>
-**TL;DR**
+Collect function logs and extension logs with the Rotel Lambda Extension and send them directly to ClickHouse Observability over OTLP. The extension runs alongside your Lambda function, so no separate collector is needed. You can also add OpenTelemetry instrumentation to collect traces.
 
-This guide shows you how to monitor AWS Lambda functions with ClickStack by using the Rotel Lambda Extension to collect and forward function logs, extension logs, and OpenTelemetry data directly to ClickHouse. You'll learn how to:
+## Prerequisites {#prerequisites}
 
-- Deploy the Rotel Lambda Extension layer to your Lambda functions
-- Configure the extension to export logs and traces to ClickStack
-- Optionally disable CloudWatch Logs to reduce costs
+- A ClickHouse Observability service
+- An AWS Lambda function using a ZIP deployment and a runtime supported by the [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)
+- AWS CLI v2 configured for your function's region, if using the CLI examples
+- Permission to update the function's layers and environment variables
+- Network access from the Lambda function to your OTLP endpoint, including outbound access for functions in a VPC
 
-This approach can significantly reduce your Lambda observability costs by bypassing CloudWatch Logs entirely.
+### Connection details {#connection-details}
 
-Time Required: 5-10 minutes
-</Info>
+For a managed service, open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key.
 
-## Integration with existing Lambda functions {#existing-lambda-self-configured}
+<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
 
-This section covers configuring your existing AWS Lambda functions to send logs and traces to ClickStack using the Rotel Lambda Extension.
+Use the exact endpoint, including its port, as `ROTEL_OTLP_EXPORTER_ENDPOINT` below. Use the base HTTP endpoint without a `/v1/logs` suffix and set the protocol to `http`. The managed service requires an `Authorization=Bearer YOUR_API_KEY` header.
 
-### Prerequisites {#prerequisites-self-configured}
-- ClickStack instance running
-- AWS Lambda functions to monitor
-- AWS CLI configured with appropriate permissions
-- Lambda execution role with permissions to add layers
+For self-configured deployments, use your collector's OTLP HTTP endpoint and authentication settings. Omit `ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS` if the destination does not require authentication. The endpoint must be reachable from Lambda; `localhost` refers to the Lambda execution environment. See the [self-configured setup guide](/clickstack/self-configured/getting-started/managed).
+
+## Integration with existing Lambda functions {#existing-lambda}
 
 <Steps>
-<Step title="Choose the appropriate Rotel Lambda Extension layer" id="choose-layer-self-configured">
+<Step title="Choose the appropriate Rotel Lambda Extension layer" id="choose-layer">
 
-Choose the Lambda layer that matches your Lambda runtime architecture. The `{version}` field
-is dependent on the AWS region that you're deploying into. Check the [releases](https://github.com/streamfold/rotel-lambda-extension/releases)
-page for the latest version numbers that correspond to your region.
-
-| Architecture | ARN                                                                          |
-| ------------ | ---------------------------------------------------------------------------- |
-| x86-64/amd64 | `arn:aws:lambda:{region}:418653438961:layer:rotel-extension-amd64:{version}` |
-| arm64        | `arn:aws:lambda:{region}:418653438961:layer:rotel-extension-arm64:{version}` |
-
-**Available regions:**
-- us-east-{1, 2}, us-west-{1, 2}
-- eu-central-1, eu-north-1, eu-west-{1, 2, 3}
-- ca-central-1
-- ap-southeast-{1, 2}, ap-northeast-{1, 2}
-- ap-south-1
-- sa-east-1
+Choose a layer matching your function's architecture (`amd64` or `arm64`), runtime, and AWS region. Copy the full, versioned layer ARN from the [Rotel releases](https://github.com/streamfold/rotel-lambda-extension/releases). Use that ARN in the examples below; layer versions and availability vary by region.
 </Step>
-<Step title="Add the Rotel layer to your Lambda function" id="add-layer-self-configured">
+<Step title="Add the Rotel layer to your Lambda function" id="add-layer">
 
-_In these examples replace `{arch}`, `{region}`, and `{version}` with the appropriate values above._
+Replace `YOUR_ROTEL_LAYER_ARN` with the ARN you selected, and `my-function` with your function name.
 
-##### Option 1: AWS Console {#console-self-configured}
+##### Option 1: AWS Console {#console}
 
 1. Open the AWS Lambda console
 2. Navigate to your Lambda function
@@ -78,19 +51,31 @@ _In these examples replace `{arch}`, `{region}`, and `{version}` with the approp
 4. Select **Specify an ARN**
 5. Enter the Rotel layer ARN:
    ```text
-   arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+   YOUR_ROTEL_LAYER_ARN
    ```
 6. Click **Add**
 
-##### Option 2: AWS CLI {#cli-self-configured}
+##### Option 2: AWS CLI {#cli}
+
+Export the current layer list:
+
+```bash
+aws lambda get-function-configuration \
+  --function-name my-function \
+  --query 'Layers[].Arn || `[]`' \
+  --output json > layers.json
+```
+
+Append the Rotel layer ARN as a string in the `layers.json` array, preserving the existing entries. Then apply the complete list:
 
 ```bash
 aws lambda update-function-configuration \
   --function-name my-function \
-  --layers arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+  --layers file://layers.json
+aws lambda wait function-updated --function-name my-function
 ```
 
-##### Option 3: AWS SAM {#sam-self-configured}
+##### Option 3: AWS SAM {#sam}
 
 ```yaml
 Resources:
@@ -99,36 +84,39 @@ Resources:
     Properties:
       # ... other configuration ...
       Layers:
-        - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+        # Keep any existing layer entries here.
+        - YOUR_ROTEL_LAYER_ARN
 ```
 </Step>
-<Step title="Configure the extension to export to ClickStack" id="configure-extension-self-configured">
+<Step title="Configure the extension to export to ClickHouse Observability" id="configure-extension">
 
-The Rotel Lambda Extension is configured using environment variables. You need to configure the OTLP exporter endpoint to point to your ClickStack instance. The examples assume your AWS Lambda function is able to reach the ClickStack instance.
+In the Lambda console, open **Configuration → Environment variables** and add the settings below, preserving any existing variables. These are Lambda configuration values, not commands to run in your local terminal. When entering values in the console, omit the surrounding quotes shown in the examples.
 
-##### Basic configuration (environment variables) {#basic-config-self-configured}
+##### Basic configuration (environment variables) {#basic-config}
 
 Add these environment variables to your Lambda function:
 
 ```bash
-# Required: ClickStack OTLP endpoint
-ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+# OTLP HTTP endpoint from Connection details
+ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+ROTEL_OTLP_EXPORTER_PROTOCOL=http
 
-# Optional: Authentication headers
-ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
+# Required for managed ingestion
+ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
 
 # Optional: Service name (defaults to Lambda function name)
 ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
 ```
 
-##### Advanced configuration (using .env file) {#advanced-config-self-configured}
+##### Advanced configuration (using .env file) {#advanced-config}
 
 For more complex configurations, create a `rotel.env` file in your Lambda function bundle:
 
 **rotel.env:**
 ```bash
-ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
-ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
+ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+ROTEL_OTLP_EXPORTER_PROTOCOL=http
+ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
 ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,deployment.environment=production"
 ```
 
@@ -137,20 +125,22 @@ Then set the environment variable to point to this file:
 ROTEL_ENV_FILE=/var/task/rotel.env
 ```
 
-##### Using AWS Secrets Manager or Parameter Store {#secrets-self-configured}
+##### Using AWS Secrets Manager or Parameter Store {#secrets}
 
-For production deployments, store sensitive values like API keys in AWS Secrets Manager or Parameter Store:
+You can store the API key in AWS Secrets Manager or Parameter Store and reference its ARN in `rotel.env`. The examples below assume the secret contains the API key only; Rotel adds the `Bearer` prefix from the configuration. Replace the example region, account, and secret names with your own:
 
 **AWS Secrets Manager Example:**
 ```bash
-ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
-ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=${arn:aws:secretsmanager:us-east-1:123456789012:secret:clickstack-api-key-abc123}"
+ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+ROTEL_OTLP_EXPORTER_PROTOCOL=http
+ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-abc123}"
 ```
 
 **AWS Parameter Store Example:**
 ```bash
-ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
-ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=${arn:aws:ssm:us-east-1:123456789012:parameter/clickstack-api-key}"
+ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+ROTEL_OTLP_EXPORTER_PROTOCOL=http
+ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key}"
 ```
 
 **Required IAM Permissions:**
@@ -168,7 +158,7 @@ For Secrets Manager:
         "secretsmanager:GetSecretValue",
         "secretsmanager:BatchGetSecretValue"
       ],
-      "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:clickstack-api-key-*"
+      "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-*"
     }
   ]
 }
@@ -184,23 +174,24 @@ For Parameter Store:
       "Action": [
         "ssm:GetParameters"
       ],
-      "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/clickstack-api-key"
+      "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key"
     }
   ]
 }
 ```
 
 <Note>
-AWS API calls for secret retrieval add 100-150ms to cold start latency. Secrets are retrieved in batches (up to 10) and only on initialization, so subsequent invocations aren't impacted.
+Secret retrieval happens during initialization and can add cold-start latency. See the [Rotel secret configuration](https://github.com/streamfold/rotel-lambda-extension#secrets) for supported formats and permissions. Customer-managed encryption keys may also require `kms:Decrypt` permission.
 </Note>
 </Step>
-<Step title="Test the integration" id="test-integration-self-configured">
+<Step title="Test the integration" id="test-integration">
 
-Invoke your Lambda function to verify logs are being sent to ClickStack:
+Invoke your Lambda function with an event it accepts and ensure the handler writes a log. Replace this example payload if your function expects a different event:
 
 ```bash
 aws lambda invoke \
   --function-name my-function \
+  --cli-binary-format raw-in-base64-out \
   --payload '{"test": "data"}' \
   response.json
 ```
@@ -210,16 +201,16 @@ Check the Lambda logs for any errors:
 aws logs tail /aws/lambda/my-function --follow
 ```
 </Step>
-<Step title="Verify logs in HyperDX" id="verify-logs-self-configured">
+<Step title="Verify logs" id="verify-logs">
 
-Once configured, log into HyperDX (ClickStack's UI) and verify that logs are flowing:
+Open **Search** in ClickHouse Observability, select your **Logs** source, and filter for `ServiceName:my-lambda-api` if you used the example service name. Otherwise, use your Lambda function name. Select **Last 15 minutes**.
 
 <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Lambda Log View"/>
 
 <Image img="/images/clickstack/lambda/lambda-log.webp" alt="Lambda Log Detail"/>
 
 Look for these key attributes in the logs:
-- `service.name`: Your Lambda function name
+- `service.name`: Your configured service name, or the Lambda function name by default
 - `faas.name`: AWS Lambda function name
 - `faas.invocation_id`: Unique invocation ID
 - `cloud.provider`: "aws"
@@ -227,111 +218,51 @@ Look for these key attributes in the logs:
 </Step>
 </Steps>
 
-## Disabling CloudWatch Logs (cost optimization) {#disable-cloudwatch-self-configured}
+## Disabling CloudWatch Logs (cost optimization) {#disable-cloudwatch}
 
-By default, AWS Lambda sends all logs to CloudWatch Logs, which can be expensive at scale. Once you've verified that logs are flowing to ClickStack, you can disable CloudWatch logging to reduce costs.
+By default, AWS Lambda sends all logs to CloudWatch Logs, which can be expensive at scale. Once you've verified that logs are flowing to ClickHouse Observability, you can disable CloudWatch logging to reduce costs.
 
 <Steps>
-<Step title="Remove CloudWatch permissions from the execution role" id="remove-permissions-self-configured">
+<Step title="Remove CloudWatch permissions from the execution role" id="remove-permissions">
 
 1. Open the AWS Console and navigate to **AWS Lambda**
 2. Navigate to your Lambda function
 3. Select **Configuration** → **Permissions**
 4. Click the execution role name to open the IAM console
-5. Edit the role and remove any `logs:*` actions:
+5. Remove the CloudWatch Logs write permissions used by this function. If the role is shared, use a dedicated role before making this change:
    - If using a custom policy, edit to remove `logs:CreateLogGroup`, `logs:CreateLogStream`, and `logs:PutLogEvents`
    - If using the AWS managed policy `AWSLambdaBasicExecutionRole`, remove it from the role
 6. Save the role
 </Step>
-<Step title="Verify CloudWatch logging is disabled" id="verify-disabled-self-configured">
+<Step title="Verify CloudWatch logging is disabled" id="verify-disabled">
 
 Invoke your function again and verify that:
-1. No new CloudWatch log streams are created
-2. Logs continue to appear in ClickStack/HyperDX
+1. No new events appear in the function's CloudWatch log group
+2. Logs continue to appear in ClickHouse Observability
 
 ```bash
-# This should show no new log streams after the policy change
-aws logs describe-log-streams \
-  --log-group-name /aws/lambda/my-function \
-  --order-by LastEventTime \
-  --descending \
-  --max-items 5
+aws logs tail /aws/lambda/my-function --since 5m --follow
 ```
 </Step>
 </Steps>
 
-## Adding OpenTelemetry auto-instrumentation {#auto-instrumentation-self-configured}
+## Adding OpenTelemetry auto-instrumentation {#auto-instrumentation}
 
-The Rotel Lambda Extension works seamlessly with OpenTelemetry auto-instrumentation layers to collect distributed traces and metrics in addition to logs.
+Rotel can receive telemetry from a language instrumentation layer installed alongside it. Follow the [Rotel auto-instrumentation instructions](https://github.com/streamfold/rotel-lambda-extension#auto-instrumentation) and the linked language-layer documentation to choose a compatible layer and set `AWS_LAMBDA_EXEC_WRAPPER`.
 
-<Steps>
-<Step title="Choose your language instrumentation layer" id="choose-instrumentation-self-configured">
+Preserve the Rotel layer and any existing layers when adding instrumentation. After invoking the function, select your **Traces** source in ClickHouse Observability and filter by the configured service name. Log/trace correlation requires the application instrumentation to include trace and span IDs in its logs.
 
-AWS provides OpenTelemetry auto-instrumentation layers for multiple languages:
+## Example applications {#examples}
 
-| Language | Layer ARN Pattern |
-|----------|-------------------|
-| Node.js  | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-{version}` |
-| Python   | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-python-{arch}-ver-{version}` |
-| Java     | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-java-agent-{arch}-ver-{version}` |
-
-Find the latest versions in the [AWS OpenTelemetry Lambda repository](https://github.com/aws-observability/aws-otel-lambda).
-</Step>
-<Step title="Add both layers to your function" id="add-both-layers-self-configured">
-
-Add **both** the Rotel extension layer and the instrumentation layer:
-
-```bash
-aws lambda update-function-configuration \
-  --function-name my-function \
-  --layers \
-    arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version} \
-    arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-1-30-2:1
-```
-</Step>
-<Step title="Configure the auto-instrumentation" id="configure-instrumentation-self-configured">
-
-Set the `AWS_LAMBDA_EXEC_WRAPPER` environment variable to enable auto-instrumentation:
-
-**For Node.js:**
-```bash
-AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
-```
-
-**For Python:**
-```bash
-AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
-```
-
-**For Java:**
-```bash
-AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
-```
-</Step>
-<Step title="Verify traces in HyperDX" id="verify-traces-self-configured">
-
-After invoking your function:
-
-1. Navigate to the **Traces** view in HyperDX
-2. You should see traces with spans from your Lambda function
-3. Traces will be correlated with logs via `trace_id` and `span_id` attributes
-</Step>
-</Steps>
-
-## Example applications {#examples-self-configured}
-
-Checkout the example Python app demonstrating the Rotel Lambda Extension:
+See the example Python app demonstrating the Rotel Lambda Extension:
 
 - **[Python + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**: Python application with manual OpenTelemetry instrumentation, sending traces and logs directly to ClickHouse
 
-## Join the Rotel community {#join-rotel-community-self-configured}
+## Join the Rotel community {#join-rotel-community}
 
 If you have questions about Rotel, please join the [Rotel Discord server](https://rotel.dev) and share your feedback or questions. Check out the [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension) to contribute any improvements.
 
-## Additional resources {#resources-self-configured}
+## Additional resources {#resources}
 
 - **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**: Source code and detailed documentation
 - **[Rotel Core](https://github.com/streamfold/rotel)**: The lightweight OTEL data plane powering the extension
-
-</Tab>
-</Tabs>
