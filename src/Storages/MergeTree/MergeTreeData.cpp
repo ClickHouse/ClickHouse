@@ -1738,17 +1738,21 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
     for (const auto & index : indices)
     {
+        /// The writer calculates a partial index from its columns, for the rows its condition selects only.
+        if (index->index.where_expression)
+        {
+            for (const auto & column : index->index.getRequiredColumns())
+                if (!use_index_expression || use_index_expression(column))
+                    combined_expr_list->children.push_back(make_intrusive<ASTIdentifier>(column));
+            continue;
+        }
+
         /// `column_names` are the analyzed result names, one per expression.
         const auto & index_exprs = index->index.expression_list_ast->children;
         chassert(index_exprs.size() == index->index.column_names.size());
         for (size_t i = 0; i < index_exprs.size(); ++i)
             if (!use_index_expression || use_index_expression(index->index.column_names[i]))
                 combined_expr_list->children.push_back(index_exprs[i]->clone());
-
-        /// The writer reads the condition of a partial index from the block, next to the index columns.
-        const auto & where_ast = index->index.where_ast;
-        if (where_ast && (!use_index_expression || use_index_expression(index->index.where_column_name)))
-            combined_expr_list->children.push_back(where_ast->clone());
     }
 
     if (!key && combined_expr_list->children.empty())

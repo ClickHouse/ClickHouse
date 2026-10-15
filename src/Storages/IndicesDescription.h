@@ -55,6 +55,8 @@ struct IndexDescription
     ASTPtr where_ast;
     ExpressionActionsPtr where_expression;
     String where_column_name;
+    /// The indexed expressions, analysed like the condition. The writer runs them only on the rows the condition selects.
+    ExpressionActionsPtr selected_rows_expression;
     /// `queryConditionCacheSettingsSalt` of the settings the condition's functions were built with: they decide
     /// what the condition evaluated to when the index was written, and the name and types of a function do not.
     UInt64 where_settings_salt = 0;

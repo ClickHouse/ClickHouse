@@ -27,6 +27,7 @@
 #include <IO/NullWriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <base/find_symbols.h>
 
 namespace ProfileEvents
@@ -327,10 +328,35 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         const auto index_helper = skip_indices[i];
         auto & index_streams = skip_indices_streams[i];
 
-        /// Rows of a partial index that do not satisfy its `WHERE` condition are not indexed.
+        /// Rows of a partial index that do not satisfy its `WHERE` condition are not indexed, and its expressions are
+        /// calculated only for the selected rows, so that a row outside of the index cannot make them fail.
         std::optional<FilterDescription> where_filter;
-        if (index_helper->index.where_expression)
-            where_filter.emplace(*skip_indexes_block.getByName(index_helper->index.where_column_name).column);
+        Block selected_rows;
+        size_t selected_pos = 0;
+        if (const auto & index = index_helper->index; index.where_expression)
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterSkipIndicesCalculationMicroseconds);
+
+            Block where_block;
+            for (const auto & name : index.where_expression->getRequiredColumns())
+                where_block.insert(skip_indexes_block.getByName(name));
+            size_t num_rows = skip_indexes_block.rows();
+            index.where_expression->execute(where_block, num_rows);
+            where_filter.emplace(*where_block.getByName(index.where_column_name).column);
+
+            size_t num_selected = countBytesInFilter(*where_filter->data);
+            if (num_selected > 0)
+            {
+                for (const auto & name : index.selected_rows_expression->getRequiredColumns())
+                {
+                    const auto & column = skip_indexes_block.getByName(name);
+                    selected_rows.insert({column.column->filter(*where_filter->data, num_selected), column.type, name});
+                }
+                index.selected_rows_expression->execute(selected_rows, num_selected);
+            }
+
+            execution_stats.skip_indices_build_us[i] += watch.elapsed();
+        }
 
         for (const auto & granule : granules_to_write)
         {
@@ -382,27 +408,13 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             else
             {
                 const auto & filter = *where_filter->data;
-                const size_t end = granule.start_row + granule.rows_to_write;
-                const size_t passed = countBytesInFilter(filter.data(), granule.start_row, end);
-                if (passed == granule.rows_to_write)
-                {
-                    skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write);
-                }
-                else if (passed > 0)
-                {
-                    IColumn::Filter granule_filter(filter.begin() + granule.start_row, filter.begin() + end);
-                    Block filtered_block;
-                    for (const auto & name : index_helper->index.column_names)
-                    {
-                        const auto & column = skip_indexes_block.getByName(name);
-                        auto filtered = column.column->cut(granule.start_row, granule.rows_to_write)->filter(granule_filter, passed);
-                        filtered_block.insert({filtered, column.type, name});
-                    }
-                    size_t filtered_pos = 0;
-                    skip_indices_aggregators[i]->update(filtered_block, &filtered_pos, passed);
-                }
+                const size_t passed = countBytesInFilter(filter.data(), granule.start_row, granule.start_row + granule.rows_to_write);
+                /// The selected rows of the granule follow the ones of the previous granule in `selected_rows`.
                 if (passed > 0)
+                {
+                    skip_indices_aggregators[i]->update(selected_rows, &selected_pos, passed);
                     partial_index_granule_has_rows[i] = true;
+                }
             }
 
             if (granule.is_complete)
@@ -737,10 +749,15 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
     std::unordered_set<String> skip_indexes_column_names_set;
     for (const auto & index : skip_indices)
     {
+        /// A partial index is calculated in `calculateAndSerializeSkipIndices` from the columns it reads.
+        if (index->index.where_expression)
+        {
+            for (const auto & name : index->index.getRequiredColumns())
+                skip_indexes_column_names_set.insert(name);
+            continue;
+        }
         std::copy(index->index.column_names.cbegin(), index->index.column_names.cend(),
                   std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
-        if (index->index.where_expression)
-            skip_indexes_column_names_set.insert(index->index.where_column_name);
     }
     return Names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 }

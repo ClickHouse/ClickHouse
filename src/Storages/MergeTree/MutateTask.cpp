@@ -4498,13 +4498,17 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             else
                 inserted = ctx->indices_to_recalc.insert(index_ptr).second;
 
-            if (inserted)
+            if (inserted && index.where_expression)
+            {
+                /// The writer calculates a partial index from its columns, for the rows its condition selects only.
+                for (const auto & column : index.getRequiredColumns())
+                    indices_recalc_expr_list->children.push_back(make_intrusive<ASTIdentifier>(column));
+            }
+            else if (inserted)
             {
                 ASTPtr expr_list = index.expression_list_ast->clone();
                 for (const auto & expr : expr_list->children)
                     indices_recalc_expr_list->children.push_back(expr->clone());
-                if (index.where_ast)
-                    indices_recalc_expr_list->children.push_back(index.where_ast->clone());
             }
         }
     }

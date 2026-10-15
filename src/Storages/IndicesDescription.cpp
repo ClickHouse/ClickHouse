@@ -82,6 +82,8 @@ IndexDescription::IndexDescription(const IndexDescription & other)
         expression = other.expression->clone();
     if (other.where_expression)
         where_expression = other.where_expression->clone();
+    if (other.selected_rows_expression)
+        selected_rows_expression = other.selected_rows_expression->clone();
 }
 
 
@@ -127,6 +129,11 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
         where_expression = other.where_expression->clone();
     else
         where_expression.reset();
+
+    if (other.selected_rows_expression)
+        selected_rows_expression = other.selected_rows_expression->clone();
+    else
+        selected_rows_expression.reset();
 
     where_column_name = other.where_column_name;
     where_settings_salt = other.where_settings_salt;
@@ -206,9 +213,8 @@ IndexDescription IndexDescription::getIndexFromAST(
         ReplaceAliasToExprVisitor::Data data{columns, {}};
         ReplaceAliasToExprVisitor{data}.visit(result.where_ast);
 
-        /// INSERT, merge and mutation analyse the condition again in the server (global) context. Analyse it
-        /// the same way here, so that the settings its functions capture and the constants folded into it are
-        /// the ones the writers use; the time zone folding depends on is recorded.
+        /// The part writer runs the condition analysed here, with the settings of the server (global) context.
+        /// Its constants are folded in the current time zone, which is recorded.
         const ContextPtr analysis_context = context->getGlobalContext();
         result.where_timezone = DateLUT::instance().getTimeZone();
 
@@ -222,9 +228,13 @@ IndexDescription IndexDescription::getIndexFromAST(
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
                 "WHERE condition of skip index '{}' must be of type UInt8 or Bool, got {}", result.name, where_column.type->getName());
         result.where_column_name = where_column.name;
-        /// The condition is evaluated by INSERT, merge and mutation from an expression they analyse again from
-        /// the AST in the server (global) context, not in the session that defines the index, so the global
-        /// settings are the ones its functions capture.
+
+        ASTPtr expression_ast = result.expression_list_ast->clone();
+        auto expression_syntax = TreeRewriter(analysis_context).analyze(
+            expression_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+        result.selected_rows_expression = ExpressionAnalyzer(expression_ast, expression_syntax, analysis_context).getActions(true);
+
+        /// The functions of the condition capture the global settings, not the ones of the session that defines the index.
         result.where_settings_salt = queryConditionCacheSettingsSalt(context->getGlobalContext()->getSettingsRef());
     }
 
@@ -330,9 +340,10 @@ Names IndexDescription::getRequiredColumns() const
     Names result = expression->getRequiredColumns();
     if (where_expression)
     {
-        for (const auto & column : where_expression->getRequiredColumns())
-            if (std::find(result.begin(), result.end(), column) == result.end())
-                result.push_back(column);
+        for (const auto & actions : {where_expression, selected_rows_expression})
+            for (const auto & column : actions->getRequiredColumns())
+                if (std::find(result.begin(), result.end(), column) == result.end())
+                    result.push_back(column);
     }
     return result;
 }
@@ -413,10 +424,15 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & index : *this)
     {
+        /// The writer calculates a partial index from its columns, for the rows its condition selects only.
+        if (index.where_expression)
+        {
+            for (const auto & column : index.getRequiredColumns())
+                combined_expr_list->children.push_back(make_intrusive<ASTIdentifier>(column));
+            continue;
+        }
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
-        if (index.where_ast)
-            combined_expr_list->children.push_back(index.where_ast->clone());
     }
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
