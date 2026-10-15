@@ -123,6 +123,13 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     Arena scratch_pool;
 
     typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
+    /// The keys of the rows before `row_begin` (the part of the block aggregated before freezing) are not needed.
+    /// If all keys are const, only row 0 is used.
+    if constexpr (requires { local_find_state.skipRowsBefore(row_begin); })
+    {
+        if (!all_keys_are_const)
+            local_find_state.skipRowsBefore(row_begin);
+    }
 
     /// The kernel runs only while the producer is frozen, and phase transitions happen between
     /// blocks, so the reference stays valid for the whole block.
@@ -359,6 +366,14 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     /// hash (identical to the twin's by construction - the pairing in `executeFrozen` binds a
     /// method to its own two-level form, which keeps the hash function), and the partitioning
     /// of the hash is static.
+
+    /// The keys of the rows before `row_begin` (the part of the block aggregated before freezing) are not needed.
+    /// If all keys are const, only row 0 is used.
+    if constexpr (requires { local_find_state.skipRowsBefore(row_begin); })
+    {
+        if (!all_keys_are_const)
+            local_find_state.skipRowsBefore(row_begin);
+    }
 
     /// The kernel runs only while the producer is frozen, and phase transitions happen between
     /// blocks, so the reference stays valid for the whole block.
