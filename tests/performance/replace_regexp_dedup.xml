@@ -68,4 +68,7 @@
 
     <!-- A long matching row every 64th for an unanchored pattern. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(if(number % 64 = 0, concat('https://example.com/', repeat('longpathcomponent/', 100)), concat('nonmatching:', toString(number))), 'https?://([^/]+)/.*$', '\\1'))</query>
+
+    <!-- The same for a pattern anchored with '^' and with captures, but without a literal prefix. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(if(number % 64 = 0, concat('https://example.com/', repeat('longpathcomponent/', 100), toString(number)), concat('nonmatching:', toString(number))), '^([a-z]+)://([^/]+)/.*$', ''))</query>
 </test>

@@ -10,11 +10,12 @@
 namespace DB
 {
 
-/// Chooses for `ReplaceRegexpImpl` whether to cache results per distinct haystack or run the regexp on every
-/// row. Whether the cache pays depends on the cost of the regexp relative to hashing the haystack, so the time
-/// per byte of each window of rows is measured, the cheaper mode is kept, and the other mode is probed again
-/// at exponentially growing intervals. The result does not depend on the choice.
-/// Also enables the capture-free existence check when almost no row of the last window matched.
+/// Chooses for `ReplaceRegexpImpl` whether to cache results per distinct haystack, and whether to run a
+/// capture-free existence check ahead of the regexp. Which is cheaper depends on the cost of the regexp
+/// relative to hashing or scanning the haystack, so the time per byte of each window of rows is measured, the
+/// cheaper option is kept, and the other one is probed again at exponentially growing intervals. The result
+/// does not depend on the choice.
+/// The existence check is only considered when almost no row of the last window matched.
 /// The state is carried from block to block through `Hint`, so short blocks still reach a decision.
 class ReplaceRegexpModeController
 {
@@ -31,24 +32,34 @@ public:
     /// The per-row cost in bytes, for normalizing the time of a window.
     static constexpr size_t row_cost_in_bytes = 64;
 
-    struct State
+    /// A choice between doing something (`true`) or not, kept by measuring both.
+    struct Choice
     {
-        bool use_cache = true;
-        bool cache_is_cheaper = true;
-        /// Measuring the mode that is not `cache_is_cheaper` (before the first decision: both).
+        /// Windows at the start of a probe of `true` that are not measured.
+        size_t warmup_windows = 0;
+        /// The option of the current window, the one found cheaper, and whether the current phase measures
+        /// the other one (before the first decision: both).
+        bool current = true;
+        bool preferred = true;
         bool probing = true;
-        size_t windows_left_in_phase = probeWindows(true);
+        size_t windows_left_in_phase = phaseWindows(true, warmup_windows);
         /// Zero until the first decision.
         size_t probe_interval = 0;
-        /// Time per byte of the last phase in each mode, negative while unknown.
-        double cost_cached = -1;
-        double cost_plain = -1;
+        /// Time per byte of the last phase of each option, negative while unknown.
+        double cost[2] = {-1, -1};
         UInt64 phase_ns = 0;
         size_t phase_units = 0;
+    };
+
+    struct State
+    {
+        /// A probe of the cache is not measured in its first window, which refills the cache.
+        Choice cache{.warmup_windows = 1};
+        Choice precheck;
+        bool precheck_eligible = false;
         /// The window in progress at the end of the previous block.
         UInt64 window_ns = 0;
         Window window;
-        bool precheck = false;
     };
 
     /// Shared by the threads executing the function; concurrent updates only lose measurements.
@@ -85,8 +96,15 @@ public:
         }
     }
 
-    bool useCache() const { return state.use_cache; }
-    bool usePrecheck() const { return precheck_allowed && state.precheck; }
+    bool useCache() const { return state.cache.current; }
+
+    /// While the cache is probed, the existence check is held at its preferred option, so that each
+    /// measured window differs from the compared ones in one choice only.
+    bool usePrecheck() const
+    {
+        return precheck_allowed && state.precheck_eligible
+            && (state.cache.probing ? state.precheck.preferred : state.precheck.current);
+    }
 
     void finishWindow(const Window & window)
     {
@@ -95,64 +113,77 @@ public:
         window_start_ns = now_ns;
         state.window_ns = 0;
 
-        const bool measured = !(state.probing && state.use_cache && state.windows_left_in_phase == probeWindows(true));
-        if (measured)
-        {
-            state.phase_ns += window_ns;
-            state.phase_units += window.units;
-        }
-        state.precheck = precheck_allowed && window.matched * 20 < window_rows_count;
+        if (precheck_allowed && state.precheck_eligible && !state.cache.probing)
+            addWindow(state.precheck, window_ns, window.units);
 
-        if (--state.windows_left_in_phase == 0)
-            finishPhase();
+        const bool cache_preferred = state.cache.preferred;
+        addWindow(state.cache, window_ns, window.units);
+        /// The cost of the existence check was measured with the other cache option.
+        if (state.cache.preferred != cache_preferred)
+            state.precheck = Choice{};
+
+        state.precheck_eligible = precheck_allowed && window.matched * 20 < window_rows_count;
     }
 
 private:
-    /// On a near tie the plain mode is kept, as it does not grow the cache.
-    static constexpr double cache_advantage_required = 0.9;
+    /// On a near tie `false` is kept: it does not grow the cache, or does not scan matching rows twice.
+    static constexpr double advantage_required = 0.9;
     static constexpr size_t initial_probe_interval = 4;
     static constexpr size_t max_probe_interval = 256;
     /// More than one, as a single window may cover a run of unusually cheap or expensive rows.
     static constexpr size_t measured_probe_windows = 2;
 
-    /// A probe of the cached mode is not measured in its first window, which refills the cache.
-    static constexpr size_t probeWindows(bool cache) { return cache ? measured_probe_windows + 1 : measured_probe_windows; }
-
-    void finishPhase()
+    static constexpr size_t phaseWindows(bool option, size_t warmup_windows)
     {
-        if (state.phase_units)
-            (state.use_cache ? state.cost_cached : state.cost_plain)
-                = static_cast<double>(state.phase_ns) / static_cast<double>(state.phase_units);
-        state.phase_ns = 0;
-        state.phase_units = 0;
+        return option ? measured_probe_windows + warmup_windows : measured_probe_windows;
+    }
 
-        if (state.probing && (state.cost_cached < 0 || state.cost_plain < 0))
+    static void addWindow(Choice & choice, UInt64 window_ns, size_t window_units)
+    {
+        const bool warmup = choice.probing && choice.current && choice.windows_left_in_phase > measured_probe_windows;
+        if (!warmup)
         {
-            state.use_cache = !state.use_cache;
-            state.windows_left_in_phase = probeWindows(state.use_cache);
+            choice.phase_ns += window_ns;
+            choice.phase_units += window_units;
+        }
+        if (--choice.windows_left_in_phase == 0)
+            finishPhase(choice);
+    }
+
+    static void finishPhase(Choice & choice)
+    {
+        if (choice.phase_units)
+            choice.cost[choice.current] = static_cast<double>(choice.phase_ns) / static_cast<double>(choice.phase_units);
+        choice.phase_ns = 0;
+        choice.phase_units = 0;
+
+        if (choice.probing && (choice.cost[false] < 0 || choice.cost[true] < 0))
+        {
+            choice.current = !choice.current;
+            choice.windows_left_in_phase = phaseWindows(choice.current, choice.warmup_windows);
             return;
         }
 
-        if (state.probing)
+        if (choice.probing)
         {
-            const bool cheaper = state.cost_cached < state.cost_plain * cache_advantage_required;
-            if (state.probe_interval == 0 || cheaper != state.cache_is_cheaper)
+            const bool cheaper = choice.cost[true] < choice.cost[false] * advantage_required;
+            if (choice.probe_interval == 0 || cheaper != choice.preferred)
             {
-                state.cache_is_cheaper = cheaper;
-                state.probe_interval = initial_probe_interval;
+                choice.preferred = cheaper;
+                choice.probe_interval = initial_probe_interval;
             }
             else
-                state.probe_interval = std::min(state.probe_interval * 2, max_probe_interval);
+                choice.probe_interval = std::min(choice.probe_interval * 2, max_probe_interval);
 
-            state.probing = false;
-            state.use_cache = state.cache_is_cheaper;
-            state.windows_left_in_phase = state.probe_interval;
+            choice.probing = false;
+            choice.current = choice.preferred;
+            choice.windows_left_in_phase = choice.probe_interval;
         }
         else
         {
-            state.probing = true;
-            state.use_cache = !state.cache_is_cheaper;
-            state.windows_left_in_phase = probeWindows(state.use_cache);
+            choice.probing = true;
+            choice.current = !choice.preferred;
+            choice.windows_left_in_phase = phaseWindows(choice.current, choice.warmup_windows);
         }
     }
 
