@@ -104,8 +104,10 @@ void TextSearchQuery::initializeHash()
         hash_state.update(patterns.size());
         for (const auto & pattern : patterns)
         {
+            /// Sizes keep `['a.c', 'd.f']` and `['a.cd', '.f']` apart.
             if (const auto & re2 = pattern.getRE2())
             {
+                hash_state.update(re2->pattern().size());
                 hash_state.update(re2->pattern());
             }
             else
@@ -114,6 +116,7 @@ void TextSearchQuery::initializeHash()
                 bool is_trivial = false;
                 bool required_substring_is_prefix = false;
                 pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+                hash_state.update(required_substring.size());
                 hash_state.update(required_substring);
                 hash_state.update(is_trivial);
                 hash_state.update(required_substring_is_prefix);
