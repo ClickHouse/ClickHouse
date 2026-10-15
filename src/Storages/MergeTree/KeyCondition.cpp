@@ -2219,11 +2219,12 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
 /// Converts a text constant into a `DateTime` or `DateTime64` transform input with no explicit time zone.
 /// Such a type stores its construction-time zone, while comparison parses text through its serialization
 /// using the session's zone. Tuple elements are converted by position, as the comparison pairs them.
-static bool tryNormalizeTextFieldForZonelessDateTimeInput(
-    const DataTypePtr & transform_input_type, Field & value, DataTypePtr & value_type)
+/// Other values keep their original columns: a `Dynamic` or `Variant` rebuilt from a `Field` loses its type.
+static bool tryNormalizeTextConstantForZonelessDateTimeInput(
+    const DataTypePtr & transform_input_type, ColumnWithTypeAndName & constant)
 {
     const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
-    const auto constant_type = removeLowCardinalityAndNullable(value_type);
+    const auto constant_type = removeLowCardinalityAndNullable(constant.type);
     if (isStringOrFixedString(constant_type))
     {
         bool input_time_zone_is_implicit = false;
@@ -2235,33 +2236,36 @@ static bool tryNormalizeTextFieldForZonelessDateTimeInput(
         if (!input_time_zone_is_implicit)
             return true;
 
-        Field converted = tryConvertFieldToType(value, *input_type);
+        Field converted = tryConvertFieldToType((*constant.column)[0], *input_type);
         if (converted.isNull())
             return false;
 
-        value = std::move(converted);
-        value_type = input_type;
+        auto converted_column = input_type->createColumn();
+        converted_column->insert(converted);
+        constant.column = std::move(converted_column);
+        constant.type = input_type;
         return true;
     }
 
     const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
     const auto * input_tuple = typeid_cast<const DataTypeTuple *>(input_type.get());
-    if (!constant_tuple || !input_tuple || value.getType() != Field::Types::Tuple)
+    const auto * column_tuple = typeid_cast<const ColumnTuple *>(removeNullable(constant.column).get());
+    if (!constant_tuple || !input_tuple || !column_tuple || constant.column->isNullAt(0)
+        || constant_tuple->getElements().size() != input_tuple->getElements().size())
         return true;
 
-    auto & elements = value.safeGet<Tuple>();
+    Columns element_columns = column_tuple->getColumnsCopy();
     DataTypes element_types = constant_tuple->getElements();
-    if (elements.size() != element_types.size() || element_types.size() != input_tuple->getElements().size())
-        return true;
 
     bool changed = false;
-    for (size_t i = 0; i < elements.size(); ++i)
+    for (size_t i = 0; i < element_types.size(); ++i)
     {
-        DataTypePtr element_type = element_types[i];
-        if (!tryNormalizeTextFieldForZonelessDateTimeInput(input_tuple->getElements()[i], elements[i], element_type))
+        ColumnWithTypeAndName element{element_columns[i], element_types[i], {}};
+        if (!tryNormalizeTextConstantForZonelessDateTimeInput(input_tuple->getElements()[i], element))
             return false;
-        changed |= element_type != element_types[i];
-        element_types[i] = std::move(element_type);
+        changed |= element.type != element_types[i];
+        element_columns[i] = std::move(element.column);
+        element_types[i] = std::move(element.type);
     }
 
     if (!changed)
@@ -2272,26 +2276,10 @@ static bool tryNormalizeTextFieldForZonelessDateTimeInput(
         && constant_tuple->getElementNames() != input_tuple->getElementNames())
         return false;
 
-    value_type = constant_tuple->hasExplicitNames()
+    constant.column = ColumnTuple::create(element_columns);
+    constant.type = constant_tuple->hasExplicitNames()
         ? std::make_shared<DataTypeTuple>(element_types, constant_tuple->getElementNames())
         : std::make_shared<DataTypeTuple>(element_types);
-    return true;
-}
-
-/// Constants without such text retain their original columns and type information.
-static bool tryNormalizeTextConstantForZonelessDateTimeInput(
-    const DataTypePtr & transform_input_type, ColumnWithTypeAndName & constant)
-{
-    Field value = (*constant.column)[0];
-    DataTypePtr value_type = constant.type;
-    if (!tryNormalizeTextFieldForZonelessDateTimeInput(transform_input_type, value, value_type))
-        return false;
-
-    if (value_type != constant.type)
-    {
-        constant.column = value_type->createColumnConst(1, value);
-        constant.type = value_type;
-    }
     return true;
 }
 
