@@ -402,14 +402,8 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                 password = result;
         }
 
-        if (config.has("one-time-password"))
-        {
-            has_second_factor = true;
-            password_without_second_factor = password;
-            password += "+";
-            password += config.getString("one-time-password");
-        }
-        else if (config.getBool("ask-password-2fa", false))
+        /// Checked first: after a login, `one-time-password` stays in the read-only layer of the arguments.
+        if (config.getBool("ask-password-2fa", false))
         {
             has_second_factor = true;
             password_without_second_factor = password;
@@ -417,6 +411,13 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
             char buf[1000] = {};
             if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), RPP_ECHO_ON))
                 password += "+" + std::string(result);
+        }
+        else if (config.has("one-time-password"))
+        {
+            has_second_factor = true;
+            password_without_second_factor = password;
+            password += "+";
+            password += config.getString("one-time-password");
         }
     }
 

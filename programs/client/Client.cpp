@@ -1632,10 +1632,7 @@ void Client::connect()
     /// The login used up the one-time password that was given in the command line, and the server accepts a
     /// code once, so a later session (after a detached query, or a reconnect) has to ask for a fresh one.
     if (connection_parameters.has_second_factor && config().has("one-time-password"))
-    {
-        config().remove("one-time-password");
         config().setBool("ask-password-2fa", true);
-    }
 
     server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
     if (server_display_name.empty())
