@@ -59,6 +59,24 @@ const ActionsDAG::Node * findNodeContaining(const MergedPlanDAG & merged, const 
     return nullptr;
 }
 
+/// The inputs the frontier has read lazily, indexed by source.
+std::vector<NodeSet> collectLazyReads(const MergedPlanDAG & merged, const LazyFrontier & frontier)
+{
+    std::vector<NodeSet> reads(merged.sources.size());
+
+    for (const auto & [node, placed] : frontier.placement)
+    {
+        if (node->type != ActionsDAG::ActionType::INPUT || !isComputedAbove(placed))
+            continue;
+
+        const auto & node_sources = merged.getSources(node);
+        EXPECT_EQ(node_sources.count(), 1u);
+        reads[*node_sources.begin()].insert(node);
+    }
+
+    return reads;
+}
+
 size_t countCarried(const LazyFrontier & frontier)
 {
     return std::ranges::count_if(

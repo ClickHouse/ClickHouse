@@ -97,11 +97,6 @@ struct MergedPlanDAG
     /// has to be carried out in the step that computes it.
     std::unordered_map<const ActionsDAG::Node *, Origin> origins;
 
-    /// The other direction, per step: every node of the step's own DAG, its inputs included, mapped to
-    /// the value of this DAG it stands for. The keys point into the steps of the plan as they are, so
-    /// this stays valid only while those steps are not changed.
-    std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeMapping> step_mappings;
-
     /// Per plan node of the subtree, sources included: the value of each column of its output header, in
     /// order. What a step passes through without reading is only here.
     std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;

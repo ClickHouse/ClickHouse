@@ -237,8 +237,6 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
             if (original->type != ActionsDAG::ActionType::INPUT)
                 built.dag.origins.emplace(merged_node, MergedPlanDAG::Origin{&node, original});
 
-        built.dag.step_mappings.emplace(&node, clone_mapping);
-
         /// Nothing below this step gates what it computes: a join further down gated the values this
         /// reads, and their answers already stand where that join left them.
         for (auto it = firstNodeAdded(dag, last_before); it != dag.getNodes().end(); ++it)
@@ -336,7 +334,6 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built>
     built.dag.padded_sides.splice(built.dag.padded_sides.end(), right.dag.padded_sides);
     built.dag.nearest_padded_side.merge(right.dag.nearest_padded_side);
     built.dag.origins.merge(right.dag.origins);
-    built.dag.step_mappings.merge(right.dag.step_mappings);
     built.dag.step_outputs.merge(right.dag.step_outputs);
     built.pre_join_nodes.append_range(right.pre_join_nodes);
 

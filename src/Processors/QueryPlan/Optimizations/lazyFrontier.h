@@ -66,8 +66,4 @@ LazyFrontier chooseLazyFrontier(
     const std::vector<bool> & lazy_sources,
     const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides = {});
 
-/// The inputs each source's lazy read has to produce, indexed by source. Derived from the frontier, so
-/// that the one answer lives in one place.
-std::vector<NodeSet> collectLazyReads(const MergedPlanDAG & merged, const LazyFrontier & frontier);
-
 }

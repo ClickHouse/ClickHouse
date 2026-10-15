@@ -366,21 +366,4 @@ LazyFrontier chooseLazyFrontier(
     return chooser.takeFrontier();
 }
 
-std::vector<NodeSet> collectLazyReads(const MergedPlanDAG & merged, const LazyFrontier & frontier)
-{
-    std::vector<NodeSet> reads(merged.sources.size());
-
-    for (const auto & [node, placed] : frontier.placement)
-    {
-        if (node->type != ActionsDAG::ActionType::INPUT || !isComputedAbove(placed))
-            continue;
-
-        const auto & node_sources = merged.getSources(node);
-        chassert(node_sources.count() == 1);
-        reads[*node_sources.begin()].insert(node);
-    }
-
-    return reads;
-}
-
 }
