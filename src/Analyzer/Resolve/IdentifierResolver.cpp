@@ -575,7 +575,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
     if (auto inside_aggregate_it = scope.expression_argument_name_to_node_inside_aggregate_function.find(it->first);
         inside_aggregate_it != scope.expression_argument_name_to_node_inside_aggregate_function.end()
         && isLookupInsideAggregateFunctionOfLambdaBody(scope, identifier_resolve_context))
-        argument_node = inside_aggregate_it->second;
+        argument_node = inside_aggregate_it->second();
 
     auto node_type = argument_node->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))

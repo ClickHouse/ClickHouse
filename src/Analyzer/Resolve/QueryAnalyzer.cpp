@@ -4487,7 +4487,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     bool allow_lambda_expression,
     bool allow_table_expression,
     bool allow_niladic_functions,
-    bool is_top_level_projection
+    bool is_top_level_projection,
+    std::vector<size_t> * expanded_node_counts
 )
 {
     auto & node_list_typed = node_list->as<ListNode &>();
@@ -4519,6 +4520,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
                 "Expression nodes list expected {} projection names. Actual: {}",
                 expected_projection_names_size,
                 expression_node_projection_names.size());
+
+        if (expanded_node_counts)
+            expanded_node_counts->push_back(expected_projection_names_size);
 
         result_projection_names.insert(result_projection_names.end(), expression_node_projection_names.begin(), expression_node_projection_names.end());
         expression_node_projection_names.clear();

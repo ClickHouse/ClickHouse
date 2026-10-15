@@ -47,6 +47,23 @@ no aggregate over the argument
 3	Nullable(UInt64)
 5	Nullable(UInt64)
 \N	Nullable(UInt64)
+argument form inside an aggregate that is not used
+1
+1
+1
+1
+1
+1
+1
+1
+1
+2
+3
+4
+1
+2
+3
+4
 nested lambda
 0
 1
@@ -82,6 +99,20 @@ apply
 1
 2
 3
+(0,10,0)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(0,NULL,0)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(1,11,1)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(1,NULL,1)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(2,12,2)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(2,NULL,2)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(3,NULL,3)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(0,10,0)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(0,NULL,0)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(1,11,1)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(1,NULL,1)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(2,12,2)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(2,NULL,2)	Tuple(UInt64, Nullable(UInt64), UInt64)
+(3,NULL,3)	Tuple(UInt64, Nullable(UInt64), UInt64)
 1
 2
 3

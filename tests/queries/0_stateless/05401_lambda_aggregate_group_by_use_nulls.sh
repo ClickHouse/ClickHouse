@@ -10,8 +10,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "
 DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_sum;
 DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_grouping;
+DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_identity;
 CREATE FUNCTION ${CLICKHOUSE_DATABASE}_sum AS x -> sum(x);
 CREATE FUNCTION ${CLICKHOUSE_DATABASE}_grouping AS x -> grouping(x);
+CREATE FUNCTION ${CLICKHOUSE_DATABASE}_identity AS x -> x;
 
 SELECT 'issue';
 WITH (x -> sum(x)) AS f
@@ -41,6 +43,12 @@ SELECT 'no aggregate over the argument';
 WITH (x -> x + 1) AS f SELECT f(number) AS t, toTypeName(t) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 WITH (x -> sum(number) + x) AS f SELECT f(number + 1) AS t, toTypeName(t) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 
+SELECT 'argument form inside an aggregate that is not used';
+WITH (x -> x) AS f SELECT f(toUInt64(if(isNullable(number), '1', 'invalid'))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
+SELECT ${CLICKHOUSE_DATABASE}_identity(toUInt64(if(isNullable(number), '1', 'invalid'))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
+WITH (x -> sum(number) + x) AS f SELECT f(toUInt64(if(isNullable(number), '1', 'invalid'))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
+WITH ((x, y) -> sum(x) + y) AS f SELECT f(number, toUInt64(if(isNullable(number), '1', 'invalid'))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
+
 SELECT 'nested lambda';
 WITH (y -> sum(y)) AS g, (x -> g(x)) AS f SELECT f(number) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
 
@@ -56,6 +64,8 @@ WITH (x -> sum(x)) AS f SELECT * APPLY f FROM numbers(3) GROUP BY number WITH RO
 WITH (x -> sum(x)) AS f SELECT * APPLY x -> f(x) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
 SELECT * APPLY ${CLICKHOUSE_DATABASE}_sum FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
 WITH (x -> sum(x)) AS f SELECT f(*) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
+WITH ((x, y, z) -> (sum(x), y, sum(z))) AS f SELECT f(*, a) AS t, toTypeName(t) FROM (SELECT number AS a, number + 10 AS b FROM numbers(3)) GROUP BY a, b WITH ROLLUP ORDER BY ALL;
+SELECT (sum(a), b, sum(a)) AS t, toTypeName(t) FROM (SELECT number AS a, number + 10 AS b FROM numbers(3)) GROUP BY a, b WITH ROLLUP ORDER BY ALL;
 WITH (x -> x + 1) AS f SELECT * APPLY f FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
 SELECT * APPLY x -> x + 1 FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
 WITH (x -> x + 1) AS f SELECT * APPLY sum, * APPLY f FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
@@ -85,4 +95,5 @@ SELECT sum(number), (SELECT count() FROM (SELECT number FROM numbers(2) GROUP BY
 
 DROP FUNCTION ${CLICKHOUSE_DATABASE}_sum;
 DROP FUNCTION ${CLICKHOUSE_DATABASE}_grouping;
+DROP FUNCTION ${CLICKHOUSE_DATABASE}_identity;
 "
