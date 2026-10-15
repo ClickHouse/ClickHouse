@@ -189,8 +189,11 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     offset += bytes_read;
 
-    /// The response stream owns the HTTP session; the working buffer is independent.
-    if (static_cast<size_t>(offset) == total_size)
+    /// The stream owns the HTTP session; release it at the end of the data, not of a response that ended before the bound.
+    const bool end_of_data = read_until_position
+        ? static_cast<size_t>(offset) == *read_until_position
+        : static_cast<size_t>(offset) == total_size;
+    if (end_of_data)
         data_stream.reset();
 
     if (bytes_read == 0)
