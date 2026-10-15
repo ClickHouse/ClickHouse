@@ -507,8 +507,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     auto geo_it = geo_columns.find(node.getParquetName());
     auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
 
-    /// An Iceberg `time` column read as `Int64` keeps the stored microseconds. Iceberg stores only `time`
-    /// as Parquet TIME, so a column of a file without field ids needs no lookup.
+    /// Iceberg stores only `time` as Parquet TIME, so a column of a file without field ids needs no lookup.
     bool time_as_stored_integer = false;
     if (column_mapper && primitive_type_hint && WhichDataType(primitive_type_hint).isInt64())
         time_as_stored_integer = node.element->__isset.field_id

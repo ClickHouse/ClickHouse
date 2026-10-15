@@ -385,7 +385,6 @@ static void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            /// Read by field id, so that the data files are decoded the same way as by SELECT.
             std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr),
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
