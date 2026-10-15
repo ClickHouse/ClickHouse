@@ -527,7 +527,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     if (WhichDataType(argument_types[1].get()).idx != TypeIndex::String)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of second argument of aggregate function {}, must be String",
-                        argument_types[1].get()->getName(), name);
+                        argument_types[1]->getName(), name);
 
     DataTypePtr data_type = makeNullable(argument_types[1]);
 
@@ -547,7 +547,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of aggregate function {}, must "
-                    "be Unsigned Number, Date, DateTime", argument_types.front().get()->getName(), name);
+                    "be Unsigned Number, Date, DateTime", argument_types.front()->getName(), name);
 }
 
 }

@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -46,8 +47,7 @@ public:
                     getName(),
                     getNumericVariantSupertypeHint(type.getPtr()));
         };
-        check_not_dynamic_or_variant(*this->result_type);
-        this->result_type->forEachChild(check_not_dynamic_or_variant);
+        forEachInTypeTree(*this->result_type, check_not_dynamic_or_variant);
     }
 
     String getName() const override
@@ -271,6 +271,8 @@ SELECT department, min(revenue) FROM sales GROUP BY department ORDER BY departme
     FunctionDocumentation min_documentation = {min_description, min_syntax, min_arguments, {}, min_returned_value, min_examples, min_introduced_in, min_category};
 
     factory.registerFunction("min", {createAggregateFunctionMinMax<true>, min_documentation}, AggregateFunctionFactory::Case::Insensitive);
+    /// For boolean arguments, the minimum is the logical AND.
+    factory.registerAlias("bool_and", "min", AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description max_description = R"(
 Aggregate function that calculates the maximum across a group of values.
@@ -331,6 +333,8 @@ SELECT greatest(a, b) FROM values('a Int32, b Int32', (1, 2), (5, 3));
     FunctionDocumentation max_documentation = {max_description, max_syntax, max_arguments, {}, max_returned_value, max_examples, max_introduced_in, max_category};
 
     factory.registerFunction("max", {createAggregateFunctionMinMax<false>, max_documentation}, AggregateFunctionFactory::Case::Insensitive);
+    /// For boolean arguments, the maximum is the logical OR.
+    factory.registerAlias("bool_or", "max", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

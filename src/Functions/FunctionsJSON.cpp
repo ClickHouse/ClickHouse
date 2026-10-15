@@ -51,6 +51,7 @@ namespace Setting
 {
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool json_extract_named_tuples_as_objects;
 }
 
 namespace ErrorCodes
@@ -645,17 +646,22 @@ public:
         DataTypes argument_types_,
         DataTypePtr return_type_,
         DataTypePtr json_return_type_,
-        const FormatSettings & format_settings_)
+        const FormatSettings & format_settings_,
+        UInt64 settings_hash_)
         : null_presence(null_presence_)
         , allow_simdjson(allow_simdjson_)
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_))
         , json_return_type(std::move(json_return_type_))
         , format_settings(format_settings_)
+        , settings_hash(settings_hash_)
     {
     }
 
     String getName() const override { return Name::name; }
+
+    /// The captured settings decide how a JSON value is parsed into the result, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(settings_hash); }
 
     const DataTypes & getArgumentTypes() const override
     {
@@ -681,6 +687,7 @@ private:
     DataTypePtr return_type;
     DataTypePtr json_return_type;
     FormatSettings format_settings;
+    UInt64 settings_hash;
 };
 
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
@@ -705,6 +712,19 @@ public:
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
         format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+
+        /// Not a format setting: it governs these functions, so it is applied here rather than in
+        /// `getFormatSettings`, which would also reach the `JSON` data type.
+        format_settings.json.extract_named_tuples_as_objects = context->getSettingsRef()[Setting::json_extract_named_tuples_as_objects];
+
+        /// Everything captured above, for `FunctionBaseFunctionJSON::updateHash`: `format_settings` through the
+        /// hash of the session settings it was derived from, plus the members overridden above.
+        SipHash hash;
+        hash.update(allow_simdjson);
+        hash.update(format_settings.date_time_input_format);
+        hash.update(format_settings.json.extract_named_tuples_as_objects);
+        hash.update(getFormatSettingsHash(context->getSettingsRef()));
+        settings_hash = hash.get64();
     }
 
     bool isVariadic() const override { return true; }
@@ -738,12 +758,13 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
-            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings);
+            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings, settings_hash);
     }
 
 private:
     const bool allow_simdjson;
     FormatSettings format_settings;
+    UInt64 settings_hash = 0;
 };
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };

@@ -1,0 +1,4 @@
+1
+INSERT into a missing SQLite file fails and reports the error code:
+PATH_ACCESS_DENIED
+The missing database file was not created
