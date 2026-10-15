@@ -19,6 +19,15 @@ echo "--- the arrivals that find all slots busy wait in the queue"
 $CLICKHOUSE_BENCHMARK --arrival-rate 1000 --max-in-flight 1 --seed 42 -i 20 -d 0 -q 'SELECT sleep(0.05)' 2>&1 \
     | grep -oE '^Queries executed: [0-9]+|^Arrivals: [0-9]+|queued: [0-9]+|max [0-9]+ of [0-9]+'
 
+echo "--- the achieved rate does not change while the queries in flight finish"
+# The arrivals stop at 0.3 seconds, the cumulative reports continue until the query in flight finishes at about 1 second.
+$CLICKHOUSE_BENCHMARK --arrival-rate 1000 --max-in-flight 1 --seed 42 -t 0.3 -d 0.1 --cumulative -q 'SELECT sleep(1)' 2>&1 \
+    | grep -oE 'achieved rate: [0-9.]+' | tail -2 | uniq | wc -l
+
+echo "--- an early fatal error stops the run"
+$CLICKHOUSE_BENCHMARK_BINARY --host 127.0.0.1 --port 1 --arrival-rate 1000000 --max-in-flight 256 --seed 42 -i 1 -d 0 -q 'SELECT 1' 2>&1 \
+    | grep -m1 -oF 'Connection refused'
+
 echo "--- per-query statistics"
 printf 'SELECT 1\nSELECT 2\n' | $CLICKHOUSE_BENCHMARK --arrival-rate 200 --seed 42 -i 10 -d 0 --per-query 2>&1 \
     | grep -A 3 '^Per-query statistics' | grep -v '^Per-query' | cut -f 1,2,3,9

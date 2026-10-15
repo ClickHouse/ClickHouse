@@ -1,6 +1,5 @@
 #include <unistd.h>
 #include <cmath>
-#include <condition_variable>
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
@@ -454,10 +453,6 @@ private:
     std::atomic<size_t> not_sent{0};
     /// The end of the run by --timelimit, 0 if there is no time limit.
     std::atomic<UInt64> deadline_ns{0};
-    /// Worker threads that did not exit yet.
-    std::mutex workers_mutex;
-    std::condition_variable workers_cv;
-    size_t running_workers TSA_GUARDED_BY(workers_mutex) = 0;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;
@@ -814,10 +809,6 @@ private:
         startNextInterval(true);
         deadline_ns = max_time > 0 ? start_ns + static_cast<UInt64>(max_time * 1e9) : 0;
 
-        {
-            std::lock_guard lock(workers_mutex);
-            running_workers = concurrency;
-        }
         try
         {
             for (size_t i = 0; i < concurrency; ++i)
@@ -833,15 +824,13 @@ private:
         bool interrupted = false;
         bool stopped = false;
         double arrival_time = 0;
-        UInt64 last_arrival_ns = start_ns;
         for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
         {
             arrival_time += interarrival_distribution(generator);
             if (max_time > 0 && arrival_time >= max_time)
             {
                 /// Wait until the time limit to report the right arrival rate.
-                last_arrival_ns = start_ns + static_cast<UInt64>(max_time * 1e9);
-                if (waitUntil(last_arrival_ns, interrupt_listener, interrupted))
+                if (waitUntil(deadline_ns, interrupt_listener, interrupted))
                     std::cout << "Stopping launch of queries."
                               << " Requested time limit " << max_time << " seconds is exhausted.\n";
                 stopped = true;
@@ -855,7 +844,6 @@ private:
 
             if (!waitUntil(arrival_ns, interrupt_listener, interrupted))
             {
-                last_arrival_ns = clock_gettime_ns();
                 stopped = true;
                 break;
             }
@@ -865,7 +853,6 @@ private:
             {
                 std::cout << "Stopping launch of queries."
                           << " Requested time limit " << max_time << " seconds is exhausted.\n";
-                last_arrival_ns = deadline_ns;
                 stopped = true;
                 break;
             }
@@ -876,7 +863,16 @@ private:
             }
             if (!queue.push(task))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push to the queue of arrivals");
-            last_arrival_ns = arrival_ns;
+        }
+
+        /// The achieved arrival rate is computed over the actual duration of the arrival process,
+        /// also in the reports made while the queries in flight finish.
+        {
+            std::lock_guard lock(interval_mutex);
+            const UInt64 arrivals_end_ns = clock_gettime_ns();
+            total_arrival_stats.arrival_seconds = static_cast<double>(arrivals_end_ns - start_ns) / 1e9;
+            if (interval)
+                interval->arrival_stats.arrival_seconds = static_cast<double>(arrivals_end_ns - interval->start_ns) / 1e9;
         }
 
         /// The queries in flight finish. The arrivals in the queue are executed only if all
@@ -890,14 +886,8 @@ private:
             interrupt_listener.unblock();
 
         /// Wait for the workers, while handling SIGINT if it is still blocked (in a sweep) and reporting intervals.
-        while (true)
+        while (!pool.waitUntil(std::chrono::steady_clock::now() + std::chrono::milliseconds(100)))
         {
-            {
-                std::unique_lock lock(workers_mutex);
-                if (workers_cv.wait_for(lock, std::chrono::milliseconds(100), [this]() TSA_REQUIRES(workers_mutex) { return running_workers == 0; }))
-                    break;
-            }
-
             if (interrupt_listener.check())
             {
                 std::cout << "Stopping the run. SIGINT received.\n";
@@ -918,7 +908,6 @@ private:
             std::lock_guard lock(interval_mutex);
             updateInFlightIntegral(total_watch.getEnd());
             total_arrival_stats.not_sent = queue.size() + not_sent;
-            total_arrival_stats.arrival_seconds = static_cast<double>(last_arrival_ns - start_ns) / 1e9;
             arrival_stats_snapshot = total_arrival_stats;
         }
         report(total_stats, total_watch.elapsedSeconds(), 0, &arrival_stats_snapshot);
@@ -962,12 +951,6 @@ private:
 
     void openLoopThread()
     {
-        SCOPE_EXIT({
-            std::lock_guard lock(workers_mutex);
-            --running_workers;
-            workers_cv.notify_all();
-        });
-
         blockSigint();
 
         Task task;

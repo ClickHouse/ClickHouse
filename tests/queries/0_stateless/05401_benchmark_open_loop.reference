@@ -12,6 +12,10 @@ Queries executed: 20
 Arrivals: 20
 queued: 19
 max 1 of 1
+--- the achieved rate does not change while the queries in flight finish
+1
+--- an early fatal error stops the run
+Connection refused
 --- per-query statistics
 #	queries	errors	query
 0	5	0	SELECT 1
