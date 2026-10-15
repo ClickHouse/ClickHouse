@@ -968,13 +968,7 @@ TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(
     MergeTreeReaderStream & stream, const TokenPostingsInfo & token_info, UInt64 expected_num_docs)
 {
     /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
-    const size_t file_size = stream.getFileSize();
-    if ((token_info.position_bytes == 0) || (token_info.position_offset > file_size)
-        || (token_info.position_bytes > file_size - token_info.position_offset))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
-            token_info.position_bytes, token_info.position_offset, file_size);
-
+    validateTokenPositions(token_info, stream.getFileSize());
     stream.seekToMark({token_info.position_offset, 0});
     return TextIndexBlockedPositionsCodec::readDirectory(
         *stream.getDataBuffer(), token_info.position_offset, expected_num_docs, token_info.position_bytes);
@@ -1203,9 +1197,23 @@ std::vector<PostingListCursorPtr> MergeTreeReaderTextIndex::makePhraseCursors(co
         const auto & token_info = *phrase.unique_infos[u];
         if (token_info.header & PostingsSerialization::Flags::RawPostings)
         {
-            const PostingList postings = readAllPostingsForToken(token, token_info);
-            auto docs = std::make_shared<PaddedPODArray<UInt32>>(postings.cardinality());
-            postings.toUint32Array(docs->data());
+            auto docs = std::make_shared<PaddedPODArray<UInt32>>();
+            if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+            {
+                docs->assign(token_info.embedded_postings.begin(), token_info.embedded_postings.end());
+            }
+            else
+            {
+                std::unique_ptr<MergeTreeReaderStream> local_stream;
+                MergeTreeReaderStream * stream = nullptr;
+                if (auto it = postings_streams.find(token); it != postings_streams.end())
+                    stream = it->second.get();
+                else
+                    stream = (local_stream = makePostingsStream(token_info)).get();
+
+                stream->seekToMark({token_info.offsets[0], 0});
+                postings_serialization->deserializeToArray(*stream->getDataBuffer(), token_info, 0, *docs);
+            }
             cursors.push_back(std::make_shared<PostingListCursor>(std::move(docs)));
         }
         else
