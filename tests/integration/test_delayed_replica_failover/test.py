@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -199,3 +200,38 @@ SELECT sum(x) FROM distributed SETTINGS
             ).strip()
             == "7"
         )
+
+
+def test_global_in_pushed_down_to_stale_local_replica(started_cluster):
+    # A GLOBAL IN pushed down into the query of a shard with a stale local replica must use the initiator's set.
+    node_1_1.query("SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale")
+    try:
+        node_1_2.query(
+            "INSERT INTO replicated VALUES ('2017-05-08', 1), ('2017-05-08', 2), ('2017-05-08', 3)"
+        )
+        node_1_1.query("SYSTEM SYNC REPLICA replicated")
+        for node, values in ((node_1_1, "(1), (4)"), (node_1_2, "(1), (2)")):
+            node.query("CREATE TABLE ids (y UInt32) ENGINE = Memory")
+            node.query(f"INSERT INTO ids VALUES {values}")
+
+        node_1_1.query("SYSTEM STOP FETCHES replicated")
+        node_1_2.query("INSERT INTO replicated VALUES ('2017-05-08', 4)")
+        assert_eq_with_retry(
+            node_1_1,
+            "SELECT absolute_delay >= 2 FROM system.replicas WHERE database = 'default' AND table = 'replicated'",
+            "1",
+        )
+
+        query = """
+SELECT x FROM (SELECT * FROM distributed) WHERE x {} (SELECT y FROM ids) ORDER BY x SETTINGS
+    load_balancing='in_order',
+    max_replica_delay_for_distributed_queries=1,
+    prefer_localhost_replica=1,
+    serialize_query_plan=0
+"""
+        assert node_1_1.query(query.format("GLOBAL IN")).split() == ["1", "4"]
+        assert node_1_1.query(query.format("GLOBAL NOT IN")).split() == ["2", "3"]
+    finally:
+        node_1_1.query("SYSTEM START FETCHES replicated")
+        for node in (node_1_1, node_1_2):
+            node.query("DROP TABLE IF EXISTS ids SYNC")
