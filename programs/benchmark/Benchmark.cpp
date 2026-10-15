@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <cmath>
+#include <condition_variable>
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
@@ -335,6 +336,7 @@ private:
         double queries = 0;
         size_t finished_queries = 0;
         size_t errors = 0;
+        double max_duration = 0;
         double read_rows = 0;
         double read_bytes = 0;
         double result_rows = 0;
@@ -359,6 +361,7 @@ private:
         void sample(double duration)
         {
             ++finished_queries;
+            max_duration = std::max(max_duration, duration);
             sampler.insert(duration);
         }
 
@@ -449,6 +452,12 @@ private:
     std::atomic<bool> arrivals_finished{false};
     /// Arrivals taken from the queue after the run stopped.
     std::atomic<size_t> not_sent{0};
+    /// The end of the run by --timelimit, 0 if there is no time limit.
+    std::atomic<UInt64> deadline_ns{0};
+    /// Worker threads that did not exit yet.
+    std::mutex workers_mutex;
+    std::condition_variable workers_cv;
+    size_t running_workers TSA_GUARDED_BY(workers_mutex) = 0;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;
@@ -803,7 +812,12 @@ private:
             total_arrival_stats.last_change_ns = start_ns;
         }
         startNextInterval(true);
+        deadline_ns = max_time > 0 ? start_ns + static_cast<UInt64>(max_time * 1e9) : 0;
 
+        {
+            std::lock_guard lock(workers_mutex);
+            running_workers = concurrency;
+        }
         try
         {
             for (size_t i = 0; i < concurrency; ++i)
@@ -846,6 +860,16 @@ private:
                 break;
             }
 
+            /// The arrival process may fall behind the schedule, but no query starts after the time limit.
+            if (pastDeadline())
+            {
+                std::cout << "Stopping launch of queries."
+                          << " Requested time limit " << max_time << " seconds is exhausted.\n";
+                last_arrival_ns = deadline_ns;
+                stopped = true;
+                break;
+            }
+
             {
                 std::lock_guard lock(interval_mutex);
                 onArrival();
@@ -864,6 +888,27 @@ private:
         /// Now we don't block the Ctrl+C signal and second signal will terminate the program without waiting.
         if (interrupted || last_run)
             interrupt_listener.unblock();
+
+        /// Wait for the workers, while handling SIGINT if it is still blocked (in a sweep) and reporting intervals.
+        while (true)
+        {
+            {
+                std::unique_lock lock(workers_mutex);
+                if (workers_cv.wait_for(lock, std::chrono::milliseconds(100), [this]() TSA_REQUIRES(workers_mutex) { return running_workers == 0; }))
+                    break;
+            }
+
+            if (interrupt_listener.check())
+            {
+                std::cout << "Stopping the run. SIGINT received.\n";
+                interrupted = true;
+                shutdown = true;
+                interrupt_listener.unblock();
+            }
+
+            if (delay > 0 && delay_watch.elapsedSeconds() > delay)
+                startNextInterval();
+        }
 
         pool.wait();
         total_watch.stop();
@@ -909,8 +954,20 @@ private:
         }
     }
 
+    bool pastDeadline() const
+    {
+        const UInt64 deadline = deadline_ns;
+        return deadline && clock_gettime_ns() >= deadline;
+    }
+
     void openLoopThread()
     {
+        SCOPE_EXIT({
+            std::lock_guard lock(workers_mutex);
+            --running_workers;
+            workers_cv.notify_all();
+        });
+
         blockSigint();
 
         Task task;
@@ -928,7 +985,7 @@ private:
                 continue;
             }
 
-            if (shutdown)
+            if (shutdown || pastDeadline())
             {
                 ++not_sent;
                 return;
@@ -1266,8 +1323,9 @@ private:
             auto & stats = *per_query_stats[i];
             log << i << "\t" << stats.finished_queries << "\t" << stats.errors
                 << "\t" << fmt::format("{:.3f}", stats.queries / seconds);
-            for (double level : {0.5, 0.9, 0.99, 1.0})
+            for (double level : {0.5, 0.9, 0.99})
                 log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.sampler.quantileNearest(level)) : "-");
+            log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.max_duration) : "-");
             String query_text = queries[i].substr(0, 80);
             std::replace_if(query_text.begin(), query_text.end(), [](char c) { return c == '\n' || c == '\t'; }, ' ');
             log << "\t" << query_text << (queries[i].size() > 80 ? "..." : "") << "\n";
