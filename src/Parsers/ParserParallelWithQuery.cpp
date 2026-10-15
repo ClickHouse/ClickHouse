@@ -84,7 +84,7 @@ DROP TABLE table2;
 
 Statements such as `CREATE`, `DROP` or `INSERT INTO ... SELECT` can be combined. A statement that returns a result set, such as `SELECT`, or that expects input data is rejected with the `INCORRECT_QUERY` error.
 
-A DDL statement executed [`ON CLUSTER`](/reference/statements/distributed-ddl) or in a [`Replicated`](/reference/engines/database-engines/replicated) database returns a table with its status on each host, so it is rejected as well. It is rejected only after it has been sent to the hosts, so it is executed there anyway. Such a statement returns no result set, and can be combined, if [distributed_ddl_output_mode](/reference/settings/session-settings/distributed-ddl#distributed_ddl_output_mode) is `none` or `none_only_active`, or if [distributed_ddl_task_timeout](/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) is `0`. With `distributed_ddl_output_mode = 'none'`, the query still waits for the hosts and rethrows an exception from them if any:
+A DDL statement executed [`ON CLUSTER`](/reference/statements/distributed-ddl) or replicated through the DDL log of a [`Replicated`](/reference/engines/database-engines/replicated) database returns a table with its status on each host, so it is rejected as well. It is rejected only after it has been sent to the hosts, so it is executed there anyway. Such a statement returns no result set, and can be combined, if [distributed_ddl_output_mode](/reference/settings/session-settings/distributed-ddl#distributed_ddl_output_mode) is `none` or `none_only_active`, or if [distributed_ddl_task_timeout](/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) is `0`. With `distributed_ddl_output_mode = 'none'`, the query still waits for the hosts and rethrows an exception from them if any. For example:
 
 ```sql
 SET distributed_ddl_output_mode = 'none';
@@ -93,6 +93,8 @@ CREATE TABLE table1 ON CLUSTER default (x Int32) ENGINE = MergeTree ORDER BY tup
 PARALLEL WITH
 CREATE TABLE table2 ON CLUSTER default (y String) ENGINE = MergeTree ORDER BY tuple();
 ```
+
+Partition operations in a `Replicated` database, such as `ALTER TABLE ... DROP PARTITION`, are not replicated through its DDL log, so they can be combined without these settings.
 
 The statements are not executed atomically: if one of them fails, the statements that have already been executed are not rolled back.
 
