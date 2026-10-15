@@ -305,7 +305,7 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
                 context,
                 /*run_access_check*/ false,
                 /*run_local_paths_check*/ false,
-                /*run_remote_host_filter_check*/ false);
+                RemoteHostFilterCheck::None);
         });
 }
 

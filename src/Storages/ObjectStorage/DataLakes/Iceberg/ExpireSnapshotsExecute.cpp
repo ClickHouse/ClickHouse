@@ -147,8 +147,8 @@ Pipe resultToPipe(const ExpireSnapshotsResult & result)
     add("deleted_manifest_files_count", result.deleted_manifest_files_count);
     add("deleted_manifest_lists_count", result.deleted_manifest_lists_count);
     add("deleted_statistics_files_count", result.deleted_statistics_files_count);
-    add("failed_deletions_count", result.failed_deletions_count);
     add("dry_run", result.dry_run ? 1 : 0);
+    add("failed_deletions_count", result.failed_deletions_count);
 
     const size_t rows = columns[0]->size();
     Chunk chunk(std::move(columns), rows);
@@ -245,6 +245,10 @@ public:
 
     void walkBranchAncestors(Int64 now_ms, Int64 head_id, Int32 min_keep, Int64 max_age_ms, std::set<Int64> & retained) const
     {
+        /// A branch head is always retained, whatever `min_keep` and `max_age_ms` are.
+        if (hasSnapshot(head_id))
+            retained.insert(head_id);
+
         Int64 walk_id = head_id;
         Int32 count = 0;
         while (hasSnapshot(walk_id))
@@ -432,48 +436,27 @@ void collectRetainedFiles(
     }
 }
 
-enum class ExpiredFileRole : uint8_t
-{
-    DataFile,
-    PositionDelete,
-    EqualityDelete,
-    Manifest,
-    ManifestList,
-};
-
 struct ExpiredFile
 {
     Iceberg::IcebergPathFromMetadata path;
-    ExpiredFileRole role;
+    FileCategory category;
 };
+using ExpiredFiles = std::vector<ExpiredFile>;
 
-struct ExpiredFileCounts
+void countFile(ExpireSnapshotsResult & result, FileCategory category)
 {
-    Int64 data_files = 0;
-    Int64 position_delete_files = 0;
-    Int64 equality_delete_files = 0;
-    Int64 manifest_files = 0;
-    Int64 manifest_lists = 0;
-
-    Int64 & of(ExpiredFileRole role)
+    switch (category)
     {
-        switch (role)
-        {
-            case ExpiredFileRole::DataFile: return data_files;
-            case ExpiredFileRole::PositionDelete: return position_delete_files;
-            case ExpiredFileRole::EqualityDelete: return equality_delete_files;
-            case ExpiredFileRole::Manifest: return manifest_files;
-            case ExpiredFileRole::ManifestList: return manifest_lists;
-        }
+        case FileCategory::DATA_FILE:            ++result.deleted_data_files_count; break;
+        case FileCategory::POSITION_DELETE_FILE: ++result.deleted_position_delete_files_count; break;
+        case FileCategory::EQUALITY_DELETE_FILE: ++result.deleted_equality_delete_files_count; break;
+        case FileCategory::MANIFEST_FILE:        ++result.deleted_manifest_files_count; break;
+        case FileCategory::MANIFEST_LIST:        ++result.deleted_manifest_lists_count; break;
+        case FileCategory::STATISTICS_FILE:      ++result.deleted_statistics_files_count; break;
+        case FileCategory::METADATA_JSON:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "expire_snapshots does not delete metadata files");
     }
-};
-
-struct ExpiredFiles
-{
-    /// Delete leaves before their manifests, and manifests before their manifest lists.
-    std::vector<ExpiredFile> all_paths;
-    ExpiredFileCounts planned;
-};
+}
 
 ExpiredFiles collectExpiredFiles(
     const std::vector<Iceberg::IcebergPathFromMetadata> & expired_manifest_list_paths,
@@ -490,6 +473,7 @@ ExpiredFiles collectExpiredFiles(
     ExpiredFiles result;
     std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_list_paths;
     std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_paths;
+    std::set<Iceberg::IcebergPathFromMetadata> seen_expired_file_paths;
     for (const auto & manifest_list_path : expired_manifest_list_paths)
     {
         Iceberg::IcebergPathFromMetadata manifest_list_id;
@@ -546,23 +530,23 @@ ExpiredFiles collectExpiredFiles(
                     manifest_entry, current_schema_id, external_storages);
 
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
-                    if (!retained_data_file_paths.contains(resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages)))
-                    {
-                        result.all_paths.push_back({entry->parsed_entry->file_path_key, ExpiredFileRole::DataFile});
-                        ++result.planned.data_files;
-                    }
+                {
+                    auto id = resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages);
+                    if (!retained_data_file_paths.contains(id) && seen_expired_file_paths.insert(id).second)
+                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::DATA_FILE});
+                }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                    if (!retained_data_file_paths.contains(resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages)))
-                    {
-                        result.all_paths.push_back({entry->parsed_entry->file_path_key, ExpiredFileRole::PositionDelete});
-                        ++result.planned.position_delete_files;
-                    }
+                {
+                    auto id = resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages);
+                    if (!retained_data_file_paths.contains(id) && seen_expired_file_paths.insert(id).second)
+                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::POSITION_DELETE_FILE});
+                }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
-                    if (!retained_data_file_paths.contains(resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages)))
-                    {
-                        result.all_paths.push_back({entry->parsed_entry->file_path_key, ExpiredFileRole::EqualityDelete});
-                        ++result.planned.equality_delete_files;
-                    }
+                {
+                    auto id = resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages);
+                    if (!retained_data_file_paths.contains(id) && seen_expired_file_paths.insert(id).second)
+                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::EQUALITY_DELETE_FILE});
+                }
             }
             catch (...)
             {
@@ -571,19 +555,17 @@ ExpiredFiles collectExpiredFiles(
             }
 
             seen_expired_manifest_paths.insert(manifest_id);
-            result.all_paths.push_back({manifest_entry.manifest_file_path, ExpiredFileRole::Manifest});
-            ++result.planned.manifest_files;
+            result.push_back({manifest_entry.manifest_file_path, FileCategory::MANIFEST_FILE});
         }
 
         seen_expired_manifest_list_paths.insert(manifest_list_id);
-        result.all_paths.push_back({manifest_list_path, ExpiredFileRole::ManifestList});
-        ++result.planned.manifest_lists;
+        result.push_back({manifest_list_path, FileCategory::MANIFEST_LIST});
     }
     return result;
 }
 
 std::vector<Iceberg::IcebergPathFromMetadata> collectExternalExpiredFiles(
-    const std::vector<ExpiredFile> & files,
+    const ExpiredFiles & files,
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
@@ -750,64 +732,59 @@ void updateMetadataForExpiration(
     metadata->set(Iceberg::f_last_updated_ms, ms.count());
 }
 
-struct DeletionOutcome
-{
-    ExpiredFileCounts deleted;
-    Int64 failed = 0;
-};
-
+/// Counts only the files it deleted; a removal that throws or a kept anchor is counted in `failed_deletions_count` instead.
 /// Keep a manifest or manifest list if any dependency survived deletion, so surviving files remain discoverable.
-DeletionOutcome deleteExpiredFiles(
-    const std::vector<ExpiredFile> & files_to_delete,
+ExpireSnapshotsResult deleteExpiredFiles(
+    const ExpiredFiles & files,
     const Iceberg::IcebergPathResolver & path_resolver,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     LoggerPtr log,
     ExternalStorageCache & external_storages)
 {
-    DeletionOutcome outcome;
+    ExpireSnapshotsResult result;
     bool manifest_incomplete = false;
     bool manifest_list_incomplete = false;
 
-    for (const auto & [file_path, role] : files_to_delete)
+    for (const auto & [path, category] : files)
     {
         const bool keep_anchor
-            = (role == ExpiredFileRole::Manifest && manifest_incomplete)
-            || (role == ExpiredFileRole::ManifestList && manifest_list_incomplete);
+            = (category == FileCategory::MANIFEST_FILE && manifest_incomplete)
+            || (category == FileCategory::MANIFEST_LIST && manifest_list_incomplete);
 
         if (keep_anchor)
         {
-            ++outcome.failed;
-            LOG_WARNING(log, "Keeping {}: a file it references could not be deleted", file_path);
+            ++result.failed_deletions_count;
+            LOG_WARNING(log, "Keeping {}: a file it references could not be deleted", path);
         }
         else
         {
             try
             {
                 auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
-                    path_resolver.getTableLocation(), file_path.serialize(), object_storage, external_storages, context,
+                    path_resolver.getTableLocation(), path.serialize(), object_storage, external_storages, context,
                     path_resolver);
                 storage_to_use->removeObjectIfExists(StoredObject(key_in_storage));
-                ++outcome.deleted.of(role);
-                LOG_DEBUG(log, "Deleted expired file {}", file_path);
+                countFile(result, category);
+                LOG_DEBUG(log, "Deleted expired file {}", path);
             }
             catch (...)
             {
-                ++outcome.failed;
-                LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
+                ++result.failed_deletions_count;
+                LOG_WARNING(log, "Failed to delete file {}: {}", path, getCurrentExceptionMessage(false));
 
-                if (role != ExpiredFileRole::Manifest && role != ExpiredFileRole::ManifestList)
+                if (category != FileCategory::MANIFEST_FILE && category != FileCategory::MANIFEST_LIST)
                     manifest_incomplete = true;
                 manifest_list_incomplete = true;
             }
         }
 
-        if (role == ExpiredFileRole::Manifest)
+        if (category == FileCategory::MANIFEST_FILE)
             manifest_incomplete = false;
-        else if (role == ExpiredFileRole::ManifestList)
+        else if (category == FileCategory::MANIFEST_LIST)
             manifest_list_incomplete = false;
     }
-    return outcome;
+    return result;
 }
 
 }
@@ -923,7 +900,7 @@ ExpireSnapshotsResult expireSnapshots(
                 external_storages);
 
             auto external_expired_files = collectExternalExpiredFiles(
-                expired.all_paths, object_storage, persistent_table_components, context, external_storages);
+                expired, object_storage, persistent_table_components, context, external_storages);
             if (!external_expired_files.empty())
             {
                 constexpr size_t max_files_to_name = 10;
@@ -951,14 +928,10 @@ ExpireSnapshotsResult expireSnapshots(
         if (options.dry_run)
         {
             LOG_INFO(log, "Dry-run mode: skip metadata commit and file deletion");
-            return ExpireSnapshotsResult{
-                .deleted_data_files_count = expired_files.planned.data_files,
-                .deleted_position_delete_files_count = expired_files.planned.position_delete_files,
-                .deleted_equality_delete_files_count = expired_files.planned.equality_delete_files,
-                .deleted_manifest_files_count = expired_files.planned.manifest_files,
-                .deleted_manifest_lists_count = expired_files.planned.manifest_lists,
-                .dry_run = true,
-            };
+            ExpireSnapshotsResult result{.dry_run = true};
+            for (const auto & file : expired_files)
+                countFile(result, file.category);
+            return result;
         }
 
         if (catalog_commits_metadata)
@@ -1017,25 +990,13 @@ ExpireSnapshotsResult expireSnapshots(
         }
         persistent_table_components.invalidateMetadataCache();
 
-        LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.all_paths.size(), partition.expired_snapshot_ids.size());
-        auto outcome = deleteExpiredFiles(
-            expired_files.all_paths, persistent_table_components.path_resolver, object_storage, context, log, external_storages);
-        LOG_INFO(
-            log,
-            "Expired {} snapshots, deleted {} files, failed to delete {} files",
-            partition.expired_snapshot_ids.size(),
-            static_cast<Int64>(expired_files.all_paths.size()) - outcome.failed,
-            outcome.failed);
+        LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.size(), partition.expired_snapshot_ids.size());
+        auto result = deleteExpiredFiles(
+            expired_files, persistent_table_components.path_resolver, object_storage, context, log, external_storages);
+        LOG_INFO(log, "Expired {} snapshots, deleted {} of {} files ({} failed)", partition.expired_snapshot_ids.size(),
+            expired_files.size() - result.failed_deletions_count, expired_files.size(), result.failed_deletions_count);
 
-        return ExpireSnapshotsResult{
-            .deleted_data_files_count = outcome.deleted.data_files,
-            .deleted_position_delete_files_count = outcome.deleted.position_delete_files,
-            .deleted_equality_delete_files_count = outcome.deleted.equality_delete_files,
-            .deleted_manifest_files_count = outcome.deleted.manifest_files,
-            .deleted_manifest_lists_count = outcome.deleted.manifest_lists,
-            .failed_deletions_count = outcome.failed,
-            .dry_run = false,
-        };
+        return result;
     }
 
     if (max_retries == 0)
