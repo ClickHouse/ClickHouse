@@ -260,6 +260,8 @@ private:
     std::optional<size_t> read_until;
     /// `nullopt` = no map was announced, the caller may read the whole file.
     std::optional<ByteRangeSet> request_map;
+    /// `request_map` with holes up to `min_bytes_for_seek` filled, so `demandEnd` finds a run end by one binary search.
+    std::optional<ByteRangeSet> request_runs;
 
     std::optional<LongConnection> long_conn;
     ReadContinuityTracker fetch_tracker;

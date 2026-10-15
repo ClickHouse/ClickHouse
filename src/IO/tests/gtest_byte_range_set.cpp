@@ -2,6 +2,8 @@
 
 #include <IO/ByteRangeSet.h>
 
+#include <random>
+
 using namespace DB;
 
 TEST(ByteRangeSet, AddMergesOverlapAndAdjacency)
@@ -157,4 +159,33 @@ TEST(ByteRangeSet, ContiguousEndBridgesNarrowGaps)
     EXPECT_EQ(s.contiguousEnd(5, 5), 30u);
 
     EXPECT_EQ(ByteRangeSet{}.contiguousEnd(0, 100), std::nullopt);
+}
+
+TEST(ByteRangeSet, CoalesceKeepsContiguousEnd)
+{
+    ByteRangeSet s;
+    s.add({10, 10});   /// [10, 20)
+    s.add({25, 5});    /// [25, 30), 5 bytes after
+    s.add({50, 10});   /// [50, 60), 20 bytes after
+    const ByteRangeSet runs = s.coalesce(5);
+    ASSERT_EQ(runs.ranges().size(), 2u);
+    EXPECT_EQ(runs.ranges()[0].offset, 10u);
+    EXPECT_EQ(runs.ranges()[0].end(), 30u);
+    EXPECT_EQ(runs.ranges()[1].offset, 50u);
+    EXPECT_EQ(runs.ranges()[1].end(), 60u);
+    EXPECT_TRUE(ByteRangeSet{}.coalesce(100).empty());
+
+    /// `ReaderExecutor` looks run ends up in the coalesced set: every offset must get the answer of the walk.
+    std::mt19937 rng(42);
+    for (size_t round = 0; round < 200; ++round)
+    {
+        ByteRangeSet set;
+        for (size_t i = 0; i < 20; ++i)
+            set.add({rng() % 1000, 1 + rng() % 30});
+        const size_t max_gap = rng() % 40;
+        const ByteRangeSet coalesced = set.coalesce(max_gap);
+        for (size_t offset = 0; offset < 1100; ++offset)
+            ASSERT_EQ(coalesced.contiguousEnd(offset, max_gap), set.contiguousEnd(offset, max_gap))
+                << "round " << round << ", offset " << offset << ", max_gap " << max_gap << ", set " << set.describe();
+    }
 }

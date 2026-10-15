@@ -271,9 +271,9 @@ size_t ReaderExecutor::clampReach(size_t predicted_end, size_t phys_pos) const
 size_t ReaderExecutor::demandEnd(size_t block_bytes) const
 {
     const size_t file_end = offset_map.hasUnknownSize() ? std::numeric_limits<size_t>::max() : offset_map.totalSize();
-    if (!request_map)
+    if (!request_runs)
         return file_end;
-    const std::optional<size_t> run_end = request_map->contiguousEnd(position, min_bytes_for_seek);
+    const std::optional<size_t> run_end = request_runs->contiguousEnd(position, min_bytes_for_seek);
     /// Outside the map, serve one block at a time.
     const size_t end = run_end ? toPhysical(*run_end) : toPhysical(position) + block_bytes;
     return std::min(end, file_end);
@@ -848,6 +848,7 @@ void ReaderExecutor::seek(size_t new_position)
 void ReaderExecutor::setRequestMap(ByteRangeSet ranges)
 {
     request_map = std::move(ranges);
+    request_runs = request_map->coalesce(min_bytes_for_seek);
     if (request_map->empty())
     {
         LOG_TEST(log, "Request map of {}: nothing", log_file_path);
