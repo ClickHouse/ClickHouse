@@ -61,6 +61,7 @@ namespace S3AuthSetting
 
 namespace Setting
 {
+extern const SettingsUInt64 hdfs_replication;
 extern const SettingsBool object_storage_propagate_credentials_to_other_storages;
 }
 
@@ -901,6 +902,24 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     if (access_check != nullptr)
         return std::nullopt;
 
+#if USE_HDFS
+    /// `HDFSObjectStorage` keeps a reference to its configuration, so it gets the server configuration rather than a temporary one.
+    if (target_scheme_normalized == "hdfs")
+    {
+        return getOrCreateStorage(
+            cache_key,
+            target_decomposed.key,
+            external_storages,
+            [&](const std::string & storage_name) -> ObjectStoragePtr
+            {
+                auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(
+                    /*min_bytes_for_seek*/ 1024 * 1024, context->getSettingsRef()[Setting::hdfs_replication]);
+                return std::make_shared<HDFSObjectStorage>(
+                    cache_key + "/", std::move(hdfs_settings), context->getConfigRef(), /*lazy_initialize*/ false, storage_name);
+            });
+    }
+#endif
+
     return getOrCreateStorageAndKey(
         cache_key,
         target_decomposed.key,
@@ -923,13 +942,6 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 cfg.setBool(config_prefix + ".container_already_exists", true);
                 if (!account_name.empty())
                     cfg.setString(config_prefix + ".account_name", account_name);
-            }
-            else if (target_scheme_normalized == "hdfs")
-            {
-                auto endpoint = target_scheme_normalized + "://" + target_decomposed.authority;
-                if (!endpoint.empty() && endpoint.back() != '/')
-                    endpoint.push_back('/');
-                cfg.setString(config_prefix + ".endpoint", endpoint);
             }
         });
 }

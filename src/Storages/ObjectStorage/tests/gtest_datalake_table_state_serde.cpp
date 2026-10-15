@@ -206,11 +206,14 @@ TEST(DatalakeStateSerde, ClusterFunctionReadTaskResponseExternalPathRejectedBefo
 }
 
 
-TEST(DatalakeStateSerde, IcebergObjectSerializableInfoDeleteFilePathsStrippedBeforeAbsolutePathProtocol)
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoDeleteFileKeysSentBeforeAbsolutePathProtocol)
 {
     auto info = makeObjectInfo();
-    info.position_deletes_objects = {{"s3://bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet", 0}};
+    info.position_deletes_objects = {{"/table/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet", 0}};
     info.deletion_vector = Iceberg::DeletionVectorObject{"s3://bucket/deletes/dv.puffin", 123, 456};
+    info.delete_file_keys_in_base_storage = {
+        {"/table/deletes/pos1.parquet", "table/deletes/pos1.parquet"},
+        {"s3://bucket/deletes/dv.puffin", "deletes/dv.puffin"}};
 
     String str;
     {
@@ -223,7 +226,7 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoDeleteFilePathsStrippedBef
 
     ASSERT_TRUE(read_buffer.eof());
     ASSERT_EQ(deserialized.position_deletes_objects.size(), 1);
-    ASSERT_EQ(deserialized.position_deletes_objects[0].file_path, "deletes/pos1.parquet");
+    ASSERT_EQ(deserialized.position_deletes_objects[0].file_path, "table/deletes/pos1.parquet");
     ASSERT_TRUE(deserialized.deletion_vector.has_value());
     ASSERT_EQ(deserialized.deletion_vector->file_path, "deletes/dv.puffin");
 }

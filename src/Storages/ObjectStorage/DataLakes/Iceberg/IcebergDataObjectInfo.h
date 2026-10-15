@@ -13,6 +13,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <base/types.h>
 
+#include <unordered_map>
+
 namespace DB::Iceberg
 {
 
@@ -38,6 +40,10 @@ struct IcebergObjectSerializableInfo
     std::vector<std::pair<String, Field>> identity_partition_columns;
 
     bool requires_external_storage = false;
+
+    /// Delete file paths mapped to their keys in the base storage. Not serialized: workers before
+    /// `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH` receive these keys instead of the paths.
+    std::unordered_map<String, String> delete_file_keys_in_base_storage{};
 
     bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
 

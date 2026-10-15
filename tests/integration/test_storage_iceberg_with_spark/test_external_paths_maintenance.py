@@ -20,6 +20,7 @@ from .external_paths_utils import (
     _external_manifest_lists_in_another_bucket,
     _rewrite_manifests_and_reupload,
     external_bucket,
+    modify_avro_file,
     relocate_manifest_lists_to_bucket,
 )
 
@@ -123,6 +124,52 @@ def test_maintenance_commands_reject_external_paths(started_cluster_iceberg_with
     assert "outside the table's base directory" in error
 
     assert external_objects() == objects_before
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == rows
+
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+def test_optimize_keeps_deletes_of_data_file_listed_under_two_spellings(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    bucket = started_cluster_iceberg_with_spark.minio_bucket
+
+    TABLE_NAME = f"test_optimize_two_spellings_{get_uuid_str()}"
+    host_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    rows = "1\talpha\n3\tgamma\n4\tdelta\n"
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg "
+        f"TBLPROPERTIES ('format-version'='2', 'write.delete.mode'='merge-on-read')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (4, 'delta')")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+
+    # The first snapshot lists the data file as an `s3://` URI of the same object, while the second snapshot
+    # keeps the original spelling, which the position delete of the third snapshot matches.
+    metadata_json = max(
+        find_files(os.path.join(host_path, "metadata"), ".metadata.json"),
+        key=lambda f: len(json.load(open(f)).get("snapshots", [])))
+    with open(metadata_json) as f:
+        first_manifest_list = json.load(f)["snapshots"][0]["manifest-list"]
+
+    def to_s3_uri(path):
+        assert path.startswith("/"), path
+        return f"s3://{bucket}{path}"
+
+    def alias_manifest(manifest_path):
+        alias_path = os.path.join(os.path.dirname(manifest_path), f"alias-{os.path.basename(manifest_path)}")
+        shutil.copyfile(manifest_path, alias_path)
+        modify_avro_file(alias_path, ["data_file", "file_path"], to_s3_uri)
+        return alias_path
+
+    modify_avro_file(first_manifest_list, ["manifest_path"], alias_manifest)
+
+    default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, host_path.lstrip("/"))
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == rows
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME}", settings={"allow_experimental_iceberg_compaction": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == rows
 
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC")

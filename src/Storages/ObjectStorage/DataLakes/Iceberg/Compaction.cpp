@@ -300,19 +300,19 @@ static Plan getPlan(
                     resolved_key);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 const auto & manifest_file_plan = manifest_files[manifest_file.manifest_file_path];
-                /// Deduplicate by resolved identity: different metadata paths may name the same file.
-                auto path_identifier = Iceberg::IcebergPathFromMetadata::makeStorageIdentity(resolved_storage, resolved_key);
-                if (!plan.path_to_data_file.contains(path_identifier))
+                /// Keyed by the metadata path rather than the physical file: position deletes match a data file by that spelling.
+                const auto & data_file_path = data_file->parsed_entry->file_path_key;
+                if (!plan.path_to_data_file.contains(data_file_path))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_files = {manifest_file_plan},
                         .patched_path = plan.generator.generateDataFileName()});
-                    plan.path_to_data_file[path_identifier] = data_file_ptr;
+                    plan.path_to_data_file[data_file_path] = data_file_ptr;
                 }
                 else
                 {
-                    data_file_ptr = plan.path_to_data_file[path_identifier];
+                    data_file_ptr = plan.path_to_data_file[data_file_path];
                     if (std::ranges::find(data_file_ptr->manifest_files, manifest_file_plan) == data_file_ptr->manifest_files.end())
                         data_file_ptr->manifest_files.push_back(manifest_file_plan);
                 }
