@@ -4,11 +4,12 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Sinks/NullSink.h>
 
 using namespace DB;
+using namespace DB::Runtime::V1;
 
 namespace DB::ErrorCodes
 {
@@ -75,7 +76,7 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
     processors->push_back(first);
     processors->push_back(second);
 
-    ExecutingGraph graph(processors, /* profile_processors_ = */ false);
+    ExecutingGraph graph(processors, /*profile_processors_=*/ false, /*memory_reservation_=*/ nullptr);
     ExecutingGraph::Queue queue;
     ExecutingGraph::Queue async_queue;
 
