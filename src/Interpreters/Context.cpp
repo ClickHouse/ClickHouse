@@ -2865,13 +2865,10 @@ void Context::checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes
     else
         return; /// Not a part of another query.
 
-    /// The values the part asks for: its settings with `SETTINGS name = DEFAULT` applied, also where the
-    /// caller does not apply the reset to the context.
-    Settings requested = getSettingsRef();
-    for (const auto & name : reset_settings)
-        if (isQuerySchedulingSetting(name))
-            requested.setDefaultValue(name);
-    if (!sameScheduling(requested[Setting::workload], makeClassifierSettings(requested, false), expected_workload, expected_settings))
+    /// The callers have applied the clause, including its resets and the clamping to the settings
+    /// constraints, so compare the effective values.
+    const auto & own_settings = getSettingsRef();
+    if (!sameScheduling(own_settings[Setting::workload], makeClassifierSettings(own_settings, false), expected_workload, expected_settings))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "A part of a query, such as a subquery or a `PARALLEL WITH` subquery, cannot set `workload`, `weight`, "
             "`weight_lowering_*` or `workload_priority` to a value that differs from the query's: all parts of a query "

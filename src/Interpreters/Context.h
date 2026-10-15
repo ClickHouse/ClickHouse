@@ -1044,8 +1044,8 @@ public:
     void setParentSchedulingGroup(QuerySchedulingGroupPtr group);
     /// Throws if this context is a part of a query (a copy of a query context, or a query context with a
     /// parent scheduling group), `changes` or `reset_settings` (`SETTINGS name = DEFAULT`) touch its
-    /// `workload` or scheduling settings, and they differ from the query's. Called after the `SETTINGS`
-    /// clause of a part is applied, so such a query is rejected before it runs.
+    /// `workload` or scheduling settings, and their effective values differ from the query's. Called after
+    /// the `SETTINGS` clause of a part, with its resets, is applied, so such a query is rejected before it runs.
     void checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes, const std::vector<String> & reset_settings = {}) const;
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw

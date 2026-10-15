@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- A part of a query cannot change the scheduling settings of the query through a settings profile either.
 
-DROP SETTINGS PROFILE IF EXISTS s_05332_weight, s_05332_workload, s_05332_other;
+DROP SETTINGS PROFILE IF EXISTS s_05332_weight, s_05332_workload, s_05332_other, s_05332_const;
 CREATE SETTINGS PROFILE s_05332_weight SETTINGS weight = 2;
 CREATE SETTINGS PROFILE s_05332_workload SETTINGS workload = 'other';
 CREATE SETTINGS PROFILE s_05332_other SETTINGS max_threads = 1;
@@ -22,4 +22,11 @@ SELECT * FROM t_05332_1 UNION ALL SELECT * FROM t_05332_2 ORDER BY 1;
 DROP TABLE t_05332_1;
 DROP TABLE t_05332_2;
 
-DROP SETTINGS PROFILE s_05332_weight, s_05332_workload, s_05332_other;
+-- A part whose setting is clamped by a constraint to the query's value is allowed, also for a reset.
+DROP SETTINGS PROFILE IF EXISTS s_05332_const;
+CREATE SETTINGS PROFILE s_05332_const SETTINGS weight = 2 CONST;
+SET profile = 's_05332_const';
+SELECT * FROM (SELECT getSetting('weight') SETTINGS weight = 1);
+SELECT * FROM (SELECT getSetting('weight') SETTINGS weight = DEFAULT);
+
+DROP SETTINGS PROFILE s_05332_weight, s_05332_workload, s_05332_other, s_05332_const;
