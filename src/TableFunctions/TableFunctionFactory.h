@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Common/IFactoryWithAliases.h>
@@ -75,6 +76,7 @@ public:
     std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
     std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
     const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const;
+    bool hasArgumentSecretsIgnoringCase(const String & name) const;
 
     bool isTableFunctionName(const std::string & name) const;
 
@@ -94,6 +96,7 @@ private:
 
     TableFunctions table_functions;
     TableFunctions case_insensitive_table_functions;
+    NameSet lowercase_names_with_argument_secrets;
 };
 
 }
