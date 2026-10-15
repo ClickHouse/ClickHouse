@@ -337,9 +337,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 /** Whether the expression can be computed before the window functions instead of after them.
   * The window step keeps every row and only changes the order of rows and their split into blocks,
   * so an expression evaluated row by row has the same value on either side of it.
-  * `depends_on_columns` is set if the expression reads a column or an aggregate function result.
+  * `reads_unbounded_values` is set if the expression reads a column or an aggregate function result
+  * whose values have no maximum size, such as `String` or `Array`.
   */
-bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePtrWithHashSet & correlated_columns_set, bool & depends_on_columns)
+bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePtrWithHashSet & correlated_columns_set, bool & reads_unbounded_values)
 {
     switch (node->getNodeType())
     {
@@ -347,18 +348,20 @@ bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePt
             return true;
         case QueryTreeNodeType::COLUMN:
         {
-            depends_on_columns = true;
+            const auto & column_node = node->as<ColumnNode &>();
+            if (!column_node.getColumnType()->haveMaximumSizeOfValue())
+                reads_unbounded_values = true;
             return !correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(node));
         }
         case QueryTreeNodeType::LIST:
         {
             for (const auto & child : node->as<ListNode &>().getNodes())
-                if (!canBeComputedBeforeWindow(child, correlated_columns_set, depends_on_columns))
+                if (!canBeComputedBeforeWindow(child, correlated_columns_set, reads_unbounded_values))
                     return false;
             return true;
         }
         case QueryTreeNodeType::LAMBDA:
-            return canBeComputedBeforeWindow(node->as<LambdaNode &>().getExpression(), correlated_columns_set, depends_on_columns);
+            return canBeComputedBeforeWindow(node->as<LambdaNode &>().getExpression(), correlated_columns_set, reads_unbounded_values);
         case QueryTreeNodeType::FUNCTION:
         {
             const auto & function_node = node->as<FunctionNode &>();
@@ -368,7 +371,8 @@ bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePt
             /// The result of an aggregate function is an input column of the actions after aggregation.
             if (function_node.isAggregateFunction())
             {
-                depends_on_columns = true;
+                if (!function_node.getResultType()->haveMaximumSizeOfValue())
+                    reads_unbounded_values = true;
                 return true;
             }
 
@@ -376,11 +380,12 @@ bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePt
             if (function_node.getFunctionName() == "arrayJoin")
                 return false;
 
-            /// Stateful functions (`rowNumberInBlock`, `runningDifference`, ...) depend on the order of rows and on blocks.
-            if (auto function = function_node.getFunction(); function && function->isStateful())
+            /// Stateful functions (`rowNumberInBlock`, `runningDifference`, ...) depend on the order of rows,
+            /// and some functions that are not deterministic in the scope of the query (`blockSize`) depend on blocks.
+            if (auto function = function_node.getFunction(); function && (function->isStateful() || !function->isDeterministicInScopeOfQuery()))
                 return false;
 
-            return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, depends_on_columns);
+            return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, reads_unbounded_values);
         }
         default:
             /// Subqueries.
@@ -388,10 +393,12 @@ bool canBeComputedBeforeWindow(const QueryTreeNodePtr & node, const ColumnNodePt
     }
 }
 
-/** Collect the largest subexpressions of the projection that can be computed before the window functions.
-  * Window functions buffer their input, so computing the projection expressions before them lets the window step
-  * buffer the results of these expressions instead of the columns they read, which are usually larger.
-  * An expression that does not read any column is not collected: computing it earlier only adds a column to the buffer.
+/** Collect the largest subexpressions of the projection that are worth computing before the window functions.
+  * Window functions buffer their input, so computing a projection expression before them lets the window step
+  * buffer its result instead of the columns it reads. This is done only if it reads values of unbounded size and
+  * its result has a maximum size, otherwise the result can be larger than the columns it reads.
+  * The arguments of short-circuit functions that may be executed lazily are not collected, as computing them
+  * before the window step would execute them for all rows.
   */
 void collectExpressionsComputableBeforeWindow(
     const QueryTreeNodePtr & node,
@@ -402,16 +409,32 @@ void collectExpressionsComputableBeforeWindow(
     if (!function_node || !function_node->isOrdinaryFunction())
         return;
 
-    bool depends_on_columns = false;
-    if (canBeComputedBeforeWindow(node, correlated_columns_set, depends_on_columns))
+    bool reads_unbounded_values = false;
+    if (canBeComputedBeforeWindow(node, correlated_columns_set, reads_unbounded_values)
+        && reads_unbounded_values
+        && function_node->getResultType()->haveMaximumSizeOfValue())
     {
-        if (depends_on_columns)
-            result.push_back(node);
+        result.push_back(node);
         return;
     }
 
-    for (const auto & argument : function_node->getArguments().getNodes())
-        collectExpressionsComputableBeforeWindow(argument, correlated_columns_set, result);
+    const auto & arguments = function_node->getArguments().getNodes();
+
+    IFunctionBase::ShortCircuitSettings short_circuit_settings;
+    auto function = function_node->getFunction();
+    bool is_short_circuit = function && function->isShortCircuit(short_circuit_settings, arguments.size());
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        /// For commutative short-circuit functions (`and`, `or`) any argument may be executed lazily.
+        if (is_short_circuit
+            && (short_circuit_settings.arguments_are_commutative
+                || short_circuit_settings.force_enable_lazy_execution
+                || !short_circuit_settings.arguments_with_disabled_lazy_execution.contains(i)))
+            continue;
+
+        collectExpressionsComputableBeforeWindow(arguments[i], correlated_columns_set, result);
+    }
 }
 
 /** Construct window analysis result if query tree has window functions.

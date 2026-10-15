@@ -31,6 +31,22 @@ SELECT 'stateful functions are computed after window functions';
 SELECT number, rowNumberInAllBlocks() AS r, row_number() OVER (ORDER BY number DESC) AS rn
 FROM numbers(5) SETTINGS max_threads = 1;
 
+SELECT 'block-dependent functions are computed after window functions';
+SELECT number, length(s) + blockSize() AS b, count() OVER (ORDER BY number DESC) AS n
+FROM (SELECT number, toString(number) AS s FROM numbers(5))
+SETTINGS max_block_size = 2, max_threads = 1, query_plan_enable_optimizations = 0;
+
+SELECT 'lazily executed arguments of short-circuit functions';
+SELECT if(count() OVER () = 0, toUInt64(s), 0) AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';
+SELECT multiIf(count() OVER () = 0, toUInt64(s), count() OVER () = 1, toUInt64(s) + 1, 0) AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';
+SELECT count() OVER () = 0 AND toUInt64(s) = 1 AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';
+SELECT count() OVER () > 0 OR toUInt64(s) = 1 AS a FROM (SELECT concat('x', toString(number)) AS s FROM numbers(2)) SETTINGS short_circuit_function_evaluation = 'enable';
+
+SELECT 'expressions with results of unbounded size are computed after window functions';
+SELECT repeat(s, 1000) AS r, count() OVER () AS n FROM (SELECT toString(number) AS s FROM numbers(100000))
+FORMAT Null SETTINGS max_memory_usage = '50M', max_block_size = 1024, max_threads = 1;
+SELECT 'ok';
+
 SELECT 'QUALIFY';
 SELECT number, throwIf(number = 3) AS t, row_number() OVER (ORDER BY number) AS rn FROM numbers(5) QUALIFY rn != 4 ORDER BY number;
 
