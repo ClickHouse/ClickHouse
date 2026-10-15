@@ -348,7 +348,15 @@ PROJECTS = [
                 availability_zones=["ap-southeast-2b"],
                 instance_type="mac2-m2pro.metal",
                 image_id=MAC_OS_TAHOE_ARM_IMAGE_AMI,
-                quantity_per_az=10,
+                quantity_per_az=11,
+                vpc_name="macos-ap-southeast-2",
+            ),
+            _mac_runner_pool(
+                name="pr-macos-m4",
+                availability_zones=["ap-southeast-2b"],
+                instance_type="mac-m4.metal",
+                image_id=MAC_OS_TAHOE_ARM_IMAGE_AMI,
+                quantity_per_az=5,
                 vpc_name="macos-ap-southeast-2",
             ),
             _mac_runner_pool(
