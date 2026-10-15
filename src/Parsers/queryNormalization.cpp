@@ -12,8 +12,26 @@ namespace DB
 namespace
 {
 
+/// a token that can only end an operand
+bool endsOperand(const Token & token)
+{
+    switch (token.type)
+    {
+        case TokenType::Number:
+        case TokenType::StringLiteral:
+        case TokenType::HereDoc:
+        case TokenType::QuotedIdentifier:
+        case TokenType::ClosingRoundBracket:
+        case TokenType::ClosingSquareBracket:
+        case TokenType::ClosingCurlyBrace:
+            return true;
+        default:
+            return false;
+    }
+}
+
 /// a sign after these tokens cannot be binary
-bool canPrecedeUnarySign(const Token & prev)
+bool canPrecedeUnarySign(const Token & prev, const Token & before_prev)
 {
     switch (prev.type)
     {
@@ -24,7 +42,6 @@ bool canPrecedeUnarySign(const Token & prev)
         case TokenType::Comma:
         case TokenType::Plus:
         case TokenType::Minus:
-        case TokenType::Asterisk:
         case TokenType::Slash:
         case TokenType::Percent:
         case TokenType::Caret:
@@ -40,15 +57,18 @@ bool canPrecedeUnarySign(const Token & prev)
         case TokenType::Spaceship:
         case TokenType::Concatenation:
             return true;
+        /// a wildcard (`SELECT * - 1`, `t.* - 1`) takes a binary sign, and a bare word before `*` can be a keyword
+        case TokenType::Asterisk:
+            return endsOperand(before_prev);
         default:
             return false;
     }
 }
 
 /// a unary sign is part of the number it precedes, so that `-1` normalizes like `1`
-bool isUnarySignOfNumber(const Token & token, const Token & prev, Lexer lexer)
+bool isUnarySignOfNumber(const Token & token, const Token & prev, const Token & before_prev, Lexer lexer)
 {
-    if ((token.type != TokenType::Plus && token.type != TokenType::Minus) || !canPrecedeUnarySign(prev))
+    if ((token.type != TokenType::Plus && token.type != TokenType::Minus) || !canPrecedeUnarySign(prev, before_prev))
         return false;
 
     /// lexer is a copy, so looking ahead does not move the caller
@@ -69,6 +89,7 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
     size_t num_literals_in_sequence = 0;
     bool prev_comma = false;
     Token prev_token(TokenType::Whitespace, begin, begin);
+    Token before_prev_token(TokenType::Whitespace, begin, begin);
 
     while (true)
     {
@@ -77,7 +98,9 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
         if (!token.isSignificant())
             continue;
 
-        if (isUnarySignOfNumber(token, std::exchange(prev_token, token), lexer))
+        const bool is_unary_sign = isUnarySignOfNumber(token, prev_token, before_prev_token, lexer);
+        before_prev_token = std::exchange(prev_token, token);
+        if (is_unary_sign)
             continue;
 
         /// Literals.
@@ -176,16 +199,12 @@ UInt64 normalizedQueryHashUnordered(const char * begin, const char * end)
     /// Coalesce a list of comma separated literals.
     size_t num_literals_in_sequence = 0;
     bool prev_comma = false;
-    Token prev_token(TokenType::Whitespace, begin, begin);
 
     while (true)
     {
         Token token = lexer.nextToken();
 
         if (!token.isSignificant())
-            continue;
-
-        if (isUnarySignOfNumber(token, std::exchange(prev_token, token), lexer))
             continue;
 
         /// Literals.
@@ -273,6 +292,7 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
     bool prev_comma = false;
     bool prev_whitespace = false;
     Token prev_token(TokenType::Whitespace, begin, begin);
+    Token before_prev_token(TokenType::Whitespace, begin, begin);
 
     while (true)
     {
@@ -301,7 +321,9 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
         }
 
         /// skipped before prev_insignificant is reset, so the spaces around the sign collapse into one
-        if (isUnarySignOfNumber(token, std::exchange(prev_token, token), lexer))
+        const bool is_unary_sign = isUnarySignOfNumber(token, prev_token, before_prev_token, lexer);
+        before_prev_token = std::exchange(prev_token, token);
+        if (is_unary_sign)
             continue;
 
         prev_insignificant = false;
