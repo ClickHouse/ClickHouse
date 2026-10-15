@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -975,16 +976,18 @@ void TimeSeriesSink::writeSamplesAndRecent(Block samples_block)
     auto samples = createTargetPipeline(
         ViewTarget::Samples, samples_pipeline_header, /* parallel= */ true, /* delay_commit= */ false, &samples_block);
     std::unique_ptr<TargetPipeline> recent;
-    bool recent_is_one_partition = false;
+    bool recent_can_overlap = false;
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
     {
         auto recent_storage = time_series_storage.getTargetTable(ViewTarget::RecentSamples, getContext());
-        recent_is_one_partition = blockIsOneMergeTreePartition(recent_storage, samples_block, getContext());
+        /// A dependent view can commit during consume.
+        recent_can_overlap = blockIsOneMergeTreePartition(recent_storage, samples_block, getContext())
+            && DatabaseCatalog::instance().getDependentViews(recent_storage->getStorageID()).empty();
         recent = createTargetPipeline(
             ViewTarget::RecentSamples, samples_pipeline_header, /* parallel= */ true, /* delay_commit= */ fits_one_block, &samples_block);
     }
 
-    if (fits_one_block && recent && recent_is_one_partition)
+    if (fits_one_block && recent && recent_can_overlap)
     {
         samples->push(samples_block);
         recent->push(samples_block);
