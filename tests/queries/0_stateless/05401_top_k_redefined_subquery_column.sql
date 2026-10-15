@@ -25,6 +25,7 @@ SELECT k FROM (SELECT toUInt64(200000 - k) AS k FROM t_mt_minmax) ORDER BY k LIM
 SELECT k FROM (SELECT toUInt64(200000 - k) AS k FROM t_memory) ORDER BY k LIMIT 3 SETTINGS max_threads = 1;
 
 SELECT replaceRegexpOne(explain, '^[ │├└─]*', '') FROM (EXPLAIN actions = 1 SELECT k FROM (SELECT k FROM t_memory) ORDER BY k LIMIT 3) WHERE explain LIKE '%TopN filter%';
+SELECT replaceRegexpOne(explain, '^[ │├└─]*', '') FROM (EXPLAIN actions = 1 SELECT x FROM (SELECT k AS x FROM t_memory WHERE k % 2 = 0) ORDER BY x LIMIT 3) WHERE explain LIKE '%TopN filter%';
 SELECT replaceRegexpOne(explain, '^[ │├└─]*', '') FROM (EXPLAIN actions = 1 SELECT k FROM (SELECT toUInt64(200000 - k) AS k FROM t_memory) ORDER BY k LIMIT 3) WHERE explain LIKE '%TopN filter%';
 
 DROP TABLE t_mt;
