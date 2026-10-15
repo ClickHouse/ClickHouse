@@ -141,8 +141,8 @@ nan	nan	2
 3
 -- (C) still optimized: now() is constant within the query and folded before the filter is built
 1
--- a conjunct on the PARTITION BY columns is pushed below the window, which leaves a step
--- between the window and its sort, so the prefilter declines: correct, only slower
+-- a conjunct on the PARTITION BY columns beside the bound is computed by the filter too,
+-- so the prefilter declines: correct, only slower
 0
 1	8	3
 1	8	3

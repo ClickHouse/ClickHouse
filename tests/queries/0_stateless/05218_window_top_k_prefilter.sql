@@ -110,8 +110,8 @@ SELECT count() FROM t_wtkp WHERE o IN (SELECT o FROM (SELECT o, rank() OVER (ORD
 SELECT '-- (C) still optimized: now() is constant within the query and folded before the filter is built';
 SELECT count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND now() > toDateTime('2000-01-01')) WHERE explain ILIKE '%Window top-K prefilter%';
 
-SELECT '-- a conjunct on the PARTITION BY columns is pushed below the window, which leaves a step';
-SELECT '-- between the window and its sort, so the prefilter declines: correct, only slower';
+SELECT '-- a conjunct on the PARTITION BY columns beside the bound is computed by the filter too,';
+SELECT '-- so the prefilter declines: correct, only slower';
 SELECT count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND p < 100) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND p < 100 ORDER BY p, o, rk;
 
@@ -150,8 +150,9 @@ SELECT '31b a serialized plan declines', count() FROM (EXPLAIN actions=1 SELECT 
 
 SELECT '-- 30b the rows the prefilter would drop are the ones `throwIf` throws on, so the exception';
 SELECT '--     the query raises today must survive the optimization';
-SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
-SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+-- Short-circuit evaluation of `AND` skips `throwIf` on the rows `rk <= 1` rejects, so the query raises only without it.
+SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0, short_circuit_function_evaluation = 'disable'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1, short_circuit_function_evaluation = 'disable'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT '-- 33 a conjunct the filter evaluates on a row the prefilter would remove keeps alive the';
 SELECT '--     exception that row raises, because a filter that computes anything but the bound is';
